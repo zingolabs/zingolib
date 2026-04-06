@@ -1,6 +1,5 @@
 use http::Uri;
 use zcash_wallet_interface::BlockHeight;
-use zingolib::wallet::{SyncConfig, TransparentAddressDiscovery};
 
 use crate::ZingoWallet;
 
@@ -45,7 +44,7 @@ pub enum GetMaxScannedHeightError {
     #[error("Todo")]
     NoHeightFoundForServer, //TODO
     #[error("Todo")]
-    WalletError(zingolib::wallet::error::WalletError),
+    WalletError(#[from] pepper_sync::error::SyncStatusError<zingolib::wallet::error::WalletError>),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -85,13 +84,10 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         maximum_block: Option<BlockHeight>,
     ) -> Result<(), Self::BeginScanningServerRangeError> {
         use std::num::NonZeroU32;
-
         use std::str::FromStr as _;
 
         use zingolib::config::ChainType;
-
         use zingolib::lightclient::LightClient;
-        use zingolib::wallet::LightWallet;
         use zingolib::wallet::WalletSettings;
 
         if let Some(maximum_scan_block) = maximum_block {
@@ -148,8 +144,9 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer"); // seems like this should default. Also why are we stringing it in in two places??
 
             let wallet_settings = WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                sync_config: zingolib::wallet::SyncConfig {
+                    transparent_address_discovery:
+                        zingolib::wallet::TransparentAddressDiscovery::minimal(),
                     performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).expect("1 aint 0"),
@@ -212,14 +209,10 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         _server: String,
     ) -> Result<zcash_wallet_interface::BlockHeight, Self::GetMaxScannedHeightError> {
         match &self.lightclient {
-            Some(client) => Ok(client
-                .wallet
-                .read()
-                .await
-                .sync_state
-                .highest_scanned_height()
-                .map(|h| zcash_wallet_interface::BlockHeight(h.into()))
-                .unwrap_or(BlockHeight(0))),
+            Some(client) => {
+                let sync_status = pepper_sync::sync_status(&*client.wallet().read().await).await?;
+                Ok(())
+            }
             None => Err(GetMaxScannedHeightError::NoServer),
         }
     }
