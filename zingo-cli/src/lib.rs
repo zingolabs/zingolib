@@ -546,6 +546,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = RT
             .block_on(async move {
                 zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
+                    .map_err(|e| format!("{e:?}"))?
                     .get_latest_block()
                     .await
                     .map(|block_id| block_id.height as u32)

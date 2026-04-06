@@ -108,6 +108,10 @@ impl LightClient {
     /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
     pub fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
+        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
                 let buffer = BufReader::new(
@@ -135,7 +139,12 @@ impl LightClient {
             }
         };
 
-        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri());
+        // Install the ring crypto provider for rustls. Required because both
+        // `ring` and `aws-lc-rs` features are unified in via transitive deps,
+        // preventing rustls from auto-selecting a provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
 
         Ok(LightClient {
             indexer,
@@ -194,13 +203,20 @@ impl LightClient {
     }
 
     /// Returns URI of the indexer the lightclient is connected to.
-    pub fn indexer_uri(&self) -> Option<&http::Uri> {
+    pub fn indexer_uri(&self) -> &http::Uri {
         self.indexer.uri()
     }
 
     /// Set indexer uri.
-    pub fn set_indexer_uri(&mut self, server: http::Uri) {
-        self.indexer.set_uri(server);
+    ///
+    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
+    /// `zingo-netutils` instead of `http::Uri`.
+    pub fn set_indexer_uri(
+        &mut self,
+        server: http::Uri,
+    ) -> Result<(), zingo_netutils::GetClientError> {
+        self.indexer = zingo_netutils::GrpcIndexer::new(server)?;
+        Ok(())
     }
 
     /// Creates a tor client for current price updates.
@@ -233,7 +249,7 @@ impl LightClient {
                 let o = json::object! {
                     "version" => i.version,
                     "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer.uri().map(|u| u.to_string()).unwrap_or_default(),
+                    "server_uri" => self.indexer.uri().to_string(),
                     "vendor" => i.vendor,
                     "taddr_support" => i.taddr_support,
                     "chain_name" => i.chain_name,

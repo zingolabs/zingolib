@@ -38,7 +38,10 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
         for uri in uris {
             handles.push(tokio::spawn(async move {
                 let start = Instant::now();
-                let indexer = GrpcIndexer::new(uri.clone());
+                let indexer = match GrpcIndexer::new(uri.clone()) {
+                    Ok(i) => i,
+                    Err(_) => return None,
+                };
                 match tokio::time::timeout(GET_INFO_TIMEOUT, indexer.get_info()).await {
                     Ok(Ok(_info)) => Some(RankedServer {
                         uri,
