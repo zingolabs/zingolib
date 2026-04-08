@@ -6,7 +6,9 @@
 //!
 //! The binary entry point (`main.rs`) is intentionally thin: it handles
 //! process-level concerns (tracing, crypto-provider installation, error
-//! reporting) and delegates all wallet logic here via [`run_cli`].
+//! reporting) and delegates to [`run_cli`], which builds a
+//! [`LightClient`](zingolib::lightclient::LightClient) and runs the
+//! command loop.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -403,11 +405,11 @@ fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
     CommunicationMode::Online
 }
 
-/// All CLI-derived configuration needed to start a wallet session.
+/// All CLI-derived configuration needed to create a [`LightClient`] and
+/// start the command loop.
 ///
 /// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
-/// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`]
-/// to create the [`LightClient`] and command channel.
+/// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`].
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
