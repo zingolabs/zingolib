@@ -404,6 +404,7 @@ impl Default for ClientConfigBuilder {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                         performance_level: pepper_sync::config::PerformanceLevel::High,
+                        extended_zip212_grace_period: false,
                     },
                     min_confirmations: NonZeroU32::try_from(3)
                         .expect("hard coded non-zero integer"),

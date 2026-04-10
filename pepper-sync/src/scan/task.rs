@@ -66,6 +66,7 @@ pub(crate) struct Scanner<P> {
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    extended_zip212_grace_period: bool,
 }
 
 impl<P> Scanner<P>
@@ -77,6 +78,7 @@ where
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+        extended_zip212_grace_period: bool,
     ) -> Self {
         let workers: Vec<ScanWorker<P>> = Vec::with_capacity(MAX_WORKER_POOLSIZE);
 
@@ -89,6 +91,7 @@ where
             fetch_request_sender,
             consensus_parameters,
             ufvks,
+            extended_zip212_grace_period,
         }
     }
 
@@ -152,7 +155,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run(max_batch_outputs);
+        worker.run(max_batch_outputs, self.extended_zip212_grace_period);
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -649,7 +652,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self, max_batch_outputs: usize) {
+    fn run(&mut self, max_batch_outputs: usize, extended_zip212_grace_period: bool) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -668,6 +671,7 @@ where
                     &ufvks,
                     scan_task,
                     max_batch_outputs,
+                    extended_zip212_grace_period,
                 );
 
                 let scan_results = match tokio::time::timeout(SCAN_TASK_TIMEOUT, scan_fut).await {

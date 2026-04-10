@@ -86,12 +86,16 @@ pub struct SyncConfig {
     pub transparent_address_discovery: TransparentAddressDiscovery,
     /// Performance level
     pub performance_level: PerformanceLevel,
+    /// Optionally extend the grace period to enable recovery of zecwalletlite funds.
+    /// https://github.com/zcash/librustzcash/issues/323
+    /// https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d
+    pub extended_zip212_grace_period: bool,
 }
 
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
-        1
+        2
     }
 
     /// Deserialize into `reader`
@@ -101,10 +105,16 @@ impl SyncConfig {
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
         let performance_level = if version >= 1 {
-            PerformanceLevel::read(reader)?
+            PerformanceLevel::read(&mut reader)?
         } else {
             PerformanceLevel::High
         };
+        let extended_zip212_grace_period = if version >= 2 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(Self {
             transparent_address_discovery: TransparentAddressDiscovery {
                 gap_limit,
@@ -115,6 +125,7 @@ impl SyncConfig {
                 },
             },
             performance_level,
+            extended_zip212_grace_period,
         })
     }
 
@@ -133,7 +144,8 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
-        self.performance_level.write(writer)?;
+        self.performance_level.write(&mut writer)?;
+        writer.write_u8(self.extended_zip212_grace_period as u8)?;
 
         Ok(())
     }

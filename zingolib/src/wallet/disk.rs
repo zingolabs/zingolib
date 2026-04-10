@@ -351,6 +351,7 @@ impl LightWallet {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
+                    extended_zip212_grace_period: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
             },
@@ -580,6 +581,7 @@ impl LightWallet {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
+                    extended_zip212_grace_period: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
             }
