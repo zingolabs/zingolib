@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `config::SyncConfig`:
+  - added `extended_zip212_grace_period` field.
+  - updated serialization to version 2 include `extended_zip212_grace_period` field
+
 ### Removed
 
 ## [0.3.0]
