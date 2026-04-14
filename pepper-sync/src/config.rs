@@ -87,8 +87,8 @@ pub struct SyncConfig {
     /// Performance level
     pub performance_level: PerformanceLevel,
     /// Optionally extend the grace period to enable recovery of zecwalletlite funds.
-    /// https://github.com/zcash/librustzcash/issues/323
-    /// https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d
+    /// <https://github.com/zcash/librustzcash/issues/323>
+    /// <https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d>
     pub extended_zip212_grace_period: bool,
 }
 

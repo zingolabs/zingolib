@@ -27,12 +27,12 @@ use crate::wallet::OutputId;
 
 /// The "grace period" defined in [ZIP 212].
 ///
-/// [ZIP 212]: https://zips.z.cash/zip-0212#changes-to-the-process-of-receiving-sapling-or-orchard-notes
-pub const ZIP212_GRACE_PERIOD: u32 = 32256;
+/// [ZIP 212]: <https://zips.z.cash/zip-0212#changes-to-the-process-of-receiving-sapling-or-orchard-notes>
+const ZIP212_GRACE_PERIOD: u32 = 32256;
 
 /// An extended grace period used by zecwalletlite and resulting in missing funds for zip212 conformant wallets.
-/// https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d
-pub const ZIP212_EXTENDED_GRACE_PERIOD: u32 = 32256 + 161280;
+/// <https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d>
+const ZIP212_EXTENDED_GRACE_PERIOD: u32 = 32256 + 161280;
 
 /// Returns the enforcement policy for ZIP 212 at the given height.
 /// If `extended` is true, the grace window will be extended to enable recovery of zecwalletlite funds.
