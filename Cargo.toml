@@ -30,8 +30,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
 
 ### Documentation
 indoc = "2"
@@ -43,7 +43,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 ### Zingo-common
-zingo-netutils = "3.0.0"
+zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "indexer_trait", features = ["back_compatible", "globally-public-transparent"] }
 zingo_common_components = "0.3.0"
 
 ### Zcash
