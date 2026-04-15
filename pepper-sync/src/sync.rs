@@ -425,6 +425,7 @@ where
         scan_results_sender,
         fetch_request_sender.clone(),
         ufvks.clone(),
+        config.extended_zip212_grace_period,
     );
     scanner.launch(config.performance_level);
 

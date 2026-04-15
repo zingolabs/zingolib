@@ -117,6 +117,7 @@ pub(crate) async fn scan<P>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_task: ScanTask,
     max_batch_outputs: usize,
+    extended_zip212_grace_period: bool,
 ) -> Result<ScanResults, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -182,6 +183,7 @@ where
             &ufvks_clone,
             initial_scan_data,
             max_batch_outputs / 8,
+            extended_zip212_grace_period,
         )
     })
     .await

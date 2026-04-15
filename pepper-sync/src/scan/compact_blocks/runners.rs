@@ -8,12 +8,14 @@ use std::sync::atomic::AtomicUsize;
 use crossbeam_channel as channel;
 
 use orchard::note_encryption::{CompactAction, OrchardDomain};
+use sapling_crypto::note_encryption::Zip212Enforcement;
 use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
-use zcash_primitives::{
-    block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
-};
+use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::NetworkUpgrade;
+use zcash_protocol::consensus::Parameters;
 use zcash_protocol::{ShieldedProtocol, consensus};
 
 use memuse::DynamicUsage;
@@ -22,6 +24,42 @@ use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
 use crate::wallet::OutputId;
+
+/// The "grace period" defined in [ZIP 212].
+///
+/// [ZIP 212]: <https://zips.z.cash/zip-0212#changes-to-the-process-of-receiving-sapling-or-orchard-notes>
+const ZIP212_GRACE_PERIOD: u32 = 32256;
+
+/// An extended grace period used by zecwalletlite and resulting in missing funds for zip212 conformant wallets.
+/// <https://github.com/adityapk00/librustzcash/commit/c31a04a4dbfa5a2ac013139db229f41cd421754d>
+const ZIP212_EXTENDED_GRACE_PERIOD: u32 = 32256 + 161280;
+
+/// Returns the enforcement policy for ZIP 212 at the given height.
+/// If `extended` is true, the grace window will be extended to enable recovery of zecwalletlite funds.
+/// https://github.com/zcash/librustzcash/issues/323
+fn zip212_enforcement(
+    params: &impl Parameters,
+    height: BlockHeight,
+    extended: bool,
+) -> Zip212Enforcement {
+    if params.is_nu_active(NetworkUpgrade::Canopy, height) {
+        let grace_period = if extended {
+            ZIP212_EXTENDED_GRACE_PERIOD
+        } else {
+            ZIP212_GRACE_PERIOD
+        };
+        let grace_period_end_height =
+            params.activation_height(NetworkUpgrade::Canopy).unwrap() + grace_period;
+
+        if height < grace_period_end_height {
+            Zip212Enforcement::GracePeriod
+        } else {
+            Zip212Enforcement::On
+        }
+    } else {
+        Zip212Enforcement::Off
+    }
+}
 
 type TaggedSaplingBatch = Batch<
     SaplingDomain,
@@ -85,13 +123,15 @@ where
         &mut self,
         params: &P,
         block: CompactBlock,
+        extended_zip212_grace_period: bool,
     ) -> Result<(), zcash_client_backend::scanning::ScanError>
     where
         P: consensus::Parameters + Send + 'static,
     {
         let block_hash = block.hash();
         let block_height = block.height();
-        let zip212_enforcement = zip212_enforcement(params, block_height);
+        let zip212_enforcement =
+            zip212_enforcement(params, block_height, extended_zip212_grace_period);
 
         for tx in block.vtx {
             let txid = tx.txid();

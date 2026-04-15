@@ -38,6 +38,7 @@ pub(super) fn scan_compact_blocks<P>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
     trial_decrypt_task_size: usize,
+    extended_zip212_grace_period: bool,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -54,6 +55,7 @@ where
         &scanning_keys,
         &compact_blocks,
         trial_decrypt_task_size,
+        extended_zip212_grace_period,
     )?;
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
@@ -181,6 +183,7 @@ fn trial_decrypt<P>(
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
     trial_decrypt_task_size: usize,
+    extended_zip212_grace_period: bool,
 ) -> Result<BatchRunners<(), ()>, ScanError>
 where
     P: consensus::Parameters + Send + 'static,
@@ -188,7 +191,11 @@ where
     let mut runners = BatchRunners::<(), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
     for block in compact_blocks {
         runners
-            .add_block(consensus_parameters, block.clone())
+            .add_block(
+                consensus_parameters,
+                block.clone(),
+                extended_zip212_grace_period,
+            )
             .map_err(ScanError::ZcbScanError)?;
     }
     runners.flush();
