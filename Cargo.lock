@@ -4064,7 +4064,7 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9375,7 +9375,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "append-only-vec",
  "bech32",

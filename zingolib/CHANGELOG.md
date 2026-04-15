@@ -134,6 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
 - `testutils::build_fvk_client`
 
+## [3.0.1] - 2026-03-26
+
 ## [3.0.0] - 2026-03-02
 
 ### Deprecated
