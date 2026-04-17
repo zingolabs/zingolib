@@ -7,10 +7,12 @@ use zcash_client_backend::{
 };
 use zcash_protocol::{
     ShieldedProtocol,
-    consensus::{BlockHeight, Parameters},
+    consensus::Parameters,
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
+
+use zingo_common_components::protocol::BlockHeight;
 
 use super::{
     LightWallet,

@@ -26,12 +26,10 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{TxId, components::transparent::OutPoint},
 };
-use zcash_protocol::{
-    PoolType, ShieldedProtocol,
-    consensus::{self, BlockHeight},
-    value::Zatoshis,
-};
+use zcash_protocol::{PoolType, ShieldedProtocol, consensus, value::Zatoshis};
 use zcash_transparent::address::Script;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -391,7 +389,8 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: block.height(),
+            block_height: BlockHeight::try_from(block.height)
+                .expect("compact blocks height should always be valid u32"),
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
             time: block.time,
@@ -624,7 +623,7 @@ impl WalletTransaction {
             TxVersion::V5,
             BranchId::Nu5,
             0,
-            BlockHeight::from_u32(0),
+            zcash_protocol::consensus::H0,
             None,
             None,
             None,
@@ -1217,10 +1216,12 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 // TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
 // handling will need to replace expects
 /// Type alias for sapling memory shard store
-pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
+pub type SaplingShardStore =
+    MemoryShardStore<sapling_crypto::Node, zcash_protocol::consensus::BlockHeight>;
 
 /// Type alias for orchard memory shard store
-pub type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+pub type OrchardShardStore =
+    MemoryShardStore<MerkleHashOrchard, zcash_protocol::consensus::BlockHeight>;
 
 /// Shard tree wallet data struct
 #[derive(Debug)]
@@ -1247,10 +1248,10 @@ impl ShardTrees {
         let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
-            .checkpoint(BlockHeight::from_u32(0))
+            .checkpoint(zcash_protocol::consensus::BlockHeight::from_u32(0))
             .expect("should never fail");
         orchard
-            .checkpoint(BlockHeight::from_u32(0))
+            .checkpoint(zcash_protocol::consensus::BlockHeight::from_u32(0))
             .expect("should never fail");
 
         Self { sapling, orchard }

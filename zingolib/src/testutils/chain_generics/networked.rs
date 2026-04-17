@@ -2,8 +2,7 @@
 
 use http::Uri;
 
-use zcash_protocol::consensus::BlockHeight;
-
+use zingo_common_components::protocol::BlockHeight;
 use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;

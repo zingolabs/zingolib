@@ -12,7 +12,7 @@ license = "MIT"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-zcash_protocol = { workspace = true }
+zingo_common_components = { workspace = true }
 byteorder = { workspace = true }
 
 [dev-dependencies]

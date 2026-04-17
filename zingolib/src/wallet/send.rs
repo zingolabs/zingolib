@@ -10,8 +10,10 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, Parameters as _};
+use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::{ShieldedProtocol, TxId};
+
+use zingo_common_components::protocol::BlockHeight;
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
@@ -232,7 +234,8 @@ mod tests {
 
     mod check_note_shards_are_scanned {
         use pepper_sync::sync::{ScanPriority, ScanRange};
-        use zcash_protocol::consensus::BlockHeight;
+
+        use zingo_common_components::protocol::BlockHeight;
 
         use crate::wallet::send::check_note_shards_are_scanned;
 

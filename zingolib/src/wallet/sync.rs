@@ -12,8 +12,9 @@ use pepper_sync::{
     },
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_protocol::consensus::BlockHeight;
 use zip32::{AccountId, DiversifierIndex};
+
+use zingo_common_components::protocol::BlockHeight;
 
 use super::{
     LightWallet,

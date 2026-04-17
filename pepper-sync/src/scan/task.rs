@@ -17,7 +17,9 @@ use tokio::{
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::{
     client::{self, FetchRequest},
@@ -484,7 +486,10 @@ where
                             );
                             first_batch = false;
                         }
-                        if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
+                        if BlockHeight::try_from(compact_block.height)
+                            .expect("compact blocks height should always be valid u32")
+                            == scan_task.scan_range.block_range().end - 1
+                        {
                             previous_task_last_block = Some(
                                 WalletBlock::from_compact_block(
                                     &consensus_parameters,
@@ -513,7 +518,8 @@ where
                             .split(
                                 &consensus_parameters,
                                 fetch_request_sender.clone(),
-                                compact_block.height(),
+                                BlockHeight::try_from(compact_block.height)
+                                    .expect("compact blocks height should always be valid u32"),
                             )
                             .await?;
 
@@ -526,7 +532,9 @@ where
                         orchard_nullifier_count = 0;
                     }
 
-                    retry_height = compact_block.height() + 1;
+                    retry_height = BlockHeight::try_from(compact_block.height)
+                        .expect("compact blocks height should always be valid u32")
+                        + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
@@ -774,10 +782,12 @@ impl ScanTask {
         }
 
         let mut lower_compact_blocks = self.compact_blocks;
-        let upper_compact_blocks = if let Some(index) = lower_compact_blocks
-            .iter()
-            .position(|block| block.height() == block_height)
-        {
+        let upper_compact_blocks = if let Some(index) =
+            lower_compact_blocks.iter().position(|block| {
+                BlockHeight::try_from(block.height)
+                    .expect("compact blocks height should always be valid u32")
+                    == block_height
+            }) {
             lower_compact_blocks.split_off(index)
         } else {
             Vec::new()

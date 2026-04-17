@@ -13,7 +13,9 @@ use zcash_client_backend::proto::compact_formats::{
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{block::BlockHash, zip32::AccountId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::{
     client::{self, FetchRequest},
@@ -72,7 +74,8 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height = block.height();
+        let block_height = BlockHeight::try_from(block.height)
+            .expect("compact blocks height should always be valid u32");
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
@@ -101,7 +104,12 @@ where
                 });
             }
 
-            collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+            collect_nullifiers(
+                &mut nullifiers,
+                BlockHeight::try_from(block.height)
+                    .expect("compact blocks height should always be valid u32"),
+                transaction,
+            )?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -145,7 +153,8 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: block.height(),
+            block_height: BlockHeight::try_from(block.height)
+                .expect("compact blocks height should always be valid u32"),
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
             time: block.time,
@@ -215,10 +224,13 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && block.height() != prev_height + 1
+            && BlockHeight::try_from(block.height)
+                .expect("compact blocks height should always be valid u32")
+                != prev_height + 1
         {
             return Err(ContinuityError::HeightDiscontinuity {
-                height: block.height(),
+                height: BlockHeight::try_from(block.height)
+                    .expect("compact blocks height should always be valid u32"),
                 previous_block_height: prev_height,
             });
         }
@@ -227,13 +239,17 @@ fn check_continuity(
             && block.prev_hash() != prev_hash
         {
             return Err(ContinuityError::HashDiscontinuity {
-                height: block.height(),
+                height: BlockHeight::try_from(block.height)
+                    .expect("compact blocks height should always be valid u32"),
                 prev_hash: block.prev_hash(),
                 previous_block_hash: prev_hash,
             });
         }
 
-        prev_height = Some(block.height());
+        prev_height = Some(
+            BlockHeight::try_from(block.height)
+                .expect("compact blocks height should always be valid u32"),
+        );
         prev_hash = Some(block.hash());
     }
 
@@ -432,9 +448,12 @@ pub(crate) async fn calculate_block_tree_bounds(
 
             match compact_block.height().cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
-                    let frontiers =
-                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
-                            .await?;
+                    let frontiers = client::get_frontiers(
+                        fetch_request_sender.clone(),
+                        BlockHeight::try_from(compact_block.height)
+                            .expect("compact blocks height should always be valid u32"),
+                    )
+                    .await?;
                     (
                         frontiers
                             .final_sapling_tree()

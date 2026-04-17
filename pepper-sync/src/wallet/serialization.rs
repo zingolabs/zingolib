@@ -21,13 +21,12 @@ use zcash_primitives::{
     merkle_tree::HashSer,
     transaction::{Transaction, TxId},
 };
-use zcash_protocol::{
-    consensus::{self, BlockHeight},
-    value::Zatoshis,
-};
+use zcash_protocol::{consensus, value::Zatoshis};
 use zcash_transparent::address::Script;
-
 use zcash_transparent::keys::NonHardenedChildIndex;
+
+use zingo_common_components::protocol::BlockHeight;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
@@ -377,7 +376,10 @@ impl WalletTransaction {
         let status = ConfirmationStatus::read(&mut reader)?;
         let transaction = Transaction::read(
             &mut reader,
-            consensus::BranchId::for_height(consensus_parameters, status.get_height()),
+            consensus::BranchId::for_height(
+                consensus_parameters,
+                zcash_protocol::consensus::BlockHeight::from_u32(status.get_height().into()),
+            ),
         )?;
         let datetime = reader.read_u32::<LittleEndian>()?;
         let transparent_coins = Vector::read(&mut reader, |r| TransparentCoin::read(r))?;
@@ -1176,7 +1178,7 @@ mod tests {
                 .sapling
                 .store_mut()
                 .add_checkpoint(
-                    height,
+                    zcash_protocol::consensus::BlockHeight::from_u32(height.into()),
                     Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
                 )
                 .expect("infallible");
@@ -1184,7 +1186,7 @@ mod tests {
                 .orchard
                 .store_mut()
                 .add_checkpoint(
-                    height,
+                    zcash_protocol::consensus::BlockHeight::from_u32(height.into()),
                     Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
                 )
                 .expect("infallible");
@@ -1201,29 +1203,29 @@ mod tests {
         assert_eq!(orchard_store.checkpoint_count().expect("infallible"), 100);
         assert_eq!(
             sapling_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(51))
+            Some(zcash_protocol::consensus::BlockHeight::from_u32(51))
         );
         assert_eq!(
             sapling_store.max_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(150))
+            Some(zcash_protocol::consensus::BlockHeight::from_u32(150))
         );
         assert_eq!(
             orchard_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(51))
+            Some(zcash_protocol::consensus::BlockHeight::from_u32(51))
         );
         assert_eq!(
             orchard_store.max_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(150))
+            Some(zcash_protocol::consensus::BlockHeight::from_u32(150))
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(149))
+                .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(149))
                 .expect("infallible")
                 .is_some()
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(50))
+                .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(50))
                 .expect("infallible")
                 .is_none()
         );

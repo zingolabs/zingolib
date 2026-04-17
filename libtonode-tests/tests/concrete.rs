@@ -141,11 +141,10 @@ mod fast {
         zip321::{Payment, TransactionRequest},
     };
     use zcash_local_net::validator::Validator;
-    use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zcash_transparent::keys::NonHardenedChildIndex;
-    use zingo_common_components::protocol::ActivationHeights;
+    use zingo_common_components::protocol::{ActivationHeights, BlockHeight};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -1475,11 +1474,10 @@ mod slow {
     };
     use zcash_local_net::validator::Validator;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-    use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_common_components::protocol::ActivationHeights;
+    use zingo_common_components::protocol::{ActivationHeights, BlockHeight};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::{ChainType, ClientConfig, WalletConfig};

@@ -5,11 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{
-    ShieldedProtocol,
-    consensus::{self, BlockHeight},
-};
+use zcash_protocol::{ShieldedProtocol, consensus};
 use zip32::AccountId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::{
     client::{self, FetchRequest},
@@ -258,7 +257,12 @@ where
                     {
                         shard_trees
                             .sapling
-                            .remove_mark(position, Some(&height))
+                            .remove_mark(
+                                position,
+                                Some(&zcash_protocol::consensus::BlockHeight::from_u32(
+                                    height.into(),
+                                )),
+                            )
                             .expect("infallible");
                     }
                 }
@@ -282,7 +286,12 @@ where
                     {
                         shard_trees
                             .orchard
-                            .remove_mark(position, Some(&height))
+                            .remove_mark(
+                                position,
+                                Some(&zcash_protocol::consensus::BlockHeight::from_u32(
+                                    height.into(),
+                                )),
+                            )
                             .expect("infallible");
                     }
                 }

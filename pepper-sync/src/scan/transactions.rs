@@ -22,10 +22,12 @@ use zcash_primitives::{
 };
 use zcash_protocol::{
     ShieldedProtocol,
-    consensus::{self, BlockHeight, NetworkConstants},
+    consensus::{self, NetworkConstants},
 };
-
 use zcash_transparent::bundle::TxIn;
+
+use zingo_common_components::protocol::BlockHeight;
+
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -164,7 +166,7 @@ pub(crate) fn scan_transaction(
     let block_height = status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,
-        block_height,
+        zcash_protocol::consensus::BlockHeight::from_u32(u32::from(block_height)),
     );
     let mut transparent_coins: Vec<TransparentCoin> = Vec::new();
     let mut sapling_notes: Vec<SaplingNote> = Vec::new();

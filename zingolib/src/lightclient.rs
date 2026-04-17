@@ -16,8 +16,9 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use bip0039::Mnemonic;
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use pepper_sync::{
     error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,

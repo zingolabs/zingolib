@@ -9,10 +9,10 @@ use std::{
 use bip0039::{English, Mnemonic};
 use http::uri::InvalidUri;
 
-use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::consensus::Parameters;
 
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
-use zingo_common_components::protocol::ActivationHeights;
+use zingo_common_components::protocol::{ActivationHeights, BlockHeight};
 
 use crate::wallet::{
     WalletBase, WalletSettings,
@@ -158,9 +158,12 @@ impl WalletConfig {
                 chain_height,
                 wallet_settings,
             } => {
-                let sapling_activation_height = chain_type
-                    .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-                    .expect("should have some sapling activation height");
+                let sapling_activation_height = BlockHeight::from_u32(
+                    chain_type
+                        .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+                        .expect("should have some sapling activation height")
+                        .into(),
+                );
                 let birthday =
                     sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100);
 

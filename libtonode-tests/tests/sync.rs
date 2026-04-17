@@ -2,7 +2,6 @@ use std::{num::NonZeroU32, time::Duration};
 
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
-use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
@@ -204,7 +203,7 @@ async fn store_all_checkpoints_in_verification_window() {
                 .shard_trees
                 .sapling
                 .store()
-                .get_checkpoint(&BlockHeight::from_u32(height))
+                .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(height))
                 .unwrap()
                 .is_some(),
             "missing sapling checkpoint at height {height}"
@@ -217,7 +216,7 @@ async fn store_all_checkpoints_in_verification_window() {
                 .shard_trees
                 .orchard
                 .store()
-                .get_checkpoint(&BlockHeight::from_u32(height))
+                .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(height))
                 .unwrap()
                 .is_some(),
             "missing orchard checkpoint at height {height}"

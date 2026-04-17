@@ -11,7 +11,9 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::{
     client::FetchRequest,
@@ -148,7 +150,12 @@ where
         let mut nullifiers = NullifierMap::new();
         for block in &compact_blocks {
             for transaction in &block.vtx {
-                collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+                collect_nullifiers(
+                    &mut nullifiers,
+                    BlockHeight::try_from(block.height)
+                        .expect("compact blocks height should always be valid u32"),
+                    transaction,
+                )?;
             }
         }
 

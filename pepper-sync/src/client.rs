@@ -22,7 +22,9 @@ use zcash_client_backend::{
     },
 };
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
+
+use zingo_common_components::protocol::BlockHeight;
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
@@ -299,7 +301,10 @@ pub(crate) async fn get_transaction_and_block_height(
 
     let transaction = Transaction::read(
         &raw_transaction.data[..],
-        consensus::BranchId::for_height(consensus_parameters, block_height),
+        consensus::BranchId::for_height(
+            consensus_parameters,
+            zcash_protocol::consensus::BlockHeight::from_u32(u32::from(block_height)),
+        ),
     )
     .map_err(ServerError::InvalidTransaction)?;
 
@@ -387,7 +392,10 @@ pub(crate) async fn get_transparent_address_transactions(
 
             let transaction = Transaction::read(
                 &raw_transaction.data[..],
-                consensus::BranchId::for_height(consensus_parameters, block_height),
+                consensus::BranchId::for_height(
+                    consensus_parameters,
+                    zcash_protocol::consensus::BlockHeight::from_u32(u32::from(block_height)),
+                ),
             )
             .map_err(ServerError::InvalidTransaction)?;
 

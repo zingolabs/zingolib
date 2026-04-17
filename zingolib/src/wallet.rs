@@ -7,9 +7,11 @@ use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::Parameters;
 use zcash_transparent::keys::NonHardenedChildIndex;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
@@ -175,9 +177,12 @@ impl LightWallet {
             wallet_settings,
         } = wallet_base;
 
-        let sapling_activation_height = chain_type
-            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
+        let sapling_activation_height = BlockHeight::from_u32(
+            chain_type
+                .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height")
+                .into(),
+        );
         if birthday < sapling_activation_height {
             return Err(WalletError::BirthdayBelowSapling(
                 u32::from(birthday),

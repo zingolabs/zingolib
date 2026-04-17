@@ -25,6 +25,9 @@ test-features = []
 zingo-memo.workspace = true
 zingo-status.workspace = true
 
+# Zingo primitives
+zingo_common_components.workspace = true
+
 # Zcash
 incrementalmerkletree.workspace = true
 orchard.workspace = true

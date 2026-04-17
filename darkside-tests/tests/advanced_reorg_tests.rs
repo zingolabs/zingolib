@@ -13,8 +13,7 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
-use zcash_protocol::consensus::BlockHeight;
-use zingo_common_components::protocol::ActivationHeights;
+use zingo_common_components::protocol::{ActivationHeights, BlockHeight};
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::{
     config::WalletConfig,

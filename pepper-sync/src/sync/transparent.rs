@@ -5,9 +5,11 @@ use std::ops::Range;
 use tokio::sync::mpsc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zip32::AccountId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::client::{self, FetchRequest};
 use crate::config::TransparentAddressDiscovery;
@@ -39,9 +41,12 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
     let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
-    let sapling_activation_height = consensus_parameters
-        .activation_height(consensus::NetworkUpgrade::Sapling)
-        .expect("sapling activation height should always return Some");
+    let sapling_activation_height = BlockHeight::from_u32(
+        consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Sapling)
+            .expect("sapling activation height should always return Some")
+            .into(),
+    );
     let block_range_start = last_known_chain_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
     let checked_block_range_start = match block_range_start.cmp(&sapling_activation_height) {
         cmp::Ordering::Greater | cmp::Ordering::Equal => block_range_start,

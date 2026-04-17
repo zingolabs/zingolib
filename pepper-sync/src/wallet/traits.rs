@@ -11,9 +11,10 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 use zip32::AccountId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
@@ -306,14 +307,36 @@ pub trait SyncShardTrees: SyncWallet {
             }
 
             for tree in sapling_located_trees {
-                shard_trees
-                    .sapling
-                    .insert_tree(tree.subtree, tree.checkpoints)?;
+                shard_trees.sapling.insert_tree(
+                    tree.subtree,
+                    tree.checkpoints
+                        .iter()
+                        .map(|(height, pos)| {
+                            (
+                                zcash_protocol::consensus::BlockHeight::from_u32(u32::from(
+                                    *height,
+                                )),
+                                *pos,
+                            )
+                        })
+                        .collect(),
+                )?;
             }
             for tree in orchard_located_trees {
-                shard_trees
-                    .orchard
-                    .insert_tree(tree.subtree, tree.checkpoints)?;
+                shard_trees.orchard.insert_tree(
+                    tree.subtree,
+                    tree.checkpoints
+                        .iter()
+                        .map(|(height, pos)| {
+                            (
+                                zcash_protocol::consensus::BlockHeight::from_u32(u32::from(
+                                    *height,
+                                )),
+                                *pos,
+                            )
+                        })
+                        .collect(),
+                )?;
             }
 
             Ok(())
@@ -327,7 +350,7 @@ pub trait SyncShardTrees: SyncWallet {
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), SyncError<Self::Error>> {
-        if truncate_height == zcash_protocol::consensus::H0 {
+        if truncate_height == zingo_common_components::protocol::H0 {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
             tracing::info!("Clearing shard trees.");
             shard_trees.sapling =
@@ -339,7 +362,9 @@ pub trait SyncShardTrees: SyncWallet {
                 .get_shard_trees_mut()
                 .map_err(SyncError::WalletError)?
                 .sapling
-                .truncate_to_checkpoint(&truncate_height)?
+                .truncate_to_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(
+                    truncate_height.into(),
+                ))?
             {
                 tracing::error!("Sapling shard tree is broken! Beginning rescan.");
                 return Err(SyncError::TruncationError(
@@ -351,7 +376,9 @@ pub trait SyncShardTrees: SyncWallet {
                 .get_shard_trees_mut()
                 .map_err(SyncError::WalletError)?
                 .orchard
-                .truncate_to_checkpoint(&truncate_height)?
+                .truncate_to_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(
+                    truncate_height.into(),
+                ))?
             {
                 tracing::error!("Sapling shard tree is broken! Beginning rescan.");
                 return Err(SyncError::TruncationError(
@@ -371,7 +398,7 @@ async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     checkpoint_height: BlockHeight,
     located_trees: &[LocatedTreeData<L>],
     shard_tree: &mut shardtree::ShardTree<
-        shardtree::store::memory::MemoryShardStore<L, BlockHeight>,
+        shardtree::store::memory::MemoryShardStore<L, zcash_protocol::consensus::BlockHeight>,
         DEPTH,
         SHARD_HEIGHT,
     >,
@@ -390,12 +417,15 @@ where
         let mut previous_checkpoint = None;
         shard_tree
             .store()
-            .for_each_checkpoint(1_000, |height, checkpoint| {
-                if *height == checkpoint_height - 1 {
-                    previous_checkpoint = Some(checkpoint.clone());
-                }
-                Ok(())
-            })
+            .for_each_checkpoint(
+                1_000,
+                |height: &zcash_protocol::consensus::BlockHeight, checkpoint: &Checkpoint| {
+                    if BlockHeight::from_u32(u32::from(*height)) == checkpoint_height - 1 {
+                        previous_checkpoint = Some(checkpoint.clone());
+                    }
+                    Ok(())
+                },
+            )
             .expect("infallible");
 
         let tree_state = if let Some(checkpoint) = previous_checkpoint {
@@ -419,7 +449,10 @@ where
 
     shard_tree
         .store_mut()
-        .add_checkpoint(checkpoint_height, checkpoint)
+        .add_checkpoint(
+            zcash_protocol::consensus::BlockHeight::from_u32(checkpoint_height.into()),
+            checkpoint,
+        )
         .expect("infallible");
 
     Ok(())

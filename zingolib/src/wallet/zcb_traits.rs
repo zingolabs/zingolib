@@ -152,7 +152,10 @@ impl WalletRead for LightWallet {
     }
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        Ok(self.sync_state.last_known_chain_height())
+        Ok(self
+            .sync_state
+            .last_known_chain_height()
+            .map(|height| BlockHeight::from_u32(height.into())))
     }
 
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
@@ -185,19 +188,25 @@ impl WalletRead for LightWallet {
         &self,
         min_confirmations: NonZeroU32,
     ) -> Result<Option<(TargetHeight, BlockHeight)>, Self::Error> {
-        let target_height = if let Some(height) = self.sync_state.last_known_chain_height() {
+        let target_height = if let Some(height) = self
+            .sync_state
+            .last_known_chain_height()
+            .map(|height| BlockHeight::from_u32(height.into()))
+        {
             height + 1
         } else {
             return Ok(None);
         };
 
-        let max_checkpoint_height = self
-            .shard_trees
-            .sapling
-            .store()
-            .max_checkpoint_id()
-            .expect("infallible")
-            .expect("should be at least 1 checkpoint");
+        let max_checkpoint_height = BlockHeight::from_u32(
+            self.shard_trees
+                .sapling
+                .store()
+                .max_checkpoint_id()
+                .expect("infallible")
+                .expect("should be at least 1 checkpoint")
+                .into(),
+        );
 
         let anchor_height = std::cmp::min(
             max_checkpoint_height,
@@ -211,10 +220,12 @@ impl WalletRead for LightWallet {
     }
 
     fn get_tx_height(&self, txid: TxId) -> Result<Option<BlockHeight>, Self::Error> {
-        Ok(self
-            .wallet_transactions
-            .get(&txid)
-            .and_then(|transaction| transaction.status().get_confirmed_height()))
+        Ok(self.wallet_transactions.get(&txid).and_then(|transaction| {
+            transaction
+                .status()
+                .get_confirmed_height()
+                .map(|height| BlockHeight::from_u32(height.into()))
+        }))
     }
 
     fn get_unified_full_viewing_keys(
@@ -328,10 +339,7 @@ impl WalletRead for LightWallet {
         )
     }
 
-    fn utxo_query_height(
-        &self,
-        _account: Self::AccountId,
-    ) -> Result<zcash_protocol::consensus::BlockHeight, Self::Error> {
+    fn utxo_query_height(&self, _account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
         unimplemented!()
     }
 
@@ -453,7 +461,11 @@ impl WalletWrite for LightWallet {
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
-                ConfirmationStatus::Calculated(sent_transaction.target_height().into()),
+                ConfirmationStatus::Calculated(
+                    zingo_common_components::protocol::BlockHeight::from_u32(
+                        sent_transaction.target_height().into(),
+                    ),
+                ),
                 sent_transaction.created().unix_timestamp() as u32,
             ) {
                 Ok(()) => (),
@@ -619,6 +631,8 @@ impl InputSource for LightWallet {
             .get_target_and_anchor_heights(confirmations_policy.trusted())
             .expect("infallible")
             .ok_or(WalletError::NoSyncData)?;
+        let anchor_height =
+            zingo_common_components::protocol::BlockHeight::from_u32(anchor_height.into());
 
         let mut exclude_sapling = exclude
             .iter()
@@ -837,7 +851,7 @@ impl InputSource for LightWallet {
         // TODO: add recipient key scope metadata
         Ok(self
             .spendable_transparent_coins(
-                target_height.into(),
+                zingo_common_components::protocol::BlockHeight::from_u32(target_height.into()),
                 confirmations_policy.allow_zero_conf_shielding(),
                 false,
             )
@@ -850,12 +864,13 @@ impl InputSource for LightWallet {
                         output.value().try_into().expect("value from checked type"),
                         output.script().clone(),
                     ),
-                    Some(
+                    Some(BlockHeight::from_u32(
                         self.output_transaction(output)
                             .status()
                             .get_confirmed_height()
-                            .expect("output must be confirmed in this scope"),
-                    ),
+                            .expect("output must be confirmed in this scope")
+                            .into(),
+                    )),
                 )
                 .map(|transparent_output| WalletUtxo::new(transparent_output, None))
             })

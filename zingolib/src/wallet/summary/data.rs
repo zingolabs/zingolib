@@ -3,7 +3,9 @@
 use chrono::DateTime;
 use json::JsonValue;
 
-use zcash_protocol::{TxId, consensus::BlockHeight};
+use zcash_protocol::TxId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zingo_status::confirmation_status::ConfirmationStatus;

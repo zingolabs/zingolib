@@ -17,11 +17,13 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
-    consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
 };
+
+use zingo_common_components::protocol::BlockHeight;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};

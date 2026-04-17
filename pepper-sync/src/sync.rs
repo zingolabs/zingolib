@@ -17,8 +17,10 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::ShieldedProtocol;
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus;
 use zip32::AccountId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -630,9 +632,12 @@ where
         Ok(last_known_chain_height)
     } else {
         // This is the wallet's first sync. Use [birthday - 1] as wallet height.
-        let sapling_activation_height = consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("sapling activation height should always return Some");
+        let sapling_activation_height = BlockHeight::from_u32(
+            consensus_parameters
+                .activation_height(consensus::NetworkUpgrade::Sapling)
+                .expect("sapling activation height should always return Some")
+                .into(),
+        );
         let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
         if birthday > chain_height {
             // Human attention requiring error, a birthday *above* the proxy reported
@@ -1300,7 +1305,10 @@ where
 
     let transaction = zcash_primitives::transaction::Transaction::read(
         &raw_transaction.data[..],
-        consensus::BranchId::for_height(consensus_parameters, mempool_height),
+        consensus::BranchId::for_height(
+            consensus_parameters,
+            zcash_protocol::consensus::BlockHeight::from_u32(mempool_height.into()),
+        ),
     )
     .map_err(ServerError::InvalidTransaction)?;
 
@@ -1360,7 +1368,7 @@ where
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&wallet_birthday) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
-        std::cmp::Ordering::Less => consensus::H0,
+        std::cmp::Ordering::Less => zingo_common_components::protocol::H0,
     };
     truncate_scan_ranges(checked_truncate_height, sync_state);
 
@@ -1412,7 +1420,7 @@ where
                 })
         })
         .collect::<Vec<_>>();
-    truncate_wallet_data(wallet, consensus::H0)?;
+    truncate_wallet_data(wallet, zingo_common_components::protocol::H0)?;
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
@@ -1739,9 +1747,12 @@ where
 {
     let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
     if birthday
-        == consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("sapling activation height should always return Some")
+        == BlockHeight::from_u32(
+            consensus_parameters
+                .activation_height(consensus::NetworkUpgrade::Sapling)
+                .expect("sapling activation height should always return Some")
+                .into(),
+        )
     {
         return Ok(());
     }
@@ -1764,7 +1775,7 @@ where
             .insert_frontier(
                 frontiers.final_sapling_tree().clone(),
                 Retention::Checkpoint {
-                    id: birthday,
+                    id: zcash_protocol::consensus::BlockHeight::from_u32(birthday.into()),
                     marking: Marking::None,
                 },
             )
@@ -1774,7 +1785,7 @@ where
             .insert_frontier(
                 frontiers.final_orchard_tree().clone(),
                 Retention::Checkpoint {
-                    id: birthday,
+                    id: zcash_protocol::consensus::BlockHeight::from_u32(birthday.into()),
                     marking: Marking::None,
                 },
             )
@@ -1860,7 +1871,8 @@ where
         .values()
         .filter(|transaction| {
             transaction.status().is_pending()
-                && last_known_chain_height >= transaction.transaction().expiry_height()
+                && last_known_chain_height
+                    >= BlockHeight::from_u32(transaction.transaction().expiry_height().into())
         })
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
@@ -1892,19 +1904,21 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 #[cfg(test)]
 mod test {
     mod checked_height_validation {
-        use zcash_protocol::consensus::BlockHeight;
-        use zcash_protocol::local_consensus::LocalNetwork;
-        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(3)),
-            blossom: Some(BlockHeight::from_u32(3)),
-            heartwood: Some(BlockHeight::from_u32(3)),
-            canopy: Some(BlockHeight::from_u32(3)),
-            nu5: Some(BlockHeight::from_u32(3)),
-            nu6: Some(BlockHeight::from_u32(3)),
-            nu6_1: Some(BlockHeight::from_u32(3)),
-        };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
+        use zcash_protocol::local_consensus::LocalNetwork;
+        use zingo_common_components::protocol::BlockHeight;
+
+        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(zcash_protocol::consensus::BlockHeight::from_u32(1)),
+            sapling: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            blossom: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            heartwood: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            canopy: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            nu5: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            nu6: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+            nu6_1: Some(zcash_protocol::consensus::BlockHeight::from_u32(3)),
+        };
+
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
         // this test shows that such an error is raies wrapped in a WalletError and return as the Err variant
         #[tokio::test]

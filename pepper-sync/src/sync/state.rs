@@ -11,8 +11,10 @@ use tokio::sync::mpsc;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
     ShieldedProtocol,
-    consensus::{self, BlockHeight, NetworkUpgrade},
+    consensus::{self, NetworkUpgrade},
 };
+
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::{
     client::{self, FetchRequest},
@@ -157,7 +159,7 @@ fn create_scan_range(
 /// `truncate_height`.
 /// If `truncate_height` is zero, the sync state will be cleared completely.
 pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
-    if truncate_height == zcash_protocol::consensus::H0 {
+    if truncate_height == zingo_common_components::protocol::H0 {
         *sync_state = SyncState::new();
     }
     let Some((index, range_to_split)) = sync_state
@@ -490,9 +492,12 @@ fn determine_block_range(
             match shielded_protocol {
                 ShieldedProtocol::Sapling => {
                     if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Sapling)
-                            .expect("network activation height should be set")
+                        < BlockHeight::from_u32(
+                            consensus_parameters
+                                .activation_height(NetworkUpgrade::Sapling)
+                                .expect("network activation height should be set")
+                                .into(),
+                        )
                     {
                         panic!("pre-sapling not supported");
                     } else {
@@ -501,9 +506,12 @@ fn determine_block_range(
                 }
                 ShieldedProtocol::Orchard => {
                     if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Nu5)
-                            .expect("network activation height should be set")
+                        < BlockHeight::from_u32(
+                            consensus_parameters
+                                .activation_height(consensus::NetworkUpgrade::Nu5)
+                                .expect("network activation height should be set")
+                                .into(),
+                        )
                     {
                         shielded_protocol = ShieldedProtocol::Sapling;
                     } else {
@@ -937,9 +945,12 @@ where
         ))
     } else {
         // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height = consensus_parameters
-            .activation_height(NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
+        let sapling_activation_height = BlockHeight::from_u32(
+            consensus_parameters
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height")
+                .into(),
+        );
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {

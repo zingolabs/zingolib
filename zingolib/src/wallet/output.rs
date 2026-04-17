@@ -6,8 +6,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
+
+use zingo_common_components::protocol::BlockHeight;
 
 use super::LightWallet;
 use super::error::WalletError;
@@ -251,7 +252,9 @@ impl LightWallet {
             .shard_trees
             .orchard
             .store()
-            .get_checkpoint(&anchor_height)
+            .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(
+                u32::from(anchor_height),
+            ))
             .expect("infallible")
             .is_none()
         {
@@ -264,7 +267,9 @@ impl LightWallet {
             .shard_trees
             .sapling
             .store()
-            .get_checkpoint(&anchor_height)
+            .get_checkpoint(&zcash_protocol::consensus::BlockHeight::from_u32(
+                u32::from(anchor_height),
+            ))
             .expect("infallible")
             .is_none()
         {

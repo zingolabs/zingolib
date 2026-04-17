@@ -8,7 +8,9 @@ use crate::wallet::{
     },
 };
 use std::collections::{BTreeMap, HashMap};
-use zcash_protocol::{TxId, consensus::BlockHeight};
+use zcash_protocol::TxId;
+
+use zingo_common_components::protocol::BlockHeight;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum MockWalletError {

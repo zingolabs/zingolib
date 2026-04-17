@@ -388,9 +388,10 @@ pub mod proposal {
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
     use zcash_primitives::transaction::fees::zip317::FeeRule;
-    use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use zingo_common_components::protocol::BlockHeight;
 
     use super::{default_txid, default_zaddr};
     use crate::testutils::{build_method, build_method_push};
@@ -439,7 +440,10 @@ pub mod proposal {
                 step.shielded_inputs().cloned(),
                 step.balance().clone(),
                 self.fee_rule.unwrap(),
-                self.min_target_height.unwrap().into(),
+                zcash_protocol::consensus::BlockHeight::from_u32(
+                    self.min_target_height.unwrap().into(),
+                )
+                .into(),
                 step.is_shielding(),
             )
             .unwrap()
@@ -538,7 +542,7 @@ pub mod proposal {
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
-                    BlockHeight::from_u32(1),
+                    zcash_protocol::consensus::BlockHeight::from_u32(1),
                     NonEmpty::singleton(ReceivedNote::from_parts(
                         OutputRef::new(OutputId::new(txid, 0), PoolType::SAPLING),
                         txid,

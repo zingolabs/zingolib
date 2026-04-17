@@ -7,6 +7,7 @@ use pepper_sync::wallet::{
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::{PoolType, value::Zatoshis};
+use zingo_common_components::protocol::BlockHeight;
 
 use crate::utils;
 
@@ -494,6 +495,7 @@ impl LightWallet {
         else {
             return Ok(Zatoshis::ZERO);
         };
+        let anchor_height = BlockHeight::from_u32(anchor_height.into());
 
         let spendable_balance = self.get_filtered_balance::<N, _>(
             |note, transaction: &WalletTransaction| {

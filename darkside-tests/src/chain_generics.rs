@@ -39,7 +39,7 @@ pub(crate) mod conduct_chain {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
-    use zcash_protocol::consensus::BlockHeight;
+    use zingo_common_components::protocol::BlockHeight;
     use zingo_netutils::Indexer as _;
 
     use zingolib::config::WalletConfig;
