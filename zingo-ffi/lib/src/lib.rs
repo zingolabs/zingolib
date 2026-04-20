@@ -32,7 +32,8 @@ use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::consensus::NetworkType;
 use zip32::AccountId;
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingolib::config::SyncConfig;
+use pepper_sync::config::{PerformanceLevel, TransparentAddressDiscovery};
 use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use tokio::runtime::Runtime;
