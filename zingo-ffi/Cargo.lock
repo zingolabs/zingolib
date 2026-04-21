@@ -1615,8 +1615,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd5f2b7218a51c827a11d22d1439b598121fac94bf9b99452e4afffe512d78c9"
 dependencies = [
  "heck",
- "indexmap 1.9.3",
- "itertools 0.12.1",
+ "indexmap 2.13.0",
+ "itertools 0.14.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2755,9 +2755,7 @@ dependencies = [
 [[package]]
 name = "hyper-util"
 version = "0.1.20"
-version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
  "base64",
@@ -4043,8 +4041,6 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.3.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 version = "0.3.0"
 source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 dependencies = [
@@ -6369,9 +6365,9 @@ checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
 
 [[package]]
 name = "tonic"
-version = "0.14.4"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f32a6f80051a4111560201420c7885d0082ba9efe2ab61875c587bb6b18b9a0"
+checksum = "fec7c61a0695dc1887c1b53952990f3ad2e3a31453e1f49f10e75424943a93ec"
 dependencies = [
  "async-trait",
  "axum",
@@ -9195,9 +9191,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "2.0.2"
-version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d2ca11c717feb94a0032da1e6cffb2928ce2c34aca3b430e85cac02fd0ab425"
 checksum = "2d2ca11c717feb94a0032da1e6cffb2928ce2c34aca3b430e85cac02fd0ab425"
 dependencies = [
  "http",
@@ -9213,7 +9207,6 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 dependencies = [
  "byteorder",
@@ -9274,8 +9267,6 @@ dependencies = [
 name = "zingolib"
 version = "3.0.1"
 source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
-version = "3.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9303,7 +9294,6 @@ dependencies = [
  "prost",
  "rand 0.8.5",
  "ring",
- "rusqlite",
  "rusqlite",
  "rust-embed",
  "rustls 0.23.36",
@@ -9343,7 +9333,6 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.1#31da83657d88fbb3b57bf45996023850e8aaf9da"
 dependencies = [
  "bip0039 0.13.4",
