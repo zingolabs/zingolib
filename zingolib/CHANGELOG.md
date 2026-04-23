@@ -35,7 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::WalletSettings`: `default` impl
 
 ### Changed
+- Upgraded `zingo-netutils` from 3.0.0 to 4.0.0 (`indexer_trait` branch).
+  Proto types now come from `lightwallet-protocol` via `zingo_netutils::lightwallet_protocol`.
+  `back_compatible` and `globally-public-transparent` feature gates are enabled.
 - `lightclient::LightClient`:
+  - `new` now installs the rustls ring crypto provider (idempotent) since
+    `GrpcIndexer::new` pre-builds a TLS endpoint at construction time.
+  - `indexer_uri` now returns `&http::Uri` instead of `Option<&http::Uri>`.
+  - `set_indexer_uri` now returns `Result<(), zingo_netutils::GetClientError>` and
+    constructs a new `GrpcIndexer` internally (`set_uri` was removed upstream).
   - `server_uri`: renamed `indexer_uri`
   - `set_server`: renamed `set_indexer_uri`
   - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
@@ -57,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - `wallet_settings` and `no_of_accounts` methods replaced by `wallet_config` method
       - `get_zcash_params_path` replaced by `utils::get_zcash_params_path` fn
       - `backup_existing_wallet` replaced by `LightClient::backup_wallet_file`
+  - `ClientConfigBuilder::build`: default `indexer_uri` is now `DEFAULT_INDEXER_URI`
+    (`https://zec.rocks:443`) instead of an empty URI, since `GrpcIndexer::new`
+    validates the scheme at construction.
   - `ZingoConfigBuilder`:
     - renamed: ClientConfigBuilder
     - reworked. public fields now private with public setter methods to constrain public API:
@@ -122,6 +133,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `create_from_wallet` constructor: no longer needed as now covered by `new` due to config rework
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
 - `testutils::build_fvk_client`
+
+## [3.0.1] - 2026-03-26
 
 ## [3.0.0] - 2026-03-02
 

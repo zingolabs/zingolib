@@ -233,7 +233,7 @@ async fn reload_wallet_from_file() {
     mid_client.shutdown_save_task().await.unwrap();
 
     let config = ClientConfig::builder()
-        .set_indexer_uri(mid_client.indexer_uri().cloned().unwrap())
+        .set_indexer_uri(mid_client.indexer_uri().clone())
         .set_chain_type(mid_client_network)
         .set_wallet_dir(mid_client.wallet_dir().unwrap())
         .set_wallet_config(WalletConfig::Read)
