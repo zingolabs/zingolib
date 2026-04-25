@@ -341,6 +341,9 @@ impl ClientConfigBuilder {
     }
 
     /// Set indexer URI.
+    ///
+    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
+    /// `zingo-netutils` instead of `http::Uri`.
     pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
         self.indexer_uri = Some(indexer_uri);
         self
@@ -378,7 +381,7 @@ impl ClientConfigBuilder {
             indexer_uri: self
                 .indexer_uri
                 .clone()
-                .unwrap_or_else(|| DEFAULT_INDEXER_URI.parse().expect("valid constant")),
+                .unwrap_or_else(|| DEFAULT_INDEXER_URI.parse().expect("valid constant URI")),
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
