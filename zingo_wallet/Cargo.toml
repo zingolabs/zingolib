@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zingolib = { workspace = true }
-pepper-sync.workspace = true
+zingolib.path = "../zingolib"
+pepper-sync.path = "../pepper-sync"
 
 zcash_wallet_interface = { git = "https://github.com/zingolabs/zcash_wallet_interface.git", branch = "dev" }
 
@@ -28,6 +28,6 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
-zingolib = { workspace = true, features = ["testutils"] }
+zingolib = { path = "../zingolib", features = ["testutils"]}
 test-log.workspace = true
-libtonode-tests.workspace = true
+libtonode-tests.path = "../libtonode-tests"

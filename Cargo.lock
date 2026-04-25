@@ -1440,7 +1440,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3349,7 +3349,7 @@ dependencies = [
  "zcash_transparent",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -8744,7 +8744,7 @@ dependencies = [
  "zebra-node-services",
  "zebra-rpc",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc)",
 ]
 
 [[package]]
@@ -8891,6 +8891,11 @@ dependencies = [
  "zcash_spec",
  "zip32",
 ]
+
+[[package]]
+name = "zcash_wallet_interface"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zcash_wallet_interface.git?branch=dev#84156c1c0940eb8ba248ec2f91d418a40f8ea248"
 
 [[package]]
 name = "zebra-chain"
@@ -9368,9 +9373,42 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#f7df87310df72bc2a8312a1d1f090d7f8eb17ca4"
+dependencies = [
+ "bip0039 0.12.0",
+]
+
+[[package]]
+name = "zingo_test_vectors"
+version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc#5bcbf53d680542c247d01585c12085c1be831adc"
 dependencies = [
  "bip0039 0.12.0",
+]
+
+[[package]]
+name = "zingo_wallet"
+version = "0.1.0"
+dependencies = [
+ "bip0039 0.14.0",
+ "http",
+ "libtonode-tests",
+ "pepper-sync",
+ "rustls 0.23.37",
+ "tempfile",
+ "test-log",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "zcash_client_backend",
+ "zcash_primitives",
+ "zcash_wallet_interface",
+ "zingo-netutils",
+ "zingo_common_components",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
+ "zingolib",
 ]
 
 [[package]]
@@ -9425,7 +9463,7 @@ dependencies = [
  "zingo-price",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc)",
  "zip32",
 ]
 
@@ -9441,7 +9479,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_protocol",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc)",
  "zingolib",
  "zip32",
 ]
