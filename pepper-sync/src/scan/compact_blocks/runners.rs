@@ -646,3 +646,63 @@ where
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zcash_protocol::consensus::MainNetwork;
+
+    // Mainnet Canopy activates at height 1_046_400. The standard ZIP-212 grace
+    // period ends at 1_078_656, while the extended recovery window ends at
+    // 1_239_936. The end heights are exclusive: at the end height itself,
+    // enforcement flips from `GracePeriod` to `On`. These tests pin behavior at
+    // each boundary and at the height where the two modes diverge.
+    mod zip212_enforcement {
+        use super::*;
+
+        #[test]
+        fn standard_mode_last_grace_height() {
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, BlockHeight::from_u32(1_078_655), false),
+                Zip212Enforcement::GracePeriod,
+            );
+        }
+
+        #[test]
+        fn standard_mode_first_enforced_height() {
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, BlockHeight::from_u32(1_078_656), false),
+                Zip212Enforcement::On,
+            );
+        }
+
+        #[test]
+        fn extended_mode_last_grace_height() {
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, BlockHeight::from_u32(1_239_935), true),
+                Zip212Enforcement::GracePeriod,
+            );
+        }
+
+        #[test]
+        fn extended_mode_first_enforced_height() {
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, BlockHeight::from_u32(1_239_936), true),
+                Zip212Enforcement::On,
+            );
+        }
+
+        #[test]
+        fn extended_flag_diverges_at_standard_end() {
+            let height = BlockHeight::from_u32(1_078_656);
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, height, false),
+                Zip212Enforcement::On,
+            );
+            assert_eq!(
+                zip212_enforcement(&MainNetwork, height, true),
+                Zip212Enforcement::GracePeriod,
+            );
+        }
+    }
+}
