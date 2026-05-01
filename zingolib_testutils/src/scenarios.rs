@@ -411,6 +411,12 @@ pub async fn faucet_funded_recipient(
             .unwrap();
     }
 
+    // Each send burns the lone shielded note from the auto-shield;
+    // the change note returns as pending. Confirm-and-resync between
+    // sends so the next propose can see the change as spendable. (The
+    // pre-shield setup had multiple coinbase notes and didn't need this.)
+    let mine_and_resync = matches!(mine_to_pool, PoolType::Transparent);
+
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
             quick_send(
@@ -425,6 +431,11 @@ pub async fn faucet_funded_recipient(
     } else {
         None
     };
+    if mine_and_resync && orchard_txid.is_some() && sapling_funds.or(transparent_funds).is_some() {
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+    }
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
             quick_send(
@@ -439,6 +450,11 @@ pub async fn faucet_funded_recipient(
     } else {
         None
     };
+    if mine_and_resync && sapling_txid.is_some() && transparent_funds.is_some() {
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+    }
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
             quick_send(

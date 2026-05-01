@@ -143,7 +143,7 @@ mod fast {
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
-    use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
+    use zcash_protocol::{PoolType, value::Zatoshis};
     use zcash_transparent::keys::NonHardenedChildIndex;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -651,11 +651,14 @@ mod fast {
 
     #[tokio::test]
     async fn send_not_fully_synced() {
+        // Transparent mining + auto-shield in faucet_funded_recipient
+        // delivers the same recipient balances (200k orchard, 100k
+        // sapling) the explicit ORCHARD validator mining used to.
         let (local_net, _faucet, mut recipient, _, _, _) = scenarios::faucet_funded_recipient(
             Some(200_000),
             Some(100_000),
             None,
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Transparent,
             ActivationHeights::default(),
             None,
         )
