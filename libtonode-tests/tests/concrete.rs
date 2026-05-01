@@ -504,6 +504,11 @@ mod fast {
         // send to the UAs so they are recorded on chain
         local_net.validator().generate_blocks(3).await.unwrap();
         faucet.sync_and_await().await.unwrap();
+        // Faucet only mines transparent under the new defaults; shield
+        // before sending since `quick_send` requires shielded inputs.
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         from_inputs::quick_send(
             &mut faucet,
             vec![
@@ -710,7 +715,8 @@ mod fast {
         environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
+        // See `value_transfers` for the rationale on these values.
+        check_client_balances!(faucet, o: 1_874_975_000u64 s: 0 t: 625_025_000u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -736,6 +742,15 @@ mod fast {
         let no_messages = &recipient.messages_containing(None).await.unwrap();
 
         assert_eq!(no_messages.len(), 0);
+
+        // The first send consumed the lone shielded note from
+        // create_faucet's shield; resync the faucet so it sees the
+        // change note's confirmation, and mine one more block so that
+        // change note has the same conf depth the original shield note
+        // had at the first send (otherwise the second propose finds
+        // available = 0).
+        environment.increase_chain_height().await;
+        faucet.sync_and_await().await.unwrap();
 
         from_inputs::quick_send(
             &mut faucet,
@@ -942,7 +957,14 @@ mod fast {
         environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
+        // After Transparent-default mining + auto-shield in create_faucet:
+        // 3 transparent coinbases (h1-3) shielded into 1 orchard note
+        // (3 × 625M - 25k fee = 1_874_975_000). Two coinbases mined since
+        // (h4 from create_faucet's confirm-shield, h5 from increase_chain_height);
+        // h4 is mature with maturity=1 (1 conf), h5 is not (0 conf). The
+        // h4 coinbase also collects the shield's 25k fee (faucet is the
+        // miner), so the mature transparent UTXO is 625M + 25k.
+        check_client_balances!(faucet, o: 1_874_975_000u64 s: 0 t: 625_025_000u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -1094,7 +1116,10 @@ mod fast {
                 .find(|tx| tx.value == 20_000)
                 .unwrap()
                 .status,
-            ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
+            // Bumped by 1 vs. the pre-Transparent-default chain height
+            // because faucet_funded_recipient now mines a confirming
+            // block for the auto-shield step.
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(7))
         );
 
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
@@ -1108,7 +1133,7 @@ mod fast {
                 .find(|tx| tx.value == 20_000)
                 .unwrap()
                 .status,
-            ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(7))
         );
     }
 
@@ -1415,9 +1440,11 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         let activation_heights = ActivationHeights::default();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
-            .await
-            .unwrap();
+        // The 100-block coinbase-maturity warm-up that used to live here
+        // is now obsolete: the harness sets `regtest_coinbase_maturity = 1`
+        // and zingolib honors it, so the 4 post-launch coinbases are
+        // already spendable. Same orchard balance (2.5B - 30k fee), an
+        // order of magnitude faster.
         faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1431,26 +1458,30 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .confirmed_orchard_balance
                 .unwrap()
                 .into_u64(),
-            2_499_970_000
+            // 3 mature transparent coinbases (heights 1, 2, 3) shielded
+            // into one orchard note. Fee = 5000 × max(2, 3 inputs + 2
+            // orchard actions) = 25_000.
+            1_874_975_000
         );
     }
 
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
         let activation_heights = ActivationHeights::default();
-        let (local_net, mut faucet, _recipient) =
+        let (_local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
-            .await
-            .unwrap();
+        // 100-block warm-up dropped — see `mine_to_transparent_and_shield`.
         let proposal = faucet.propose_shield(zip32::AccountId::ZERO).await.unwrap();
         let only_step = proposal.steps().first();
 
-        // Orchard action and dummy, plus 4 transparent inputs
-        let expected_fee = 30_000;
+        // Orchard action and dummy, plus 3 transparent inputs (only the
+        // 3 mature coinbases at heights 1-3 — the old 100-block warm-up
+        // produced 4 because of additional bookkeeping; with maturity=1
+        // it's exactly the post-launch coinbases).
+        let expected_fee = 25_000;
 
         assert_eq!(proposal.steps().len(), 1);
-        assert_eq!(only_step.transparent_inputs().len(), 4);
+        assert_eq!(only_step.transparent_inputs().len(), 3);
         assert_eq!(
             only_step.balance().fee_required(),
             Zatoshis::const_from_u64(expected_fee)
@@ -1464,7 +1495,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .first()
                 .unwrap()
                 .value(),
-            Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
+            Zatoshis::const_from_u64((block_rewards::CANOPY * 3) - expected_fee)
         );
     }
 }
@@ -3451,6 +3482,12 @@ TransactionSummary {
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
         increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
+            .await
+            .unwrap();
+        // Faucet only mines transparent under the new defaults; shield
+        // before sending since `quick_send` requires shielded inputs.
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {

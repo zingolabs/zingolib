@@ -37,12 +37,25 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder
+        let mut faucet = self
+            .client_builder
             .build_faucet(
                 false,
                 self.local_net.validator().get_activation_heights().await,
             )
+            .await;
+        // The harness mines transparent coinbase by default; convert it
+        // to orchard so callers can spend via `quick_send` (which goes
+        // through `propose_transfer`, requiring shielded inputs).
+        faucet.sync_and_await().await.unwrap();
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        self.local_net
+            .validator()
+            .generate_blocks(1)
             .await
+            .expect("confirm faucet shield");
+        faucet.sync_and_await().await.unwrap();
+        faucet
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {

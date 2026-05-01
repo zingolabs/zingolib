@@ -134,6 +134,11 @@ pub struct ClientBuilder {
     /// Directory for wallet files
     pub zingo_datadir: TempDir,
     client_number: u8,
+    /// Override transparent coinbase maturity for clients built by this
+    /// builder, paired with the harness's `-regtestcoinbasematurity` flag
+    /// (`ZcashdConfig::regtest_coinbase_maturity`). `None` keeps the
+    /// protocol-default 100. Honored only on regtest by zingolib.
+    regtest_coinbase_maturity: Option<u32>,
 }
 
 impl ClientBuilder {
@@ -144,7 +149,15 @@ impl ClientBuilder {
             server_id,
             zingo_datadir,
             client_number,
+            regtest_coinbase_maturity: None,
         }
+    }
+
+    /// Sets the regtest transparent coinbase maturity override for
+    /// every client this builder produces. Match this to the value the
+    /// harness passed to zcashd via `-regtestcoinbasematurity=<n>`.
+    pub fn set_regtest_coinbase_maturity(&mut self, maturity: u32) {
+        self.regtest_coinbase_maturity = Some(maturity);
     }
 
     pub fn make_unique_data_dir_and_create_config(
@@ -175,12 +188,15 @@ impl ClientBuilder {
         wallet_config: WalletConfig,
     ) -> ClientConfig {
         std::fs::create_dir(&conf_path).unwrap();
-        ClientConfig::builder()
+        let mut builder = ClientConfig::builder()
             .set_indexer_uri(self.server_id.clone())
             .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
-            .set_wallet_config(wallet_config)
-            .build()
+            .set_wallet_config(wallet_config);
+        if let Some(maturity) = self.regtest_coinbase_maturity {
+            builder = builder.set_regtest_coinbase_maturity(maturity);
+        }
+        builder.build()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -228,7 +244,7 @@ pub async fn unfunded_client(
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) = custom_clients(
-        PoolType::ORCHARD,
+        PoolType::Transparent,
         configured_activation_heights,
         chain_cache,
     )
@@ -290,7 +306,10 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    let (local_net, mut faucet) =
+        faucet(PoolType::Transparent, ActivationHeights::default(), None).await;
+    shield_faucet_transparent(&local_net, &mut faucet).await;
+    (local_net, faucet)
 }
 
 /// TODO: Add Doc Comment Here!
@@ -338,7 +357,26 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    let (local_net, mut faucet, recipient) =
+        faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None).await;
+    shield_faucet_transparent(&local_net, &mut faucet).await;
+    (local_net, faucet, recipient)
+}
+
+/// Shields the faucet's transparent coinbase to orchard so callers can
+/// spend via `quick_send` (which goes through `propose_transfer`,
+/// requiring shielded inputs). Mines one block to confirm the shield.
+async fn shield_faucet_transparent<V, I>(local_net: &LocalNet<V, I>, faucet: &mut LightClient)
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send,
+{
+    faucet.sync_and_await().await.unwrap();
+    faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+    local_net.validator().generate_blocks(1).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
 }
 
 /// TODO: Add Doc Comment Here!
@@ -362,6 +400,16 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
+
+    // `quick_send` below goes through `propose_transfer`, which requires
+    // shielded inputs. Under the new Transparent-default mining the
+    // faucet only holds transparent coinbase, so shield it first.
+    if matches!(mine_to_pool, PoolType::Transparent) {
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+    }
 
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
@@ -438,7 +486,7 @@ pub async fn faucet_funded_recipient_default(
             Some(orchard_funds),
             None,
             None,
-            PoolType::ORCHARD,
+            PoolType::Transparent,
             ActivationHeights::default(),
             None,
         )
@@ -465,10 +513,15 @@ pub async fn custom_clients(
         local_net.validator().generate_blocks(2).await.unwrap();
     }
 
-    let client_builder = ClientBuilder::new(
+    let mut client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
     );
+    // Match the harness's `ZcashdConfig::regtest_coinbase_maturity`
+    // default. Both ends of the pipe must agree: zcashd's consensus
+    // rule (set via `-regtestcoinbasematurity=1`) and zingolib's
+    // wallet-side spendability check (`LightWallet::coinbase_maturity`).
+    client_builder.set_regtest_coinbase_maturity(1);
 
     (local_net, client_builder)
 }
@@ -477,7 +530,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+        custom_clients(PoolType::Transparent, ActivationHeights::default(), None).await;
 
     (local_net, client_builder)
 }
@@ -486,7 +539,7 @@ pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultInde
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
-        PoolType::SAPLING,
+        PoolType::Transparent,
         ActivationHeights::default(),
         None,
     )
