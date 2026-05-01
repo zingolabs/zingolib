@@ -19,7 +19,7 @@ use super::{
 /// Minimum number of confirmations required for transparent coinbase outputs.
 /// Per Zcash consensus rules (ZIP-213), transparent coinbase outputs cannot be
 /// spent until they are 100 blocks deep.
-const COINBASE_MATURITY: u32 = 100;
+pub(super) const COINBASE_MATURITY: u32 = 100;
 
 /// Balance for a wallet account.
 #[derive(Clone, Debug, PartialEq, Eq)]
