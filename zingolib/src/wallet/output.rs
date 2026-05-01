@@ -10,7 +10,6 @@ use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
-use super::balance::COINBASE_MATURITY;
 use super::error::WalletError;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
@@ -337,7 +336,7 @@ impl LightWallet {
                     .transparent_bundle()
                     .map_or(0, |bundle| {
                         if bundle.is_coinbase() {
-                            COINBASE_MATURITY
+                            self.coinbase_maturity
                         } else {
                             0
                         }

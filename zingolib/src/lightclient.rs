@@ -112,7 +112,8 @@ impl LightClient {
         // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let wallet = match config.wallet_config() {
+        #[cfg_attr(not(any(test, feature = "testutils")), allow(unused_mut))]
+        let mut wallet = match config.wallet_config() {
             WalletConfig::Read => {
                 let buffer = BufReader::new(
                     File::open(config.get_wallet_path()).map_err(LightClientError::FileError)?,
@@ -138,6 +139,11 @@ impl LightClient {
                 LightWallet::new(config.chain_type(), config.wallet_config())?
             }
         };
+
+        #[cfg(any(test, feature = "testutils"))]
+        if let Some(maturity) = config.regtest_coinbase_maturity() {
+            wallet.set_coinbase_maturity(maturity);
+        }
 
         // Install the ring crypto provider for rustls. Required because both
         // `ring` and `aws-lc-rs` features are unified in via transitive deps,

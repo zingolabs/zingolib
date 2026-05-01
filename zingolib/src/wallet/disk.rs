@@ -332,6 +332,7 @@ impl LightWallet {
         let lw = Self {
             current_version: LightWallet::serialized_version(),
             read_version: version,
+            coinbase_maturity: super::balance::COINBASE_MATURITY,
             mnemonic,
             birthday,
             unified_key_store,
@@ -595,6 +596,7 @@ impl LightWallet {
             current_version: LightWallet::serialized_version(),
             read_version: version,
             chain_type,
+            coinbase_maturity: super::balance::COINBASE_MATURITY,
             mnemonic,
             birthday,
             unified_key_store,

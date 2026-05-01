@@ -172,7 +172,7 @@ impl LightWallet {
             }
 
             let confirmations = current_height_u32 - tx_height_u32;
-            confirmations >= COINBASE_MATURITY
+            confirmations >= self.coinbase_maturity
         } else {
             true
         }

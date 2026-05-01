@@ -275,6 +275,11 @@ pub struct ClientConfig {
     wallet_name: String,
     /// Wallet config.
     wallet_config: WalletConfig,
+    /// Override for transparent coinbase maturity on regtest, paired with
+    /// zcashd's `-regtestcoinbasematurity` flag. `None` keeps the protocol
+    /// default (100). Only honored on `ChainType::Regtest`.
+    #[cfg(any(test, feature = "testutils"))]
+    regtest_coinbase_maturity: Option<u32>,
 }
 
 impl ClientConfig {
@@ -322,6 +327,14 @@ impl ClientConfig {
 
         wallet_path.into_boxed_path()
     }
+
+    /// Returns the configured regtest transparent coinbase maturity override,
+    /// if any. Always `None` on non-regtest chains.
+    #[cfg(any(test, feature = "testutils"))]
+    #[must_use]
+    pub fn regtest_coinbase_maturity(&self) -> Option<u32> {
+        self.regtest_coinbase_maturity
+    }
 }
 
 /// Builder for [`ClientConfig`].
@@ -332,6 +345,8 @@ pub struct ClientConfigBuilder {
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
     wallet_config: WalletConfig,
+    #[cfg(any(test, feature = "testutils"))]
+    regtest_coinbase_maturity: Option<u32>,
 }
 
 impl ClientConfigBuilder {
@@ -373,6 +388,15 @@ impl ClientConfigBuilder {
         self
     }
 
+    /// Override transparent coinbase maturity on regtest. Pair with the
+    /// matching `-regtestcoinbasematurity=<n>` flag passed to zcashd.
+    /// Ignored on mainnet/testnet.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_regtest_coinbase_maturity(mut self, maturity: u32) -> Self {
+        self.regtest_coinbase_maturity = Some(maturity);
+        self
+    }
+
     /// Build a [`ClientConfig`] from the builder.
     pub fn build(self) -> ClientConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
@@ -386,6 +410,8 @@ impl ClientConfigBuilder {
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
+            #[cfg(any(test, feature = "testutils"))]
+            regtest_coinbase_maturity: self.regtest_coinbase_maturity,
         }
     }
 }
@@ -397,6 +423,8 @@ impl Default for ClientConfigBuilder {
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
+            #[cfg(any(test, feature = "testutils"))]
+            regtest_coinbase_maturity: None,
             wallet_config: WalletConfig::NewSeed {
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
                 chain_height: 1,

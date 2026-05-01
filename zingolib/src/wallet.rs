@@ -116,6 +116,10 @@ pub struct LightWallet {
     read_version: u64,
     /// Blockchain network type
     chain_type: ChainType,
+    /// Number of confirmations required before a transparent coinbase output
+    /// is considered spendable. ZIP-213 fixes this at 100 for mainnet/testnet;
+    /// regtest may lower it via [`crate::config::ClientConfig::regtest_coinbase_maturity`].
+    coinbase_maturity: u32,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
@@ -223,6 +227,7 @@ impl LightWallet {
             current_version: LightWallet::serialized_version(),
             read_version: LightWallet::serialized_version(),
             chain_type,
+            coinbase_maturity: balance::COINBASE_MATURITY,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
@@ -263,6 +268,28 @@ impl LightWallet {
     #[must_use]
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
+    }
+
+    /// Returns the transparent coinbase maturity (in confirmations) used
+    /// by this wallet. Always 100 on mainnet/testnet; configurable on
+    /// regtest via [`set_coinbase_maturity`](Self::set_coinbase_maturity).
+    #[must_use]
+    pub fn coinbase_maturity(&self) -> u32 {
+        self.coinbase_maturity
+    }
+
+    /// Overrides the transparent coinbase maturity for a regtest wallet.
+    /// No-op for mainnet/testnet: ZIP-213 fixes the value at 100 there
+    /// and diverging would desync this wallet from consensus.
+    ///
+    /// Gated behind `testutils` because the only legitimate use is the
+    /// regtest test harness pairing this with zcashd's
+    /// `-regtestcoinbasematurity` flag.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_coinbase_maturity(&mut self, maturity: u32) {
+        if matches!(self.chain_type, ChainType::Regtest(_)) {
+            self.coinbase_maturity = maturity;
+        }
     }
 
     /// Returns the wallet's mnemonic for internal operations.
