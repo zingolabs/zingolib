@@ -1450,7 +1450,7 @@ dependencies = [
  "zebra-chain",
  "zingo-netutils",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update)",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3424,7 +3424,7 @@ dependencies = [
  "zebra-chain",
  "zingo-status",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update)",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -9858,7 +9858,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update#54b284e4dfdf767632d592735d9671614524f186"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams#1550e03208849271577be02c15e95a44d9052981"
 dependencies = [
  "bip0039 0.12.0",
 ]
@@ -9943,7 +9943,7 @@ dependencies = [
  "zcash_protocol 0.9.0",
  "zebra-chain",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update)",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams)",
  "zingolib",
  "zip32",
 ]

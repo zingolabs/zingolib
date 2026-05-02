@@ -22,7 +22,9 @@ use zcash_protocol::{
     memo::Memo,
 };
 
-use zcash_transparent::bundle::TxIn;
+use zcash_transparent::bundle::{
+    Authorization as TransparentAuthorization, Bundle as TransparentBundle, TxIn,
+};
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zip32::AccountId;
@@ -553,11 +555,11 @@ fn collect_nullifiers(
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
-fn collect_outpoints<A: zcash_transparent::bundle::Authorization>(
+fn collect_outpoints<A: TransparentAuthorization>(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
-    transparent_bundle: &zcash_transparent::bundle::Bundle<A>,
+    transparent_bundle: &TransparentBundle<A>,
 ) {
     transparent_bundle
         .vin
