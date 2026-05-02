@@ -18,11 +18,9 @@ resolver = "2"
 ### Workspace
 # pepper-sync = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.0"
+zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
 zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.0"
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -30,8 +28,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "fix-corez-deps" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "fix-corez-deps" }
 
 ### Documentation
 indoc = "2"
@@ -43,32 +41,32 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 ### Zingo-common
-zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "indexer_trait", features = ["back_compatible", "globally-public-transparent"] }
+zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "fix-corez-deps", features = ["back_compatible", "globally-public-transparent"] }
 zingo_common_components = "0.3.0"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
-orchard = "0.11.0"
-sapling-crypto = "0.5.0"
+orchard = "0.13.1"
+sapling-crypto = "0.7.0"
 shardtree = "0.6.1"
-zcash_address = "0.10"
-zcash_client_backend = { version = "0.21", features = [
+zcash_address = "0.11"
+zcash_client_backend = { version = "0.22", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
     "tor",
 ] }
-zcash_encoding = "0.3"
-zcash_keys = { version = "0.12", features = [
+zcash_encoding = "0.4"
+zcash_keys = { version = "0.13", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
 zcash_note_encryption = "0.4"
-zcash_primitives = "0.26"
-zcash_proofs = "0.26"
-zcash_protocol = "0.7" # public API (TODO: remove from public API)
-zcash_transparent = "0.6"
+zcash_primitives = "0.27"
+zcash_proofs = "0.27"
+zcash_protocol = "0.8" # public API (TODO: remove from public API)
+zcash_transparent = "0.7"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
