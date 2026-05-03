@@ -258,10 +258,13 @@ async fn get_block_range_nullifiers(
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
+    #[allow(deprecated)]
+    let nullifier_range = client.get_block_range_nullifiers(request);
+
     let resp = call_with_timeout(
         "get_block_range_nullifiers (open)",
         STREAM_OPEN_TIMEOUT,
-        client.get_block_range_nullifiers(request),
+        nullifier_range,
     )
     .await?;
 
