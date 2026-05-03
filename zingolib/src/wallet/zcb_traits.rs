@@ -6,10 +6,12 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
-        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, SAPLING_SHARD_HEIGHT, TargetValue,
-        TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletUtxo,
+        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
+        SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
+        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletUtxo,
         WalletWrite, Zip32Derivation,
-        chain::CommitmentTreeRoot,
+        chain::{ChainState, CommitmentTreeRoot},
+        error::FindAccountForAddressError,
         wallet::{ConfirmationsPolicy, TargetHeight},
     },
     wallet::{Exposure, NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
@@ -17,12 +19,12 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    memo::Memo,
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
+    memo::Memo,
 };
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::{OutPoint, TxOut};
@@ -62,6 +64,10 @@ impl Account for ZingoAccount {
     }
 
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
+        unimplemented!()
+    }
+
+    fn birthday_height(&self) -> BlockHeight {
         unimplemented!()
     }
 }
@@ -305,7 +311,7 @@ impl WalletRead for LightWallet {
         _account: Self::AccountId,
         _max_height: TargetHeight,
         _confirmations_policy: ConfirmationsPolicy,
-    ) -> Result<HashMap<TransparentAddress, (TransparentKeyScope, Balance)>, Self::Error> {
+    ) -> Result<HashMap<TransparentAddress, (TransparentKeyOrigin, Balance)>, Self::Error> {
         unimplemented!()
     }
 
@@ -336,6 +342,23 @@ impl WalletRead for LightWallet {
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn find_account_for_address<P: Parameters>(
+        &self,
+        _params: &P,
+        _address: &zcash_keys::address::Address,
+    ) -> Result<Option<Self::AccountId>, FindAccountForAddressError<Self::Error>> {
+        unimplemented!()
+    }
+
+    fn get_received_outputs(
+        &self,
+        _txid: TxId,
+        _target_height: TargetHeight,
+        _confirmations_policy: ConfirmationsPolicy,
+    ) -> Result<Vec<ReceivedTransactionOutput>, Self::Error> {
         unimplemented!()
     }
 }
@@ -417,7 +440,10 @@ impl WalletWrite for LightWallet {
 
     fn store_decrypted_tx(
         &mut self,
-        _received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
+        _received_tx: zcash_client_backend::data_api::DecryptedTransaction<
+            Transaction,
+            Self::AccountId,
+        >,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
@@ -469,6 +495,14 @@ impl WalletWrite for LightWallet {
     }
 
     fn truncate_to_height(&mut self, _max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+        unimplemented!()
+    }
+
+    fn truncate_to_chain_state(&mut self, _chain_state: ChainState) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn rewind_to_height(&mut self, _max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
         unimplemented!()
     }
 
@@ -831,6 +865,7 @@ impl InputSource for LightWallet {
         address: &TransparentAddress,
         target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
+        _output_filter: TransparentOutputFilter,
     ) -> Result<Vec<WalletUtxo>, Self::Error> {
         let address = transparent::encode_address(&self.chain_type, *address);
 

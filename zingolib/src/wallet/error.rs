@@ -5,8 +5,8 @@ use std::convert::Infallible;
 use pepper_sync::{error::ScanError, wallet::OutputId};
 use shardtree::error::ShardTreeError;
 use zcash_keys::keys::DerivationError;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{PoolType, ShieldedProtocol, consensus::BlockHeight};
 
 use super::output::OutputRef;
 
