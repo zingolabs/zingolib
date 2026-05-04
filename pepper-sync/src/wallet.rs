@@ -662,14 +662,10 @@ impl WalletTransaction {
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
 
-        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
-        // to this fix to zcash client backend
-        let sapling_value_sent = self
-            .total_outgoing_note_value::<OutgoingSaplingNote>()
-            .saturating_sub(self.total_output_value::<SaplingNote>());
-        let orchard_value_sent = self
-            .total_outgoing_note_value::<OutgoingOrchardNote>()
-            .saturating_sub(self.total_output_value::<OrchardNote>());
+        let sapling_value_sent =
+            self.total_external_outgoing_note_value::<OutgoingSaplingNote, SaplingNote>();
+        let orchard_value_sent =
+            self.total_external_outgoing_note_value::<OutgoingOrchardNote, OrchardNote>();
 
         transparent_value_sent + sapling_value_sent + orchard_value_sent
     }
@@ -696,6 +692,24 @@ impl WalletTransaction {
     pub fn total_outgoing_note_value<Op: OutgoingNoteInterface>(&self) -> u64 {
         Op::transaction_outgoing_notes(self)
             .iter()
+            .map(OutgoingNoteInterface::value)
+            .sum()
+    }
+
+    /// Returns total sum of outgoing note values for outputs that are not wallet-owned.
+    #[must_use]
+    pub fn total_external_outgoing_note_value<Outgoing, Incoming>(&self) -> u64
+    where
+        Outgoing: OutgoingNoteInterface,
+        Incoming: OutputInterface,
+    {
+        Outgoing::transaction_outgoing_notes(self)
+            .iter()
+            .filter(|outgoing_note| {
+                !Incoming::transaction_outputs(self)
+                    .iter()
+                    .any(|wallet_note| wallet_note.output_id() == outgoing_note.output_id())
+            })
             .map(OutgoingNoteInterface::value)
             .sum()
     }
