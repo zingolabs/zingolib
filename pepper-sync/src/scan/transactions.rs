@@ -13,7 +13,12 @@ use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+// use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_keys::{
+    address::UnifiedAddress,
+    keys::{OutgoingViewingKey, UnifiedFullViewingKey},
+};
+
 use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
@@ -138,6 +143,16 @@ pub(crate) async fn scan_transactions(
     Ok(wallet_transactions)
 }
 
+fn add_unified_ovk(
+    sapling_ovks: &mut Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)>,
+    orchard_ovks: &mut Vec<(KeyId, orchard::keys::OutgoingViewingKey)>,
+    key_id: KeyId,
+    ovk: OutgoingViewingKey,
+) {
+    sapling_ovks.push((key_id, ovk.into()));
+    orchard_ovks.push((key_id, ovk.into()));
+}
+
 /// Scans `transaction` with the given `status` and returns [`crate::wallet::WalletTransaction`], decrypting all
 /// incoming and outgoing notes with `ufvks` and adding any transparent coins matching `transparent_addresses`.
 ///
@@ -177,31 +192,88 @@ pub(crate) fn scan_transaction(
     let mut sapling_ovks = Vec::new();
     let mut orchard_ivks = Vec::new();
     let mut orchard_ovks = Vec::new();
+
     for (account_id, ufvk) in ufvks {
         if let Some(dfvk) = ufvk.sapling() {
             for scope in [Scope::External, Scope::Internal] {
                 let key_id = KeyId::from_parts(*account_id, scope);
+
                 sapling_ivks.push((
                     key_id,
                     sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(
                         &dfvk.to_ivk(scope),
                     ),
                 ));
-                sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    dfvk.to_ovk(scope).into(),
+                );
             }
         }
 
         if let Some(fvk) = ufvk.orchard() {
             for scope in [Scope::External, Scope::Internal] {
                 let key_id = KeyId::from_parts(*account_id, scope);
+
                 orchard_ivks.push((
                     key_id,
                     orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
                 ));
-                orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    fvk.to_ovk(scope).into(),
+                );
             }
         }
+
+        if let Some(tkeys) = ufvk.transparent() {
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::External),
+                OutgoingViewingKey::from(tkeys.external_ovk().as_bytes()),
+            );
+
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::Internal),
+                OutgoingViewingKey::from(tkeys.internal_ovk().as_bytes()),
+            );
+        }
     }
+
+    // for (account_id, ufvk) in ufvks {
+    //     if let Some(dfvk) = ufvk.sapling() {
+    //         for scope in [Scope::External, Scope::Internal] {
+    //             let key_id = KeyId::from_parts(*account_id, scope);
+    //             sapling_ivks.push((
+    //                 key_id,
+    //                 sapling_crypto::note_encryption::PreparedIncomingViewingKey::new(
+    //                     &dfvk.to_ivk(scope),
+    //                 ),
+    //             ));
+    //             sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+    //         }
+    //     }
+
+    //     if let Some(fvk) = ufvk.orchard() {
+    //         for scope in [Scope::External, Scope::Internal] {
+    //             let key_id = KeyId::from_parts(*account_id, scope);
+    //             orchard_ivks.push((
+    //                 key_id,
+    //                 orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
+    //             ));
+    //             orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+    //         }
+    //     }
+    // }
 
     if let Some(bundle) = transaction.transparent_bundle() {
         let transparent_outputs = &bundle.vout;
@@ -407,6 +479,7 @@ where
     D: Domain<Note = N>,
     D::Memo: AsRef<[u8]>,
     Op: ShieldedOutputExt<D>,
+    OutgoingNote<N>: OutgoingNoteInterface,
 {
     let (key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
 
@@ -418,18 +491,61 @@ where
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote {
+            let memo = Memo::from_bytes(memo_bytes.as_ref())?;
+            let is_empty_memo = matches!(memo, Memo::Empty);
+
+            let outgoing_note = OutgoingNote {
                 output_id: OutputId::new(txid, output_index as u16),
                 key_id: key_ids[key_index],
                 note,
-                memo: Memo::from_bytes(memo_bytes.as_ref())?,
+                memo,
                 recipient_full_unified_address: None,
-            });
+            };
+
+            if outgoing_note.value() == 0 && is_empty_memo {
+                continue;
+            }
+
+            outgoing_notes.push(outgoing_note);
         }
     }
 
     Ok(())
 }
+
+// fn scan_outgoing_notes<D, Op, N>(
+//     outgoing_notes: &mut Vec<OutgoingNote<N>>,
+//     txid: TxId,
+//     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
+//     outputs: &[(D, Op)],
+// ) -> Result<(), ScanError>
+// where
+//     D: Domain<Note = N>,
+//     D::Memo: AsRef<[u8]>,
+//     Op: ShieldedOutputExt<D>,
+// {
+//     let (key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
+
+//     for (output_index, (domain, output)) in outputs.iter().enumerate() {
+//         if let Some(((note, _, memo_bytes), key_index)) = try_output_recovery_with_ovks(
+//             domain,
+//             &ovks,
+//             output,
+//             &output.value_commitment(),
+//             &output.out_ciphertext(),
+//         ) {
+//             outgoing_notes.push(OutgoingNote {
+//                 output_id: OutputId::new(txid, output_index as u16),
+//                 key_id: key_ids[key_index],
+//                 note,
+//                 memo: Memo::from_bytes(memo_bytes.as_ref())?,
+//                 recipient_full_unified_address: None,
+//             });
+//         }
+//     }
+
+//     Ok(())
+// }
 
 #[allow(clippy::type_complexity)]
 fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(

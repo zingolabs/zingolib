@@ -647,6 +647,33 @@ impl WalletTransaction {
 
 #[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
+    // /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
+    // #[must_use]
+    // pub fn total_value_sent(&self) -> u64 {
+    //     let transparent_value_sent = self
+    //         .transaction
+    //         .transparent_bundle()
+    //         .map_or(0, |bundle| {
+    //             bundle
+    //                 .vout
+    //                 .iter()
+    //                 .map(|output| output.value().into_u64())
+    //                 .sum()
+    //         })
+    //         .saturating_sub(self.total_output_value::<TransparentCoin>());
+
+    //     // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
+    //     // to this fix to zcash client backend
+    //     let sapling_value_sent = self
+    //         .total_outgoing_note_value::<OutgoingSaplingNote>()
+    //         .saturating_sub(self.total_output_value::<SaplingNote>());
+    //     let orchard_value_sent = self
+    //         .total_outgoing_note_value::<OutgoingOrchardNote>()
+    //         .saturating_sub(self.total_output_value::<OrchardNote>());
+
+    //     transparent_value_sent + sapling_value_sent + orchard_value_sent
+    // }
+
     /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
     #[must_use]
     pub fn total_value_sent(&self) -> u64 {
@@ -662,16 +689,29 @@ impl WalletTransaction {
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
 
-        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
-        // to this fix to zcash client backend
-        let sapling_value_sent = self
-            .total_outgoing_note_value::<OutgoingSaplingNote>()
-            .saturating_sub(self.total_output_value::<SaplingNote>());
-        let orchard_value_sent = self
-            .total_outgoing_note_value::<OutgoingOrchardNote>()
-            .saturating_sub(self.total_output_value::<OrchardNote>());
+        let sapling_value_sent = self.shielded_value_sent::<OutgoingSaplingNote, SaplingNote>();
+
+        let orchard_value_sent = self.shielded_value_sent::<OutgoingOrchardNote, OrchardNote>();
 
         transparent_value_sent + sapling_value_sent + orchard_value_sent
+    }
+
+    fn shielded_value_sent<OutgoingOp, ReceivedOp>(&self) -> u64
+    where
+        OutgoingOp: OutgoingNoteInterface,
+        ReceivedOp: OutputInterface,
+    {
+        let received_outputs = ReceivedOp::transaction_outputs(self);
+
+        OutgoingOp::transaction_outgoing_notes(self)
+            .iter()
+            .filter(|outgoing_output| {
+                !received_outputs.iter().any(|received_output| {
+                    received_output.output_id() == outgoing_output.output_id()
+                })
+            })
+            .map(OutgoingNoteInterface::value)
+            .sum()
     }
 
     /// Returns total sum of all output values.

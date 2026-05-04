@@ -2170,15 +2170,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes:vec![OutgoingNoteSummary {
-                 value: 99_960_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 output_index: 0,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            // Under OvkPolicy::Sender, wallet-internal change outputs are not
+            // recoverable via outgoing OVKs. The change is asserted above in
+            // `orchard_notes`; `outgoing_orchard_notes` only contains externally
+            // recoverable Orchard outputs.
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: first_send_to_sapling,
@@ -2210,15 +2206,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 99_925_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            // Under OvkPolicy::Sender, wallet-internal change outputs are not
+            // recoverable via outgoing OVKs. The change is asserted above in
+            // `orchard_notes`; `outgoing_orchard_notes` only contains externally
+            // recoverable Orchard outputs.
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
@@ -2336,15 +2328,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 965_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            // Under OvkPolicy::Sender, wallet-internal change outputs are not
+            // recoverable via outgoing OVKs. The change is asserted above in
+            // `orchard_notes`; `outgoing_orchard_notes` only contains externally
+            // recoverable Orchard outputs.
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
@@ -2380,15 +2368,11 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 99_885_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            // Under OvkPolicy::Sender, wallet-internal change outputs are not
+            // recoverable via outgoing OVKs. The change is asserted above in
+            // `orchard_notes`; `outgoing_orchard_notes` only contains externally
+            // recoverable Orchard outputs.
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
                  value: second_send_to_sapling,
@@ -2416,9 +2400,7 @@ TransactionSummary {
 
         // Third external transparent
         let external_transparent_3 = 20_000;
-        let summary_external_transparent_3 =
-
-TransactionSummary {
+        let summary_external_transparent_3 = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
             status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
@@ -2435,15 +2417,11 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 930_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            // Under OvkPolicy::Sender, wallet-internal change outputs are not
+            // recoverable via outgoing OVKs. The change is asserted above in
+            // `orchard_notes`; `outgoing_orchard_notes` only contains externally
+            // recoverable Orchard outputs.
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
