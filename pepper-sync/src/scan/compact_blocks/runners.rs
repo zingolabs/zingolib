@@ -7,9 +7,8 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::{CompactAction, OrchardDomain};
-use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
@@ -21,6 +20,9 @@ use memuse::DynamicUsage;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
+use crate::lightwallet::{
+    CompactBlock, CompactBlockExt, CompactTxExt, orchard_compact_action, sapling_output_description,
+};
 use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<
@@ -104,7 +106,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|()| {
+                        sapling_output_description(output).map_err(|()| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
@@ -124,7 +126,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|()| {
+                        orchard_compact_action(action).map_err(|()| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,

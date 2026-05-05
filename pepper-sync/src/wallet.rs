@@ -19,7 +19,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -39,6 +38,7 @@ use crate::{
     client::FetchRequest,
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
+    lightwallet::{CompactBlock, CompactBlockExt, CompactTxExt},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     witness,
@@ -395,11 +395,7 @@ impl WalletBlock {
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
-                .collect(),
+            txids: block.vtx.iter().map(CompactTxExt::txid).collect(),
             tree_bounds,
         })
     }

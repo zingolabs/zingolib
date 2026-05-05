@@ -4070,6 +4070,7 @@ dependencies = [
  "byteorder",
  "crossbeam-channel",
  "futures",
+ "hex",
  "incrementalmerkletree",
  "json",
  "jubjub",

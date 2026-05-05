@@ -12,8 +12,6 @@ use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use tonic::transport::Channel;
-use zcash_client_backend::proto::service::RawTransaction;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::ShieldedProtocol;
@@ -29,6 +27,7 @@ use crate::error::{
     SyncStatusError,
 };
 use crate::keys::transparent::TransparentAddressId;
+use crate::lightwallet::{CompactTxStreamerClient, RawTransaction};
 use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;

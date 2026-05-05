@@ -8,7 +8,6 @@ use task::ScanTask;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -16,6 +15,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    lightwallet::{CompactBlock, CompactBlockExt, CompactTx, CompactTxExt},
     sync::ScanPriority,
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},

@@ -6,24 +6,22 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use tonic::transport::Channel;
 use tracing::instrument;
-use zcash_client_backend::proto::{
-    compact_formats::CompactBlock,
-    service::{
-        BlockId, BlockRange, ChainSpec, GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction,
-        TransparentAddressBlockFilter, TreeState, TxFilter,
-        compact_tx_streamer_client::CompactTxStreamerClient,
-    },
-};
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::client::FetchRequest;
+use crate::{
+    client::FetchRequest,
+    lightwallet::{
+        BlockId, BlockRange, ChainSpec, CompactBlock, CompactTxStreamerClient, GetAddressUtxosArg,
+        GetAddressUtxosReply, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+    },
+};
 
 const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
+use crate::lightwallet::{GetSubtreeRootsArg, SubtreeRoot};
 
 async fn call_with_timeout<T, F>(
     what: &'static str,
@@ -224,6 +222,7 @@ async fn get_block_range(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
@@ -251,6 +250,7 @@ async fn get_block_range_nullifiers(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
@@ -371,6 +371,7 @@ async fn get_taddress_txs(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     let mut request = tonic::Request::new(TransparentAddressBlockFilter { address, range });
@@ -392,7 +393,7 @@ async fn get_taddress_txs(
 pub(crate) async fn get_mempool_stream(
     client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-    let mut request = tonic::Request::new(zcash_client_backend::proto::service::Empty {});
+    let mut request = tonic::Request::new(crate::lightwallet::Empty {});
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
     let resp = call_with_timeout(

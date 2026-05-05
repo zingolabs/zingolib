@@ -11,23 +11,20 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_client_backend::{
-    data_api::chain::ChainState,
-    proto::{
-        compact_formats::CompactBlock,
-        service::{
-            BlockId, GetAddressUtxosReply, RawTransaction, TreeState,
-            compact_tx_streamer_client::CompactTxStreamerClient,
-        },
-    },
-};
+use zcash_client_backend::data_api::chain::ChainState;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
-#[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::SubtreeRoot;
+use crate::{
+    error::{MempoolError, ServerError},
+    lightwallet::{
+        BlockId, CompactBlock, CompactTxStreamerClient, GetAddressUtxosReply, RawTransaction,
+        TreeState, TreeStateExt,
+    },
+};
 
-use crate::error::{MempoolError, ServerError};
+#[cfg(not(feature = "darkside_test"))]
+use crate::lightwallet::SubtreeRoot;
 
 pub(crate) mod fetch;
 

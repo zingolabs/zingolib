@@ -14,7 +14,6 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -24,6 +23,7 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
+    lightwallet::{CompactBlock, CompactBlockExt},
     sync::{self, ScanPriority, ScanRange},
     wallet::{
         ScanTarget, WalletBlock,

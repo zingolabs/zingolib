@@ -4,12 +4,9 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
+use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::Node;
 use tokio::sync::mpsc;
-use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
-};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{block::BlockHash, zip32::AccountId};
@@ -19,6 +16,10 @@ use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    lightwallet::{
+        CompactBlock, CompactBlockExt, CompactOrchardAction, CompactSaplingOutput, CompactTxExt,
+        orchard_compact_action, sapling_output_description,
+    },
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
@@ -149,11 +150,7 @@ where
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
-                .collect(),
+            txids: block.vtx.iter().map(CompactTxExt::txid).collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
@@ -358,7 +355,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactOutputDescription::try_from(output)
+                let note_commitment = sapling_output_description(output)
                     .map_err(|()| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
@@ -395,7 +392,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactAction::try_from(output)
+                let note_commitment = orchard_compact_action(output)
                     .map_err(|()| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);

@@ -9,8 +9,9 @@ use zcash_protocol::consensus::BlockHeight;
 
 #[cfg(not(feature = "darkside_test"))]
 use {
-    crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
-    zcash_client_backend::proto::service::SubtreeRoot,
+    crate::{error::ServerError, lightwallet::SubtreeRoot},
+    shardtree::store::ShardStore,
+    subtle::CtOption,
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
