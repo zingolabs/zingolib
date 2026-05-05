@@ -3572,18 +3572,6 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
-dependencies = [
- "bitflags 2.11.0",
- "cfg-if",
- "cfg_aliases",
- "libc",
-]
-
-[[package]]
-name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
@@ -5381,7 +5369,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "nix 0.30.1",
+ "nix",
  "radix_trie",
  "unicode-segmentation",
  "unicode-width",
@@ -8739,12 +8727,11 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=fix-corez-deps#8546a0c652982b20edf1fe3090e9a26f5a2cc0c6"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=434653b2e807062d22be11692d16d5abf4957b48#434653b2e807062d22be11692d16d5abf4957b48"
 dependencies = [
  "getset",
  "hex",
  "json",
- "nix 0.29.0",
  "reqwest",
  "serde_json",
  "tempfile",
@@ -9068,7 +9055,7 @@ dependencies = [
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
  "metrics",
- "nix 0.30.1",
+ "nix",
  "openrpsee",
  "phf 0.12.1",
  "prost",
@@ -9293,7 +9280,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "4.0.0"
-source = "git+https://github.com/zingolabs/zingo-common?branch=fix-corez-deps#793e8bade56fcdf122188d5d48068c9ae2c10cda"
+source = "git+https://github.com/zingolabs/zingo-common?branch=indexer_trait#1f434a7a03918357b2e9e4c078bbe0d8375ec265"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -9344,7 +9331,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=fix-corez-deps#8546a0c652982b20edf1fe3090e9a26f5a2cc0c6"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=434653b2e807062d22be11692d16d5abf4957b48#434653b2e807062d22be11692d16d5abf4957b48"
 dependencies = [
  "bip0039 0.12.0",
 ]
