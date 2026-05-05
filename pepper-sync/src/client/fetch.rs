@@ -255,6 +255,7 @@ async fn get_block_range_nullifiers(
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
+    #[allow(deprecated)]
     let resp = call_with_timeout(
         "get_block_range_nullifiers (open)",
         STREAM_OPEN_TIMEOUT,
