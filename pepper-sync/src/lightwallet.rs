@@ -1,10 +1,46 @@
-use incrementalmerkletree::frontier::CommitmentTree;
-use zcash_client_backend::data_api::chain::ChainState;
+use incrementalmerkletree::frontier::{CommitmentTree, Frontier};
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree, transaction::TxId};
 use zcash_protocol::consensus::BlockHeight;
 
 pub(crate) use lightwallet_protocol::*;
+
+pub(crate) struct ChainState {
+    sapling_tree: Frontier<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>,
+    orchard_tree:
+        Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
+}
+
+impl ChainState {
+    fn new(
+        sapling_tree: Frontier<
+            sapling_crypto::Node,
+            { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+        >,
+        orchard_tree: Frontier<
+            orchard::tree::MerkleHashOrchard,
+            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+        >,
+    ) -> Self {
+        Self {
+            sapling_tree,
+            orchard_tree,
+        }
+    }
+
+    pub(crate) fn final_sapling_tree(
+        &self,
+    ) -> &Frontier<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }> {
+        &self.sapling_tree
+    }
+
+    pub(crate) fn final_orchard_tree(
+        &self,
+    ) -> &Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>
+    {
+        &self.orchard_tree
+    }
+}
 
 pub(crate) trait CompactBlockExt {
     fn hash(&self) -> BlockHash;
@@ -49,24 +85,14 @@ pub(crate) trait TreeStateExt {
 
 impl TreeStateExt for TreeState {
     fn to_chain_state(&self) -> std::io::Result<ChainState> {
-        let mut hash_bytes = hex::decode(&self.hash).map_err(|e| {
+        hex::decode(&self.hash).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Block hash is not valid hex: {e:?}"),
             )
         })?;
-        hash_bytes.reverse();
 
         Ok(ChainState::new(
-            self.height.try_into().map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid block height")
-            })?,
-            BlockHash::try_from_slice(&hash_bytes).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid block hash length.",
-                )
-            })?,
             sapling_tree(self)?.to_frontier(),
             orchard_tree(self)?.to_frontier(),
         ))

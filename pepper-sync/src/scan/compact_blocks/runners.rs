@@ -17,6 +17,7 @@ use zcash_protocol::{ShieldedProtocol, consensus};
 
 use memuse::DynamicUsage;
 
+use crate::error::ScanError;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
@@ -83,11 +84,7 @@ where
     }
 
     #[tracing::instrument(skip_all, fields(height = block.height))]
-    pub(crate) fn add_block<P>(
-        &mut self,
-        params: &P,
-        block: CompactBlock,
-    ) -> Result<(), zcash_client_backend::scanning::ScanError>
+    pub(crate) fn add_block<P>(&mut self, params: &P, block: CompactBlock) -> Result<(), ScanError>
     where
         P: consensus::Parameters + Send + 'static,
     {
@@ -107,7 +104,7 @@ where
                     .enumerate()
                     .map(|(i, output)| {
                         sapling_output_description(output).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
+                            ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
                                 pool_type: ShieldedProtocol::Sapling,
@@ -126,13 +123,11 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        orchard_compact_action(action).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Orchard,
-                                index: i,
-                            }
+                        orchard_compact_action(action).map_err(|()| ScanError::EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedProtocol::Orchard,
+                            index: i,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,

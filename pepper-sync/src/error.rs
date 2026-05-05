@@ -4,7 +4,7 @@ use std::{array::TryFromSliceError, convert::Infallible};
 
 use shardtree::error::ShardTreeError;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::PoolType;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::wallet::OutputId;
 
@@ -197,9 +197,20 @@ pub enum ScanError {
     /// Continuity error.
     #[error("continuity error. {0}")]
     ContinuityError(#[from] ContinuityError),
-    /// Zcash client backend scan error
-    #[error("{0}")]
-    ZcbScanError(zcash_client_backend::scanning::ScanError),
+    /// Invalid compact output encoding.
+    #[error(
+        "invalid {pool_type:?} compact output encoding at height {at_height}, txid {txid}, output index {index}"
+    )]
+    EncodingInvalid {
+        /// Block height.
+        at_height: BlockHeight,
+        /// Transaction ID.
+        txid: TxId,
+        /// Shielded pool.
+        pool_type: ShieldedProtocol,
+        /// Output index.
+        index: usize,
+    },
     /// Invalid sapling nullifier
     #[error("invalid sapling nullifier. {0}")]
     InvalidSaplingNullifier(#[from] TryFromSliceError),

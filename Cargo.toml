@@ -18,8 +18,7 @@ resolver = "2"
 ### Workspace
 # pepper-sync = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.0"
+zingo-memo = { path = "zingo-memo" }
 zingo-price = { path = "zingo-price" }
 # zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 zingo-status = "0.2.0"

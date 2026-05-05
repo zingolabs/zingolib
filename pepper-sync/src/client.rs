@@ -11,15 +11,14 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_client_backend::data_api::chain::ChainState;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
     error::{MempoolError, ServerError},
     lightwallet::{
-        BlockId, CompactBlock, CompactTxStreamerClient, GetAddressUtxosReply, RawTransaction,
-        TreeState, TreeStateExt,
+        BlockId, ChainState, CompactBlock, CompactTxStreamerClient, GetAddressUtxosReply,
+        RawTransaction, TreeState, TreeStateExt,
     },
 };
 

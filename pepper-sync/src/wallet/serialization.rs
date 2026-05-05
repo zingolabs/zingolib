@@ -3,17 +3,17 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
-    ops::Range,
+    ops::{Deref, Range},
+    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use incrementalmerkletree::{Hashable, Position};
 use shardtree::{
-    LocatedPrunableTree, ShardTree,
+    LocatedPrunableTree, Node, PrunableTree, RetentionFlags, ShardTree, Tree,
     store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
-use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
@@ -45,6 +45,86 @@ use super::{
     SaplingNote, ShardTrees, SyncState, TransparentCoin, TreeBounds, WalletBlock, WalletNote,
     WalletTransaction,
 };
+
+const SHARD_SER_V1: u8 = 1;
+const SHARD_NIL_TAG: u8 = 0;
+const SHARD_LEAF_TAG: u8 = 1;
+const SHARD_PARENT_TAG: u8 = 2;
+
+fn write_shard<H: HashSer, W: Write>(
+    writer: &mut W,
+    tree: &PrunableTree<H>,
+) -> std::io::Result<()> {
+    fn write_inner<H: HashSer, W: Write>(
+        mut writer: &mut W,
+        tree: &PrunableTree<H>,
+    ) -> std::io::Result<()> {
+        match tree.deref() {
+            Node::Parent { ann, left, right } => {
+                writer.write_u8(SHARD_PARENT_TAG)?;
+                Optional::write(&mut writer, ann.as_ref(), |w, h| {
+                    <H as HashSer>::write(h, w)
+                })?;
+                write_inner(writer, left)?;
+                write_inner(writer, right)?;
+                Ok(())
+            }
+            Node::Leaf { value } => {
+                writer.write_u8(SHARD_LEAF_TAG)?;
+                value.0.write(&mut writer)?;
+                writer.write_u8(value.1.bits())?;
+                Ok(())
+            }
+            Node::Nil => {
+                writer.write_u8(SHARD_NIL_TAG)?;
+                Ok(())
+            }
+        }
+    }
+
+    writer.write_u8(SHARD_SER_V1)?;
+    write_inner(writer, tree)
+}
+
+fn read_shard<H: HashSer, R: Read>(mut reader: R) -> std::io::Result<PrunableTree<H>> {
+    fn read_shard_v1<H: HashSer, R: Read>(mut reader: &mut R) -> std::io::Result<PrunableTree<H>> {
+        match reader.read_u8()? {
+            SHARD_PARENT_TAG => {
+                let ann = Optional::read(&mut reader, <H as HashSer>::read)?.map(Arc::new);
+                let left = read_shard_v1(reader)?;
+                let right = read_shard_v1(reader)?;
+                Ok(Tree::parent(ann, left, right))
+            }
+            SHARD_LEAF_TAG => {
+                let value = <H as HashSer>::read(&mut reader)?;
+                let flags = reader.read_u8().and_then(|bits| {
+                    RetentionFlags::from_bits(bits).ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "Byte value {bits} does not correspond to a valid set of retention flags"
+                            ),
+                        )
+                    })
+                })?;
+                Ok(Tree::leaf((value, flags)))
+            }
+            SHARD_NIL_TAG => Ok(Tree::empty()),
+            other => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Node tag not recognized: {other}"),
+            )),
+        }
+    }
+
+    match reader.read_u8()? {
+        SHARD_SER_V1 => read_shard_v1(&mut reader),
+        other => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Shard serialization version not recognized: {other}"),
+        )),
+    }
+}
 
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
     let str_len = reader.read_u64::<LittleEndian>()?;

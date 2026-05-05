@@ -32,9 +32,6 @@ orchard.workspace = true
 sapling-crypto.workspace = true
 shardtree.workspace = true
 zcash_address.workspace = true
-zcash_client_backend = { workspace = true, features = [
-    "unstable-serialization",
-] }
 zcash_encoding = { workspace = true, optional = true }
 zcash_keys.workspace = true
 zcash_note_encryption.workspace = true
