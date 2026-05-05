@@ -45,6 +45,7 @@ tracing-subscriber = "0.3"
 ### Zingo-common
 zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "indexer_trait", features = ["back_compatible", "globally-public-transparent"] }
 zingo_common_components = "0.3.0"
+lightwallet-protocol = "0.3.0"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"

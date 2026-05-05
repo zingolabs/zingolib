@@ -22,6 +22,7 @@ test-features = []
 
 [dependencies]
 # Zingo
+lightwallet-protocol.workspace = true
 zingo-memo.workspace = true
 zingo-status.workspace = true
 

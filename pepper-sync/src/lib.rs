@@ -108,6 +108,7 @@ pub(crate) mod client;
 pub mod config;
 pub mod error;
 pub mod keys;
+pub(crate) mod lightwallet;
 pub(crate) mod scan;
 pub mod sync;
 pub mod wallet;

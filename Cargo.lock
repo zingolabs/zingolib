@@ -4073,6 +4073,7 @@ dependencies = [
  "incrementalmerkletree",
  "json",
  "jubjub",
+ "lightwallet-protocol",
  "memuse",
  "orchard",
  "rayon",
