@@ -17,12 +17,12 @@ use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
-    memo::Memo,
     merkle_tree::HashSer,
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::{
     consensus::{self, BlockHeight},
+    memo::Memo,
     value::Zatoshis,
 };
 use zcash_transparent::address::Script;

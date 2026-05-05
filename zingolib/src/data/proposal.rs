@@ -45,7 +45,8 @@ pub fn total_payment_amount(proposal: &ProportionalFeeProposal) -> Result<Zatosh
         .iter()
         .map(zcash_client_backend::proposal::Step::transaction_request)
         .try_fold(Zatoshis::ZERO, |acc, request| {
-            (acc + request.total()?).ok_or(BalanceError::Overflow)
+            let total = request.total()?.ok_or(BalanceError::Overflow)?;
+            (acc + total).ok_or(BalanceError::Overflow)
         })
 }
 
