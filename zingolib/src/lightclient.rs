@@ -144,7 +144,15 @@ impl LightClient {
         // preventing rustls from auto-selecting a provider.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
+        let indexer = {
+            let grpc = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => tokio::task::block_in_place(|| handle.block_on(grpc.with_nym()))?,
+                Err(_) => tokio::runtime::Runtime::new()
+                    .map_err(LightClientError::FileError)?
+                    .block_on(grpc.with_nym())?,
+            }
+        };
 
         Ok(LightClient {
             indexer,
@@ -244,7 +252,7 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        match self.indexer.get_info(false).await {
+        match self.indexer.get_info(true).await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
