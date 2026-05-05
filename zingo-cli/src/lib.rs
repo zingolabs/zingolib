@@ -532,7 +532,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
             .block_on(async move {
                 zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
                     .map_err(|e| format!("{e:?}"))?
-                    .get_latest_block()
+                    .get_latest_block(false)
                     .await
                     .map(|block_id| block_id.height as u32)
                     .map_err(|e| format!("{e:?}"))

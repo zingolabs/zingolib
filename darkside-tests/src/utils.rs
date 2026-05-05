@@ -123,10 +123,13 @@ pub async fn update_tree_states_for_transaction(
 ) -> TreeState {
     let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
         .unwrap()
-        .get_tree_state(zingo_netutils::lightwallet_protocol::BlockId {
-            height: height - 1,
-            hash: vec![],
-        })
+        .get_tree_state(
+            zingo_netutils::lightwallet_protocol::BlockId {
+                height: height - 1,
+                hash: vec![],
+            },
+            false,
+        )
         .await
         .unwrap();
     let mut sapling_tree: sapling_crypto::CommitmentTree =

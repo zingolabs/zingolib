@@ -42,7 +42,7 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
                     Ok(i) => i,
                     Err(_) => return None,
                 };
-                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer.get_info()).await {
+                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer.get_info(false)).await {
                     Ok(Ok(_info)) => Some(RankedServer {
                         uri,
                         latency: start.elapsed(),
