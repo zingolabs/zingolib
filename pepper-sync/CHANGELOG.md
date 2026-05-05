@@ -19,8 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `error::ServerError::recovery_recommendation()` — server-level recovery classification.
 
 ### Changed
+- Proto-generated lightwallet types and `CompactTxStreamerClient` now come from
+  `lightwallet-protocol` instead of `zcash_client_backend`.
+- Local compatibility helpers now provide compact block, compact transaction,
+  tree state, and shard serialization behavior previously imported from
+  `zcash_client_backend`.
 
 ### Removed
+- Direct and transitive `zcash_client_backend` dependency from `pepper-sync`.
 
 ## [0.3.0]
 
