@@ -43,7 +43,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 ### Zingo-common
-zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "nym_wallet_poc_2_1", features = ["back_compatible", "globally-public-transparent", "nym"] }
+zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "chore/echo-server", features = ["back_compatible", "globally-public-transparent", "nym"] }
 zingo_common_components = "0.3.0"
 
 ### Zcash
@@ -52,7 +52,7 @@ orchard = "0.11.0"
 sapling-crypto = "0.5.0"
 shardtree = "0.6.1"
 zcash_address = "0.10"
-zcash_client_backend = { version = "0.21", features = [
+zcash_client_backend = { version = "0.22", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",

@@ -26,7 +26,7 @@ impl LightClient {
             ));
         }
 
-        let client = self.indexer.get_zcb_client(true).await?;
+        let client = self.indexer.get_zcb_client(false).await?;
         let chain_type = self.chain_type();
         let sync_config = self
             .wallet()

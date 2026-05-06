@@ -43,11 +43,11 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
                     Err(_) => return None,
                 };
 
-                let indexer = match indexer_wo_nym.with_nym().await {
-                    Ok(i) => i,
-                    Err(_) => return None,
-                };
-                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer.get_info(true)).await {
+                // let indexer = match indexer_wo_nym.with_nym().await {
+                //     Ok(i) => i,
+                //     Err(_) => return None,
+                // };
+                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer_wo_nym.get_info(false)).await {
                     Ok(Ok(_info)) => Some(RankedServer {
                         uri,
                         latency: start.elapsed(),
