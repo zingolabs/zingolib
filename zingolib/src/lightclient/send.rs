@@ -162,7 +162,7 @@ impl LightClient {
             let txid_from_server = loop {
                 let transmission_result = self
                     .indexer
-                    .send_transaction(transaction_bytes.clone().into_boxed_slice(), true)
+                    .send_transaction(transaction_bytes.clone().into_boxed_slice(), false)
                     .await
                     .map_err(|e| {
                         SendError::TransmissionError(TransmissionError::TransmissionFailed(

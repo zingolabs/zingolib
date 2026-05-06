@@ -144,15 +144,17 @@ impl LightClient {
         // preventing rustls from auto-selecting a provider.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let indexer = {
-            let grpc = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
-            match tokio::runtime::Handle::try_current() {
-                Ok(handle) => tokio::task::block_in_place(|| handle.block_on(grpc.with_nym()))?,
-                Err(_) => tokio::runtime::Runtime::new()
-                    .map_err(LightClientError::FileError)?
-                    .block_on(grpc.with_nym())?,
-            }
-        };
+        // let indexer = {
+        //     let grpc = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
+        //     match tokio::runtime::Handle::try_current() {
+        //         Ok(handle) => tokio::task::block_in_place(|| handle.block_on(grpc.with_nym()))?,
+        //         Err(_) => tokio::runtime::Runtime::new()
+        //             .map_err(LightClientError::FileError)?
+        //             .block_on(grpc.with_nym())?,
+        //     }
+        // };
+
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
 
         Ok(LightClient {
             indexer,
