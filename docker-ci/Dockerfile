@@ -70,6 +70,7 @@ RUN apt update \
     curl \
     pkg-config \
     libssl-dev \
+    libsqlite3-dev \
     build-essential \
     protobuf-compiler \
     libclang-dev \
