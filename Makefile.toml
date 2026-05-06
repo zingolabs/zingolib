@@ -94,11 +94,12 @@ container_dir_hash() {
 }
 
 container_image_tag() {
-  printf 'RUST_%s-LIGHTWALLETD_%s-ZCASH_%s-ZAINO_%s-CONTAINER_%s' \
+  printf 'RUST_%s-LIGHTWALLETD_%s-ZCASH_%s-ZAINO_%s-NEXTEST_%s-CONTAINER_%s' \
     "${RUST_VERSION}" \
     "${LIGHTWALLETD_VERSION}" \
     "${ZCASH_VERSION}" \
     "${ZAINO_IMAGE_TAG}" \
+    "${NEXTEST_VERSION}" \
     "$(container_dir_hash)" \
     | git hash-object --stdin \
     | cut -c1-14
@@ -160,6 +161,7 @@ echo "  RUST_VERSION=${RUST_VERSION}"
 echo "  LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}"
 echo "  ZCASH_VERSION=${ZCASH_VERSION}"
 echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
+echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
   -f docker-ci/Dockerfile \
@@ -167,6 +169,7 @@ echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
   --build-arg "LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}" \
   --build-arg "ZCASH_VERSION=${ZCASH_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
 '''
