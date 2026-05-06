@@ -1,4 +1,14 @@
+ARG RUST_VERSION=1.90
+ARG LIGHTWALLETD_VERSION=0.4.18
+ARG ZCASH_VERSION=6.12.1
+ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
+
+FROM docker.io/zodlinc/zcash:v${ZCASH_VERSION} AS zcashd-downloader
+FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG} AS zainod-downloader
+
 FROM debian:trixie-slim AS builder
+
+ARG LIGHTWALLETD_VERSION
 
 WORKDIR /usr/src
 
@@ -9,7 +19,6 @@ RUN apt update \
     pkg-config \
     libc6-dev \
     m4 \
-    g++-multilib \
     autoconf \
     libtool \
     ncurses-dev \
@@ -28,21 +37,26 @@ RUN apt update \
 # Build lightwalletd
 RUN git clone https://github.com/zcash/lightwalletd \
     && cd lightwalletd \
-    && git checkout v0.4.18 \
+    && git checkout "v${LIGHTWALLETD_VERSION}" \
     && make
-
-# Build zcashd and fetch params
-RUN git clone https://github.com/zcash/zcash.git \
-    && cd zcash/ \
-    && git checkout v6.3.0 \
-    && ./zcutil/build.sh -j$(nproc)
 
 FROM debian:trixie-slim AS runner
 
+ARG RUST_VERSION
+ARG LIGHTWALLETD_VERSION
+ARG ZCASH_VERSION
+ARG ZAINO_IMAGE_TAG
+
+LABEL org.zingolib.test-artifacts.versions.rust="${RUST_VERSION}"
+LABEL org.zingolib.test-artifacts.versions.lightwalletd="${LIGHTWALLETD_VERSION}"
+LABEL org.zingolib.test-artifacts.versions.zcashd="${ZCASH_VERSION}"
+LABEL org.zingolib.test-artifacts.versions.zaino="${ZAINO_IMAGE_TAG}"
+
 # Copy regtest binaries and zcash params from builder
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
-COPY --from=builder /usr/src/zcash/src/zcashd /usr/bin/
-COPY --from=builder /usr/src/zcash/src/zcash-cli /usr/bin/
+COPY --from=zcashd-downloader /usr/local/bin/zcashd /usr/bin/
+COPY --from=zcashd-downloader /usr/local/bin/zcash-cli /usr/bin/
+COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
 
 # Install dependencies and update ca certificates
 RUN apt update \
@@ -59,15 +73,14 @@ RUN apt update \
     ca-certificates \
     && update-ca-certificates
 
-# Install rust and cargo tarpaulin
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# Install pinned Rust tooling and test helpers
 ENV HOME=/root
 ENV CARGO_HOME=$HOME/.cargo
 ENV RUSTUP_HOME=$HOME/.rustup
 ENV PATH=$PATH:$CARGO_HOME/bin
-RUN rustup toolchain install stable --profile minimal --component clippy \
-    && rustup update \
-    && rustup default stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal \
+    && rustup component add clippy rustfmt
 RUN cargo install cargo-nextest --locked
 RUN cargo install cargo-tarpaulin
 
@@ -75,4 +88,3 @@ RUN cargo install cargo-tarpaulin
 RUN apt autoremove -y \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
-
