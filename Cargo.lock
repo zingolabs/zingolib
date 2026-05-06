@@ -9280,7 +9280,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "4.0.0"
-source = "git+https://github.com/zingolabs/zingo-common?branch=indexer_trait#1f434a7a03918357b2e9e4c078bbe0d8375ec265"
+source = "git+https://github.com/zingolabs/zingo-common?rev=63bf5d9171d36e180acbeb6d9182d9c7a93c57b6#63bf5d9171d36e180acbeb6d9182d9c7a93c57b6"
 dependencies = [
  "http",
  "lightwallet-protocol",
