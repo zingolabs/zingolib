@@ -14,7 +14,8 @@ use zcash_client_backend::proto::{
         compact_tx_streamer_client::CompactTxStreamerClient,
     },
 };
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 
 use crate::client::FetchRequest;
 
@@ -224,6 +225,7 @@ async fn get_block_range(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
@@ -251,14 +253,18 @@ async fn get_block_range_nullifiers(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
+    #[allow(deprecated)]
+    let nullifier_range = client.get_block_range_nullifiers(request);
+
     let resp = call_with_timeout(
         "get_block_range_nullifiers (open)",
         STREAM_OPEN_TIMEOUT,
-        client.get_block_range_nullifiers(request),
+        nullifier_range,
     )
     .await?;
 
@@ -371,6 +377,7 @@ async fn get_taddress_txs(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![],
     });
 
     let mut request = tonic::Request::new(TransparentAddressBlockFilter { address, range });

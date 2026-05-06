@@ -183,7 +183,8 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 
     local_net
         .validator_mut()
-        .cache_chain(get_cargo_manifest_dir().join("store_all_checkpoints_test"));
+        .cache_chain(get_cargo_manifest_dir().join("store_all_checkpoints_test"))
+        .await;
 }
 
 #[ignore = "ignored until we add framework for chain caches as we don't want to check these into the zingolib repo"]
