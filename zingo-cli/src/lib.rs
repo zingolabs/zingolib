@@ -575,6 +575,8 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
     println!("{update}");
 
+    lightclient = RT.block_on(async move { lightclient.with_nym().await.unwrap() });
+
     lightclient = RT.block_on(async move {
         if filled_template.tor_enabled {
             info!("Creating tor client");

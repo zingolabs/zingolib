@@ -23,7 +23,7 @@ pub(crate) struct RankedServer {
 ///
 /// Uses a per-server timeout so one slow server doesn't block the rest.
 pub(crate) fn select_servers() -> Vec<RankedServer> {
-    const GET_INFO_TIMEOUT: Duration = Duration::from_secs(5);
+    const GET_INFO_TIMEOUT: Duration = Duration::from_secs(30);
 
     let uris: Vec<http::Uri> = MOST_UP_INDEXER_URIS
         .iter()
@@ -43,11 +43,11 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
                     Err(_) => return None,
                 };
 
-                // let indexer = match indexer_wo_nym.with_nym().await {
-                //     Ok(i) => i,
-                //     Err(_) => return None,
-                // };
-                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer_wo_nym.get_info(false)).await {
+                let indexer = match indexer_wo_nym.with_nym().await {
+                    Ok(i) => i,
+                    Err(_) => return None,
+                };
+                match tokio::time::timeout(GET_INFO_TIMEOUT, indexer.get_info(true)).await {
                     Ok(Ok(_info)) => Some(RankedServer {
                         uri,
                         latency: start.elapsed(),

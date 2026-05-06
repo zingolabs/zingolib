@@ -167,6 +167,12 @@ impl LightClient {
         })
     }
 
+    /// Activate internal nym proxy
+    pub async fn with_nym(mut self) -> Result<Self, LightClientError> {
+        self.indexer = self.indexer.with_nym().await.unwrap();
+        Ok(self)
+    }
+
     /// Returns the chain type for lock-free access.
     pub fn chain_type(&self) -> ChainType {
         self.wallet.chain_type
