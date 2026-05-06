@@ -65,6 +65,18 @@ ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers run
 makers rerun
 ```
 
+To run the containerized test suite with all features enabled, pass `--all-features` through to nextest:
+
+```
+makers run --all-features
+```
+
+This still applies the default `not test(slow)` filter. To match `cargo nextest run --all-features` more closely, clear the default filter:
+
+```
+ZINGOLIB_NEXTEST_FILTER= makers run --all-features
+```
+
 Use `makers local-run` to run the same nextest command on the host.
 
 ## Notes:
