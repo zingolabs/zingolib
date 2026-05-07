@@ -4,7 +4,8 @@ use std::{
     io::{self, Read, Write},
     path::PathBuf,
 };
-use zcash_primitives::{memo::MemoBytes, transaction::TxId};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::memo::MemoBytes;
 
 /// TODO: Add Doc Comment Here!
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
