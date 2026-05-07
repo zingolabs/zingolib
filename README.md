@@ -36,6 +36,8 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc libsqlite3-dev`
 * Protobuf Compiler
     * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
+* cargo-make and cargo-nextest for reproducible local test runs
+    * Run `cargo install cargo-make cargo-nextest`
 ```
 git clone https://github.com/zingolabs/zingolib.git
 cd zingolib
@@ -44,6 +46,38 @@ cargo build --release --package zingo-cli
 ```
 
 This will launch the interactive prompt. Type `help` to get a list of commands.
+
+## Testing
+
+Use `makers run` or `cargo make run` to run the same default nextest shape used by PR CI inside a reproducible local container image:
+
+```
+makers run
+```
+
+The task builds the image if needed, symlinks the image-provided `lightwalletd`, `zcashd`, `zcash-cli`, and `zainod` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile, two retries, and the default filter `not test(slow)`. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
+
+Extra nextest flags can be forwarded after the task name, and the default filter can be changed with `ZINGOLIB_NEXTEST_FILTER`.
+
+```
+makers run -p zingo-memo
+ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers run
+makers rerun
+```
+
+To run the containerized test suite with all features enabled, pass `--all-features` through to nextest:
+
+```
+makers run --all-features
+```
+
+This still applies the default `not test(slow)` filter. To match `cargo nextest run --all-features` more closely, clear the default filter:
+
+```
+ZINGOLIB_NEXTEST_FILTER= makers run --all-features
+```
+
+Use `makers local-run` to run the same nextest command on the host.
 
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
