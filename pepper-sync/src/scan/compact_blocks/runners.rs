@@ -9,7 +9,6 @@ use crossbeam_channel as channel;
 
 use orchard::note_encryption::{CompactAction, OrchardDomain};
 use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
@@ -17,10 +16,14 @@ use zcash_primitives::{
 use zcash_protocol::{ShieldedProtocol, consensus};
 
 use memuse::DynamicUsage;
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
+use crate::scan::compact_blocks::get_compact_block_hash;
+use crate::scan::compact_blocks::get_compact_tx_txid;
+use crate::scan::get_compact_block_height;
 use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<
@@ -89,21 +92,28 @@ where
     where
         P: consensus::Parameters + Send + 'static,
     {
-        let block_hash = block.hash();
-        let block_height = block.height();
+        let block_hash = get_compact_block_hash(&block);
+        let block_height = get_compact_block_height(&block);
         let zip212_enforcement = zip212_enforcement(params, block_height);
 
         for tx in block.vtx {
-            let txid = tx.txid();
+            let txid = get_compact_tx_txid(&tx);
 
             self.sapling.add_outputs(
                 block_hash,
                 txid,
                 |_| SaplingDomain::new(zip212_enforcement),
                 &tx.outputs
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, output)| {
+                        // TODO: implement direct conversion from lightwallet_protocol type
+                        let output =
+                            zcash_client_backend::proto::compact_formats::CompactSaplingOutput {
+                                cmu: output.cmu,
+                                ephemeral_key: output.ephemeral_key,
+                                ciphertext: output.ciphertext,
+                            };
                         CompactOutputDescription::try_from(output).map_err(|_| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
@@ -121,10 +131,18 @@ where
                 txid,
                 OrchardDomain::for_compact_action,
                 &tx.actions
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|_| {
+                        // TODO: implement direct conversion from lightwallet_protocol type
+                        let action =
+                            zcash_client_backend::proto::compact_formats::CompactOrchardAction {
+                                ephemeral_key: action.ephemeral_key,
+                                ciphertext: action.ciphertext,
+                                nullifier: action.nullifier,
+                                cmx: action.cmx,
+                            };
+                        CompactAction::try_from(&action).map_err(|_| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,

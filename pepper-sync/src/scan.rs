@@ -8,15 +8,16 @@ use task::ScanTask;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    scan::compact_blocks::get_compact_block_height,
     sync::ScanPriority,
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
@@ -149,7 +150,11 @@ where
         let mut nullifiers = NullifierMap::new();
         for block in &compact_blocks {
             for transaction in &block.vtx {
-                collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+                collect_nullifiers(
+                    &mut nullifiers,
+                    get_compact_block_height(block),
+                    transaction,
+                )?;
             }
         }
 

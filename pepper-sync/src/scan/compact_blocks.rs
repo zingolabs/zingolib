@@ -9,9 +9,12 @@ use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::{self, BlockHeight};
-use zingo_netutils::lightwallet_protocol::CompactBlock;
+use zcash_primitives::block::{BlockHash, BlockHeader};
+use zcash_protocol::{
+    TxId,
+    consensus::{self, BlockHeight},
+};
+use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
 use crate::{
@@ -71,16 +74,18 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height = block.height;
+        let block_height = get_compact_block_height(block);
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
-            let incoming_sapling_outputs = runners
-                .sapling
-                .collect_results(block.hash, transaction.txid);
-            let incoming_orchard_outputs = runners
-                .orchard
-                .collect_results(block.hash, transaction.txid);
+            let incoming_sapling_outputs = runners.sapling.collect_results(
+                get_compact_block_hash(block),
+                get_compact_tx_txid(transaction),
+            );
+            let incoming_orchard_outputs = runners.orchard.collect_results(
+                get_compact_block_hash(block),
+                get_compact_tx_txid(transaction),
+            );
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
@@ -100,7 +105,11 @@ where
                 });
             }
 
-            collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+            collect_nullifiers(
+                &mut nullifiers,
+                get_compact_block_height(block),
+                transaction,
+            )?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -144,14 +153,14 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: block.height(),
-            block_hash: block.hash(),
-            prev_hash: block.prev_hash(),
+            block_height: get_compact_block_height(block),
+            block_hash: get_compact_block_hash(block),
+            prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
             txids: block
                 .vtx
                 .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
+                .map(|compact_tx| get_compact_tx_txid(compact_tx))
                 .collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
@@ -497,4 +506,60 @@ fn set_checkpoint_retentions<L>(
             _ => (),
         }
     }
+}
+
+/// Returns the [`BlockHash`] for this block.
+///
+/// # Panics
+///
+/// This function will panic if [`field@Self::header`] is not set and
+/// [`field@Self::hash`] is not exactly 32 bytes.
+fn get_compact_block_hash(compact_block: &CompactBlock) -> BlockHash {
+    if let Some(header) = get_compact_block_header(compact_block) {
+        header.hash()
+    } else {
+        BlockHash::from_slice(&compact_block.hash)
+    }
+}
+
+/// Returns the [`BlockHash`] for this block's parent.
+///
+/// # Panics
+///
+/// This function will panic if [`field@Self::header`] is not set and
+/// [`field@Self::prev_hash`] is not exactly 32 bytes.
+fn get_compact_block_prev_hash(compact_block: &CompactBlock) -> BlockHash {
+    if let Some(header) = get_compact_block_header(compact_block) {
+        header.prev_block
+    } else {
+        BlockHash::from_slice(&compact_block.prev_hash)
+    }
+}
+
+/// Returns the [`BlockHeight`] value for this block
+///
+/// # Panics
+///
+/// This function will panic if [`field@Self::height`] is not representable within a
+/// `u32`.
+pub(super) fn get_compact_block_height(compact_block: &CompactBlock) -> BlockHeight {
+    compact_block.height.try_into().unwrap()
+}
+
+/// Returns the [`BlockHeader`] for this block if present.
+///
+/// A convenience method that parses [`field@Self::header`] if present.
+fn get_compact_block_header(compact_block: &CompactBlock) -> Option<BlockHeader> {
+    if compact_block.header.is_empty() {
+        None
+    } else {
+        BlockHeader::read(&compact_block.header[..]).ok()
+    }
+}
+
+/// Returns the transaction Id
+fn get_compact_tx_txid(compact_tx: &CompactTx) -> TxId {
+    let mut txid_bytes = [0u8; 32];
+    txid_bytes.copy_from_slice(&compact_tx.txid);
+    TxId::from_bytes(txid_bytes)
 }
