@@ -11,21 +11,16 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_client_backend::{
-    data_api::chain::ChainState,
-    proto::{
-        compact_formats::CompactBlock,
-        service::{
-            BlockId, GetAddressUtxosReply, RawTransaction, TreeState,
-            compact_tx_streamer_client::CompactTxStreamerClient,
-        },
-    },
-};
+use zcash_client_backend::{data_api::chain::ChainState, proto::service::TreeState};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
+use zingo_netutils::{
+    Indexer, TransparentIndexer,
+    lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
+};
 
 use crate::error::{MempoolError, ServerError};
 
@@ -401,10 +396,13 @@ pub(crate) async fn get_transparent_address_transactions(
 /// Gets stream of mempool transactions until the next block is mined.
 ///
 /// Checks at intervals if `shutdown_mempool` is set to prevent hanging on awating mempool monitor handle.
-pub(crate) async fn get_mempool_transaction_stream(
-    client: &mut CompactTxStreamerClient<tonic::transport::Channel>,
+pub(crate) async fn get_mempool_transaction_stream<C>(
+    client: &mut C,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, MempoolError> {
+) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
+where
+    C: Clone + Indexer + TransparentIndexer,
+{
     tracing::debug!("Fetching mempool stream");
     let mut interval = tokio::time::interval(Duration::from_secs(3));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

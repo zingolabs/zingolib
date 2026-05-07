@@ -1789,12 +1789,15 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
-async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<Channel>,
+async fn mempool_monitor<C>(
+    mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<(), MempoolError> {
+) -> Result<(), MempoolError>
+where
+    C: Clone + Indexer + TransparentIndexer,
+{
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
