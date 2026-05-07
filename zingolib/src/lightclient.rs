@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::BufReader,
+    io::{BufReader, Cursor},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -143,6 +143,34 @@ impl LightClient {
         // `ring` and `aws-lc-rs` features are unified in via transitive deps,
         // preventing rustls from auto-selecting a provider.
         let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
+
+        Ok(LightClient {
+            indexer,
+            tor_client: None,
+            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
+            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_handle: None,
+            save_active: Arc::new(AtomicBool::new(false)),
+            save_handle: None,
+        })
+    }
+
+    /// Creates a `LightClient` by deserializing wallet bytes directly, without reading from a file.
+    ///
+    /// Intended for mobile platforms (iOS/Android) where the native layer (Swift/Kotlin) owns all
+    /// file I/O: the native side reads the wallet file and passes the raw bytes across the FFI
+    /// boundary; Rust deserializes from memory via [`std::io::Cursor`].
+    ///
+    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` within the
+    /// config is retained for any subsequent save operations, but no file is read here.
+    #[allow(clippy::result_large_err)]
+    pub fn from_bytes(bytes: Vec<u8>, config: ClientConfig) -> Result<Self, LightClientError> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
+            .map_err(LightClientError::FileError)?;
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
 
