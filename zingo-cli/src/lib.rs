@@ -559,6 +559,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
 
     let mut lightclient = LightClient::new(config, false)
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+    lightclient = RT.block_on(async move { lightclient.with_nym().await.unwrap() });
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages
@@ -574,8 +575,6 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
 
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
     println!("{update}");
-
-    lightclient = RT.block_on(async move { lightclient.with_nym().await.unwrap() });
 
     lightclient = RT.block_on(async move {
         if filled_template.tor_enabled {

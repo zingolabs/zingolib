@@ -250,7 +250,7 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        match self.indexer.get_info(false).await {
+        match self.indexer.get_info(true).await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
