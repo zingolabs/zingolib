@@ -11,7 +11,6 @@ use tokio::sync::{RwLock, mpsc};
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use tonic::transport::Channel;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
@@ -313,7 +312,7 @@ pub async fn sync<C, P, W>(
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
-    C: Clone + Indexer + TransparentIndexer,
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks

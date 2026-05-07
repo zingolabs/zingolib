@@ -14,10 +14,10 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
 
 use crate::{

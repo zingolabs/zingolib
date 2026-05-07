@@ -7,13 +7,11 @@ use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
-use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
-};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
 
 use crate::{
@@ -73,16 +71,16 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height = block.height();
+        let block_height = block.height;
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners
                 .sapling
-                .collect_results(block.hash(), transaction.txid());
+                .collect_results(block.hash, transaction.txid);
             let incoming_orchard_outputs = runners
                 .orchard
-                .collect_results(block.hash(), transaction.txid());
+                .collect_results(block.hash, transaction.txid);
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change

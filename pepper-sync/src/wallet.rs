@@ -19,7 +19,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{
@@ -31,6 +30,7 @@ use zcash_protocol::{
 use zcash_transparent::address::Script;
 use zcash_transparent::bundle::OutPoint;
 
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
