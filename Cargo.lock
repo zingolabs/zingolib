@@ -13687,6 +13687,7 @@ version = "0.2.0"
 dependencies = [
  "bip0039 0.14.0",
  "clap",
+ "ed25519-zebra",
  "http 1.4.0",
  "indoc",
  "json",
