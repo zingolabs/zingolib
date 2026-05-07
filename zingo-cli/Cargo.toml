@@ -27,6 +27,8 @@ tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
 
+ed25519-zebra = { version = "4", features = ["std"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros"] }
