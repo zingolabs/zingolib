@@ -187,7 +187,7 @@ impl LightClient {
 
     /// Activate internal nym proxy
     pub async fn with_nym(mut self) -> Result<Self, LightClientError> {
-        self.indexer = self.indexer.with_nym().await.unwrap();
+        self.indexer = self.indexer.with_nym().await?;
         Ok(self)
     }
 
