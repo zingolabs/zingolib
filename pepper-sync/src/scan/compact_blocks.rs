@@ -4,14 +4,16 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
+use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::Node;
 use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{self, BlockHeight};
-use zingo_netutils::lightwallet_protocol::CompactBlock;
+use zingo_netutils::lightwallet_protocol::{
+    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
+};
 use zip32::AccountId;
 
 use crate::{
@@ -19,8 +21,8 @@ use crate::{
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     utils::{
-        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
-        get_compact_tx_txid,
+        get_compact_action, get_compact_block_hash, get_compact_block_height,
+        get_compact_block_prev_hash, get_compact_output_description, get_compact_tx_txid,
     },
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -367,7 +369,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactOutputDescription::try_from(output)
+                let note_commitment = get_compact_output_description(output)
                     .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
@@ -404,7 +406,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactAction::try_from(output)
+                let note_commitment = get_compact_action(output)
                     .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
