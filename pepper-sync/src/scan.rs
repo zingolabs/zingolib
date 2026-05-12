@@ -17,8 +17,8 @@ use zip32::AccountId;
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
-    scan::compact_blocks::get_compact_block_height,
     sync::ScanPriority,
+    utils::{get_compact_block_height, get_compact_tx_txid},
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -267,7 +267,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction.txid(),
+                    txid: get_compact_tx_txid(transaction),
                     narrow_scan_area: false,
                 },
             );
@@ -291,7 +291,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction.txid(),
+                    txid: get_compact_tx_txid(transaction),
                     narrow_scan_area: false,
                 },
             );

@@ -21,9 +21,9 @@ use zingo_netutils::lightwallet_protocol::CompactBlock;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
-use crate::scan::compact_blocks::get_compact_block_hash;
-use crate::scan::compact_blocks::get_compact_tx_txid;
-use crate::scan::get_compact_block_height;
+use crate::utils::get_compact_block_hash;
+use crate::utils::get_compact_block_height;
+use crate::utils::get_compact_tx_txid;
 use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<

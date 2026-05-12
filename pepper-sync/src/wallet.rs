@@ -39,6 +39,10 @@ use crate::{
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
+    utils::{
+        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
+        get_compact_tx_txid,
+    },
     witness,
 };
 
@@ -389,15 +393,11 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: block.height(),
-            block_hash: block.hash(),
-            prev_hash: block.prev_hash(),
+            block_height: get_compact_block_height(block),
+            block_hash: get_compact_block_hash(block),
+            prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
-                .collect(),
+            txids: block.vtx.iter().map(|tx| get_compact_tx_txid(tx)).collect(),
             tree_bounds,
         })
     }

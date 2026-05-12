@@ -9,18 +9,19 @@ use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_primitives::block::{BlockHash, BlockHeader};
-use zcash_protocol::{
-    TxId,
-    consensus::{self, BlockHeight},
-};
-use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
+use zcash_primitives::block::BlockHash;
+use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    utils::{
+        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
+        get_compact_tx_txid,
+    },
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
@@ -223,26 +224,26 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && block.height() != prev_height + 1
+            && get_compact_block_height(block) != prev_height + 1
         {
             return Err(ContinuityError::HeightDiscontinuity {
-                height: block.height(),
+                height: get_compact_block_height(block),
                 previous_block_height: prev_height,
             });
         }
 
         if let Some(prev_hash) = prev_hash
-            && block.prev_hash() != prev_hash
+            && get_compact_block_prev_hash(block) != prev_hash
         {
             return Err(ContinuityError::HashDiscontinuity {
-                height: block.height(),
-                prev_hash: block.prev_hash(),
+                height: get_compact_block_height(block),
+                prev_hash: get_compact_block_prev_hash(block),
                 previous_block_hash: prev_hash,
             });
         }
 
-        prev_height = Some(block.height());
-        prev_hash = Some(block.hash());
+        prev_height = Some(get_compact_block_height(block));
+        prev_hash = Some(get_compact_block_hash(block));
     }
 
     if let Some(end_seam_block) = end_seam_block {
@@ -438,11 +439,13 @@ pub(crate) async fn calculate_block_tree_bounds(
                 .activation_height(consensus::NetworkUpgrade::Sapling)
                 .expect("should have some sapling activation height");
 
-            match compact_block.height().cmp(&sapling_activation_height) {
+            match get_compact_block_height(compact_block).cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
-                    let frontiers =
-                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
-                            .await?;
+                    let frontiers = client::get_frontiers(
+                        fetch_request_sender.clone(),
+                        get_compact_block_height(compact_block),
+                    )
+                    .await?;
                     (
                         frontiers
                             .final_sapling_tree()
@@ -506,60 +509,4 @@ fn set_checkpoint_retentions<L>(
             _ => (),
         }
     }
-}
-
-/// Returns the [`BlockHash`] for this block.
-///
-/// # Panics
-///
-/// This function will panic if [`field@Self::header`] is not set and
-/// [`field@Self::hash`] is not exactly 32 bytes.
-fn get_compact_block_hash(compact_block: &CompactBlock) -> BlockHash {
-    if let Some(header) = get_compact_block_header(compact_block) {
-        header.hash()
-    } else {
-        BlockHash::from_slice(&compact_block.hash)
-    }
-}
-
-/// Returns the [`BlockHash`] for this block's parent.
-///
-/// # Panics
-///
-/// This function will panic if [`field@Self::header`] is not set and
-/// [`field@Self::prev_hash`] is not exactly 32 bytes.
-fn get_compact_block_prev_hash(compact_block: &CompactBlock) -> BlockHash {
-    if let Some(header) = get_compact_block_header(compact_block) {
-        header.prev_block
-    } else {
-        BlockHash::from_slice(&compact_block.prev_hash)
-    }
-}
-
-/// Returns the [`BlockHeight`] value for this block
-///
-/// # Panics
-///
-/// This function will panic if [`field@Self::height`] is not representable within a
-/// `u32`.
-pub(super) fn get_compact_block_height(compact_block: &CompactBlock) -> BlockHeight {
-    compact_block.height.try_into().unwrap()
-}
-
-/// Returns the [`BlockHeader`] for this block if present.
-///
-/// A convenience method that parses [`field@Self::header`] if present.
-fn get_compact_block_header(compact_block: &CompactBlock) -> Option<BlockHeader> {
-    if compact_block.header.is_empty() {
-        None
-    } else {
-        BlockHeader::read(&compact_block.header[..]).ok()
-    }
-}
-
-/// Returns the transaction Id
-fn get_compact_tx_txid(compact_tx: &CompactTx) -> TxId {
-    let mut txid_bytes = [0u8; 32];
-    txid_bytes.copy_from_slice(&compact_tx.txid);
-    TxId::from_bytes(txid_bytes)
 }
