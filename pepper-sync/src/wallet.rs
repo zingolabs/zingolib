@@ -397,7 +397,7 @@ impl WalletBlock {
             block_hash: get_compact_block_hash(block),
             prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
-            txids: block.vtx.iter().map(|tx| get_compact_tx_txid(tx)).collect(),
+            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
             tree_bounds,
         })
     }

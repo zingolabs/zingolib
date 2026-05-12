@@ -28,7 +28,7 @@ use log::{error, info};
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
-use zingolib::lightclient::LightClient;
+use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
@@ -548,8 +548,9 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = RT
             .block_on(async move {
                 zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
+                    .await
                     .map_err(|e| format!("{e:?}"))?
-                    .get_latest_block()
+                    .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
                     .await
                     .map(|block_id| block_id.height as u32)
                     .map_err(|e| format!("{e:?}"))
@@ -574,8 +575,11 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
     let config = build_zingo_config(filled_template)?;
 
-    let mut lightclient = LightClient::new(config, false)
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+    let mut lightclient = RT.block_on(async move {
+        LightClient::new(config, false)
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))
+    })?;
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages

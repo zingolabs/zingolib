@@ -238,7 +238,7 @@ async fn reload_wallet_from_file() {
         .set_wallet_dir(mid_client.wallet_dir().unwrap())
         .set_wallet_config(WalletConfig::Read)
         .build();
-    let loaded_client = LightClient::new(config, true).unwrap();
+    let loaded_client = LightClient::new(config, true).await.unwrap();
     let loaded_wallet = loaded_client.wallet().read().await;
 
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();

@@ -1795,7 +1795,7 @@ async fn mempool_monitor<C>(
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
 where
-    C: Clone + Indexer + TransparentIndexer,
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

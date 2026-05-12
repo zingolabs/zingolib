@@ -403,7 +403,7 @@ pub(crate) async fn get_mempool_transaction_stream<C>(
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
 where
-    C: Clone + Indexer + TransparentIndexer,
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     tracing::debug!("Fetching mempool stream");
     let mut interval = tokio::time::interval(Duration::from_secs(3));

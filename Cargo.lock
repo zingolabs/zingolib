@@ -9282,7 +9282,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "4.0.0"
-source = "git+https://github.com/Oscar-Pepper/zingo-common?branch=grpc_indexer_holds_client_and_returns_compatible_errors#20a228c221966577ed8e6de22add86fdb1046ea1"
+source = "git+https://github.com/Oscar-Pepper/zingo-common?branch=add_send_to_trait_method_returns#8d9aee789d3c4e745f07ee2c7d14d53bf72dc86a"
 dependencies = [
  "http",
  "lightwallet-protocol",

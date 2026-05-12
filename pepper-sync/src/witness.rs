@@ -158,9 +158,10 @@ pub(crate) struct Frontiers {
         Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
 }
 
+#[allow(dead_code)]
 impl Frontiers {
     /// Construct a new empty chain state.
-    pub fn empty(block_height: BlockHeight, block_hash: BlockHash) -> Self {
+    pub(crate) fn empty(block_height: BlockHeight, block_hash: BlockHash) -> Self {
         Self {
             block_height,
             block_hash,
@@ -170,7 +171,7 @@ impl Frontiers {
     }
 
     /// Construct a new [`ChainState`] from its constituent parts.
-    pub fn new(
+    pub(crate) fn new(
         block_height: BlockHeight,
         block_hash: BlockHash,
         final_sapling_tree: Frontier<
@@ -191,18 +192,18 @@ impl Frontiers {
     }
 
     /// Returns the block height to which this chain state applies.
-    pub fn block_height(&self) -> BlockHeight {
+    pub(crate) fn block_height(&self) -> BlockHeight {
         self.block_height
     }
 
     /// Return the hash of the block.
-    pub fn block_hash(&self) -> BlockHash {
+    pub(crate) fn block_hash(&self) -> BlockHash {
         self.block_hash
     }
 
     /// Returns the frontier of the Sapling note commitment tree as of the end of the block at
     /// [`Self::block_height`].
-    pub fn final_sapling_tree(
+    pub(crate) fn final_sapling_tree(
         &self,
     ) -> &Frontier<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }> {
         &self.final_sapling_tree
@@ -210,7 +211,7 @@ impl Frontiers {
 
     /// Returns the frontier of the Orchard note commitment tree as of the end of the block at
     /// [`Self::block_height`].
-    pub fn final_orchard_tree(
+    pub(crate) fn final_orchard_tree(
         &self,
     ) -> &Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>
     {

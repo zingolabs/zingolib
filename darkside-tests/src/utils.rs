@@ -23,7 +23,10 @@ use zcash_protocol::consensus::BranchId;
 
 use zingo_netutils::Indexer as _;
 
-use zingolib::testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri};
+use zingolib::{
+    lightclient::DEFAULT_REQUEST_TIMEOUT,
+    testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri},
+};
 
 use super::{
     constants,
@@ -122,11 +125,15 @@ pub async fn update_tree_states_for_transaction(
     height: u64,
 ) -> TreeState {
     let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
+        .await
         .unwrap()
-        .get_tree_state(zingo_netutils::lightwallet_protocol::BlockId {
-            height: height - 1,
-            hash: vec![],
-        })
+        .get_tree_state(
+            zingo_netutils::lightwallet_protocol::BlockId {
+                height: height - 1,
+                hash: vec![],
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
         .await
         .unwrap();
     let mut sapling_tree: sapling_crypto::CommitmentTree =

@@ -13,6 +13,7 @@ use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
+use crate::testutils::REQUEST_TIMEOUT;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
@@ -123,9 +124,16 @@ where
 
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
-    let indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()).unwrap();
-    let server_height_at_send =
-        BlockHeight::from(indexer.get_latest_block().await.unwrap().height as u32);
+    let mut indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap())
+        .await
+        .unwrap();
+    let server_height_at_send = BlockHeight::from(
+        indexer
+            .get_latest_block(REQUEST_TIMEOUT)
+            .await
+            .unwrap()
+            .height as u32,
+    );
     let last_known_chain_height = sender
         .wallet()
         .read()

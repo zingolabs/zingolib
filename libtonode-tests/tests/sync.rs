@@ -40,7 +40,7 @@ async fn sync_mainnet_test() {
             wallet_settings: default_test_wallet_settings(),
         })
         .build();
-    let mut lightclient = LightClient::new(config, true).unwrap();
+    let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -92,7 +92,7 @@ async fn sync_status() {
             wallet_settings: default_test_wallet_settings(),
         })
         .build();
-    let mut lightclient = LightClient::new(config, true).unwrap();
+    let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }

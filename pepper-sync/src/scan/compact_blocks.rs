@@ -160,11 +160,7 @@ where
             block_hash: get_compact_block_hash(block),
             prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(|compact_tx| get_compact_tx_txid(compact_tx))
-                .collect(),
+            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
