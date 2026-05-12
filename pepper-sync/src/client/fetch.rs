@@ -18,7 +18,6 @@ use zingo_netutils::{
 use crate::client::FetchRequest;
 
 const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
-const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[cfg(not(feature = "darkside_test"))]
@@ -171,7 +170,7 @@ async fn get_latest_block<C>(client: &mut C) -> Result<BlockId, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer,
 {
-    client.get_latest_block().await
+    client.get_latest_block(UNARY_RPC_TIMEOUT).await
 }
 
 async fn get_block<C>(
@@ -182,10 +181,13 @@ where
     C: Clone + Indexer + TransparentIndexer,
 {
     client
-        .get_block(BlockId {
-            height: u64::from(block_height),
-            hash: vec![],
-        })
+        .get_block(
+            BlockId {
+                height: u64::from(block_height),
+                hash: vec![],
+            },
+            UNARY_RPC_TIMEOUT,
+        )
         .await
 }
 
@@ -197,17 +199,20 @@ where
     C: Clone + Indexer + TransparentIndexer,
 {
     client
-        .get_block_range(BlockRange {
-            start: Some(BlockId {
-                height: u64::from(block_range.start),
-                hash: vec![],
-            }),
-            end: Some(BlockId {
-                height: u64::from(block_range.end) - 1,
-                hash: vec![],
-            }),
-            pool_types: vec![],
-        })
+        .get_block_range(
+            BlockRange {
+                start: Some(BlockId {
+                    height: u64::from(block_range.start),
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height: u64::from(block_range.end) - 1,
+                    hash: vec![],
+                }),
+                pool_types: vec![],
+            },
+            HEAVY_UNARY_TIMEOUT,
+        )
         .await
 }
 
@@ -220,17 +225,20 @@ where
 {
     #[allow(deprecated)]
     client
-        .get_block_range_nullifiers(BlockRange {
-            start: Some(BlockId {
-                height: u64::from(block_range.start),
-                hash: vec![],
-            }),
-            end: Some(BlockId {
-                height: u64::from(block_range.end) - 1,
-                hash: vec![],
-            }),
-            pool_types: vec![],
-        })
+        .get_block_range_nullifiers(
+            BlockRange {
+                start: Some(BlockId {
+                    height: u64::from(block_range.start),
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height: u64::from(block_range.end) - 1,
+                    hash: vec![],
+                }),
+                pool_types: vec![],
+            },
+            HEAVY_UNARY_TIMEOUT,
+        )
         .await
 }
 
@@ -245,11 +253,14 @@ where
     C: Clone + Indexer + TransparentIndexer,
 {
     client
-        .get_subtree_roots(GetSubtreeRootsArg {
-            start_index,
-            shielded_protocol,
-            max_entries,
-        })
+        .get_subtree_roots(
+            GetSubtreeRootsArg {
+                start_index,
+                shielded_protocol,
+                max_entries,
+            },
+            HEAVY_UNARY_TIMEOUT,
+        )
         .await
 }
 
@@ -262,10 +273,13 @@ where
     C: Clone + Indexer + TransparentIndexer,
 {
     client
-        .get_tree_state(BlockId {
-            height: block_height.into(),
-            hash: vec![],
-        })
+        .get_tree_state(
+            BlockId {
+                height: block_height.into(),
+                hash: vec![],
+            },
+            UNARY_RPC_TIMEOUT,
+        )
         .await
 }
 
@@ -274,11 +288,14 @@ where
     C: Clone + Indexer + TransparentIndexer,
 {
     client
-        .get_transaction(TxFilter {
-            block: None,
-            index: 0,
-            hash: txid.as_ref().to_vec(),
-        })
+        .get_transaction(
+            TxFilter {
+                block: None,
+                index: 0,
+                hash: txid.as_ref().to_vec(),
+            },
+            UNARY_RPC_TIMEOUT,
+        )
         .await
 }
 
@@ -293,11 +310,14 @@ where
 {
     let start_height: u64 = start_height.into();
     Ok(client
-        .get_address_utxos(GetAddressUtxosArg {
-            addresses,
-            start_height,
-            max_entries,
-        })
+        .get_address_utxos(
+            GetAddressUtxosArg {
+                addresses,
+                start_height,
+                max_entries,
+            },
+            UNARY_RPC_TIMEOUT,
+        )
         .await?
         .address_utxos)
 }
@@ -324,7 +344,10 @@ where
     });
 
     client
-        .get_taddress_txids(TransparentAddressBlockFilter { address, range })
+        .get_taddress_txids(
+            TransparentAddressBlockFilter { address, range },
+            HEAVY_UNARY_TIMEOUT,
+        )
         .await
 }
 
@@ -337,5 +360,5 @@ pub(crate) async fn get_mempool_stream<C>(
 where
     C: Clone + Indexer + TransparentIndexer,
 {
-    client.get_mempool_stream().await
+    client.get_mempool_stream(HEAVY_UNARY_TIMEOUT).await
 }
