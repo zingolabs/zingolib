@@ -11,7 +11,6 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_client_backend::{data_api::chain::ChainState, proto::service::TreeState};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
@@ -19,10 +18,15 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_client_backend::proto::service::SubtreeRoot;
 use zingo_netutils::{
     Indexer, TransparentIndexer,
-    lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
+    lightwallet_protocol::{
+        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
+    },
 };
 
-use crate::error::{MempoolError, ServerError};
+use crate::{
+    error::{MempoolError, ServerError},
+    witness::Frontiers,
+};
 
 pub(crate) mod fetch;
 
@@ -261,7 +265,7 @@ pub(crate) async fn get_subtree_roots(
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<ChainState, ServerError> {
+) -> Result<Frontiers, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
@@ -269,9 +273,7 @@ pub(crate) async fn get_frontiers(
 
     let tree_state = recv_fetch_reply(reply_receiver, "TreeState").await?;
 
-    tree_state
-        .to_chain_state()
-        .map_err(ServerError::InvalidFrontier)
+    tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
 
 /// Gets a full transaction for a specified txid.
