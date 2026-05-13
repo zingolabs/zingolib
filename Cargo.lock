@@ -9281,8 +9281,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "4.0.0"
-source = "git+https://github.com/Oscar-Pepper/zingo-common?branch=add_send_to_trait_method_returns#8d9aee789d3c4e745f07ee2c7d14d53bf72dc86a"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0430130024f57f5f5a8f66a74af7f0f039473d34e6d32948861ac01457138bec"
 dependencies = [
  "http",
  "lightwallet-protocol",
