@@ -11,8 +11,8 @@ use zingo_netutils::lightwallet_protocol::{
 ///
 /// # Panics
 ///
-/// This function will panic if [`field@Self::header`] is not set and
-/// [`field@Self::hash`] is not exactly 32 bytes.
+/// This function will panic if `compact_block.header` is not set and
+/// `compact_block.hash` is not exactly 32 bytes.
 pub(crate) fn get_compact_block_hash(compact_block: &CompactBlock) -> BlockHash {
     if let Some(header) = get_compact_block_header(compact_block) {
         header.hash()
@@ -25,8 +25,8 @@ pub(crate) fn get_compact_block_hash(compact_block: &CompactBlock) -> BlockHash 
 ///
 /// # Panics
 ///
-/// This function will panic if [`field@Self::header`] is not set and
-/// [`field@Self::prev_hash`] is not exactly 32 bytes.
+/// This function will panic if `compact_block.header` is not set and
+/// `compact_block.hash` is not exactly 32 bytes.
 pub(crate) fn get_compact_block_prev_hash(compact_block: &CompactBlock) -> BlockHash {
     if let Some(header) = get_compact_block_header(compact_block) {
         header.prev_block
@@ -39,7 +39,7 @@ pub(crate) fn get_compact_block_prev_hash(compact_block: &CompactBlock) -> Block
 ///
 /// # Panics
 ///
-/// This function will panic if [`field@Self::height`] is not representable within a
+/// This function will panic if `compact_block.height` is not representable within a
 /// `u32`.
 pub(crate) fn get_compact_block_height(compact_block: &CompactBlock) -> BlockHeight {
     compact_block.height.try_into().unwrap()
@@ -47,7 +47,7 @@ pub(crate) fn get_compact_block_height(compact_block: &CompactBlock) -> BlockHei
 
 /// Returns the [`BlockHeader`] for this block if present.
 ///
-/// A convenience method that parses [`field@Self::header`] if present.
+/// A convenience method that parses `compact_block.height` if present.
 pub(crate) fn get_compact_block_header(compact_block: &CompactBlock) -> Option<BlockHeader> {
     if compact_block.header.is_empty() {
         None

@@ -170,7 +170,7 @@ impl Frontiers {
         }
     }
 
-    /// Construct a new [`ChainState`] from its constituent parts.
+    /// Construct a new [`Frontiers`] from its constituent parts.
     pub(crate) fn new(
         block_height: BlockHeight,
         block_hash: BlockHash,
