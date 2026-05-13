@@ -624,6 +624,12 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
+            truncate_scan_ranges(
+                chain_height,
+                wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?,
+            );
             return Ok(chain_height);
         }
         // The last wallet reported height is equal or below the proxy height.
@@ -1362,7 +1368,6 @@ where
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
         std::cmp::Ordering::Less => consensus::H0,
     };
-    truncate_scan_ranges(checked_truncate_height, sync_state);
 
     if checked_truncate_height > highest_scanned_height {
         return Ok(());
@@ -1413,6 +1418,12 @@ where
         })
         .collect::<Vec<_>>();
     truncate_wallet_data(wallet, consensus::H0)?;
+    truncate_scan_ranges(
+        consensus::H0,
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+    );
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
