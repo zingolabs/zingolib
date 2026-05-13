@@ -45,9 +45,11 @@ use crate::witness::LocatedTreeData;
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
 
+#[cfg(not(feature = "darkside_test"))]
+pub(crate) mod transparent;
+
 pub(crate) mod spend;
 pub(crate) mod state;
-pub(crate) mod transparent;
 
 const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
