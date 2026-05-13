@@ -25,7 +25,6 @@ use zingolib::{
 };
 use zingolib_testutils::scenarios::ClientBuilder;
 
-#[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
     let lightwalletd = lightwalletd().await.unwrap();
