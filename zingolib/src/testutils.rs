@@ -34,8 +34,6 @@ pub mod paths;
 pub use portpicker;
 pub use tempfile;
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Default wallet settings for testing
 pub fn default_test_wallet_settings() -> WalletSettings {
     WalletSettings {

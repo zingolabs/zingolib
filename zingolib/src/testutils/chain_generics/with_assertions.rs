@@ -12,8 +12,8 @@ use zcash_protocol::value::Zatoshis;
 use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use crate::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use crate::lightclient::LightClient;
-use crate::testutils::REQUEST_TIMEOUT;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
@@ -129,7 +129,7 @@ where
         .unwrap();
     let server_height_at_send = BlockHeight::from(
         indexer
-            .get_latest_block(REQUEST_TIMEOUT)
+            .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
             .await
             .unwrap()
             .height as u32,

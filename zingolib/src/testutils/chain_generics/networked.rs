@@ -8,7 +8,8 @@ use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
 use crate::{
-    config::DEFAULT_INDEXER_URI_TESTNET, lightclient::LightClient, testutils::REQUEST_TIMEOUT,
+    config::DEFAULT_INDEXER_URI_TESTNET,
+    lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient},
 };
 
 /// this is essentially a placeholder.
@@ -24,7 +25,7 @@ impl NetworkedTestEnvironment {
             .await
             .unwrap();
         let latest = indexer
-            .get_latest_block(REQUEST_TIMEOUT)
+            .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
             .await
             .unwrap()
             .height as u32;
