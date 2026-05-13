@@ -80,16 +80,16 @@ impl SyncWallet for LightWallet {
     // from a diversifier index of 0.
     // For example, if the sapling address is associated with the 10th valid diversifier, this address will be added
     // to the unified address of index 9.
-    // Unified address discovery for sapling addresses is limited to a maximum sapling diversifier index of 2^16 as
-    // very high indexes become computationally expensive.
+    // Unified address discovery for sapling addresses is limited to the 16-bit index space (0..=65535)
+    // as very high indexes become computationally expensive.
     fn add_sapling_address(
         &mut self,
         account_id: zip32::AccountId,
         address: sapling_crypto::PaymentAddress,
         diversifier_index: DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        const MAX_SAPLING_DIVERSIFIER_INDEX: u128 = 1 << 16;
-        if u128::from(diversifier_index) >= MAX_SAPLING_DIVERSIFIER_INDEX {
+        const SAPLING_DIVERSIFIER_INDEX_LIMIT: u128 = 1 << 16;
+        if u128::from(diversifier_index) >= SAPLING_DIVERSIFIER_INDEX_LIMIT {
             return Ok(());
         }
 
@@ -228,8 +228,9 @@ mod tests {
         .unwrap()
     }
 
-    /// Index 65 536 (`1 << 16`) must early-return `Ok(())` without inserting an address,
-    /// confirming the bound is a bit-shift and not the XOR expression `2 ^ 16 = 18` that caused the original bug.
+    /// Index 65 536 (`1 << 16`, the exclusive upper bound of the 16-bit index space) must
+    /// early-return `Ok(())` without inserting an address, confirming the limit is a bit-shift
+    /// and not the XOR expression `2 ^ 16 = 18` that caused the original bug.
     #[test]
     fn add_sapling_address_at_limit_early_returns() {
         let mut wallet = test_wallet();
