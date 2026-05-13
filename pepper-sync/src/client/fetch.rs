@@ -21,7 +21,7 @@ const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
 const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
+use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.

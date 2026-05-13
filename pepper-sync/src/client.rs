@@ -14,8 +14,6 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
-#[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::SubtreeRoot;
 use zingo_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
@@ -27,6 +25,9 @@ use crate::{
     error::{MempoolError, ServerError},
     witness::Frontiers,
 };
+
+#[cfg(not(feature = "darkside_test"))]
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 

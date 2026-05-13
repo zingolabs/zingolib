@@ -16,7 +16,7 @@ use zingo_netutils::lightwallet_protocol::TreeState;
 #[cfg(not(feature = "darkside_test"))]
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
-    zcash_client_backend::proto::service::SubtreeRoot,
+    zingo_netutils::lightwallet_protocol::SubtreeRoot,
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
