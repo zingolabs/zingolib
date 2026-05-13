@@ -371,6 +371,7 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
+    #[cfg(not(feature = "darkside_test"))]
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         &mut *wallet_guard,

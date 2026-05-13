@@ -162,6 +162,12 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
     client.clear_address_utxo(Empty {}).await.unwrap();
 
+    // reset with parameters
+    connector
+        .reset(202, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
     let dataset_path = format!(
         "{}/{}",
         get_cargo_manifest_dir().to_string_lossy(),
@@ -175,6 +181,17 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
                 .collect(),
         )
         .await?;
+
+    for i in 201..207 {
+        let tree_state_path = format!(
+            "{}/{}/{}.json",
+            get_cargo_manifest_dir().to_string_lossy(),
+            TREE_STATE_FOLDER_PATH,
+            i
+        );
+        let tree_state = TreeState::from_file(tree_state_path).unwrap();
+        connector.add_tree_state(tree_state).await.unwrap();
+    }
 
     connector.apply_staged(206).await?;
 
