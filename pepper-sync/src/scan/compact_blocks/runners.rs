@@ -7,22 +7,26 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::{CompactAction, OrchardDomain};
-use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
 };
-use zcash_protocol::{ShieldedProtocol, consensus};
+use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
+use zcash_protocol::ShieldedProtocol;
 use zingo_netutils::lightwallet_protocol::CompactBlock;
 
+use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
+use crate::utils::get_compact_action;
 use crate::utils::get_compact_block_hash;
 use crate::utils::get_compact_block_height;
+use crate::utils::get_compact_output_description;
 use crate::utils::get_compact_tx_txid;
 use crate::wallet::OutputId;
 
@@ -88,7 +92,7 @@ where
         &mut self,
         params: &P,
         block: CompactBlock,
-    ) -> Result<(), zcash_client_backend::scanning::ScanError>
+    ) -> Result<(), EncodingInvalid>
     where
         P: consensus::Parameters + Send + 'static,
     {
@@ -107,20 +111,12 @@ where
                     .into_iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        // TODO: implement direct conversion from lightwallet_protocol type
-                        let output =
-                            zcash_client_backend::proto::compact_formats::CompactSaplingOutput {
-                                cmu: output.cmu,
-                                ephemeral_key: output.ephemeral_key,
-                                ciphertext: output.ciphertext,
-                            };
-                        CompactOutputDescription::try_from(output).map_err(|_| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Sapling,
-                                index: i,
-                            }
+                        get_compact_output_description(&output).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedProtocol::Sapling,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -134,21 +130,12 @@ where
                     .into_iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        // TODO: implement direct conversion from lightwallet_protocol type
-                        let action =
-                            zcash_client_backend::proto::compact_formats::CompactOrchardAction {
-                                ephemeral_key: action.ephemeral_key,
-                                ciphertext: action.ciphertext,
-                                nullifier: action.nullifier,
-                                cmx: action.cmx,
-                            };
-                        CompactAction::try_from(&action).map_err(|_| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Orchard,
-                                index: i,
-                            }
+                        get_compact_action(&action).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedProtocol::Orchard,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,

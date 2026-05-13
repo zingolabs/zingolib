@@ -194,9 +194,7 @@ where
 {
     let mut runners = BatchRunners::<(), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
     for block in compact_blocks {
-        runners
-            .add_block(consensus_parameters, block.clone())
-            .map_err(ScanError::ZcbScanError)?;
+        runners.add_block(consensus_parameters, block.clone())?;
     }
     runners.flush();
 

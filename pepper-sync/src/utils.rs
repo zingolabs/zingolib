@@ -7,6 +7,8 @@ use zingo_netutils::lightwallet_protocol::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
 };
 
+use crate::error::CompactFormatError;
+
 /// Returns the [`BlockHash`] for this block.
 ///
 /// # Panics
@@ -114,24 +116,4 @@ pub(crate) fn get_compact_action(
             .try_into()
             .map_err(CompactFormatError::InvalidLength)?,
     ))
-}
-
-/// An error indicating that a field of a compact format structure could not be parsed.
-#[derive(Clone, Debug)]
-pub enum CompactFormatError {
-    /// A byte slice had an invalid length for the expected field.
-    InvalidLength(std::array::TryFromSliceError),
-    /// A field value did not represent a valid protocol element.
-    InvalidValue,
-}
-
-impl std::fmt::Display for CompactFormatError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompactFormatError::InvalidLength(e) => write!(f, "Invalid compact format field: {e}"),
-            CompactFormatError::InvalidValue => {
-                write!(f, "Compact format field is not a valid protocol element")
-            }
-        }
-    }
 }
