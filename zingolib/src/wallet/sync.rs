@@ -88,7 +88,8 @@ impl SyncWallet for LightWallet {
         address: sapling_crypto::PaymentAddress,
         diversifier_index: DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        if u128::from(diversifier_index) > 2 ^ 16 {
+        const MAX_SAPLING_DIVERSIFIER_INDEX: u128 = 1 << 16;
+        if u128::from(diversifier_index) >= MAX_SAPLING_DIVERSIFIER_INDEX {
             return Ok(());
         }
 
@@ -199,5 +200,73 @@ impl SyncShardTrees for LightWallet {
 
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
         Ok(&mut self.shard_trees)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::{ChainType, WalletConfig},
+        mocks::default_zaddr,
+        testutils::default_test_wallet_settings,
+        wallet::LightWallet,
+    };
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zip32::DiversifierIndex;
+
+    fn test_wallet() -> LightWallet {
+        LightWallet::new(
+            ChainType::Mainnet,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419_200,
+                wallet_settings: default_test_wallet_settings(),
+            },
+        )
+        .unwrap()
+    }
+
+    /// Index 65 536 (`1 << 16`) must early-return `Ok(())` without inserting an address,
+    /// confirming the bound is a bit-shift and not the XOR expression `2 ^ 16 = 18` that caused the original bug.
+    #[test]
+    fn add_sapling_address_at_limit_early_returns() {
+        let mut wallet = test_wallet();
+        let (_, _, addr) = default_zaddr();
+        let missing_account = zip32::AccountId::try_from(999u32).unwrap();
+
+        let at_limit = DiversifierIndex::from(65536u32);
+        let before = wallet.unified_addresses().len();
+        let result = SyncWallet::add_sapling_address(&mut wallet, missing_account, addr, at_limit);
+
+        assert!(result.is_ok());
+        assert_eq!(
+            wallet.unified_addresses().len(),
+            before,
+            "early return must not insert an address"
+        );
+    }
+
+    /// Indices the old buggy guard (`2 ^ 16 = 18`, i.e. `> 18`) silently dropped must now
+    /// pass through and attempt real work, witnessed here by `Err(NoAccountKeys)`.
+    #[test]
+    fn add_sapling_address_below_limit_proceeds_past_guard() {
+        let mut wallet = test_wallet();
+        let (_, _, addr) = default_zaddr();
+        let missing_account = zip32::AccountId::try_from(999u32).unwrap();
+
+        for idx in [19u32, 100, 65535] {
+            let result = SyncWallet::add_sapling_address(
+                &mut wallet,
+                missing_account,
+                addr.clone(),
+                DiversifierIndex::from(idx),
+            );
+            assert!(
+                result.is_err(),
+                "index {idx} should proceed past the bound check but returned Ok(())"
+            );
+        }
     }
 }
