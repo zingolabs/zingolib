@@ -7,8 +7,7 @@
 //! The binary entry point (`main.rs`) is intentionally thin: it handles
 //! process-level concerns (tracing, crypto-provider installation, error
 //! reporting) and delegates to [`run_cli`], which builds a
-//! [`LightClient`](zingolib::lightclient::LightClient) and runs the
-//! command loop.
+//! [`LightClient`] and runs the command loop.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
