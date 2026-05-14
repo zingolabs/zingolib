@@ -53,14 +53,14 @@ jobs:
             --archive-file nextest-archive-darkside.tar.zst
 
       - name: Upload normal archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nextest-archive-normal
           path: nextest-archive-normal.tar.zst
           overwrite: true
 
       - name: Upload darkside archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nextest-archive-darkside
           path: nextest-archive-darkside.tar.zst
@@ -91,7 +91,7 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
 
       - name: Download normal archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nextest-archive-normal
 
@@ -124,7 +124,7 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
 
       - name: Download darkside archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nextest-archive-darkside
 
