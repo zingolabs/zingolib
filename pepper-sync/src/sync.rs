@@ -560,6 +560,17 @@ where
         .set_save_flag()
         .map_err(SyncError::WalletError)?;
 
+    dbg!("BLOCK DUMP");
+    wallet_guard
+        .get_wallet_blocks_mut()
+        .unwrap()
+        .iter()
+        .for_each(|(_height, block)| {
+            dbg!(block.block_height);
+            dbg!(block.block_hash);
+            dbg!(block.txids());
+        });
+
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
@@ -1358,6 +1369,7 @@ fn truncate_wallet_data<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
+    dbg!(truncate_height);
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
