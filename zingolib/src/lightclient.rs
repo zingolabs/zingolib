@@ -8,6 +8,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
     },
+    time::Duration,
 };
 
 use json::JsonValue;
@@ -45,6 +46,8 @@ pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
+
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
 /// the read/write lock.
@@ -107,7 +110,7 @@ impl LightClient {
     /// [`crate::config::WalletConfig`] is of `Read` variant.
     /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
-    pub fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
+    pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
         // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -144,7 +147,7 @@ impl LightClient {
         // preventing rustls from auto-selecting a provider.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
 
         Ok(LightClient {
             indexer,
@@ -207,15 +210,14 @@ impl LightClient {
         self.indexer.uri()
     }
 
-    /// Set indexer uri.
+    /// Set indexer URI.
     ///
-    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
-    /// `zingo-netutils` instead of `http::Uri`.
-    pub fn set_indexer_uri(
+    /// Replaces the current gRPC client(s) with new ones that point at the provided URI.
+    pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
-        self.indexer = zingo_netutils::GrpcIndexer::new(server)?;
+        self.indexer = zingo_netutils::GrpcIndexer::new(server).await?;
         Ok(())
     }
 
@@ -243,8 +245,8 @@ impl LightClient {
 
     /// Returns server information.
     // TODO: return concrete struct with from json impl
-    pub async fn do_info(&self) -> String {
-        match self.indexer.get_info().await {
+    pub async fn do_info(&mut self) -> String {
+        match self.indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
@@ -418,12 +420,12 @@ mod tests {
             })
             .build();
 
-        let mut lc = LightClient::new(config.clone(), false).unwrap();
+        let mut lc = LightClient::new(config.clone(), false).await.unwrap();
 
         lc.save_task().await;
         lc.wait_for_save().await;
 
-        let lc_file_exists_error = LightClient::new(config, false).unwrap_err();
+        let lc_file_exists_error = LightClient::new(config, false).await.unwrap_err();
 
         assert!(matches!(
             lc_file_exists_error,

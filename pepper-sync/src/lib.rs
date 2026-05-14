@@ -110,6 +110,7 @@ pub mod error;
 pub mod keys;
 pub(crate) mod scan;
 pub mod sync;
+pub(crate) mod utils;
 pub mod wallet;
 pub(crate) mod witness;
 

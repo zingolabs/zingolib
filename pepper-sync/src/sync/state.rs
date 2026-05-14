@@ -31,7 +31,7 @@ use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
 const NARROW_SCAN_AREA: u32 = 10_000;
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::SubtreeRoot;
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {

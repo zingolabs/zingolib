@@ -11,23 +11,23 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_client_backend::{
-    data_api::chain::ChainState,
-    proto::{
-        compact_formats::CompactBlock,
-        service::{
-            BlockId, GetAddressUtxosReply, RawTransaction, TreeState,
-            compact_tx_streamer_client::CompactTxStreamerClient,
-        },
-    },
-};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
-#[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::SubtreeRoot;
+use zingo_netutils::{
+    Indexer, TransparentIndexer,
+    lightwallet_protocol::{
+        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
+    },
+};
 
-use crate::error::{MempoolError, ServerError};
+use crate::{
+    error::{MempoolError, ServerError},
+    witness::Frontiers,
+};
+
+#[cfg(not(feature = "darkside_test"))]
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 
@@ -266,7 +266,7 @@ pub(crate) async fn get_subtree_roots(
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<ChainState, ServerError> {
+) -> Result<Frontiers, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
@@ -274,9 +274,7 @@ pub(crate) async fn get_frontiers(
 
     let tree_state = recv_fetch_reply(reply_receiver, "TreeState").await?;
 
-    tree_state
-        .to_chain_state()
-        .map_err(ServerError::InvalidFrontier)
+    tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
 
 /// Gets a full transaction for a specified txid.
@@ -401,10 +399,13 @@ pub(crate) async fn get_transparent_address_transactions(
 /// Gets stream of mempool transactions until the next block is mined.
 ///
 /// Checks at intervals if `shutdown_mempool` is set to prevent hanging on awating mempool monitor handle.
-pub(crate) async fn get_mempool_transaction_stream(
-    client: &mut CompactTxStreamerClient<tonic::transport::Channel>,
+pub(crate) async fn get_mempool_transaction_stream<C>(
+    client: &mut C,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, MempoolError> {
+) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
+where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+{
     tracing::debug!("Fetching mempool stream");
     let mut interval = tokio::time::interval(Duration::from_secs(3));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

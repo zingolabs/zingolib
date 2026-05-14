@@ -10,16 +10,17 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::info;
 
 use bip0039::Mnemonic;
+use zip32::AccountId;
 
-use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
+
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
-use zip32::AccountId;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
 use super::{LightWallet, error::KeyError};

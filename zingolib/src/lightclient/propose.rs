@@ -178,7 +178,7 @@ mod shielding {
         wallet::error::ProposeShieldError,
     };
 
-    fn create_basic_client() -> LightClient {
+    async fn create_basic_client() -> LightClient {
         let config = ClientConfig::builder()
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
@@ -187,12 +187,12 @@ mod shielding {
                 wallet_settings: default_test_wallet_settings(),
             })
             .build();
-        LightClient::new(config, true).unwrap()
+        LightClient::new(config, true).await.unwrap()
     }
 
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
-        let basic_client = create_basic_client();
+        let basic_client = create_basic_client().await;
         let propose_shield_result = basic_client
             .wallet()
             .write()
@@ -207,7 +207,7 @@ mod shielding {
     }
     #[tokio::test]
     async fn get_transparent_addresses() {
-        let basic_client = create_basic_client();
+        let basic_client = create_basic_client().await;
         let network = basic_client.chain_type();
 
         // TODO: store t addrs as concrete types instead of encoded

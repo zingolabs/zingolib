@@ -4,22 +4,26 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
+use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::Node;
 use tokio::sync::mpsc;
-use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
-};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::{
+    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
+};
 use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    utils::{
+        get_compact_action, get_compact_block_hash, get_compact_block_height,
+        get_compact_block_prev_hash, get_compact_output_description, get_compact_tx_txid,
+    },
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
@@ -73,16 +77,18 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height = block.height();
+        let block_height = get_compact_block_height(block);
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
-            let incoming_sapling_outputs = runners
-                .sapling
-                .collect_results(block.hash(), transaction.txid());
-            let incoming_orchard_outputs = runners
-                .orchard
-                .collect_results(block.hash(), transaction.txid());
+            let incoming_sapling_outputs = runners.sapling.collect_results(
+                get_compact_block_hash(block),
+                get_compact_tx_txid(transaction),
+            );
+            let incoming_orchard_outputs = runners.orchard.collect_results(
+                get_compact_block_hash(block),
+                get_compact_tx_txid(transaction),
+            );
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
@@ -102,7 +108,11 @@ where
                 });
             }
 
-            collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+            collect_nullifiers(
+                &mut nullifiers,
+                get_compact_block_height(block),
+                transaction,
+            )?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -146,15 +156,11 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: block.height(),
-            block_hash: block.hash(),
-            prev_hash: block.prev_hash(),
+            block_height: get_compact_block_height(block),
+            block_hash: get_compact_block_hash(block),
+            prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
-                .collect(),
+            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
@@ -188,9 +194,7 @@ where
 {
     let mut runners = BatchRunners::<(), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
     for block in compact_blocks {
-        runners
-            .add_block(consensus_parameters, block.clone())
-            .map_err(ScanError::ZcbScanError)?;
+        runners.add_block(consensus_parameters, block.clone())?;
     }
     runners.flush();
 
@@ -216,26 +220,26 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && block.height() != prev_height + 1
+            && get_compact_block_height(block) != prev_height + 1
         {
             return Err(ContinuityError::HeightDiscontinuity {
-                height: block.height(),
+                height: get_compact_block_height(block),
                 previous_block_height: prev_height,
             });
         }
 
         if let Some(prev_hash) = prev_hash
-            && block.prev_hash() != prev_hash
+            && get_compact_block_prev_hash(block) != prev_hash
         {
             return Err(ContinuityError::HashDiscontinuity {
-                height: block.height(),
-                prev_hash: block.prev_hash(),
+                height: get_compact_block_height(block),
+                prev_hash: get_compact_block_prev_hash(block),
                 previous_block_hash: prev_hash,
             });
         }
 
-        prev_height = Some(block.height());
-        prev_hash = Some(block.hash());
+        prev_height = Some(get_compact_block_height(block));
+        prev_hash = Some(get_compact_block_hash(block));
     }
 
     if let Some(end_seam_block) = end_seam_block {
@@ -359,7 +363,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactOutputDescription::try_from(output)
+                let note_commitment = get_compact_output_description(output)
                     .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
@@ -396,7 +400,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactAction::try_from(output)
+                let note_commitment = get_compact_action(output)
                     .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
@@ -431,11 +435,13 @@ pub(crate) async fn calculate_block_tree_bounds(
                 .activation_height(consensus::NetworkUpgrade::Sapling)
                 .expect("should have some sapling activation height");
 
-            match compact_block.height().cmp(&sapling_activation_height) {
+            match get_compact_block_height(compact_block).cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
-                    let frontiers =
-                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
-                            .await?;
+                    let frontiers = client::get_frontiers(
+                        fetch_request_sender.clone(),
+                        get_compact_block_height(compact_block),
+                    )
+                    .await?;
                     (
                         frontiers
                             .final_sapling_tree()

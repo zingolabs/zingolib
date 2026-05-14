@@ -43,7 +43,7 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
         .arg("--server")
-        .arg("https://127.0.0.1:1")
+        .arg("https://zec.rocks:443")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")

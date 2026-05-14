@@ -9,11 +9,12 @@ use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
 use zingo_netutils::Indexer as _;
+use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
-use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
@@ -162,7 +163,14 @@ impl LightClient {
             let txid_from_server = loop {
                 let transmission_result = self
                     .indexer
-                    .send_transaction(transaction_bytes.clone().into_boxed_slice())
+                    .clone()
+                    .send_transaction(
+                        RawTransaction {
+                            data: transaction_bytes.clone(),
+                            height: height.into(),
+                        },
+                        DEFAULT_REQUEST_TIMEOUT,
+                    )
                     .await
                     .map_err(|e| {
                         SendError::TransmissionError(TransmissionError::TransmissionFailed(
@@ -238,7 +246,7 @@ mod test {
         wallet::disk::testing::examples,
     };
 
-    fn create_basic_client() -> LightClient {
+    async fn create_basic_client() -> LightClient {
         let config = ClientConfig::builder()
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
@@ -247,12 +255,12 @@ mod test {
                 wallet_settings: default_test_wallet_settings(),
             })
             .build();
-        LightClient::new(config, true).unwrap()
+        LightClient::new(config, true).await.unwrap()
     }
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
-        let mut lc = create_basic_client();
+        let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error

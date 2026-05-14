@@ -43,6 +43,7 @@ pub(crate) mod conduct_chain {
     use zingo_netutils::Indexer as _;
 
     use zingolib::config::WalletConfig;
+    use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::testutils::default_test_wallet_settings;
@@ -85,7 +86,7 @@ pub(crate) mod conduct_chain {
                 self.configured_activation_heights,
                 wallet_config,
             );
-            let mut lightclient = LightClient::new(config, true).unwrap();
+            let mut lightclient = LightClient::new(config, true).await.unwrap();
 
             lightclient
                 .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
@@ -108,8 +109,9 @@ pub(crate) mod conduct_chain {
 
         async fn increase_chain_height(&mut self) {
             let height_before = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
+                .await
                 .unwrap()
-                .get_latest_block()
+                .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
                 .await
                 .unwrap()
                 .height;
@@ -128,11 +130,15 @@ pub(crate) mod conduct_chain {
 
             // trees
             let trees = zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
+                .await
                 .unwrap()
-                .get_tree_state(zingo_netutils::lightwallet_protocol::BlockId {
-                    height: height_before,
-                    hash: vec![],
-                })
+                .get_tree_state(
+                    zingo_netutils::lightwallet_protocol::BlockId {
+                        height: height_before,
+                        hash: vec![],
+                    },
+                    DEFAULT_REQUEST_TIMEOUT,
+                )
                 .await
                 .unwrap();
             let mut sapling_tree: sapling_crypto::CommitmentTree =
