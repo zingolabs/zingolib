@@ -88,7 +88,7 @@ impl SyncWallet for LightWallet {
         address: sapling_crypto::PaymentAddress,
         diversifier_index: DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        const SAPLING_DIVERSIFIER_INDEX_LIMIT: u128 = 1 << 16;
+        const SAPLING_DIVERSIFIER_INDEX_LIMIT: u128 = 2u128.pow(16);
         if u128::from(diversifier_index) >= SAPLING_DIVERSIFIER_INDEX_LIMIT {
             return Ok(());
         }
@@ -228,8 +228,8 @@ mod tests {
         .unwrap()
     }
 
-    /// Index 65 536 (`1 << 16`, the exclusive upper bound of the 16-bit index space) must
-    /// early-return `Ok(())` without inserting an address, confirming the limit is a bit-shift
+    /// Index 65 536 (`2u128.pow(16)`, the exclusive upper bound of the 16-bit index space) must
+    /// early-return `Ok(())` without inserting an address, confirming the limit uses `.pow()`
     /// and not the XOR expression `2 ^ 16 = 18` that caused the original bug.
     #[test]
     fn add_sapling_address_at_limit_early_returns() {
