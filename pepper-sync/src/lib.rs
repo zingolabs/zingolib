@@ -127,12 +127,10 @@ mod mocks;
 use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::wallet::NoteInterface;
-use crate::wallet::OrchardNote;
-use crate::wallet::OrchardShardStore;
-use crate::wallet::SaplingNote;
-use crate::wallet::SaplingShardStore;
-use crate::wallet::WalletTransaction;
+use crate::wallet::{
+    NoteInterface, OrchardNote, OrchardShardStore, SaplingNote, SaplingShardStore,
+    WalletTransaction,
+};
 
 pub(crate) trait SyncDomain {
     const SHIELDED_PROTOCOL: ShieldedProtocol;
