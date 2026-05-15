@@ -240,7 +240,7 @@ mod tests {
     fn add_sapling_address_at_limit_early_returns() {
         let mut wallet = test_wallet();
         let (_, _, addr) = default_zaddr();
-        let missing_account = zip32::AccountId::try_from(0).unwrap();
+        let account_id = zip32::AccountId::try_from(0).unwrap();
 
         let at_limit = DiversifierIndex::from(65536u32);
         let before = wallet.unified_addresses().len();
