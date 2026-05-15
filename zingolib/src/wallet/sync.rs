@@ -235,9 +235,7 @@ mod tests {
         .unwrap()
     }
 
-    /// Index 65 536 (`2u128.pow(16)`, the exclusive upper bound of the 16-bit index space) must
-    /// early-return `Ok(())` without inserting an address, confirming the limit uses `.pow()`
-    /// and not the XOR expression `2 ^ 16 = 18` that caused the original bug.
+    /// Verifies that diversifier indices equal to or above the limit of 65536 return early and does not insert a new address into the wallet.
     #[test]
     fn add_sapling_address_at_limit_early_returns() {
         let mut wallet = test_wallet();
