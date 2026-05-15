@@ -259,7 +259,7 @@ mod tests {
     fn add_sapling_address_below_limit_proceeds_past_guard() {
         let mut wallet = test_wallet();
         let (_, _, addr) = default_zaddr();
-        let missing_account = zip32::AccountId::try_from(0).unwrap();
+        let account_id = zip32::AccountId::try_from(0).unwrap();
 
         let result = SyncWallet::add_sapling_address(
             &mut wallet,
