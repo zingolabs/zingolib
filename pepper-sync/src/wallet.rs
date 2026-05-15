@@ -773,7 +773,7 @@ pub trait NoteInterface: OutputInterface {
     /// Decrypted note type.
     type ZcashNote;
     /// Nullifier type.
-    type Nullifier: Copy;
+    type Nullifier: Copy + Clone + PartialEq + Eq + PartialOrd + Ord;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;
