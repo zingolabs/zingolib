@@ -233,8 +233,10 @@ pub(super) fn detect_shielded_spends(
     (sapling_spend_scan_targets, orchard_spend_scan_targets)
 }
 
-/// Update all notes where the derived nullifier matches the nullifier in the spend scan target map.
-/// The items in the spend scan target map are taken directly from the nullifier map during spend detection.
+/// Update the `spending_transaction` field of all notes where the derived nullifier matches the nullifier in the spend
+/// scan target map. The items in the spend scan target map are taken directly from the nullifier map during spend detection.
+/// Also removes retention marks from the shard tree when a note is spent as it no longer needs the wallet to be able
+/// to construct a witness for it's note commitment.
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
     sapling_spend_scan_targets: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
@@ -271,7 +273,7 @@ where
     Ok(())
 }
 
-pub(super) fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     shard_tree: &mut ShardTree<D::ShardStore, DEPTH, SHARD_HEIGHT>,
     spend_scan_targets: BTreeMap<<D::Note as NoteInterface>::Nullifier, ScanTarget>,
