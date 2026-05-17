@@ -214,6 +214,7 @@ mod tests {
         wallet::{LightWallet, WalletBase, WalletSettings},
     };
     use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+    use sapling_crypto::zip32::DiversifiableFullViewingKey;
     use zip32::DiversifierIndex;
 
     fn test_wallet() -> LightWallet {
@@ -235,7 +236,8 @@ mod tests {
         .unwrap()
     }
 
-    /// Verifies that diversifier indices equal to or above the limit of 65536 return early and does not insert a new address into the wallet.
+    /// Index 65 536 (`2u128.pow(16)`, the exclusive upper bound of the 16-bit index space) must
+    /// early-return `Ok(())` without inserting an address.
     #[test]
     fn add_sapling_address_at_limit_early_returns() {
         let mut wallet = test_wallet();
@@ -244,7 +246,7 @@ mod tests {
 
         let at_limit = DiversifierIndex::from(65536u32);
         let before = wallet.unified_addresses().len();
-        let result = SyncWallet::add_sapling_address(&mut wallet, missing_account, addr, at_limit);
+        let result = SyncWallet::add_sapling_address(&mut wallet, account_id, addr, at_limit);
 
         assert!(result.is_ok());
         assert_eq!(
@@ -254,19 +256,33 @@ mod tests {
         );
     }
 
-    /// Verifies that diversifier indices below the limit of 65536 correctly insert a new address into the wallet.
+    /// An index below the 16-bit limit must pass the guard and insert the sapling address into
+    /// `unified_addresses`, not silently discard it.
     #[test]
     fn add_sapling_address_below_limit_proceeds_past_guard() {
         let mut wallet = test_wallet();
         let (_, _, addr) = default_zaddr();
         let account_id = zip32::AccountId::try_from(0).unwrap();
 
+        let fvk = DiversifiableFullViewingKey::try_from(
+            wallet.unified_key_store.get(&account_id).unwrap(),
+        )
+        .unwrap();
+        let (first_valid_diversifier, _) = fvk.find_address(DiversifierIndex::new()).unwrap();
+
         let result = SyncWallet::add_sapling_address(
             &mut wallet,
-            missing_account,
+            account_id,
             addr.clone(),
-            DiversifierIndex::from(1u32),
+            first_valid_diversifier,
         );
-        assert!(result.is_ok(),);
+        assert!(result.is_ok());
+        assert!(
+            wallet
+                .unified_addresses()
+                .values()
+                .any(|ua| ua.sapling() == Some(&addr)),
+            "sapling address must appear in unified_addresses after proceeding past the guard"
+        );
     }
 }
