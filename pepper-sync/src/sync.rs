@@ -1723,8 +1723,16 @@ where
     let shard_trees = wallet
         .get_shard_trees_mut()
         .map_err(SyncError::WalletError)?;
-    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling)?;
-    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard)?;
+    witness::add_subtree_roots(
+        sapling_start_index,
+        sapling_subtree_roots,
+        &mut shard_trees.sapling,
+    )?;
+    witness::add_subtree_roots(
+        orchard_start_index,
+        orchard_subtree_roots,
+        &mut shard_trees.orchard,
+    )?;
 
     Ok(())
 }
