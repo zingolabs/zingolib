@@ -55,7 +55,7 @@ pub struct LightClient {
     /// Wallet data
     pub wallet: Arc<RwLock<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
-    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
+    pub sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
 }

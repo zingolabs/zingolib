@@ -3325,6 +3325,7 @@ version = "0.2.0"
 dependencies = [
  "bip0039 0.13.4",
  "http",
+ "incrementalmerkletree",
  "itertools 0.14.0",
  "json",
  "pepper-sync",
@@ -3333,6 +3334,7 @@ dependencies = [
  "shardtree",
  "test-log",
  "tokio",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "zcash_address",
@@ -3342,6 +3344,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zebra-chain",
+ "zingo-netutils",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release)",

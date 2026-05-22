@@ -1,12 +1,15 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use bip0039::Mnemonic;
+use incrementalmerkletree::Position;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::sync::ScanPriority;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::data::PollReport;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
@@ -89,13 +92,11 @@ async fn sync_mainnet_test() {
     // dbg!(&wallet.sync_state);
 }
 
-#[ignore = "mainnet test for large chain"]
 #[tokio::test]
-async fn sync_status() {
+async fn add_subtree_roots() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Ring to work as a default");
-    tracing_subscriber::fmt().init();
 
     let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
     let temp_dir = TempDir::new().unwrap();
@@ -106,7 +107,7 @@ async fn sync_status() {
         zingolib::config::ChainType::Mainnet,
         WalletSettings {
             sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                transparent_address_discovery: TransparentAddressDiscovery::disabled(),
                 performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
@@ -122,7 +123,7 @@ async fn sync_status() {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
-            2_496_152.into(),
+            2_000_000.into(),
             config.wallet_settings.clone(),
         )
         .unwrap(),
@@ -131,7 +132,207 @@ async fn sync_status() {
     )
     .unwrap();
 
-    lightclient.sync_and_await().await.unwrap();
+    let mut grpc_client = zingo_netutils::get_client(lightclient.config.get_lightwalletd_uri())
+        .await
+        .unwrap();
+
+    let request = tonic::Request::new(zcash_client_backend::proto::service::GetSubtreeRootsArg {
+        start_index: 0,
+        shielded_protocol: 0,
+        max_entries: 0,
+    });
+    let mut sapling_subtree_roots_server = Vec::new();
+    let mut sapling_subtree_roots_stream = grpc_client
+        .get_subtree_roots(request)
+        .await
+        .unwrap()
+        .into_inner();
+    while let Some(root) = sapling_subtree_roots_stream.message().await.unwrap() {
+        sapling_subtree_roots_server.push(root.root_hash);
+    }
+
+    let request = tonic::Request::new(zcash_client_backend::proto::service::GetSubtreeRootsArg {
+        start_index: 0,
+        shielded_protocol: 1,
+        max_entries: 0,
+    });
+    let mut orchard_subtree_roots_server = Vec::new();
+    let mut orchard_subtree_roots_stream = grpc_client
+        .get_subtree_roots(request)
+        .await
+        .unwrap()
+        .into_inner();
+    while let Some(root) = orchard_subtree_roots_stream.message().await.unwrap() {
+        orchard_subtree_roots_server.push(root.root_hash);
+    }
+
+    dbg!("1");
+    dbg!(lightclient.sync_mode());
+    lightclient.sync().await.unwrap();
+    dbg!("post-sync");
+    dbg!(&lightclient.sync_handle);
+    while !(lightclient
+        .wallet
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .iter()
+        .any(|range| range.priority() == ScanPriority::Scanning)
+        || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
+    {
+        dbg!("2");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    dbg!("3");
+    dbg!(lightclient.sync_mode());
+    let _ = lightclient.stop_sync();
+    dbg!(lightclient.sync_mode());
+    dbg!("4");
+    let _ = lightclient.await_sync().await;
+    dbg!("5");
+
+    {
+        let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
+
+        let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+        if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
+            sapling_shard_addrs.pop();
+        }
+        assert!(
+            sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_shard_addrs.len(),
+            sapling_subtree_roots_server.len()
+        );
+        let mut sapling_subtree_roots_wallet = Vec::new();
+        for addr in sapling_shard_addrs {
+            let root = shard_trees
+                .sapling
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!sapling_subtree_roots_server.is_empty());
+        assert!(
+            sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_subtree_roots_wallet.len(),
+            sapling_subtree_roots_server.len()
+        );
+        sapling_subtree_roots_wallet
+            .iter()
+            .zip(sapling_subtree_roots_server.clone())
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+
+        let mut orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
+        if orchard_shard_addrs.len() > orchard_subtree_roots_server.len() {
+            orchard_shard_addrs.pop();
+        }
+        assert!(
+            orchard_shard_addrs.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_shard_addrs.len(),
+            orchard_subtree_roots_server.len()
+        );
+        let mut orchard_subtree_roots_wallet = Vec::new();
+        for addr in orchard_shard_addrs {
+            let root = shard_trees
+                .orchard
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            orchard_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!orchard_subtree_roots_server.is_empty());
+        assert!(
+            orchard_subtree_roots_wallet.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_subtree_roots_wallet.len(),
+            orchard_subtree_roots_server.len()
+        );
+        orchard_subtree_roots_wallet
+            .iter()
+            .zip(orchard_subtree_roots_server)
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+
+        shard_trees
+            .sapling
+            .store_mut()
+            .truncate_shards(500)
+            .unwrap();
+    }
+
+    dbg!("6");
+    dbg!(lightclient.sync_mode());
+    lightclient.sync().await.unwrap();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    dbg!("post-sync");
+    dbg!(&lightclient.sync_handle);
+    while !(lightclient
+        .wallet
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .iter()
+        .any(|range| range.priority() == ScanPriority::Scanning)
+        || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
+    {
+        dbg!("7");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    dbg!("8");
+    dbg!(lightclient.sync_mode());
+    let _ = lightclient.stop_sync();
+    dbg!(lightclient.sync_mode());
+    dbg!("9");
+    let _ = lightclient.await_sync().await;
+    dbg!(&lightclient.sync_handle);
+    dbg!("10");
+
+    // tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // {
+    //     let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
+
+    //     let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+    //     if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
+    //         sapling_shard_addrs.pop();
+    //     }
+    //     assert!(
+    //         sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
+    //         "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+    //         sapling_shard_addrs.len(),
+    //         sapling_subtree_roots_server.len()
+    //     );
+    //     let mut sapling_subtree_roots_wallet = Vec::new();
+    //     for addr in sapling_shard_addrs {
+    //         let root = shard_trees
+    //             .sapling
+    //             .root(addr, Position::from(u64::MAX))
+    //             .unwrap();
+    //         sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
+    //     }
+
+    //     assert!(
+    //         sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
+    //         "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+    //         sapling_subtree_roots_wallet.len(),
+    //         sapling_subtree_roots_server.len()
+    //     );
+    //     sapling_subtree_roots_wallet
+    //         .iter()
+    //         .zip(sapling_subtree_roots_server)
+    //         .for_each(|(wallet_root, server_root)| {
+    //             assert!(wallet_root.as_slice() == server_root.as_slice());
+    //         });
+    // }
 }
 
 // temporary test for sync development

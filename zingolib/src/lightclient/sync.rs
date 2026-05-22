@@ -21,6 +21,7 @@ impl LightClient {
     /// `sync_handle` field.
     // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
     pub async fn sync(&mut self) -> Result<(), LightClientError> {
+        dbg!("sync 1");
         if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,
@@ -35,8 +36,18 @@ impl LightClient {
         let wallet = self.wallet.clone();
         let sync_mode = self.sync_mode.clone();
         let sync_handle = tokio::spawn(async move {
+            dbg!("sync 2");
             pepper_sync::sync(client, &network, wallet, sync_mode, sync_config).await
         });
+
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        interval.tick().await;
+        while self.sync_mode() == SyncMode::NotRunning {
+            interval.tick().await;
+        }
+
+        dbg!("sync 3");
         self.sync_handle = Some(sync_handle);
 
         Ok(())
@@ -107,16 +118,22 @@ impl LightClient {
 
     /// Polls the sync task, returning [`self::PollReport`].
     pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<WalletError>> {
+        dbg!("poll sync");
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
+                dbg!("poll ready");
                 self.sync_mode
                     .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
                 PollReport::Ready(sync_result.expect("task panicked"))
             } else {
+                dbg!("poll not ready");
                 self.sync_handle = Some(sync_handle);
                 PollReport::NotReady
             }
         } else {
+            dbg!("poll no handle");
+            self.sync_mode
+                .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
             PollReport::NoHandle
         }
     }

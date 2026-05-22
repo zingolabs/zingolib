@@ -216,19 +216,23 @@ where
                 self.update_workers();
 
                 let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+                dbg!("a");
                 if !sync_state
                     .scan_ranges()
                     .iter()
                     .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
                 {
+                    dbg!("b");
                     if sync_state
                         .scan_ranges()
                         .iter()
                         .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
                     {
+                        dbg!("c");
                         // the last scan ranges with `Verify` priority are currently being scanned.
                         return Ok(());
                     }
+                    dbg!("d");
                     // verification complete
                     self.state.verified();
                     return Ok(());
@@ -239,6 +243,7 @@ where
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
+                dbg!("scan");
                 self.batcher
                     .as_mut()
                     .expect("batcher should be running")
@@ -248,6 +253,7 @@ where
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
+                dbg!("shutdown");
                 shutdown_mempool.store(true, atomic::Ordering::Release);
                 while let Some(worker) = self.idle_worker() {
                     self.shutdown_worker(worker.id).await;
@@ -284,15 +290,19 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
+        dbg!("update batcher");
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
+            dbg!("create scan task");
             if let Some(scan_task) = sync::state::create_scan_task(
                 &self.consensus_parameters,
                 wallet,
                 nullifier_map_limit_exceeded,
             )? {
+                dbg!("add task");
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
+                dbg!("set shutdown");
                 self.state.shutdown();
             }
         }
@@ -349,6 +359,7 @@ where
             let mut previous_task_last_block: Option<WalletBlock> = None;
 
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
+                dbg!("batcher main loop");
                 let fetch_nullifiers_only =
                     scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
 
@@ -360,7 +371,7 @@ where
                 let mut first_batch = true;
 
                 let mut block_stream = {
-                    let range = scan_task.scan_range.block_range().clone();
+                    let range = dbg!(scan_task.scan_range.block_range().clone());
                     let frs = fetch_request_sender.clone();
 
                     let open_fut = async move {
@@ -532,8 +543,12 @@ where
 
                 let _ignore_error = batch_sender.send(scan_task).await;
 
+                dbg!("batcher set false");
                 is_batching.store(false, atomic::Ordering::Release);
             }
+
+            dbg!("batcher return ok");
+            is_batching.store(false, atomic::Ordering::Release);
             Ok(())
         });
 
