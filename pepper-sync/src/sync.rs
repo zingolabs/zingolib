@@ -323,14 +323,12 @@ where
         + Send,
 {
     let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-    dbg!(sync_mode_enum);
     if sync_mode_enum == SyncMode::NotRunning {
         sync_mode_enum = SyncMode::Running;
         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
     } else {
         return Err(SyncModeError::SyncAlreadyRunning.into());
     }
-    dbg!(sync_mode.load(atomic::Ordering::Acquire));
 
     tracing::info!("Starting sync...");
 
@@ -469,7 +467,6 @@ where
             }
 
             _update_scanner = interval.tick() => {
-                dbg!("update scanner");
                 sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
                 match sync_mode_enum {
                     SyncMode::Paused => {
@@ -481,7 +478,6 @@ where
                         }
                     },
                     SyncMode::Shutdown => {
-                        dbg!("sd tick");
                         let mut wallet_guard = wallet.write().await;
                         let sync_status = match sync_status(&*wallet_guard).await {
                             Ok(status) => status,
@@ -523,10 +519,8 @@ where
 
                 scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
-                dbg!("sd check");
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
-                dbg!("sd check inner");
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
                     {
@@ -538,7 +532,6 @@ where
         }
     }
 
-    dbg!("exited loop");
     let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,

@@ -166,11 +166,7 @@ async fn add_subtree_roots() {
         orchard_subtree_roots_server.push(root.root_hash);
     }
 
-    dbg!("1");
-    dbg!(lightclient.sync_mode());
     lightclient.sync().await.unwrap();
-    dbg!("post-sync");
-    dbg!(&lightclient.sync_handle);
     while !(lightclient
         .wallet
         .read()
@@ -181,16 +177,10 @@ async fn add_subtree_roots() {
         .any(|range| range.priority() == ScanPriority::Scanning)
         || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
     {
-        dbg!("2");
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    dbg!("3");
-    dbg!(lightclient.sync_mode());
     let _ = lightclient.stop_sync();
-    dbg!(lightclient.sync_mode());
-    dbg!("4");
     let _ = lightclient.await_sync().await;
-    dbg!("5");
 
     {
         let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
@@ -268,12 +258,7 @@ async fn add_subtree_roots() {
             .unwrap();
     }
 
-    dbg!("6");
-    dbg!(lightclient.sync_mode());
     lightclient.sync().await.unwrap();
-    tokio::time::sleep(Duration::from_secs(10)).await;
-    dbg!("post-sync");
-    dbg!(&lightclient.sync_handle);
     while !(lightclient
         .wallet
         .read()
@@ -284,17 +269,10 @@ async fn add_subtree_roots() {
         .any(|range| range.priority() == ScanPriority::Scanning)
         || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
     {
-        dbg!("7");
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    dbg!("8");
-    dbg!(lightclient.sync_mode());
     let _ = lightclient.stop_sync();
-    dbg!(lightclient.sync_mode());
-    dbg!("9");
     let _ = lightclient.await_sync().await;
-    dbg!(&lightclient.sync_handle);
-    dbg!("10");
 
     // tokio::time::sleep(Duration::from_secs(10)).await;
 
