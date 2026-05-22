@@ -41,7 +41,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 ### Zingo-common
-zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "chore/echo-server", features = ["back_compatible", "globally-public-transparent", "nym"] }
+zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "chore/echo-server-zingo-mobile-fix", features = ["back_compatible", "globally-public-transparent", "nym"] }
 zingo_common_components = "0.3.0"
 
 ### Zcash
