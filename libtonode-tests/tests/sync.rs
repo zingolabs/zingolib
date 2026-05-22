@@ -4,6 +4,7 @@ use bip0039::Mnemonic;
 use incrementalmerkletree::Position;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::sync::ScanPriority;
+use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
@@ -94,6 +95,78 @@ async fn sync_mainnet_test() {
 
 #[tokio::test]
 async fn add_subtree_roots() {
+    fn assert_subtree_roots_match_server(
+        shard_trees: &mut ShardTrees,
+        sapling_subtree_roots_server: Vec<Vec<u8>>,
+        orchard_subtree_roots_server: Vec<Vec<u8>>,
+    ) {
+        let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+        if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
+            sapling_shard_addrs.pop();
+        }
+        assert!(
+            sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_shard_addrs.len(),
+            sapling_subtree_roots_server.len()
+        );
+        let mut sapling_subtree_roots_wallet = Vec::new();
+        for addr in sapling_shard_addrs {
+            let root = shard_trees
+                .sapling
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!sapling_subtree_roots_server.is_empty());
+        assert!(
+            sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_subtree_roots_wallet.len(),
+            sapling_subtree_roots_server.len()
+        );
+        sapling_subtree_roots_wallet
+            .iter()
+            .zip(sapling_subtree_roots_server.clone())
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+
+        let mut orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
+        if orchard_shard_addrs.len() > orchard_subtree_roots_server.len() {
+            orchard_shard_addrs.pop();
+        }
+        assert!(
+            orchard_shard_addrs.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_shard_addrs.len(),
+            orchard_subtree_roots_server.len()
+        );
+        let mut orchard_subtree_roots_wallet = Vec::new();
+        for addr in orchard_shard_addrs {
+            let root = shard_trees
+                .orchard
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            orchard_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!orchard_subtree_roots_server.is_empty());
+        assert!(
+            orchard_subtree_roots_wallet.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_subtree_roots_wallet.len(),
+            orchard_subtree_roots_server.len()
+        );
+        orchard_subtree_roots_wallet
+            .iter()
+            .zip(orchard_subtree_roots_server)
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+    }
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Ring to work as a default");
@@ -185,77 +258,27 @@ async fn add_subtree_roots() {
     {
         let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
 
-        let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
-        if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
-            sapling_shard_addrs.pop();
-        }
-        assert!(
-            sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
-            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
-            sapling_shard_addrs.len(),
-            sapling_subtree_roots_server.len()
+        assert_subtree_roots_match_server(
+            shard_trees,
+            sapling_subtree_roots_server.clone(),
+            orchard_subtree_roots_server.clone(),
         );
-        let mut sapling_subtree_roots_wallet = Vec::new();
-        for addr in sapling_shard_addrs {
-            let root = shard_trees
-                .sapling
-                .root(addr, Position::from(u64::MAX))
-                .unwrap();
-            sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
-        }
-
-        assert!(!sapling_subtree_roots_server.is_empty());
-        assert!(
-            sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
-            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
-            sapling_subtree_roots_wallet.len(),
-            sapling_subtree_roots_server.len()
-        );
-        sapling_subtree_roots_wallet
-            .iter()
-            .zip(sapling_subtree_roots_server.clone())
-            .for_each(|(wallet_root, server_root)| {
-                assert!(wallet_root.as_slice() == server_root.as_slice());
-            });
-
-        let mut orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
-        if orchard_shard_addrs.len() > orchard_subtree_roots_server.len() {
-            orchard_shard_addrs.pop();
-        }
-        assert!(
-            orchard_shard_addrs.len() == orchard_subtree_roots_server.len(),
-            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
-            orchard_shard_addrs.len(),
-            orchard_subtree_roots_server.len()
-        );
-        let mut orchard_subtree_roots_wallet = Vec::new();
-        for addr in orchard_shard_addrs {
-            let root = shard_trees
-                .orchard
-                .root(addr, Position::from(u64::MAX))
-                .unwrap();
-            orchard_subtree_roots_wallet.push(root.to_bytes().to_vec());
-        }
-
-        assert!(!orchard_subtree_roots_server.is_empty());
-        assert!(
-            orchard_subtree_roots_wallet.len() == orchard_subtree_roots_server.len(),
-            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
-            orchard_subtree_roots_wallet.len(),
-            orchard_subtree_roots_server.len()
-        );
-        orchard_subtree_roots_wallet
-            .iter()
-            .zip(orchard_subtree_roots_server)
-            .for_each(|(wallet_root, server_root)| {
-                assert!(wallet_root.as_slice() == server_root.as_slice());
-            });
 
         shard_trees
             .sapling
             .store_mut()
             .truncate_shards(500)
             .unwrap();
+        let sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+        assert!(sapling_shard_addrs.len() != sapling_subtree_roots_server.len());
+
+        shard_trees
+            .orchard
+            .store_mut()
+            .truncate_shards(500)
+            .unwrap();
+        let orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
+        assert!(orchard_shard_addrs.len() != orchard_subtree_roots_server.len());
     }
 
     lightclient.sync().await.unwrap();
@@ -274,43 +297,15 @@ async fn add_subtree_roots() {
     let _ = lightclient.stop_sync();
     let _ = lightclient.await_sync().await;
 
-    // tokio::time::sleep(Duration::from_secs(10)).await;
+    {
+        let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
 
-    // {
-    //     let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
-
-    //     let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
-    //     if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
-    //         sapling_shard_addrs.pop();
-    //     }
-    //     assert!(
-    //         sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
-    //         "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
-    //         sapling_shard_addrs.len(),
-    //         sapling_subtree_roots_server.len()
-    //     );
-    //     let mut sapling_subtree_roots_wallet = Vec::new();
-    //     for addr in sapling_shard_addrs {
-    //         let root = shard_trees
-    //             .sapling
-    //             .root(addr, Position::from(u64::MAX))
-    //             .unwrap();
-    //         sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
-    //     }
-
-    //     assert!(
-    //         sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
-    //         "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
-    //         sapling_subtree_roots_wallet.len(),
-    //         sapling_subtree_roots_server.len()
-    //     );
-    //     sapling_subtree_roots_wallet
-    //         .iter()
-    //         .zip(sapling_subtree_roots_server)
-    //         .for_each(|(wallet_root, server_root)| {
-    //             assert!(wallet_root.as_slice() == server_root.as_slice());
-    //         });
-    // }
+        assert_subtree_roots_match_server(
+            shard_trees,
+            sapling_subtree_roots_server.clone(),
+            orchard_subtree_roots_server.clone(),
+        );
+    }
 }
 
 // temporary test for sync development
