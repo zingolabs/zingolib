@@ -57,8 +57,8 @@ LABEL org.zingolib.test-artifacts.versions.nextest="${NEXTEST_VERSION}"
 
 # Copy regtest binaries and zcash params from builder
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
-COPY --from=zcashd-downloader /usr/local/bin/zcashd /usr/bin/
-COPY --from=zcashd-downloader /usr/local/bin/zcash-cli /usr/bin/
+COPY --from=zcashd-downloader /usr/bin/zcashd /usr/bin/
+COPY --from=zcashd-downloader /usr/bin/zcash-cli /usr/bin/
 COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
 
 # Install dependencies and update ca certificates
