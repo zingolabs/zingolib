@@ -374,7 +374,6 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
     Ok(())
 }
 
-#[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
     let lightwalletd = lightwalletd().await.unwrap();
