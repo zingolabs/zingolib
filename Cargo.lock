@@ -8729,7 +8729,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=434653b2e807062d22be11692d16d5abf4957b48#434653b2e807062d22be11692d16d5abf4957b48"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=b8929c4821c18ec7a059fbd6b57bd39795568fa1#b8929c4821c18ec7a059fbd6b57bd39795568fa1"
 dependencies = [
  "getset",
  "hex",
@@ -9334,7 +9334,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=434653b2e807062d22be11692d16d5abf4957b48#434653b2e807062d22be11692d16d5abf4957b48"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=b8929c4821c18ec7a059fbd6b57bd39795568fa1#b8929c4821c18ec7a059fbd6b57bd39795568fa1"
 dependencies = [
  "bip0039 0.12.0",
 ]
