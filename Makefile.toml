@@ -25,10 +25,10 @@ Zingolib test tasks
 -------------------
 
 Common usage:
-  makers run
-  cargo make run
+  makers container-test
+  cargo make container-test
 
-The run task runs tests inside a reproducible container image:
+The container-test task runs tests inside a reproducible container image:
   cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
 
 Build or refresh the local image:
@@ -41,10 +41,10 @@ The local-run task mirrors the PR test defaults:
   cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
 
 Forward extra nextest flags after the task name:
-  makers run -p zingo-memo
+  makers container-test -p zingo-memo
 
 Override the default nextest filter:
-  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers run
+  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers container-test
 
 Reproduce the latest failing or incomplete nextest run:
   makers rerun
@@ -218,7 +218,7 @@ fi
 cargo nextest run "${args[@]}" "${@}"
 '''
 
-[tasks.run]
+[tasks.container-test]
 clear = true
 description = "Run reproducible workspace tests inside the local test container"
 dependencies = ["ensure-image-exists"]
