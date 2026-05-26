@@ -328,7 +328,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     K: ScanningKeyOps<D, Nf>,
 {
     for (output_id, incoming_output) in incoming_decrypted_outputs {
-        let position = Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
+        let position = Position::from(u64::from(tree_size + output_id.output_index()));
         let key = keys
             .get(&incoming_output.ivk_tag)
             .expect("key should be available as it was used to decrypt output");
@@ -362,7 +362,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                     .map_err(|()| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {
@@ -399,7 +403,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                     .map_err(|()| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {
