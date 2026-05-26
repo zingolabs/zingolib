@@ -3,10 +3,11 @@
 use zcash_address::{ToAddress as _, ZcashAddress};
 use zcash_protocol::consensus;
 use zcash_transparent::address::TransparentAddress;
-use zcash_transparent::keys::{
-    AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
-};
+use zcash_transparent::keys::{NonHardenedChildIndex, TransparentKeyScope};
 use zip32::AccountId;
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_transparent::keys::{AccountPubKey, IncomingViewingKey as _};
 
 use crate::wallet::KeyIdInterface;
 
@@ -103,6 +104,7 @@ impl TryFrom<u8> for TransparentScope {
     }
 }
 
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) fn derive_address(
     consensus_parameters: &impl consensus::Parameters,
     account_pubkey: &AccountPubKey,
@@ -123,6 +125,7 @@ pub(crate) fn derive_address(
     Ok(encode_address(consensus_parameters, address))
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_external_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
@@ -132,6 +135,7 @@ fn derive_external_address(
         .derive_address(address_index)
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_internal_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
@@ -141,6 +145,7 @@ fn derive_internal_address(
         .derive_address(address_index)
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_refund_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
