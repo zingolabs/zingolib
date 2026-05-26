@@ -153,7 +153,7 @@ pub trait SyncTransactions: SyncWallet {
             .get_wallet_transactions()?
             .values()
             .filter(|tx| tx.status().is_confirmed_after(&truncate_height))
-            .map(|tx| tx.transaction().txid())
+            .map(|tx| tx.txid())
             .collect();
 
         set_transactions_failed(self.get_wallet_transactions_mut()?, invalid_txids);

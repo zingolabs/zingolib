@@ -16,6 +16,7 @@ use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
@@ -430,34 +431,35 @@ async fn reorg_expires_incoming_tx() {
         Err(err_str) => tracing::info!("{err_str}"),
     }
 
-    // // Assert that balance holds
-    // assert_eq!(
-    //     light_client
-    //         .account_balance(zip32::AccountId::ZERO)
-    //         .await
-    //         .unwrap(),
-    //     AccountBalance {
-    //         total_sapling_balance: Some(0.try_into().unwrap()),
-    //         confirmed_sapling_balance: Some(0.try_into().unwrap()),
-    //         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
-    //         total_orchard_balance: Some(0.try_into().unwrap()),
-    //         confirmed_orchard_balance: Some(0.try_into().unwrap()),
-    //         unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
-    //         total_transparent_balance: Some(0.try_into().unwrap()),
-    //         confirmed_transparent_balance: Some(0.try_into().unwrap()),
-    //         unconfirmed_transparent_balance: Some(0.try_into().unwrap())
-    //     }
-    // );
+    // Assert that balance holds
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(0.try_into().unwrap()),
+            confirmed_orchard_balance: Some(0.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
+        }
+    );
 
     let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
-    dbg!(after_reorg_transactions.clone());
-
-    assert_eq!(after_reorg_transactions.len(), 0);
+    assert_eq!(after_reorg_transactions.len(), 1);
+    assert_eq!(
+        after_reorg_transactions.first().unwrap().status,
+        ConfirmationStatus::Failed(203.into())
+    );
 }
 
 async fn prepare_expires_incoming_tx_before_reorg(uri: http::Uri) -> Result<(), String> {
-    dbg!(&uri);
     let connector = DarksideConnector(uri.clone());
 
     let mut client = connector.get_client().await.unwrap();
@@ -501,7 +503,6 @@ async fn prepare_expires_incoming_tx_before_reorg(uri: http::Uri) -> Result<(), 
 }
 
 async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), String> {
-    dbg!(&uri);
     let connector = DarksideConnector(uri.clone());
 
     let mut client = connector.get_client().await.unwrap();

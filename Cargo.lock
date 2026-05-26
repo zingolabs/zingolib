@@ -1434,6 +1434,7 @@ dependencies = [
  "zcash_protocol",
  "zebra-chain",
  "zingo-netutils",
+ "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release)",
  "zingolib",
