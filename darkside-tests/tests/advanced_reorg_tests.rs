@@ -7,7 +7,7 @@ use darkside_tests::{
         TREE_STATE_FOLDER_PATH,
     },
     darkside_connector::DarksideConnector,
-    darkside_types::{Empty, TreeState},
+    darkside_types::{Empty, RawTransaction, TreeState},
     utils::{lightwalletd, read_dataset, read_lines},
 };
 
@@ -610,7 +610,7 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.transaction_summaries(true).await.unwrap().0;
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -667,9 +667,6 @@ async fn reorg_changes_outgoing_tx_height() {
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
-
-    tracing::info!("{:?}", light_client.value_transfers(true).await);
-
     assert_eq!(
         light_client
             .value_transfers(true)
@@ -699,24 +696,105 @@ async fn reorg_changes_outgoing_tx_height() {
     // Create reorg
     //
 
-    // stage empty blocks from height 205 to cause a Reorg
-    _ = connector.stage_blocks_create(sent_tx_height, 20, 1).await;
+    prepare_changes_outgoing_tx_height_after_reorg(server_id.clone(), tx.clone())
+        .await
+        .unwrap();
 
-    _ = connector
-        .stage_transactions_stream([(tx.clone().data, 210)].to_vec())
-        .await;
+    light_client.sync_and_await().await.unwrap();
 
-    _ = connector.apply_staged(211).await;
+    //
+    // due to a darkside bug where the returned txid of a transaction is different to the one requested we must mine
+    // beyond the expiry height to fail the duplicated tx. In production, this tx would be replaced immediately due to
+    // matching txids.
+    //
 
-    // temp hack as pepper sync needs tree state of latest block for sync status
-    connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 211, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
+    // verify that the reorged transaction is still there at the old height
+    assert_eq!(
+        light_client
+            .value_transfers(true)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent(SentValueTransfer::Send) => {
+                    if v.recipient_address == Some(recipient_string.to_string())
+                        && v.value == 100000
+                        && v.status == ConfirmationStatus::Transmitted(205.into())
+                    {
+                        Some(v.blockheight)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(205))
+    );
+    // mine 50 new blocks to expire tx
+    connector.stage_blocks_create(212, 50, 1).await.unwrap();
+    connector.apply_staged(261).await.unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await().await;
+    // pepper sync needs tree state of latest block for sync status
+    connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 261, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
 
-    match reorg_sync_result {
-        Ok(value) => tracing::info!("{value}"),
-        Err(err_str) => tracing::info!("{err_str}"),
-    }
+    light_client.sync_and_await().await.unwrap();
+
+    let after_reorg_transactions = light_client.transaction_summaries(true).await.unwrap().0;
+
+    // the initial receive, the re-orged send and the failed tx (due to darkside bug)
+    assert_eq!(after_reorg_transactions.len(), 3);
+
+    // verify that the reorged transaction is in the new height
+    assert_eq!(
+        light_client
+            .value_transfers(true)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent(SentValueTransfer::Send) => {
+                    if v.recipient_address == Some(recipient_string.to_string())
+                        && v.value == 100000
+                        && v.status == ConfirmationStatus::Confirmed(210.into())
+                    {
+                        Some(v.blockheight)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(210))
+    );
+
+    // verify that the transaction that was stuck in transmitted due to darkside bug correctly expires
+    assert_eq!(
+        light_client
+            .value_transfers(true)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent(SentValueTransfer::Send) => {
+                    if v.recipient_address == Some(recipient_string.to_string())
+                        && v.value == 100000
+                        && v.status == ConfirmationStatus::Failed(205.into())
+                    {
+                        Some(v.blockheight)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(205))
+    );
 
     let expected_after_reorg_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
@@ -738,35 +816,6 @@ async fn reorg_changes_outgoing_tx_height() {
             .unwrap(),
         expected_after_reorg_balance
     );
-
-    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
-
-    assert_eq!(after_reorg_transactions.len(), 3);
-
-    tracing::info!("{:?}", light_client.value_transfers(true).await);
-
-    // FIXME: This test is broken because if this issue
-    // https://github.com/zingolabs/zingolib/issues/622
-    // verify that the reorged transaction is in the new height
-    // assert_eq!(
-    //     light_client
-    //         .list_value_transfers(true)
-    //         .await
-    //         .into_iter()
-    //         .find_map(|v| match v.kind {
-    //             ValueTransferKind::Sent { to_address, amount } => {
-    //                 if to_address.to_string() == recipient_string && amount == 100000 {
-    //                     Some(v.block_height)
-    //                 } else {
-    //                     None
-    //                 }
-    //             }
-    //             _ => {
-    //                 None
-    //             }
-    //         }),
-    //     Some(BlockHeight::from(211))
-    // );
 }
 
 async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Result<(), String> {
@@ -807,6 +856,63 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
     }
 
     connector.apply_staged(204).await?;
+
+    sleep(std::time::Duration::new(1, 0)).await;
+
+    Ok(())
+}
+
+async fn prepare_changes_outgoing_tx_height_after_reorg(
+    uri: http::Uri,
+    tx: RawTransaction,
+) -> Result<(), String> {
+    let connector = DarksideConnector(uri.clone());
+
+    let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    connector
+        .reset(202, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    // this dataset works for this test since we only need funds to send a transaction.
+    let dataset_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE
+    );
+
+    tracing::info!("dataset path: {dataset_path}");
+
+    connector
+        .stage_blocks_stream(read_dataset(dataset_path))
+        .await?;
+
+    for i in 201..211 {
+        let tree_state_path = format!(
+            "{}/{}/{}.json",
+            get_cargo_manifest_dir().to_string_lossy(),
+            TREE_STATE_FOLDER_PATH,
+            i
+        );
+        let tree_state = TreeState::from_file(tree_state_path).unwrap();
+        connector.add_tree_state(tree_state).await.unwrap();
+    }
+
+    // stage empty blocks from height 205 to cause a Reorg
+    _ = connector.stage_blocks_create(205, 20, 1).await;
+
+    _ = connector
+        .stage_transactions_stream([(tx.clone().data, 210)].to_vec())
+        .await;
+
+    _ = connector.apply_staged(211).await;
+
+    // temp hack as pepper sync needs tree state of latest block for sync status
+    connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 211, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
 
     sleep(std::time::Duration::new(1, 0)).await;
 
