@@ -51,7 +51,6 @@ pub(crate) mod transparent;
 pub(crate) mod spend;
 pub(crate) mod state;
 
-const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -1853,10 +1852,7 @@ async fn mempool_monitor(
     Ok(())
 }
 
-/// Spends will be reset to free up funds if transaction has been unconfirmed for
-/// `UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD` confirmed blocks.
-/// Transaction status will then be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
-// TODO: add config to pepper-sync to set UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+/// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
@@ -1879,17 +1875,6 @@ where
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
-
-    let stuck_funds_txids = wallet_transactions
-        .values()
-        .filter(|transaction| {
-            transaction.status().is_pending()
-                && last_known_chain_height
-                    >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
-        })
-        .map(super::wallet::WalletTransaction::txid)
-        .collect::<Vec<_>>();
-    reset_spends(wallet_transactions, stuck_funds_txids);
 
     Ok(())
 }
