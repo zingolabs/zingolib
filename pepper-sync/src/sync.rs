@@ -402,12 +402,12 @@ where
 
     let initial_reorg_detection_start_height = state::update_scan_ranges(
         consensus_parameters,
+        fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        wallet_guard
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-    );
+        &mut *wallet_guard,
+    )
+    .await?;
 
     state::set_initial_state(
         consensus_parameters,
