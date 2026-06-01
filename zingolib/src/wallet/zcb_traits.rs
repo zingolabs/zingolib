@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32};
 
-use secrecy::SecretVec;
+use nonempty::NonEmpty;
+use secrecy::{ExposeSecret, SecretVec};
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
@@ -29,8 +30,9 @@ use zcash_protocol::{
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::{OutPoint, TxOut};
 use zcash_transparent::keys::TransparentKeyScope;
+use zip32::fingerprint::SeedFingerprint;
 
-use super::{LightWallet, error::WalletError, output::OutputRef};
+use super::{LightWallet, error::WalletError, keys::unified::UnifiedKeyStore, output::OutputRef};
 use crate::wallet::output::RemainingNeeded;
 use pepper_sync::{
     error::SyncError,
@@ -56,11 +58,13 @@ impl Account for ZingoAccount {
     }
 
     fn birthday_height(&self) -> BlockHeight {
-        unimplemented!()
+        // wallet birthday is on LightWallet, not per-account
+        panic!("ZingoAccount::birthday_height is not supported; use LightWallet::birthday()")
     }
 
     fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
-        unimplemented!()
+        // zingolib does not track account source metadata
+        panic!("ZingoAccount::source is not supported")
     }
 
     fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
@@ -68,7 +72,8 @@ impl Account for ZingoAccount {
     }
 
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
-        unimplemented!()
+        // zingolib does not expose UIVK separately from UFVK
+        panic!("ZingoAccount::uivk is not supported")
     }
 }
 
@@ -83,31 +88,103 @@ impl WalletRead for LightWallet {
 
     fn get_account(
         &self,
-        _account_id: Self::AccountId,
+        account_id: Self::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        unimplemented!()
+        let Some(key) = self.unified_key_store.get(&account_id) else {
+            return Ok(None);
+        };
+        Ok(Some(ZingoAccount(
+            account_id,
+            UnifiedFullViewingKey::try_from(key)?,
+        )))
     }
 
     fn get_derived_account(
         &self,
-        _account_id: &Zip32Derivation,
+        derivation: &Zip32Derivation,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        unimplemented!()
+        let Some(mnemonic) = &self.mnemonic else {
+            return Ok(None); // view-only wallet: no derived accounts
+        };
+        let seed = mnemonic.to_seed("");
+        let Some(wallet_fp) = SeedFingerprint::from_seed(&seed) else {
+            return Ok(None);
+        };
+        if &wallet_fp != derivation.seed_fingerprint() {
+            return Ok(None); // derivation belongs to a different seed
+        }
+        self.get_account(derivation.account_index())
     }
 
     fn validate_seed(
         &self,
-        _account_id: Self::AccountId,
-        _seed: &secrecy::SecretVec<u8>,
+        account_id: Self::AccountId,
+        seed: &SecretVec<u8>,
     ) -> Result<bool, Self::Error> {
-        unimplemented!()
+        let seed_bytes = seed.expose_secret().as_slice();
+        let Ok(seed_array) = seed_bytes.try_into() else {
+            return Ok(false); // expected 64-byte BIP-39 seed
+        };
+        let Ok(derived_key) =
+            UnifiedKeyStore::new_from_seed(self.chain_type, seed_array, account_id)
+        else {
+            return Ok(false);
+        };
+        let Ok(derived_ufvk) = UnifiedFullViewingKey::try_from(&derived_key) else {
+            return Ok(false);
+        };
+        let Some(stored_key) = self.unified_key_store.get(&account_id) else {
+            return Ok(false); // no such account
+        };
+        let Ok(stored_ufvk) = UnifiedFullViewingKey::try_from(stored_key) else {
+            return Ok(false);
+        };
+        Ok(stored_ufvk.encode(&self.chain_type) == derived_ufvk.encode(&self.chain_type))
     }
 
     fn seed_relevance_to_derived_accounts(
         &self,
-        _seed: &secrecy::SecretVec<u8>,
+        seed: &SecretVec<u8>,
     ) -> Result<zcash_client_backend::data_api::SeedRelevance<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        use zcash_client_backend::data_api::SeedRelevance;
+
+        if self.unified_key_store.is_empty() {
+            return Ok(SeedRelevance::NoAccounts);
+        }
+        if self.mnemonic.is_none() {
+            // All accounts are imported from UFVKs, not HD-derived
+            return Ok(SeedRelevance::NoDerivedAccounts);
+        }
+        let seed_bytes = seed.expose_secret().as_slice();
+        let Ok(seed_array) = seed_bytes.try_into() else {
+            return Ok(SeedRelevance::NotRelevant); // wrong length
+        };
+        let matching: Vec<_> = self
+            .unified_key_store
+            .keys()
+            .filter(|&&account_id| {
+                (|| -> Option<bool> {
+                    let derived_key =
+                        UnifiedKeyStore::new_from_seed(self.chain_type, seed_array, account_id)
+                            .ok()?;
+                    let derived_ufvk = UnifiedFullViewingKey::try_from(&derived_key).ok()?;
+                    let stored_ufvk =
+                        UnifiedFullViewingKey::try_from(self.unified_key_store.get(&account_id)?)
+                            .ok()?;
+                    Some(
+                        stored_ufvk.encode(&self.chain_type)
+                            == derived_ufvk.encode(&self.chain_type),
+                    )
+                })()
+                .unwrap_or(false)
+            })
+            .copied()
+            .collect();
+
+        Ok(match NonEmpty::from_vec(matching) {
+            Some(account_ids) => SeedRelevance::Relevant { account_ids },
+            None => SeedRelevance::NotRelevant,
+        })
     }
 
     fn get_account_for_ufvk(
@@ -226,7 +303,10 @@ impl WalletRead for LightWallet {
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<Self::AccountId, UnifiedFullViewingKey>, Self::Error> {
-        unimplemented!()
+        self.unified_key_store
+            .iter()
+            .map(|(account_id, key)| Ok((*account_id, UnifiedFullViewingKey::try_from(key)?)))
+            .collect()
     }
 
     fn get_memo(&self, _note_id: NoteId) -> Result<Option<Memo>, Self::Error> {

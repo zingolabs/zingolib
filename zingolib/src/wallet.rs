@@ -104,9 +104,7 @@ pub(crate) struct WalletBase {
 /// `birthday` block height.
 ///
 /// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
-/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
-/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
-/// methods for a save task implementation.
+/// automatically. See [`crate::lightclient::LightClient::save_task`] and related methods to persist the wallet.
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
@@ -144,7 +142,7 @@ pub struct LightWallet {
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    pub save_required: bool,
+    pub(crate) save_required: bool,
 }
 
 impl LightWallet {
@@ -331,6 +329,11 @@ impl LightWallet {
         self.send_proposal = None;
     }
 
+    /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.
+    pub fn mark_dirty(&mut self) {
+        self.save_required = true;
+    }
+
     #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
@@ -366,7 +369,7 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
-    pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+    pub(crate) fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];

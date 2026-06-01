@@ -575,7 +575,7 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
@@ -593,7 +593,7 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(examples::SERVER_URI),
                 "expected URI to start with {}, got: {uri}",

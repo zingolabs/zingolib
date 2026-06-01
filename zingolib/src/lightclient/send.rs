@@ -26,6 +26,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let calculated_txids = self
             .wallet()
             .write()
@@ -42,6 +43,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let calculated_txids = self
             .wallet()
             .write()
@@ -60,6 +62,7 @@ impl LightClient {
         &mut self,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let txids = match proposal {
@@ -92,6 +95,7 @@ impl LightClient {
         account_id: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let _ignore_error = self.pause_sync();
         let proposal = self
             .wallet()
@@ -112,6 +116,7 @@ impl LightClient {
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let proposal = self
             .wallet()
             .write()
@@ -128,6 +133,7 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        let indexer = self.require_indexer()?.clone();
         let mut wallet = self.wallet().write().await;
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
@@ -161,8 +167,7 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                let transmission_result = self
-                    .indexer
+                let transmission_result = indexer
                     .clone()
                     .send_transaction(
                         RawTransaction {
@@ -602,7 +607,7 @@ mod test {
 
     use crate::{
         config::{ClientConfig, WalletConfig},
-        lightclient::{LightClient, sync::test::sync_example_wallet},
+        lightclient::{LightClient, error::LightClientError, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
         testutils::{
             chain_generics::{
@@ -630,8 +635,8 @@ mod test {
     async fn complete_and_broadcast_unconnected_error() {
         let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
-        lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
-        // TODO: match on specific error
+        let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
+        assert!(matches!(err, LightClientError::Offline));
     }
 
     /// live sync: execution time increases linearly until example wallet is upgraded

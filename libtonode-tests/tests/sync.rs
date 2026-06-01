@@ -65,7 +65,7 @@ async fn sync_mainnet_test() {
             tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
             tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
-        lightclient.wallet().write().await.save().unwrap();
+        lightclient.flush().await.unwrap();
     }
 
     // let wallet = lightclient.wallet.read().await;
