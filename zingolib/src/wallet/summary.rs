@@ -171,7 +171,9 @@ impl LightWallet {
                                                 &self.network,
                                                 address,
                                             ),
-                                            output_index: output_index as u16,
+                                            output_index: output_index
+                                                .try_into()
+                                                .expect("output index should be valid u32"),
                                         }
                                     })
                                 })

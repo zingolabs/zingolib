@@ -909,7 +909,7 @@ impl std::fmt::Display for OutgoingNoteSummaries {
 pub struct OutgoingCoinSummary {
     pub value: u64,
     pub recipient: String,
-    pub output_index: u16,
+    pub output_index: u32,
 }
 
 impl std::fmt::Display for OutgoingCoinSummary {
