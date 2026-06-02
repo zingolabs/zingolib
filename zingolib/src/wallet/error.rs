@@ -221,7 +221,7 @@ impl From<bip32::Error> for KeyError {
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
     #[error("No unified spending key found for this account. {0}")]
-    NoSpendingKey(#[from] crate::wallet::error::KeyError),
+    NoSpendingKey(#[from] KeyError),
     #[error("Failed to load sapling paramaters. {0}")]
     SaplingParams(String),
     #[error("Failed to calculate transaction. {0}")]

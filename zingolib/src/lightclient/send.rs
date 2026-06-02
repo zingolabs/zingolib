@@ -8,6 +8,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
+use pepper_sync::keys::transparent::TransparentScope;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
@@ -19,20 +20,33 @@ use crate::wallet::output::OutputRef;
 const MAX_RETRIES: u8 = 3;
 
 impl LightClient {
+    // TODO: unify send and shield methods into a generic method
     async fn send(
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet
-            .write()
-            .await
+        let mut wallet = self.wallet.write().await;
+        let highest_refund_address_index = wallet.highest_refund_address_index();
+        let calculated_txids = wallet
             .calculate_transactions(proposal, sending_account)
             .await
-            .map_err(SendError::CalculateSendError)?;
+            .map_err(|e| {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
 
-        self.transmit_transactions(calculated_txids).await
+                SendError::CalculateSendError(e)
+            })?;
+        drop(wallet);
+
+        let transmission_result = self.transmit_transactions(calculated_txids).await;
+        if transmission_result.is_err() {
+            self.wallet
+                .write()
+                .await
+                .truncate_refund_addresses(highest_refund_address_index);
+        }
+
+        transmission_result
     }
 
     async fn shield(
@@ -40,15 +54,27 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet
-            .write()
-            .await
+        let mut wallet = self.wallet.write().await;
+        let highest_refund_address_index = wallet.highest_refund_address_index();
+        let calculated_txids = wallet
             .calculate_transactions(proposal, shielding_account)
             .await
-            .map_err(SendError::CalculateShieldError)?;
+            .map_err(|e| {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
 
-        self.transmit_transactions(calculated_txids).await
+                SendError::CalculateShieldError(e)
+            })?;
+        drop(wallet);
+
+        let transmission_result = self.transmit_transactions(calculated_txids).await;
+        if transmission_result.is_err() {
+            self.wallet
+                .write()
+                .await
+                .truncate_refund_addresses(highest_refund_address_index);
+        }
+
+        transmission_result
     }
 
     /// Creates and transmits transactions from a stored proposal.
