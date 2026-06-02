@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `lightclient::error::LightClientError`: added `SyncLaunchErrror` variant.
 
 ### Removed
 

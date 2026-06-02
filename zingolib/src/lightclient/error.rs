@@ -12,6 +12,9 @@ use crate::wallet::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum LightClientError {
+    /// Sync failed to launch..
+    #[error("Sync failed to launch.")]
+    SyncLaunchError,
     /// Sync not running.
     #[error("No sync handle. Sync is not running.")]
     SyncNotRunning,

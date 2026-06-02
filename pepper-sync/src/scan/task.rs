@@ -536,6 +536,7 @@ where
             }
 
             is_batching.store(false, atomic::Ordering::Release);
+
             Ok(())
         });
 
@@ -687,6 +688,8 @@ where
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }
+
+            is_scanning.store(false, atomic::Ordering::Release);
         });
 
         self.handle = Some(handle);
