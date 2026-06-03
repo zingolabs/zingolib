@@ -81,6 +81,8 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
+            // proposed_version (zcash_client_backend "unstable"): use the default tx version
+            None,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -226,7 +228,7 @@ mod tests {
 
         assert_eq!(
             request.total().expect("total"),
-            (amount_1 + amount_2).expect("add")
+            Some((amount_1 + amount_2).expect("add"))
         );
     }
 

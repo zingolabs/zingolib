@@ -57,6 +57,8 @@ impl LightWallet {
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
+            // proposed_version (zcash_client_backend "unstable"): use the default tx version
+            None,
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -114,6 +116,8 @@ impl LightWallet {
             account_id,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
+            // shield all spendable transparent outputs, as before
+            zcash_client_backend::data_api::TransparentOutputFilter::All,
         )
         .map_err(ProposeShieldError::Component)?;
 

@@ -49,7 +49,7 @@ pub mod receivers {
         fn from(receiver: Receiver) -> Self {
             Payment::new(
                 receiver.recipient_address,
-                receiver.amount,
+                Some(receiver.amount),
                 receiver.memo,
                 None,
                 None,

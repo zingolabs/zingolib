@@ -17,10 +17,12 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::{Memo, MemoBytes},
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
+};
+use zcash_protocol::{
+    consensus::BlockHeight,
+    memo::{Memo, MemoBytes},
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 

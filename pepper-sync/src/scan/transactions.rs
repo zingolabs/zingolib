@@ -15,19 +15,17 @@ use sapling_crypto::{
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{Transaction, TxId},
-    zip32::AccountId,
-};
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedProtocol,
     consensus::{self, BlockHeight, NetworkConstants},
+    memo::Memo,
 };
 
 use zcash_transparent::bundle::TxIn;
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
@@ -555,11 +553,11 @@ fn collect_nullifiers(
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
-fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
+fn collect_outpoints<A: zcash_transparent::bundle::Authorization>(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
-    transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
+    transparent_bundle: &zcash_transparent::bundle::Bundle<A>,
 ) {
     transparent_bundle
         .vin
