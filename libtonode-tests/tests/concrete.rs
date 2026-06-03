@@ -796,7 +796,7 @@ mod fast {
         let alice_to_bob = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
                 )),
@@ -810,7 +810,7 @@ mod fast {
         let alice_to_bob_2 = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
                 )),
@@ -824,7 +824,7 @@ mod fast {
         let alice_to_charlie = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
                         .unwrap(),
@@ -839,7 +839,7 @@ mod fast {
         let charlie_to_alice = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&alice).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Charlie->Alice #2\nReply to\n".to_string()
@@ -857,7 +857,7 @@ mod fast {
         let bob_to_alice = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&alice).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Bob->Alice #2\nReply to\n".to_string()
@@ -1353,6 +1353,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu5: Some(11u32),
             nu6: Some(13u32),
             nu6_1: Some(15u32),
+            nu6_2: Some(15u32),
             nu7: None,
         };
 
@@ -1375,6 +1376,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu5: Some(5u32),
             nu6: Some(7u32),
             nu6_1: Some(9u32),
+            nu6_2: Some(9u32),
             nu7: None,
         };
         let (local_net, mut lightclient) =
@@ -2584,6 +2586,7 @@ TransactionSummary {
             nu5: Some(5u32),
             nu6: Some(5u32),
             nu6_1: Some(5u32),
+            nu6_2: Some(5u32),
             nu7: None,
         };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
