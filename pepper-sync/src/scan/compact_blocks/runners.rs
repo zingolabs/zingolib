@@ -104,7 +104,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|()| {
+                        CompactOutputDescription::try_from(output).map_err(|_| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
@@ -124,7 +124,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|()| {
+                        CompactAction::try_from(action).map_err(|_| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,

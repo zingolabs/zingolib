@@ -21,17 +21,14 @@ use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
-use zcash_primitives::{
-    block::BlockHash,
-    memo::Memo,
-    transaction::{TxId, components::transparent::OutPoint},
-};
+use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight},
+    memo::Memo,
     value::Zatoshis,
 };
-use zcash_transparent::address::Script;
+use zcash_transparent::{address::Script, bundle::OutPoint};
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 

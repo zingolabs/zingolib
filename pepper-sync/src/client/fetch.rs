@@ -9,12 +9,13 @@ use tracing::instrument;
 use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
-        BlockId, BlockRange, ChainSpec, GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction,
-        TransparentAddressBlockFilter, TreeState, TxFilter,
+        BlockId, BlockRange, ChainSpec, GetAddressUtxosArg, GetAddressUtxosReply, PoolType,
+        RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
         compact_tx_streamer_client::CompactTxStreamerClient,
     },
 };
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 
 use crate::client::FetchRequest;
 
@@ -223,6 +224,11 @@ async fn get_block_range(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![
+            PoolType::Transparent.into(),
+            PoolType::Sapling.into(),
+            PoolType::Orchard.into(),
+        ],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
@@ -237,6 +243,7 @@ async fn get_block_range(
     Ok(resp.into_inner())
 }
 
+#[allow(deprecated)]
 async fn get_block_range_nullifiers(
     client: &mut CompactTxStreamerClient<Channel>,
     block_range: Range<BlockHeight>,
@@ -250,6 +257,11 @@ async fn get_block_range_nullifiers(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![
+            PoolType::Transparent.into(),
+            PoolType::Sapling.into(),
+            PoolType::Orchard.into(),
+        ],
     });
 
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
@@ -370,6 +382,7 @@ async fn get_taddress_txs(
             height: u64::from(block_range.end) - 1,
             hash: vec![],
         }),
+        pool_types: vec![PoolType::Transparent.into()],
     });
 
     let mut request = tonic::Request::new(TransparentAddressBlockFilter { address, range });
