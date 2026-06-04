@@ -121,7 +121,7 @@ zingo-status = { path = "zingo-status" } # NOTE: for development between release
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "nu6_2_update" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "nu6_2_update_with_nuparams" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "nu6_2_update" }
 
 [profile.test]
