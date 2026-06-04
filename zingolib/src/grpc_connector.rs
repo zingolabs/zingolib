@@ -20,7 +20,7 @@ pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 /// This mirrors `zingo_netutils::get_client` but constructs the client from this crate's
 /// `zcash_client_backend` so the proto message types match the rest of the workspace (the
 /// published `zingo-netutils` is still built against an older `zcash_client_backend`).
-pub async fn get_client(
+pub(crate) async fn get_client(
     uri: http::Uri,
 ) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
     let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
