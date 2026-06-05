@@ -6,9 +6,12 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_netutils::GetClientError;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::data::PollReport;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
@@ -167,6 +170,28 @@ async fn add_subtree_roots() {
             });
     }
 
+    // temporary client creation until zingolib v5 lands with new netutils update (imminent!)
+    async fn get_client(
+        uri: http::Uri,
+    ) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+        let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+        if scheme != "http" && scheme != "https" {
+            return Err(GetClientError::InvalidScheme);
+        }
+        let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+
+        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+
+        let channel = if scheme == "https" {
+            let tls = ClientTlsConfig::new().with_webpki_roots();
+            endpoint.tls_config(tls)?.connect().await?
+        } else {
+            endpoint.connect().await?
+        };
+
+        Ok(CompactTxStreamerClient::new(channel))
+    }
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Ring to work as a default");
@@ -205,7 +230,7 @@ async fn add_subtree_roots() {
     )
     .unwrap();
 
-    let mut grpc_client = zingo_netutils::get_client(lightclient.config.get_lightwalletd_uri())
+    let mut grpc_client = get_client(lightclient.config.get_lightwalletd_uri())
         .await
         .unwrap();
 
