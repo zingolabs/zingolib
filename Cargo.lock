@@ -4234,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9761,7 +9761,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bip0039 0.13.4",
  "clap",
@@ -9827,7 +9827,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "byteorder",
  "zcash_primitives 0.28.0",
@@ -9868,7 +9868,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "3.0.1"
+version = "4.0.0"
 dependencies = [
  "append-only-vec",
  "bech32",
