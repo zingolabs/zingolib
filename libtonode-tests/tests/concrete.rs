@@ -796,7 +796,7 @@ mod fast {
         let alice_to_bob = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
                 )),
@@ -810,7 +810,7 @@ mod fast {
         let alice_to_bob_2 = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
                 )),
@@ -824,7 +824,7 @@ mod fast {
         let alice_to_charlie = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
                         .unwrap(),
@@ -839,7 +839,7 @@ mod fast {
         let charlie_to_alice = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&alice).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Charlie->Alice #2\nReply to\n".to_string()
@@ -857,7 +857,7 @@ mod fast {
         let bob_to_alice = TransactionRequest::new(vec![
             Payment::new(
                 ZcashAddress::from_str(&alice).unwrap(),
-                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Zatoshis::from_u64(1_000).unwrap()),
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Bob->Alice #2\nReply to\n".to_string()
@@ -1353,6 +1353,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu5: Some(11u32),
             nu6: Some(13u32),
             nu6_1: Some(15u32),
+            nu6_2: Some(15u32),
             nu7: None,
         };
 
@@ -1375,6 +1376,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu5: Some(5u32),
             nu6: Some(7u32),
             nu6_1: Some(9u32),
+            nu6_2: Some(9u32),
             nu7: None,
         };
         let (local_net, mut lightclient) =
@@ -2134,15 +2136,7 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes:vec![OutgoingNoteSummary {
-                 value: 99_960_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 output_index: 0,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: first_send_to_sapling,
@@ -2174,15 +2168,7 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 99_925_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
@@ -2300,15 +2286,7 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 965_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
@@ -2344,15 +2322,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 99_885_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
                  value: second_send_to_sapling,
@@ -2380,9 +2350,7 @@ TransactionSummary {
 
         // Third external transparent
         let external_transparent_3 = 20_000;
-        let summary_external_transparent_3 =
-
-TransactionSummary {
+        let summary_external_transparent_3 = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
             status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
@@ -2399,15 +2367,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
-            outgoing_orchard_notes: vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 value: 930_000,
-                 memo: None,
-                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
-                 recipient_unified_address: None,
-                 account_id: AccountId::ZERO,
-                 scope: summary::data::Scope::from(zip32::Scope::Internal),
-             }],
+            outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
         };
@@ -2584,6 +2544,7 @@ TransactionSummary {
             nu5: Some(5u32),
             nu6: Some(5u32),
             nu6_1: Some(5u32),
+            nu6_2: Some(5u32),
             nu7: None,
         };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(

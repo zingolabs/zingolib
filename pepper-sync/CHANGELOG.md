@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
 ### Added
 
 ### Changed
@@ -19,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `output_index` method's return type is now u32.
 
 ### Removed
+
+## [0.4.0] - 2026-06-05
+
+### Added
+`wallet::WalletTransaction`: added `total_external_outgoing_note_value` method
 
 ## [0.3.0]
 

@@ -34,7 +34,7 @@ RUN git clone https://github.com/zcash/lightwalletd \
 # Build zcashd and fetch params
 RUN git clone https://github.com/zcash/zcash.git \
     && cd zcash/ \
-    && git checkout v6.3.0 \
+    && git checkout v6.20.0 \
     && ./zcutil/build.sh -j$(nproc)
 
 FROM debian:trixie-slim AS runner

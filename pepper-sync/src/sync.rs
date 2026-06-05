@@ -495,6 +495,8 @@ where
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
                         drop(wallet_guard);
+                        mempool_handle.abort();
+                        fetcher_handle.abort();
                         tracing::info!("Sync successfully shutdown.");
 
                         return Ok(SyncResult {
@@ -1737,8 +1739,16 @@ where
     let shard_trees = wallet
         .get_shard_trees_mut()
         .map_err(SyncError::WalletError)?;
-    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling)?;
-    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard)?;
+    witness::add_subtree_roots(
+        sapling_start_index as usize,
+        sapling_subtree_roots,
+        &mut shard_trees.sapling,
+    )?;
+    witness::add_subtree_roots(
+        orchard_start_index as usize,
+        orchard_subtree_roots,
+        &mut shard_trees.orchard,
+    )?;
 
     Ok(())
 }
@@ -1918,6 +1928,7 @@ mod test {
             nu5: Some(BlockHeight::from_u32(3)),
             nu6: Some(BlockHeight::from_u32(3)),
             nu6_1: Some(BlockHeight::from_u32(3)),
+            nu6_2: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height

@@ -8,6 +8,9 @@ use futures::FutureExt;
 use pepper_sync::error::SyncError;
 use pepper_sync::error::SyncModeError;
 use pepper_sync::wallet::SyncMode;
+use tokio::time::MissedTickBehavior;
+use tokio::time::interval;
+use tokio::time::timeout;
 
 use crate::data::PollReport;
 use crate::wallet::error::WalletError;
@@ -15,6 +18,8 @@ use crate::wallet::error::WalletError;
 use super::LightClient;
 use super::SyncResult;
 use super::error::LightClientError;
+
+const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);
 
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
@@ -27,7 +32,7 @@ impl LightClient {
             ));
         }
 
-        let client = zingo_netutils::get_client(self.config.get_lightwalletd_uri()).await?;
+        let client = crate::grpc_connector::get_client(self.config.get_lightwalletd_uri()).await?;
         let wallet_guard = self.wallet.read().await;
         let network = wallet_guard.network;
         let sync_config = wallet_guard.wallet_settings.sync_config.clone();
@@ -38,6 +43,42 @@ impl LightClient {
             pepper_sync::sync(client, &network, wallet, sync_mode, sync_config).await
         });
         self.sync_handle = Some(sync_handle);
+
+        if timeout(SYNC_START_TIMEOUT, async {
+            let mut interval = interval(Duration::from_millis(50));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            interval.tick().await;
+            while self.sync_mode() == SyncMode::NotRunning {
+                interval.tick().await;
+            }
+        })
+        .await
+        .is_err()
+        {
+            match self.poll_sync() {
+                PollReport::Ready(sync_result) => {
+                    // sync can only return an error in this context so ignore success and return errror.
+                    let _ignore_sync_success = sync_result?;
+                }
+                PollReport::NotReady => {
+                    // this error should never be reached.
+                    // timeout only occurs when sync has returned an error so handle will always be ready.
+                    // cleans up sync handle and sets sync mode back to 'not running'.
+                    if let Some(sync_handle) = self.sync_handle.take() {
+                        sync_handle.abort();
+                        let _ignore_cancelled = sync_handle.await;
+                    }
+                    self.sync_mode
+                        .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+                    return Err(LightClientError::SyncLaunchError);
+                }
+                PollReport::NoHandle => {
+                    // this error should never be reached.
+                    // sync handle must exist in this scope.
+                    return Err(LightClientError::SyncLaunchError);
+                }
+            }
+        }
 
         Ok(())
     }
@@ -117,6 +158,8 @@ impl LightClient {
                 PollReport::NotReady
             }
         } else {
+            self.sync_mode
+                .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
             PollReport::NoHandle
         }
     }
