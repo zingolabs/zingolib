@@ -3,8 +3,8 @@
 use std::{array::TryFromSliceError, convert::Infallible};
 
 use shardtree::error::ShardTreeError;
-use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::PoolType;
+use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::{PoolType, consensus::BlockHeight};
 
 use crate::wallet::OutputId;
 

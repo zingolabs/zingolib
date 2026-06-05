@@ -140,15 +140,20 @@ where
     let wallet_transactions = wallet
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?;
-    let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
+    let confirmed_wallet_txids = wallet_transactions
+        .iter()
+        .filter(|(_, transaction)| transaction.status().is_confirmed())
+        .map(|(txids, _)| txids)
+        .copied()
+        .collect::<HashSet<_>>();
     let mut spending_scan_targets = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
     for scan_target in scan_targets {
         let block_height = scan_target.block_height;
         let txid = scan_target.txid;
 
-        // skip if transaction already exists in the wallet
-        if wallet_txids.contains(&txid) {
+        // skip if confirmed transaction already exists in the wallet
+        if confirmed_wallet_txids.contains(&txid) {
             continue;
         }
 

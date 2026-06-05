@@ -3,17 +3,47 @@
 use std::time::Duration;
 
 use tonic::Request;
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
+use zingo_netutils::GetClientError;
 
 #[cfg(feature = "testutils")]
 use zcash_client_backend::proto::service::TreeState;
 
 pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Connect to `uri` and return a gRPC client bound to the current `zcash_client_backend`
+/// proto types.
+///
+/// This mirrors `zingo_netutils::get_client` but constructs the client from this crate's
+/// `zcash_client_backend` so the proto message types match the rest of the workspace (the
+/// published `zingo-netutils` is still built against an older `zcash_client_backend`).
+pub(crate) async fn get_client(
+    uri: http::Uri,
+) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+    let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+    if scheme != "http" && scheme != "https" {
+        return Err(GetClientError::InvalidScheme);
+    }
+    let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+
+    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+
+    let channel = if scheme == "https" {
+        let tls = ClientTlsConfig::new().with_webpki_roots();
+        endpoint.tls_config(tls)?.connect().await?
+    } else {
+        endpoint.connect().await?
+    };
+
+    Ok(CompactTxStreamerClient::new(channel))
+}
+
 /// Get server info.
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-    let mut client = zingo_netutils::get_client(uri.clone())
+    let mut client = get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -30,7 +60,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 /// TODO: Add Doc Comment Here!
 #[cfg(feature = "testutils")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
-    let mut client = zingo_netutils::get_client(uri.clone())
+    let mut client = get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -48,7 +78,7 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 
 /// `get_latest_block` GRPC call
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
-    let mut client = zingo_netutils::get_client(uri.clone())
+    let mut client = get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -67,7 +97,7 @@ pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,
 ) -> Result<String, String> {
-    let mut client = zingo_netutils::get_client(uri)
+    let mut client = get_client(uri)
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 

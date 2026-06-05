@@ -13,21 +13,24 @@ use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{Transaction, TxId},
-    zip32::AccountId,
+use zcash_keys::{
+    address::UnifiedAddress,
+    keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
+use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedProtocol,
     consensus::{self, BlockHeight, NetworkConstants},
+    memo::Memo,
 };
 
-use zcash_transparent::bundle::TxIn;
+use zcash_transparent::bundle::{
+    Authorization as TransparentAuthorization, Bundle as TransparentBundle, TxIn,
+};
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
@@ -187,7 +190,12 @@ pub(crate) fn scan_transaction(
                         &dfvk.to_ivk(scope),
                     ),
                 ));
-                sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    dfvk.to_ovk(scope).into(),
+                );
             }
         }
 
@@ -198,8 +206,28 @@ pub(crate) fn scan_transaction(
                     key_id,
                     orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
                 ));
-                orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    fvk.to_ovk(scope).into(),
+                );
             }
+        }
+
+        if let Some(tkeys) = ufvk.transparent() {
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::External),
+                OutgoingViewingKey::from(tkeys.external_ovk().as_bytes()),
+            );
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::Internal),
+                OutgoingViewingKey::from(tkeys.internal_ovk().as_bytes()),
+            );
         }
     }
 
@@ -327,6 +355,16 @@ pub(crate) fn scan_transaction(
         outgoing_sapling_notes,
         outgoing_orchard_notes,
     })
+}
+
+fn add_unified_ovk(
+    sapling_ovks: &mut Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)>,
+    orchard_ovks: &mut Vec<(KeyId, orchard::keys::OutgoingViewingKey)>,
+    key_id: KeyId,
+    ovk: OutgoingViewingKey,
+) {
+    sapling_ovks.push((key_id, ovk.into()));
+    orchard_ovks.push((key_id, ovk.into()));
 }
 
 fn scan_incoming_coins<P: consensus::Parameters>(
@@ -555,11 +593,11 @@ fn collect_nullifiers(
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
-fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
+fn collect_outpoints<A: TransparentAuthorization>(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
-    transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
+    transparent_bundle: &TransparentBundle<A>,
 ) {
     transparent_bundle
         .vin
