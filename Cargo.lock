@@ -4262,7 +4262,7 @@ dependencies = [
  "zcash_primitives 0.28.0",
  "zcash_protocol 0.9.0",
  "zcash_transparent 0.8.0",
- "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-memo",
  "zingo-netutils",
  "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zip32",
@@ -8947,7 +8947,6 @@ dependencies = [
  "arti-client",
  "base64",
  "bech32",
- "bip32",
  "bls12_381",
  "bs58",
  "crossbeam-channel",
@@ -8964,8 +8963,6 @@ dependencies = [
  "incrementalmerkletree",
  "memuse",
  "nonempty",
- "orchard 0.11.0",
- "pasta_curves",
  "percent-encoding",
  "prost",
  "rand 0.8.5",
@@ -8973,7 +8970,6 @@ dependencies = [
  "rayon",
  "rust_decimal",
  "sapling-crypto 0.5.0",
- "secp256k1 0.29.1",
  "secrecy",
  "serde",
  "serde_json",
@@ -9110,7 +9106,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c115531caa1b7ca5ccd82dc26dbe3ba44b7542e928a3f77cd04abbe3cde4a4f2"
 dependencies = [
  "bech32",
- "bip32",
  "blake2b_simd",
  "bls12_381",
  "bs58",
@@ -9119,7 +9114,6 @@ dependencies = [
  "group",
  "memuse",
  "nonempty",
- "orchard 0.11.0",
  "rand_core 0.6.4",
  "sapling-crypto 0.5.0",
  "secrecy",
@@ -9227,7 +9221,6 @@ dependencies = [
  "redjubjub",
  "ripemd 0.1.3",
  "sapling-crypto 0.5.0",
- "secp256k1 0.29.1",
  "sha2 0.10.9",
  "subtle",
  "tracing",
@@ -9793,26 +9786,13 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rand 0.8.5",
  "zcash_address 0.12.0",
  "zcash_encoding 0.4.0",
  "zcash_keys 0.14.0",
  "zcash_protocol 0.9.0",
-]
-
-[[package]]
-name = "zingo-memo"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4152c6c9ac701ef82b82deca2b5db7bbf70583c04031f97423bf9f850d74e4a"
-dependencies = [
- "zcash_address 0.10.1",
- "zcash_client_backend 0.21.2",
- "zcash_encoding 0.3.0",
- "zcash_keys 0.12.0",
- "zcash_primitives 0.26.4",
 ]
 
 [[package]]
@@ -9954,7 +9934,7 @@ dependencies = [
  "zcash_protocol 0.9.0",
  "zcash_transparent 0.8.0",
  "zebra-chain",
- "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-memo",
  "zingo-netutils",
  "zingo-price",
  "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
