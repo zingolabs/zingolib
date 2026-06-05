@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.0.0] - 2026-06-05
 
 ### Changed
-`data::Receiver`: From impl for Payment is now a TryFrom
+- `lightclient::error::LightClientError`: added `SyncLaunchErrror` variant.
+- `data::Receiver`: From impl for Payment is now a TryFrom
 
 ## [3.0.1] - 2026-03-26
 
