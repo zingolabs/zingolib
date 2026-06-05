@@ -7,3 +7,4 @@ The following is required to successfully update the docker container for Github
  - update github workflow files to the new image version number
 
  NOTE: if `sudo` is necessary use `sudo` with all commands including login.
+ for MAC M1...5 -> 'docker buildx build --platform=linux/amd64 -t zingodevops/ci-build:011 --load .'
