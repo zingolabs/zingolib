@@ -12,15 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-`data::Receiver`: From impl for Payment is now a TryFrom
 
 ### Removed
+
+## [4.0.0] - 2026-06-05
+
+### Changed
+`data::Receiver`: From impl for Payment is now a TryFrom
 
 ## [3.0.1] - 2026-03-26
 
 ## [3.0.0] - 2026-03-02
-
-### Deprecated
 
 ### Added
 - `lightclient::error::TransmissionError` - moved from `wallet::error` and simplified to much fewer variants more specific
