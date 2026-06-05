@@ -4183,8 +4183,8 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.3.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+version = "0.4.0"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v4.0.0#0d9273defa4930a35dac8cd118d0dab617f73107"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9617,8 +9617,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be89f74c1be1ac061f58921191c005fd2f9d83541e7ef6febfb5c51c0c3f539c"
 dependencies = [
  "zcash_address 0.12.0",
  "zcash_encoding 0.4.0",
@@ -9645,7 +9646,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v4.0.0#0d9273defa4930a35dac8cd118d0dab617f73107"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -9659,8 +9660,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa2f3e473a81f4b9fd3fb34d5e22a2c458ce0d8d3a73460e9aa0a2bbf71967f4"
 dependencies = [
  "byteorder",
  "zcash_primitives 0.28.0",
@@ -9694,15 +9696,15 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update#54b284e4dfdf767632d592735d9671614524f186"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams#1550e03208849271577be02c15e95a44d9052981"
 dependencies = [
  "bip0039 0.12.0",
 ]
 
 [[package]]
 name = "zingolib"
-version = "3.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+version = "4.0.0"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v4.0.0#0d9273defa4930a35dac8cd118d0dab617f73107"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9769,7 +9771,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=chore%2Fnu6-2#bcaf641c339ba22444393cc2121863f8c2d16125"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v4.0.0#0d9273defa4930a35dac8cd118d0dab617f73107"
 dependencies = [
  "bip0039 0.13.4",
  "http",
@@ -9780,7 +9782,7 @@ dependencies = [
  "zcash_protocol 0.9.0",
  "zebra-chain",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update)",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=nu6_2_update_with_nuparams)",
  "zingolib",
  "zip32",
 ]
