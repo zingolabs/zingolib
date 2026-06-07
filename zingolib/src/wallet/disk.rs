@@ -41,11 +41,11 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 39:
-    /// - sync state updated serialized version
+    /// Changes in version 40:
+    /// - output id type changed from u16 to u32
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        39
+        40
     }
 
     /// Serialize into `writer`
@@ -109,7 +109,7 @@ impl LightWallet {
             &self.outpoint_map.iter().collect::<Vec<_>>(),
             |w, &(&output_id, &scan_target)| {
                 output_id.txid().write(&mut *w)?;
-                w.write_u16::<LittleEndian>(output_id.output_index())?;
+                w.write_u32::<LittleEndian>(output_id.output_index())?;
                 scan_target.write(w)
             },
         )?;
@@ -127,7 +127,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=39 => Self::read_v32(reader, network, version),
+            32..=40 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -495,7 +495,11 @@ impl LightWallet {
         let nullifier_map = NullifierMap::read(&mut reader)?;
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
-            let output_index = r.read_u16::<LittleEndian>()?;
+            let output_index = if version >= 40 {
+                r.read_u32::<LittleEndian>()?
+            } else {
+                u32::from(r.read_u16::<LittleEndian>()?)
+            };
             let scan_target = if version >= 37 {
                 ScanTarget::read(r)?
             } else {

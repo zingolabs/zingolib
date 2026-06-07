@@ -796,7 +796,10 @@ impl InputSource for LightWallet {
                         PoolType::SAPLING,
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index(),
+                    note.output_id()
+                        .output_index()
+                        .try_into()
+                        .expect("shielded notes are always valid u16"),
                     note.note().clone(),
                     note.key_id().scope,
                     note.position()
@@ -815,7 +818,10 @@ impl InputSource for LightWallet {
                         PoolType::ORCHARD,
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index(),
+                    note.output_id()
+                        .output_index()
+                        .try_into()
+                        .expect("shielded notes are always valid u16"),
                     *note.note(),
                     note.key_id().scope,
                     note.position()
