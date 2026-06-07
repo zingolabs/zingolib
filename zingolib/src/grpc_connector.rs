@@ -27,15 +27,27 @@ pub(crate) async fn get_client(
     if scheme != "http" && scheme != "https" {
         return Err(GetClientError::InvalidScheme);
     }
+
     let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
 
-    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+    let endpoint = Endpoint::from_shared(uri.to_string())
+        .map_err(|_| GetClientError::InvalidAuthority)?
+        .tcp_nodelay(true);
 
     let channel = if scheme == "https" {
         let tls = ClientTlsConfig::new().with_webpki_roots();
-        endpoint.tls_config(tls)?.connect().await?
+
+        endpoint
+            .tls_config(tls)
+            .map_err(|_| GetClientError::InvalidScheme)?
+            .connect()
+            .await
+            .map_err(|_| GetClientError::InvalidAuthority)?
     } else {
-        endpoint.connect().await?
+        endpoint
+            .connect()
+            .await
+            .map_err(|_| GetClientError::InvalidAuthority)?
     };
 
     Ok(CompactTxStreamerClient::new(channel))
