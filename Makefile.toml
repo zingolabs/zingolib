@@ -25,10 +25,10 @@ Zingolib test tasks
 -------------------
 
 Common usage:
-  makers run
-  cargo make run
+  makers container-test
+  cargo make container-test
 
-The run task runs tests inside a reproducible container image:
+The container-test task runs tests inside a reproducible container image:
   cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
 
 Build or refresh the local image:
@@ -41,10 +41,10 @@ The local-run task mirrors the PR test defaults:
   cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
 
 Forward extra nextest flags after the task name:
-  makers run -p zingo-memo
+  makers container-test -p zingo-memo
 
 Override the default nextest filter:
-  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers run
+  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers container-test
 
 Reproduce the latest failing or incomplete nextest run:
   makers rerun
@@ -118,6 +118,53 @@ append_workspace_default() {
   if [[ "${use_default_workspace}" -eq 1 ]]; then
     printf '%s\n' "--workspace"
   fi
+}
+
+nextest_args() {
+  local -a extra_args=("$@")
+  local -a args=(
+    --verbose
+    --profile "${ZINGOLIB_NEXTEST_PROFILE}"
+    --retries "${ZINGOLIB_NEXTEST_RETRIES}"
+  )
+
+  args+=("${extra_args[@]}")
+
+  local workspace_arg
+  workspace_arg="$(append_workspace_default "$@")"
+  if [[ -n "${workspace_arg}" ]]; then
+    args+=("${workspace_arg}")
+  fi
+
+  if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
+    args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
+  fi
+
+  printf '%s\n' "${args[@]}"
+}
+
+container_nextest_run() {
+  local runtime mount_suffix tag
+  runtime="$(container_runtime)"
+  mount_suffix="$(container_mount_suffix)"
+  tag="$(container_image_tag)"
+
+  local -a args
+  mapfile -t args < <(nextest_args "$@")
+
+  "${runtime}" run --rm --init \
+    --pids-limit -1 \
+    -v "${PWD}:/workspace" \
+    -v "zingolib-container-target:/workspace/target${mount_suffix}" \
+    -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
+    -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
+    -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
+    -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
+    -w /workspace \
+    "${IMAGE_NAME}:${tag}" \
+    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod test_binaries/bins/ && exec "$@"' \
+    bash \
+    cargo nextest run "${args[@]}"
 }
 '''
 script.main = "true"
@@ -200,62 +247,18 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-args=(
-  --verbose
-  --profile "${ZINGOLIB_NEXTEST_PROFILE}"
-  --retries "${ZINGOLIB_NEXTEST_RETRIES}"
-)
-
-workspace_arg="$(append_workspace_default "$@")"
-if [[ -n "${workspace_arg}" ]]; then
-  args+=("${workspace_arg}")
-fi
-
-if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
-  args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
-fi
-
-cargo nextest run "${args[@]}" "${@}"
+mapfile -t args < <(nextest_args "$@")
+cargo nextest run "${args[@]}"
 '''
 
-[tasks.run]
+[tasks.container-test]
 clear = true
 description = "Run reproducible workspace tests inside the local test container"
 dependencies = ["ensure-image-exists"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-runtime="$(container_runtime)"
-mount_suffix="$(container_mount_suffix)"
-tag="$(container_image_tag)"
-
-args=(
-  --verbose
-  --profile "${ZINGOLIB_NEXTEST_PROFILE}"
-  --retries "${ZINGOLIB_NEXTEST_RETRIES}"
-)
-
-workspace_arg="$(append_workspace_default "$@")"
-if [[ -n "${workspace_arg}" ]]; then
-  args+=("${workspace_arg}")
-fi
-
-if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
-  args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
-fi
-
-"${runtime}" run --rm --init \
-  -v "${PWD}:/workspace" \
-  -v "zingolib-container-target:/workspace/target${mount_suffix}" \
-  -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
-  -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
-  -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
-  -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-  -w /workspace \
-  "${IMAGE_NAME}:${tag}" \
-  bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod test_binaries/bins/ && exec "$@"' \
-  bash \
-  cargo nextest run "${args[@]}" "${@}"
+container_nextest_run "$@"
 '''
 
 [tasks.rerun]
@@ -265,38 +268,7 @@ dependencies = ["ensure-image-exists"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-runtime="$(container_runtime)"
-mount_suffix="$(container_mount_suffix)"
-tag="$(container_image_tag)"
-
-args=(
-  --verbose
-  --profile "${ZINGOLIB_NEXTEST_PROFILE}"
-  --retries "${ZINGOLIB_NEXTEST_RETRIES}"
-  --rerun latest
-)
-
-workspace_arg="$(append_workspace_default "$@")"
-if [[ -n "${workspace_arg}" ]]; then
-  args+=("${workspace_arg}")
-fi
-
-if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
-  args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
-fi
-
-"${runtime}" run --rm --init \
-  -v "${PWD}:/workspace" \
-  -v "zingolib-container-target:/workspace/target${mount_suffix}" \
-  -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
-  -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
-  -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
-  -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-  -w /workspace \
-  "${IMAGE_NAME}:${tag}" \
-  bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod test_binaries/bins/ && exec "$@"' \
-  bash \
-  cargo nextest run "${args[@]}" "${@}"
+container_nextest_run --rerun latest "$@"
 '''
 
 [tasks.run-ignored]
@@ -306,17 +278,6 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-args=(
-  --verbose
-  --profile "${ZINGOLIB_NEXTEST_PROFILE}"
-  --retries "${ZINGOLIB_NEXTEST_RETRIES}"
-  --run-ignored all
-)
-
-workspace_arg="$(append_workspace_default "$@")"
-if [[ -n "${workspace_arg}" ]]; then
-  args+=("${workspace_arg}")
-fi
-
-cargo nextest run "${args[@]}" "${@}"
+mapfile -t args < <(nextest_args --run-ignored all "$@")
+cargo nextest run "${args[@]}"
 '''
