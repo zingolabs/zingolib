@@ -64,7 +64,7 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zingo-memo = { workspace = true }
-zingo-netutils = { workspace = true, features = ["back_compatible"] }
+zingo-netutils = { workspace = true }
 zingo-price = { workspace = true }
 zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
