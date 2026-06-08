@@ -20,7 +20,6 @@ zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", featur
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 zingo_common_components = { workspace = true, features = ["for_test"] }
-zingo-netutils = { workspace = true }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }

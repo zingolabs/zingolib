@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+
+### Removed
+
+## [5.0.0] - 2026-06-08
+
+### Added
+- `grpc_connector::GetClientError`
+
+### Changed
 - `wallet::summary::data`:
   - `NoteSummary`: `output_index` field is now u32.
   - `OutgoingNoteSummary`: `output_index` field is now u32.
@@ -19,8 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `OutgoingCoinSummary`: `output_index` field is now u32.
 - `wallet::disk`: serialized version incremented to 40 for serializing output indexes as u32.
 - `wallet::output::OutputRef`: `output_index` method now returns u32.
-
-### Removed
 
 ## [4.0.0] - 2026-06-05
 

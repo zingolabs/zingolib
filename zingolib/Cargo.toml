@@ -1,7 +1,7 @@
 [package]
 name = "zingolib"
 description = "Zingo backend library."
-version = "4.0.0"
+version = "5.0.0"
 authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
@@ -30,7 +30,6 @@ zingo-price = { workspace = true }
 
 # Zingo-common
 zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
 
 # Test
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}

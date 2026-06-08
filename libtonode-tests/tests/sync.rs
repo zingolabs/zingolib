@@ -191,6 +191,20 @@ async fn add_subtree_roots() {
 
         Ok(CompactTxStreamerClient::new(channel))
     }
+    #[derive(Debug, thiserror::Error)]
+    pub enum GetClientError {
+        #[error("bad uri: invalid scheme")]
+        InvalidScheme,
+
+        #[error("bad uri: invalid authority")]
+        InvalidAuthority,
+
+        #[error("bad uri: invalid path and/or query")]
+        InvalidPathAndQuery,
+
+        #[error(transparent)]
+        Transport(#[from] tonic::transport::Error),
+    }
 
     rustls::crypto::ring::default_provider()
         .install_default()
