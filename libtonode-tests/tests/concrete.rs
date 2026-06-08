@@ -1379,12 +1379,13 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .set_nu5(Some(11))
             .set_nu6(Some(13))
             .set_nu6_1(Some(15))
+            .set_nu6_2(Some(17))
             .set_nu7(None)
             .build();
 
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
+        increase_height_and_wait_for_client(&local_net, &mut lightclient, 18)
             .await
             .unwrap();
     }
@@ -1400,12 +1401,13 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .set_nu5(Some(5))
             .set_nu6(Some(7))
             .set_nu6_1(Some(9))
+            .set_nu6_2(Some(11))
             .set_nu7(None)
             .build();
 
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
+        increase_height_and_wait_for_client(&local_net, &mut lightclient, 12)
             .await
             .unwrap();
     }
@@ -2577,6 +2579,7 @@ TransactionSummary {
             .set_nu5(Some(5))
             .set_nu6(Some(5))
             .set_nu6_1(Some(5))
+            .set_nu6_2(Some(5))
             .set_nu7(None)
             .build();
 
