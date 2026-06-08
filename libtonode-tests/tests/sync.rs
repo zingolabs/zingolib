@@ -11,9 +11,9 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
-use zingo_netutils::GetClientError;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::data::PollReport;
+use zingolib::grpc_connector::GetClientError;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
@@ -190,20 +190,6 @@ async fn add_subtree_roots() {
         };
 
         Ok(CompactTxStreamerClient::new(channel))
-    }
-    #[derive(Debug, thiserror::Error)]
-    pub enum GetClientError {
-        #[error("bad uri: invalid scheme")]
-        InvalidScheme,
-
-        #[error("bad uri: invalid authority")]
-        InvalidAuthority,
-
-        #[error("bad uri: invalid path and/or query")]
-        InvalidPathAndQuery,
-
-        #[error(transparent)]
-        Transport(#[from] tonic::transport::Error),
     }
 
     rustls::crypto::ring::default_provider()
