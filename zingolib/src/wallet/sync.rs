@@ -270,12 +270,8 @@ mod tests {
         .unwrap();
         let (first_valid_diversifier, _) = fvk.find_address(DiversifierIndex::new()).unwrap();
 
-        let result = SyncWallet::add_sapling_address(
-            &mut wallet,
-            account_id,
-            addr.clone(),
-            first_valid_diversifier,
-        );
+        let result =
+            SyncWallet::add_sapling_address(&mut wallet, account_id, addr, first_valid_diversifier);
         assert!(result.is_ok());
         assert!(
             wallet

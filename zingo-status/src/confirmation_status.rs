@@ -185,7 +185,7 @@ impl ConfirmationStatus {
     ///
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
+    /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(ConfirmationStatus::Calculated(1.into()).is_pending());
     /// assert!(ConfirmationStatus::Transmitted(1.into()).is_pending());
@@ -206,7 +206,7 @@ impl ConfirmationStatus {
     ///
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
+    /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(1.into()).is_failed());
     /// assert!(!ConfirmationStatus::Transmitted(1.into()).is_failed());
