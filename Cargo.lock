@@ -5571,6 +5571,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8644,7 +8653,7 @@ dependencies = [
  "rust_decimal",
  "sapling-crypto",
  "secp256k1 0.29.1",
- "secrecy",
+ "secrecy 0.8.0",
  "serde",
  "serde_json",
  "shardtree",
@@ -8716,7 +8725,7 @@ dependencies = [
  "orchard",
  "rand_core 0.6.4",
  "sapling-crypto",
- "secrecy",
+ "secrecy 0.8.0",
  "subtle",
  "tracing",
  "zcash_address",
@@ -9370,7 +9379,7 @@ dependencies = [
  "rustls 0.23.37",
  "sapling-crypto",
  "secp256k1 0.31.1",
- "secrecy",
+ "secrecy 0.10.3",
  "serde",
  "shardtree",
  "tempfile",
