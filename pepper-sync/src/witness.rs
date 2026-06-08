@@ -86,6 +86,7 @@ where
 
 #[cfg(not(feature = "darkside_test"))]
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    subtree_root_start_index: usize,
     subtree_roots: Vec<SubtreeRoot>,
     shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) -> Result<(), ServerError>
@@ -108,7 +109,7 @@ where
         let shard = LocatedPrunableTree::with_root_value(
             incrementalmerkletree::Address::from_parts(
                 incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                index as u64,
+                (subtree_root_start_index + index) as u64,
             ),
             (node, shardtree::RetentionFlags::EPHEMERAL),
         );

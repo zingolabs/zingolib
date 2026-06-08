@@ -51,7 +51,6 @@ pub(crate) mod transparent;
 pub(crate) mod spend;
 pub(crate) mod state;
 
-const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -402,12 +401,12 @@ where
 
     let initial_reorg_detection_start_height = state::update_scan_ranges(
         consensus_parameters,
+        fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        wallet_guard
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-    );
+        &mut *wallet_guard,
+    )
+    .await?;
 
     state::set_initial_state(
         consensus_parameters,
@@ -495,6 +494,8 @@ where
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
                         drop(wallet_guard);
+                        mempool_handle.abort();
+                        fetcher_handle.abort();
                         tracing::info!("Sync successfully shutdown.");
 
                         return Ok(SyncResult {
@@ -1737,8 +1738,16 @@ where
     let shard_trees = wallet
         .get_shard_trees_mut()
         .map_err(SyncError::WalletError)?;
-    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling)?;
-    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard)?;
+    witness::add_subtree_roots(
+        sapling_start_index as usize,
+        sapling_subtree_roots,
+        &mut shard_trees.sapling,
+    )?;
+    witness::add_subtree_roots(
+        orchard_start_index as usize,
+        orchard_subtree_roots,
+        &mut shard_trees.orchard,
+    )?;
 
     Ok(())
 }
@@ -1853,10 +1862,7 @@ async fn mempool_monitor(
     Ok(())
 }
 
-/// Spends will be reset to free up funds if transaction has been unconfirmed for
-/// `UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD` confirmed blocks.
-/// Transaction status will then be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
-// TODO: add config to pepper-sync to set UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+/// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
@@ -1879,17 +1885,6 @@ where
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
-
-    let stuck_funds_txids = wallet_transactions
-        .values()
-        .filter(|transaction| {
-            transaction.status().is_pending()
-                && last_known_chain_height
-                    >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
-        })
-        .map(super::wallet::WalletTransaction::txid)
-        .collect::<Vec<_>>();
-    reset_spends(wallet_transactions, stuck_funds_txids);
 
     Ok(())
 }
@@ -1918,6 +1913,7 @@ mod test {
             nu5: Some(BlockHeight::from_u32(3)),
             nu6: Some(BlockHeight::from_u32(3)),
             nu6_1: Some(BlockHeight::from_u32(3)),
+            nu6_2: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height

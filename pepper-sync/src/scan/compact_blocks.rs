@@ -12,8 +12,9 @@ use zcash_client_backend::proto::compact_formats::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_primitives::{block::BlockHash, zip32::AccountId};
+use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
@@ -328,7 +329,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     K: ScanningKeyOps<D, Nf>,
 {
     for (output_id, incoming_output) in incoming_decrypted_outputs {
-        let position = Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
+        let position = Position::from(u64::from(tree_size + output_id.output_index()));
         let key = keys
             .get(&incoming_output.ivk_tag)
             .expect("key should be available as it was used to decrypt output");
@@ -359,10 +360,14 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .enumerate()
             .map(|(output_index, output)| {
                 let note_commitment = CompactOutputDescription::try_from(output)
-                    .map_err(|()| ScanError::InvalidSaplingOutput)?
+                    .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {
@@ -396,10 +401,14 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .enumerate()
             .map(|(output_index, output)| {
                 let note_commitment = CompactAction::try_from(output)
-                    .map_err(|()| ScanError::InvalidOrchardAction)?
+                    .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {

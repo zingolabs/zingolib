@@ -16,8 +16,9 @@ use tokio::{
 
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{transaction::TxId, zip32::AccountId};
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
@@ -534,6 +535,9 @@ where
 
                 is_batching.store(false, atomic::Ordering::Release);
             }
+
+            is_batching.store(false, atomic::Ordering::Release);
+
             Ok(())
         });
 
@@ -685,6 +689,8 @@ where
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }
+
+            is_scanning.store(false, atomic::Ordering::Release);
         });
 
         self.handle = Some(handle);

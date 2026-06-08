@@ -7,8 +7,8 @@ use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::consensus::Parameters;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};

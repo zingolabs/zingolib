@@ -518,7 +518,7 @@ pub struct NoteSummary {
     pub memo: Option<String>,
     pub time: u32,
     pub txid: TxId,
-    pub output_index: u16,
+    pub output_index: u32,
     pub account_id: zip32::AccountId,
     pub scope: Scope,
 }
@@ -723,7 +723,7 @@ pub struct CoinSummary {
     pub spend_status: SpendStatus,
     pub time: u32,
     pub txid: TxId,
-    pub output_index: u16,
+    pub output_index: u32,
     pub account_id: zip32::AccountId,
     pub scope: TransparentScope,
     pub address_index: u32,
@@ -843,7 +843,7 @@ pub struct OutgoingNoteSummary {
     pub memo: Option<String>,
     pub recipient: String,
     pub recipient_unified_address: Option<String>,
-    pub output_index: u16,
+    pub output_index: u32,
     pub account_id: zip32::AccountId,
     pub scope: Scope,
 }
@@ -909,7 +909,7 @@ impl std::fmt::Display for OutgoingNoteSummaries {
 pub struct OutgoingCoinSummary {
     pub value: u64,
     pub recipient: String,
-    pub output_index: u16,
+    pub output_index: u32,
 }
 
 impl std::fmt::Display for OutgoingCoinSummary {
