@@ -1,31 +1,32 @@
 [workspace]
 members = [
-    "libtonode-tests",
     "darkside-tests",
-    "zingo-cli",
-    "zingolib",
-    "zingo-memo",
+    "libtonode-tests",
     "pepper-sync",
+    "zingo-cli",
+    "zingo-memo",
     "zingo-price",
     "zingo-status",
+    "zingolib",
     "zingolib_testutils",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-
-# Protocol
-bip0039 = { version = "0.13", features = ["rand"] }
-bip32 = { version = "0.6.0-pre.1", default-features = false }
-zip32 = "0.2.0"
+### Workspace
+pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+zingo-price = { path = "zingo-price" }
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "nu6_2_update_with_nuparams" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "nu6_2_update_with_nuparams" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
 
 ### Documentation
 indoc = "2"
@@ -36,94 +37,100 @@ log = "0.4"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
-# Zingo-common
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", tag = "v0_2_with_nu6_2_upgrade" }
+### Zingo-common
+zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
+zingo_common_components = "0.3.1"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
 orchard = "0.14.0"
 sapling-crypto = "0.7.0"
-shardtree = "0.6.1"
-zcash_address = "0.12"
-zcash_client_backend = { version = "0.23", features = [
+shardtree = "0.6.2"
+zcash_address = "0.12.0"
+zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
     "tor",
 ] }
-zcash_encoding = "0.4"
-zcash_keys = { version = "0.14", features = [
+zcash_encoding = "0.4.0"
+zcash_keys = { version = "0.14.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4"
-zcash_primitives = "0.28"
-zcash_proofs = "0.28"
-zcash_protocol = "0.9"
-zcash_transparent = "0.8"
+zcash_note_encryption = "0.4.1"
+zcash_primitives = "0.28.0"
+zcash_proofs = "0.28.0"
+zcash_protocol = "0.9.0" # public API (TODO: remove from public API)
+zcash_transparent = "0.8.0"
 
 # Zebra
 zebra-chain = "9.0.0"
+
+### Blockchain Protocol
+bip0039 = { version = "0.14", features = ["rand"] }
+bip32 = { version = "0.6.0-pre.1", default-features = false }
+zip32 = "0.2.0"
+
+### Cryptographic
+jubjub = "0.10.0"
+ring = "0.17.14"
+secp256k1 = "0.31.1"
+secrecy = "0.8"
+subtle = "2.6.1"
+bech32 = "0.11.0"
+bs58 = "0.5"
 
 # Parallel processing
 crossbeam-channel = "0.5"
 rayon = "1"
 
-# Misc
-append-only-vec = "0.1.7"
-bech32 = "0.11.0"
-bs58 = "0.5"
+# Encoding
 byteorder = "1"
-bytes = "1"
-chrono = "0.4"
-clap = "4"
-dirs = "6"
-futures = "0.3"
-futures-util = "0.3"
 hex = "0.4"
-http = "1"
-hyper-util = "0.1"
-hyper = { version = "1", features = ["full"] }
-hyper-rustls = { version = "0.27", features = ["http2"] }
-itertools = "0.14"
 json = "0.12"
-jubjub = "0.10"
-log4rs = "1"
-memuse = "0.2"
-nonempty = "0.11.0"
-prost = "0.14"
-rand = "0.8"
-reqwest = { version = "0.12.15", default-features = false }
-ring = "0.17.14"
-rust_decimal = "1.37.2"
-rust-embed = "8"
-rustls = { version = "0.23", features = ["ring"] }
-rustyline = "11"
-secp256k1 = "0.31.1"
-secrecy = "0.8"
 serde = "1"
 serde_json = "1"
-shellwords = "1"
-subtle = "2"
-thiserror = "2"
-tokio = "1"
-tokio-rustls = "0.26"
+
+### Network
+http = "1"
+reqwest = { version = "0.12.15", default-features = false }
+rustls = { version = "0.23.37", features = ["ring"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
-tower = "0.5"
-webpki-roots = "1.0.6"
+prost = "0.14"
 
-# Workspace
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.1"
-zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.1"
-pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# pepper-sync = "0.2.0"
-zingolib = { path = "zingolib" }
+### Async
+futures = "0.3"
+futures-util = "0.3"
+tokio = "1"
+
+### Error interface
+thiserror = "2"
+
+### Internal data
+append-only-vec = "0.1.7"
+bytes = "1"
+itertools = "0.14"
+nonempty = "0.11.0"
+rust_decimal = "1.37.2"
+rustyline = "17.0.2"
+shellwords = "1"
+
+### OS hooks
+chrono = "0.4"
+clap = "4"
+dirs = "6"
+memuse = "0.2"
+rand = "0.8"
+
+### Misc / not-yet-grouped
+rust-embed = "8"
 
 [profile.test]
 opt-level = 3
+
+[patch.crates-io]
+time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }

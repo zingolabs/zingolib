@@ -1,6 +1,9 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    path::PathBuf,
+};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::MemoBytes;
 
@@ -59,6 +62,12 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
             .as_ref(),
     );
     Ok((sapling_output, sapling_spend))
+}
+
+/// Returns the path to the default directory that the Zcash proving parameters are located in.
+pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
+    zcash_proofs::default_params_folder()
+        .ok_or_else(|| std::io::Error::other("could not load default params folder"))
 }
 
 #[cfg(test)]

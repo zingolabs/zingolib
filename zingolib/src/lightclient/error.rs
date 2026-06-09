@@ -2,15 +2,14 @@
 
 use std::convert::Infallible;
 
-use pepper_sync::error::{SyncError, SyncModeError};
 use zcash_protocol::TxId;
 
-use crate::{
-    grpc_connector::GetClientError,
-    wallet::{
-        error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
-        output::OutputRef,
-    },
+use pepper_sync::error::{SyncError, SyncModeError};
+use zingo_netutils::GetClientError;
+
+use crate::wallet::{
+    error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
+    output::OutputRef,
 };
 
 #[derive(Debug, thiserror::Error)]

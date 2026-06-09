@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Removed
+- `regtest` feature: can still use zingo-cli in regtest mode with no features enabled using the '--chain regtest' flag. 
 
 ## [0.3.0] - 2026-06-05
 
@@ -21,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 `remove_transaction` command - now only allows transactions with the new `Failed` status to be removed.
 
 ### Removed
-`resend` command - see zingolib CHANGELOG.md on `LightClient::resend`
-`send_progress` command
+- `resend` command: see zingolib CHANGELOG.md on `LightClient::resend`
+- `send_progress` command
 
 ## [0.2.0]
 

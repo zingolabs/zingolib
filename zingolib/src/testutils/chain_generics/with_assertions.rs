@@ -9,6 +9,10 @@ use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
+use zingo_netutils::Indexer as _;
+use zingo_status::confirmation_status::ConfirmationStatus;
+
+use crate::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
@@ -17,7 +21,6 @@ use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
 use crate::wallet::output::OutputRef;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// this function handles inputs and their lifetimes to create a proposal
 pub async fn to_clients_proposal(
@@ -121,14 +124,18 @@ where
 
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
+    let mut indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap())
+        .await
+        .unwrap();
     let server_height_at_send = BlockHeight::from(
-        crate::grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
+        indexer
+            .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
             .await
             .unwrap()
             .height as u32,
     );
     let last_known_chain_height = sender
-        .wallet
+        .wallet()
         .read()
         .await
         .sync_state
@@ -261,7 +268,7 @@ where
         // chain scan shows the same
         sender.sync_and_await().await.unwrap();
         let last_known_chain_height = sender
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state

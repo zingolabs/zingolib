@@ -10,7 +10,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 ///
 /// The higher the performance level the higher the memory usage and storage.
 // TODO: revisit after implementing nullifier refetching
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PerformanceLevel {
     /// - number of outputs per batch is quartered
     /// - nullifier map only contains chain tip
@@ -80,7 +80,7 @@ impl std::fmt::Display for PerformanceLevel {
 }
 
 /// Sync configuration.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct SyncConfig {
     /// Transparent address discovery configuration.
     pub transparent_address_discovery: TransparentAddressDiscovery,
@@ -142,7 +142,7 @@ impl SyncConfig {
 /// Transparent address configuration.
 ///
 /// Sets which `scopes` will be searched for addresses in use, scanning relevant transactions, up to a given `gap_limit`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransparentAddressDiscovery {
     /// Sets the gap limit for transparent address discovery.
     pub gap_limit: u8,
@@ -194,7 +194,7 @@ impl TransparentAddressDiscovery {
 }
 
 /// Sets the active scopes for transparent address recovery.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransparentAddressDiscoveryScopes {
     /// External.
     pub external: bool,

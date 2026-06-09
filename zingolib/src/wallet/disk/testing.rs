@@ -30,7 +30,7 @@ pub async fn assert_wallet_capability_matches_seed(
         Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap();
 
     let expected_keys = crate::wallet::keys::unified::UnifiedKeyStore::new_from_mnemonic(
-        &wallet.network,
+        wallet.chain_type,
         &expected_mnemonic,
         zip32::AccountId::ZERO,
     )

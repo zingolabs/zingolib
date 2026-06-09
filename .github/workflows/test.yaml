@@ -10,6 +10,7 @@ on:
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
   DARKSIDE_PACKAGE: darkside-tests
+  NEXTEST_VERSION: "0.9.132"
 
 jobs:
   build-test-artifacts:
@@ -29,7 +30,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest@0.9.78
+          tool: nextest@${{ env.NEXTEST_VERSION }}
 
       - name: Install system deps
         run: |
@@ -89,6 +90,11 @@ jobs:
 
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@${{ env.NEXTEST_VERSION }}
 
       - name: Download normal archive
         uses: actions/download-artifact@v8

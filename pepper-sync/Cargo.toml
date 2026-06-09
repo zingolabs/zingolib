@@ -24,6 +24,7 @@ test-features = []
 # Zingo
 zingo-memo.workspace = true
 zingo-status.workspace = true
+zingo-netutils.workspace = true
 
 # Zcash
 incrementalmerkletree.workspace = true
@@ -74,6 +75,7 @@ json.workspace = true
 
 # Serialization
 byteorder = { workspace = true, optional = true }
+hex.workspace = true
 
 # Documentation
 simple-mermaid.workspace = true

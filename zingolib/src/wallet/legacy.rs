@@ -12,9 +12,7 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
-use zcash_client_backend::{
-    proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
-};
+use zcash_client_backend::serialization::shardtree::read_shard;
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
@@ -24,6 +22,7 @@ use zcash_protocol::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
