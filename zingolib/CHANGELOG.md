@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
 ### Added
 - `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
   if it failed, returns `(SyncRecoveryObservables, String)` with the recommended
@@ -35,9 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::WalletSettings`: `default` impl
 
 ### Changed
-- Upgraded `zingo-netutils` from 3.0.0 to 4.0.0 (`indexer_trait` branch).
-  Proto types now come from `lightwallet-protocol` via `zingo_netutils::lightwallet_protocol`.
-  `back_compatible` and `globally-public-transparent` feature gates are enabled.
+- Upgraded `zingo-netutils` from 3.0.0 to 5.0.1:
+  - proto types now come from `lightwallet-protocol` via `zingo_netutils::lightwallet_protocol`.
+  - `globally-public-transparent` feature gates are enabled.
 - `lightclient::LightClient`:
   - `new` now installs the rustls ring crypto provider (idempotent) since
     `GrpcIndexer::new` pre-builds a TLS endpoint at construction time.
@@ -93,9 +95,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `new_from_seed` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
   - `new_from_mnemonic` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
   - `new_from_ufvk` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
-- `wallet::disk::read`: `network` parameter renamed `chain_type`
+- `wallet::disk`:
+  - serialized version incremented to 41 for serializing output indexes as u32 and chain types as u8 instead of string.
+  - `read` module: `network` parameter renamed `chain_type`
 - `wallet::error::WalletError`: added `WalletAlreadyCreated` variant
 - `wallet::error::KeyError`: added `InvalidMnemonicPhrase` variant
+- `wallet::summary::data`:
+  - `NoteSummary`: `output_index` field is now u32.
+  - `OutgoingNoteSummary`: `output_index` field is now u32.
+  - `CoinSummary`: `output_index` field is now u32.
+  - `OutgoingCoinSummary`: `output_index` field is now u32.
+- `wallet::output::OutputRef`: `output_index` method now returns u32.
 
 ### Removed
 - `regtest` feature: production binaries can now be tested in regtest mode.
@@ -133,20 +143,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `create_from_wallet` constructor: no longer needed as now covered by `new` due to config rework
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
 - `testutils::build_fvk_client`
-
-## [5.0.0] - 2026-06-08
-
-### Added
-- `grpc_connector::GetClientError`
-
-### Changed
-- `wallet::summary::data`:
-  - `NoteSummary`: `output_index` field is now u32.
-  - `OutgoingNoteSummary`: `output_index` field is now u32.
-  - `CoinSummary`: `output_index` field is now u32.
-  - `OutgoingCoinSummary`: `output_index` field is now u32.
-- `wallet::disk`: serialized version incremented to 40 for serializing output indexes as u32.
-- `wallet::output::OutputRef`: `output_index` method now returns u32.
 
 ## [4.0.0] - 2026-06-05
 
