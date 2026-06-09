@@ -11,13 +11,12 @@ use tokio::sync::{RwLock, mpsc};
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use tonic::transport::Channel;
-use zcash_client_backend::proto::service::RawTransaction;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::RawTransaction;
+use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -306,14 +305,15 @@ impl ScanRange {
 /// times in quick sucession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
-pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<Channel>,
+pub async fn sync<C, P, W>(
+    client: C,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks
@@ -1811,12 +1811,15 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
-async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<Channel>,
+async fn mempool_monitor<C>(
+    mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<(), MempoolError> {
+) -> Result<(), MempoolError>
+where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+{
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
@@ -1900,7 +1903,6 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
-
     mod checked_height_validation {
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::local_consensus::LocalNetwork;

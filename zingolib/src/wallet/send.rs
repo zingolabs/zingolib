@@ -38,7 +38,7 @@ impl LightWallet {
                             .recipient_address()
                             .clone()
                             .convert_if_network::<zcash_keys::address::Address>(
-                                self.network.network_type()
+                                self.chain_type.network_type()
                             ),
                         Ok(zcash_keys::address::Address::Tex(_))
                     )
@@ -60,7 +60,7 @@ impl LightWallet {
         proposal: Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        let network = self.network;
+        let chain_type = self.chain_type;
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&sending_account)
@@ -75,13 +75,12 @@ impl LightWallet {
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
-            &network,
+            &chain_type,
             &sapling_prover,
             &sapling_prover,
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
-            // proposed_version (zcash_client_backend "unstable"): use the default tx version
             None,
         )
         .map_err(CalculateTransactionError::Calculation)
@@ -227,8 +226,8 @@ mod tests {
             transaction_request_from_receivers(rec).expect("rec can requestify");
 
         assert_eq!(
-            request.total().expect("total"),
-            Some((amount_1 + amount_2).expect("add"))
+            request.total().expect("total").expect("amounts present"),
+            (amount_1 + amount_2).expect("add")
         );
     }
 

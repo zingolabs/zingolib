@@ -13,10 +13,10 @@ ci = ["zingolib/ci"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
+zingo_common_components = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-status = { workspace = true }
-zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
-
+zingolib_testutils = { path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 zingo_common_components = { workspace = true, features = ["for_test"] }
@@ -29,8 +29,6 @@ zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 shardtree.workspace = true
 bip0039.workspace = true
-zebra-chain = { workspace = true }
-incrementalmerkletree.workspace = true
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }

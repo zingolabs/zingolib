@@ -3,29 +3,33 @@
 use std::{
     fs::File,
     io::BufReader,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
     },
+    time::Duration,
 };
 
 use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
+use bip0039::Mnemonic;
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
     error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
 };
+use zingo_netutils::Indexer as _;
 
 use crate::{
-    config::ZingoConfig,
+    config::{ChainType, ClientConfig, WalletConfig},
+    utils::now,
     wallet::{
-        LightWallet, WalletBase,
+        LightWallet,
         balance::AccountBalance,
         error::{BalanceError, KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
@@ -43,17 +47,56 @@ pub mod save;
 pub mod send;
 pub mod sync;
 
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
+/// the read/write lock.
+struct WalletMeta {
+    /// Full path to wallet file.
+    wallet_path: PathBuf,
+    /// The chain type, extracted at construction for lock-free access.
+    chain_type: ChainType,
+    /// The wallet birthday height.
+    birthday: BlockHeight,
+    /// The mnemonic seed phrase, if this is a spending wallet.
+    mnemonic: Option<Mnemonic>,
+    /// The locked mutable wallet state.
+    wallet_data: Arc<RwLock<LightWallet>>,
+}
+
+impl std::fmt::Debug for WalletMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalletMeta")
+            .field("wallet_path", &self.wallet_path)
+            .field("chain_type", &self.chain_type)
+            .field("birthday", &self.birthday)
+            .field("mnemonic", &self.mnemonic)
+            .finish()
+    }
+}
+
+impl WalletMeta {
+    /// Creates a new `WalletMeta` by wrapping a [`crate::wallet::LightWallet`] in a lock alongside metadata and
+    /// immutable wallet data.
+    fn new(wallet_path: PathBuf, wallet: LightWallet) -> Self {
+        Self {
+            wallet_path,
+            chain_type: wallet.chain_type(),
+            birthday: wallet.birthday(),
+            mnemonic: wallet.mnemonic().cloned(),
+            wallet_data: Arc::new(RwLock::new(wallet)),
+        }
+    }
+}
+
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
-    // TODO: split zingoconfig so data is not duplicated
-    pub config: ZingoConfig,
-    /// Tor client
+    indexer: zingo_netutils::GrpcIndexer,
     tor_client: Option<tor::Client>,
-    /// Wallet data
-    pub wallet: Arc<RwLock<LightWallet>>,
+    wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
@@ -61,59 +104,55 @@ pub struct LightClient {
 }
 
 impl LightClient {
-    /// Creates a `LightClient` with a new wallet from fresh entropy and a birthday of the higher value between
-    /// [`chain_height` - 100] or sapling activation height.
-    /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
+    /// Creates a `LightClient` from [`crate::config::ClientConfig`].
+    ///
+    /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true` or the
+    /// [`crate::config::WalletConfig`] is of `Read` variant.
+    /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
-    pub fn new(
-        config: ZingoConfig,
-        chain_height: BlockHeight,
-        overwrite: bool,
-    ) -> Result<Self, LightClientError> {
-        let sapling_activation_height = config
-            .chain
-            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
-        let birthday = sapling_activation_height.max(chain_height - 100);
+    pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
+        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
+        let _ = rustls::crypto::ring::default_provider().install_default();
 
-        Self::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::FreshEntropy {
-                    no_of_accounts: config.no_of_accounts,
-                },
-                birthday,
-                config.wallet_settings.clone(),
-            )?,
-            config,
-            overwrite,
-        )
-    }
+        let wallet = match config.wallet_config() {
+            WalletConfig::Read => {
+                let buffer = BufReader::new(
+                    File::open(config.get_wallet_path()).map_err(LightClientError::FileError)?,
+                );
 
-    /// Creates a `LightClient` from a `wallet` and `config`.
-    /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
-    #[allow(clippy::result_large_err)]
-    pub fn create_from_wallet(
-        wallet: LightWallet,
-        config: ZingoConfig,
-        overwrite: bool,
-    ) -> Result<Self, LightClientError> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.wallet_path_exists() {
-                return Err(LightClientError::FileError(std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    format!(
-                        "Cannot save to given data directory as a wallet file already exists at:\n{}",
-                        config.get_wallet_pathbuf().to_string_lossy()
-                    ),
-                )));
+                LightWallet::read(buffer, config.chain_type())
+                    .map_err(LightClientError::FileError)?
             }
-        }
+            _ => {
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    if !overwrite && config.get_wallet_path().exists() {
+                        return Err(LightClientError::FileError(std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            format!(
+                                "Cannot save to given data directory as a wallet file already exists at:\n{}",
+                                config.get_wallet_path().display()
+                            ),
+                        )));
+                    }
+                }
+
+                LightWallet::new(config.chain_type(), config.wallet_config())?
+            }
+        };
+
+        // Install the ring crypto provider for rustls. Required because both
+        // `ring` and `aws-lc-rs` features are unified in via transitive deps,
+        // preventing rustls from auto-selecting a provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
+
         Ok(LightClient {
-            config,
+            indexer,
             tor_client: None,
-            wallet: Arc::new(RwLock::new(wallet)),
+            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -121,33 +160,44 @@ impl LightClient {
         })
     }
 
-    /// Create a `LightClient` from an existing wallet file.
-    #[allow(clippy::result_large_err)]
-    pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
-        let wallet_path = if config.wallet_path_exists() {
-            config.get_wallet_path()
-        } else {
-            return Err(LightClientError::FileError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "Cannot read wallet. No file at {}",
-                    config.get_wallet_path().display()
-                ),
-            )));
-        };
-
-        let buffer = BufReader::new(File::open(wallet_path).map_err(LightClientError::FileError)?);
-
-        Self::create_from_wallet(
-            LightWallet::read(buffer, config.chain).map_err(LightClientError::FileError)?,
-            config,
-            true,
-        )
+    /// Returns the chain type for lock-free access.
+    pub fn chain_type(&self) -> ChainType {
+        self.wallet.chain_type
     }
 
-    /// Returns config used to create lightclient.
-    pub fn config(&self) -> &ZingoConfig {
-        &self.config
+    /// Returns the wallet birthday height for lock-free access.
+    pub fn birthday(&self) -> u32 {
+        u32::from(self.wallet.birthday)
+    }
+
+    /// Returns the wallet's mnemonic phrase as a string.
+    pub fn mnemonic_phrase(&self) -> Option<String> {
+        self.wallet
+            .mnemonic
+            .as_ref()
+            .map(|m| m.phrase().to_string())
+    }
+
+    /// Returns full path to wallet file.
+    pub fn wallet_path(&self) -> PathBuf {
+        self.wallet.wallet_path.clone()
+    }
+
+    /// Returns path to the directory which holds the wallet file.
+    pub fn wallet_dir(&self) -> Result<PathBuf, LightClientError> {
+        self.wallet
+            .wallet_path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| {
+                LightClientError::FileError(std::io::Error::other("wallet directory not found!"))
+            })
+    }
+
+    /// Returns a reference to the locked mutable wallet state.
+    // TODO: remove this from public API and replace with APIs to pass through all wallet methods without the consumer having access to the rwlock
+    pub fn wallet(&self) -> &Arc<RwLock<LightWallet>> {
+        &self.wallet.wallet_data
     }
 
     /// Returns tor client.
@@ -155,25 +205,31 @@ impl LightClient {
         self.tor_client.as_ref()
     }
 
-    /// Returns URI of the server the lightclient is connected to.
-    pub fn server_uri(&self) -> http::Uri {
-        self.config.get_lightwalletd_uri()
+    /// Returns URI of the indexer the lightclient is connected to.
+    pub fn indexer_uri(&self) -> &http::Uri {
+        self.indexer.uri()
     }
 
-    /// Set the server uri.
-    pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server;
+    /// Set indexer URI.
+    ///
+    /// Replaces the current gRPC client(s) with new ones that point at the provided URI.
+    pub async fn set_indexer_uri(
+        &mut self,
+        server: http::Uri,
+    ) -> Result<(), zingo_netutils::GetClientError> {
+        self.indexer = zingo_netutils::GrpcIndexer::new(server).await?;
+        Ok(())
     }
 
     /// Creates a tor client for current price updates.
     ///
-    /// If `tor_dir` is `None` it will be set to the wallet's data directory.
+    /// If `tor_dir` is `None` it will be set to a directory named "tor" within the wallet's data directory.
     pub async fn create_tor_client(
         &mut self,
         tor_dir: Option<PathBuf>,
     ) -> Result<(), LightClientError> {
-        let tor_dir =
-            tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
+        let wallet_dir = self.wallet_dir()?;
+        let tor_dir = tor_dir.unwrap_or_else(|| wallet_dir.join("tor"));
         tokio::fs::create_dir_all(tor_dir.as_path())
             .await
             .map_err(LightClientError::FileError)?;
@@ -189,13 +245,13 @@ impl LightClient {
 
     /// Returns server information.
     // TODO: return concrete struct with from json impl
-    pub async fn do_info(&self) -> String {
-        match crate::grpc_connector::get_info(self.server_uri()).await {
+    pub async fn do_info(&mut self) -> String {
+        match self.indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
                     "git_commit" => i.git_commit,
-                    "server_uri" => self.server_uri().to_string(),
+                    "server_uri" => self.indexer.uri().to_string(),
                     "vendor" => i.vendor,
                     "taddr_support" => i.taddr_support,
                     "chain_name" => i.chain_name,
@@ -205,7 +261,7 @@ impl LightClient {
                 };
                 o.pretty(2)
             }
-            Err(e) => e,
+            Err(e) => format!("{e:?}"),
         }
     }
 
@@ -215,7 +271,7 @@ impl LightClient {
         receivers: ReceiverSelection,
         account_id: zip32::AccountId,
     ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
-        self.wallet
+        self.wallet()
             .write()
             .await
             .generate_unified_address(receivers, account_id)
@@ -227,7 +283,7 @@ impl LightClient {
         account_id: zip32::AccountId,
         enforce_no_gap: bool,
     ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
-        self.wallet
+        self.wallet()
             .write()
             .await
             .generate_transparent_address(account_id, enforce_no_gap)
@@ -235,12 +291,12 @@ impl LightClient {
 
     /// Wrapper for [`crate::wallet::LightWallet::unified_addresses_json`].
     pub async fn unified_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.unified_addresses_json()
+        self.wallet().read().await.unified_addresses_json()
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::transparent_addresses_json`].
     pub async fn transparent_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.transparent_addresses_json()
+        self.wallet().read().await.transparent_addresses_json()
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::account_balance`].
@@ -248,7 +304,7 @@ impl LightClient {
         &self,
         account_id: zip32::AccountId,
     ) -> Result<AccountBalance, BalanceError> {
-        self.wallet.read().await.account_balance(account_id)
+        self.wallet().read().await.account_balance(account_id)
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::transaction_summaries`].
@@ -256,7 +312,7 @@ impl LightClient {
         &self,
         reverse_sort: bool,
     ) -> Result<TransactionSummaries, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .transaction_summaries(reverse_sort)
@@ -268,7 +324,7 @@ impl LightClient {
         &self,
         sort_highest_to_lowest: bool,
     ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .value_transfers(sort_highest_to_lowest)
@@ -280,14 +336,14 @@ impl LightClient {
         &self,
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet.read().await.messages_containing(filter).await
+        self.wallet().read().await.messages_containing(filter).await
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_memobytes_to_address`].
     pub async fn do_total_memobytes_to_address(
         &self,
     ) -> Result<TotalMemoBytesToAddress, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .do_total_memobytes_to_address()
@@ -296,19 +352,40 @@ impl LightClient {
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_spends_to_address`].
     pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
-        self.wallet.read().await.do_total_spends_to_address().await
+        self.wallet()
+            .read()
+            .await
+            .do_total_spends_to_address()
+            .await
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
     pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
-        self.wallet.read().await.do_total_value_to_address().await
+        self.wallet().read().await.do_total_value_to_address().await
+    }
+
+    /// Creates a backup file of the current wallet file in the wallet directory.
+    pub fn backup_wallet_file(&self) -> Result<(), LightClientError> {
+        let backup_time = now();
+        let backup_wallet_path = self.wallet_path().with_extension(
+            self.wallet_path()
+                .extension()
+                .map(|e| format!("backup.{}.{}", backup_time, e.to_string_lossy()))
+                .unwrap_or_else(|| format!("backup.{}.dat", backup_time)),
+        );
+
+        std::fs::copy(self.wallet_path(), backup_wallet_path)
+            .map_err(LightClientError::FileError)?;
+
+        Ok(())
     }
 }
 
 impl std::fmt::Debug for LightClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LightClient")
-            .field("config", &self.config)
+            .field("indexer", &self.indexer)
+            .field("wallet_meta", &self.wallet)
             .field("sync_mode", &self.sync_mode())
             .field(
                 "save_active",
@@ -317,60 +394,38 @@ impl std::fmt::Debug for LightClient {
             .finish()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, ZingoConfig},
-        lightclient::error::LightClientError,
-        wallet::LightWallet,
+        config::{ChainType, ClientConfig, WalletConfig},
+        lightclient::{LightClient, error::LightClientError},
+        testutils::default_test_wallet_settings,
     };
-    use bip0039::Mnemonic;
     use tempfile::TempDir;
-    use zingo_common_components::protocol::activation_heights::for_test;
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
-
-    use crate::{lightclient::LightClient, wallet::WalletBase};
 
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::build(ChainType::Regtest(for_test::all_height_one_nus()))
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
-            .create();
-        let mut lc = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
-                },
-                1.into(),
-                config.wallet_settings.clone(),
-            )
-            .unwrap(),
-            config.clone(),
-            false,
-        )
-        .unwrap();
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build();
+
+        let mut lc = LightClient::new(config.clone(), false).await.unwrap();
 
         lc.save_task().await;
         lc.wait_for_save().await;
 
-        let lc_file_exists_error = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
-                },
-                1.into(),
-                config.wallet_settings.clone(),
-            )
-            .unwrap(),
-            config,
-            false,
-        )
-        .unwrap_err();
+        let lc_file_exists_error = LightClient::new(config, false).await.unwrap_err();
 
         assert!(matches!(
             lc_file_exists_error,

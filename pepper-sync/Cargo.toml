@@ -74,6 +74,7 @@ json.workspace = true
 
 # Serialization
 byteorder = { workspace = true, optional = true }
+hex.workspace = true
 
 # Documentation
 simple-mermaid.workspace = true

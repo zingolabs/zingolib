@@ -5,10 +5,11 @@ use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
-        Account, AccountBirthday, AccountPurpose, BlockMetadata, InputSource, NullifierQuery,
-        ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT,
-        TargetValue, TransactionDataRequest, TransparentOutputFilter, WalletCommitmentTrees,
-        WalletRead, WalletSummary, WalletUtxo, WalletWrite, Zip32Derivation,
+        Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
+        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
+        SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
+        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletUtxo,
+        WalletWrite, Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
         wallet::{ConfirmationsPolicy, TargetHeight},
@@ -69,6 +70,10 @@ impl Account for ZingoAccount {
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
         unimplemented!()
     }
+
+    fn birthday_height(&self) -> BlockHeight {
+        unimplemented!()
+    }
 }
 
 impl WalletRead for LightWallet {
@@ -116,7 +121,7 @@ impl WalletRead for LightWallet {
         let Some((account_id, unified_key)) =
             self.unified_key_store.iter().find(|(_, unified_key)| {
                 UnifiedFullViewingKey::try_from(*unified_key).is_ok_and(|account_ufvk| {
-                    account_ufvk.encode(&self.network) == *ufvk.encode(&self.network)
+                    account_ufvk.encode(&self.chain_type) == *ufvk.encode(&self.chain_type)
                 })
             })
         else {
@@ -264,7 +269,7 @@ impl WalletRead for LightWallet {
             })
             .map(|(address_id, encoded_address)| {
                 let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::derived(
                     address_id.scope().into(),
@@ -291,7 +296,7 @@ impl WalletRead for LightWallet {
             })
             .map(|(address_id, encoded_address)| {
                 let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::derived(
                     address_id.scope().into(),
@@ -303,6 +308,15 @@ impl WalletRead for LightWallet {
                 Ok((address, address_metadata))
             })
             .collect()
+    }
+
+    fn get_transparent_balances(
+        &self,
+        _account: Self::AccountId,
+        _max_height: TargetHeight,
+        _confirmations_policy: ConfirmationsPolicy,
+    ) -> Result<HashMap<TransparentAddress, (TransparentKeyOrigin, Balance)>, Self::Error> {
+        unimplemented!()
     }
 
     fn get_transparent_address_metadata(
@@ -446,7 +460,7 @@ impl WalletWrite for LightWallet {
         &mut self,
         transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
     ) -> Result<(), Self::Error> {
-        let network = self.network;
+        let chain_type = self.chain_type;
 
         for sent_transaction in transactions {
             // this is a workaround as Transaction does not implement Clone
@@ -458,14 +472,14 @@ impl WalletWrite for LightWallet {
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(
-                    &self.network,
+                    &self.chain_type,
                     sent_transaction.target_height().into(),
                 ),
             )
             .map_err(WalletError::TransactionRead)?;
 
             match pepper_sync::scan_pending_transaction(
-                &network,
+                &chain_type,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
@@ -863,7 +877,7 @@ impl InputSource for LightWallet {
         confirmations_policy: ConfirmationsPolicy,
         _output_filter: TransparentOutputFilter,
     ) -> Result<Vec<WalletUtxo>, Self::Error> {
-        let address = transparent::encode_address(&self.network, *address);
+        let address = transparent::encode_address(&self.chain_type, *address);
 
         // TODO: add recipient key scope metadata
         Ok(self

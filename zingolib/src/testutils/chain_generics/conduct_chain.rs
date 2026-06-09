@@ -3,11 +3,11 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
-use crate::config::ZingoConfig;
+use crate::config::{ClientConfig, WalletConfig};
 use crate::get_base_address_macro;
+use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
 use crate::wallet::keys::unified::ReceiverSelection;
-use crate::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(async_fn_in_trait)]
 #[allow(opaque_hidden_inferred_bound)]
@@ -27,12 +27,13 @@ pub trait ConductChain {
     /// the server communicates some parameters (asyncronously)
     /// that are here compiled into an appropriate wallet configuration
     // super awful that this function has to exist, because the wallet should be able to communicate without 'test-only helpers'
-    async fn zingo_config(&mut self) -> crate::config::ZingoConfig;
+    async fn zingo_config(&mut self) -> crate::config::ClientConfig;
 
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
         let config = self.zingo_config().await;
-        let mut lightclient = LightClient::new(config, 1.into(), false).unwrap();
+        assert!(!matches!(config.wallet_config(), WalletConfig::Read));
+        let mut lightclient = LightClient::new(config, false).await.unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await
@@ -42,13 +43,9 @@ pub trait ConductChain {
     }
 
     /// loads a client from bytes
-    fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        LightClient::create_from_wallet(
-            LightWallet::read(data, config.chain).unwrap(),
-            config,
-            false,
-        )
-        .unwrap()
+    async fn load_client(&mut self, config: ClientConfig) -> LightClient {
+        assert!(matches!(config.wallet_config(), WalletConfig::Read));
+        LightClient::new(config, false).await.unwrap()
     }
 
     /// moves the chain tip forward, creating 1 new block
