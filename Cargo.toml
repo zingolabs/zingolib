@@ -37,7 +37,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Zingo-common
-zingo-netutils = "2.0.1"
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", tag = "v0_2_with_nu6_2_upgrade" }
 
 ### Zcash

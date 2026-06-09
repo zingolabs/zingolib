@@ -7,7 +7,6 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
-use zingo_netutils::GetClientError;
 
 #[cfg(feature = "testutils")]
 use zcash_client_backend::proto::service::TreeState;
@@ -39,6 +38,20 @@ pub(crate) async fn get_client(
     };
 
     Ok(CompactTxStreamerClient::new(channel))
+}
+#[derive(Debug, thiserror::Error)]
+pub enum GetClientError {
+    #[error("bad uri: invalid scheme")]
+    InvalidScheme,
+
+    #[error("bad uri: invalid authority")]
+    InvalidAuthority,
+
+    #[error("bad uri: invalid path and/or query")]
+    InvalidPathAndQuery,
+
+    #[error(transparent)]
+    Transport(#[from] tonic::transport::Error),
 }
 
 /// Get server info.
