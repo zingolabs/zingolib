@@ -37,7 +37,7 @@ simple-mermaid = "0.2.0"
 ### Logging
 log = "0.4"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
 zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
@@ -53,7 +53,7 @@ zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
-    "tor",
+    # "tor",
 ] }
 zcash_encoding = "0.4.0"
 zcash_keys = { version = "0.14.0", features = [

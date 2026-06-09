@@ -597,10 +597,11 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
 
     lightclient = RT.block_on(async move {
         if filled_template.tor_enabled {
-            info!("Creating tor client");
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            }
+            panic!("tor not currently supported")
+            // info!("Creating tor client");
+            // if let Err(e) = lightclient.create_tor_client(None).await {
+            //     eprintln!("error: failed to create tor client. price updates disabled. {e}");
+            // }
         }
 
         if filled_template.sync

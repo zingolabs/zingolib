@@ -15,7 +15,7 @@ use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use bip0039::Mnemonic;
-use zcash_client_backend::tor;
+// use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
@@ -95,7 +95,7 @@ impl WalletMeta {
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     indexer: zingo_netutils::GrpcIndexer,
-    tor_client: Option<tor::Client>,
+    // tor_client: Option<tor::Client>,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -151,7 +151,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            tor_client: None,
+            // tor_client: None,
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -200,10 +200,10 @@ impl LightClient {
         &self.wallet.wallet_data
     }
 
-    /// Returns tor client.
-    pub fn tor_client(&self) -> Option<&tor::Client> {
-        self.tor_client.as_ref()
-    }
+    // /// Returns tor client.
+    // pub fn tor_client(&self) -> Option<&tor::Client> {
+    //     self.tor_client.as_ref()
+    // }
 
     /// Returns URI of the indexer the lightclient is connected to.
     pub fn indexer_uri(&self) -> &http::Uri {
@@ -221,27 +221,27 @@ impl LightClient {
         Ok(())
     }
 
-    /// Creates a tor client for current price updates.
-    ///
-    /// If `tor_dir` is `None` it will be set to a directory named "tor" within the wallet's data directory.
-    pub async fn create_tor_client(
-        &mut self,
-        tor_dir: Option<PathBuf>,
-    ) -> Result<(), LightClientError> {
-        let wallet_dir = self.wallet_dir()?;
-        let tor_dir = tor_dir.unwrap_or_else(|| wallet_dir.join("tor"));
-        tokio::fs::create_dir_all(tor_dir.as_path())
-            .await
-            .map_err(LightClientError::FileError)?;
-        self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
+    // /// Creates a tor client for current price updates.
+    // ///
+    // /// If `tor_dir` is `None` it will be set to a directory named "tor" within the wallet's data directory.
+    // pub async fn create_tor_client(
+    //     &mut self,
+    //     tor_dir: Option<PathBuf>,
+    // ) -> Result<(), LightClientError> {
+    //     let wallet_dir = self.wallet_dir()?;
+    //     let tor_dir = tor_dir.unwrap_or_else(|| wallet_dir.join("tor"));
+    //     tokio::fs::create_dir_all(tor_dir.as_path())
+    //         .await
+    //         .map_err(LightClientError::FileError)?;
+    //     self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    /// Removes the tor client.
-    pub async fn remove_tor_client(&mut self) {
-        self.tor_client = None;
-    }
+    // /// Removes the tor client.
+    // pub async fn remove_tor_client(&mut self) {
+    //     self.tor_client = None;
+    // }
 
     /// Returns server information.
     // TODO: return concrete struct with from json impl
