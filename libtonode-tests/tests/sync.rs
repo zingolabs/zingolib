@@ -1,13 +1,18 @@
 use std::{num::NonZeroU32, time::Duration};
 
+use incrementalmerkletree::Position;
+use pepper_sync::sync::ScanPriority;
+use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
+use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
+use zingolib::data::PollReport;
+use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
@@ -146,28 +151,6 @@ async fn add_subtree_roots() {
             });
     }
 
-    // temporary client creation until zingolib v5 lands with new netutils update (imminent!)
-    async fn get_client(
-        uri: http::Uri,
-    ) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-        let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
-
-        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
-
-        let channel = if scheme == "https" {
-            let tls = ClientTlsConfig::new().with_webpki_roots();
-            endpoint.tls_config(tls)?.connect().await?
-        } else {
-            endpoint.connect().await?
-        };
-
-        Ok(CompactTxStreamerClient::new(channel))
-    }
-
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Ring to work as a default");
@@ -175,69 +158,6 @@ async fn add_subtree_roots() {
     let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-<<<<<<< HEAD
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::disabled(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.chain,
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            2_000_000.into(),
-            config.wallet_settings.clone(),
-        )
-        .unwrap(),
-        config,
-        true,
-    )
-    .unwrap();
-||||||| 31da83657
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.chain,
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            2_496_152.into(),
-            config.wallet_settings.clone(),
-        )
-        .unwrap(),
-        config,
-        true,
-    )
-    .unwrap();
-=======
     let config = ClientConfig::builder()
         .set_indexer_uri(uri.clone())
         .set_chain_type(ChainType::Mainnet)
@@ -245,50 +165,51 @@ async fn add_subtree_roots() {
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            birthday: 2_496_152,
+            birthday: 2_000_000,
             wallet_settings: default_test_wallet_settings(),
         })
         .build();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
->>>>>>> dev
 
-    let mut grpc_client = get_client(lightclient.config.get_lightwalletd_uri())
+    let mut grpc_client = GrpcIndexer::new(lightclient.indexer_uri().clone())
         .await
         .unwrap();
 
-    let request = tonic::Request::new(zcash_client_backend::proto::service::GetSubtreeRootsArg {
-        start_index: 0,
-        shielded_protocol: 0,
-        max_entries: 0,
-    });
     let mut sapling_subtree_roots_server = Vec::new();
     let mut sapling_subtree_roots_stream = grpc_client
-        .get_subtree_roots(request)
+        .get_subtree_roots(
+            GetSubtreeRootsArg {
+                start_index: 0,
+                shielded_protocol: 0,
+                max_entries: 0,
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
         .await
-        .unwrap()
-        .into_inner();
+        .unwrap();
     while let Some(root) = sapling_subtree_roots_stream.message().await.unwrap() {
         sapling_subtree_roots_server.push(root.root_hash);
     }
 
-    let request = tonic::Request::new(zcash_client_backend::proto::service::GetSubtreeRootsArg {
-        start_index: 0,
-        shielded_protocol: 1,
-        max_entries: 0,
-    });
     let mut orchard_subtree_roots_server = Vec::new();
     let mut orchard_subtree_roots_stream = grpc_client
-        .get_subtree_roots(request)
+        .get_subtree_roots(
+            GetSubtreeRootsArg {
+                start_index: 0,
+                shielded_protocol: 1,
+                max_entries: 0,
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
         .await
-        .unwrap()
-        .into_inner();
+        .unwrap();
     while let Some(root) = orchard_subtree_roots_stream.message().await.unwrap() {
         orchard_subtree_roots_server.push(root.root_hash);
     }
 
     lightclient.sync().await.unwrap();
     while !(lightclient
-        .wallet
+        .wallet()
         .read()
         .await
         .sync_state
@@ -303,7 +224,7 @@ async fn add_subtree_roots() {
     let _ = lightclient.await_sync().await;
 
     {
-        let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
+        let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
 
         assert_subtree_roots_match_server(
             shard_trees,
@@ -330,7 +251,7 @@ async fn add_subtree_roots() {
 
     lightclient.sync().await.unwrap();
     while !(lightclient
-        .wallet
+        .wallet()
         .read()
         .await
         .sync_state
@@ -345,7 +266,7 @@ async fn add_subtree_roots() {
     let _ = lightclient.await_sync().await;
 
     {
-        let shard_trees = &mut lightclient.wallet.write().await.shard_trees;
+        let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
 
         assert_subtree_roots_match_server(
             shard_trees,

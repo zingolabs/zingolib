@@ -205,32 +205,25 @@ impl SyncShardTrees for LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-
     use super::*;
     use crate::{
-        config::ZingoConfigBuilder,
+        config::{ChainType, WalletConfig},
         mocks::default_zaddr,
-        wallet::{LightWallet, WalletBase, WalletSettings},
+        testutils::default_test_wallet_settings,
+        wallet::LightWallet,
     };
-    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
     use sapling_crypto::zip32::DiversifiableFullViewingKey;
+    use zingo_test_vectors::seeds;
     use zip32::DiversifierIndex;
 
     fn test_wallet() -> LightWallet {
-        let config = ZingoConfigBuilder::default().create();
         LightWallet::new(
-            config.chain,
-            WalletBase::FreshEntropy {
+            ChainType::Mainnet,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-            },
-            419_200.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                birthday: 419200,
+                wallet_settings: default_test_wallet_settings(),
             },
         )
         .unwrap()

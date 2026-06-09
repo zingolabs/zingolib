@@ -3328,6 +3328,7 @@ version = "0.2.0"
 dependencies = [
  "bip0039 0.14.0",
  "http",
+ "incrementalmerkletree",
  "itertools 0.14.0",
  "json",
  "pepper-sync",
@@ -3345,6 +3346,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
+ "zingo-netutils",
  "zingo-status",
  "zingo_common_components",
  "zingo_test_vectors",
