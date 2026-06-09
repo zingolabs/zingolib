@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+
+### Changed
+
+### Removed
+
+## [5.0.0] - 2026-06-09
+
+### Added
 - `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
   if it failed, returns `(SyncRecoveryObservables, String)` with the recommended
   recovery action and error description. Primary entry point for consumers
