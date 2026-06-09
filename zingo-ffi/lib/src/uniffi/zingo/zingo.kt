@@ -767,8 +767,6 @@ internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_zingo_checksum_func_change_server(): Short
 
-    fun uniffi_zingo_checksum_func_check_b64(): Short
-
     fun uniffi_zingo_checksum_func_check_my_address(): Short
 
     fun uniffi_zingo_checksum_func_confirm(): Short
@@ -913,11 +911,6 @@ internal interface UniffiLib : Library {
     // FFI functions
     fun uniffi_zingo_fn_func_change_server(
         `serveruri`: RustBuffer.ByValue,
-        uniffi_out_err: UniffiRustCallStatus,
-    ): RustBuffer.ByValue
-
-    fun uniffi_zingo_fn_func_check_b64(
-        `datab64`: RustBuffer.ByValue,
         uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
 
@@ -1320,9 +1313,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_change_server() != 47175.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zingo_checksum_func_check_b64() != 6216.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_zingo_checksum_func_check_my_address() != 14233.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1699,13 +1689,6 @@ fun `changeServer`(`serveruri`: kotlin.String): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
             UniffiLib.INSTANCE.uniffi_zingo_fn_func_change_server(FfiConverterString.lower(`serveruri`), _status)
-        },
-    )
-
-fun `checkB64`(`datab64`: kotlin.String): kotlin.String =
-    FfiConverterString.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_zingo_fn_func_check_b64(FfiConverterString.lower(`datab64`), _status)
         },
     )
 
