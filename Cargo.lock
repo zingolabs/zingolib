@@ -3336,6 +3336,7 @@ dependencies = [
  "shardtree",
  "test-log",
  "tokio",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "zcash_address",
@@ -4062,7 +4063,7 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9250,7 +9251,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bip0039 0.14.0",
  "clap",
@@ -9280,7 +9281,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rand 0.8.5",
  "zcash_address",
@@ -9319,7 +9320,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -9353,7 +9354,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "3.0.1"
+version = "5.0.0"
 dependencies = [
  "append-only-vec",
  "bech32",

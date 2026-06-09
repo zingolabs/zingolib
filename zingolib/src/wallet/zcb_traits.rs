@@ -70,10 +70,6 @@ impl Account for ZingoAccount {
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
         unimplemented!()
     }
-
-    fn birthday_height(&self) -> BlockHeight {
-        unimplemented!()
-    }
 }
 
 impl WalletRead for LightWallet {
