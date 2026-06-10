@@ -13,34 +13,33 @@ ci = ["zingolib/ci"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-pepper-sync = { workspace = true }
-zingo-status = { workspace = true }
 zingolib_testutils = { path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
 zcash_local_net = { workspace = true }
-zingo_test_vectors = { workspace = true }
-zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
+http = { workspace = true }
+proptest = { workspace = true, optional = true }
 
-zip32 = { workspace = true }
+[dev-dependencies]
+rustls.workspace = true
+test-log.workspace = true
+bip0039.workspace = true
+incrementalmerkletree.workspace = true
+itertools = { workspace = true }
+json = { workspace = true }
+pepper-sync = { workspace = true }
+shardtree.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
-shardtree.workspace = true
-incrementalmerkletree.workspace = true
-bip0039.workspace = true
+zingo-netutils = { workspace = true }
+zingo-status = { workspace = true }
+zingo_test_vectors = { workspace = true }
+zingo_common_components = { workspace = true }
+zip32 = { workspace = true }
 
-tokio = { workspace = true, features = ["full"] }
-json = { workspace = true }
-itertools = { workspace = true }
-proptest = { workspace = true, optional = true }
-tracing.workspace = true
-tracing-subscriber.workspace = true
-
-http = { workspace = true }
-tonic.workspace = true
-
-[dev-dependencies]
-rustls.workspace = true
-test-log.workspace = true
+[package.metadata.cargo-shear]
+ignored = ["proptest"]
