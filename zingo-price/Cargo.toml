@@ -2,14 +2,13 @@
 name = "zingo-price"
 description = "Crate for fetching ZEC prices."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [dependencies]
-zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }

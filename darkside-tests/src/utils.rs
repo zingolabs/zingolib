@@ -16,11 +16,17 @@ use zcash_local_net::{
         Indexer as _,
         lightwalletd::{Lightwalletd, LightwalletdConfig},
     },
-    network::localhost_uri,
     process::Process as _,
 };
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zcash_protocol::consensus::BranchId;
+
+use zingo_netutils::Indexer as _;
+
+use zingolib::{
+    lightclient::DEFAULT_REQUEST_TIMEOUT,
+    testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri},
+};
 
 use super::{
     constants,
@@ -31,7 +37,6 @@ use crate::{
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-use zingolib::testutils::paths::get_cargo_manifest_dir;
 
 fn lightwalletd_config() -> LightwalletdConfig {
     LightwalletdConfig {
@@ -119,7 +124,16 @@ pub async fn update_tree_states_for_transaction(
     raw_tx: RawTransaction,
     height: u64,
 ) -> TreeState {
-    let trees = zingolib::grpc_connector::get_trees(server_id.clone(), height - 1)
+    let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
+        .await
+        .unwrap()
+        .get_tree_state(
+            zingo_netutils::lightwallet_protocol::BlockId {
+                height: height - 1,
+                hash: vec![],
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
         .await
         .unwrap();
     let mut sapling_tree: sapling_crypto::CommitmentTree =
@@ -231,7 +245,7 @@ pub async fn init_darksidewalletd(
         ..lightwalletd_config()
     };
     let lightwalletd = Lightwalletd::launch(lightwalletd_config).await.unwrap();
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);
 
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
@@ -324,13 +338,15 @@ fn write_transaction(transaction: Transaction, mut chainbuild_file: &File) {
 
 pub mod scenarios {
     use std::fs::File;
+    use std::num::NonZeroU32;
     use std::ops::Add;
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zebra_chain::parameters::testnet;
-    use zingo_common_components::protocol::activation_heights::for_test;
+    use zingo_common_components::protocol::ActivationHeights;
+    use zingolib::config::WalletConfig;
+    use zingolib::testutils::default_test_wallet_settings;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -340,7 +356,7 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
-    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingo_test_vectors::seeds::{DARKSIDE_SEED, HOSPITAL_MUSEUM_SEED};
     use zingolib::lightclient::LightClient;
     use zingolib_testutils::scenarios::ClientBuilder;
 
@@ -348,7 +364,7 @@ pub mod scenarios {
         lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) configured_activation_heights: testnet::ConfiguredActivationHeights,
+        pub(crate) configured_activation_heights: ActivationHeights,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -365,7 +381,7 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
             );
-            let configured_activation_heights = for_test::all_height_one_nus();
+            let configured_activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
@@ -395,12 +411,20 @@ pub mod scenarios {
         /// The staged block with the funding transaction is not applied and the faucet is not synced
         pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
             assert!(self.faucet.is_none(), "Error: Faucet already exists!");
-            self.faucet = Some(self.client_builder.build_client(
-                zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
-                1,
-                true,
-                self.configured_activation_heights,
-            ));
+            self.faucet = Some(
+                self.client_builder
+                    .build_client(
+                        WalletConfig::MnemonicPhrase {
+                            mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                            birthday: 1,
+                            wallet_settings: default_test_wallet_settings(),
+                        },
+                        true,
+                        self.configured_activation_heights,
+                    )
+                    .await,
+            );
 
             let faucet_funding_transaction = match funded_pool {
                 PoolType::Shielded(ShieldedProtocol::Orchard) => {
@@ -424,12 +448,19 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient = self.client_builder.build_client(
-                seed,
-                birthday,
-                true,
-                self.configured_activation_heights,
-            );
+            let lightclient = self
+                .client_builder
+                .build_client(
+                    WalletConfig::MnemonicPhrase {
+                        mnemonic_phrase: seed,
+                        no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                        birthday: birthday as u32,
+                        wallet_settings: default_test_wallet_settings(),
+                    },
+                    true,
+                    self.configured_activation_heights,
+                )
+                .await;
             self.lightclients.push(lightclient);
             self
         }
@@ -676,7 +707,7 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_activation_heights(&self) -> testnet::ConfiguredActivationHeights {
+        pub fn get_activation_heights(&self) -> ActivationHeights {
             self.configured_activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {

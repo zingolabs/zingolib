@@ -2,7 +2,7 @@
 name = "pepper-sync"
 description = "Pepper-sync is a crate providing a sync engine for the zcash network."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
@@ -24,8 +24,6 @@ test-features = []
 # Zingo
 zingo-memo.workspace = true
 zingo-status.workspace = true
-
-# Zingo-common
 zingo-netutils.workspace = true
 
 # Zcash
@@ -77,6 +75,7 @@ json.workspace = true
 
 # Serialization
 byteorder = { workspace = true, optional = true }
+hex.workspace = true
 
 # Documentation
 simple-mermaid.workspace = true

@@ -2,8 +2,10 @@
 
 use std::convert::Infallible;
 
-use pepper_sync::error::{SyncError, SyncModeError};
 use zcash_protocol::TxId;
+
+use pepper_sync::error::{SyncError, SyncModeError};
+use zingo_netutils::GetClientError;
 
 use crate::wallet::{
     error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
@@ -29,16 +31,13 @@ pub enum LightClientError {
     SendError(#[from] SendError),
     /// gPRC client error.
     #[error("gRPC client error. {0}")]
-    ClientError(#[from] zingo_netutils::GetClientError),
+    ClientError(#[from] GetClientError),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
-    /// Tor client error.
-    #[error("Tor client error. {0}")]
-    TorClientError(#[from] zcash_client_backend::tor::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

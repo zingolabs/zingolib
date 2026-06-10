@@ -9,11 +9,13 @@ use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
 use pepper_sync::keys::transparent::TransparentScope;
+use zingo_netutils::Indexer as _;
+use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
-use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
@@ -26,7 +28,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
             .calculate_transactions(proposal, sending_account)
@@ -54,7 +56,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
             .calculate_transactions(proposal, shielding_account)
@@ -84,7 +86,7 @@ impl LightClient {
         &mut self,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let opt_proposal = self.wallet.write().await.take_proposal();
+        let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let txids = match proposal {
                 ZingoProposal::Send {
@@ -118,7 +120,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id)
@@ -137,7 +139,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_shield_proposal(account_id)
@@ -152,7 +154,7 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
                 .wallet_transactions
@@ -185,14 +187,22 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                let transmission_result = crate::grpc_connector::send_transaction(
-                    self.server_uri(),
-                    transaction_bytes.clone().into_boxed_slice(),
-                )
-                .await
-                .map_err(|e| {
-                    SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
-                });
+                let transmission_result = self
+                    .indexer
+                    .clone()
+                    .send_transaction(
+                        RawTransaction {
+                            data: transaction_bytes.clone(),
+                            height: height.into(),
+                        },
+                        DEFAULT_REQUEST_TIMEOUT,
+                    )
+                    .await
+                    .map_err(|e| {
+                        SendError::TransmissionError(TransmissionError::TransmissionFailed(
+                            format!("{e:?}"),
+                        ))
+                    });
 
                 match transmission_result {
                     Ok(txid) => {
@@ -246,49 +256,37 @@ impl LightClient {
 mod test {
     //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
-    use std::num::NonZeroU32;
-
-    use bip0039::Mnemonic;
-    use pepper_sync::config::SyncConfig;
+    use zingo_test_vectors::seeds;
 
     use crate::{
-        lightclient::sync::test::sync_example_wallet,
-        testutils::chain_generics::{
-            conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
+        config::{ClientConfig, WalletConfig},
+        lightclient::{LightClient, sync::test::sync_example_wallet},
+        mocks::proposal::ProposalBuilder,
+        testutils::{
+            chain_generics::{
+                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                with_assertions,
+            },
+            default_test_wallet_settings,
         },
-        wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
+        wallet::disk::testing::examples,
     };
+
+    async fn create_basic_client() -> LightClient {
+        let config = ClientConfig::builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419200,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build();
+        LightClient::new(config, true).await.unwrap()
+    }
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
-        use crate::{
-            config::ZingoConfigBuilder, lightclient::LightClient, mocks::proposal::ProposalBuilder,
-        };
-        use zingo_test_vectors::seeds::ABANDON_ART_SEED;
-
-        let config = ZingoConfigBuilder::default().create();
-        let mut lc = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                },
-                419_200.into(),
-                WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery:
-                            pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                },
-            )
-            .unwrap(),
-            config,
-            true,
-        )
-        .unwrap();
+        let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error

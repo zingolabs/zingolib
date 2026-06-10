@@ -4,22 +4,10 @@ A command-line interface for the Zingo wallet.
 
 ## Building
 
-### Default Build (Mainnet/Testnet)
-
-To build the standard zingo-cli binary that works with mainnet and testnet:
+To build the zingo-cli binary from the workspace:
 
 ```bash
-cargo build --release
-```
-
-The binary will be available at `target/release/zingo-cli`.
-
-### Build with Regtest Support
-
-To build zingo-cli with regtest support in addition to mainnet and testnet:
-
-```bash
-cargo build --release --features regtest
+cargo build --release -p zingo-cli
 ```
 
 The binary will be available at `target/release/zingo-cli`.
@@ -60,10 +48,7 @@ To connect to testnet:
 ### Regtest Mode
 
 To run in regtest mode:
-1. Build the zingo-cli binary with the `regtest` feature flag enabled
-```bash
-cargo build --release -p zingo-cli --features regtest
-```
+1. Build the zingo-cli binary.
 2. Launch a validator, see details below for an example of launching zcashd and generating blocks with zcash-cli.
 3. Launch an indexer/lightserver, see details below for an example of launching lightwalletd.
 4. Create a wallet directory (data-dir) and run zingo-cli,
@@ -136,7 +121,7 @@ mineraddress=uregtest1zkuzfv5m3yhv2j4fmvq5rjurkxenxyq8r7h4daun2zkznrjaa8ra8asgdm
 minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet.
 ```
 
-### Example: Zcashd Config File
+### Example: Lightwalletd Config File
 
 ```
 grpc-bind-addr: 127.0.0.1:9067

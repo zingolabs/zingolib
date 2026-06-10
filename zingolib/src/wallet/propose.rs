@@ -37,7 +37,7 @@ impl LightWallet {
             ShieldedProtocol::Orchard,
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
-        let network = self.network;
+        let chain_type = self.chain_type;
 
         zcash_client_backend::data_api::wallet::propose_transfer::<
             LightWallet,
@@ -50,14 +50,13 @@ impl LightWallet {
             WalletError,
         >(
             self,
-            &network,
+            &chain_type,
             account_id,
             &input_selector,
             &change_strategy,
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            // proposed_version (zcash_client_backend "unstable"): use the default tx version
             None,
         )
         .map_err(ProposeSendError::Proposal)
@@ -82,7 +81,7 @@ impl LightWallet {
             ShieldedProtocol::Orchard,
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
-        let network = self.network;
+        let chain_type = self.chain_type;
 
         // TODO: store t addrs as concrete types instead of encoded
         let transparent_addresses = self
@@ -91,7 +90,7 @@ impl LightWallet {
             .map(|address| {
                 Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
                     .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                        self.network.network_type(),
+                        self.chain_type.network_type(),
                     )
                     .expect("incorrect network should be checked on wallet load"))
             })
@@ -108,7 +107,7 @@ impl LightWallet {
             WalletError,
         >(
             self,
-            &network,
+            &chain_type,
             &input_selector,
             &change_strategy,
             Zatoshis::const_from_u64(10_000),
@@ -158,7 +157,7 @@ impl LightWallet {
             if let Ok(address) = payment
                 .recipient_address()
                 .clone()
-                .convert_if_network::<zcash_keys::address::Address>(self.network.network_type())
+                .convert_if_network::<zcash_keys::address::Address>(self.chain_type.network_type())
             {
                 match address {
                     zcash_keys::address::Address::Unified(unified_address) => {
@@ -173,7 +172,7 @@ impl LightWallet {
             }
         }
         let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
-            &self.network,
+            &self.chain_type,
             recipient_uas.as_slice(),
             refund_address_indexes.as_slice(),
         ) {
@@ -264,9 +263,9 @@ mod test {
         let client = examples::NetworkSeedVersion::Mainnet(
             examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
         )
-        .load_example_wallet_with_client()
+        .load_example_wallet()
         .await;
-        let mut wallet = client.wallet.write().await;
+        let mut wallet = client.wallet().write().await;
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
         let self_address = wallet.get_address(pool);
