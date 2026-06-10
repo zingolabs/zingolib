@@ -3,41 +3,39 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v4.0.0" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v4.0.0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v4.0.0", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
-zcash_address = "0.12"
-zcash_client_backend = { version = "0.23", features = [
+zcash_address = "0.12.0"
+zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
-    "tor",
 ] }
-zcash_encoding = "0.4"
-zcash_keys = { version = "0.14", features = [
+zcash_encoding = "0.4.0"
+zcash_keys = { version = "0.14.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4"
-zcash_proofs = "0.28"
-zcash_protocol = "0.9"
-zcash_transparent = "0.8"
+zcash_note_encryption = "0.4.1"
+zcash_proofs = "0.28.0"
+zcash_protocol = "0.9.0"
+zcash_transparent = "0.8.0"
 
-zebra-chain = "9.0.0"
+zingo_common_components = "0.3.1"
+zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
 
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", tag = "v0_2_with_nu6_2_upgrade" }
-
-bip0039 = { version = "0.13", features = ["rand"] }
+bip0039 = { version = "0.14", features = ["rand"] }
 zip32 = "0.2.0"
 uniffi = "0.29"
 tokio = "1"
-rustls = { version = "0.23", features = ["ring"] }
+rustls = { version = "0.23.37", features = ["ring"] }
 serde_json = "1"
 android_logger = "0.11"
 base64 = "0.22"
