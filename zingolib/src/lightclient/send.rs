@@ -8,7 +8,6 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
-use pepper_sync::keys::transparent::TransparentScope;
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -42,7 +41,7 @@ impl LightClient {
 
         let transmission_result = self.transmit_transactions(calculated_txids).await;
         if transmission_result.is_err() {
-            self.wallet
+            self.wallet()
                 .write()
                 .await
                 .truncate_refund_addresses(highest_refund_address_index);
@@ -70,7 +69,7 @@ impl LightClient {
 
         let transmission_result = self.transmit_transactions(calculated_txids).await;
         if transmission_result.is_err() {
-            self.wallet
+            self.wallet()
                 .write()
                 .await
                 .truncate_refund_addresses(highest_refund_address_index);
