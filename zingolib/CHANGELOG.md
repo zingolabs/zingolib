@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [5.0.0] - 2026-06-09
+## [5.0.0] - 2026-06-10
 
 ### Added
 - `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
