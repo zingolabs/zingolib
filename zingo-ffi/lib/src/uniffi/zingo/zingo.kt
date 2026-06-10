@@ -775,8 +775,6 @@ internal interface IntegrityCheckingUniffiLib : Library {
 
     fun uniffi_zingo_checksum_func_create_new_unified_address(): Short
 
-    fun uniffi_zingo_checksum_func_create_tor_client(): Short
-
     fun uniffi_zingo_checksum_func_get_balance(): Short
 
     fun uniffi_zingo_checksum_func_get_config_wallet_performance(): Short
@@ -838,8 +836,6 @@ internal interface IntegrityCheckingUniffiLib : Library {
     fun uniffi_zingo_checksum_func_pause_sync(): Short
 
     fun uniffi_zingo_checksum_func_poll_sync(): Short
-
-    fun uniffi_zingo_checksum_func_remove_tor_client(): Short
 
     fun uniffi_zingo_checksum_func_remove_transaction(): Short
 
@@ -925,11 +921,6 @@ internal interface UniffiLib : Library {
 
     fun uniffi_zingo_fn_func_create_new_unified_address(
         `receivers`: RustBuffer.ByValue,
-        uniffi_out_err: UniffiRustCallStatus,
-    ): RustBuffer.ByValue
-
-    fun uniffi_zingo_fn_func_create_tor_client(
-        `datadir`: RustBuffer.ByValue,
         uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
 
@@ -1040,8 +1031,6 @@ internal interface UniffiLib : Library {
 
     fun uniffi_zingo_fn_func_poll_sync(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
-    fun uniffi_zingo_fn_func_remove_tor_client(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
-
     fun uniffi_zingo_fn_func_remove_transaction(
         `txid`: RustBuffer.ByValue,
         uniffi_out_err: UniffiRustCallStatus,
@@ -1076,10 +1065,7 @@ internal interface UniffiLib : Library {
 
     fun uniffi_zingo_fn_func_wallet_kind(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
-    fun uniffi_zingo_fn_func_zec_price(
-        `tor`: RustBuffer.ByValue,
-        uniffi_out_err: UniffiRustCallStatus,
-    ): RustBuffer.ByValue
+    fun uniffi_zingo_fn_func_zec_price(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
     fun ffi_zingo_rustbuffer_alloc(
         `size`: Long,
@@ -1325,9 +1311,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_create_new_unified_address() != 56466.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zingo_checksum_func_create_tor_client() != 55045.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_zingo_checksum_func_get_balance() != 46672.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1421,9 +1404,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_poll_sync() != 35296.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zingo_checksum_func_remove_tor_client() != 6970.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_zingo_checksum_func_remove_transaction() != 54006.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1460,7 +1440,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_wallet_kind() != 56355.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zingo_checksum_func_zec_price() != 47815.toShort()) {
+    if (lib.uniffi_zingo_checksum_func_zec_price() != 16513.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1721,14 +1701,6 @@ fun `createNewUnifiedAddress`(`receivers`: kotlin.String): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
             UniffiLib.INSTANCE.uniffi_zingo_fn_func_create_new_unified_address(FfiConverterString.lower(`receivers`), _status)
-        },
-    )
-
-@Throws(ZingolibException::class)
-fun `createTorClient`(`datadir`: kotlin.String): kotlin.String =
-    FfiConverterString.lift(
-        uniffiRustCallWithError(ZingolibException) { _status ->
-            UniffiLib.INSTANCE.uniffi_zingo_fn_func_create_tor_client(FfiConverterString.lower(`datadir`), _status)
         },
     )
 
@@ -2042,14 +2014,6 @@ fun `pollSync`(): kotlin.String =
     )
 
 @Throws(ZingolibException::class)
-fun `removeTorClient`(): kotlin.String =
-    FfiConverterString.lift(
-        uniffiRustCallWithError(ZingolibException) { _status ->
-            UniffiLib.INSTANCE.uniffi_zingo_fn_func_remove_tor_client(_status)
-        },
-    )
-
-@Throws(ZingolibException::class)
 fun `removeTransaction`(`txid`: kotlin.String): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
@@ -2153,9 +2117,9 @@ fun `walletKind`(): kotlin.String =
     )
 
 @Throws(ZingolibException::class)
-fun `zecPrice`(`tor`: kotlin.String): kotlin.String =
+fun `zecPrice`(): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
-            UniffiLib.INSTANCE.uniffi_zingo_fn_func_zec_price(FfiConverterString.lower(`tor`), _status)
+            UniffiLib.INSTANCE.uniffi_zingo_fn_func_zec_price(_status)
         },
     )
