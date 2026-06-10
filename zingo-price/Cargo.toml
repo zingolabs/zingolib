@@ -9,7 +9,6 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [dependencies]
-zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
