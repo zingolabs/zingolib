@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - `regtest` feature: can still use zingo-cli in regtest mode with no features enabled using the '--chain regtest' flag. 
+- `tor` flag. tor is no longer supported but will be replaced by nym in the coming release.
 
 ## [0.3.0] - 2026-06-05
 
