@@ -65,7 +65,7 @@ mod mode_of_operation {
 
     #[test]
     fn flags_do_not_affect_mode_interactive() {
-        assert_interactive(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        assert_interactive(&[examples::BIN_NAME, "--nosync"]);
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod is_interactive {
 
     #[test]
     fn flags_without_command_is_interactive() {
-        let matches = parse(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        let matches = parse(&[examples::BIN_NAME, "--nosync"]);
         assert!(is_interactive(&matches));
     }
 }
