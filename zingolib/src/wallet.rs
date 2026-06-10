@@ -380,7 +380,6 @@ impl LightWallet {
 
     /// Update and return current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
     pub async fn update_current_price(&mut self) -> Result<f32, PriceError> {
         let current_price = self.price_list.update_current_price().await?.price_usd;

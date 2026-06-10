@@ -110,7 +110,6 @@ impl PriceList {
 
     /// Update and return current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
     pub async fn update_current_price(&mut self) -> Result<Price, PriceError> {
         get_current_price().await

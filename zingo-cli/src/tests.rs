@@ -448,7 +448,6 @@ mod config_template {
             assert_eq!(config.communication_mode, CommunicationMode::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
-            assert!(!config.tor_enabled);
             assert!(config.seed.is_none());
             assert!(config.ufvk.is_none());
             assert_eq!(config.birthday, 0);
@@ -465,12 +464,6 @@ mod config_template {
         fn waitsync_flag() {
             let config = fill(&[examples::BIN_NAME, "--waitsync"]).unwrap();
             assert!(config.waitsync);
-        }
-
-        #[test]
-        fn tor_flag() {
-            let config = fill(&[examples::BIN_NAME, "--tor"]).unwrap();
-            assert!(config.tor_enabled);
         }
 
         #[test]
