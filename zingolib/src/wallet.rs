@@ -5,7 +5,6 @@ use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
-use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
@@ -381,17 +380,9 @@ impl LightWallet {
 
     /// Update and return current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
-    pub async fn update_current_price(
-        &mut self,
-        tor_client: Option<&tor::Client>,
-    ) -> Result<f32, PriceError> {
-        let current_price = self
-            .price_list
-            .update_current_price(tor_client)
-            .await?
-            .price_usd;
+    pub async fn update_current_price(&mut self) -> Result<f32, PriceError> {
+        let current_price = self.price_list.update_current_price().await?.price_usd;
         self.save_required = true;
 
         Ok(current_price)

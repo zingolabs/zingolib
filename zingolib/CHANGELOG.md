@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+
+### Changed
+
+### Removed
+
+## [5.0.0] - 2026-06-09
+
+### Added
 - `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
   if it failed, returns `(SyncRecoveryObservables, String)` with the recommended
   recovery action and error description. Primary entry point for consumers
@@ -50,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `set_server`: renamed `set_indexer_uri`
   - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
   - `new` constructor: removed `chain_height` parameter which is now within the config
+- `lightclient::error::LightClientError`: removed `TorClientError` variant.
 - `config` module:
   - `ChainType`:
     - `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
@@ -90,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `new` constructor:
     - `network` parameter renamed `chain_type`
     - `wallet_base`, `birthday` and `wallet_settings` fields replaced by `wallet_config` field
-  - new wallet serialization version 40 due to changes to chain type fmt::Display. chain type is now encoded as u8.
+  - new wallet serialization version 41 due to changes to chain type fmt::Display. chain type is now encoded as u8 and output indexes changed to u32.
+  - `update_current_price` method no longer takes `tor_client` parameter.
 - `wallet::keys::unified::UnifiedKeyStore`:
   - `new_from_seed` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
   - `new_from_mnemonic` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
@@ -136,12 +146,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `get_log_path()` method
   - `ZingoConfigBuilder::set_logfile_name()` method.
   - `load_clientconfig`: replaced by zingo config builder pattern (`ZingoConfigBuilder`)
-- `wallet::LightWallet::mnemonic()`
+- `wallet::LightWallet`: `mnemonic` method.
 - `testutils::lightclient::new_client_from_save_buffer`
 - `wallet::WalletBase`: no longer public. public functionality replaced by `config::WalletConfig`
 - `lightclient::LightClient`:
   - `create_from_wallet` constructor: no longer needed as now covered by `new` due to config rework
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
+  - `tor_client` method. Tor no longer supported. To be replaced by nym in coming release.
+  - `create_tor_client` method.
+  - `remove_tor_client` method.
 - `testutils::build_fvk_client`
 
 ## [4.0.0] - 2026-06-05

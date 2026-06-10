@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+
+### Changed
+
+### Removed
+
+## [0.5.0] - 2026-06-09
+
+### Added
 - `error::SyncRecoveryObservables` enum with variants `MaybeRecoverableServer`,
   `ServerUnavailable`, and `Abort` — classifies sync errors for consumer retry logic.
 - `error::SyncError::is_retryable()` — returns `true` for transient errors
@@ -28,8 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `output_index` field is now u32.
   - `new` constructor `output_index` parameter is now u32.
   - `output_index` method's return type is now u32.
-
-### Removed
 
 ## [0.4.0] - 2026-06-05
 

@@ -53,7 +53,6 @@ tracing-subscriber = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
-    "transparent-inputs",
     "unstable-serialization",
     "unstable-spanning-tree",
 ] }
