@@ -622,8 +622,13 @@ fn run_sync() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             if lightclient.sync_mode() == SyncMode::Paused {
-                lightclient.resume_sync().expect("sync should be paused");
-                Ok("Resuming sync task...".to_string())
+                // resume_sync can race: sync_mode() was Paused a moment ago but the
+                // task may have advanced before we got here. Return the error as a
+                // string instead of `expect` — panicking would poison LIGHTCLIENT.
+                Ok(match lightclient.resume_sync() {
+                    Ok(_) => "Resuming sync task...".to_string(),
+                    Err(e) => format!("Error: {e}"),
+                })
             } else {
                 Ok(RT.block_on(async {
                     match lightclient.sync().await {
