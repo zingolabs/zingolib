@@ -1083,6 +1083,57 @@ mod fast {
             let (mut local_net, faucet, mut sender, _txid) =
                 scenarios::faucet_funded_recipient_default(5_000_000).await;
 
+            // send a failing tex and assert the refund address was not retained in the wallet
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                0
+            );
+            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
+            let proposal = propose(
+                &mut sender,
+                vec![(&tex_addr_from_first.encode(), 100_000, None)],
+            )
+            .await
+            .unwrap();
+            assert_eq!(proposal.steps().len(), 2usize);
+            local_net.stop();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            sender
+                .send_stored_proposal(true)
+                .await
+                .expect_err("send incorrectly succeeded before local network managed to shutdown!");
+            let wallet_txs = &sender.transaction_summaries(false).await.unwrap().0;
+            assert!(
+                wallet_txs.iter().any(|tx| tx.status.is_failed()),
+                "send incorrectly succeeded before local network managed to shutdown!"
+            );
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                0
+            );
+        }
+
+        #[tokio::test]
+        async fn send_fail_removes_unused_refund_address_nonzero() {
+            let (mut local_net, faucet, mut sender, _txid) =
+                scenarios::faucet_funded_recipient_default(5_000_000).await;
+
             // send an initial successful tex so the start length of refund addresses is non-zero and to verify the
             // refund address is retained in the wallet on successful tex sends
             assert_eq!(
