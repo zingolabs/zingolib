@@ -355,10 +355,10 @@ where
                     scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
 
                 let mut retry_height = scan_task.scan_range.block_range().start;
-                let mut sapling_output_count = 0;
-                let mut orchard_output_count = 0;
-                let mut sapling_nullifier_count = 0;
-                let mut orchard_nullifier_count = 0;
+                let mut batch_sapling_output_count = 0;
+                let mut batch_orchard_output_count = 0;
+                let mut batch_sapling_nullifier_count = 0;
+                let mut batch_orchard_nullifier_count = 0;
                 let mut current_block_sapling_output_count = 0;
                 let mut current_block_orchard_output_count = 0;
                 let mut current_block_sapling_nullifier_count = 0;
@@ -462,12 +462,12 @@ where
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        sapling_nullifier_count += current_block_sapling_nullifier_count;
+                        batch_sapling_nullifier_count += current_block_sapling_nullifier_count;
                         current_block_orchard_nullifier_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
-                        orchard_nullifier_count += current_block_orchard_nullifier_count;
+                        batch_orchard_nullifier_count += current_block_orchard_nullifier_count;
                     } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
@@ -509,16 +509,17 @@ where
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.outputs.len());
-                        sapling_output_count += current_block_sapling_output_count;
+                        batch_sapling_output_count += current_block_sapling_output_count;
                         current_block_orchard_output_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
-                        orchard_output_count += current_block_orchard_output_count;
+                        batch_orchard_output_count += current_block_orchard_output_count;
                     }
 
-                    if (sapling_output_count + orchard_output_count > max_batch_outputs
-                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS)
+                    if (batch_sapling_output_count + batch_orchard_output_count > max_batch_outputs
+                        || batch_sapling_nullifier_count + batch_orchard_nullifier_count
+                            > MAX_BATCH_NULLIFIERS)
                         && scan_task.scan_range.block_range().start
                             != get_compact_block_height(&compact_block)
                     {
@@ -534,10 +535,10 @@ where
                         let _ignore_error = batch_sender.send(full_batch).await;
 
                         scan_task = new_batch;
-                        sapling_output_count = current_block_sapling_output_count;
-                        orchard_output_count = current_block_orchard_output_count;
-                        sapling_nullifier_count = current_block_sapling_nullifier_count;
-                        orchard_nullifier_count = current_block_orchard_nullifier_count;
+                        batch_sapling_output_count = current_block_sapling_output_count;
+                        batch_orchard_output_count = current_block_orchard_output_count;
+                        batch_sapling_nullifier_count = current_block_sapling_nullifier_count;
+                        batch_orchard_nullifier_count = current_block_orchard_nullifier_count;
                     }
 
                     retry_height = get_compact_block_height(&compact_block) + 1;
