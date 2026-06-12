@@ -38,10 +38,8 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
 
-const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
-const SCAN_TASK_TIMEOUT: Duration = Duration::from_secs(120);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -361,26 +359,18 @@ where
                 let mut orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
-                let mut block_stream = {
-                    let range = scan_task.scan_range.block_range().clone();
-                    let frs = fetch_request_sender.clone();
-
-                    let open_fut = async move {
-                        if fetch_nullifiers_only {
-                            client::get_nullifier_range(frs, range).await
-                        } else {
-                            client::get_compact_block_range(frs, range).await
-                        }
-                    };
-
-                    match tokio::time::timeout(STREAM_OPEN_TIMEOUT, open_fut).await {
-                        Ok(res) => res?,
-                        Err(_) => {
-                            return Err(
-                                tonic::Status::deadline_exceeded("open stream timeout").into()
-                            );
-                        }
-                    }
+                let mut block_stream = if fetch_nullifiers_only {
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                } else {
+                    client::get_compact_block_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
                 };
 
                 loop {
@@ -403,28 +393,19 @@ where
 
                             let retry_range = retry_height..scan_task.scan_range.block_range().end;
 
-                            let reopen_fut = {
-                                let frs = fetch_request_sender.clone();
-
-                                async move {
-                                    if fetch_nullifiers_only {
-                                        client::get_nullifier_range(frs, retry_range).await
-                                    } else {
-                                        client::get_compact_block_range(frs, retry_range).await
-                                    }
-                                }
+                            let mut block_stream = if fetch_nullifiers_only {
+                                client::get_nullifier_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
+                            } else {
+                                client::get_compact_block_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
                             };
-
-                            block_stream =
-                                match tokio::time::timeout(STREAM_OPEN_TIMEOUT, reopen_fut).await {
-                                    Ok(res) => res?,
-                                    Err(_) => {
-                                        return Err(tonic::Status::deadline_exceeded(
-                                            "open stream timeout (retry)",
-                                        )
-                                        .into());
-                                    }
-                                };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -668,26 +649,14 @@ where
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
                 let scan_range = scan_task.scan_range.clone();
-
-                let scan_fut = scan(
+                let scan_results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
                     max_batch_outputs,
-                );
-
-                let scan_results = match tokio::time::timeout(SCAN_TASK_TIMEOUT, scan_fut).await {
-                    Ok(res) => res,
-                    Err(_) => {
-                        // Best-effort: maps timeout into existing error types.
-                        Err(ServerError::from(tonic::Status::deadline_exceeded(
-                            "scan task timeout",
-                        ))
-                        .into())
-                    }
-                };
-
+                )
+                .await;
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
