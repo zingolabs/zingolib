@@ -797,7 +797,7 @@ pub fn wallet_kind() -> Result<String, ZingolibError> {
             Ok(RT.block_on(async move {
                 let wallet = lightclient.wallet().read().await;
                 if wallet.mnemonic_phrase().is_some() {
-                    object! {"kind" => "Loaded from seed or mnemonic phrase)",
+                    object! {"kind" => "Loaded from seed or mnemonic phrase",
                             "transparent" => true,
                             "sapling" => true,
                             "orchard" => true,
