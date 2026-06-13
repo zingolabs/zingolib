@@ -44,7 +44,7 @@ use crate::witness::LocatedTreeData;
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
 
-// #[cfg(not(feature = "darkside_test"))]
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) mod transparent;
 
 pub(crate) mod spend;
@@ -375,7 +375,7 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    // #[cfg(not(feature = "darkside_test"))]
+    #[cfg(not(feature = "darkside_test"))]
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         wallet.clone(),
