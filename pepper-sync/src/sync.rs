@@ -1838,10 +1838,18 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                     let _ignore_error = mempool_transaction_sender
+                                     match mempool_transaction_sender
                                         .send(raw_transaction)
-                                        .await;
-                                    unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                        .await {
+                                            Ok(_) => {
+                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                            }
+                                            Err(_) => {
+                                                unprocessed_transactions_count.store(0, atomic::Ordering::Release);
+                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                break 'main;
+                                            }
+                                        }
                                 }
                                 None => {
                                     continue 'main;
