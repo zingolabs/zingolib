@@ -109,20 +109,18 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                     .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
                     .next_back()
                 {
-                    id.address_index().index() + 1
+                    id.address_index().next()
                 } else {
-                    0
-                };
+                    Some(NonHardenedChildIndex::ZERO)
+                }
+                .ok_or_else(|| {
+                    SyncError::TransparentAddressDerivationError(bip32::Error::ChildNumber)
+                })?;
                 let mut unused_address_count: usize = 0;
                 let mut addresses: Vec<(TransparentAddressId, String)> = Vec::new();
 
                 while unused_address_count < config.gap_limit as usize {
-                    let address_id = TransparentAddressId::new(
-                        *account_id,
-                        *scope,
-                        NonHardenedChildIndex::from_index(address_index)
-                            .expect("all non-hardened addresses in use!"),
-                    );
+                    let address_id = TransparentAddressId::new(*account_id, *scope, address_index);
                     let address = keys::transparent::derive_address(
                         consensus_parameters,
                         account_pubkey,
@@ -152,7 +150,9 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                         unused_address_count = 0;
                     }
 
-                    address_index += 1;
+                    address_index.next().ok_or_else(|| {
+                        SyncError::TransparentAddressDerivationError(bip32::Error::ChildNumber)
+                    })?;
                 }
 
                 addresses.truncate(addresses.len() - config.gap_limit as usize);
