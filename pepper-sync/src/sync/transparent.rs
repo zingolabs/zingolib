@@ -150,7 +150,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                         unused_address_count = 0;
                     }
 
-                    address_index.next().ok_or_else(|| {
+                    address_index = address_index.next().ok_or_else(|| {
                         SyncError::TransparentAddressDerivationError(bip32::Error::ChildNumber)
                     })?;
                 }
