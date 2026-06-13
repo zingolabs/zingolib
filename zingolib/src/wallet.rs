@@ -356,6 +356,7 @@ impl LightWallet {
                 account_id,
             )?,
         );
+        self.save_required = true;
 
         Ok(())
     }
