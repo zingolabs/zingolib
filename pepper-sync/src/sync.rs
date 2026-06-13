@@ -465,6 +465,7 @@ where
                 )
                 .await?;
                 unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                 drop(wallet_guard);
             }
 
@@ -634,6 +635,7 @@ where
                     .get_sync_state_mut()
                     .map_err(SyncError::WalletError)?,
             );
+            wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
         // The last wallet reported height is equal or below the proxy height.
@@ -1748,6 +1750,7 @@ where
         orchard_subtree_roots,
         &mut shard_trees.orchard,
     )?;
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1802,6 +1805,7 @@ where
                 },
             )
             .expect("infallible");
+        wallet.set_save_flag().map_err(SyncError::WalletError)?;
     }
 
     Ok(())
@@ -1888,6 +1892,7 @@ where
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
