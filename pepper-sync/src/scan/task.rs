@@ -393,7 +393,7 @@ where
 
                             let retry_range = retry_height..scan_task.scan_range.block_range().end;
 
-                            let mut block_stream = if fetch_nullifiers_only {
+                            block_stream = if fetch_nullifiers_only {
                                 client::get_nullifier_range(
                                     fetch_request_sender.clone(),
                                     retry_range,
