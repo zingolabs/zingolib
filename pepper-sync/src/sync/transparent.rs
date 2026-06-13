@@ -160,9 +160,9 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 }
 
                 addresses.truncate(addresses.len() - config.gap_limit as usize);
-                let wallet_addresses_mut = wallet
-                    .write()
-                    .await
+
+                let mut wallet_guard = wallet.write().await;
+                let wallet_addresses_mut = wallet_guard
                     .get_transparent_addresses_mut()
                     .map_err(SyncError::WalletError)?;
                 for (id, address) in addresses {
@@ -172,7 +172,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         }
     }
 
-    let wallet_guard = wallet.write().await;
+    let mut wallet_guard = wallet.write().await;
     wallet_guard
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?

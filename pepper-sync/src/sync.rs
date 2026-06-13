@@ -392,8 +392,6 @@ where
         consensus_parameters,
         fetch_request_sender.clone(),
         &mut *wallet.write().await,
-
-,
     )
     .await?;
 
