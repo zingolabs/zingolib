@@ -264,7 +264,8 @@ async fn sent_transaction_reorged_into_mempool() {
         .set_chain_type(ChainType::Regtest(activation_heights))
         .set_wallet_dir(light_client.wallet_dir().unwrap())
         .set_wallet_config(WalletConfig::Read)
-        .build();
+        .build()
+        .unwrap();
     let mut loaded_client = LightClient::new(config, true).await.unwrap();
 
     loaded_client.sync_and_await().await.unwrap();

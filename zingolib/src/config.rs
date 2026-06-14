@@ -375,10 +375,11 @@ impl ClientConfigBuilder {
     }
 
     /// Build a [`ClientConfig`] from the builder.
-    pub fn build(self) -> ClientConfig {
-        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
+    pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
+        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
-        ClientConfig {
+
+        Ok(ClientConfig {
             indexer_uri: self
                 .indexer_uri
                 .clone()
@@ -387,7 +388,7 @@ impl ClientConfigBuilder {
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
-        }
+        })
     }
 }
 
@@ -423,48 +424,60 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     }
 }
 
-fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> PathBuf {
+fn wallet_dir_or_default(
+    opt_wallet_dir: Option<PathBuf>,
+    chain: ChainType,
+) -> Result<PathBuf, ClientConfigError> {
     let wallet_dir: PathBuf;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        // TODO: handle errors
-        wallet_dir = opt_wallet_dir.unwrap();
+        wallet_dir = opt_wallet_dir.ok_or_else(|| ClientConfigError::WalletDirNotSpecified)?;
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        wallet_dir = opt_wallet_dir.clone().unwrap_or_else(|| {
-            let mut dir = dirs::data_dir().expect("Couldn't determine user's data directory!");
+        wallet_dir = opt_wallet_dir.clone().map_or_else(
+            || {
+                let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            {
-                dir.push("Zcash");
-            }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
+                    dir.push("Zcash");
+                }
 
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                dir.push(".zcash");
-            }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    dir.push(".zcash");
+                }
 
-            match chain {
-                ChainType::Mainnet => {}
-                ChainType::Testnet => dir.push("testnet3"),
-                ChainType::Regtest(_) => dir.push("regtest"),
-            }
+                match chain {
+                    ChainType::Mainnet => {}
+                    ChainType::Testnet => dir.push("testnet3"),
+                    ChainType::Regtest(_) => dir.push("regtest"),
+                }
 
-            dir
-        });
+                Ok(dir)
+            },
+            Ok,
+        )?;
 
         // Create directory if it doesn't exist on non-mobile platforms
-        match std::fs::create_dir_all(wallet_dir.clone()) {
-            Ok(()) => {}
-            Err(e) => {
-                panic!("Couldn't create zcash directory!\n {e}");
-            }
-        }
+        std::fs::create_dir_all(wallet_dir.clone())
+            .map_err(|e| ClientConfigError::FileError(e.to_string()))?;
     }
 
-    wallet_dir
+    Ok(wallet_dir)
+}
+
+/// Invalid client config.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum ClientConfigError {
+    #[error("Wallet directory must be specified for iOS and Android platforms.")]
+    WalletDirNotSpecified,
+    #[error("User's default data directory not found.")]
+    UsersDataDirNotFound,
+    #[error("Failed to create wallet directory. {0}")]
+    FileError(String),
 }
 
 #[cfg(test)]
@@ -485,7 +498,8 @@ mod tests {
             .set_indexer_uri(valid_uri.clone())
             .set_chain_type(ChainType::Mainnet)
             .set_wallet_dir(temp_path)
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(valid_config.indexer_uri(), valid_uri);
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);

@@ -46,7 +46,8 @@ async fn sync_mainnet_test() {
             birthday: 1_500_000,
             wallet_settings: default_test_wallet_settings(),
         })
-        .build();
+        .build()
+        .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     lightclient.sync().await.unwrap();
@@ -168,7 +169,8 @@ async fn add_subtree_roots() {
             birthday: 2_000_000,
             wallet_settings: default_test_wallet_settings(),
         })
-        .build();
+        .build()
+        .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     let mut grpc_client = GrpcIndexer::new(lightclient.indexer_uri().clone())

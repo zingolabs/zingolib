@@ -181,6 +181,7 @@ impl ClientBuilder {
             .set_wallet_dir(conf_path)
             .set_wallet_config(wallet_config)
             .build()
+            .unwrap()
     }
 
     /// TODO: Add Doc Comment Here!

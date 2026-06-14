@@ -237,7 +237,8 @@ async fn reload_wallet_from_file() {
         .set_chain_type(mid_client_network)
         .set_wallet_dir(mid_client.wallet_dir().unwrap())
         .set_wallet_config(WalletConfig::Read)
-        .build();
+        .build()
+        .unwrap();
     let loaded_client = LightClient::new(config, true).await.unwrap();
     let loaded_wallet = loaded_client.wallet().read().await;
 
