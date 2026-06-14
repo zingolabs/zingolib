@@ -33,7 +33,7 @@ async fn sync_mainnet_test() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_lightwalletd_uri(DEFAULT_INDEXER_URI.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
@@ -155,7 +155,7 @@ async fn add_subtree_roots() {
         .install_default()
         .expect("Ring to work as a default");
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_lightwalletd_uri(DEFAULT_INDEXER_URI.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
