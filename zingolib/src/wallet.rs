@@ -138,6 +138,10 @@ pub struct LightWallet {
     /// Sync state
     pub sync_state: SyncState,
     /// Wallet settings
+    ///
+    /// Altering the sync config will not automatically restart sync which is needed for the changes to take effect.
+    /// It is recommended to rescan after altering the transparent address discovery settings as scanned ranges will
+    /// have been scanned with the previous configuration.
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
