@@ -624,7 +624,7 @@ impl Command for CurrentPriceCommand {
                 .wallet()
                 .write()
                 .await
-                .update_current_price(lightclient.tor_client())
+                .update_current_price()
                 .await
             {
                 Ok(price) => format!("current price: {price}"),

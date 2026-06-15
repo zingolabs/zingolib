@@ -67,7 +67,7 @@ impl LightWallet {
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
-                            u32::from(output.output_id().output_index()),
+                            output.output_id().output_index(),
                             memo,
                         )
                     })
@@ -87,7 +87,7 @@ impl LightWallet {
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
-                            u32::from(output.output_id().output_index()),
+                            output.output_id().output_index(),
                             memo,
                         )
                     })
@@ -101,7 +101,7 @@ impl LightWallet {
                         BasicCoinSummary::from_parts(
                             output.value(),
                             spend_status,
-                            u32::from(output.output_id().output_index()),
+                            output.output_id().output_index(),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -173,7 +173,9 @@ impl LightWallet {
                                                 &self.chain_type,
                                                 address,
                                             ),
-                                            output_index: output_index as u16,
+                                            output_index: output_index
+                                                .try_into()
+                                                .expect("output index should be valid u32"),
                                         }
                                     })
                                 })

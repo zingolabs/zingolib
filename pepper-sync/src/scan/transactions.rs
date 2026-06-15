@@ -378,7 +378,12 @@ fn scan_incoming_coins<P: consensus::Parameters>(
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
             if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::new(txid, output_index as u16);
+                let output_id = OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
 
                 transparent_coins.push(TransparentCoin {
                     output_id,
@@ -413,7 +418,12 @@ where
         .enumerate()
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
-            let output_id = OutputId::new(txid, output_index as u16);
+            let output_id = OutputId::new(
+                txid,
+                output_index
+                    .try_into()
+                    .expect("output indexes should be valid u32"),
+            );
             let (nullifier, position) = nullifiers_and_positions.map_or(Ok((None, None)), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
@@ -457,7 +467,12 @@ where
             &output.out_ciphertext(),
         ) {
             outgoing_notes.push(OutgoingNote {
-                output_id: OutputId::new(txid, output_index as u16),
+                output_id: OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                ),
                 key_id: key_ids[key_index],
                 note,
                 memo: Memo::from_bytes(memo_bytes.as_ref())?,

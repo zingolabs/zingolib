@@ -603,7 +603,15 @@ where
                              output_index,
                              value,
                          }| {
-                            (OutputId::new(txid, output_index as u16), value)
+                            (
+                                OutputId::new(
+                                    txid,
+                                    output_index
+                                        .try_into()
+                                        .expect("output indexes should be valid u32"),
+                                ),
+                                value,
+                            )
                         },
                     )
                     .collect()

@@ -13,14 +13,13 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# groups ordered from most specific to least specific
-
 ### Workspace
-# pepper-sync = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+zingo-memo = "0.1.1"
 zingo-price = { path = "zingo-price" }
-zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -38,7 +37,7 @@ simple-mermaid = "0.2.0"
 ### Logging
 log = "0.4"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
 zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
@@ -54,7 +53,6 @@ zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
-    "tor",
 ] }
 zcash_encoding = "0.4.0"
 zcash_keys = { version = "0.14.0", features = [
@@ -79,28 +77,28 @@ ring = "0.17.14"
 secp256k1 = "0.31.1"
 secrecy = "0.8"
 subtle = "2.6.1"
-
-### Encoding
 bech32 = "0.11.0"
 bs58 = "0.5"
+
+# Parallel processing
+crossbeam-channel = "0.5"
+rayon = "1"
+
+# Encoding
 byteorder = "1"
 hex = "0.4"
 json = "0.12"
-prost = "0.14"
 serde = "1"
 serde_json = "1"
 
 ### Network
 http = "1"
 reqwest = { version = "0.12.15", default-features = false }
-rustls = { version = "0.23.37", features = ["ring"] }
+rustls = { version = "0.23.40", features = ["ring"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
-
-### Parallel processing
-crossbeam-channel = "0.5"
-rayon = "1"
+prost = "0.14"
 
 ### Async
 futures = "0.3"
@@ -112,7 +110,6 @@ thiserror = "2"
 
 ### Internal data
 append-only-vec = "0.1.7"
-bytes = "1"
 itertools = "0.14"
 nonempty = "0.11.0"
 rust_decimal = "1.37.2"
@@ -134,3 +131,6 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
+
+[workspace.metadata.cargo-shear]
+ignored = ["tonic-prost"]

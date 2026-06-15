@@ -1,7 +1,7 @@
 [package]
 name = "zingolib"
 description = "Zingo backend library."
-version = "3.0.1"
+version = "5.0.0"
 authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
@@ -21,7 +21,6 @@ bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
-bytes = { workspace = true }
 chrono = { workspace = true }
 dirs.workspace = true
 futures = { workspace = true }
@@ -49,11 +48,9 @@ tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
-tracing-subscriber = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
-    "transparent-inputs",
     "unstable-serialization",
     "unstable-spanning-tree",
 ] }

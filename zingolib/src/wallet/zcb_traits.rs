@@ -55,6 +55,10 @@ impl Account for ZingoAccount {
         None
     }
 
+    fn birthday_height(&self) -> BlockHeight {
+        unimplemented!()
+    }
+
     fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
         unimplemented!()
     }
@@ -64,10 +68,6 @@ impl Account for ZingoAccount {
     }
 
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
-        unimplemented!()
-    }
-
-    fn birthday_height(&self) -> BlockHeight {
         unimplemented!()
     }
 }
@@ -345,7 +345,7 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn find_account_for_address<P: Parameters>(
+    fn find_account_for_address<P: consensus::Parameters>(
         &self,
         _params: &P,
         _address: &zcash_keys::address::Address,
@@ -806,7 +806,10 @@ impl InputSource for LightWallet {
                         PoolType::SAPLING,
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index(),
+                    note.output_id()
+                        .output_index()
+                        .try_into()
+                        .expect("shielded notes are always valid u16"),
                     note.note().clone(),
                     note.key_id().scope,
                     note.position()
@@ -825,7 +828,10 @@ impl InputSource for LightWallet {
                         PoolType::ORCHARD,
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index(),
+                    note.output_id()
+                        .output_index()
+                        .try_into()
+                        .expect("shielded notes are always valid u16"),
                     *note.note(),
                     note.key_id().scope,
                     note.position()

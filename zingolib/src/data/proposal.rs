@@ -45,8 +45,9 @@ pub fn total_payment_amount(proposal: &ProportionalFeeProposal) -> Result<Zatosh
         .iter()
         .map(zcash_client_backend::proposal::Step::transaction_request)
         .try_fold(Zatoshis::ZERO, |acc, request| {
-            let total = request.total()?.ok_or(BalanceError::Overflow)?;
-            (acc + total).ok_or(BalanceError::Overflow)
+            // zip321 payment amounts are now optional; unspecified amounts contribute zero.
+            let request_total = request.total()?.unwrap_or(Zatoshis::ZERO);
+            (acc + request_total).ok_or(BalanceError::Overflow)
         })
 }
 
