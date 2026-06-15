@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+### Added
+
+### Changed
+
+### Removed
+
+## [0.5.0] - 2026-06-10
+
 ### Added
 - `error::SyncRecoveryObservables` enum with variants `MaybeRecoverableServer`,
   `ServerUnavailable`, and `Abort` — classifies sync errors for consumer retry logic.
@@ -19,8 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `error::ServerError::recovery_recommendation()` — server-level recovery classification.
 
 ### Changed
+- `wallet::TransparentCoin`: serialized version incremented to 1 to serialize output indexes as u32
+- `wallet::WalletNote`: serialized version incremented to 2 to serialize output indexes as u32
+- `wallet::OutgoingNote`: serialized version incremented to 1 to serialize output indexes as u32
+- `wallet::OutputId`:
+  - `output_index` field is now u32.
+  - `new` constructor `output_index` parameter is now u32.
+  - `output_index` method's return type is now u32.
 
-### Removed
+## [0.4.0] - 2026-06-05
+
+### Added
+`wallet::WalletTransaction`: added `total_external_outgoing_note_value` method
 
 ## [0.3.0]
 

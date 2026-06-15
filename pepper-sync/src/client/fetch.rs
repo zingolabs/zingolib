@@ -216,6 +216,7 @@ where
         .await
 }
 
+#[allow(deprecated)]
 async fn get_block_range_nullifiers<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
@@ -223,7 +224,6 @@ async fn get_block_range_nullifiers<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    #[allow(deprecated)]
     client
         .get_block_range_nullifiers(
             BlockRange {

@@ -44,11 +44,12 @@ use crate::witness::LocatedTreeData;
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
 
-pub(crate) mod spend;
-pub(crate) mod state;
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) mod transparent;
 
-const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
+pub(crate) mod spend;
+pub(crate) mod state;
+
 pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -371,6 +372,7 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
+    #[cfg(not(feature = "darkside_test"))]
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         &mut *wallet_guard,
@@ -399,12 +401,12 @@ where
 
     let initial_reorg_detection_start_height = state::update_scan_ranges(
         consensus_parameters,
+        fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        wallet_guard
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-    );
+        &mut *wallet_guard,
+    )
+    .await?;
 
     state::set_initial_state(
         consensus_parameters,
@@ -463,6 +465,7 @@ where
                 )
                 .await?;
                 unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                 drop(wallet_guard);
             }
 
@@ -492,6 +495,8 @@ where
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
                         drop(wallet_guard);
+                        mempool_handle.abort();
+                        fetcher_handle.abort();
                         tracing::info!("Sync successfully shutdown.");
 
                         return Ok(SyncResult {
@@ -624,6 +629,13 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
+            truncate_scan_ranges(
+                chain_height,
+                wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?,
+            );
+            wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
         // The last wallet reported height is equal or below the proxy height.
@@ -1362,7 +1374,6 @@ where
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
         std::cmp::Ordering::Less => consensus::H0,
     };
-    truncate_scan_ranges(checked_truncate_height, sync_state);
 
     if checked_truncate_height > highest_scanned_height {
         return Ok(());
@@ -1413,6 +1424,12 @@ where
         })
         .collect::<Vec<_>>();
     truncate_wallet_data(wallet, consensus::H0)?;
+    truncate_scan_ranges(
+        consensus::H0,
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+    );
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
@@ -1723,8 +1740,17 @@ where
     let shard_trees = wallet
         .get_shard_trees_mut()
         .map_err(SyncError::WalletError)?;
-    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling)?;
-    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard)?;
+    witness::add_subtree_roots(
+        sapling_start_index as usize,
+        sapling_subtree_roots,
+        &mut shard_trees.sapling,
+    )?;
+    witness::add_subtree_roots(
+        orchard_start_index as usize,
+        orchard_subtree_roots,
+        &mut shard_trees.orchard,
+    )?;
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1779,6 +1805,7 @@ where
                 },
             )
             .expect("infallible");
+        wallet.set_save_flag().map_err(SyncError::WalletError)?;
     }
 
     Ok(())
@@ -1842,10 +1869,7 @@ where
     Ok(())
 }
 
-/// Spends will be reset to free up funds if transaction has been unconfirmed for
-/// `UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD` confirmed blocks.
-/// Transaction status will then be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
-// TODO: add config to pepper-sync to set UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+/// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
@@ -1868,17 +1892,7 @@ where
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
-
-    let stuck_funds_txids = wallet_transactions
-        .values()
-        .filter(|transaction| {
-            transaction.status().is_pending()
-                && last_known_chain_height
-                    >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
-        })
-        .map(super::wallet::WalletTransaction::txid)
-        .collect::<Vec<_>>();
-    reset_spends(wallet_transactions, stuck_funds_txids);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }

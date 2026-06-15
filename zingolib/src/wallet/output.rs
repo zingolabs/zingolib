@@ -55,7 +55,7 @@ impl OutputRef {
 
     /// Output identifier.
     #[must_use]
-    pub fn output_index(&self) -> u16 {
+    pub fn output_index(&self) -> u32 {
         self.output_id.output_index()
     }
 

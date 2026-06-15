@@ -292,13 +292,13 @@ pub struct OutputId {
     /// ID of associated transaction.
     txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
-    output_index: u16,
+    output_index: u32,
 }
 
 impl OutputId {
     /// Creates new `OutputId` from parts.
     #[must_use]
-    pub fn new(txid: TxId, output_index: u16) -> Self {
+    pub fn new(txid: TxId, output_index: u32) -> Self {
         OutputId { txid, output_index }
     }
 
@@ -310,7 +310,7 @@ impl OutputId {
 
     /// Index of output within the transactions bundle of the given pool type.
     #[must_use]
-    pub fn output_index(&self) -> u16 {
+    pub fn output_index(&self) -> u32 {
         self.output_index
     }
 }
@@ -330,13 +330,13 @@ impl std::fmt::Display for OutputId {
 
 impl From<&OutPoint> for OutputId {
     fn from(value: &OutPoint) -> Self {
-        OutputId::new(*value.txid(), value.n() as u16)
+        OutputId::new(*value.txid(), value.n())
     }
 }
 
 impl From<OutputId> for OutPoint {
     fn from(value: OutputId) -> Self {
-        OutPoint::new(value.txid.into(), u32::from(value.output_index))
+        OutPoint::new(value.txid.into(), value.output_index)
     }
 }
 
@@ -785,7 +785,7 @@ pub trait NoteInterface: OutputInterface {
     /// Decrypted note type.
     type ZcashNote;
     /// Nullifier type.
-    type Nullifier: Copy;
+    type Nullifier: Copy + Clone + PartialEq + Eq + PartialOrd + Ord;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;

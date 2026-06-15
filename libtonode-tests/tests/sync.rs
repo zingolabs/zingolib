@@ -1,11 +1,18 @@
 use std::{num::NonZeroU32, time::Duration};
 
+use incrementalmerkletree::Position;
+use pepper_sync::sync::ScanPriority;
+use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
+use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
+use zingolib::data::PollReport;
+use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
@@ -70,13 +77,83 @@ async fn sync_mainnet_test() {
     // dbg!(&wallet.sync_state);
 }
 
-#[ignore = "mainnet test for large chain"]
 #[tokio::test]
-async fn sync_status() {
+async fn add_subtree_roots() {
+    fn assert_subtree_roots_match_server(
+        shard_trees: &mut ShardTrees,
+        sapling_subtree_roots_server: Vec<Vec<u8>>,
+        orchard_subtree_roots_server: Vec<Vec<u8>>,
+    ) {
+        let mut sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+        if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
+            sapling_shard_addrs.pop();
+        }
+        assert!(
+            sapling_shard_addrs.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_shard_addrs.len(),
+            sapling_subtree_roots_server.len()
+        );
+        let mut sapling_subtree_roots_wallet = Vec::new();
+        for addr in sapling_shard_addrs {
+            let root = shard_trees
+                .sapling
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            sapling_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!sapling_subtree_roots_server.is_empty());
+        assert!(
+            sapling_subtree_roots_wallet.len() == sapling_subtree_roots_server.len(),
+            "no of sapling shard roots wallet: {}, no of sapling shard roots server: {}",
+            sapling_subtree_roots_wallet.len(),
+            sapling_subtree_roots_server.len()
+        );
+        sapling_subtree_roots_wallet
+            .iter()
+            .zip(sapling_subtree_roots_server.clone())
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+
+        let mut orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
+        if orchard_shard_addrs.len() > orchard_subtree_roots_server.len() {
+            orchard_shard_addrs.pop();
+        }
+        assert!(
+            orchard_shard_addrs.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_shard_addrs.len(),
+            orchard_subtree_roots_server.len()
+        );
+        let mut orchard_subtree_roots_wallet = Vec::new();
+        for addr in orchard_shard_addrs {
+            let root = shard_trees
+                .orchard
+                .root(addr, Position::from(u64::MAX))
+                .unwrap();
+            orchard_subtree_roots_wallet.push(root.to_bytes().to_vec());
+        }
+
+        assert!(!orchard_subtree_roots_server.is_empty());
+        assert!(
+            orchard_subtree_roots_wallet.len() == orchard_subtree_roots_server.len(),
+            "no of orchard shard roots wallet: {}, no of orchard shard roots server: {}",
+            orchard_subtree_roots_wallet.len(),
+            orchard_subtree_roots_server.len()
+        );
+        orchard_subtree_roots_wallet
+            .iter()
+            .zip(orchard_subtree_roots_server)
+            .for_each(|(wallet_root, server_root)| {
+                assert!(wallet_root.as_slice() == server_root.as_slice());
+            });
+    }
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Ring to work as a default");
-    tracing_subscriber::fmt().init();
 
     let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
@@ -88,13 +165,115 @@ async fn sync_status() {
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            birthday: 2_496_152,
+            birthday: 2_000_000,
             wallet_settings: default_test_wallet_settings(),
         })
         .build();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
-    lightclient.sync_and_await().await.unwrap();
+    let mut grpc_client = GrpcIndexer::new(lightclient.indexer_uri().clone())
+        .await
+        .unwrap();
+
+    let mut sapling_subtree_roots_server = Vec::new();
+    let mut sapling_subtree_roots_stream = grpc_client
+        .get_subtree_roots(
+            GetSubtreeRootsArg {
+                start_index: 0,
+                shielded_protocol: 0,
+                max_entries: 0,
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+        .unwrap();
+    while let Some(root) = sapling_subtree_roots_stream.message().await.unwrap() {
+        sapling_subtree_roots_server.push(root.root_hash);
+    }
+
+    let mut orchard_subtree_roots_server = Vec::new();
+    let mut orchard_subtree_roots_stream = grpc_client
+        .get_subtree_roots(
+            GetSubtreeRootsArg {
+                start_index: 0,
+                shielded_protocol: 1,
+                max_entries: 0,
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+        .unwrap();
+    while let Some(root) = orchard_subtree_roots_stream.message().await.unwrap() {
+        orchard_subtree_roots_server.push(root.root_hash);
+    }
+
+    lightclient.sync().await.unwrap();
+    while !(lightclient
+        .wallet()
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .iter()
+        .any(|range| range.priority() == ScanPriority::Scanning)
+        || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
+    {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let _ = lightclient.stop_sync();
+    let _ = lightclient.await_sync().await;
+
+    {
+        let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
+
+        assert_subtree_roots_match_server(
+            shard_trees,
+            sapling_subtree_roots_server.clone(),
+            orchard_subtree_roots_server.clone(),
+        );
+
+        shard_trees
+            .sapling
+            .store_mut()
+            .truncate_shards(500)
+            .unwrap();
+        let sapling_shard_addrs = shard_trees.sapling.store().get_shard_roots().unwrap();
+        assert!(sapling_shard_addrs.len() != sapling_subtree_roots_server.len());
+
+        shard_trees
+            .orchard
+            .store_mut()
+            .truncate_shards(500)
+            .unwrap();
+        let orchard_shard_addrs = shard_trees.orchard.store().get_shard_roots().unwrap();
+        assert!(orchard_shard_addrs.len() != orchard_subtree_roots_server.len());
+    }
+
+    lightclient.sync().await.unwrap();
+    while !(lightclient
+        .wallet()
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .iter()
+        .any(|range| range.priority() == ScanPriority::Scanning)
+        || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
+    {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let _ = lightclient.stop_sync();
+    let _ = lightclient.await_sync().await;
+
+    {
+        let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
+
+        assert_subtree_roots_match_server(
+            shard_trees,
+            sapling_subtree_roots_server.clone(),
+            orchard_subtree_roots_server.clone(),
+        );
+    }
 }
 
 // temporary test for sync development

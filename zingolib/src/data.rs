@@ -16,6 +16,7 @@ pub enum PollReport<T, E> {
 pub mod receivers {
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::Payment;
+    use zcash_client_backend::zip321::PaymentError;
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::zip321::Zip321Error;
     use zcash_protocol::memo::MemoBytes;
@@ -45,8 +46,10 @@ pub mod receivers {
             }
         }
     }
-    impl From<Receiver> for Payment {
-        fn from(receiver: Receiver) -> Self {
+    impl TryFrom<Receiver> for Payment {
+        type Error = PaymentError;
+
+        fn try_from(receiver: Receiver) -> Result<Self, Self::Error> {
             Payment::new(
                 receiver.recipient_address,
                 Some(receiver.amount),
@@ -55,7 +58,6 @@ pub mod receivers {
                 None,
                 vec![],
             )
-            .expect("memo compatibility checked in 'parse_send_args'")
         }
     }
 
@@ -65,13 +67,18 @@ pub mod receivers {
     pub fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
-        // If this succeeds:
-        //  * zingolib learns whether there is a TEX address
-        //  * if there's a TEX address it's readable.
         let payments = receivers
             .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+            .enumerate()
+            .map(|(i, receiver)| {
+                Payment::try_from(receiver).map_err(|e| match e {
+                    PaymentError::TransparentMemo => Zip321Error::TransparentMemo(i),
+                    PaymentError::ZeroValuedTransparentOutput => {
+                        Zip321Error::ZeroValuedTransparentOutput(i)
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, Zip321Error>>()?;
 
         TransactionRequest::new(payments)
     }

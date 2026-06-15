@@ -78,10 +78,6 @@ pub fn build_clap_app() -> clap::Command {
                 .long("data-dir")
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory"))
-            .arg(Arg::new("tor")
-                .long("tor")
-                .help("Enable tor for price fetching")
-                .action(clap::ArgAction::SetTrue) )
             .arg(Arg::new("log-file")
                 .long("log-file")
                 .value_name("PATH")
@@ -429,7 +425,6 @@ pub(crate) struct ConfigTemplate {
     sync: bool,
     waitsync: bool,
     chaintype: ChainType,
-    tor_enabled: bool,
 }
 
 impl ConfigTemplate {
@@ -438,7 +433,6 @@ impl ConfigTemplate {
         communication_mode: CommunicationMode,
         matches: clap::ArgMatches,
     ) -> Result<Self, String> {
-        let tor_enabled = matches.get_flag("tor");
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
@@ -503,7 +497,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             sync,
             waitsync,
             chaintype,
-            tor_enabled,
         })
     }
 }
@@ -596,13 +589,6 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     println!("{update}");
 
     lightclient = RT.block_on(async move {
-        if filled_template.tor_enabled {
-            info!("Creating tor client");
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            }
-        }
-
         if filled_template.sync
             && filled_template.waitsync
             && let Err(e) = lightclient.await_sync().await

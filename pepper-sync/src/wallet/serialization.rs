@@ -434,15 +434,19 @@ impl WalletTransaction {
 
 impl TransparentCoin {
     fn serialized_version() -> u8 {
-        0
+        1
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
-        let output_index = reader.read_u16::<LittleEndian>()?;
+        let output_index = if version >= 1 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            u32::from(reader.read_u16::<LittleEndian>()?)
+        };
 
         let account_id = zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?)
             .expect("only valid account ids written");
@@ -475,7 +479,7 @@ impl TransparentCoin {
         writer.write_u8(Self::serialized_version())?;
 
         self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_id.output_index())?;
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id().into())?;
         writer.write_u8(self.key_id.scope() as u8)?;
@@ -494,7 +498,7 @@ impl TransparentCoin {
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     fn serialized_version() -> u8 {
-        1
+        2
     }
 }
 
@@ -529,7 +533,11 @@ impl SaplingNote {
         let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
-        let output_index = reader.read_u16::<LittleEndian>()?;
+        let output_index = if version >= 2 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            u32::from(reader.read_u16::<LittleEndian>()?)
+        };
 
         let account_id =
             zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
@@ -616,7 +624,7 @@ impl SaplingNote {
         writer.write_u8(Self::serialized_version())?;
 
         self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_id.output_index())?;
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
         writer.write_u8(self.key_id.scope as u8)?;
@@ -656,7 +664,11 @@ impl OrchardNote {
         let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
-        let output_index = reader.read_u16::<LittleEndian>()?;
+        let output_index = if version >= 2 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            u32::from(reader.read_u16::<LittleEndian>()?)
+        };
 
         let account_id =
             zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
@@ -727,7 +739,7 @@ impl OrchardNote {
         writer.write_u8(Self::serialized_version())?;
 
         self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_id.output_index())?;
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
         writer.write_u8(self.key_id.scope as u8)?;
@@ -754,7 +766,7 @@ impl OrchardNote {
 
 impl<N> OutgoingNote<N> {
     fn serialized_version() -> u8 {
-        0
+        1
     }
 }
 
@@ -764,10 +776,14 @@ impl OutgoingSaplingNote {
         mut reader: R,
         consensus_parameters: &impl consensus::Parameters,
     ) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
-        let output_index = reader.read_u16::<LittleEndian>()?;
+        let output_index = if version >= 1 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            u32::from(reader.read_u16::<LittleEndian>()?)
+        };
 
         let account_id =
             zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
@@ -844,7 +860,7 @@ impl OutgoingSaplingNote {
         writer.write_u8(Self::serialized_version())?;
 
         self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_id.output_index())?;
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
         writer.write_u8(self.key_id.scope as u8)?;
@@ -879,10 +895,14 @@ impl OutgoingOrchardNote {
         mut reader: R,
         consensus_parameters: &impl consensus::Parameters,
     ) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
-        let output_index = reader.read_u16::<LittleEndian>()?;
+        let output_index = if version >= 1 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            u32::from(reader.read_u16::<LittleEndian>()?)
+        };
 
         let account_id =
             zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
@@ -947,7 +967,7 @@ impl OutgoingOrchardNote {
         writer.write_u8(Self::serialized_version())?;
 
         self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+        writer.write_u32::<LittleEndian>(self.output_id.output_index())?;
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
         writer.write_u8(self.key_id.scope as u8)?;

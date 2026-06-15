@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_protocol::PoolType;
+use zcash_local_net::PoolType;
 
 use zcash_local_net::LocalNet;
 use zcash_local_net::ProcessId;

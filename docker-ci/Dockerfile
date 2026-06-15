@@ -1,6 +1,6 @@
 ARG RUST_VERSION=1.90
 ARG LIGHTWALLETD_VERSION=0.4.18
-ARG ZCASH_VERSION=6.12.1
+ARG ZCASH_VERSION=6.20.0
 ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
 ARG NEXTEST_VERSION=0.9.128
 
@@ -40,6 +40,12 @@ RUN git clone https://github.com/zcash/lightwalletd \
     && cd lightwalletd \
     && git checkout "v${LIGHTWALLETD_VERSION}" \
     && make
+
+# Build zcashd and fetch params
+# RUN git clone https://github.com/zcash/zcash.git \
+#     && cd zcash/ \
+#     && git checkout v6.20.0 \
+#     && ./zcutil/build.sh -j$(nproc)
 
 FROM debian:trixie-slim AS runner
 
