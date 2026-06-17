@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::BufReader,
+    io::{BufReader, Cursor},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -144,6 +144,44 @@ impl LightClient {
         // `ring` and `aws-lc-rs` features are unified in via transitive deps,
         // preventing rustls from auto-selecting a provider.
         let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
+
+        Ok(LightClient {
+            indexer,
+            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
+            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_handle: None,
+            save_active: Arc::new(AtomicBool::new(false)),
+            save_handle: None,
+        })
+    }
+
+    /// Creates a [`LightClient`] by deserializing wallet bytes directly, without reading from
+    /// a file.
+    ///
+    /// Intended for mobile platforms (iOS/Android) where the native layer (Swift/Kotlin) owns
+    /// all file I/O: the native side reads the wallet file and passes the raw bytes across the
+    /// FFI boundary; Rust deserializes from memory via [`std::io::Cursor`]. This avoids the
+    /// staging-to-`temp_dir` workaround that consumers had to use to satisfy the
+    /// [`WalletConfig::Read`] variant on platforms where the application sandbox cannot write
+    /// to the OS temp directory (notably Android, where `std::env::temp_dir()` resolves to
+    /// `/tmp` outside the app UID's reach).
+    ///
+    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` /
+    /// `wallet_name` within the config are retained on the resulting [`LightClient`] for any
+    /// subsequent save operations, but no file is read here.
+    #[allow(clippy::result_large_err)]
+    pub async fn from_bytes(
+        bytes: Vec<u8>,
+        config: ClientConfig,
+    ) -> Result<Self, LightClientError> {
+        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
+            .map_err(LightClientError::FileError)?;
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
 
@@ -411,6 +449,57 @@ mod tests {
             "uregtest15en5x5cnsc7ye3wfy0prnh3ut34ns9w40htunlh9htfl6k5p004ja5gprxfz8fygjeax07a8489wzjk8gsx65thcp6d3ku8umgaka6f0"
                 .to_string(),
             lc.unified_addresses_json().await[0]["encoded_address"]
+        );
+    }
+
+    /// Round-trips a wallet through `save()` and `from_bytes`, asserting the deserialized
+    /// `LightClient` exposes the same derived addresses as the source. Crucially, the
+    /// `from_bytes` config uses `WalletConfig::Read` with an empty wallet_dir — no file is
+    /// written or read; if `from_bytes` ever regresses into touching disk this assertion
+    /// would still pass but the call would fail to construct.
+    #[tokio::test]
+    async fn from_bytes_roundtrip() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build();
+
+        // Source wallet → serialized bytes via the same in-memory `save()` that mobile
+        // consumers use to ship the wallet across the FFI.
+        let source = LightClient::new(config.clone(), false).await.unwrap();
+        let bytes = source
+            .wallet()
+            .write()
+            .await
+            .save()
+            .expect("save returned an error")
+            .expect("nothing to save");
+
+        // Reconstruct purely from bytes — note the config carries no source file path,
+        // confirming the constructor never touches the filesystem to load the wallet.
+        let restored_config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::Read)
+            .build();
+        let restored = LightClient::from_bytes(bytes, restored_config)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            source.transparent_addresses_json().await[0]["encoded_address"],
+            restored.transparent_addresses_json().await[0]["encoded_address"],
+        );
+        assert_eq!(
+            source.unified_addresses_json().await[0]["encoded_address"],
+            restored.unified_addresses_json().await[0]["encoded_address"],
         );
     }
 }
