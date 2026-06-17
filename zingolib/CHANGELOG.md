@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
+  deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
+  Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
+  and passes the raw wallet bytes across the FFI boundary. Restores the in-memory
+  construction path that was lost when `create_from_wallet` and `WalletBase` were removed
+  in 5.0.0; the new path uses the `WalletConfig` enum and the existing
+  `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
 
 ### Changed
 
