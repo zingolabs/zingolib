@@ -11,7 +11,6 @@ use log::Level;
 
 use std::any::Any;
 use std::backtrace::Backtrace;
-use std::io::Write;
 use std::num::NonZeroU32;
 use std::panic::{self, PanicHookInfo, UnwindSafe};
 use std::path::PathBuf;
@@ -448,35 +447,23 @@ pub fn init_from_b64(
             }
         };
 
-        // v5 LightClient::new with `WalletConfig::Read` reads the wallet from disk.
-        // The JS layer manages persistence via save_to_b64; here we stage the
-        // decoded wallet bytes into a temp file so v5's disk-based loader is satisfied.
-        let wallet_dir = std::env::temp_dir();
-        let wallet_name = "zingo-wallet.dat".to_string();
-        let wallet_path = wallet_dir.join(&wallet_name);
-        if let Err(e) = (|| -> std::io::Result<()> {
-            let mut f = std::fs::File::create(&wallet_path)?;
-            f.write_all(&decoded_bytes)?;
-            f.sync_all()
-        })() {
-            return Ok(format!("Error: writing wallet bytes: {e}"));
-        }
+        // `LightClient::from_bytes` deserializes the wallet straight from memory.
+        // The native layer (Kotlin/Swift) owns all wallet persistence and ships
+        // the bytes across the FFI; nothing here touches the filesystem.
+        //
+        // This replaces the previous staging-to-`std::env::temp_dir()` workaround
+        // that satisfied v5's `WalletConfig::Read` variant. That workaround failed
+        // with `Permission denied (os error 13)` on Android devices where `TMPDIR`
+        // is unset and the app UID cannot write to `/tmp`.
+        let config = build_client_config(&params, WalletConfig::Read);
 
-        let config = ClientConfig::builder()
-            .set_indexer_uri(params.lightwalletd_uri.clone())
-            .set_chain_type(params.chain_type)
-            .set_wallet_dir(wallet_dir)
-            .set_wallet_name(wallet_name)
-            .set_wallet_config(WalletConfig::Read)
-            .build();
-
-        let lightclient = match RT.block_on(LightClient::new(config, false)) {
+        let lightclient = match RT.block_on(LightClient::from_bytes(decoded_bytes, config)) {
             Ok(l) => l,
             Err(e) => return Ok(format!("Error: {e}")),
         };
 
-        // Override the wallet's settings with the caller-supplied ones, since
-        // WalletConfig::Read uses whatever was serialized on disk.
+        // Override the wallet's settings with the caller-supplied ones, since the
+        // serialized wallet carries whatever settings it was last saved with.
         let has_seed = RT.block_on(async {
             let mut wallet = lightclient.wallet().write().await;
             wallet.wallet_settings = params.wallet_settings.clone();
@@ -484,9 +471,6 @@ pub fn init_from_b64(
         });
 
         let _ = store_client(lightclient);
-
-        // Best-effort cleanup of staging file.
-        let _ = std::fs::remove_file(&wallet_path);
 
         if has_seed { get_seed() } else { get_ufvk() }
     })
