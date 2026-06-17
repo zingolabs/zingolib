@@ -3,9 +3,9 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v5.0.0", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "afea8b734" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "afea8b734" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "afea8b734", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
