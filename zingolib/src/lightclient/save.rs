@@ -11,10 +11,7 @@ use crate::data::PollReport;
 /// Writes `bytes` to file at `wallet_path` using a blocking thread.
 ///
 /// The write is atomic: bytes go to a `.tmp` sibling file first, then renamed into place.
-async fn write_to_path(
-    wallet_path: &std::path::Path,
-    bytes: &[u8],
-) -> std::io::Result<()> {
+async fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     let wallet_path = wallet_path.to_path_buf();
     let bytes = bytes.to_vec();
     tokio::task::spawn_blocking(move || {
