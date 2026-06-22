@@ -85,11 +85,15 @@ impl LightClient {
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
+    /// `op_return` optionally attaches an `OP_RETURN` (null-data) transparent output to the
+    /// final step of the proposal. See [`LightClient::propose_send`] for details.
+    ///
     /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
     pub async fn quick_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
+        op_return: Option<Vec<u8>>,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
@@ -99,6 +103,10 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .map_err(SendError::ProposeSendError)?;
+        let proposal = match op_return {
+            Some(data) => proposal.with_op_return_data(data),
+            None => proposal,
+        };
         let txids = self.send(proposal, account_id).await?;
         if resume_sync {
             let _ignore_error = self.resume_sync();

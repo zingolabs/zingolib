@@ -27,14 +27,25 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal from a transaction request.
+    ///
+    /// `op_return` optionally attaches an `OP_RETURN` (null-data) transparent output to the
+    /// final step of the proposal. This is used by cross-chain swap integrations
+    /// (e.g., THORChain/MAYAChain) that require a memo embedded as a null-data output.
+    /// When `None`, no `OP_RETURN` output is added. Maximum size is 80 bytes, enforced at
+    /// transaction build time.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
+        op_return: Option<Vec<u8>>,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_send_proposal(request, account_id)?;
+        let proposal = match op_return {
+            Some(data) => proposal.with_op_return_data(data),
+            None => proposal,
+        };
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,

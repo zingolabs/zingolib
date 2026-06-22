@@ -1108,7 +1108,7 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(request, zip32::AccountId::ZERO)
+                .propose_send(request, zip32::AccountId::ZERO, None)
                 .await
             {
                 Ok(proposal) => {
@@ -1234,7 +1234,7 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
+            match lightclient.quick_send(request, zip32::AccountId::ZERO, None, true).await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
