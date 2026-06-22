@@ -1498,7 +1498,7 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
                     Err(e) => return format!("Error: Request Error: {e}"),
                 };
 
-                match lightclient.propose_send(request, AccountId::ZERO).await {
+                match lightclient.propose_send(request, AccountId::ZERO, None).await {
                     Ok(proposal) => {
                         let fee = match total_fee(&proposal) {
                             Ok(fee) => fee,

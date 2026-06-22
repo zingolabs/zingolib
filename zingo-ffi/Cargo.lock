@@ -364,7 +364,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -1307,6 +1307,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "equihash"
+version = "0.3.0"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+dependencies = [
+ "blake2b_simd",
+ "corez",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1335,8 +1344,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d42773cb15447644d170be20231a3268600e0c4cea8987d013b93ac973d3cf7"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2260,15 +2268,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -2959,7 +2958,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=0ed92148b#0ed92148bf1983af3b992e5afcfb2070a337ad08"
+source = "git+https://github.com/zingolabs/zingolib?rev=23d30bb58#23d30bb580bf43403748dcd8d44f6252afbd6430"
 dependencies = [
  "bip32",
  "byteorder",
@@ -3275,7 +3274,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "petgraph",
@@ -3296,7 +3295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -6044,8 +6043,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58342d0aaa8e2fa98849636f52800ac4bf020574c944c974742fc933db58cac2"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bs58",
@@ -6058,8 +6056,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04583f0945d5ff80eee80c1844fb0af8b7cc46a0ac26d5e12c4ccd474bec0f03"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "bech32",
@@ -6109,8 +6106,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1440921903cdb86133fb9e2fe800be488015db2939a30bedb413078a1acb0306"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "hex",
@@ -6131,8 +6127,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fbcdfbb5c8edb247439d72a397abaae9b7dd14a1c070e7e4fc3536924f9065f"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bip32",
@@ -6196,15 +6191,14 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c69e07f5eb3f682a6467b4b08ee4956f1acd1e886d70b21c4766953b3a1beba2"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
  "corez",
  "crypto-common 0.2.0-rc.1",
  "document-features",
- "equihash",
+ "equihash 0.3.0 (git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat)",
  "ff",
  "hex",
  "incrementalmerkletree",
@@ -6227,8 +6221,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3de6b0ca82e08a9d38b1121f87c5b180b5feac19fecba074cb582882210d2371"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -6251,8 +6244,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bec496a0bd62dae98c4b26f51c5dab112d0c5350bbc2ccfdfd05bb3454f714d"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "document-features",
@@ -6290,8 +6282,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15df1908b428d4edeb7c7caae5692e05e2e92e5c38007a40b20ac098efdffd96"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bip32",
  "bs58",
@@ -6331,7 +6322,7 @@ dependencies = [
  "derive-getters",
  "dirs",
  "ed25519-zebra",
- "equihash",
+ "equihash 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures",
  "group",
  "halo2_proofs",
@@ -6739,7 +6730,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=0ed92148b#0ed92148bf1983af3b992e5afcfb2070a337ad08"
+source = "git+https://github.com/zingolabs/zingolib?rev=23d30bb58#23d30bb580bf43403748dcd8d44f6252afbd6430"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -6781,7 +6772,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=0ed92148b#0ed92148bf1983af3b992e5afcfb2070a337ad08"
+source = "git+https://github.com/zingolabs/zingolib?rev=23d30bb58#23d30bb580bf43403748dcd8d44f6252afbd6430"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -6836,7 +6827,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=0ed92148b#0ed92148bf1983af3b992e5afcfb2070a337ad08"
+source = "git+https://github.com/zingolabs/zingolib?rev=23d30bb58#23d30bb580bf43403748dcd8d44f6252afbd6430"
 dependencies = [
  "http",
  "portpicker",
@@ -6868,8 +6859,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fef061351aa99792deb8f62b00426863a317ca2cb124c9de85550e3ef0f0f2f"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "nom",
