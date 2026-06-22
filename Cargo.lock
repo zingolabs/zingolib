@@ -121,7 +121,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -132,7 +132,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1119,7 +1119,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1265,7 +1265,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -1284,7 +1284,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1306,7 +1306,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2319,7 +2319,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2650,7 +2650,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3245,7 +3245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -3266,7 +3266,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -3933,7 +3933,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4440,7 +4440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4578,7 +4578,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5479,7 +5479,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5875,7 +5875,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bs58",
@@ -5889,7 +5889,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.23.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "bech32",
@@ -5939,7 +5939,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "hex",
@@ -5960,7 +5960,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.14.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bip32",
@@ -6024,14 +6024,14 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
  "corez",
  "crypto-common 0.2.0-rc.1",
  "document-features",
- "equihash 0.3.0 (git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat)",
+ "equihash 0.3.0 (git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat)",
  "ff",
  "hex",
  "incrementalmerkletree",
@@ -6054,7 +6054,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.28.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -6077,7 +6077,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "document-features",
@@ -6115,7 +6115,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bip32",
  "bs58",
@@ -6711,7 +6711,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.8.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
+source = "git+https://github.com/zingolabs/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "nom",

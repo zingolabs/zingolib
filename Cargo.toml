@@ -135,14 +135,14 @@ time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
 # TEMPORARY: point to fork with OP_RETURN support for swap integrations.
 # See: https://github.com/zcash/librustzcash/pull/<TBD>
 # Revert these once the upstream PR is merged.
-zcash_client_backend = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_keys = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_primitives = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_protocol = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_transparent = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_proofs = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_address = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
-zcash_encoding = { git = "https://github.com/juanky201271/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat"}
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]
