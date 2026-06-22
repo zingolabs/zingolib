@@ -131,6 +131,8 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
+# Lazy gRPC connect so opening a wallet works offline (auzum197/zingo-common#1, merged to dev).
+zingo-netutils = { git = "https://github.com/auzum197/zingo-common", branch = "dev" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]
