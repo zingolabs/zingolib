@@ -101,12 +101,8 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .create_send_proposal(request, account_id)
+            .create_send_proposal(request, account_id, op_return)
             .map_err(SendError::ProposeSendError)?;
-        let proposal = match op_return {
-            Some(data) => proposal.with_op_return_data(data),
-            None => proposal,
-        };
         let txids = self.send(proposal, account_id).await?;
         if resume_sync {
             let _ignore_error = self.resume_sync();

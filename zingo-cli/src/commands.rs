@@ -1073,9 +1073,12 @@ impl Command for SendCommand {
             "The 'confirm' command must be called to complete and broadcast the proposed transaction(s).\n",
             "\n",
             "Usage:\n",
-            "    send <address> <amount in zatoshis> \"<optional memo>\"\n",
+            "    send <address> <amount in zatoshis> \"<optional memo>\" \"<optional op_return hex>\"\n",
             "    OR\n",
-            "    send '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "    send '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\", \"op_return\":\"<optional hex>\"}, ...]'\n",
+            "Note:\n",
+            "    op_return is a hex-encoded payload (max 80 bytes raw) attached as a transparent OP_RETURN\n",
+            "    null-data output. Pass an empty memo (\"\") when only op_return is needed.\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -1093,8 +1096,8 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        let receivers = match utils::parse_send_args(args) {
-            Ok(receivers) => receivers,
+        let (receivers, op_return) = match utils::parse_send_args(args) {
+            Ok(parsed) => parsed,
             Err(e) => {
                 return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
             }
@@ -1108,7 +1111,7 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(request, zip32::AccountId::ZERO, None)
+                .propose_send(request, zip32::AccountId::ZERO, op_return)
                 .await
             {
                 Ok(proposal) => {
@@ -1201,9 +1204,12 @@ impl Command for QuickSendCommand {
             "Warning:\n",
             "    Transaction(s) will be sent without the user being aware of the fee amount.\n",
             "Usage:\n",
-            "    quicksend <address> <amount in zatoshis> \"<optional memo>\"\n",
+            "    quicksend <address> <amount in zatoshis> \"<optional memo>\" \"<optional op_return hex>\"\n",
             "    OR\n",
-            "    quicksend '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "    quicksend '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\", \"op_return\":\"<optional hex>\"}, ...]'\n",
+            "Note:\n",
+            "    op_return is a hex-encoded payload (max 80 bytes raw) attached as a transparent OP_RETURN\n",
+            "    null-data output. Pass an empty memo (\"\") when only op_return is needed.\n",
             "Example:\n",
             "    quicksend ",
             crate::examples::sapling_address!(),
@@ -1220,8 +1226,8 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        let receivers = match utils::parse_send_args(args) {
-            Ok(receivers) => receivers,
+        let (receivers, op_return) = match utils::parse_send_args(args) {
+            Ok(parsed) => parsed,
             Err(e) => {
                 return format!("Error: {e}\nTry 'help quicksend' for correct usage and examples.");
             }
@@ -1234,7 +1240,7 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, None, true).await {
+            match lightclient.quick_send(request, zip32::AccountId::ZERO, op_return, true).await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }

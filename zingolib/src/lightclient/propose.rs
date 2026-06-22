@@ -41,11 +41,7 @@ impl LightClient {
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        let proposal = match op_return {
-            Some(data) => proposal.with_op_return_data(data),
-            None => proposal,
-        };
+        let proposal = wallet.create_send_proposal(request, account_id, op_return)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
@@ -76,7 +72,7 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
+        let proposal = wallet.create_send_proposal(request, account_id, None)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
@@ -129,7 +125,7 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id);
+            let trial_proposal = wallet.create_send_proposal(request, account_id, None);
 
             match trial_proposal {
                 Err(ProposeSendError::Proposal(

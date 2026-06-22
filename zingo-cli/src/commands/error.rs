@@ -15,6 +15,7 @@ pub(crate) enum CommandError {
     InvalidArguments,
     IncompatibleMemo,
     InvalidMemo(String),
+    InvalidOpReturn(String),
     NonJsonNumberForAmount(String),
     ConversionFailed(zingolib::utils::error::ConversionError),
     MissingZenniesForZingoFlag,
@@ -25,8 +26,8 @@ impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use CommandError::{
             ArgNotJsonOrValidAddress, ArgsNotJson, ConversionFailed, EmptyJsonArray,
-            IncompatibleMemo, InvalidArguments, InvalidMemo, JsonArrayNotObj, MissingKey,
-            MissingZenniesForZingoFlag, NonJsonNumberForAmount, ParseIntFromString,
+            IncompatibleMemo, InvalidArguments, InvalidMemo, InvalidOpReturn, JsonArrayNotObj,
+            MissingKey, MissingZenniesForZingoFlag, NonJsonNumberForAmount, ParseIntFromString,
             SingleArgNotJsonArray, UnexpectedType, ZenniesFlagNonBool,
         };
 
@@ -54,6 +55,7 @@ impl fmt::Display for CommandError {
                 write!(f, "memo's cannot be sent to transparent addresses.")
             }
             InvalidMemo(e) => write!(f, "failed to interpret memo. {e}"),
+            InvalidOpReturn(e) => write!(f, "invalid op_return hex payload. {e}"),
             NonJsonNumberForAmount(e) => write!(f, "invalid argument. expected a number. {e}"),
             ConversionFailed(e) => write!(f, "conversion failed. {e}"),
             MissingZenniesForZingoFlag => {

@@ -13,11 +13,19 @@ use zingolib::wallet;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
-// - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
-// - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
-pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> {
+// - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>", "op_return":"<optional hex>"}, ...]'
+// - 2 (+1 optional memo, +1 optional op_return hex) arguments for a single address send.
+//   &["<address>", <amount>, "<optional memo>", "<optional op_return hex>"]
+//
+// `op_return` is an optional hex-encoded payload (max 80 bytes raw / 160 hex chars) used by
+// cross-chain swap integrations (THORChain/MAYAChain) that require a memo embedded as a
+// transparent OP_RETURN null-data output. If supplied in JSON form, it is taken from the
+// first receiver entry (the swap memo applies to the whole transaction's final step).
+pub(super) fn parse_send_args(
+    args: &[&str],
+) -> Result<(Receivers, Option<Vec<u8>>), CommandError> {
     // Check for a single argument that can be parsed as JSON
-    let send_args = if args.len() == 1 {
+    if args.len() == 1 {
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
 
         if !json_args.is_array() {
@@ -27,7 +35,10 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
             return Err(CommandError::EmptyJsonArray);
         }
 
-        json_args
+        // The op_return, if any, is taken from the first receiver entry.
+        let op_return = op_return_from_json(&json_args[0])?;
+
+        let receivers: Receivers = json_args
             .members()
             .map(|j| {
                 let recipient_address = address_from_json(j)?;
@@ -41,8 +52,10 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
                     memo,
                 })
             })
-            .collect::<Result<Receivers, CommandError>>()
-    } else if args.len() == 2 || args.len() == 3 {
+            .collect::<Result<Receivers, CommandError>>()?;
+
+        Ok((receivers, op_return))
+    } else if args.len() == 2 || args.len() == 3 || args.len() == 4 {
         let recipient_address =
             address_from_str(args[0]).map_err(CommandError::ConversionFailed)?;
         let amount_u64 = args[1]
@@ -50,7 +63,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
             .parse::<u64>()
             .map_err(CommandError::ParseIntFromString)?;
         let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
-        let memo = if args.len() == 3 {
+        let memo = if args.len() >= 3 && !args[2].is_empty() {
             Some(
                 wallet::utils::memo_bytes_from_string(args[2].to_string())
                     .map_err(CommandError::InvalidMemo)?,
@@ -60,16 +73,37 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
         };
         check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![zingolib::data::receivers::Receiver {
-            recipient_address,
-            amount,
-            memo,
-        }])
-    } else {
-        return Err(CommandError::InvalidArguments);
-    }?;
+        let op_return = if args.len() == 4 && !args[3].is_empty() {
+            Some(hex::decode(args[3]).map_err(|e| CommandError::InvalidOpReturn(e.to_string()))?)
+        } else {
+            None
+        };
 
-    Ok(send_args)
+        Ok((
+            vec![zingolib::data::receivers::Receiver {
+                recipient_address,
+                amount,
+                memo,
+            }],
+            op_return,
+        ))
+    } else {
+        Err(CommandError::InvalidArguments)
+    }
+}
+
+fn op_return_from_json(j: &JsonValue) -> Result<Option<Vec<u8>>, CommandError> {
+    if j["op_return"].is_null() {
+        return Ok(None);
+    }
+    let hex_str = j["op_return"]
+        .as_str()
+        .ok_or_else(|| CommandError::InvalidOpReturn("op_return must be a hex string".into()))?;
+    if hex_str.is_empty() {
+        return Ok(None);
+    }
+    let bytes = hex::decode(hex_str).map_err(|e| CommandError::InvalidOpReturn(e.to_string()))?;
+    Ok(Some(bytes))
 }
 
 // The send arguments have two possible formats:
@@ -242,22 +276,43 @@ mod tests {
         let send_args = &[address_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![zingolib::data::receivers::Receiver {
-                recipient_address: recipient_address.clone(),
-                amount,
-                memo: None
-            }]
+            (
+                vec![zingolib::data::receivers::Receiver {
+                    recipient_address: recipient_address.clone(),
+                    amount,
+                    memo: None
+                }],
+                None
+            )
         );
 
         // Memo
         let send_args = &[address_str, value_str, memo_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![Receiver {
-                recipient_address: recipient_address.clone(),
-                amount,
-                memo: Some(memo.clone())
-            }]
+            (
+                vec![Receiver {
+                    recipient_address: recipient_address.clone(),
+                    amount,
+                    memo: Some(memo.clone())
+                }],
+                None
+            )
+        );
+
+        // Op_return (with empty memo)
+        let op_return_str = "deadbeef";
+        let send_args = &[address_str, value_str, "", op_return_str];
+        assert_eq!(
+            super::parse_send_args(send_args).unwrap(),
+            (
+                vec![Receiver {
+                    recipient_address: recipient_address.clone(),
+                    amount,
+                    memo: None
+                }],
+                Some(vec![0xde, 0xad, 0xbe, 0xef])
+            )
         );
 
         // Json
@@ -266,30 +321,36 @@ mod tests {
                     \"amount\":100000, \"memo\":\"test memo\"}]";
         assert_eq!(
             super::parse_send_args(&[json]).unwrap(),
-            vec![
-                Receiver {
-                    recipient_address: address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd")
-                        .unwrap(),
-                    amount: zatoshis_from_u64(50_000).unwrap(),
-                    memo: None
-                },
-                Receiver {
-                    recipient_address: recipient_address.clone(),
-                    amount,
-                    memo: Some(memo.clone())
-                }
-            ]
+            (
+                vec![
+                    Receiver {
+                        recipient_address: address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd")
+                            .unwrap(),
+                        amount: zatoshis_from_u64(50_000).unwrap(),
+                        memo: None
+                    },
+                    Receiver {
+                        recipient_address: recipient_address.clone(),
+                        amount,
+                        memo: Some(memo.clone())
+                    }
+                ],
+                None
+            )
         );
 
         // Trim whitespace
         let send_args = &[address_str, "1 ", memo_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![Receiver {
-                recipient_address,
-                amount: zatoshis_from_u64(1).unwrap(),
-                memo: Some(memo.clone())
-            }]
+            (
+                vec![Receiver {
+                    recipient_address,
+                    amount: zatoshis_from_u64(1).unwrap(),
+                    memo: Some(memo.clone())
+                }],
+                None
+            )
         );
     }
 
