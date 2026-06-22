@@ -21,9 +21,7 @@ use zingolib::wallet;
 // cross-chain swap integrations (THORChain/MAYAChain) that require a memo embedded as a
 // transparent OP_RETURN null-data output. If supplied in JSON form, it is taken from the
 // first receiver entry (the swap memo applies to the whole transaction's final step).
-pub(super) fn parse_send_args(
-    args: &[&str],
-) -> Result<(Receivers, Option<Vec<u8>>), CommandError> {
+pub(super) fn parse_send_args(args: &[&str]) -> Result<(Receivers, Option<Vec<u8>>), CommandError> {
     // Check for a single argument that can be parsed as JSON
     if args.len() == 1 {
         let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;

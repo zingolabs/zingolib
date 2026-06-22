@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction path that was lost when `create_from_wallet` and `WalletBase` were removed
   in 5.0.0; the new path uses the `WalletConfig` enum and the existing
   `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
+- Optional `op_return: Option<Vec<u8>>` parameter on
+  `lightclient::LightClient::propose_send` and `lightclient::LightClient::quick_send`.
+  When `Some(data)`, the proposed transaction includes a transparent `OP_RETURN`
+  (null-data) output carrying the supplied payload (max 80 bytes). The fee and input
+  selection account for the additional output. Used by cross-chain swap integrations
+  (THORChain/MAYAChain) that require a memo embedded in the transaction's null-data
+  output. Existing callers passing `None` retain previous behaviour.
+- `wallet::LightWallet::create_send_proposal` now also accepts the optional
+  `op_return_data` argument and propagates it to
+  `zcash_client_backend::data_api::wallet::propose_transfer`.
 
 ### Changed
 
