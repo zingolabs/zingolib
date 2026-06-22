@@ -339,7 +339,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -1265,7 +1265,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -1306,7 +1306,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2167,15 +2167,6 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -5884,7 +5875,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bs58",
@@ -5898,7 +5889,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.23.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "bech32",
@@ -5948,7 +5939,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "hex",
@@ -5969,7 +5960,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.14.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bech32",
  "bip32",
@@ -6033,7 +6024,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
@@ -6063,7 +6054,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.28.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -6086,7 +6077,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "corez",
  "document-features",
@@ -6124,7 +6115,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "bip32",
  "bs58",
@@ -6720,7 +6711,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.8.0"
-source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ae250d15ef8225ef3352cb7f4122dbfebd8439f8"
+source = "git+https://github.com/juanky201271/librustzcash?branch=feature%2Fop-return-zingolib-compat#ed334f11f418318de39de8e8df6687b0833f2e3c"
 dependencies = [
  "base64",
  "nom",
