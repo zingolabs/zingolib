@@ -18,6 +18,20 @@ use super::error::{CalculateTransactionError, KeyError};
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
+    ///
+    /// Two-step proposals are accepted in two cases:
+    /// 1. The step-1 recipient is a TEX address (`Address::Tex`) — the canonical
+    ///    ZIP-320 flow: shielded → wallet ephemeral t-addr → exchange-style TEX
+    ///    destination. The 2-hop is implicit in the recipient encoding.
+    /// 2. The step-1 recipient is a plain transparent address (`Address::Transparent`)
+    ///    AND the caller explicitly asked for the ephemeral indirection via the
+    ///    `route_via_ephemeral` flag plumbed through `propose_transfer`. This is the
+    ///    Mayachain / THORChain deposit path: the protocol needs an observable
+    ///    `from_address` on the inbound tx (for refund routing) but the funds
+    ///    originate from a shielded note. The 2-hop puts a wallet-controlled
+    ///    ephemeral t-addr in that slot. From the wallet's transaction-build
+    ///    perspective these two cases produce indistinguishable proposals, so the
+    ///    same code path handles both.
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: Proposal<zip317::FeeRule, NoteRef>,
@@ -40,7 +54,8 @@ impl LightWallet {
                             .convert_if_network::<zcash_keys::address::Address>(
                                 self.chain_type.network_type()
                             ),
-                        Ok(zcash_keys::address::Address::Tex(_))
+                        Ok(zcash_keys::address::Address::Tex(_)
+                            | zcash_keys::address::Address::Transparent(_))
                     )
                 }) =>
             {
