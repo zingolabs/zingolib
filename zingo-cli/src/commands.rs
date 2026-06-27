@@ -1111,7 +1111,8 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(request, zip32::AccountId::ZERO, op_return)
+                // CLI does not expose swap-deposit flow; single-hop default.
+                .propose_send(request, zip32::AccountId::ZERO, op_return, false)
                 .await
             {
                 Ok(proposal) => {
@@ -1240,7 +1241,10 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, op_return, true).await {
+            match lightclient
+                .quick_send(request, zip32::AccountId::ZERO, op_return, false, true)
+                .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }

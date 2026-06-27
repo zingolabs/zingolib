@@ -33,15 +33,24 @@ impl LightClient {
     /// (e.g., THORChain/MAYAChain) that require a memo embedded as a null-data output.
     /// When `None`, no `OP_RETURN` output is added. Maximum size is 80 bytes, enforced at
     /// transaction build time.
+    ///
+    /// `route_via_ephemeral` forces transparent recipients through the ZIP-320 ephemeral
+    /// indirection (shielded → wallet ephemeral t-addr → recipient) so the final tx exposes
+    /// a wallet-controlled `from_address`. Required for swap-deposit flows targeting Mayachain
+    /// / THORChain vaults from shielded notes — without this the protocol cannot derive a
+    /// refund destination and a failed swap would leave the funds in the vault. Has no effect
+    /// when the recipient is shielded or already a `tex1…` address.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return: Option<Vec<u8>>,
+        route_via_ephemeral: bool,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id, op_return)?;
+        let proposal =
+            wallet.create_send_proposal(request, account_id, op_return, route_via_ephemeral)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
@@ -72,7 +81,8 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id, None)?;
+        // send-all is a self-spend: route_via_ephemeral has no use case here, so single-hop.
+        let proposal = wallet.create_send_proposal(request, account_id, None, false)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
@@ -125,7 +135,9 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id, None);
+            // Fee-estimation probe: always single-hop. The flag affects fee accounting but
+            // we're not committing this proposal — we just need a baseline.
+            let trial_proposal = wallet.create_send_proposal(request, account_id, None, false);
 
             match trial_proposal {
                 Err(ProposeSendError::Proposal(

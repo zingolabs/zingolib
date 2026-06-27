@@ -29,11 +29,19 @@ impl LightWallet {
     /// the final step of the proposal. The fee/input selection accounts for this output's
     /// impact on transaction size. Used for cross-chain swap integrations (THORChain/MAYAChain)
     /// that require a memo embedded as a null-data output.
+    ///
+    /// `route_via_ephemeral` forces transparent recipient addresses through the same ZIP-320
+    /// ephemeral indirection that TEX (`tex1…`) addresses already trigger: the proposal becomes
+    /// a two-step transfer (shielded → wallet ephemeral t-addr → final t-addr) so the deposit
+    /// tx exposes a wallet-controlled `from_address`. Required for swap-deposit flows targeting
+    /// MAYAChain / THORChain vaults from shielded notes — without this the deposit tx has no
+    /// observable origin and the protocol's refund path is broken.
     pub(crate) fn create_send_proposal(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<Vec<u8>>,
+        route_via_ephemeral: bool,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
@@ -64,6 +72,7 @@ impl LightWallet {
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             op_return_data,
+            route_via_ephemeral,
             None,
         )
         .map_err(ProposeSendError::Proposal)
@@ -282,7 +291,7 @@ mod test {
             .expect("actually all of this logic oughta be internal to propose");
 
         wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO, None)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None, false)
             .expect("can propose from existing data");
     }
 }

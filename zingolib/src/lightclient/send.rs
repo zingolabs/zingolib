@@ -88,12 +88,16 @@ impl LightClient {
     /// `op_return` optionally attaches an `OP_RETURN` (null-data) transparent output to the
     /// final step of the proposal. See [`LightClient::propose_send`] for details.
     ///
+    /// `route_via_ephemeral` forces transparent recipients through the ZIP-320 ephemeral
+    /// indirection. See [`LightClient::propose_send`] for the use case.
+    ///
     /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
     pub async fn quick_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return: Option<Vec<u8>>,
+        route_via_ephemeral: bool,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
@@ -101,7 +105,7 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .create_send_proposal(request, account_id, op_return)
+            .create_send_proposal(request, account_id, op_return, route_via_ephemeral)
             .map_err(SendError::ProposeSendError)?;
         let txids = self.send(proposal, account_id).await?;
         if resume_sync {

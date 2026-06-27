@@ -784,7 +784,7 @@ mod fast {
             ($client:ident, $message:ident) => {
                 // Propose sending the message
                 $client
-                    .propose_send($message.clone(), zip32::AccountId::ZERO, None)
+                    .propose_send($message.clone(), zip32::AccountId::ZERO, None, false)
                     .await
                     .unwrap();
                 // Complete and broadcast the stored proposal
@@ -1032,7 +1032,7 @@ mod fast {
             let transaction_request = TransactionRequest::new(payment).unwrap();
 
             let proposal = sender
-                .propose_send(transaction_request, zip32::AccountId::ZERO, None)
+                .propose_send(transaction_request, zip32::AccountId::ZERO, None, false)
                 .await
                 .unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
