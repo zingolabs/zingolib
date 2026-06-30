@@ -81,7 +81,7 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        // send-all is a self-spend: route_via_ephemeral has no use case here, so single-hop.
+        // op_return & route_via_ephemeral has no use case here.
         let proposal = wallet.create_send_proposal(request, account_id, None, false)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
