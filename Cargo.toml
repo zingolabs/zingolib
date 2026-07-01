@@ -27,8 +27,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "df462543fd39bf7957a379a7414742be00e9bab2" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "df462543fd39bf7957a379a7414742be00e9bab2" }
 
 ### Documentation
 indoc = "2"
@@ -41,11 +41,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
 zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
-zingo_common_components = "0.3.1"
+zingo_common_components = "0.4.0"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
-orchard = "0.14.0"
+orchard = "0.15.0-pre.1"
 sapling-crypto = "0.7.0"
 shardtree = "0.6.2"
 zcash_address = "0.12.0"
@@ -131,6 +131,42 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
+
+# Ironwood (NU6.3) — zebra. Point zebra at the zingolabs Ironwood fork (ZIN-37,
+# the add-ironwood-v6-value-pool work), built against orchard 0.15.0-pre.1 and
+# `--cfg zcash_unstable="nu6.3"`. This is what removes the orchard 0.14/0.15
+# split: zebra-chain 9.0.0 from crates.io pins orchard 0.14, which clashes with
+# the librustzcash Ironwood stack below. We only need to patch the three crates
+# this workspace names directly; their intra-workspace `path` deps
+# (zebra-consensus, zebra-state, zebra-network, …, which also pull orchard)
+# resolve from the same fork checkout, so the whole zebra subtree moves to
+# orchard 0.15.0-pre.1.
+zebra-chain = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
+zebra-rpc = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
+zebra-node-services = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
+
+# Ironwood (NU6.3) — librustzcash. Consume the zingolabs librustzcash fork so
+# there is a single orchard 0.15.0-pre.1 in the graph (no 0.14/0.15 split).
+# Same crate versions as crates.io — a source swap that enables the Ironwood
+# code paths behind `--cfg zcash_unstable="nu6.3"`. Mirrors zingolib's patch
+# set so the harness and its consumer build against the same revs.
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+# zcash_history carries the Ironwood V3 history-tree node data that zebra's
+# value-pool code consumes (`zcash_history::V3`). zingolib's wallet stack does
+# not touch history trees, so its patch set omits it — but zebra-chain (pulled
+# in transitively here) needs it from the fork, and a dependency's own
+# `[patch]` table is ignored: only this top-level workspace's patches apply.
+zcash_history = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+equihash = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+f4jumble = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]
