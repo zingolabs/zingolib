@@ -16,11 +16,11 @@ resolver = "2"
 [workspace.dependencies]
 ### Workspace
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.1"
+zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+# zingo-memo = "0.1.1"
 zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.1"
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+# zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -28,8 +28,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "df462543fd39bf7957a379a7414742be00e9bab2" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "df462543fd39bf7957a379a7414742be00e9bab2" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "84d9c979e4aa6de0fe6243cbce333c8e5b5603ad" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "84d9c979e4aa6de0fe6243cbce333c8e5b5603ad" }
 
 ### Documentation
 indoc = "2"
@@ -70,14 +70,14 @@ incrementalmerkletree = "0.8.2"
 orchard = "0.15.0-pre.1"
 sapling-crypto = "0.7.0"
 shardtree = "0.6.2"
-zcash_address = "0.12.0"
+zcash_address = "0.13.0-pre.0"
 zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
 ] }
 zcash_encoding = "0.4.0"
-zcash_keys = { version = "0.14.0", features = [
+zcash_keys = { version = "0.15.0-pre.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
@@ -85,10 +85,10 @@ zcash_keys = { version = "0.14.0", features = [
 zcash_note_encryption = "0.4.1"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "0.28.0", features = ["non-standard-fees"] }
-zcash_proofs = "0.28.0"
-zcash_protocol = "0.9.0" # public API (TODO: remove from public API)
-zcash_transparent = "0.8.0"
+zcash_primitives = { version = "0.29.0-pre.0", features = ["non-standard-fees"] }
+zcash_proofs = "0.29.0-pre.0"
+zcash_protocol = "0.10.0-pre.0" # public API (TODO: remove from public API)
+zcash_transparent = "0.9.0-pre.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
@@ -165,32 +165,29 @@ time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
 # (zebra-consensus, zebra-state, zebra-network, …, which also pull orchard)
 # resolve from the same fork checkout, so the whole zebra subtree moves to
 # orchard 0.15.0-pre.1.
-zebra-chain = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
-zebra-rpc = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
-zebra-node-services = { git = "https://github.com/zingolabs/zebra", branch = "feat/ironwood" }
+zebra-chain = { git = "https://github.com/zcashfoundation/zebra", branch = "nu63-ironwood" }
+zebra-rpc = { git = "https://github.com/zcashfoundation/zebra", branch = "nu63-ironwood" }
+zebra-node-services = { git = "https://github.com/zcashfoundation/zebra", branch = "nu63-ironwood" }
 
-# Ironwood (NU6.3) — librustzcash. Consume the zingolabs librustzcash fork so
-# there is a single orchard 0.15.0-pre.1 in the graph (no 0.14/0.15 split).
-# Same crate versions as crates.io — a source swap that enables the Ironwood
-# code paths behind `--cfg zcash_unstable="nu6.3"`. Mirrors zingolib's patch
-# set so the harness and its consumer build against the same revs.
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-# zcash_history carries the Ironwood V3 history-tree node data that zebra's
-# value-pool code consumes (`zcash_history::V3`). zingolib's wallet stack does
-# not touch history trees, so its patch set omits it — but zebra-chain (pulled
-# in transitively here) needs it from the fork, and a dependency's own
-# `[patch]` table is ignored: only this top-level workspace's patches apply.
-# zcash_history = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-equihash = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
-f4jumble = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+# librustzcash. Consume the canonical upstream `zcash/librustzcash` main
+# branch, pinned to a specific rev for reproducibility (its main is the
+# internally-consistent latest). A source swap over the same crate names;
+# `zcash_history` is included because zebra-chain (pulled in transitively)
+# consumes it and a dependency's own `[patch]` table is ignored — only this
+# top-level workspace's patches apply.
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_history = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+equihash = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+f4jumble = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+
+# zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]
