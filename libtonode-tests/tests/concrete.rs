@@ -3648,22 +3648,18 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
-                if let ProposeSendError::Proposal(insufficient_funds) = e {
-                    match insufficient_funds {
-                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                            available,
-                            required,
-                        } => {
-                            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
-                        }
-                        _ => {
-                            panic!()
-                        }
-                    }
-                } else {
-                    panic!()
-                }
+                let ProposeSendError::Proposal(
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    },
+                ) = e
+                else {
+                    panic!("unexpected error: {e:?}");
+                };
+
+                assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
             }
             _ => panic!(),
         }

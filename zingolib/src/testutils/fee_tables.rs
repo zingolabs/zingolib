@@ -32,6 +32,7 @@ pub fn one_to_one(
         PoolType::Transparent => transparent_outputs += 1,
         PoolType::Shielded(ShieldedPool::Sapling) => sapling_outputs += 1,
         PoolType::Shielded(ShieldedPool::Orchard) => orchard_outputs += 1,
+        PoolType::Shielded(ShieldedPool::Ironwood) => todo!(), // FIXME: implement ironwood
     }
     if change {
         if orchard_inputs + orchard_outputs == 0 {

@@ -427,6 +427,7 @@ pub mod scenarios {
             );
 
             let faucet_funding_transaction = match funded_pool {
+                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
                 PoolType::Shielded(ShieldedPool::Orchard) => {
                     constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT
                 }

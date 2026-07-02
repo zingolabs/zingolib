@@ -8,8 +8,8 @@ use zcash_client_backend::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
         NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
         SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
-        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary,
-        WalletWrite, Zip32Derivation,
+        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
+        Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
         wallet::{ConfirmationsPolicy, TargetHeight},
@@ -905,6 +905,43 @@ impl InputSource for LightWallet {
     ) -> Result<Option<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         unimplemented!()
     }
+
+    // fn get_spendable_transparent_outputs(
+    //     &self,
+    //     address: &TransparentAddress,
+    //     target_height: TargetHeight,
+    //     confirmations_policy: ConfirmationsPolicy,
+    //     _output_filter: TransparentOutputFilter,
+    // ) -> Result<Vec<WalletUtxo>, Self::Error> {
+    //     let address = transparent::encode_address(&self.chain_type, *address);
+
+    //     // TODO: add recipient key scope metadata
+    //     Ok(self
+    //         .spendable_transparent_coins(
+    //             target_height.into(),
+    //             confirmations_policy.allow_zero_conf_shielding(),
+    //             false,
+    //         )
+    //         .into_iter()
+    //         .filter(|&output| output.address() == address)
+    //         .filter_map(|output| {
+    //             WalletTransparentOutput::from_parts(
+    //                 output.output_id().into(),
+    //                 TxOut::new(
+    //                     output.value().try_into().expect("value from checked type"),
+    //                     output.script().clone(),
+    //                 ),
+    //                 Some(
+    //                     self.output_transaction(output)
+    //                         .status()
+    //                         .get_confirmed_height()
+    //                         .expect("output must be confirmed in this scope"),
+    //                 ),
+    //             )
+    //             .map(|transparent_output| WalletUtxo::new(transparent_output, None))
+    //         })
+    //         .collect())
+    // }
 
     fn get_spendable_transparent_outputs(
         &self,

@@ -530,12 +530,14 @@ fn determine_block_range(
                         break;
                     }
                 }
+                ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
             }
         }
 
         let shard_ranges = match shielded_protocol {
             ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_slice(),
             ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_slice(),
+            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
         };
 
         let target_ranges = shard_ranges
@@ -1024,11 +1026,13 @@ pub(super) fn add_shard_ranges(
         ShieldedPool::Orchard => consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Nu5)
             .expect("activation height should exist for this network upgrade!"),
+        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
     };
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
         ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
         ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
+        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
     };
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
@@ -1077,6 +1081,7 @@ pub(super) fn update_found_note_shard_priority(
     let found_note = match shielded_protocol {
         ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
         ShieldedPool::Orchard => !wallet_transaction.orchard_notes().is_empty(),
+        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
     };
     if found_note {
         set_found_note_scan_range(

@@ -108,6 +108,7 @@ impl OutputPoolQuery {
                 sapling: false,
                 orchard: true,
             },
+            PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
         }
     }
 }
