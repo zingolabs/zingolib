@@ -5,7 +5,7 @@ use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
@@ -256,7 +256,7 @@ impl LightWallet {
             .is_none()
         {
             return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedProtocol::Orchard,
+                shielded_protocol: ShieldedPool::Orchard,
                 height: anchor_height,
             });
         }
@@ -269,7 +269,7 @@ impl LightWallet {
             .is_none()
         {
             return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedProtocol::Sapling,
+                shielded_protocol: ShieldedPool::Sapling,
                 height: anchor_height,
             });
         }
@@ -471,7 +471,7 @@ fn calculate_remaining_needed(target_value: Zatoshis, selected_value: Zatoshis) 
 #[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
+    use zcash_client_backend::{wallet::NoteId, ShieldedPool};
     use zcash_primitives::transaction::TxId;
 
     use crate::{mocks::default_txid, testutils::build_method};
@@ -479,7 +479,7 @@ pub mod mocks {
     /// to build a mock NoteRecordIdentifier
     pub struct NoteIdBuilder {
         txid: Option<TxId>,
-        shpool: Option<ShieldedProtocol>,
+        shpool: Option<ShieldedPool>,
         index: Option<u16>,
     }
     impl NoteIdBuilder {
@@ -493,7 +493,7 @@ pub mod mocks {
         }
         // Methods to set each field
         build_method!(txid, TxId);
-        build_method!(shpool, ShieldedProtocol);
+        build_method!(shpool, ShieldedPool);
         build_method!(index, u16);
 
         /// selects a random probablistically unique txid
@@ -516,7 +516,7 @@ pub mod mocks {
             let mut builder = Self::new();
             builder
                 .txid(default_txid())
-                .shpool(zcash_client_backend::ShieldedProtocol::Orchard)
+                .shpool(zcash_client_backend::ShieldedPool::Orchard)
                 .index(0);
             builder
         }

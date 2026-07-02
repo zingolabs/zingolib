@@ -125,7 +125,7 @@ pub use sync::sync_status;
 #[cfg(test)]
 mod mocks;
 
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
@@ -134,7 +134,7 @@ use crate::wallet::{
 };
 
 pub(crate) trait SyncDomain {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
+    const SHIELDED_PROTOCOL: ShieldedPool;
 
     type Note: NoteInterface;
     type ShardStore: ShardStore<CheckpointId = BlockHeight>;
@@ -145,7 +145,7 @@ pub(crate) trait SyncDomain {
 pub(crate) struct Sapling;
 
 impl SyncDomain for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
 
     type Note = SaplingNote;
     type ShardStore = SaplingShardStore;
@@ -158,7 +158,7 @@ impl SyncDomain for Sapling {
 pub(crate) struct Orchard;
 
 impl SyncDomain for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
 
     type Note = OrchardNote;
     type ShardStore = OrchardShardStore;

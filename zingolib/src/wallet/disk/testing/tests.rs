@@ -1,7 +1,7 @@
 use bip0039::Mnemonic;
 
 use zcash_keys::keys::Era;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::{
     config::ClientConfig,
@@ -30,7 +30,7 @@ impl NetworkSeedVersion {
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_seed()).await;
         for pool in [
             PoolType::Transparent,
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
         ] {
             assert_eq!(wallet.get_address(pool), self.example_wallet_address(pool));
         }

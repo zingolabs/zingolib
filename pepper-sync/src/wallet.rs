@@ -22,7 +22,7 @@ use zcash_address::unified::ParseError;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{
-    PoolType, ShieldedProtocol,
+    PoolType, ShieldedPool,
     consensus::{self, BlockHeight},
     memo::Memo,
     value::Zatoshis,
@@ -788,7 +788,7 @@ pub trait NoteInterface: OutputInterface {
     type Nullifier: Copy + Clone + PartialEq + Eq + PartialOrd + Ord;
 
     /// Note's associated shielded protocol.
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
+    const SHIELDED_PROTOCOL: ShieldedPool;
 
     /// Decrypted note with recipient and value
     fn note(&self) -> &Self::ZcashNote;
@@ -912,7 +912,7 @@ impl OutputInterface for SaplingNote {
     type KeyId = KeyId;
     type Input = sapling_crypto::Nullifier;
 
-    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Sapling);
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedPool::Sapling);
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -951,7 +951,7 @@ impl NoteInterface for SaplingNote {
     type ZcashNote = sapling_crypto::Note;
     type Nullifier = Self::Input;
 
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
 
     fn note(&self) -> &Self::ZcashNote {
         &self.note
@@ -981,7 +981,7 @@ impl OutputInterface for OrchardNote {
     type KeyId = KeyId;
     type Input = orchard::note::Nullifier;
 
-    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Orchard);
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedPool::Orchard);
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -1020,7 +1020,7 @@ impl NoteInterface for OrchardNote {
     type ZcashNote = orchard::Note;
     type Nullifier = Self::Input;
 
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
 
     fn note(&self) -> &Self::ZcashNote {
         &self.note
@@ -1053,7 +1053,7 @@ pub trait OutgoingNoteInterface: Sized {
     type Error: Debug + std::error::Error;
 
     /// Note's associated shielded protocol.
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
+    const SHIELDED_PROTOCOL: ShieldedPool;
 
     /// Output ID.
     fn output_id(&self) -> OutputId;
@@ -1113,7 +1113,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
     type Address = sapling_crypto::PaymentAddress;
     type Error = Infallible;
 
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -1175,7 +1175,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     type Address = orchard::Address;
     type Error = ParseError;
 
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
 
     fn output_id(&self) -> OutputId {
         self.output_id

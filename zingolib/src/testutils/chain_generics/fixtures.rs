@@ -4,7 +4,7 @@
 use pepper_sync::wallet::SaplingNote;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::value::Zatoshis;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::chain_generics::with_assertions;
@@ -27,9 +27,9 @@ where
     let mut environment = CC::setup().await;
     let mut sender = environment.fund_client_orchard(250_000).await;
     let sender_orchard_addr =
-        get_base_address(&sender, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let sender_sapling_addr =
-        get_base_address(&sender, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+        get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
     let sender_taddr = get_base_address(&sender, PoolType::Transparent).await;
     let send_value_for_recipient = 23_000;
     let send_value_self = 17_000;
@@ -43,7 +43,7 @@ where
         &mut sender,
         vec![
             (
-                &get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await,
+                &get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await,
                 send_value_for_recipient,
                 Some("Orchard sender to recipient"),
             ),
@@ -178,7 +178,7 @@ where
                 &mut environment,
                 &mut secondary,
                 vec![(
-                    &get_base_address(&primary, PoolType::Shielded(ShieldedProtocol::Orchard))
+                    &get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard))
                         .await,
                     50_000,
                     None,
@@ -209,9 +209,9 @@ where
     let mut primary = environment.fund_client_orchard(120_000).await;
     let mut secondary = environment.create_client().await;
     let secondary_sapling_addr =
-        get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+        get_base_address(&secondary, PoolType::Shielded(ShieldedPool::Sapling)).await;
     let secondary_orchard_addr =
-        get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&secondary, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
     // send a bunch of dust
     let (recorded_fee, recorded_value, recorded_change) =
@@ -250,7 +250,7 @@ where
             &mut environment,
             &mut secondary,
             vec![(
-                &get_base_address(&primary, PoolType::Shielded(ShieldedProtocol::Orchard)).await,
+                &get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard)).await,
                 10_000,
                 None,
             )],
@@ -292,7 +292,7 @@ where
 
     // Send number_of_notes transfers in increasing 10_000 zat increments
     let secondary_sapling_addr =
-        get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+        get_base_address(&secondary, PoolType::Shielded(ShieldedPool::Sapling)).await;
     let (recorded_fee, recorded_value, recorded_change) =
         with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
@@ -344,7 +344,7 @@ where
 
     // the second client selects notes to cover the transaction.
     let primary_orchard_addr =
-        get_base_address(&primary, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let (recorded_fee, recorded_value, recorded_change) =
         with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
@@ -374,7 +374,7 @@ where
         .await
         .sum_queried_output_values(OutputQuery {
             spend_status: OutputSpendStatusQuery::only_unspent(),
-            pools: OutputPoolQuery::one_pool(PoolType::Shielded(ShieldedProtocol::Orchard)),
+            pools: OutputPoolQuery::one_pool(PoolType::Shielded(ShieldedPool::Orchard)),
         });
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
@@ -397,7 +397,7 @@ where
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. error variant.
 pub async fn shpool_to_pool_insufficient_error<CC>(
-    shpool: ShieldedProtocol,
+    shpool: ShieldedPool,
     pool: PoolType,
     underflow_amount: u64,
 ) where
@@ -480,7 +480,7 @@ where
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
 pub async fn any_source_sends_to_any_receiver<CC>(
-    shpool: ShieldedProtocol,
+    shpool: ShieldedPool,
     pool: PoolType,
     receiver_value: u64,
     change: u64,

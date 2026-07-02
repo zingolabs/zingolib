@@ -24,7 +24,7 @@ mod chain_generics {
         }
     }
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
     use zingolib::testutils::chain_generics::fixtures;
 
     #[tokio::test]
@@ -47,7 +47,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_sapling_to_transparent() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::TRANSPARENT,
             1,
         )
@@ -56,7 +56,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_sapling_to_sapling() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::SAPLING,
             1,
         )
@@ -65,7 +65,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_sapling_to_orchard() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::ORCHARD,
             1,
         )
@@ -74,7 +74,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_orchard_to_transparent() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::TRANSPARENT,
             1,
         )
@@ -83,7 +83,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_orchard_to_sapling() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::SAPLING,
             1,
         )
@@ -92,7 +92,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_1_orchard_to_orchard() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::ORCHARD,
             1,
         )
@@ -101,7 +101,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_sapling_to_transparent() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::TRANSPARENT,
             10_000,
         )
@@ -110,7 +110,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_sapling_to_sapling() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::SAPLING,
             10_000,
         )
@@ -119,7 +119,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_sapling_to_orchard() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             PoolType::ORCHARD,
             10_000,
         )
@@ -128,7 +128,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_orchard_to_transparent() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::TRANSPARENT,
             10_000,
         )
@@ -137,7 +137,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_orchard_to_sapling() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::SAPLING,
             10_000,
         )
@@ -146,7 +146,7 @@ mod chain_generics {
     #[tokio::test]
     async fn simpool_insufficient_10_000_orchard_to_orchard() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             PoolType::ORCHARD,
             10_000,
         )

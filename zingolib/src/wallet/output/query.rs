@@ -1,6 +1,6 @@
 //! Contains structs for querying a database about notes.
 
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 /// Selects received notes by how they been spent
 #[derive(Clone, Copy)]
@@ -98,12 +98,12 @@ impl OutputPoolQuery {
                 sapling: false,
                 orchard: false,
             },
-            PoolType::Shielded(ShieldedProtocol::Sapling) => Self {
+            PoolType::Shielded(ShieldedPool::Sapling) => Self {
                 transparent: false,
                 sapling: true,
                 orchard: false,
             },
-            PoolType::Shielded(ShieldedProtocol::Orchard) => Self {
+            PoolType::Shielded(ShieldedPool::Orchard) => Self {
                 transparent: false,
                 sapling: false,
                 orchard: true,

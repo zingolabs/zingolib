@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
-    ShieldedProtocol,
+    ShieldedPool,
     consensus::{self, BlockHeight, NetworkUpgrade},
 };
 
@@ -82,7 +82,7 @@ where
     set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         scan_targets.into_iter(),
     );
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
@@ -299,13 +299,13 @@ fn set_chain_tip_scan_range(
         consensus_parameters,
         sync_state,
         chain_height,
-        Some(ShieldedProtocol::Sapling),
+        Some(ShieldedPool::Sapling),
     );
     let orchard_incomplete_shard = determine_block_range(
         consensus_parameters,
         sync_state,
         chain_height,
-        Some(ShieldedProtocol::Orchard),
+        Some(ShieldedPool::Orchard),
     );
 
     let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
@@ -323,7 +323,7 @@ fn set_chain_tip_scan_range(
 pub(super) fn set_found_note_scan_ranges<T: Iterator<Item = ScanTarget>>(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: ShieldedProtocol,
+    shielded_protocol: ShieldedPool,
     scan_targets: T,
 ) {
     for scan_target in scan_targets {
@@ -347,7 +347,7 @@ pub(super) fn set_found_note_scan_ranges<T: Iterator<Item = ScanTarget>>(
 pub(super) fn set_found_note_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: Option<ShieldedProtocol>,
+    shielded_protocol: Option<ShieldedPool>,
     block_height: BlockHeight,
 ) {
     let block_range = determine_block_range(
@@ -503,12 +503,12 @@ fn determine_block_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &SyncState,
     block_height: BlockHeight,
-    shielded_protocol: Option<ShieldedProtocol>,
+    shielded_protocol: Option<ShieldedPool>,
 ) -> Range<BlockHeight> {
     if let Some(mut shielded_protocol) = shielded_protocol {
         loop {
             match shielded_protocol {
-                ShieldedProtocol::Sapling => {
+                ShieldedPool::Sapling => {
                     if block_height
                         < consensus_parameters
                             .activation_height(consensus::NetworkUpgrade::Sapling)
@@ -519,13 +519,13 @@ fn determine_block_range(
                         break;
                     }
                 }
-                ShieldedProtocol::Orchard => {
+                ShieldedPool::Orchard => {
                     if block_height
                         < consensus_parameters
                             .activation_height(consensus::NetworkUpgrade::Nu5)
                             .expect("network activation height should be set")
                     {
-                        shielded_protocol = ShieldedProtocol::Sapling;
+                        shielded_protocol = ShieldedPool::Sapling;
                     } else {
                         break;
                     }
@@ -534,8 +534,8 @@ fn determine_block_range(
         }
 
         let shard_ranges = match shielded_protocol {
-            ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_slice(),
-            ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_slice(),
+            ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_slice(),
+            ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_slice(),
         };
 
         let target_ranges = shard_ranges
@@ -728,7 +728,7 @@ fn select_scan_range(
                 consensus_parameters,
                 sync_state,
                 selected_scan_range.block_range().start,
-                Some(ShieldedProtocol::Orchard),
+                Some(ShieldedPool::Orchard),
             );
             let split_ranges = split_out_scan_range(
                 selected_scan_range,
@@ -1013,22 +1013,22 @@ where
 #[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
-    shielded_protocol: ShieldedProtocol,
+    shielded_protocol: ShieldedPool,
     sync_state: &mut SyncState,
     subtree_roots: &[SubtreeRoot],
 ) {
     let network_upgrade_activation_height = match shielded_protocol {
-        ShieldedProtocol::Sapling => consensus_parameters
+        ShieldedPool::Sapling => consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Sapling)
             .expect("activation height should exist for this network upgrade!"),
-        ShieldedProtocol::Orchard => consensus_parameters
+        ShieldedPool::Orchard => consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Nu5)
             .expect("activation height should exist for this network upgrade!"),
     };
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
-        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_mut(),
-        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_mut(),
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
     };
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
@@ -1071,12 +1071,12 @@ pub(super) fn add_shard_ranges(
 pub(super) fn update_found_note_shard_priority(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: ShieldedProtocol,
+    shielded_protocol: ShieldedPool,
     wallet_transaction: &WalletTransaction,
 ) {
     let found_note = match shielded_protocol {
-        ShieldedProtocol::Sapling => !wallet_transaction.sapling_notes().is_empty(),
-        ShieldedProtocol::Orchard => !wallet_transaction.orchard_notes().is_empty(),
+        ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
+        ShieldedPool::Orchard => !wallet_transaction.orchard_notes().is_empty(),
     };
     if found_note {
         set_found_note_scan_range(
