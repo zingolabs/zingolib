@@ -38,6 +38,9 @@ pub enum LightClientError {
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// Ironwood migration error.
+    #[error("Ironwood migration error. {0}")]
+    MigrationError(String),
 }
 
 #[derive(Debug, thiserror::Error)]

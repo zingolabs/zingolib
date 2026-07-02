@@ -67,6 +67,12 @@ pub enum WalletError {
     /// Shard tree error.
     #[error("Shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// No spendable Orchard note of the exact value required by the migration plan.
+    #[error("Migration: no spendable Orchard note of value {0} zatoshis.")]
+    MigrationNoteNotFound(u64),
+    /// Failed to build a migration transaction.
+    #[error("Migration transaction build failed: {0}")]
+    MigrationBuild(String),
     /// Conversion failed
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]

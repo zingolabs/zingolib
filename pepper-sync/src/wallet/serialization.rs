@@ -724,7 +724,7 @@ impl OrchardNote {
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
-            note: orchard::note::Note::from_parts(recipient, value, rho, rseed)
+            note: orchard::note::Note::from_parts(recipient, value, rho, rseed, orchard::note::NoteVersion::V2)
                 .expect("should be a valid orchard note"),
             nullifier,
             position,
@@ -951,7 +951,7 @@ impl OutgoingOrchardNote {
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
-            note: orchard::note::Note::from_parts(recipient, value, rho, rseed)
+            note: orchard::note::Note::from_parts(recipient, value, rho, rseed, orchard::note::NoteVersion::V2)
                 .expect("should be a valid orchard note"),
             memo,
             recipient_full_unified_address: recipient_unified_address,
@@ -990,16 +990,27 @@ impl OutgoingOrchardNote {
 
 impl ShardTrees {
     fn serialized_version() -> u8 {
-        0
+        // Version 1 appends the Ironwood shard tree after the Orchard one.
+        1
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
         let sapling = Self::read_shardtree(&mut reader)?;
         let orchard = Self::read_shardtree(&mut reader)?;
+        let ironwood = if version >= 1 {
+            Self::read_shardtree(&mut reader)?
+        } else {
+            // Pre-Ironwood wallet files: start with an empty Ironwood tree.
+            Self::new().ironwood
+        };
 
-        Ok(Self { sapling, orchard })
+        Ok(Self {
+            sapling,
+            orchard,
+            ironwood,
+        })
     }
 
     /// Serialize into `writer`
@@ -1007,6 +1018,7 @@ impl ShardTrees {
         writer.write_u8(Self::serialized_version())?;
         Self::write_shardtree(&mut writer, &mut self.sapling)?;
         Self::write_shardtree(&mut writer, &mut self.orchard)?;
+        Self::write_shardtree(&mut writer, &mut self.ironwood)?;
 
         Ok(())
     }

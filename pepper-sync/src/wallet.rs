@@ -1249,6 +1249,13 @@ pub struct ShardTrees {
         { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
         { witness::SHARD_HEIGHT },
     >,
+    /// Ironwood shard tree. Ironwood reuses the Orchard note commitment tree
+    /// structure (same hash and depth), so it has the same shape as `orchard`.
+    pub ironwood: ShardTree<
+        OrchardShardStore,
+        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+        { witness::SHARD_HEIGHT },
+    >,
 }
 
 impl ShardTrees {
@@ -1257,6 +1264,7 @@ impl ShardTrees {
     pub fn new() -> Self {
         let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
         let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
             .checkpoint(BlockHeight::from_u32(0))
@@ -1264,8 +1272,15 @@ impl ShardTrees {
         orchard
             .checkpoint(BlockHeight::from_u32(0))
             .expect("should never fail");
+        ironwood
+            .checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail");
 
-        Self { sapling, orchard }
+        Self {
+            sapling,
+            orchard,
+            ironwood,
+        }
     }
 }
 

@@ -31,6 +31,7 @@ pub mod utils;
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
 pub mod disk;
+pub mod ironwood_migration;
 pub mod keys;
 pub mod output;
 pub mod propose;

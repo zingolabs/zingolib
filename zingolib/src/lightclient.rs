@@ -41,6 +41,7 @@ use crate::{
 use error::LightClientError;
 
 pub mod error;
+pub mod migrate;
 pub mod propose;
 pub mod save;
 pub mod send;
