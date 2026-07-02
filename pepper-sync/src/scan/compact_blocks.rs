@@ -29,7 +29,7 @@ use crate::{
 };
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
@@ -287,7 +287,7 @@ fn check_tree_size(
 
             #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Sapling),
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Sapling),
                 block_metadata_size: chain_metadata.sapling_commitment_tree_size,
                 calculated_size: wallet_block.tree_bounds().sapling_final_tree_size,
             });
@@ -310,7 +310,7 @@ fn check_tree_size(
 
             #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Orchard),
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
                 block_metadata_size: chain_metadata.orchard_commitment_tree_size,
                 calculated_size: wallet_block.tree_bounds().orchard_final_tree_size,
             });

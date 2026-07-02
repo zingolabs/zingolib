@@ -16,7 +16,7 @@ use zcash_primitives::{
 use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zingo_netutils::lightwallet_protocol::CompactBlock;
 
 use crate::error::EncodingInvalid;
@@ -114,7 +114,7 @@ where
                         get_compact_output_description(&output).map_err(|e| EncodingInvalid {
                             at_height: block_height,
                             txid,
-                            pool_type: ShieldedProtocol::Sapling,
+                            pool_type: ShieldedPool::Sapling,
                             index: i,
                             error: e,
                         })
@@ -133,7 +133,7 @@ where
                         get_compact_action(&action).map_err(|e| EncodingInvalid {
                             at_height: block_height,
                             txid,
-                            pool_type: ShieldedProtocol::Orchard,
+                            pool_type: ShieldedPool::Orchard,
                             index: i,
                             error: e,
                         })

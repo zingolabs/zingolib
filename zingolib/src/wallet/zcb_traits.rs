@@ -8,8 +8,8 @@ use zcash_client_backend::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
         NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
         SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
-        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary,
-        WalletWrite, Zip32Derivation,
+        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
+        Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
         wallet::{ConfirmationsPolicy, TargetHeight},
@@ -22,7 +22,7 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::{
-    PoolType, ShieldedProtocol,
+    PoolType, ShieldedPool,
     consensus::{self, BlockHeight, Parameters},
     memo::Memo,
 };
@@ -620,28 +620,31 @@ impl WalletCommitmentTrees for LightWallet {
 
         Ok(())
     }
+}
 
-    type IronwoodShardStore<'a> = OrchardShardStore;
-
-    fn with_ironwood_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+/// Ironwood commitment-tree access, mirroring the sapling/orchard methods of
+/// [`WalletCommitmentTrees`]. The upstream trait has no Ironwood members yet,
+/// so these live here as inherent methods until it grows them.
+impl LightWallet {
+    pub fn with_ironwood_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
-                Self::IronwoodShardStore<'a>,
+                OrchardShardStore,
                 { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
                 { ORCHARD_SHARD_HEIGHT },
             >,
         ) -> Result<A, E>,
-        E: From<ShardTreeError<Self::Error>>,
+        E: From<ShardTreeError<Infallible>>,
     {
         callback(&mut self.shard_trees.ironwood)
     }
 
-    fn put_ironwood_subtree_roots(
+    pub fn put_ironwood_subtree_roots(
         &mut self,
         start_index: u64,
         roots: &[CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>],
-    ) -> Result<(), ShardTreeError<Self::Error>> {
+    ) -> Result<(), ShardTreeError<Infallible>> {
         self.with_ironwood_tree_mut(|t| {
             for (root, i) in roots.iter().zip(0u64..) {
                 let root_addr = incrementalmerkletree::Address::from_parts(
@@ -650,7 +653,7 @@ impl WalletCommitmentTrees for LightWallet {
                 );
                 t.insert(root_addr, *root.root_hash())?;
             }
-            Ok::<_, ShardTreeError<Self::Error>>(())
+            Ok::<_, ShardTreeError<Infallible>>(())
         })?;
 
         Ok(())
@@ -665,7 +668,7 @@ impl InputSource for LightWallet {
     fn get_spendable_note(
         &self,
         _txid: &TxId,
-        _protocol: ShieldedProtocol,
+        _protocol: ShieldedPool,
         _index: u32,
         _target_height: TargetHeight,
     ) -> Result<
@@ -684,7 +687,7 @@ impl InputSource for LightWallet {
         &self,
         account: Self::AccountId,
         target_value: TargetValue,
-        sources: &[ShieldedProtocol],
+        sources: &[ShieldedPool],
         _target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
@@ -714,7 +717,7 @@ impl InputSource for LightWallet {
                 let mut selected_orchard_notes = Vec::new();
                 for include_potentially_spent_notes in [false, true] {
                     // prioritise note selection for the given `sources`
-                    if sources.contains(&ShieldedProtocol::Sapling) {
+                    if sources.contains(&ShieldedPool::Sapling) {
                         let notes = self
                             .select_spendable_notes_by_pool::<SaplingNote>(
                                 &mut remaining_value_needed,
@@ -729,7 +732,7 @@ impl InputSource for LightWallet {
                         exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
                         selected_sapling_notes.extend(notes);
                     }
-                    if sources.contains(&ShieldedProtocol::Orchard) {
+                    if sources.contains(&ShieldedPool::Orchard) {
                         let notes = self
                             .select_spendable_notes_by_pool::<OrchardNote>(
                                 &mut remaining_value_needed,
@@ -808,12 +811,12 @@ impl InputSource for LightWallet {
         /* TODO: Priority
         if selected
             .iter()
-            .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
+            .filter(|n| n.0.protocol() == ShieldedPool::Sapling)
             .count()
             == 1
             || selected
                 .iter()
-                .filter(|n| n.0.protocol() == ShieldedProtocol::Orchard)
+                .filter(|n| n.0.protocol() == ShieldedPool::Orchard)
                 .count()
                 == 1
         {
@@ -906,6 +909,43 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 
+    // fn get_spendable_transparent_outputs(
+    //     &self,
+    //     address: &TransparentAddress,
+    //     target_height: TargetHeight,
+    //     confirmations_policy: ConfirmationsPolicy,
+    //     _output_filter: TransparentOutputFilter,
+    // ) -> Result<Vec<WalletUtxo>, Self::Error> {
+    //     let address = transparent::encode_address(&self.chain_type, *address);
+
+    //     // TODO: add recipient key scope metadata
+    //     Ok(self
+    //         .spendable_transparent_coins(
+    //             target_height.into(),
+    //             confirmations_policy.allow_zero_conf_shielding(),
+    //             false,
+    //         )
+    //         .into_iter()
+    //         .filter(|&output| output.address() == address)
+    //         .filter_map(|output| {
+    //             WalletTransparentOutput::from_parts(
+    //                 output.output_id().into(),
+    //                 TxOut::new(
+    //                     output.value().try_into().expect("value from checked type"),
+    //                     output.script().clone(),
+    //                 ),
+    //                 Some(
+    //                     self.output_transaction(output)
+    //                         .status()
+    //                         .get_confirmed_height()
+    //                         .expect("output must be confirmed in this scope"),
+    //                 ),
+    //             )
+    //             .map(|transparent_output| WalletUtxo::new(transparent_output, None))
+    //         })
+    //         .collect())
+    // }
+
     fn get_spendable_transparent_outputs(
         &self,
         address: &TransparentAddress,
@@ -950,7 +990,7 @@ impl InputSource for LightWallet {
     fn select_unspent_notes(
         &self,
         _account: Self::AccountId,
-        _sources: &[ShieldedProtocol],
+        _sources: &[ShieldedPool],
         _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {

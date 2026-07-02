@@ -724,8 +724,14 @@ impl OrchardNote {
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
-            note: orchard::note::Note::from_parts(recipient, value, rho, rseed, orchard::note::NoteVersion::V2)
-                .expect("should be a valid orchard note"),
+            note: orchard::note::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .expect("should be a valid orchard note"),
             nullifier,
             position,
             memo,
@@ -951,8 +957,14 @@ impl OutgoingOrchardNote {
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
-            note: orchard::note::Note::from_parts(recipient, value, rho, rseed, orchard::note::NoteVersion::V2)
-                .expect("should be a valid orchard note"),
+            note: orchard::note::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .expect("should be a valid orchard note"),
             memo,
             recipient_full_unified_address: recipient_unified_address,
         })

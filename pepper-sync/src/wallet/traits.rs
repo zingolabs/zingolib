@@ -12,7 +12,7 @@ use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
@@ -404,8 +404,9 @@ where
             let frontiers =
                 client::get_frontiers(fetch_request_sender.clone(), checkpoint_height).await?;
             let tree_size = match D::SHIELDED_PROTOCOL {
-                ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
-                ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),
+                ShieldedPool::Sapling => frontiers.final_sapling_tree().tree_size(),
+                ShieldedPool::Orchard => frontiers.final_orchard_tree().tree_size(),
+                ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
             };
             if tree_size == 0 {
                 TreeState::Empty

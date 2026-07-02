@@ -281,6 +281,7 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
+                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }
@@ -342,6 +343,7 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
+                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }

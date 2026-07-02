@@ -20,7 +20,7 @@ use zcash_keys::{
 use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
-    ShieldedProtocol,
+    ShieldedPool,
     consensus::{self, BlockHeight, NetworkConstants},
     memo::Memo,
 };
@@ -536,15 +536,16 @@ where
 {
     for unified_address in unified_addresses {
         let encoded_address = match <OutgoingNote<Nz>>::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Sapling => unified_address.sapling().map(|address| {
+            ShieldedPool::Sapling => unified_address.sapling().map(|address| {
                 Ok(zcash_keys::encoding::encode_payment_address(
                     consensus_parameters.hrp_sapling_payment_address(),
                     address,
                 ))
             }),
-            ShieldedProtocol::Orchard => unified_address
+            ShieldedPool::Orchard => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
+            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
         }
         .transpose()?;
         outgoing_notes
