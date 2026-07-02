@@ -50,10 +50,6 @@ namespace zingo {
   [Throws=ZingolibError]
   string save_to_b64();
 
-  string check_b64(
-    string datab64
-  );
-
   [Throws=ZingolibError]
   string get_latest_block_server(
     string serveruri
@@ -137,9 +133,7 @@ namespace zingo {
   string get_total_spends_to_address();
 
   [Throws=ZingolibError]
-  string zec_price(
-    string tor
-  );
+  string zec_price();
 
   [Throws=ZingolibError]
   string remove_transaction(
@@ -160,14 +154,6 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string get_option_wallet();
-
-  [Throws=ZingolibError]
-  string create_tor_client(
-    string datadir
-  );
-
-  [Throws=ZingolibError]
-  string remove_tor_client();
 
   [Throws=ZingolibError]
   string get_unified_addresses();

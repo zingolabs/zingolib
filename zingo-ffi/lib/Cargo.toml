@@ -14,7 +14,8 @@ zcash_protocol = { workspace = true }
 zcash_client_backend = { workspace = true }
 
 rusqlite = { version = "0.37.0", features = ["bundled"] }
-zingo_common_components = { workspace = true, features = ["for_test"] }
+zingo_common_components = { workspace = true }
+zingo-netutils = { workspace = true }
 
 http = { workspace = true }
 json = { workspace = true }
