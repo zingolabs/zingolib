@@ -74,6 +74,7 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
 zingo_test_vectors = { workspace = true }
 

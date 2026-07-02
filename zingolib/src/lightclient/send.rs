@@ -124,7 +124,7 @@ impl LightClient {
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
     /// Returns list of txids for successfully transmitted transactions.
-    async fn transmit_transactions(
+    pub(crate) async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
