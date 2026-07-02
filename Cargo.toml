@@ -182,7 +182,7 @@ zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "
 # not touch history trees, so its patch set omits it — but zebra-chain (pulled
 # in transitively here) needs it from the fork, and a dependency's own
 # `[patch]` table is ignored: only this top-level workspace's patches apply.
-zcash_history = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
+# zcash_history = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
