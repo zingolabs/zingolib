@@ -390,7 +390,7 @@ pub mod proposal {
     use zcash_primitives::transaction::fees::zip317::FeeRule;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use super::{default_txid, default_zaddr};
     use crate::testutils::{build_method, build_method_push};
@@ -529,7 +529,7 @@ pub mod proposal {
                 Rseed::AfterZip212([7; 32]),
             );
             let mut payment_pools = BTreeMap::new();
-            payment_pools.insert(0, PoolType::Shielded(ShieldedProtocol::Orchard));
+            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Orchard));
 
             let mut builder = Self::new();
             builder

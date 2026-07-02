@@ -9,7 +9,7 @@ mod load_wallet {
     // async fn load_old_wallet_at_reorged_height() {
     //     let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 1, 1, 200);
     //     let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
-    //         PoolType::Shielded(ShieldedProtocol::Orchard),
+    //         PoolType::Shielded(ShieldedPool::Orchard),
     //         regtest_network,
     //         false,
     //     )

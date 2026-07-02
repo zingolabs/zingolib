@@ -13,7 +13,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_netutils::{Indexer, TransparentIndexer};
@@ -1470,13 +1470,13 @@ where
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             transaction,
         );
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             transaction,
         );
     }
@@ -1726,13 +1726,13 @@ where
         .map_err(SyncError::WalletError)?;
     state::add_shard_ranges(
         consensus_parameters,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         sync_state,
         &sapling_subtree_roots,
     );
     state::add_shard_ranges(
         consensus_parameters,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         sync_state,
         &orchard_subtree_roots,
     );

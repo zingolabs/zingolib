@@ -343,7 +343,7 @@ pub mod scenarios {
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
     use zingo_common_components::protocol::ActivationHeights;
     use zingolib::config::WalletConfig;
     use zingolib::testutils::default_test_wallet_settings;
@@ -427,10 +427,10 @@ pub mod scenarios {
             );
 
             let faucet_funding_transaction = match funded_pool {
-                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                PoolType::Shielded(ShieldedPool::Orchard) => {
                     constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT
                 }
-                PoolType::Shielded(ShieldedProtocol::Sapling) => {
+                PoolType::Shielded(ShieldedPool::Sapling) => {
                     constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT
                 }
                 PoolType::Transparent => {

@@ -118,14 +118,14 @@ message TreeState {
     string orchardTree = 6; // orchard commitment tree state
 }
 
-enum ShieldedProtocol {
+enum ShieldedPool {
     sapling = 0;
     orchard = 1;
 }
 
 message GetSubtreeRootsArg {
     uint32 startIndex = 1;                  // Index identifying where to start returning subtree roots
-    ShieldedProtocol shieldedProtocol = 2;  // Shielded protocol to return subtree roots for
+    ShieldedPool shieldedProtocol = 2;  // Shielded protocol to return subtree roots for
     uint32 maxEntries = 3;                  // Maximum number of entries to return, or 0 for all entries.
 }
 message SubtreeRoot {

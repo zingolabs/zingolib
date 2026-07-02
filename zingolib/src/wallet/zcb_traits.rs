@@ -22,7 +22,7 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::{
-    PoolType, ShieldedProtocol,
+    PoolType, ShieldedPool,
     consensus::{self, BlockHeight, Parameters},
     memo::Memo,
 };
@@ -625,7 +625,7 @@ impl InputSource for LightWallet {
     fn get_spendable_note(
         &self,
         _txid: &TxId,
-        _protocol: ShieldedProtocol,
+        _protocol: ShieldedPool,
         _index: u32,
         _target_height: TargetHeight,
     ) -> Result<
@@ -644,7 +644,7 @@ impl InputSource for LightWallet {
         &self,
         account: Self::AccountId,
         target_value: TargetValue,
-        sources: &[ShieldedProtocol],
+        sources: &[ShieldedPool],
         _target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
@@ -674,7 +674,7 @@ impl InputSource for LightWallet {
                 let mut selected_orchard_notes = Vec::new();
                 for include_potentially_spent_notes in [false, true] {
                     // prioritise note selection for the given `sources`
-                    if sources.contains(&ShieldedProtocol::Sapling) {
+                    if sources.contains(&ShieldedPool::Sapling) {
                         let notes = self
                             .select_spendable_notes_by_pool::<SaplingNote>(
                                 &mut remaining_value_needed,
@@ -689,7 +689,7 @@ impl InputSource for LightWallet {
                         exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
                         selected_sapling_notes.extend(notes);
                     }
-                    if sources.contains(&ShieldedProtocol::Orchard) {
+                    if sources.contains(&ShieldedPool::Orchard) {
                         let notes = self
                             .select_spendable_notes_by_pool::<OrchardNote>(
                                 &mut remaining_value_needed,
@@ -768,12 +768,12 @@ impl InputSource for LightWallet {
         /* TODO: Priority
         if selected
             .iter()
-            .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
+            .filter(|n| n.0.protocol() == ShieldedPool::Sapling)
             .count()
             == 1
             || selected
                 .iter()
-                .filter(|n| n.0.protocol() == ShieldedProtocol::Orchard)
+                .filter(|n| n.0.protocol() == ShieldedPool::Orchard)
                 .count()
                 == 1
         {
@@ -906,7 +906,7 @@ impl InputSource for LightWallet {
     fn select_unspent_notes(
         &self,
         _account: Self::AccountId,
-        _sources: &[ShieldedProtocol],
+        _sources: &[ShieldedPool],
         _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {

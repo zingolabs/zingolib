@@ -5,7 +5,7 @@ use std::{array::TryFromSliceError, convert::Infallible};
 use shardtree::error::ShardTreeError;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::wallet::OutputId;
 
@@ -257,7 +257,7 @@ pub enum ScanError {
 pub struct EncodingInvalid {
     pub(crate) at_height: BlockHeight,
     pub(crate) txid: TxId,
-    pub(crate) pool_type: ShieldedProtocol,
+    pub(crate) pool_type: ShieldedPool,
     pub(crate) index: usize,
     pub(crate) error: CompactFormatError,
 }

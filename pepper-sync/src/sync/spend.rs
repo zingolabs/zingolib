@@ -9,7 +9,7 @@ use shardtree::{ShardTree, store::ShardStore};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
-    ShieldedProtocol,
+    ShieldedPool,
     consensus::{self, BlockHeight},
 };
 use zip32::AccountId;
@@ -81,13 +81,13 @@ where
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         sapling_spend_scan_targets.values().copied(),
     );
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         orchard_spend_scan_targets.values().copied(),
     );
 

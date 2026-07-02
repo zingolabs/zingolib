@@ -6,7 +6,7 @@ use pepper_sync::{error::ScanError, wallet::OutputId};
 use shardtree::error::ShardTreeError;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{PoolType, ShieldedProtocol, consensus::BlockHeight};
+use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
 use super::output::OutputRef;
 
@@ -61,7 +61,7 @@ pub enum WalletError {
     /// Shard store checkpoint not found.
     #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
     CheckpointNotFound {
-        shielded_protocol: ShieldedProtocol,
+        shielded_protocol: ShieldedPool,
         height: BlockHeight,
     },
     /// Shard tree error.
