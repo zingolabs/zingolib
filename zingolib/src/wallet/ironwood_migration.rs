@@ -324,11 +324,12 @@ pub fn plan_migration(note_values: &[u64], post_activation: bool) -> MigrationPl
         if denominations.is_empty() {
             // Not even the smallest denomination is fundable: the pooled
             // value is stranded. Undo any pointless reduction rounds.
-            stranded += total + conditioning_rounds
-                .iter()
-                .flatten()
-                .map(ConditioningTx::fee)
-                .sum::<u64>();
+            stranded += total
+                + conditioning_rounds
+                    .iter()
+                    .flatten()
+                    .map(ConditioningTx::fee)
+                    .sum::<u64>();
             conditioning_rounds.clear();
         } else {
             // The pool never contains drain-ready notes (those were diverted
@@ -390,7 +391,12 @@ impl super::LightWallet {
             .get_migration_heights()?
             .ok_or(super::error::WalletError::NoSyncData)?;
         Ok(self
-            .spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, &[], account, false)?
+            .spendable_notes::<pepper_sync::wallet::OrchardNote>(
+                anchor_height,
+                &[],
+                account,
+                false,
+            )?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
             .map(|note| note.value())
@@ -433,7 +439,10 @@ impl super::LightWallet {
     fn get_migration_heights(
         &self,
     ) -> Result<
-        Option<(zcash_protocol::consensus::BlockHeight, zcash_protocol::consensus::BlockHeight)>,
+        Option<(
+            zcash_protocol::consensus::BlockHeight,
+            zcash_protocol::consensus::BlockHeight,
+        )>,
         super::error::WalletError,
     > {
         use zcash_client_backend::data_api::WalletRead as _;
@@ -456,8 +465,9 @@ impl super::LightWallet {
 
         use super::error::WalletError;
 
-        let (target_height, anchor_height) =
-            self.get_migration_heights()?.ok_or(WalletError::NoSyncData)?;
+        let (target_height, anchor_height) = self
+            .get_migration_heights()?
+            .ok_or(WalletError::NoSyncData)?;
 
         // Pick one spendable V2 note per planned input value (distinct notes
         // for repeated values), copying out what the builder needs so the
@@ -483,11 +493,7 @@ impl super::LightWallet {
                     .ok_or(WalletError::MigrationNoteNotFound(value))?;
                 let selected = candidates.swap_remove(index);
                 notes.push(*selected.note());
-                positions.push(
-                    selected
-                        .position()
-                        .expect("spendable notes have positions"),
-                );
+                positions.push(selected.position().expect("spendable notes have positions"));
             }
             (notes, positions)
         };
@@ -498,7 +504,7 @@ impl super::LightWallet {
             .orchard
             .root_at_checkpoint_id(&anchor_height)?
             .ok_or(WalletError::CheckpointNotFound {
-                shielded_protocol: zcash_protocol::ShieldedProtocol::Orchard,
+                shielded_protocol: zcash_protocol::ShieldedPool::Orchard,
                 height: anchor_height,
             })?
             .into();
@@ -509,7 +515,7 @@ impl super::LightWallet {
                     .orchard
                     .witness_at_checkpoint_id_caching(position, &anchor_height)?
                     .ok_or(WalletError::CheckpointNotFound {
-                        shielded_protocol: zcash_protocol::ShieldedProtocol::Orchard,
+                        shielded_protocol: zcash_protocol::ShieldedPool::Orchard,
                         height: anchor_height,
                     })
                     .map(orchard::tree::MerklePath::from)
@@ -573,8 +579,7 @@ impl super::LightWallet {
             }
             MigrationOutputs::Ironwood(denomination) => {
                 builder
-                    .add_ironwood_change_output::<std::convert::Infallible>(
-                        orchard_fvk.clone(),
+                    .add_ironwood_output::<std::convert::Infallible>(
                         Some(internal_ovk.clone()),
                         recipient,
                         Zatoshis::from_u64(*denomination)?,
@@ -772,6 +777,7 @@ mod tests {
                 0,
                 0,
                 actions,
+                0,
             )
             .expect("fee computes")
             .into_u64()
@@ -863,8 +869,7 @@ mod tests {
                 assert!((2..=K_INPUTS).contains(&tx.inputs.len()) || tx.inputs.len() == 1);
                 assert!(tx.inputs.len() <= K_INPUTS, "too many inputs");
                 assert!(!tx.outputs.is_empty() && tx.outputs.len() <= K_INPUTS);
-                let min_fee =
-                    conditioning_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
+                let min_fee = conditioning_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
                 assert!(tx.fee() >= min_fee, "fee below ZIP-317 conventional");
                 for input in &tx.inputs {
                     let count = available.entry(*input).or_insert(0);
@@ -944,7 +949,10 @@ mod tests {
         // 500 notes of 0.0015 ZEC: reduction (500 → 5) then shaping.
         let notes = vec![150_000u64; 500];
         let plan = assert_plan_executes(&notes);
-        assert!(plan.conditioning_rounds.len() >= 2, "expected reduction + shaping");
+        assert!(
+            plan.conditioning_rounds.len() >= 2,
+            "expected reduction + shaping"
+        );
         // First round: 5 merges of 100 inputs each.
         assert_eq!(plan.conditioning_rounds[0].len(), 5);
         for tx in &plan.conditioning_rounds[0] {

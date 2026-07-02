@@ -163,9 +163,8 @@ impl LightClient {
                     statuses.iter().enumerate().find_map(|(i, status)| {
                         matches!(
                             status,
-                            Some(
-                                zingo_status::confirmation_status::ConfirmationStatus::Failed(_)
-                            ) | None
+                            Some(zingo_status::confirmation_status::ConfirmationStatus::Failed(_))
+                                | None
                         )
                         .then_some(txids[i])
                     }),

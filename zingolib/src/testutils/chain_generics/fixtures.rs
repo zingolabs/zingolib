@@ -178,8 +178,7 @@ where
                 &mut environment,
                 &mut secondary,
                 vec![(
-                    &get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard))
-                        .await,
+                    &get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard)).await,
                     50_000,
                     None,
                 )],
