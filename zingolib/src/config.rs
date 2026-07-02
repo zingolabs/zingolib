@@ -12,7 +12,8 @@ use http::uri::InvalidUri;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
 
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
-use zingo_common_components::protocol::ActivationHeights;
+#[cfg(feature = "regtest")]
+use zingo_consensus::ActivationHeights;
 
 use crate::wallet::{
     WalletBase, WalletSettings,
@@ -34,7 +35,9 @@ pub enum ChainType {
     Mainnet,
     /// Testnet
     Testnet,
-    /// Regtest
+    /// Regtest. Only available in builds with the `regtest` feature; production releases
+    /// compile without it.
+    #[cfg(feature = "regtest")]
     Regtest(ActivationHeights),
 }
 
@@ -43,6 +46,7 @@ impl std::fmt::Display for ChainType {
         let chain = match self {
             ChainType::Mainnet => "mainnet",
             ChainType::Testnet => "testnet",
+            #[cfg(feature = "regtest")]
             ChainType::Regtest(_) => "regtest",
         };
         write!(f, "{chain}")
@@ -56,6 +60,7 @@ impl TryFrom<&str> for ChainType {
         match value {
             "mainnet" => Ok(ChainType::Mainnet),
             "testnet" => Ok(ChainType::Testnet),
+            #[cfg(feature = "regtest")]
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
@@ -74,6 +79,7 @@ pub(crate) mod consealed {
             match self {
                 ChainType::Mainnet => NetworkType::Main,
                 ChainType::Testnet => NetworkType::Test,
+                #[cfg(feature = "regtest")]
                 ChainType::Regtest(_) => NetworkType::Regtest,
             }
         }
@@ -82,6 +88,7 @@ pub(crate) mod consealed {
             match self {
                 ChainType::Mainnet => MAIN_NETWORK.activation_height(nu),
                 ChainType::Testnet => TEST_NETWORK.activation_height(nu),
+                #[cfg(feature = "regtest")]
                 ChainType::Regtest(activation_heights) => match nu {
                     NetworkUpgrade::Overwinter => {
                         activation_heights.overwinter().map(BlockHeight::from_u32)
@@ -449,6 +456,7 @@ fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> P
             match chain {
                 ChainType::Mainnet => {}
                 ChainType::Testnet => dir.push("testnet3"),
+                #[cfg(feature = "regtest")]
                 ChainType::Regtest(_) => dir.push("regtest"),
             }
 

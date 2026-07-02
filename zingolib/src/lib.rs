@@ -16,7 +16,8 @@ pub mod mocks;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 
-pub use zingo_common_components::protocol::ActivationHeights;
+#[cfg(feature = "regtest")]
+pub use zingo_consensus::ActivationHeights;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
@@ -45,6 +46,7 @@ pub fn get_zennies_for_zingo_address(chain_type: ChainType) -> &'static str {
     match chain_type {
         ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+        #[cfg(feature = "regtest")]
         ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
     }
 }

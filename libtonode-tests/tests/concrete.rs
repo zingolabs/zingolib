@@ -5,9 +5,9 @@ use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use pepper_sync::wallet::TransparentCoin;
+use zcash_local_net::protocol::ActivationHeights;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
-use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
@@ -140,12 +140,12 @@ mod fast {
         encoding::encode_payment_address_p,
         zip321::{Payment, TransactionRequest},
     };
+    use zcash_local_net::protocol::ActivationHeights;
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zcash_transparent::keys::NonHardenedChildIndex;
-    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -1475,13 +1475,13 @@ mod slow {
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
     };
+    use zcash_local_net::protocol::ActivationHeights;
     use zcash_local_net::validator::Validator;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::{ChainType, ClientConfig, WalletConfig};

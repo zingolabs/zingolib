@@ -26,7 +26,8 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-use zingo_common_components::protocol::ActivationHeights;
+#[cfg(feature = "regtest")]
+use zingolib::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -231,19 +232,25 @@ impl Command for ParseAddressCommand {
             zcash_client_backend::address::Address,
             zingolib::config::ChainType,
         )> {
-            [
+            #[cfg_attr(not(feature = "regtest"), allow(unused_mut, clippy::useless_vec))]
+            let mut chains = vec![
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
-            ]
-            .iter()
-            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+            ];
+            #[cfg(feature = "regtest")]
+            chains.push(zingolib::config::ChainType::Regtest(
+                ActivationHeights::default(),
+            ));
+            chains
+                .iter()
+                .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
         }
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
             #[allow(unreachable_patterns)]
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
+                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };

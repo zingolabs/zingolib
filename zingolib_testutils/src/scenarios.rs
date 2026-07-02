@@ -28,7 +28,7 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-use zingo_common_components::protocol::ActivationHeights;
+use zcash_local_net::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 use zingolib::config::WalletConfig;
 use zingolib::config::{ChainType, ClientConfig};

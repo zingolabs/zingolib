@@ -28,8 +28,10 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
+# NOTE: rev pins the pre-release zingo-consensus migration commit; return to tags at the
+# next zcash_local_net release
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "ccd8049baaf4753d04b9c64aad00afcb88a3613f" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "ccd8049baaf4753d04b9c64aad00afcb88a3613f" }
 
 ### Documentation
 indoc = "2"
@@ -42,7 +44,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
 zingo-netutils = { path = "zingo-netutils", features = ["globally-public-transparent"] }
-zingo_common_components = "0.3.1"
+zingo-consensus = { git = "https://github.com/zingolabs/infrastructure.git", rev = "ccd8049baaf4753d04b9c64aad00afcb88a3613f" }
 
 ### Netutils
 http-body-util = "0.1.3"

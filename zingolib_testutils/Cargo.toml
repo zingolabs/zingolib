@@ -11,7 +11,6 @@ test_lwd_zcashd = []
 [dependencies]
 # zingolib
 zingolib = { workspace = true, features = ["testutils"] }
-zingo_common_components.workspace = true
 
 # zingo infrastructure
 zcash_local_net.workspace = true

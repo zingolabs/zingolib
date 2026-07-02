@@ -4,7 +4,7 @@ use http::Uri;
 
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use zingo_common_components::protocol::ActivationHeights;
+use zingo_consensus::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use crate::config::{

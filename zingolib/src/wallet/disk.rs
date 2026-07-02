@@ -18,7 +18,8 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use zingo_common_components::protocol::ActivationHeights;
+#[cfg(feature = "regtest")]
+use zingo_consensus::ActivationHeights;
 use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
 
@@ -60,6 +61,7 @@ impl LightWallet {
         writer.write_u8(match self.chain_type() {
             ChainType::Mainnet => 0,
             ChainType::Testnet => 1,
+            #[cfg(feature = "regtest")]
             ChainType::Regtest(_) => 2,
         })?;
         let seed_bytes = match &self.mnemonic {
@@ -365,7 +367,16 @@ impl LightWallet {
             let saved_network = match reader.read_u8()? {
                 0 => ChainType::Mainnet,
                 1 => ChainType::Testnet,
+                #[cfg(feature = "regtest")]
                 2 => ChainType::Regtest(ActivationHeights::default()),
+                #[cfg(not(feature = "regtest"))]
+                2 => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "wallet file is for regtest, but this build was compiled without \
+                         regtest support",
+                    ));
+                }
                 other => {
                     return Err(Error::new(
                         ErrorKind::InvalidData,

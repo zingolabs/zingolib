@@ -3,7 +3,7 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
-use zingo_common_components::protocol::ActivationHeights;
+use zcash_local_net::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::config::ChainType;
 use zingolib::config::ClientConfig;

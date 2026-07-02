@@ -342,9 +342,9 @@ pub mod scenarios {
     use std::ops::Add;
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    use zcash_local_net::protocol::ActivationHeights;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_common_components::protocol::ActivationHeights;
     use zingolib::config::WalletConfig;
     use zingolib::testutils::default_test_wallet_settings;
 

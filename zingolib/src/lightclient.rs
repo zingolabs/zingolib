@@ -411,7 +411,7 @@ mod tests {
         testutils::default_test_wallet_settings,
     };
     use tempfile::TempDir;
-    use zingo_common_components::protocol::ActivationHeights;
+    use zingo_consensus::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     #[tokio::test]
