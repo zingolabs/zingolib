@@ -259,7 +259,8 @@ fn construct_uri_load_config(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: performancetype,
             },
-            min_confirmations: NonZeroU32::try_from(min_confirmations).unwrap(),
+            min_confirmations: NonZeroU32::try_from(min_confirmations)
+                .map_err(|_| "Error: min_confirmations must be greater than 0".to_string())?,
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
         "".to_string(),
@@ -1407,7 +1408,12 @@ pub fn set_config_wallet_to_prod(
                 };
                 let mut wallet = lightclient.wallet.write().await;
                 wallet.wallet_settings.min_confirmations =
-                    NonZeroU32::try_from(min_confirmations).unwrap();
+                    match NonZeroU32::try_from(min_confirmations) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            return "Error: min_confirmations must be greater than 0".to_string()
+                        }
+                    };
                 wallet.wallet_settings.sync_config.performance_level = performancetype;
                 wallet.save_required = true;
                 "Successfully set config wallet to prod.".to_string()
