@@ -545,6 +545,7 @@ where
             ShieldedPool::Orchard => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
+            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
         }
         .transpose()?;
         outgoing_notes

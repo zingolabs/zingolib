@@ -100,6 +100,7 @@ impl LightWallet {
         let scan_ranges = self.sync_state.scan_ranges();
 
         match N::SHIELDED_PROTOCOL {
+            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
             ShieldedPool::Orchard => check_note_shards_are_scanned(
                 note_height,
                 anchor_height,

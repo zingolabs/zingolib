@@ -327,6 +327,7 @@ pub mod orchard_note {
                 self.value.unwrap(),
                 self.rho.unwrap(),
                 self.random_seed.unwrap(),
+                orchard::NoteVersion::V2, // FIXME: implement ironwood
             )
             .unwrap()
         }
@@ -470,7 +471,7 @@ pub mod proposal {
     pub struct StepBuilder {
         transaction_request: Option<TransactionRequest>,
         payment_pools: Option<BTreeMap<usize, PoolType>>,
-        transparent_inputs: Option<Vec<WalletTransparentOutput>>,
+        transparent_inputs: Option<Vec<WalletTransparentOutput<()>>>,
         shielded_inputs: Option<Option<ShieldedInputs<OutputRef>>>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
@@ -495,7 +496,7 @@ pub mod proposal {
         build_method!(transaction_request, TransactionRequest);
         build_method!(payment_pools, BTreeMap<usize, PoolType>
         );
-        build_method!(transparent_inputs, Vec<WalletTransparentOutput>);
+        build_method!(transparent_inputs, Vec<WalletTransparentOutput<()>>);
         build_method!(shielded_inputs, Option<ShieldedInputs<OutputRef>>);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);

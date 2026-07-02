@@ -8,8 +8,8 @@ use zcash_client_backend::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
         NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
         SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
-        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletUtxo,
-        WalletWrite, Zip32Derivation,
+        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
+        Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
         wallet::{ConfirmationsPolicy, TargetHeight},
@@ -433,7 +433,7 @@ impl WalletWrite for LightWallet {
 
     fn put_received_transparent_utxo(
         &mut self,
-        _output: &WalletTransparentOutput,
+        _output: &WalletTransparentOutput<Self::AccountId>,
     ) -> Result<Self::UtxoRef, Self::Error> {
         unimplemented!()
     }
@@ -502,7 +502,12 @@ impl WalletWrite for LightWallet {
         unimplemented!()
     }
 
-    fn rewind_to_height(&mut self, _max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+    fn rewind_to_chain_state(
+        &mut self,
+        _chain_state: ChainState,
+        _reset_account_birthdays: std::collections::HashSet<Self::AccountId>,
+    ) -> Result<(), zcash_client_backend::data_api::error::RewindError<Self::AccountId, Self::Error>>
+    {
         unimplemented!()
     }
 
@@ -862,9 +867,46 @@ impl InputSource for LightWallet {
         &self,
         _outpoint: &OutPoint,
         _target_height: TargetHeight,
-    ) -> Result<Option<WalletUtxo>, Self::Error> {
+    ) -> Result<Option<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         unimplemented!()
     }
+
+    // fn get_spendable_transparent_outputs(
+    //     &self,
+    //     address: &TransparentAddress,
+    //     target_height: TargetHeight,
+    //     confirmations_policy: ConfirmationsPolicy,
+    //     _output_filter: TransparentOutputFilter,
+    // ) -> Result<Vec<WalletUtxo>, Self::Error> {
+    //     let address = transparent::encode_address(&self.chain_type, *address);
+
+    //     // TODO: add recipient key scope metadata
+    //     Ok(self
+    //         .spendable_transparent_coins(
+    //             target_height.into(),
+    //             confirmations_policy.allow_zero_conf_shielding(),
+    //             false,
+    //         )
+    //         .into_iter()
+    //         .filter(|&output| output.address() == address)
+    //         .filter_map(|output| {
+    //             WalletTransparentOutput::from_parts(
+    //                 output.output_id().into(),
+    //                 TxOut::new(
+    //                     output.value().try_into().expect("value from checked type"),
+    //                     output.script().clone(),
+    //                 ),
+    //                 Some(
+    //                     self.output_transaction(output)
+    //                         .status()
+    //                         .get_confirmed_height()
+    //                         .expect("output must be confirmed in this scope"),
+    //                 ),
+    //             )
+    //             .map(|transparent_output| WalletUtxo::new(transparent_output, None))
+    //         })
+    //         .collect())
+    // }
 
     fn get_spendable_transparent_outputs(
         &self,
@@ -872,7 +914,7 @@ impl InputSource for LightWallet {
         target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         _output_filter: TransparentOutputFilter,
-    ) -> Result<Vec<WalletUtxo>, Self::Error> {
+    ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         let address = transparent::encode_address(&self.chain_type, *address);
 
         // TODO: add recipient key scope metadata
@@ -897,8 +939,10 @@ impl InputSource for LightWallet {
                             .get_confirmed_height()
                             .expect("output must be confirmed in this scope"),
                     ),
+                    None, // TODO: revise
+                    None, // TODO: revise
+                    None, // TODO: revise
                 )
-                .map(|transparent_output| WalletUtxo::new(transparent_output, None))
             })
             .collect())
     }

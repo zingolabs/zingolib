@@ -406,6 +406,7 @@ where
             let tree_size = match D::SHIELDED_PROTOCOL {
                 ShieldedPool::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedPool::Orchard => frontiers.final_orchard_tree().tree_size(),
+                ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
             };
             if tree_size == 0 {
                 TreeState::Empty
