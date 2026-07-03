@@ -5,9 +5,12 @@ default_to_workspace = false
 
 [env]
 NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
-ZINGOLIB_NEXTEST_PROFILE = "ci"
-ZINGOLIB_NEXTEST_RETRIES = "2"
-ZINGOLIB_NEXTEST_FILTER = "not test(slow)"
+# The ZINGOLIB_* knobs are user-overridable from the shell (e.g.
+# `ZINGOLIB_NEXTEST_FILTER='...' makers container-test`); the env_not_set
+# condition keeps cargo-make from clobbering a value the caller exported.
+ZINGOLIB_NEXTEST_PROFILE = { value = "ci", condition = { env_not_set = ["ZINGOLIB_NEXTEST_PROFILE"] } }
+ZINGOLIB_NEXTEST_RETRIES = { value = "2", condition = { env_not_set = ["ZINGOLIB_NEXTEST_RETRIES"] } }
+ZINGOLIB_NEXTEST_FILTER = { value = "not test(slow)", condition = { env_not_set = ["ZINGOLIB_NEXTEST_FILTER"] } }
 IMAGE_NAME = "zingodevops/ci-build"
 RUST_VERSION = { script = ["sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*\"\\([0-9.]*\\)\".*/\\1/p' rust-toolchain.toml | head -n1"] }
 
