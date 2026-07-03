@@ -96,6 +96,7 @@ bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
 ### Cryptographic
+blake2b_simd = "1"
 jubjub = "0.10.0"
 ring = "0.17.14"
 secp256k1 = "0.31.1"
@@ -175,17 +176,17 @@ zebra-node-services = { git = "https://github.com/zcashfoundation/zebra", branch
 # `zcash_history` is included because zebra-chain (pulled in transitively)
 # consumes it and a dependency's own `[patch]` table is ignored — only this
 # top-level workspace's patches apply.
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_history = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-equihash = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
-f4jumble = { git = "https://github.com/zcash/librustzcash", rev = "eb828caadb4b2be4a39823f95e50b42731a515f5" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_history = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+equihash = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+f4jumble = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 
 # zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 

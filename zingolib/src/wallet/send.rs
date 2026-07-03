@@ -73,6 +73,14 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        // Legacy V5 is requested explicitly. With `None`, upstream builds a
+        // V6 transaction once NU6.3 is active at the target height and
+        // routes Orchard-pool payments and change into the Ironwood bundle,
+        // which pepper-sync cannot scan yet: the wallet would not detect
+        // its own change. Switch to `None` when Ironwood note scanning
+        // lands. Must match the version requested in
+        // `create_send_proposal`, or the proposed fee will not match the
+        // built transaction.
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
@@ -81,7 +89,7 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
-            None,
+            Some(zcash_primitives::transaction::TxVersion::V5),
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -100,7 +108,25 @@ impl LightWallet {
         let scan_ranges = self.sync_state.scan_ranges();
 
         match N::SHIELDED_PROTOCOL {
-            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+            // pepper-sync does not track Ironwood shard completeness yet, so
+            // witnessability is judged without complete-shard shortcuts: the
+            // whole range from the Ironwood pool's beginning (NU6.3
+            // activation, or the wallet birthday if later) to the anchor
+            // must be scanned. Conservative, never wrong.
+            ShieldedPool::Ironwood => {
+                use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
+                let ironwood_birthday = self
+                    .chain_type
+                    .activation_height(NetworkUpgrade::Nu6_3)
+                    .map_or(birthday, |activation| activation.max(birthday));
+                check_note_shards_are_scanned(
+                    note_height,
+                    anchor_height,
+                    ironwood_birthday,
+                    scan_ranges,
+                    &[],
+                )
+            }
             ShieldedPool::Orchard => check_note_shards_are_scanned(
                 note_height,
                 anchor_height,
