@@ -27,8 +27,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.6.0" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "remove_unnecessary_deps" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "remove_unnecessary_deps" }
 
 ### Documentation
 indoc = "2"

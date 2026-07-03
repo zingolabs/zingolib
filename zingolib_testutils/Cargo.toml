@@ -22,3 +22,4 @@ portpicker.workspace = true
 tempfile.workspace = true
 http.workspace = true
 zip32.workspace = true
+zcash_protocol.workspace = true

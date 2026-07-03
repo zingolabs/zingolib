@@ -14,6 +14,7 @@ use zingolib::testutils::timestamped_test_log;
 use zingolib_testutils::scenarios::ClientBuilder;
 use zingolib_testutils::scenarios::custom_clients_default;
 use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
+use zingolib_testutils::scenarios::validator_activation_heights;
 
 /// includes utilities for connecting to zcashd regtest
 pub struct LibtonodeEnvironment {
@@ -40,14 +41,14 @@ impl ConductChain for LibtonodeEnvironment {
         self.client_builder
             .build_faucet(
                 false,
-                self.local_net.validator().get_activation_heights().await,
+                validator_activation_heights(self.local_net.validator()).await,
             )
             .await
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
         self.client_builder.make_unique_data_dir_and_create_config(
-            self.local_net.validator().get_activation_heights().await,
+            validator_activation_heights(self.local_net.validator()).await,
             WalletConfig::NewSeed {
                 no_of_accounts: 1.try_into().unwrap(),
                 chain_height: 1,
