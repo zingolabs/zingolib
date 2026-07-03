@@ -20,13 +20,9 @@
 //!
 //! | Feature | What it enables |
 //! |---|---|
-//! | `globally-public-transparent` | [`TransparentIndexer`] sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
-//! | `ping-very-insecure` | [`Indexer::ping`] method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
+//! | `globally-public-transparent` | `TransparentIndexer` sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
+//! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
 //!
-//! **Note:** Build docs with `--all-features` so intra-doc links to
-//! feature-gated items resolve:
-//! ```text
-//! RUSTDOCFLAGS="-D warnings" cargo doc --all-features --document-private-items
 
 use std::future::Future;
 use std::time::Duration;
