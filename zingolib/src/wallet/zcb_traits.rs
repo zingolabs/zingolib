@@ -5,10 +5,10 @@ use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
-        Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
-        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, ReceivedTransactionOutput,
-        SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest, TransparentKeyOrigin,
-        TransparentOutputFilter, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
+        Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
+        InputSource, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
+        ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest,
+        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
         Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
@@ -708,6 +708,22 @@ impl InputSource for LightWallet {
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
 
+        // Soft reservation: notes bound to pending migration parts are
+        // withheld from ordinary selection first, and offered again only if
+        // the request cannot be satisfied without them. The reservation
+        // biases selection and never blocks a spend.
+        let reserved_orchard: Vec<OutputId> = self
+            .migration
+            .as_ref()
+            .map(|migration| {
+                migration
+                    .reserved_output_ids()
+                    .into_iter()
+                    .filter(|output_id| !exclude_orchard.contains(output_id))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let (selected_sapling_notes, selected_orchard_notes) = match target_value {
             TargetValue::AtLeast(at_least_value) => {
                 let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
@@ -715,9 +731,51 @@ impl InputSource for LightWallet {
                 // prioritises selecting spendable notes that are guaranteed to be unspent first
                 let mut selected_sapling_notes = Vec::new();
                 let mut selected_orchard_notes = Vec::new();
-                for include_potentially_spent_notes in [false, true] {
-                    // prioritise note selection for the given `sources`
-                    if sources.contains(&ShieldedPool::Sapling) {
+                exclude_orchard.extend(reserved_orchard.iter().copied());
+                for withhold_reserved in [true, false] {
+                    if !withhold_reserved {
+                        let unmet = matches!(
+                            remaining_value_needed,
+                            RemainingNeeded::Positive(value) if value.into_u64() > 0
+                        );
+                        if reserved_orchard.is_empty() || !unmet {
+                            break;
+                        }
+                        exclude_orchard.retain(|output_id| !reserved_orchard.contains(output_id));
+                    }
+                    for include_potentially_spent_notes in [false, true] {
+                        // prioritise note selection for the given `sources`
+                        if sources.contains(&ShieldedPool::Sapling) {
+                            let notes = self
+                                .select_spendable_notes_by_pool::<SaplingNote>(
+                                    &mut remaining_value_needed,
+                                    anchor_height,
+                                    &exclude_sapling,
+                                    account,
+                                    include_potentially_spent_notes,
+                                )?
+                                .into_iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
+                            selected_sapling_notes.extend(notes);
+                        }
+                        if sources.contains(&ShieldedPool::Orchard) {
+                            let notes = self
+                                .select_spendable_notes_by_pool::<OrchardNote>(
+                                    &mut remaining_value_needed,
+                                    anchor_height,
+                                    &exclude_orchard,
+                                    account,
+                                    include_potentially_spent_notes,
+                                )?
+                                .into_iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
+                            selected_orchard_notes.extend(notes);
+                        }
+
                         let notes = self
                             .select_spendable_notes_by_pool::<SaplingNote>(
                                 &mut remaining_value_needed,
@@ -731,8 +789,7 @@ impl InputSource for LightWallet {
                             .collect::<Vec<_>>();
                         exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
                         selected_sapling_notes.extend(notes);
-                    }
-                    if sources.contains(&ShieldedPool::Orchard) {
+
                         let notes = self
                             .select_spendable_notes_by_pool::<OrchardNote>(
                                 &mut remaining_value_needed,
@@ -747,34 +804,6 @@ impl InputSource for LightWallet {
                         exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
                         selected_orchard_notes.extend(notes);
                     }
-
-                    let notes = self
-                        .select_spendable_notes_by_pool::<SaplingNote>(
-                            &mut remaining_value_needed,
-                            anchor_height,
-                            &exclude_sapling,
-                            account,
-                            include_potentially_spent_notes,
-                        )?
-                        .into_iter()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
-                    selected_sapling_notes.extend(notes);
-
-                    let notes = self
-                        .select_spendable_notes_by_pool::<OrchardNote>(
-                            &mut remaining_value_needed,
-                            anchor_height,
-                            &exclude_orchard,
-                            account,
-                            include_potentially_spent_notes,
-                        )?
-                        .into_iter()
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
-                    selected_orchard_notes.extend(notes);
                 }
                 (selected_sapling_notes, selected_orchard_notes)
             }
@@ -914,7 +943,7 @@ impl InputSource for LightWallet {
     //     address: &TransparentAddress,
     //     target_height: TargetHeight,
     //     confirmations_policy: ConfirmationsPolicy,
-    //     _output_filter: TransparentOutputFilter,
+    //     _output_filter: CoinbaseFilter,
     // ) -> Result<Vec<WalletUtxo>, Self::Error> {
     //     let address = transparent::encode_address(&self.chain_type, *address);
 
@@ -951,7 +980,7 @@ impl InputSource for LightWallet {
         address: &TransparentAddress,
         target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
-        _output_filter: TransparentOutputFilter,
+        _output_filter: CoinbaseFilter,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         let address = transparent::encode_address(&self.chain_type, *address);
 

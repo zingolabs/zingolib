@@ -31,8 +31,8 @@ pub mod utils;
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
 pub mod disk;
-pub mod ironwood_migration;
 pub mod keys;
+pub mod migration;
 pub mod output;
 pub mod propose;
 pub mod send;
@@ -142,6 +142,10 @@ pub struct LightWallet {
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
+    /// Orchard→Ironwood migration state, present while a migration is
+    /// planned or in flight. Wallet-file-local by design: restore-from-seed
+    /// starts fresh.
+    pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
@@ -236,6 +240,7 @@ impl LightWallet {
             sync_state: SyncState::new(),
             wallet_settings,
             price_list: PriceList::new(),
+            migration: None,
             save_required: true,
             send_proposal: None,
         })

@@ -45,9 +45,14 @@ use pepper_sync::{
 impl LightWallet {
     /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
+    ///
+    /// Changes in version 42:
+    /// Optional Orchard→Ironwood migration section appended (see
+    /// [`crate::wallet::migration::store`]; the section carries its own inner
+    /// version).
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        41
+        42
     }
 
     /// Serialize into `writer`
@@ -123,7 +128,10 @@ impl LightWallet {
         self.sync_state.write(&mut writer)?;
         self.wallet_settings.sync_config.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
-        self.price_list.write(&mut writer)
+        self.price_list.write(&mut writer)?;
+        Optional::write(&mut writer, self.migration.as_ref(), |w, migration| {
+            crate::wallet::migration::store::write(w, migration)
+        })
     }
 
     /// Deserialize into `reader`
@@ -133,7 +141,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=41 => Self::read_v32(reader, chain_type, version),
+            32..=42 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -346,6 +354,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             chain_type,
+            migration: None,
             send_proposal: None,
             save_required: false,
             wallet_settings: WalletSettings {
@@ -596,6 +605,12 @@ impl LightWallet {
             PriceList::new()
         };
 
+        let migration = if version >= 42 {
+            Optional::read(&mut reader, crate::wallet::migration::store::read)?
+        } else {
+            None
+        };
+
         Ok(Self {
             current_version: LightWallet::serialized_version(),
             read_version: version,
@@ -613,6 +628,7 @@ impl LightWallet {
             sync_state,
             wallet_settings,
             price_list,
+            migration,
             send_proposal: None,
             save_required: false,
         })

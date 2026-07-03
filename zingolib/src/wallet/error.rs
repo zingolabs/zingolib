@@ -73,6 +73,25 @@ pub enum WalletError {
     /// Failed to build a migration transaction.
     #[error("Migration transaction build failed: {0}")]
     MigrationBuild(String),
+    /// A migration part's bound note is not in the wallet.
+    #[error("Migration: bound note {0:?} not found in the wallet.")]
+    MigrationBoundNoteMissing(pepper_sync::wallet::OutputId),
+    /// A built part deviated from the canonical migration-transaction
+    /// predicate of ZIP 318. Deviating parts are never sent: they would
+    /// fingerprint the wallet.
+    #[error("Migration part deviates from the canonical predicate: {0}")]
+    MigrationDeviation(String),
+    /// A part was asked to make a transition its state does not permit.
+    #[error("Migration part cannot transition from {from} to {to}.")]
+    MigrationInvalidTransition {
+        /// The part's current state.
+        from: &'static str,
+        /// The requested state.
+        to: &'static str,
+    },
+    /// Persisted migration state failed an integrity check.
+    #[error("Migration state corrupt: {0}")]
+    MigrationStateCorrupt(String),
     /// Conversion failed
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]

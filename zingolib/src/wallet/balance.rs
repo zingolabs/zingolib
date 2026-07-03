@@ -281,7 +281,13 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
-                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+                PoolType::IRONWOOD => {
+                    // Ironwood reuses the Orchard keys: viewing capability
+                    // for the pool is the Orchard FVK.
+                    if ufvk.orchard().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    }
+                }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }
@@ -343,7 +349,13 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
-                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+                PoolType::IRONWOOD => {
+                    // Ironwood reuses the Orchard keys: viewing capability
+                    // for the pool is the Orchard FVK.
+                    if ufvk.orchard().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    }
+                }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }

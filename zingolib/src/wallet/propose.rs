@@ -1,7 +1,10 @@
 //! creating proposals from wallet data
 
 use zcash_client_backend::{
-    data_api::wallet::{ConfirmationsPolicy, input_selection::GreedyInputSelector},
+    data_api::wallet::{
+        ConfirmationsPolicy,
+        input_selection::{GreedyInputSelector, TransparentSpendPolicy},
+    },
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
@@ -31,6 +34,16 @@ impl LightWallet {
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
+        // Once NU6.3 activates, change should route to the Ironwood pool
+        // rather than Orchard, so that ordinary sends stop growing the
+        // balance the migration backend (`wallet::migration`) exists to
+        // move. zcash_client_backend now does this itself: when Ironwood is
+        // active at the target height it builds a V6 transaction and routes
+        // Orchard-pool payments and change into the Ironwood bundle, so
+        // `ShieldedPool::Orchard` here remains correct. The routing is held
+        // back for now by requesting legacy V5 below, because pepper-sync
+        // cannot scan Ironwood notes yet and the wallet would not detect
+        // its own change.
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             Some(memo),
@@ -57,7 +70,11 @@ impl LightWallet {
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            None,
+            &TransparentSpendPolicy::ShieldedOnly,
+            // Legacy V5 keeps post-NU6.3 fee math and change routing away
+            // from the Ironwood bundle until pepper-sync can scan it. Must
+            // match `create_proposed_transactions` in `wallet/send.rs`.
+            Some(zcash_primitives::transaction::TxVersion::V5),
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -75,6 +92,10 @@ impl LightWallet {
         account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
         let input_selector = GreedyInputSelector::new();
+        // Shielding also targets Orchard for now. Upstream routes the
+        // shielded output into the Ironwood bundle once NU6.3 is active,
+        // but execution requests legacy V5 until pepper-sync can scan
+        // Ironwood notes, same as `create_send_proposal` above.
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
@@ -115,7 +136,7 @@ impl LightWallet {
             account_id,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            zcash_client_backend::data_api::TransparentOutputFilter::All,
+            zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
         )
         .map_err(ProposeShieldError::Component)?;
 
