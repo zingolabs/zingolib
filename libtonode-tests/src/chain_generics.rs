@@ -1,4 +1,6 @@
-//! libtonode tests use zcashd regtest mode to mock a chain
+//! libtonode tests use a regtest-mode local network (zainod+zebrad by
+//! default; see `zingolib_testutils::scenarios::network_combo`) to mock a
+//! chain
 
 use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
@@ -16,7 +18,7 @@ use zingolib_testutils::scenarios::custom_clients_default;
 use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use zingolib_testutils::scenarios::validator_activation_heights;
 
-/// includes utilities for connecting to zcashd regtest
+/// includes utilities for connecting to the regtest validator
 pub struct LibtonodeEnvironment {
     /// Local network
     pub local_net: LocalNet<DefaultValidator, DefaultIndexer>,

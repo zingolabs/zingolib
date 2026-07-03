@@ -1313,7 +1313,8 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         );
     }
 
-    #[ignore = "zebrad does not currently support mining to shielded pools"]
+    #[ignore = "balance assertions assume direct shielded coinbase; under zebrad the faucet's \
+                mining rewards are shielded and partly offloaded (see zebrad_shielded_funds)"]
     #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) =
@@ -1325,7 +1326,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         check_client_balances!(faucet, o: 2_500_000_000u64 s: 0 t: 0);
     }
 
-    #[ignore = "zebrad does not currently support mining to shielded pools"]
+    #[ignore = "zebrad does not support mining to a Sapling address"]
     #[tokio::test]
     async fn mine_to_sapling() {
         let (local_net, mut faucet) =
