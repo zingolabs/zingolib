@@ -9,8 +9,8 @@ use crate::lightclient::LightClient;
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Shielded(ShieldedPool::Ironwood) => todo!(), // FIXME: implement ironwood
-        PoolType::Shielded(ShieldedPool::Orchard) => {
+        // The ironwood receiver of a unified address is its orchard receiver.
+        PoolType::Shielded(ShieldedPool::Ironwood) | PoolType::Shielded(ShieldedPool::Orchard) => {
             assert!(
                 client.unified_addresses_json().await[0]["has_orchard"]
                     .as_bool()

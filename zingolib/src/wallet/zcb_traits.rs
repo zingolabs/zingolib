@@ -36,8 +36,8 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::{self, TransparentScope},
     wallet::{
-        KeyIdInterface, NoteInterface, OrchardNote, OrchardShardStore, OutputId, OutputInterface,
-        SaplingNote, SaplingShardStore, traits::SyncWallet,
+        IronwoodNote, KeyIdInterface, NoteInterface, OrchardNote, OrchardShardStore, OutputId,
+        OutputInterface, SaplingNote, SaplingShardStore, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -620,13 +620,27 @@ impl WalletCommitmentTrees for LightWallet {
 
         Ok(())
     }
+
+    fn with_ironwood_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<Option<A>, E>
+    where
+        for<'a> F: FnMut(
+            &'a mut ShardTree<
+                Self::OrchardShardStore<'a>,
+                { ORCHARD_SHARD_HEIGHT * 2 },
+                ORCHARD_SHARD_HEIGHT,
+            >,
+        ) -> Result<A, E>,
+        E: From<ShardTreeError<Self::Error>>,
+    {
+        callback(&mut self.shard_trees.ironwood).map(Some)
+    }
 }
 
-/// Ironwood commitment-tree access, mirroring the sapling/orchard methods of
-/// [`WalletCommitmentTrees`]. The upstream trait has no Ironwood members yet,
-/// so these live here as inherent methods until it grows them.
+/// Ironwood subtree root loading, mirroring `put_orchard_subtree_roots`.
+/// The upstream [`WalletCommitmentTrees`] trait has no Ironwood subtree-root
+/// method, so this lives here as an inherent method until the trait grows one.
 impl LightWallet {
-    pub fn with_ironwood_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+    pub fn with_ironwood_tree_mut_inherent<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
             &'a mut ShardTree<
@@ -645,7 +659,7 @@ impl LightWallet {
         start_index: u64,
         roots: &[CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>],
     ) -> Result<(), ShardTreeError<Infallible>> {
-        self.with_ironwood_tree_mut(|t| {
+        self.with_ironwood_tree_mut_inherent(|t| {
             for (root, i) in roots.iter().zip(0u64..) {
                 let root_addr = incrementalmerkletree::Address::from_parts(
                     ORCHARD_SHARD_HEIGHT.into(),
@@ -869,6 +883,35 @@ impl InputSource for LightWallet {
         }
         */
 
+        // When V6 building is allowed, also select Ironwood (V3) notes from
+        // the ironwood pool and add them to the orchard vec. Upstream detects
+        // `note.version() == V3` and switches to `OrchardBuildMode::IronwoodSpends`,
+        // routing inputs and change through the ironwood bundle. The gate is
+        // mandatory: a V3 note in a V5 proposal causes `ProposalNotSupported`.
+        let selected_ironwood_notes: Vec<IronwoodNote> =
+            if self.wallet_settings.allow_v6_transactions {
+                let exclude_ironwood: Vec<OutputId> = exclude
+                    .iter()
+                    .filter(|&note_id| note_id.pool_type() == PoolType::IRONWOOD)
+                    .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
+                    .collect();
+                let include_potentially_spent = matches!(
+                    target_value,
+                    TargetValue::AllFunds(zcash_client_backend::data_api::MaxSpendMode::Everything)
+                );
+                self.spendable_notes::<IronwoodNote>(
+                    anchor_height,
+                    &exclude_ironwood,
+                    account,
+                    include_potentially_spent,
+                )?
+                .into_iter()
+                .cloned()
+                .collect()
+            } else {
+                Vec::new()
+            };
+
         let sapling_recieved_notes = selected_sapling_notes
             .iter()
             .map(|note| {
@@ -891,7 +934,7 @@ impl InputSource for LightWallet {
                 )
             })
             .collect::<Vec<_>>();
-        let orchard_recieved_notes = selected_orchard_notes
+        let mut orchard_recieved_notes = selected_orchard_notes
             .iter()
             .map(|note| {
                 ReceivedNote::from_parts(
@@ -913,6 +956,25 @@ impl InputSource for LightWallet {
                 )
             })
             .collect::<Vec<_>>();
+        orchard_recieved_notes.extend(selected_ironwood_notes.iter().map(|note| {
+            ReceivedNote::from_parts(
+                OutputRef::new(
+                    OutputId::new(note.output_id().txid(), note.output_id().output_index()),
+                    PoolType::IRONWOOD,
+                ),
+                note.output_id().txid(),
+                note.output_id()
+                    .output_index()
+                    .try_into()
+                    .expect("shielded notes are always valid u16"),
+                *note.note(),
+                note.key_id().scope,
+                note.position()
+                    .expect("note selection should filter on notes with positions"),
+                None, // mined_height. TODO: How should we use this here?
+                None, // max_shielding_input_height. TODO: How should we use this here?
+            )
+        }));
 
         Ok(ReceivedNotes::new(
             sapling_recieved_notes,

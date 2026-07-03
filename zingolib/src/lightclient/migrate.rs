@@ -469,12 +469,18 @@ impl LightClient {
                             &state.params,
                         )
                     });
+                    let value_migrated = wallet
+                        .account_balance(state.account)
+                        .ok()
+                        .and_then(|b| b.confirmed_ironwood_balance)
+                        .map(zcash_protocol::value::Zatoshis::into_u64)
+                        .unwrap_or(0);
                     (
                         Some(state.phase.clone()),
                         state.parts.len() as u32,
                         confirmed.len() as u32,
                         state.parts.iter().map(|part| part.denomination).sum(),
-                        confirmed.iter().map(|part| part.denomination).sum(),
+                        value_migrated,
                         wakes,
                         state.account,
                     )
