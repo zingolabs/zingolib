@@ -129,6 +129,19 @@ fn from_local_net_activation_heights(
         .build()
 }
 
+/// Activation heights for the default test network, mirroring
+/// `zcash_local_net`'s validated regtest fixture (pre-NU5 upgrades at
+/// height 1, NU5 and later staggered afterwards).
+///
+/// Zebrad rejects the blocks it is asked to produce while a configured
+/// network upgrade is still in the future of the block-template height, so
+/// the all-at-height-1 schedule of
+/// `zingo_common_components::ActivationHeights::default()` (which zcashd
+/// accepts) can never advance a zebrad chain past genesis.
+pub fn default_test_activation_heights() -> ActivationHeights {
+    from_local_net_activation_heights(zcash_local_net::validator::regtest_test_activation_heights())
+}
+
 /// Fetches a running validator's activation heights, converted to the
 /// `zingo_common_components` type zingolib configs expect.
 ///
@@ -322,7 +335,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(ActivationHeights::default(), None).await
+    unfunded_client(default_test_activation_heights(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -358,7 +371,7 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -406,7 +419,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet_recipient(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -507,7 +520,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            ActivationHeights::default(),
+            default_test_activation_heights(),
             None,
         )
         .await;
@@ -545,7 +558,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+        custom_clients(PoolType::ORCHARD, default_test_activation_heights(), None).await;
 
     (local_net, client_builder)
 }

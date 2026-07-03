@@ -6,7 +6,6 @@ use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
-use zingo_common_components::protocol::ActivationHeights;
 use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -370,7 +369,7 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 #[tokio::test]
 async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
-        ActivationHeights::default(),
+        scenarios::default_test_activation_heights(),
         Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
     )
     .await;

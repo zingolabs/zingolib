@@ -7,7 +7,6 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
-use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
@@ -654,7 +653,7 @@ mod fast {
             Some(100_000),
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
-            ActivationHeights::default(),
+            scenarios::default_test_activation_heights(),
             None,
         )
         .await;
@@ -1317,8 +1316,12 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 mining rewards are shielded and partly offloaded (see zebrad_shielded_funds)"]
     #[tokio::test]
     async fn mine_to_orchard() {
-        let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+        let (local_net, mut faucet) = scenarios::faucet(
+            PoolType::ORCHARD,
+            scenarios::default_test_activation_heights(),
+            None,
+        )
+        .await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1329,8 +1332,12 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore = "zebrad does not support mining to a Sapling address"]
     #[tokio::test]
     async fn mine_to_sapling() {
-        let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
+        let (local_net, mut faucet) = scenarios::faucet(
+            PoolType::SAPLING,
+            scenarios::default_test_activation_heights(),
+            None,
+        )
+        .await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1341,9 +1348,12 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
-        let (local_net, mut faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None)
-                .await;
+        let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
+            PoolType::Transparent,
+            scenarios::default_test_activation_heights(),
+            None,
+        )
+        .await;
 
         let unconfirmed_balance = faucet
             .wallet()
@@ -1418,7 +1428,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
-        let activation_heights = ActivationHeights::default();
+        let activation_heights = scenarios::default_test_activation_heights();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1443,7 +1453,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
-        let activation_heights = ActivationHeights::default();
+        let activation_heights = scenarios::default_test_activation_heights();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -2545,8 +2555,12 @@ TransactionSummary {
         // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
         // consistent with all the notes in the relevant block changing state.
         // NOTE that the balance doesn't give insight into the distribution across notes.
-        let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
+        let (local_net, mut faucet) = scenarios::faucet(
+            PoolType::SAPLING,
+            scenarios::default_test_activation_heights(),
+            None,
+        )
+        .await;
 
         let amount_to_send = 10_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
@@ -2624,7 +2638,7 @@ TransactionSummary {
                 Some(100_000),
                 Some(100_000),
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                ActivationHeights::default(),
+                scenarios::default_test_activation_heights(),
                 None,
             )
             .await;
@@ -2712,7 +2726,7 @@ TransactionSummary {
                 Some(funding_value),
                 None,
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                ActivationHeights::default(),
+                scenarios::default_test_activation_heights(),
                 None,
             )
             .await;
@@ -4364,9 +4378,12 @@ mod basic_transactions {
 /// Tests that transparent coinbases are matured after 100 blocks.
 #[tokio::test]
 async fn mine_to_transparent_coinbase_maturity() {
-    let (local_net, mut faucet, _recipient) =
-        scenarios::faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None)
-            .await;
+    let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
+        PoolType::Transparent,
+        scenarios::default_test_activation_heights(),
+        None,
+    )
+    .await;
 
     // After 3 blocks...
     check_client_balances!(faucet, o: 0 s: 0 t: 0);
