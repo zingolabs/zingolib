@@ -1,0 +1,34 @@
+[package]
+name = "zingo-netutils"
+version = "5.0.1"
+description = "network utility crate"
+authors = ["zingo@zingolabs.org"]
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+http.workspace = true
+thiserror.workspace = true
+tokio-rustls.workspace = true
+tonic.workspace = true
+lightwallet-protocol.workspace = true
+tokio-stream = { workspace = true, optional = true }
+
+[features]
+globally-public-transparent = ["dep:tokio-stream"]
+ping-very-insecure = []
+
+[dev-dependencies]
+tokio-stream.workspace = true
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+hyper.workspace = true
+rustls-pemfile.workspace = true
+tokio.workspace = true
+http-body-util.workspace = true
+x509-parser.workspace = true
