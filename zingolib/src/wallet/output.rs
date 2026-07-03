@@ -204,6 +204,13 @@ impl LightWallet {
                 }
             }
         }
+        if query.ironwood() {
+            for output in transaction.ironwood_notes() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
         sum
     }
 

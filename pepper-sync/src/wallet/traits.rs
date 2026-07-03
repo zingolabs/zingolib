@@ -19,10 +19,11 @@ use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
-    NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
+    WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, set_transactions_failed};
+use crate::{SyncDomain, client, set_transactions_failed};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -178,6 +179,9 @@ pub trait SyncNullifiers: SyncWallet {
         self.get_nullifiers_mut()?
             .orchard
             .append(&mut nullifiers.orchard);
+        self.get_nullifiers_mut()?
+            .ironwood
+            .append(&mut nullifiers.ironwood);
 
         Ok(())
     }
@@ -190,6 +194,9 @@ pub trait SyncNullifiers: SyncWallet {
             .retain(|_, scan_target| scan_target.block_height <= truncate_height);
         nullifier_map
             .orchard
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+        nullifier_map
+            .ironwood
             .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
@@ -241,6 +248,7 @@ pub trait SyncShardTrees: SyncWallet {
         highest_scanned_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+        ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ) -> impl std::future::Future<Output = Result<(), SyncError<Self::Error>>> + Send
     where
         Self: std::marker::Send,
@@ -303,6 +311,18 @@ pub trait SyncShardTrees: SyncWallet {
                     &mut shard_trees.orchard,
                 )
                 .await?;
+                add_checkpoint::<
+                    Ironwood,
+                    MerkleHashOrchard,
+                    { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                    { witness::SHARD_HEIGHT },
+                >(
+                    fetch_request_sender.clone(),
+                    checkpoint_height,
+                    &ironwood_located_trees,
+                    &mut shard_trees.ironwood,
+                )
+                .await?;
             }
 
             for tree in sapling_located_trees {
@@ -313,6 +333,11 @@ pub trait SyncShardTrees: SyncWallet {
             for tree in orchard_located_trees {
                 shard_trees
                     .orchard
+                    .insert_tree(tree.subtree, tree.checkpoints)?;
+            }
+            for tree in ironwood_located_trees {
+                shard_trees
+                    .ironwood
                     .insert_tree(tree.subtree, tree.checkpoints)?;
             }
 
@@ -333,6 +358,8 @@ pub trait SyncShardTrees: SyncWallet {
             shard_trees.sapling =
                 ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
             shard_trees.orchard =
+                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+            shard_trees.ironwood =
                 ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
         } else {
             if !self
@@ -358,6 +385,34 @@ pub trait SyncShardTrees: SyncWallet {
                     truncate_height,
                     PoolType::ORCHARD,
                 ));
+            }
+            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+            if !shard_trees
+                .ironwood
+                .truncate_to_checkpoint(&truncate_height)?
+            {
+                // Wallets synced before ironwood checkpoints existed carry an
+                // ironwood tree without one at the truncation height. When
+                // the tree holds no data, resetting it to empty is lossless
+                // and avoids forcing a full rescan on the first reorg after
+                // upgrade.
+                if shard_trees
+                    .ironwood
+                    .store()
+                    .get_shard_roots()
+                    .expect("infallible")
+                    .is_empty()
+                {
+                    tracing::info!("Resetting empty ironwood shard tree on truncation.");
+                    shard_trees.ironwood =
+                        ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+                } else {
+                    tracing::error!("Ironwood shard tree is broken! Beginning rescan.");
+                    return Err(SyncError::TruncationError(
+                        truncate_height,
+                        PoolType::IRONWOOD,
+                    ));
+                }
             }
         }
 
@@ -406,7 +461,7 @@ where
             let tree_size = match D::SHIELDED_PROTOCOL {
                 ShieldedPool::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedPool::Orchard => frontiers.final_orchard_tree().tree_size(),
-                ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+                ShieldedPool::Ironwood => frontiers.final_ironwood_tree().tree_size(),
             };
             if tree_size == 0 {
                 TreeState::Empty

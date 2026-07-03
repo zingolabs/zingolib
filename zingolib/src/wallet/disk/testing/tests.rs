@@ -352,6 +352,6 @@ async fn wallet_v42_round_trips_migration_state() {
 
     let bytes = wallet.save().unwrap().expect("save required");
     let recovered = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
-    assert_eq!(recovered.current_version(), 42);
+    assert_eq!(recovered.current_version(), 43);
     assert_eq!(recovered.migration, Some(state));
 }

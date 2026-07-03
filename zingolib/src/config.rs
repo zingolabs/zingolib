@@ -430,6 +430,7 @@ impl Default for ClientConfigBuilder {
                     },
                     min_confirmations: NonZeroU32::try_from(3)
                         .expect("hard coded non-zero integer"),
+                    allow_v6_transactions: false,
                 },
             },
         }

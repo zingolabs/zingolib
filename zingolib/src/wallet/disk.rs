@@ -50,9 +50,12 @@ impl LightWallet {
     /// Optional Orchard→Ironwood migration section appended (see
     /// [`crate::wallet::migration::store`]; the section carries its own inner
     /// version).
+    ///
+    /// Changes in version 43:
+    /// `allow_v6_transactions` bool appended after `min_confirmations`.
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        42
+        43
     }
 
     /// Serialize into `writer`
@@ -128,6 +131,7 @@ impl LightWallet {
         self.sync_state.write(&mut writer)?;
         self.wallet_settings.sync_config.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
+        writer.write_u8(u8::from(self.wallet_settings.allow_v6_transactions))?;
         self.price_list.write(&mut writer)?;
         Optional::write(&mut writer, self.migration.as_ref(), |w, migration| {
             crate::wallet::migration::store::write(w, migration)
@@ -141,7 +145,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=42 => Self::read_v32(reader, chain_type, version),
+            32..=43 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -363,6 +367,7 @@ impl LightWallet {
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
+                allow_v6_transactions: false,
             },
         };
 
@@ -588,6 +593,11 @@ impl LightWallet {
                 } else {
                     NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
                 },
+                allow_v6_transactions: if version >= 43 {
+                    reader.read_u8()? != 0
+                } else {
+                    false
+                },
             }
         } else {
             WalletSettings {
@@ -596,6 +606,7 @@ impl LightWallet {
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
+                allow_v6_transactions: false,
             }
         };
 

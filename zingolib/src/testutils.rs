@@ -42,6 +42,7 @@ pub fn default_test_wallet_settings() -> WalletSettings {
             performance_level: PerformanceLevel::High,
         },
         min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
+        allow_v6_transactions: false,
     }
 }
 

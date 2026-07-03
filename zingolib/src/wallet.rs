@@ -52,6 +52,12 @@ pub struct WalletSettings {
     pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
+    /// When true, proposals use `None` for the version floor, allowing the
+    /// upstream builder to produce V6 transactions post-NU6.3 activation
+    /// and route Ironwood-pool inputs and change through the ironwood bundle.
+    /// Defaults to false until a V6-accepting node is available in the
+    /// test environment and Ironwood scanning is fully exercised.
+    pub allow_v6_transactions: bool,
 }
 
 impl Default for WalletSettings {
@@ -59,6 +65,7 @@ impl Default for WalletSettings {
         Self {
             sync_config: SyncConfig::default(),
             min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
+            allow_v6_transactions: false,
         }
     }
 }

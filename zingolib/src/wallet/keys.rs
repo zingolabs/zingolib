@@ -468,8 +468,9 @@ mod test {
         #[must_use]
         pub fn get_address(&self, pool: PoolType) -> String {
             match pool {
-                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
-                PoolType::ORCHARD => self
+                // The ironwood receiver of a unified address is its orchard
+                // receiver.
+                PoolType::IRONWOOD | PoolType::ORCHARD => self
                     .unified_addresses()
                     .get(&UnifiedAddressId {
                         address_index: 0,

@@ -129,8 +129,8 @@ use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
-    NoteInterface, OrchardNote, OrchardShardStore, SaplingNote, SaplingShardStore,
-    WalletTransaction,
+    Ironwood, IronwoodNote, NoteInterface, Orchard, OrchardNote, OrchardShardStore, Sapling,
+    SaplingNote, SaplingShardStore, WalletTransaction,
 };
 
 pub(crate) trait SyncDomain {
@@ -141,8 +141,6 @@ pub(crate) trait SyncDomain {
 
     fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note>;
 }
-
-pub(crate) struct Sapling;
 
 impl SyncDomain for Sapling {
     const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
@@ -155,8 +153,6 @@ impl SyncDomain for Sapling {
     }
 }
 
-pub(crate) struct Orchard;
-
 impl SyncDomain for Orchard {
     const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
 
@@ -165,5 +161,18 @@ impl SyncDomain for Orchard {
 
     fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
         wallet_transaction.orchard_notes_mut()
+    }
+}
+
+impl SyncDomain for Ironwood {
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Ironwood;
+
+    type Note = IronwoodNote;
+    // Ironwood reuses the Orchard note commitment tree hash, so the same
+    // store type serves its (separate) tree.
+    type ShardStore = OrchardShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.ironwood_notes_mut()
     }
 }
