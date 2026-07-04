@@ -839,6 +839,8 @@ internal interface IntegrityCheckingUniffiLib : Library {
 
     fun uniffi_zingo_checksum_func_remove_transaction(): Short
 
+    fun uniffi_zingo_checksum_func_reserve_ephemeral_address(): Short
+
     fun uniffi_zingo_checksum_func_run_rescan(): Short
 
     fun uniffi_zingo_checksum_func_run_sync(): Short
@@ -1035,6 +1037,8 @@ internal interface UniffiLib : Library {
         `txid`: RustBuffer.ByValue,
         uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+
+    fun uniffi_zingo_fn_func_reserve_ephemeral_address(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
     fun uniffi_zingo_fn_func_run_rescan(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
@@ -1405,6 +1409,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_remove_transaction() != 54006.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_reserve_ephemeral_address() != 8971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_run_rescan() != 52086.toShort()) {
@@ -2018,6 +2025,14 @@ fun `removeTransaction`(`txid`: kotlin.String): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
             UniffiLib.INSTANCE.uniffi_zingo_fn_func_remove_transaction(FfiConverterString.lower(`txid`), _status)
+        },
+    )
+
+@Throws(ZingolibException::class)
+fun `reserveEphemeralAddress`(): kotlin.String =
+    FfiConverterString.lift(
+        uniffiRustCallWithError(ZingolibException) { _status ->
+            UniffiLib.INSTANCE.uniffi_zingo_fn_func_reserve_ephemeral_address(_status)
         },
     )
 

@@ -3,9 +3,9 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "0ed92148b" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "0ed92148b" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "0ed92148b", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
@@ -60,3 +60,16 @@ opt-level = "z"
 [profile.test]
 opt-level = 3
 debug = 1
+
+[patch.crates-io]
+# TEMPORARY: point to fork with OP_RETURN support for swap integrations.
+# Must match the patch in zingolib so the dependency graph resolves to a single
+# version of the librustzcash crates. Revert once upstream PR merges.
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
