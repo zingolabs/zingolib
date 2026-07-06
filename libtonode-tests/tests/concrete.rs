@@ -582,8 +582,10 @@ mod fast {
             panic!("ua should not be in fresh wallet yet!");
         }
 
-        // sync recipient and check the UAs have been discovered
-        recipient.sync_and_await().await.unwrap();
+        // sync recipient (to the Validator's tip — a bare sync races the
+        // Indexer's ingestion of the block confirming the sends) and check
+        // the UAs have been discovered
+        scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
         assert_eq!(
             recipient
                 .wallet()
@@ -625,6 +627,30 @@ mod fast {
                 .unwrap()
                 .encode(&network),
             all_shielded_encoded
+        );
+    }
+
+    /// Diagnostic probe for the Core-stack coinbase model. Each assert tests
+    /// one hypothesis, and each failure mode has a distinct quantized delta:
+    /// - orchard off by one POST_STREAM_BLOCK_REWARD (618_750_000):
+    ///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3);
+    /// - sapling delta of BLOCK_ONE_SAPLING_COINBASE (625_000_000): the
+    ///   block-1-pays-the-sapling-receiver rule is wrong;
+    /// - transparent nonzero: pre-NU5 or activation-block coinbase pays a
+    ///   transparent output instead;
+    /// - balances short by whole blocks: the deterministic
+    ///   sync_client_to_validator_tip is not actually deterministic.
+    #[tokio::test]
+    async fn orchard_miner_coinbase_distribution() {
+        let mut environment = LibtonodeEnvironment::setup().await;
+        let mut faucet = environment.create_faucet().await;
+        environment.increase_chain_height().await;
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
+
+        // Tip is height 4: launch block + 2 setup blocks + 1 above.
+        check_client_balances!(
+            faucet,
+            o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
         );
     }
 
@@ -716,12 +742,14 @@ mod fast {
         let mut recipient = environment.create_client().await;
 
         environment.increase_chain_height().await;
-        faucet.sync_and_await().await.unwrap();
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
 
-        // Orchard coinbase accrues from the block after NU5 activation
-        // (height 3 under the fixture heights), so a height-4 tip yields two
-        // post-funding-stream rewards.
-        check_client_balances!(faucet, o: (2 * scenarios::POST_STREAM_BLOCK_REWARD)  s: 0 t: 0u64);
+        // Tip is height 4: orchard coinbase from NU5 activation onward,
+        // block 1's pre-NU5 coinbase in the sapling receiver.
+        check_client_balances!(
+            faucet,
+            o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
+        );
 
         from_inputs::quick_send(
             &mut faucet,
@@ -951,12 +979,14 @@ mod fast {
         let mut recipient = environment.create_client().await;
 
         environment.increase_chain_height().await;
-        faucet.sync_and_await().await.unwrap();
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
 
-        // Orchard coinbase accrues from the block after NU5 activation
-        // (height 3 under the fixture heights), so a height-4 tip yields two
-        // post-funding-stream rewards.
-        check_client_balances!(faucet, o: (2 * scenarios::POST_STREAM_BLOCK_REWARD)  s: 0 t: 0u64);
+        // Tip is height 4: orchard coinbase from NU5 activation onward,
+        // block 1's pre-NU5 coinbase in the sapling receiver.
+        check_client_balances!(
+            faucet,
+            o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
+        );
 
         from_inputs::quick_send(
             &mut faucet,
@@ -1336,13 +1366,16 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             None,
         )
         .await;
-        check_client_balances!(faucet, o: (scenarios::funded_faucet_orchard_balance()) s: 0 t: 0);
+        check_client_balances!(
+            faucet,
+            o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        );
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         check_client_balances!(
             faucet,
-            o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: 0 t: 0
+            o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
         );
     }
 
@@ -1425,22 +1458,14 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     }
 
     #[tokio::test]
-    async fn sync_all_epochs_from_heartwood() {
-        let activation_heights = ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(3))
-            .set_nu5(Some(5))
-            .set_nu6(Some(7))
-            .set_nu6_1(Some(9))
-            .set_nu6_2(Some(11))
-            .set_nu7(None)
-            .build();
-
+    async fn sync_all_expressible_epochs() {
+        // The zebrad config writer requires every upgrade through Canopy
+        // active at height 1, and the harness subsidy fixtures pair only
+        // with the fixture shape — so the expressible epoch boundaries are
+        // NU5/NU6 at height 2 and NU6.1/NU6.2 at height 5. Sync across all
+        // of them with room to spare.
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
+            scenarios::unfunded_client(scenarios::default_test_activation_heights(), None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 12)
             .await
             .unwrap();
@@ -2512,7 +2537,7 @@ TransactionSummary {
             scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
         );
         let setup_reward = scenarios::funded_faucet_orchard_balance();
-        check_client_balances!(faucet, o: setup_reward s: 0 t: 0);
+        check_client_balances!(faucet, o: setup_reward s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
 
         // post transfer to recipient, and verify
         from_inputs::quick_send(
@@ -2549,7 +2574,7 @@ TransactionSummary {
                 .unwrap()
         );
 
-        check_client_balances!(faucet, o: faucet_orch s: 0 t: 0);
+        check_client_balances!(faucet, o: faucet_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
         check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
 
         // post half back to faucet, and verify
@@ -2576,7 +2601,7 @@ TransactionSummary {
             faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
         check_client_balances!(
             faucet,
-            o: faucet_final_orch s: 0 t: 0
+            o: faucet_final_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
         );
         check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
     }

@@ -163,15 +163,34 @@ pub const fn mined_block_rewards_total(count: u64) -> u64 {
 /// confirming the offload send.
 pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 104;
 
+/// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
+/// coinbase pays the orchard receiver from the NU5 activation block (height
+/// 2 under [`default_test_activation_heights`]) onward. If orchard coinbase
+/// actually starts one block later, every orchard expectation derived from
+/// this constant fails high by exactly one [`POST_STREAM_BLOCK_REWARD`] —
+/// flip this to 3 and nothing else.
+pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
+
+/// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
+/// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
+/// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
+/// scenarios. If refuted, s-balance expectations fail by exactly this value.
+pub const BLOCK_ONE_SAPLING_COINBASE: u64 = block_rewards::CANOPY;
+
+/// Total orchard coinbase received by the faucet at `tip` under an Orchard
+/// miner pool: one post-funding-stream reward per block from
+/// [`ORCHARD_COINBASE_START_HEIGHT`] through `tip`.
+pub const fn orchard_coinbase_total(tip: u32) -> u64 {
+    (tip - ORCHARD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
+}
+
 /// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
-/// finishes setting up. Orchard coinbase accrues from the block after NU5
-/// activation (height 3 under [`default_test_activation_heights`]), giving
-/// one post-funding-stream reward per block through
-/// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload send and its fee.
+/// finishes setting up: orchard coinbase through
+/// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload amount. The offload's
+/// fee cancels out: the faucet pays it, then collects it right back in the
+/// coinbase of the confirming block it mines.
 pub const fn funded_faucet_orchard_balance() -> u64 {
-    (FUNDED_FAUCET_SETUP_HEIGHT as u64 - 2) * POST_STREAM_BLOCK_REWARD
-        - FUND_OFFLOAD_AMOUNT
-        - 10_000
+    orchard_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
 }
 
 /// To launch a `LocalNet` with darkside settings.
@@ -203,6 +222,24 @@ where
         .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
 
+/// Sync `client` until it has fully scanned the Validator's current chain
+/// tip. A bare `sync_and_await` only reaches whatever the Indexer has
+/// ingested at that instant, which races behind the Validator right after
+/// `generate_blocks` — the cause of nondeterministic stale-balance test
+/// failures.
+pub async fn sync_client_to_validator_tip<V, I>(
+    local_net: &LocalNet<V, I>,
+    client: &mut LightClient,
+) where
+    I: Indexer + LogsToStdoutAndStderr,
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <I as Process>::Config: Send,
+    <V as Process>::Config: Send,
+{
+    let tip = local_net.validator().get_chain_height().await;
+    sync_to_target_height(client, tip).await.unwrap();
+}
+
 /// When mining to a shielded pool, generate 100 blocks so the early coinbase
 /// rewards mature (they land directly in the mined-to pool — zebrad mines to
 /// Orchard natively), then dump the excess funds and generate a final block
@@ -219,7 +256,7 @@ async fn zebrad_shielded_funds<V, I>(
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        sync_client_to_validator_tip(local_net, faucet).await;
         quick_send(
             faucet,
             vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
@@ -349,7 +386,7 @@ pub async fn unfunded_client(
             configured_activation_heights,
         )
         .await;
-    lightclient.sync_and_await().await.unwrap();
+    sync_client_to_validator_tip(&local_net, &mut lightclient).await;
 
     (local_net, lightclient)
 }
@@ -386,7 +423,7 @@ pub async fn faucet(
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
-    faucet.sync_and_await().await.unwrap();
+    sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
     (local_net, faucet)
 }
@@ -429,8 +466,8 @@ pub async fn faucet_recipient(
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
-    faucet.sync_and_await().await.unwrap();
-    recipient.sync_and_await().await.unwrap();
+    sync_client_to_validator_tip(&local_net, &mut faucet).await;
+    sync_client_to_validator_tip(&local_net, &mut recipient).await;
 
     (local_net, faucet, recipient)
 }
@@ -515,7 +552,7 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    faucet.sync_and_await().await.unwrap();
+    sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
     (
         local_net,
@@ -623,7 +660,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
             wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
-    faucet.sync_and_await().await.unwrap();
+    sync_client_to_validator_tip(&local_net, &mut faucet).await;
     quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
