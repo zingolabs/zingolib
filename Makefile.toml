@@ -7,7 +7,12 @@ default_to_workspace = false
 NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
 ZINGOLIB_NEXTEST_PROFILE = "ci"
 ZINGOLIB_NEXTEST_RETRIES = "2"
-ZINGOLIB_NEXTEST_FILTER = "not test(slow)"
+# Conditional so a shell override (documented in `makers help`, and used by
+# `makers test all` to clear the filter) actually wins: cargo-make [env]
+# entries otherwise clobber inherited environment variables.
+ZINGOLIB_NEXTEST_FILTER = { value = "not test(slow)", condition = { env_not_set = [
+    "ZINGOLIB_NEXTEST_FILTER",
+] } }
 IMAGE_NAME = "zingodevops/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
@@ -34,6 +39,9 @@ Test sets (front door):
   makers test live            ONLY libtonode-tests and zingo-cli
   makers test libtonode       exactly the libtonode-tests package
   makers test zingo-cli       exactly the zingo-cli package
+  makers test all             every test in the repo: the whole workspace,
+                              INCLUDING the slow:: tests the default filter
+                              excludes (ignored tests still need run-ignored)
 
 Every set runs inside the reproducible CI container and forwards extra
 nextest args:
@@ -284,6 +292,7 @@ container_nextest_run "$@"
 #   makers test live           ONLY the live packages
 #   makers test libtonode      exactly the libtonode-tests package
 #   makers test zingo-cli      exactly the zingo-cli package
+#   makers test all            the whole workspace, slow:: tests included
 #
 # The live-package list is defined once (live_packages, below); `packages`
 # derives its exclusions from it and `live` derives its selections from it,
@@ -297,7 +306,7 @@ container_nextest_run "$@"
 # clear = true fully replaces cargo-make's built-in `test` task (which runs
 # `cargo test`); without it our `script` would merge with the builtin `command`.
 clear = true
-description = "Run a test set: `makers test [packages|live|libtonode|zingo-cli]` (default: packages). Extra args are forwarded to nextest."
+description = "Run a test set: `makers test [packages|live|libtonode|zingo-cli|all]` (default: packages). Extra args are forwarded to nextest."
 script_runner = "bash"
 script = '''
 set -uo pipefail
@@ -307,11 +316,12 @@ set -uo pipefail
 live_packages=(libtonode-tests zingo-cli)
 
 usage() {
-  echo "usage: makers test [packages|live|libtonode|zingo-cli] [nextest args]" >&2
+  echo "usage: makers test [packages|live|libtonode|zingo-cli|all] [nextest args]" >&2
   echo "  packages (default)  every workspace package EXCEPT: ${live_packages[*]}" >&2
   echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
   echo "  libtonode           exactly the libtonode-tests package" >&2
   echo "  zingo-cli           exactly the zingo-cli package" >&2
+  echo "  all                 the whole workspace, slow:: tests included" >&2
 }
 
 # A non-flag first arg selects the set and must be a known name; a flag first
@@ -321,7 +331,7 @@ usage() {
 test_set="packages"
 if [[ "$#" -gt 0 && "${1#-}" == "$1" ]]; then
   case "$1" in
-    packages|live|libtonode|zingo-cli) test_set="$1"; shift ;;
+    packages|live|libtonode|zingo-cli|all) test_set="$1"; shift ;;
     *) echo "makers test: unknown set '$1'" >&2; usage; exit 2 ;;
   esac
 fi
@@ -337,6 +347,13 @@ case "${test_set}" in
     pkg_args+=(--package libtonode-tests) ;;
   zingo-cli)
     pkg_args+=(--package zingo-cli) ;;
+  all)
+    # Genuinely everything the repo defines: clear the default
+    # `not test(slow)` filter (the [env] entry is conditional, so this
+    # empty value survives into the container-test child process).
+    # #[ignore]d tests are still skipped by design: `makers run-ignored`.
+    export ZINGOLIB_NEXTEST_FILTER=""
+    pkg_args+=(--workspace) ;;
 esac
 
 exec makers container-test "${pkg_args[@]}" "$@"
