@@ -159,9 +159,10 @@ pub const fn mined_block_rewards_total(count: u64) -> u64 {
 }
 
 /// Chain height after a shielded-pool faucet scenario finishes setting up:
-/// 1 launch block + 2 setup blocks + 1 block confirming the offload send.
-/// (No maturity blocks: shielded coinbase has no 100-block maturity rule.)
-pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 4;
+/// 1 launch block + 2 setup blocks + 1 tip-separation block + 1 block
+/// confirming the offload send. (No maturity blocks: shielded coinbase has
+/// no 100-block maturity rule.)
+pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 5;
 
 /// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
 /// coinbase pays the orchard receiver from the NU5 activation block (height
@@ -244,8 +245,14 @@ pub async fn sync_client_to_validator_tip<V, I>(
 /// a block to confirm the send. Coinbase lands directly in the mined-to pool
 /// (zebrad mines to Orchard natively), and shielded coinbase has no
 /// 100-block maturity rule — the wallet spends blocks-old orchard coinbase
-/// fine (server-verified by `value_transfers`), so no maturity blocks are
-/// generated.
+/// fine (server-verified by `value_transfers`).
+///
+/// One block is mined between the sync and the spend: zebra's mempool
+/// rejects a transaction spending a note from the tip block itself
+/// ("rejected from the mempool until the next chain tip block ... could not
+/// validate orchard proof", observed when the offload spent the tip's note).
+/// Syncing FIRST and mining after means the wallet can only select notes
+/// (and an anchor) at least one block behind zebra's tip.
 async fn zebrad_shielded_funds<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -258,6 +265,7 @@ async fn zebrad_shielded_funds<V, I>(
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
         sync_client_to_validator_tip(local_net, faucet).await;
+        local_net.validator().generate_blocks(1).await.unwrap();
         quick_send(
             faucet,
             vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
