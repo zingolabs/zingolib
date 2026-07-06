@@ -28,8 +28,8 @@ portpicker = "0.1"
 proptest = "1.6.0"
 tempfile = "3"
 test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "84d9c979e4aa6de0fe6243cbce333c8e5b5603ad" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "84d9c979e4aa6de0fe6243cbce333c8e5b5603ad" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "bump_to_NU6.3" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "bump_to_NU6.3" }
 
 ### Documentation
 indoc = "2"
