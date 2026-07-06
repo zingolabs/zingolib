@@ -227,8 +227,7 @@ fn trial_decrypt<P>(
 where
     P: consensus::Parameters + Send + 'static,
 {
-    let mut runners =
-        BatchRunners::<(), (), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
+    let mut runners = BatchRunners::<(), (), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
     for block in compact_blocks {
         runners.add_block(consensus_parameters, block.clone())?;
     }

@@ -1181,9 +1181,8 @@ mod tests {
     #[test]
     fn ironwood_at_nu6_3_activation_uses_ironwood_shard_ranges() {
         let mut sync_state = sync_state_with_ranges(1, 200);
-        sync_state.ironwood_shard_ranges = vec![
-            BlockHeight::from_u32(100)..BlockHeight::from_u32(150),
-        ];
+        sync_state.ironwood_shard_ranges =
+            vec![BlockHeight::from_u32(100)..BlockHeight::from_u32(150)];
         let range = determine_block_range(
             &BASE_NETWORK,
             &sync_state,
