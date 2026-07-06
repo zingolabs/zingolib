@@ -7,7 +7,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
-use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
+use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
@@ -718,7 +718,10 @@ mod fast {
         environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
+        // Orchard coinbase accrues from the block after NU5 activation
+        // (height 3 under the fixture heights), so a height-4 tip yields two
+        // post-funding-stream rewards.
+        check_client_balances!(faucet, o: (2 * scenarios::POST_STREAM_BLOCK_REWARD)  s: 0 t: 0u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -950,7 +953,10 @@ mod fast {
         environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
+        // Orchard coinbase accrues from the block after NU5 activation
+        // (height 3 under the fixture heights), so a height-4 tip yields two
+        // post-funding-stream rewards.
+        check_client_balances!(faucet, o: (2 * scenarios::POST_STREAM_BLOCK_REWARD)  s: 0 t: 0u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -1322,7 +1328,6 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         );
     }
 
-    #[ignore = "zebrad does not currently support mining to shielded pools"]
     #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) = scenarios::faucet(
@@ -1331,14 +1336,17 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             None,
         )
         .await;
-        check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
+        check_client_balances!(faucet, o: (scenarios::funded_faucet_orchard_balance()) s: 0 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 2_500_000_000u64 s: 0 t: 0);
+        check_client_balances!(
+            faucet,
+            o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: 0 t: 0
+        );
     }
 
-    #[ignore = "zebrad does not currently support mining to shielded pools"]
+    #[ignore = "zcash_local_net's zebrad cannot mine to Sapling (Orchard and Transparent only)"]
     #[tokio::test]
     async fn mine_to_sapling() {
         let (local_net, mut faucet) = scenarios::faucet(
@@ -1371,7 +1379,10 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
             .unwrap();
 
-        assert_eq!(unconfirmed_balance, Zatoshis::const_from_u64(1_875_000_000));
+        assert_eq!(
+            unconfirmed_balance,
+            Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(3))
+        );
 
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1384,7 +1395,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .await
                 .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
                 .unwrap(),
-            Zatoshis::const_from_u64(2_500_000_000u64)
+            Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4))
         );
     }
 
@@ -1456,7 +1467,8 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .confirmed_orchard_balance
                 .unwrap()
                 .into_u64(),
-            2_499_970_000
+            // 4 mature coinbases shielded in one step, minus the shield fee.
+            scenarios::mined_block_rewards_total(4) - 30_000
         );
     }
 
@@ -1489,7 +1501,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .first()
                 .unwrap()
                 .value(),
-            Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
+            Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4) - expected_fee)
         );
     }
 }
@@ -2495,11 +2507,12 @@ TransactionSummary {
             .sync_state
             .fully_scanned_height()
             .unwrap();
-        assert_eq!(wallet_fully_scanned_height, BASE_HEIGHT.into());
-        let three_blocks_reward = block_rewards::CANOPY
-            .checked_mul(u64::from(BASE_HEIGHT))
-            .unwrap();
-        check_client_balances!(faucet, o: three_blocks_reward s: 0 t: 0);
+        assert_eq!(
+            wallet_fully_scanned_height,
+            scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
+        );
+        let setup_reward = scenarios::funded_faucet_orchard_balance();
+        check_client_balances!(faucet, o: setup_reward s: 0 t: 0);
 
         // post transfer to recipient, and verify
         from_inputs::quick_send(
@@ -2512,13 +2525,17 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        let orch_change =
-            block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
+        // The mined block credits the faucet (the miner) with a fresh
+        // post-stream coinbase reward plus the send's fee; the send itself
+        // debits the amount and fee. Aggregate balance is deterministic even
+        // though note selection is not.
+        let orch_change = scenarios::POST_STREAM_BLOCK_REWARD
+            - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         faucet.sync_and_await().await.unwrap();
-        let faucet_orch = three_blocks_reward + orch_change + u64::from(MINIMUM_FEE);
+        let faucet_orch = setup_reward + orch_change + u64::from(MINIMUM_FEE);
 
         tracing::info!(
             "{}",
@@ -2553,7 +2570,7 @@ TransactionSummary {
 
         let faucet_final_orch = faucet_orch
             + recipient_to_faucet_amount
-            + block_rewards::CANOPY
+            + scenarios::POST_STREAM_BLOCK_REWARD
             + u64::from(MINIMUM_FEE);
         let recipient_final_orch =
             faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
@@ -2565,13 +2582,13 @@ TransactionSummary {
     }
 
     #[tokio::test]
-    async fn send_mined_sapling_to_orchard() {
+    async fn send_mined_orchard_to_orchard() {
         // This test shows a confirmation changing the state of balance by
         // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
         // consistent with all the notes in the relevant block changing state.
         // NOTE that the balance doesn't give insight into the distribution across notes.
         let (local_net, mut faucet) = scenarios::faucet(
-            PoolType::SAPLING,
+            PoolType::ORCHARD,
             scenarios::default_test_activation_heights(),
             None,
         )
@@ -2592,18 +2609,20 @@ TransactionSummary {
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
-        // We send change to orchard now, so we should have the full value of the note
-        // we spent, minus the transaction fee
         assert_eq!(
             balance.unconfirmed_orchard_balance,
             Some(0.try_into().unwrap())
         );
+        // The send is to self, so only the fee leaves the wallet — and the
+        // faucet mines the confirming block, collecting a fresh coinbase
+        // reward plus that same fee back.
         assert_eq!(
             balance.confirmed_orchard_balance.unwrap().into_u64(),
-            625_000_000 - 4 * u64::from(MARGINAL_FEE)
+            scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD
         );
     }
 
+    #[ignore = "zcash_local_net's zebrad cannot mine to Sapling, and its config writer requires Canopy at height 1"]
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
         let activation_heights = ActivationHeights::builder()
@@ -4436,7 +4455,7 @@ async fn mine_to_transparent_coinbase_maturity() {
         .into_u64();
 
     // Should have 3 blocks worth of rewards
-    assert_eq!(mature_balance, 1_875_000_000);
+    assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
 // FIXME: does not assert dust was included in the proposal

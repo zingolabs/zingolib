@@ -29,7 +29,7 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 use zingo_common_components::protocol::ActivationHeights;
-use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, block_rewards, seeds};
 use zingolib::config::WalletConfig;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::get_base_address_macro;
@@ -140,6 +140,40 @@ pub fn default_test_activation_heights() -> ActivationHeights {
         .build()
 }
 
+/// The deferred (lockbox) funding stream in the harness's regtest fixture
+/// skims 1/100 of the block subsidy from its start height (2) onward.
+pub const DEFERRED_STREAM_SKIM: u64 = block_rewards::CANOPY / 100;
+
+/// Miner reward for blocks at or above the funding-stream start height (2).
+pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREAM_SKIM;
+
+/// Amount [`zebrad_shielded_funds`] offloads from the faucet to keep its
+/// spendable balance predictable for test assertions.
+pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
+
+/// Total miner rewards for blocks 1..=`count` under
+/// [`default_test_activation_heights`]: block 1 pays the full subsidy;
+/// every later block pays the post-funding-stream reward.
+pub const fn mined_block_rewards_total(count: u64) -> u64 {
+    block_rewards::CANOPY + POST_STREAM_BLOCK_REWARD * (count - 1)
+}
+
+/// Chain height after a shielded-pool faucet scenario finishes setting up:
+/// 1 launch block + 2 setup blocks + 100 maturity blocks + 1 block
+/// confirming the offload send.
+pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 104;
+
+/// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
+/// finishes setting up. Orchard coinbase accrues from the block after NU5
+/// activation (height 3 under [`default_test_activation_heights`]), giving
+/// one post-funding-stream reward per block through
+/// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload send and its fee.
+pub const fn funded_faucet_orchard_balance() -> u64 {
+    (FUNDED_FAUCET_SETUP_HEIGHT as u64 - 2) * POST_STREAM_BLOCK_REWARD
+        - FUND_OFFLOAD_AMOUNT
+        - 10_000
+}
+
 /// To launch a `LocalNet` with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
@@ -186,9 +220,12 @@ async fn zebrad_shielded_funds<V, I>(
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
         faucet.sync_and_await().await.unwrap();
-        quick_send(faucet, vec![(FUND_OFFLOAD_ORCHARD_ONLY, 624_960_000, None)])
-            .await
-            .unwrap();
+        quick_send(
+            faucet,
+            vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
+        )
+        .await
+        .unwrap();
         local_net.validator().generate_blocks(1).await.unwrap();
     }
 }
@@ -552,7 +589,9 @@ pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultInde
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
-        PoolType::SAPLING,
+        // No client holds the mining key here, so the miner pool is
+        // arbitrary — and zebrad cannot mine to Sapling.
+        PoolType::TRANSPARENT,
         default_test_activation_heights(),
         None,
     )
