@@ -6,12 +6,26 @@
 //! boundary `i·M`. Because that anchor is identical for every wallet sending
 //! into the same bucket, it carries no per-wallet timing information.
 
+use rand::Rng;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::error::WalletError;
 
 use super::params::MigrationParams;
 use super::parts::{PartId, PartRecord, PartState};
+
+/// Picks a random block within `[boundary, boundary + M)` as the broadcast
+/// target for one part, spreading sends across the window instead of
+/// clustering them at the boundary.
+pub fn random_target_in_bucket(
+    bucket: u64,
+    rng: &mut impl Rng,
+    params: &MigrationParams,
+) -> BlockHeight {
+    let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
+    let offset = rng.gen_range(0..params.bucket_modulus);
+    BlockHeight::from_u32(boundary + offset)
+}
 
 /// Zcash target block spacing in seconds, used to estimate wake times.
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
@@ -35,17 +49,20 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
 
-/// Assigns every [`PartState::Bound`] part to an anchor-height bucket.
+/// Assigns every [`PartState::Bound`] part to an anchor-height bucket and
+/// picks a random broadcast target within that bucket's window.
 ///
 /// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
 /// share each cohort. Cohorts fill consecutive future buckets starting after
-/// `now_height`'s bucket, largest denominations first. Deterministic: the
-/// same parts, height and params always produce the same schedule.
+/// `now_height`'s bucket, largest denominations first. Bucket assignments are
+/// deterministic; target heights within each window are randomized so parts
+/// do not cluster at the boundary.
 #[allow(clippy::result_large_err)]
 pub fn plan_schedule(
     parts: &mut [PartRecord],
     now_height: BlockHeight,
     params: &MigrationParams,
+    rng: &mut impl Rng,
 ) -> Result<(), WalletError> {
     let unassigned: Vec<usize> = parts
         .iter()
@@ -73,7 +90,9 @@ pub fn plan_schedule(
 
     let first_bucket = bucket_index(now_height, params.bucket_modulus) + 1;
     for (rank, index) in ranked.into_iter().enumerate() {
-        parts[index].assign(first_bucket + rank as u64 / k)?;
+        let bucket = first_bucket + rank as u64 / k;
+        parts[index].assign(bucket)?;
+        parts[index].target_height = Some(random_target_in_bucket(bucket, rng, params));
     }
     Ok(())
 }
@@ -213,12 +232,17 @@ mod tests {
         let denominations: Vec<u64> = (1..=13).map(|i| i * 1_000_000).collect();
         let mut parts = parts_with_denominations(&denominations);
         let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, &params).unwrap();
+        plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
 
         let first_bucket = bucket_index(now, params.bucket_modulus) + 1;
         for part in &parts {
             assert_eq!(part.state, PartState::Assigned);
-            assert!(part.bucket_index.unwrap() >= first_bucket, "future bucket");
+            let bucket = part.bucket_index.unwrap();
+            assert!(bucket >= first_bucket, "future bucket");
+            // Target is within the part's bucket window.
+            let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
+            let target = u32::from(part.target_height.unwrap());
+            assert!(target >= boundary && target < boundary + params.bucket_modulus);
         }
         // Largest denominations land in the earliest buckets.
         for a in &parts {
@@ -234,8 +258,9 @@ mod tests {
     }
 
     proptest! {
-        // Determinism, totality, cohort bound and session count for any part
-        // set and parameterization.
+        // Totality, target-in-window, cohort bound and session count for any
+        // part set and parameterization. Bucket assignments are deterministic;
+        // target_height is intentionally random so we only pin bucket structure.
         #[test]
         fn schedule_properties(
             denominations in proptest::collection::vec(1u64..=10_000_000_000, 1..80),
@@ -249,10 +274,7 @@ mod tests {
             let now = BlockHeight::from_u32(now);
 
             let mut parts = parts_with_denominations(&denominations);
-            let mut parts_again = parts.clone();
-            plan_schedule(&mut parts, now, &params).unwrap();
-            plan_schedule(&mut parts_again, now, &params).unwrap();
-            prop_assert_eq!(&parts, &parts_again, "deterministic");
+            plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
 
             let k = (denominations.len() as u64)
                 .div_ceil(u64::from(target_sessions))
@@ -264,6 +286,13 @@ mod tests {
                 let bucket = part.bucket_index.unwrap();
                 prop_assert!(bucket > current_bucket, "future buckets only");
                 *cohort_sizes.entry(bucket).or_default() += 1;
+                // Target is within the bucket's window.
+                let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
+                let target = u32::from(part.target_height.unwrap());
+                prop_assert!(
+                    target >= boundary && target < boundary + params.bucket_modulus,
+                    "target in window"
+                );
             }
             prop_assert!(cohort_sizes.values().all(|&size| size <= k), "k bound");
             prop_assert_eq!(
@@ -293,7 +322,7 @@ mod tests {
         let params = params();
         let mut parts = parts_with_denominations(&[100, 200, 300]);
         let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, &params).unwrap();
+        plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
         let before = parts.clone();
         catch_up_shift(&mut parts, now, &params).unwrap();
         assert_eq!(parts, before);
@@ -304,7 +333,7 @@ mod tests {
         let params = params();
         let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
         let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, &params).unwrap();
+        plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
         let buckets_before: Vec<u64> = parts.iter().map(|p| p.bucket_index.unwrap()).collect();
 
         // The chain has advanced two buckets past the first window.
@@ -327,7 +356,7 @@ mod tests {
         let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
         let now = BlockHeight::from_u32(10_000);
         let now_unix = 1_780_000_000;
-        plan_schedule(&mut parts, now, &params).unwrap();
+        plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
 
         let wakes = next_wakes(&parts, now, now_unix, u64::MAX, &params);
         let listed: usize = wakes.iter().map(|w| w.part_ids.len()).sum();

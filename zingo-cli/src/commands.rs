@@ -2014,8 +2014,13 @@ impl Command for MigrationCommand {
             `plan` computes the migration plan (note-splitting rounds, parts, fees,
             stranded dust) from the wallet's spendable Orchard notes and prints its plan
             hash. Nothing is signed or sent.
-            `start <plan_hash>` records consent to the plan with that hash and begins the
-            migration. Fails if the wallet's notes changed since planning.
+            `start <plan_hash> [--per-bucket N]` records consent to the plan with that
+            hash and begins the migration. --per-bucket N caps how many parts share each
+            broadcast window (lower = more sessions, better privacy; higher = fewer
+            sessions, faster). Fails if the wallet's notes changed since planning.
+            `auto` syncs the wallet, then broadcasts any parts whose random target block
+            within the current bucket window has been reached. Run this periodically
+            to drive the migration without manual steps.
             `status` reports progress: the Orchard-pool confirmed-spendable balance, the
             phase, part counts and values, and the coming broadcast windows.
             `reconcile` checks the persisted schedule against the chain and applies the
@@ -2028,7 +2033,8 @@ impl Command for MigrationCommand {
 
             Usage:
             migration plan
-            migration start <plan_hash>
+            migration start <plan_hash> [--per-bucket N]
+            migration auto
             migration status
             migration reconcile
             migration catchup [spacing_seconds]
@@ -2076,12 +2082,27 @@ impl Command for MigrationCommand {
                     Some(hash) => hash,
                     None => return "Error: the plan hash must be 64 hex characters.".to_string(),
                 };
+                // Parse optional --per-bucket N flag from remaining args.
+                let per_bucket = {
+                    let mut value = None;
+                    let mut iter = args[2..].iter();
+                    while let Some(arg) = iter.next() {
+                        if *arg == "--per-bucket" {
+                            match iter.next().and_then(|v| v.parse::<u32>().ok()) {
+                                Some(n) => { value = Some(n); }
+                                None => return "Error: --per-bucket expects a positive integer.".to_string(),
+                            }
+                        }
+                    }
+                    value
+                };
                 RT.block_on(async move {
                     match lightclient
                         .start_ironwood_migration(
                             zip32::AccountId::ZERO,
                             migration::SigningStrategy::LazyAtBoundary,
                             hash,
+                            per_bucket,
                         )
                         .await
                     {
@@ -2090,6 +2111,19 @@ impl Command for MigrationCommand {
                     }
                 })
             }
+            "auto" => RT.block_on(async move {
+                if let Err(e) = lightclient.sync_and_await().await {
+                    return format!("Error: sync failed: {e}");
+                }
+                match lightclient.auto_broadcast_if_due().await {
+                    Ok(txids) if txids.is_empty() => "No parts due yet.".to_string(),
+                    Ok(txids) => object! {
+                        "broadcast" => txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    }
+                    .pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
             "status" => RT.block_on(async move {
                 match lightclient.migration_status().await {
                     Ok(status) => object! {

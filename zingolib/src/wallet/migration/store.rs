@@ -19,7 +19,7 @@ use super::{ConsentBinding, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version.
-const INNER_VERSION: u8 = 0;
+const INNER_VERSION: u8 = 1;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -151,7 +151,7 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         }
     };
 
-    let parts = Vector::read(&mut reader, |r| read_part(r))?;
+    let parts = Vector::read(&mut reader, |r| read_part(r, inner_version))?;
 
     Ok(MigrationState {
         params,
@@ -175,6 +175,11 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     Optional::write(&mut writer, part.bucket_index, |w, bucket_index| {
         w.write_u64::<LittleEndian>(bucket_index)
     })?;
+    Optional::write(
+        &mut writer,
+        part.target_height,
+        |w, target_height| w.write_u32::<LittleEndian>(target_height.into()),
+    )?;
     match part.state {
         PartState::Bound => writer.write_u8(0)?,
         PartState::Assigned => writer.write_u8(1)?,
@@ -206,7 +211,7 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     writer.write_u8(part.attempts)
 }
 
-fn read_part<R: Read>(mut reader: R) -> io::Result<PartRecord> {
+fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord> {
     let id = PartId(reader.read_u32::<LittleEndian>()?);
     let denomination = reader.read_u64::<LittleEndian>()?;
     let note = Optional::read(&mut reader, |mut r| {
@@ -223,6 +228,13 @@ fn read_part<R: Read>(mut reader: R) -> io::Result<PartRecord> {
         })
     })?;
     let bucket_index = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+    let target_height = if inner_version >= 1 {
+        Optional::read(&mut reader, |r| {
+            Ok(BlockHeight::from_u32(r.read_u32::<LittleEndian>()?))
+        })?
+    } else {
+        None
+    };
     let state = match reader.read_u8()? {
         0 => PartState::Bound,
         1 => PartState::Assigned,
@@ -269,6 +281,7 @@ fn read_part<R: Read>(mut reader: R) -> io::Result<PartRecord> {
         denomination,
         note,
         bucket_index,
+        target_height,
         state,
         txid,
         expiry_height,
@@ -356,6 +369,7 @@ mod tests {
                     any::<[u8; 32]>(),
                 )),
                 proptest::option::of(any::<u64>()),
+                proptest::option::of(any::<u32>()),
                 arbitrary_state(),
             ),
             (
@@ -372,7 +386,7 @@ mod tests {
         )
             .prop_map(
                 |(
-                    (id, denomination, note, bucket_index, state),
+                    (id, denomination, note, bucket_index, target_height, state),
                     (txid, expiry_height, signed_blob, anchor_witness, attempts),
                 )| PartRecord {
                     id: PartId(id),
@@ -383,6 +397,7 @@ mod tests {
                         commitment,
                     }),
                     bucket_index,
+                    target_height: target_height.map(BlockHeight::from_u32),
                     state,
                     txid,
                     expiry_height: expiry_height.map(BlockHeight::from_u32),

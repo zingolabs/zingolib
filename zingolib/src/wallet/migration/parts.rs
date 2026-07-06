@@ -120,6 +120,11 @@ pub struct PartRecord {
     /// The anchor-height bucket this part broadcasts in
     /// (boundary = `bucket_index * M`).
     pub bucket_index: Option<u64>,
+    /// A randomly chosen block within the bucket window at which the part
+    /// fires. Randomizing the target within `[boundary, boundary + M)`
+    /// prevents the server from seeing all parts cluster at the boundary.
+    /// Cleared whenever the bucket changes so a fresh target is chosen.
+    pub target_height: Option<BlockHeight>,
     /// Lifecycle state.
     pub state: PartState,
     /// Txid of the built transaction, set when signed.
@@ -147,6 +152,7 @@ impl PartRecord {
             denomination,
             note: Some(note),
             bucket_index: None,
+            target_height: None,
             state: PartState::Bound,
             txid: None,
             expiry_height: None,
@@ -260,6 +266,7 @@ impl PartRecord {
             });
         }
         self.bucket_index = Some(bucket_index);
+        self.target_height = None;
         self.anchor_witness = None;
         Ok(())
     }

@@ -111,11 +111,16 @@ impl LightClient {
     /// are bound to their notes and scheduled immediately. Otherwise the
     /// migration starts in the [`MigrationPhase::Planned`] phase and note
     /// splitting proceeds from there.
+    /// `per_bucket` overrides `k_max` in the migration params, capping how
+    /// many parts share each broadcast window. Lower values spread parts
+    /// across more sessions (better privacy, slower completion); higher values
+    /// concentrate them (faster, more correlated). `None` keeps the default.
     pub async fn start_ironwood_migration(
         &mut self,
         account: zip32::AccountId,
         strategy: SigningStrategy,
         consented_plan_hash: [u8; 32],
+        per_bucket: Option<u32>,
     ) -> Result<(), LightClientError> {
         if strategy == SigningStrategy::PreSigned {
             return Err(MigrationError::PreSignedUnavailable.into());
@@ -132,7 +137,10 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        let params = MigrationParams::provisional(wallet.chain_type());
+        let mut params = MigrationParams::provisional(wallet.chain_type());
+        if let Some(k) = per_bucket {
+            params.k_max = k.max(1);
+        }
         let mut state = MigrationState {
             consent: ConsentBinding {
                 params_hash: params.params_hash(),
@@ -151,7 +159,12 @@ impl LightClient {
                 .sync_state
                 .last_known_chain_height()
                 .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-            plan_schedule(&mut state.parts, now_height, &state.params)?;
+            plan_schedule(
+                &mut state.parts,
+                now_height,
+                &state.params,
+                &mut rand::rngs::OsRng,
+            )?;
             state.phase = MigrationPhase::PartsScheduled;
         }
         wallet.migration = Some(state);
@@ -223,6 +236,7 @@ impl LightClient {
                     let part = &state.parts[index];
                     matches!(part.state, PartState::Assigned | PartState::Signed)
                         && part.bucket_index == Some(current_bucket)
+                        && part.target_height.is_none_or(|t| now_height >= t)
                         && only.is_none_or(|part_id| part.id == part_id)
                 };
                 if !due {
@@ -356,7 +370,12 @@ impl LightClient {
                             .sync_state
                             .last_known_chain_height()
                             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                        plan_schedule(&mut state.parts, now_height, &state.params)?;
+                        plan_schedule(
+                            &mut state.parts,
+                            now_height,
+                            &state.params,
+                            &mut rand::rngs::OsRng,
+                        )?;
                         state.phase = MigrationPhase::PartsScheduled;
                     }
                     RecommendedAction::MarkComplete { residual } => {
@@ -444,6 +463,25 @@ impl LightClient {
             }
         }
         Ok(sent)
+    }
+
+    /// Broadcasts any parts whose bucket window and random target height are
+    /// both reached, without synchronizing. Call this after each sync to drive
+    /// the scheduled migration automatically.
+    ///
+    /// No-op when no migration is active or no parts are due.
+    pub async fn auto_broadcast_if_due(
+        &mut self,
+    ) -> Result<Vec<zcash_primitives::transaction::TxId>, LightClientError> {
+        {
+            let wallet = self.wallet().read().await;
+            if wallet.migration.is_none() {
+                return Ok(Vec::new());
+            }
+        }
+        self.wallet().write().await.refresh_part_witnesses()?;
+        let client = self.migration_broadcast_client();
+        self.broadcast_due_parts_with(&client).await
     }
 
     /// The migration's progress, everything a progress UI renders. Includes

@@ -498,8 +498,13 @@ impl crate::wallet::LightWallet {
                 .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
         }
         for &value in output_values {
+            // Post-NU6.3, cross-address Orchard transfers are banned; only
+            // wallet-controlled change is allowed. Note-splitting outputs are
+            // always wallet-internal self-sends, so add_orchard_change_output
+            // is correct in both eras.
             builder
-                .add_orchard_output::<std::convert::Infallible>(
+                .add_orchard_change_output::<std::convert::Infallible>(
+                    orchard_fvk.clone(),
                     Some(internal_ovk.clone()),
                     recipient,
                     Zatoshis::from_u64(value)?,
