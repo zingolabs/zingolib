@@ -532,6 +532,8 @@ async fn diagnose_subtree_root_stream() {
 /// helpers (`increase_height_and_wait_for_client`,
 /// `sync_client_to_validator_tip`, `send_and_bump`) instead of raw
 /// `generate_blocks` + `sync_and_await`.
+#[ignore = "diagnostic for the known indexer tip-lag race: red by design until zcash_local_net \
+            waits for indexer convergence after generate_blocks; run on demand to re-measure the lag"]
 #[tokio::test]
 async fn indexer_tip_lags_validator_after_block_generation() {
     let (local_net, client) = scenarios::unfunded_client_default().await;
