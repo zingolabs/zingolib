@@ -175,11 +175,9 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     Optional::write(&mut writer, part.bucket_index, |w, bucket_index| {
         w.write_u64::<LittleEndian>(bucket_index)
     })?;
-    Optional::write(
-        &mut writer,
-        part.target_height,
-        |w, target_height| w.write_u32::<LittleEndian>(target_height.into()),
-    )?;
+    Optional::write(&mut writer, part.target_height, |w, target_height| {
+        w.write_u32::<LittleEndian>(target_height.into())
+    })?;
     match part.state {
         PartState::Bound => writer.write_u8(0)?,
         PartState::Assigned => writer.write_u8(1)?,

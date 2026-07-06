@@ -1501,3 +1501,49 @@ impl Default for ShardTrees {
         Self::new()
     }
 }
+
+use shardtree::store::ShardStore;
+
+pub(crate) trait SyncDomain {
+    const SHIELDED_PROTOCOL: ShieldedPool;
+
+    type Note: NoteInterface;
+    type ShardStore: ShardStore<CheckpointId = BlockHeight>;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note>;
+}
+
+impl SyncDomain for Sapling {
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
+
+    type Note = SaplingNote;
+    type ShardStore = SaplingShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.sapling_notes_mut()
+    }
+}
+
+impl SyncDomain for Orchard {
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
+
+    type Note = OrchardNote;
+    type ShardStore = OrchardShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.orchard_notes_mut()
+    }
+}
+
+impl SyncDomain for Ironwood {
+    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Ironwood;
+
+    type Note = IronwoodNote;
+    // Ironwood reuses the Orchard note commitment tree hash, so the same
+    // store type serves its (separate) tree.
+    type ShardStore = OrchardShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.ironwood_notes_mut()
+    }
+}

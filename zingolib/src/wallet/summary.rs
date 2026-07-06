@@ -52,6 +52,26 @@ impl LightWallet {
                     .calculate_transaction_fee(transaction)
                     .ok()
                     .map(zcash_protocol::value::Zatoshis::into_u64);
+                let ironwood_notes = transaction
+                    .ironwood_notes()
+                    .iter()
+                    .map(|output| {
+                        let spend_status = self.output_spend_status(output);
+
+                        let memo = if let Memo::Text(memo_text) = output.memo() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        };
+
+                        BasicNoteSummary::from_parts(
+                            output.value(),
+                            spend_status,
+                            output.output_id().output_index(),
+                            memo,
+                        )
+                    })
+                    .collect::<Vec<_>>();
                 let orchard_notes = transaction
                     .orchard_notes()
                     .iter()
@@ -106,27 +126,30 @@ impl LightWallet {
                     })
                     .collect::<Vec<_>>();
 
-                let ironwood_notes = transaction
-                    .ironwood_notes()
+                let outgoing_ironwood_notes = transaction
+                    .outgoing_ironwood_notes()
                     .iter()
-                    .map(|output| {
-                        let spend_status = self.output_spend_status(output);
-
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
+                    .map(|note| {
+                        let memo = if let Memo::Text(memo_text) = note.memo() {
                             Some(memo_text.to_string())
                         } else {
                             None
                         };
 
-                        BasicNoteSummary::from_parts(
-                            output.value(),
-                            spend_status,
-                            output.output_id().output_index(),
+                        Ok(OutgoingNoteSummary {
                             memo,
-                        )
+                            value: note.value(),
+                            recipient: note
+                                .encoded_recipient(&self.chain_type)
+                                .map_err(zcash_address::ParseError::Unified)?,
+                            recipient_unified_address: note
+                                .encoded_recipient_full_unified_address(&self.chain_type),
+                            output_index: note.output_id().output_index(),
+                            account_id: note.key_id().account_id,
+                            scope: Scope::from(note.key_id().scope),
+                        })
                     })
-                    .collect::<Vec<_>>();
-
+                    .collect::<Result<Vec<_>, SummaryError>>()?;
                 let outgoing_orchard_notes = transaction
                     .outgoing_orchard_notes()
                     .iter()
@@ -175,30 +198,6 @@ impl LightWallet {
                         }
                     })
                     .collect::<Vec<_>>();
-                let outgoing_ironwood_notes = transaction
-                    .outgoing_ironwood_notes()
-                    .iter()
-                    .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        Ok(OutgoingNoteSummary {
-                            memo,
-                            value: note.value(),
-                            recipient: note
-                                .encoded_recipient(&self.chain_type)
-                                .map_err(zcash_address::ParseError::Unified)?,
-                            recipient_unified_address: note
-                                .encoded_recipient_full_unified_address(&self.chain_type),
-                            output_index: note.output_id().output_index(),
-                            account_id: note.key_id().account_id,
-                            scope: Scope::from(note.key_id().scope),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, SummaryError>>()?;
 
                 let outgoing_transparent_coins = if kind == TransactionKind::Received {
                     Vec::new()
@@ -262,14 +261,14 @@ impl LightWallet {
                     value,
                     fee,
                     zec_price: None,
+                    ironwood_notes,
                     orchard_notes,
                     sapling_notes,
                     transparent_coins,
-                    ironwood_notes,
+                    outgoing_ironwood_notes,
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
                     outgoing_transparent_coins,
-                    outgoing_ironwood_notes,
                 })
             })
             .collect::<Result<Vec<_>, SummaryError>>()?;

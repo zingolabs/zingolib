@@ -380,39 +380,23 @@ pub trait SyncShardTrees: SyncWallet {
                 .orchard
                 .truncate_to_checkpoint(&truncate_height)?
             {
-                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
+                tracing::error!("Orchard shard tree is broken! Beginning rescan.");
                 return Err(SyncError::TruncationError(
                     truncate_height,
                     PoolType::ORCHARD,
                 ));
             }
-            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
-            if !shard_trees
+            if !self
+                .get_shard_trees_mut()
+                .map_err(SyncError::WalletError)?
                 .ironwood
                 .truncate_to_checkpoint(&truncate_height)?
             {
-                // Wallets synced before ironwood checkpoints existed carry an
-                // ironwood tree without one at the truncation height. When
-                // the tree holds no data, resetting it to empty is lossless
-                // and avoids forcing a full rescan on the first reorg after
-                // upgrade.
-                if shard_trees
-                    .ironwood
-                    .store()
-                    .get_shard_roots()
-                    .expect("infallible")
-                    .is_empty()
-                {
-                    tracing::info!("Resetting empty ironwood shard tree on truncation.");
-                    shard_trees.ironwood =
-                        ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-                } else {
-                    tracing::error!("Ironwood shard tree is broken! Beginning rescan.");
-                    return Err(SyncError::TruncationError(
-                        truncate_height,
-                        PoolType::IRONWOOD,
-                    ));
-                }
+                tracing::error!("Ironwood shard tree is broken! Beginning rescan.");
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::IRONWOOD,
+                ));
             }
         }
 

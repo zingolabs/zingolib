@@ -648,7 +648,7 @@ pub mod proposal {
 }
 
 /// Mock for the migration broadcast client.
-pub mod broadcast {
+pub(crate) mod broadcast {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
 

@@ -897,29 +897,19 @@ impl InputSource for LightWallet {
             .chain_type
             .activation_height(NetworkUpgrade::Nu6_3)
             .is_some();
-        let selected_ironwood_notes: Vec<IronwoodNote> =
-            if ironwood_active {
-                let exclude_ironwood: Vec<OutputId> = exclude
-                    .iter()
-                    .filter(|&note_id| note_id.pool_type() == PoolType::IRONWOOD)
-                    .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
-                    .collect();
-                let include_potentially_spent = matches!(
-                    target_value,
-                    TargetValue::AllFunds(zcash_client_backend::data_api::MaxSpendMode::Everything)
-                );
-                self.spendable_notes::<IronwoodNote>(
-                    anchor_height,
-                    &exclude_ironwood,
-                    account,
-                    include_potentially_spent,
-                )?
+        let selected_ironwood_notes: Vec<IronwoodNote> = if ironwood_active {
+            let exclude_ironwood: Vec<OutputId> = exclude
+                .iter()
+                .filter(|&note_id| note_id.pool_type() == PoolType::IRONWOOD)
+                .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
+                .collect();
+            self.spendable_notes::<IronwoodNote>(anchor_height, &exclude_ironwood, account, false)?
                 .into_iter()
                 .cloned()
                 .collect()
-            } else {
-                Vec::new()
-            };
+        } else {
+            Vec::new()
+        };
 
         let sapling_recieved_notes = selected_sapling_notes
             .iter()

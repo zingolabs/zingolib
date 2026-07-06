@@ -132,14 +132,14 @@ pub struct TransactionSummary {
     pub value: u64,
     pub fee: Option<u64>,
     pub zec_price: Option<f32>,
+    pub ironwood_notes: Vec<BasicNoteSummary>,
     pub orchard_notes: Vec<BasicNoteSummary>,
     pub sapling_notes: Vec<BasicNoteSummary>,
     pub transparent_coins: Vec<BasicCoinSummary>,
-    pub ironwood_notes: Vec<BasicNoteSummary>,
+    pub outgoing_ironwood_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_transparent_coins: Vec<OutgoingCoinSummary>,
-    pub outgoing_ironwood_notes: Vec<OutgoingNoteSummary>,
 }
 
 impl TransactionSummary {
@@ -165,12 +165,12 @@ impl TransactionSummary {
         String,
         BasicNoteSummaries,
         BasicNoteSummaries,
-        BasicCoinSummaries,
         BasicNoteSummaries,
+        BasicCoinSummaries,
+        OutgoingNoteSummaries,
         OutgoingNoteSummaries,
         OutgoingNoteSummaries,
         OutgoingCoinSummaries,
-        OutgoingNoteSummaries,
     ) {
         let datetime = if let Some(dt) = DateTime::from_timestamp(i64::from(self.datetime), 0) {
             format!("{dt}")
@@ -187,28 +187,28 @@ impl TransactionSummary {
         } else {
             "not available".to_string()
         };
+        let ironwood_notes = BasicNoteSummaries(self.ironwood_notes.clone());
         let orchard_notes = BasicNoteSummaries(self.orchard_notes.clone());
         let sapling_notes = BasicNoteSummaries(self.sapling_notes.clone());
         let transparent_coins = BasicCoinSummaries(self.transparent_coins.clone());
-        let ironwood_notes = BasicNoteSummaries(self.ironwood_notes.clone());
+        let outgoing_ironwood_notes = OutgoingNoteSummaries(self.outgoing_ironwood_notes.clone());
         let outgoing_orchard_notes = OutgoingNoteSummaries(self.outgoing_orchard_notes.clone());
         let outgoing_sapling_notes = OutgoingNoteSummaries(self.outgoing_sapling_notes.clone());
         let outgoing_transparent_coins =
             OutgoingCoinSummaries(self.outgoing_transparent_coins.clone());
-        let outgoing_ironwood_notes = OutgoingNoteSummaries(self.outgoing_ironwood_notes.clone());
 
         (
             datetime,
             fee,
             zec_price,
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
-            ironwood_notes,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
-            outgoing_ironwood_notes,
         )
     }
 }
@@ -219,14 +219,14 @@ impl std::fmt::Display for TransactionSummary {
             datetime,
             fee,
             zec_price,
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
-            ironwood_notes,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
-            outgoing_ironwood_notes,
         ) = self.prepare_for_display();
         write!(
             f,
@@ -239,14 +239,14 @@ impl std::fmt::Display for TransactionSummary {
     value: {}
     fee: {}
     zec price: {}
+    ironwood notes: {}
     orchard notes: {}
     sapling notes: {}
     transparent coins: {}
-    ironwood notes: {}
+    outgoing ironwood notes: {}
     outgoing orchard notes: {}
     outgoing sapling notes: {}
     outgoing transparent coins: {}
-    outgoing ironwood notes: {}
 }}",
             self.txid,
             datetime,
@@ -256,14 +256,14 @@ impl std::fmt::Display for TransactionSummary {
             self.value,
             fee,
             zec_price,
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
-            ironwood_notes,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
-            outgoing_ironwood_notes,
         )
     }
 }
@@ -279,14 +279,14 @@ impl From<TransactionSummary> for JsonValue {
             "value" => transaction.value,
             "fee" => transaction.fee,
             "zec_price" => transaction.zec_price,
+            "ironwood_notes" => JsonValue::from(transaction.ironwood_notes),
             "orchard_notes" => JsonValue::from(transaction.orchard_notes),
             "sapling_notes" => JsonValue::from(transaction.sapling_notes),
             "transparent_coins" => JsonValue::from(transaction.transparent_coins),
-            "ironwood_notes" => JsonValue::from(transaction.ironwood_notes),
+            "outgoing_ironwood_notes" => JsonValue::from(transaction.outgoing_ironwood_notes),
             "outgoing_orchard_notes" => JsonValue::from(transaction.outgoing_orchard_notes),
             "outgoing_sapling_notes" => JsonValue::from(transaction.outgoing_sapling_notes),
             "outgoing_transparent_coins" => JsonValue::from(transaction.outgoing_transparent_coins),
-            "outgoing_ironwood_notes" => JsonValue::from(transaction.outgoing_ironwood_notes),
         }
     }
 }

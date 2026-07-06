@@ -307,12 +307,21 @@ fn set_chain_tip_scan_range(
         chain_height,
         Some(ShieldedPool::Orchard),
     );
+    let ironwood_incomplete_shard = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        chain_height,
+        Some(ShieldedPool::Ironwood),
+    );
 
-    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
-        sapling_incomplete_shard
-    } else {
-        orchard_incomplete_shard
-    };
+    let chain_tip = [
+        sapling_incomplete_shard,
+        orchard_incomplete_shard,
+        ironwood_incomplete_shard,
+    ]
+    .into_iter()
+    .min_by_key(|r| r.start)
+    .expect("non-empty");
 
     punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
@@ -1181,9 +1190,8 @@ mod tests {
     #[test]
     fn ironwood_at_nu6_3_activation_uses_ironwood_shard_ranges() {
         let mut sync_state = sync_state_with_ranges(1, 200);
-        sync_state.ironwood_shard_ranges = vec![
-            BlockHeight::from_u32(100)..BlockHeight::from_u32(150),
-        ];
+        sync_state.ironwood_shard_ranges =
+            vec![BlockHeight::from_u32(100)..BlockHeight::from_u32(150)];
         let range = determine_block_range(
             &BASE_NETWORK,
             &sync_state,

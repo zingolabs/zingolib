@@ -114,7 +114,6 @@ pub(crate) mod utils;
 pub mod wallet;
 pub(crate) mod witness;
 
-use shardtree::store::ShardStore;
 pub use sync::add_scan_targets;
 pub use sync::reset_spends;
 pub use sync::scan_pending_transaction;
@@ -125,54 +124,4 @@ pub use sync::sync_status;
 #[cfg(test)]
 mod mocks;
 
-use zcash_protocol::ShieldedPool;
-use zcash_protocol::consensus::BlockHeight;
-
-use crate::wallet::{
-    Ironwood, IronwoodNote, NoteInterface, Orchard, OrchardNote, OrchardShardStore, Sapling,
-    SaplingNote, SaplingShardStore, WalletTransaction,
-};
-
-pub(crate) trait SyncDomain {
-    const SHIELDED_PROTOCOL: ShieldedPool;
-
-    type Note: NoteInterface;
-    type ShardStore: ShardStore<CheckpointId = BlockHeight>;
-
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note>;
-}
-
-impl SyncDomain for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Sapling;
-
-    type Note = SaplingNote;
-    type ShardStore = SaplingShardStore;
-
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
-        wallet_transaction.sapling_notes_mut()
-    }
-}
-
-impl SyncDomain for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Orchard;
-
-    type Note = OrchardNote;
-    type ShardStore = OrchardShardStore;
-
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
-        wallet_transaction.orchard_notes_mut()
-    }
-}
-
-impl SyncDomain for Ironwood {
-    const SHIELDED_PROTOCOL: ShieldedPool = ShieldedPool::Ironwood;
-
-    type Note = IronwoodNote;
-    // Ironwood reuses the Orchard note commitment tree hash, so the same
-    // store type serves its (separate) tree.
-    type ShardStore = OrchardShardStore;
-
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
-        wallet_transaction.ironwood_notes_mut()
-    }
-}
+pub(crate) use wallet::SyncDomain;
