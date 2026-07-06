@@ -125,6 +125,9 @@ where
     I: Indexer + LogsToStdoutAndStderr,
     <I as Process>::Config: Send + IndexerConfig + Default,
 {
+    // The harness probes the Validator's RPC over reqwest/rustls before any
+    // LightClient (the usual installer) exists, so install the provider here.
+    zingolib::ensure_default_crypto_provider();
     let mut validator_config = <V as Process>::Config::default();
     validator_config.set_test_parameters(
         miner_pool(mine_to_pool),
