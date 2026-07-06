@@ -197,8 +197,13 @@ mod load_wallet {
             .fully_scanned_height()
             .unwrap();
 
-        // Verify that wallet is still back at 6.
-        assert_eq!(client_fully_scanned_height, 8.into());
+        // Verify the wallet is still at the height it last synced to
+        // (funded setup height + the 5 blocks synced above), not the
+        // Validator's tip 2 blocks ahead.
+        assert_eq!(
+            client_fully_scanned_height,
+            (scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 5).into()
+        );
 
         // Interrupt generating send
         from_inputs::quick_send(

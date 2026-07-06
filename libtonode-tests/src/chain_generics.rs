@@ -73,6 +73,10 @@ impl ConductChain for LibtonodeEnvironment {
         );
     }
 
+    async fn sync_client_to_tip(&self, client: &mut LightClient) {
+        zingolib_testutils::scenarios::sync_client_to_validator_tip(&self.local_net, client).await;
+    }
+
     fn lightserver_uri(&self) -> Option<http::Uri> {
         Some(port_to_localhost_uri(
             self.local_net.indexer().listen_port(),
