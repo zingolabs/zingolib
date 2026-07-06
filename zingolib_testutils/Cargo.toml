@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-test_zainod_zcashd = []
-test_lwd_zebrad = []
-test_lwd_zcashd = []
+# The lightwalletd indexer lives behind the infrastructure repo's opt-in
+# `legacy-stack` feature (scheduled for removal there). This combo survives
+# only until the Legacy stack is removed as a unit; the zcashd validator
+# combos are already gone.
+test_lwd_zebrad = ["zcash_local_net/legacy-stack"]
 
 [dependencies]
 # zingolib
@@ -16,6 +18,9 @@ zingo_common_components.workspace = true
 # zingo infrastructure
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
+
+# zcash
+zcash_protocol.workspace = true
 
 # utilties
 portpicker.workspace = true

@@ -42,7 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
 zingo-netutils = { path = "zingo-netutils", features = ["globally-public-transparent"] }
-zingo_common_components = "0.3.1"
+zingo_common_components = "0.4.0"
 
 ### Netutils
 http-body-util = "0.1.3"
