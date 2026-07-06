@@ -21,7 +21,6 @@ use zingolib::{
     config::{DEFAULT_INDEXER_URI, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
-    testutils::lightclient::from_inputs::{self},
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
@@ -274,56 +273,6 @@ async fn add_subtree_roots() {
             orchard_subtree_roots_server.clone(),
         );
     }
-}
-
-// temporary test for sync development
-#[ignore = "sync development only"]
-#[allow(unused_mut, unused_variables)]
-#[tokio::test]
-async fn sync_test() {
-    tracing_subscriber::fmt().init();
-
-    let (_local_net, mut faucet, mut recipient, _txid) =
-        scenarios::faucet_funded_recipient_default(5_000_000).await;
-
-    // let recipient_ua = get_base_address_macro!(&recipient, "unified");
-    let recipient_taddr = get_base_address_macro!(&recipient, "transparent");
-    from_inputs::quick_send(&mut faucet, vec![(&recipient_taddr, 100_000, None)])
-        .await
-        .unwrap();
-
-    recipient.sync_and_await().await.unwrap();
-
-    // increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
-    //     .await
-    //     .unwrap();
-
-    // tracing::info!("{}", recipient.transaction_summaries().await.unwrap());
-    tracing::info!("{}", recipient.value_transfers(false).await.unwrap());
-    tracing::info!(
-        "{}",
-        recipient
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap()
-    );
-    tracing::info!(
-        "{:?}",
-        recipient.propose_shield(zip32::AccountId::ZERO).await
-    );
-
-    // tracing::info!(
-    //     "{:?}",
-    //     recipient
-    //         .get_spendable_shielded_balance(
-    //             zcash_address::ZcashAddress::try_from_encoded(&recipient_ua).unwrap(),
-    //             false
-    //         )
-    //         .await
-    //         .unwrap()
-    // );
-    // let wallet = recipient.wallet.lock().await;
-    // dbg!(wallet.wallet_blocks.len());
 }
 
 #[ignore = "only for building chain cache"]

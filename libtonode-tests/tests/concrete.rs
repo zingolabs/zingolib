@@ -166,305 +166,16 @@ mod fast {
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
-    // FIXME: zingo2, large test to re-integrate
-    // #[tokio::test]
-    // async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
-    //     async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
-    //         json::object! {
-    //             "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-    //         }
-    //     }
-    //     let value = 100_000;
-    //     let regtest_network = RegtestNetwork::all_upgrades_active();
-    //     let (local_net, faucet, recipient, orig_transaction_id, _, _) =
-    //         scenarios::faucet_funded_recipient(
-    //             Some(value),
-    //             None,
-    //             None,
-    //             PoolType::Shielded(ShieldedPool::Sapling),
-    //             regtest_network,
-    //             true,
-    //         )
-    //         .await;
-    //     let orig_transaction_id = orig_transaction_id.unwrap();
-    //     assert_eq!(
-    //         do_maybe_recent_txid(&recipient).await["last_txid"],
-    //         orig_transaction_id
-    //     );
-    //     // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
-    //     for _ in 0..5 {
-    //         send_value_between_clients_and_sync(
-    //             &local_net,
-    //             &faucet,
-    //             &faucet,
-    //             5_000,
-    //             "unified",
-    //         )
-    //         .await
-    //         .unwrap();
-    //     }
-
-    //     let sent_to_self = 10;
-    //     // Send recipient->recipient, to make tree equality check at the end simpler
-    //     send_value_between_clients_and_sync(
-    //         &local_net,
-    //         &recipient,
-    //         &recipient,
-    //         sent_to_self,
-    //         "unified",
-    //     )
-    //     .await
-    //     .unwrap();
-    //     let fees = lightclient::get_fees_paid_by_client(&recipient).await;
-    //     assert_eq!(value - fees, 90_000);
-    //     let balance_minus_step_one_fees = value - fees;
-
-    //     // 3a. stash zcashd state
-    //     log::debug!(
-    //         "old zcashd chain info {}",
-    //         std::str::from_utf8(
-    //             &local_net
-    //                 .get_cli_handle()
-    //                 .arg("getblockchaininfo")
-    //                 .output()
-    //                 .unwrap()
-    //                 .stdout
-    //         )
-    //         .unwrap()
-    //     );
-
-    //     // Turn zcashd off and on again, to write down the blocks
-    //     drop(_cph); // turn off zcashd and lightwalletd
-    //     let _cph = local_net.launch(false).unwrap();
-    //     log::debug!(
-    //         "new zcashd chain info {}",
-    //         std::str::from_utf8(
-    //             &local_net
-    //                 .get_cli_handle()
-    //                 .arg("getblockchaininfo")
-    //                 .output()
-    //                 .unwrap()
-    //                 .stdout
-    //         )
-    //         .unwrap()
-    //     );
-
-    //     let zcd_datadir = &local_net.zcashd_data_dir;
-    //     let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
-    //     let original_zcashd_directory = zcashd_parent.join("original_zcashd");
-
-    //     log::debug!(
-    //         "The original zcashd directory is at: {}",
-    //         &original_zcashd_directory.to_string_lossy().to_string()
-    //     );
-
-    //     let source = &zcd_datadir.to_string_lossy().to_string();
-    //     let dest = &original_zcashd_directory.to_string_lossy().to_string();
-    //     std::process::Command::new("cp")
-    //         .arg("-rf")
-    //         .arg(source)
-    //         .arg(dest)
-    //         .output()
-    //         .expect("directory copy failed");
-
-    //     // 3. Send z-to-z transaction to external z address with a memo
-    //     let sent_value = 2000;
-    //     let outgoing_memo = "Outgoing Memo";
-
-    //     let sent_transaction_id = from_inputs::quick_send(
-    //         &recipient,
-    //         vec![(
-    //             &get_base_address_macro!(faucet, "sapling"),
-    //             sent_value,
-    //             Some(outgoing_memo),
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     let second_transaction_fee;
-    //     {
-    //         let tmds = recipient
-    //             .wallet
-    //             .transaction_context
-    //             .transaction_metadata_set
-    //             .read()
-    //             .await;
-    //         let record = tmds
-    //             .transaction_records_by_id
-    //             .get(
-    //                 &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
-    //                     .unwrap(),
-    //             )
-    //             .unwrap();
-    //         second_transaction_fee = tmds
-    //             .transaction_records_by_id
-    //             .calculate_transaction_fee(record)
-    //             .unwrap();
-    //         // Sync recipient
-    //     } // drop transaction_record references and tmds read lock
-    //     recipient.do_sync(false).await.unwrap();
-
-    //     // 4b write down state before clearing the mempool
-    //     let notes_before = recipient.do_list_notes(true).await;
-    //     let transactions_before = recipient.do_list_transactions().await;
-
-    //     // Sync recipient again. We assert this should be a no-op, as we just synced
-    //     recipient.do_sync(false).await.unwrap();
-    //     let post_sync_notes_before = recipient.do_list_notes(true).await;
-    //     let post_sync_transactions_before = recipient.do_list_transactions().await;
-    //     assert_eq!(post_sync_notes_before, notes_before);
-    //     assert_eq!(post_sync_transactions_before, transactions_before);
-
-    //     drop(_cph); // Turn off zcashd and lightwalletd
-
-    //     // 5. check that the sent transaction is correctly marked in the client
-    //     let transactions = recipient.do_list_transactions().await;
-    //     let mempool_only_tx = transactions
-    //         .members()
-    //         .find(|tx| tx["txid"] == sent_transaction_id)
-    //         .unwrap()
-    //         .clone();
-    //     dbg!(&mempool_only_tx["txid"]);
-    //     assert_eq!(
-    //         mempool_only_tx["outgoing_metadata"][0]["memo"],
-    //         "Outgoing Memo"
-    //     );
-    //     assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
-
-    //     // 6. note that the client correctly considers the note pending
-    //     assert_eq!(mempool_only_tx["pending"], true);
-
-    //     std::process::Command::new("rm")
-    //         .arg("-rf")
-    //         .arg(source)
-    //         .output()
-    //         .expect("recursive rm failed");
-    //     std::process::Command::new("cp")
-    //         .arg("--recursive")
-    //         .arg("--remove-destination")
-    //         .arg(dest)
-    //         .arg(source)
-    //         .output()
-    //         .expect("directory copy failed");
-    //     assert_eq!(
-    //         source,
-    //         &local_net
-    //             .zcashd_data_dir
-    //             .to_string_lossy()
-    //             .to_string()
-    //     );
-    //     let _cph = local_net.launch(false).unwrap();
-    //     let notes_after = recipient.do_list_notes(true).await;
-    //     let transactions_after = recipient.do_list_transactions().await;
-
-    //     assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
-    //     assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
-
-    //     // 6. Mine 10 blocks, the pending transaction should still be there.
-    //     increase_height_and_wait_for_client(&local_net, &recipient, 1)
-    //         .await
-    //         .unwrap();
-    //     assert_eq!(recipient.wallet.last_synced_height().await, 12);
-
-    //     let notes = recipient.do_list_notes(true).await;
-
-    //     let transactions = recipient.do_list_transactions().await;
-
-    //     // There are 2 unspent notes, the pending transaction, and the final receipt
-    //     //tracing::info!("{}", json::stringify_pretty(notes.clone(), 4));
-    //     //tracing::info!("{}", json::stringify_pretty(transactions.clone(), 4));
-    //     // Two unspent notes: one change, pending, one from faucet, confirmed
-    //     assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-    //     assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-    //     let note = notes["unspent_orchard_notes"][1].clone();
-    //     assert_eq!(note["created_in_txid"], sent_transaction_id);
-    //     assert_eq!(
-    //         note["value"].as_u64().unwrap(),
-    //         balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
-    //     );
-    //     assert!(note["pending"].as_bool().unwrap());
-    //     assert_eq!(transactions.len(), 3);
-
-    //     // 7. Mine 3 blocks, so the 2 block pending_window is passed
-    //     increase_height_and_wait_for_client(&local_net, &recipient, 3)
-    //         .await
-    //         .unwrap();
-    //     assert_eq!(recipient.wallet.last_synced_height().await, 15);
-
-    //     let notes = recipient.do_list_notes(true).await;
-    //     let transactions = recipient.do_list_transactions().await;
-
-    //     // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
-    //     assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-    //     assert_eq!(
-    //         notes["spent_orchard_notes"][0]["created_in_txid"],
-    //         orig_transaction_id
-    //     );
-    //     assert!(!notes["unspent_orchard_notes"][0]["pending"]
-    //         .as_bool()
-    //         .unwrap());
-    //     assert_eq!(notes["pending_orchard_notes"].len(), 0);
-    //     assert_eq!(transactions.len(), 2);
-    //     let read_lock = recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await;
-    //     let wallet_trees = read_lock.witness_trees().unwrap();
-    //     let last_leaf = wallet_trees
-    //         .witness_tree_orchard
-    //         .max_leaf_position(None)
-    //         .unwrap();
-    //     let server_trees = zingolib::grpc_connector::get_trees(
-    //         recipient.get_server_uri(),
-    //         recipient.wallet.last_synced_height().await,
-    //     )
-    //     .await
-    //     .unwrap();
-    //     let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
-    //         MerkleHashOrchard,
-    //         &[u8],
-    //         { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
-    //     >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
-    //     .unwrap()
-    //     .to_frontier()
-    //     .take();
-    //     let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
-    //         ShardTree::new(
-    //             MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
-    //             MAX_REORG,
-    //         );
-    //     server_orchard_shardtree
-    //         .insert_frontier_nodes(
-    //             server_orchard_front.unwrap(),
-    //             incrementalmerkletree::Retention::Marked,
-    //         )
-    //         .unwrap();
-    //     // This height doesn't matter, all we need is any arbitrary checkpoint ID
-    //     // as witness_at_checkpoint_depth requires a checkpoint to function now
-    //     server_orchard_shardtree
-    //         .checkpoint(BlockHeight::from_u32(0))
-    //         .unwrap();
-    //     assert_eq!(
-    //         wallet_trees
-    //             .witness_tree_orchard
-    //             .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-    //             .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
-    //         server_orchard_shardtree
-    //             .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-    //             .unwrap()
-    //     )
-    // }
-
     #[tokio::test]
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(true, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                true,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut recipient = client_builder
             .build_client(
@@ -475,7 +186,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let network = recipient.chain_type();
@@ -531,7 +244,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         if let Some(_ua) =
@@ -618,13 +333,6 @@ mod fast {
                 .encode(&network),
             all_shielded_encoded
         );
-    }
-
-    // temporary for infrastrucutre integration
-    #[tokio::test]
-    async fn basic_scenario() {
-        let (_local_net, _faucet, _recipient, _) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
     }
 
     #[tokio::test]
@@ -1197,9 +905,9 @@ mod fast {
                 confirmed_sapling_balance: Some(10_000.try_into().unwrap()),
                 unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
                 total_ironwood_balance: Some(0.try_into().unwrap()),
-            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
-            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
-            total_orchard_balance: Some(30_000.try_into().unwrap()),
+                confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+                unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+                total_orchard_balance: Some(30_000.try_into().unwrap()),
                 confirmed_orchard_balance: Some(30_000.try_into().unwrap()),
                 unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
                 total_transparent_balance: Some(0.try_into().unwrap()),
@@ -1224,7 +932,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let network = recipient.chain_type();
@@ -1303,7 +1013,9 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
 
@@ -1472,6 +1184,46 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         );
     }
+
+    #[tokio::test]
+    async fn verify_old_wallet_uses_server_height_in_send() {
+        // An earlier version of zingolib used the _wallet's_ 'height' when
+        // constructing transactions.  This worked well enough when the
+        // client completed sync prior to sending, but when we introduced
+        // interrupting send, it made it immediately obvious that this was
+        // the wrong height to use!  The correct height is the
+        // "mempool height" which is the server_height + 1
+        let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
+        // Ensure that the client has confirmed spendable funds
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
+            .await
+            .unwrap();
+
+        // Without sync push server forward 2 blocks
+        local_net.validator().generate_blocks(2).await.unwrap();
+        let client_fully_scanned_height = faucet
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+
+        // Verify that wallet is still back at 6.
+        assert_eq!(client_fully_scanned_height, 8.into());
+
+        // Interrupt generating send
+        from_inputs::quick_send(
+            &mut faucet,
+            vec![(
+                &get_base_address_macro!(recipient, "unified"),
+                10_000,
+                Some("Interrupting sync!!"),
+            )],
+        )
+        .await
+        .unwrap();
+    }
 }
 mod slow {
     use pepper_sync::wallet::{
@@ -1621,179 +1373,6 @@ mod slow {
 
         check_client_balances!(recipient, o: 0 s: 0 t: 0);
     }
-    // FIXME: zingo2
-    // #[tokio::test]
-    // async fn witness_clearing() {
-    //     let (local_net, faucet, recipient, txid) =
-    //         scenarios::faucet_funded_recipient_default(100_000).await;
-    //     let txid = utils::conversion::txid_from_hex_encoded_str(&txid).unwrap();
-
-    //     // 3. Send z-to-z transaction to external z address with a memo
-    //     let sent_value = 2000;
-    //     let outgoing_memo = "Outgoing Memo";
-
-    //     let faucet_ua = get_base_address_macro!(faucet, "unified");
-
-    //     let _sent_transaction_id = from_inputs::quick_send(
-    //         &recipient,
-    //         vec![(&faucet_ua, sent_value, Some(outgoing_memo))],
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     for txid_known in recipient
-    //         .wallet
-    //         .transactions()
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id
-    //         .keys()
-    //     {
-    //         dbg!(txid_known);
-    //     }
-
-    //     // transaction is not yet mined, so witnesses should still be there
-    //     let position = recipient
-    //         .wallet
-    //         .transactions()
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id
-    //         .get(&txid)
-    //         .unwrap()
-    //         .orchard_notes
-    //         .first()
-    //         .unwrap()
-    //         .witnessed_position
-    //         .unwrap();
-    //     assert!(recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await
-    //         .witness_trees()
-    //         .unwrap()
-    //         .witness_tree_orchard
-    //         .marked_positions()
-    //         .unwrap()
-    //         .contains(&position));
-
-    //     // 4. Mine the sent transaction
-    //     increase_height_and_wait_for_client(&local_net, &recipient, 1)
-    //         .await
-    //         .unwrap();
-
-    //     // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
-    //     let position = recipient
-    //         .wallet
-    //         .transactions()
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id
-    //         .get(&txid)
-    //         .unwrap()
-    //         .orchard_notes
-    //         .first()
-    //         .unwrap()
-    //         .witnessed_position
-    //         .unwrap();
-    //     assert!(recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await
-    //         .witness_trees()
-    //         .unwrap()
-    //         .witness_tree_orchard
-    //         .marked_positions()
-    //         .unwrap()
-    //         .contains(&position));
-    //     dbg!(
-    //         &recipient
-    //             .wallet
-    //             .transaction_context
-    //             .transaction_metadata_set
-    //             .read()
-    //             .await
-    //             .witness_trees()
-    //             .unwrap()
-    //             .witness_tree_orchard
-    //     );
-
-    //     // 5. Mine 50 blocks, witness should still be there
-    //     increase_height_and_wait_for_client(&local_net, &recipient, 50)
-    //         .await
-    //         .unwrap();
-    //     let position = recipient
-    //         .wallet
-    //         .transactions()
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id
-    //         .get(&txid)
-    //         .unwrap()
-    //         .orchard_notes
-    //         .first()
-    //         .unwrap()
-    //         .witnessed_position
-    //         .unwrap();
-    //     assert!(recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await
-    //         .witness_trees()
-    //         .unwrap()
-    //         .witness_tree_orchard
-    //         .marked_positions()
-    //         .unwrap()
-    //         .contains(&position));
-
-    //     // 5. Mine 100 blocks, witness should now disappear
-    //     increase_height_and_wait_for_client(&local_net, &recipient, 50)
-    //         .await
-    //         .unwrap();
-    //     let position = recipient
-    //         .wallet
-    //         .transactions()
-    //         .read()
-    //         .await
-    //         .transaction_records_by_id
-    //         .get(&txid)
-    //         .unwrap()
-    //         .orchard_notes
-    //         .first()
-    //         .unwrap()
-    //         .witnessed_position
-    //         .unwrap();
-    //     //Note: This is a negative assertion. Notice the "!"
-    //     dbg!(
-    //         &recipient
-    //             .wallet
-    //             .transaction_context
-    //             .transaction_metadata_set
-    //             .read()
-    //             .await
-    //             .witness_trees()
-    //             .unwrap()
-    //             .witness_tree_orchard
-    //     );
-    //     assert!(!recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await
-    //         .witness_trees()
-    //         .unwrap()
-    //         .witness_tree_orchard
-    //         .marked_positions()
-    //         .unwrap()
-    //         .contains(&position));
-    // }
 
     #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
@@ -1807,7 +1386,12 @@ mod slow {
 
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                false,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut original_recipient = client_builder
             .build_client(
@@ -1818,7 +1402,9 @@ mod slow {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
 
@@ -1899,7 +1485,9 @@ mod slow {
             let zingo_config = ClientConfig::builder()
                 .set_indexer_uri(client_builder.server_id.clone())
                 .set_chain_type(ChainType::Regtest(
-                    local_net.validator().get_activation_heights().await,
+                    zingolib_testutils::scenarios::wallet_activation_heights(
+                        &local_net.validator().get_activation_heights().await,
+                    ),
                 ))
                 .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
                 .set_wallet_config(WalletConfig::Ufvk {
@@ -3049,70 +2637,6 @@ TransactionSummary {
         let remaining_orchard = for_orchard - (6 * fee);
         check_client_balances!(recipient, o: remaining_orchard s: 0 t: 0);
     }
-    // FIXME: zingo2 yet to implement transaction filter in sync engine. its also not clear how this test exceeds the tx filter.
-    // #[tokio::test]
-    // async fn sandblast_filter_preserves_trees() {
-    //     let (ref local_net, ref faucet, ref recipient, _txid) =
-    //         scenarios::faucet_funded_recipient_default(100_000).await;
-    //     recipient
-    //         .wallet
-    //         .wallet_options
-    //         .write()
-    //         .await
-    //         .transaction_size_filter = Some(10);
-    //     recipient.do_sync(false).await.unwrap();
-    //     dbg!(
-    //         recipient
-    //             .wallet
-    //             .wallet_options
-    //             .read()
-    //             .await
-    //             .transaction_size_filter
-    //     );
-
-    //     tracing::info!("creating vec");
-    //     from_inputs::quick_send(
-    //         faucet,
-    //         vec![(&get_base_address_macro!(faucet, "unified"), 10, None); 15],
-    //     )
-    //     .await
-    //     .unwrap();
-    //     increase_height_and_wait_for_client(local_net, recipient, 10)
-    //         .await
-    //         .unwrap();
-    //     from_inputs::quick_send(
-    //         recipient,
-    //         vec![(&get_base_address_macro!(faucet, "unified"), 10, None)],
-    //     )
-    //     .await
-    //     .unwrap();
-    //     increase_height_and_wait_for_client(local_net, recipient, 10)
-    //         .await
-    //         .unwrap();
-    //     faucet.do_sync(false).await.unwrap();
-    //     assert_eq!(
-    //         faucet
-    //             .wallet
-    //             .transaction_context
-    //             .transaction_metadata_set
-    //             .read()
-    //             .await
-    //             .witness_trees()
-    //             .unwrap()
-    //             .witness_tree_orchard
-    //             .max_leaf_position(None),
-    //         recipient
-    //             .wallet
-    //             .transaction_context
-    //             .transaction_metadata_set
-    //             .read()
-    //             .await
-    //             .witness_trees()
-    //             .unwrap()
-    //             .witness_tree_orchard
-    //             .max_leaf_position(None)
-    //     );
-    // }
     /// This mod collects tests of `outgoing_metadata` (a `TransactionRecordField`) across rescans
     mod rescan_still_have_outgoing_notes {
         use super::*;
@@ -3201,124 +2725,6 @@ TransactionSummary {
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
     }
-    #[tokio::test]
-    async fn note_selection_order() {
-        // In order to fund a transaction multiple notes may be selected and consumed.
-        // The algorithm selects the smallest covering note(s).
-        // In addition to testing the order in which notes are selected this test:
-        //   * sends to a sapling address
-        //   * sends back to the original sender's UA
-        let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
-            .await
-            .unwrap();
-
-        let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
-        // Send three transfers in increasing 10_000 zat increments
-        // These are sent from the coinbase funded client which will
-        // subsequently receive funding via it's orchard-packed UA.
-        let memos = ["1", "2", "3"];
-        from_inputs::quick_send(
-            &mut faucet,
-            (1..=3)
-                .map(|n| {
-                    (
-                        client_2_saplingaddress.as_str(),
-                        n * 10_000,
-                        Some(memos[(n - 1) as usize]),
-                    )
-                })
-                .collect(),
-        )
-        .await
-        .unwrap();
-
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
-            .await
-            .unwrap();
-        // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
-        // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
-        // plus the transaction fee.
-        from_inputs::quick_send(
-            &mut recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                30_000,
-                Some("Sending back, should have 2 inputs"),
-            )],
-        )
-        .await
-        .unwrap();
-
-        // FIXME: this test has all its assertions commented out !?
-        /*
-        let client_2_notes = recipient.do_list_notes(false).await;
-        // The 30_000 zat note to cover the value, plus another for the tx-fee.
-        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        assert!(
-            first_value == 30_000u64 && second_value == 20_000u64
-                || first_value == 20_000u64 && second_value == 30_000u64
-        );
-        //);
-        // Because the above tx fee won't consume a full note, change will be sent back to 2.
-        // This implies that client_2 will have a total of 2 unspent notes:
-        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
-        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
-        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
-        let change_note = client_2_notes["unspent_orchard_notes"]
-            .members()
-            .filter(|note| note["is_change"].as_bool().unwrap())
-            .collect::<Vec<_>>()[0];
-        // Because 2000 is the size of the second largest note.
-        assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
-        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
-            .members()
-            .filter(|note| !note["is_change"].as_bool().unwrap())
-            .map(extract_value_as_u64)
-            .collect::<Vec<u64>>();
-        */
-        // client_2 got a total of 3000+2000+1000
-        // It sent 3000 to the client_1, and also
-        // paid the default transaction fee.
-        // In non change notes it has 1000.
-        // There is an outstanding 2000 that is marked as change.
-        // After sync the unspent_sapling_notes should go to 3000.
-        /*
-        assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
-
-        increase_height_and_wait_for_client(&local_net, &recipient, 5)
-            .await
-            .unwrap();
-        let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
-        assert_eq!(
-            client_2_post_transaction_notes["pending_sapling_notes"].len(),
-            0
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"]
-                .members()
-                .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
-                .map(extract_value_as_u64)
-                .sum::<u64>(),
-            20000u64 // 10000 received and unused + (20000 - 10000 txfee)
-        );
-
-        // More explicit than ignoring the unused variable, we only care about this in order to drop it
-        */
-    }
 
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
@@ -3392,63 +2798,16 @@ TransactionSummary {
     // FIXME: add unified address discovery to pepper sync and add a test here
 
     #[tokio::test]
-    async fn list_value_transfers_check_fees() {
-        // Check that list_value_transfers behaves correctly given different fee scenarios
-        let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
-            .await;
-        let mut pool_migration_client = client_builder
-            .build_client(
-                WalletConfig::MnemonicPhrase {
-                    mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1,
-                    wallet_settings: default_test_wallet_settings(),
-                },
-                false,
-                local_net.validator().get_activation_heights().await,
-            )
-            .await;
-        let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
-        // Ensure that the client has confirmed spendable funds
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
-            .await
-            .unwrap();
-        macro_rules! bump_and_check_pmc {
-            (o: $o:tt s: $s:tt t: $t:tt) => {
-                increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
-                check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
-            };
-        }
-
-        // pmc receives 100_000 orchard
-        from_inputs::quick_send(&mut faucet, vec![(&pmc_unified, 100_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
-
-        // to transparent and sapling from orchard
-        //
-        // Expected Fees:
-        // 5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
-        from_inputs::quick_send(
-            &mut pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
-        )
-        .await
-        .unwrap();
-        bump_and_check_pmc!(o: 15_000 s: 30_000 t: 30_000);
-    }
-
-    #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                false,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut client = client_builder
             .build_client(
@@ -3459,7 +2818,9 @@ TransactionSummary {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let pmc_taddr = get_base_address_macro!(client, "transparent");
@@ -4007,344 +3368,6 @@ mod basic_transactions {
         recipient.sync_and_await().await.unwrap();
         faucet.sync_and_await().await.unwrap();
     }
-
-    // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
-    // #[tokio::test]
-    // async fn standard_send_fees() {
-    //     let (local_net, faucet, recipient) =
-    //         scenarios::faucet_recipient_default().await;
-
-    //     let txid1 = from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "unified").as_str(),
-    //             40_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     let txid2 = from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "sapling").as_str(),
-    //             40_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     let txid3 = from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
-    //             40_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&faucet, txid1.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&recipient, txid1.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Change:\n{:?}",
-    //         tx_outputs(&faucet, txid1.as_str()).await
-    //     );
-
-    //     let tx_actions_txid1 =
-    //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
-
-    //     let calculated_fee_txid1 =
-    //         total_tx_value(&faucet, txid1.as_str()).await - 40_000;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
-
-    //     let expected_fee_txid1 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid1.transparent_tx_actions
-    //                 + tx_actions_txid1.sapling_tx_actions
-    //                 + tx_actions_txid1.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
-
-    //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&faucet, txid2.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&recipient, txid2.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Change:\n{:?}",
-    //         tx_outputs(&faucet, txid2.as_str()).await
-    //     );
-
-    //     let tx_actions_txid2 =
-    //         tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid2);
-
-    //     let calculated_fee_txid2 =
-    //         total_tx_value(&faucet, txid2.as_str()).await - 40_000;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid2);
-
-    //     let expected_fee_txid2 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid2.transparent_tx_actions
-    //                 + tx_actions_txid2.sapling_tx_actions
-    //                 + tx_actions_txid2.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid2);
-
-    //     assert_eq!(calculated_fee_txid2, expected_fee_txid2 as u64);
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&faucet, txid3.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&recipient, txid3.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Change:\n{:?}",
-    //         tx_outputs(&faucet, txid3.as_str()).await
-    //     );
-
-    //     let tx_actions_txid3 =
-    //         tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid3);
-
-    //     let calculated_fee_txid3 =
-    //         total_tx_value(&faucet, txid3.as_str()).await - 40_000;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid3);
-
-    //     let expected_fee_txid3 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid3.transparent_tx_actions
-    //                 + tx_actions_txid3.sapling_tx_actions
-    //                 + tx_actions_txid3.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid3);
-
-    //     assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
-
-    //     let txid4 = lightclient::from_inputs::quick_send(
-    //         &recipient,
-    //         vec![(
-    //             get_base_address_macro!(faucet, "transparent").as_str(),
-    //             55_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&recipient, txid4.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&faucet, txid4.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Change:\n{:?}",
-    //         tx_outputs(&recipient, txid4.as_str()).await
-    //     );
-
-    //     let tx_actions_txid4 =
-    //         tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid4);
-
-    //     let calculated_fee_txid4 =
-    //         total_tx_value(&recipient, txid4.as_str()).await - 55_000;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid4);
-
-    //     let expected_fee_txid4 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid4.transparent_tx_actions
-    //                 + tx_actions_txid4.sapling_tx_actions
-    //                 + tx_actions_txid4.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid4);
-
-    //     assert_eq!(calculated_fee_txid4, expected_fee_txid4 as u64);
-    // }
-
-    // #[tokio::test]
-    // async fn dust_send_fees() {
-    //     let (local_net, faucet, recipient) =
-    //         scenarios::faucet_recipient_default().await;
-
-    //     let txid1 = lightclient::from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "unified").as_str(),
-    //             0,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap()
-    //     .first()
-    //     .to_string();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&faucet, txid1.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&recipient, txid1.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Change:\n{:?}",
-    //         tx_outputs(&faucet, txid1.as_str()).await
-    //     );
-
-    //     let tx_actions_txid1 =
-    //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
-
-    //     let calculated_fee_txid1 =
-    //         total_tx_value(&faucet, txid1.as_str()).await;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
-
-    //     let expected_fee_txid1 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid1.transparent_tx_actions
-    //                 + tx_actions_txid1.sapling_tx_actions
-    //                 + tx_actions_txid1.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
-
-    //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
-    // }
-
-    // #[tokio::test]
-    // async fn shield_send_fees() {
-    //     let (local_net, faucet, recipient) =
-    //         scenarios::faucet_recipient_default().await;
-
-    //     lightclient::from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
-    //             40_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     let txid1 = recipient.quick_shield().await.unwrap().first().to_string();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-
-    //     tracing::info!(
-    //         "Transaction Inputs:\n{:?}",
-    //         tx_inputs(&recipient, txid1.as_str()).await
-    //     );
-    //     tracing::info!(
-    //         "Transaction Outputs:\n{:?}",
-    //         tx_outputs(&recipient, txid1.as_str()).await
-    //     );
-
-    //     let tx_actions_txid1 =
-    //         tx_actions(&recipient, None, txid1.as_str()).await;
-    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
-
-    //     let calculated_fee_txid1 =
-    //         total_tx_value(&recipient, txid1.as_str()).await;
-    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
-
-    //     let expected_fee_txid1 = 5000
-    //         * (cmp::max(
-    //             2,
-    //             tx_actions_txid1.transparent_tx_actions
-    //                 + tx_actions_txid1.sapling_tx_actions
-    //                 + tx_actions_txid1.orchard_tx_actions,
-    //         ));
-    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
-
-    //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
-
-    //     lightclient::from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
-    //             40_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     generate_n_blocks_return_new_height(&local_net, 1)
-    //         .await
-    //         .unwrap();
-
-    //     faucet.do_sync(true).await.unwrap();
-    //     recipient.do_sync(true).await.unwrap();
-    // }
 }
 
 /// Tests that transparent coinbases are matured after 100 blocks.
