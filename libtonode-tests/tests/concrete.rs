@@ -464,7 +464,12 @@ mod fast {
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(true, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                true,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut recipient = client_builder
             .build_client(
@@ -475,7 +480,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let network = recipient.chain_type();
@@ -531,7 +538,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         if let Some(_ua) =
@@ -1221,7 +1230,9 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let network = recipient.chain_type();
@@ -1300,7 +1311,9 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
 
@@ -1804,7 +1817,12 @@ mod slow {
 
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                false,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut original_recipient = client_builder
             .build_client(
@@ -1815,7 +1833,9 @@ mod slow {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
 
@@ -1896,7 +1916,9 @@ mod slow {
             let zingo_config = ClientConfig::builder()
                 .set_indexer_uri(client_builder.server_id.clone())
                 .set_chain_type(ChainType::Regtest(
-                    local_net.validator().get_activation_heights().await,
+                    zingolib_testutils::scenarios::wallet_activation_heights(
+                        &local_net.validator().get_activation_heights().await,
+                    ),
                 ))
                 .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
                 .set_wallet_config(WalletConfig::Ufvk {
@@ -3393,7 +3415,12 @@ TransactionSummary {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                false,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut pool_migration_client = client_builder
             .build_client(
@@ -3404,7 +3431,9 @@ TransactionSummary {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
@@ -3445,7 +3474,12 @@ TransactionSummary {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder
-            .build_faucet(false, local_net.validator().get_activation_heights().await)
+            .build_faucet(
+                false,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
+            )
             .await;
         let mut client = client_builder
             .build_client(
@@ -3456,7 +3490,9 @@ TransactionSummary {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                local_net.validator().get_activation_heights().await,
+                zingolib_testutils::scenarios::wallet_activation_heights(
+                    &local_net.validator().get_activation_heights().await,
+                ),
             )
             .await;
         let pmc_taddr = get_base_address_macro!(client, "transparent");

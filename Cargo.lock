@@ -5189,9 +5189,9 @@ dependencies = [
 
 [[package]]
 name = "zingo_common_components"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3378e81bdef45a9659736a09deaef2b5e5cb3d1556031468debfca3a21d4fa76"
+checksum = "29f41ddb12ba9aa1fdbf4025fb54639f1fddd25c6e297574922b39fabfb730d4"
 dependencies = [
  "hex",
 ]
@@ -5271,6 +5271,7 @@ dependencies = [
  "portpicker",
  "tempfile",
  "zcash_local_net",
+ "zcash_protocol",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",

@@ -2,8 +2,7 @@
 //! These scenarios vary in the configuration of clients in use.  Most scenarios
 //! require some funds, the simplest way to access funds is to use a "faucet".
 //! A "faucet" is a client that receives mining rewards (because its spend capability
-//! generated the address registered as the `minetoaddress` in the zcash.conf that's
-//! used by the 'regetst mode' zcashs backing these tests.).
+//! generated the address the backing regtest Validator mines to).
 //! HELPERS:
 //! If you just need a faucet, use the "faucet" helper.
 //! If you need a faucet, and a single recipient, use 'faucet_recipient`
@@ -17,9 +16,10 @@ use std::path::PathBuf;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_local_net::PoolType;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use zcash_local_net::LocalNet;
+use zcash_local_net::MinerPool;
 use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
@@ -42,41 +42,74 @@ use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(feature = "test_zainod_zcashd")]
-#[allow(missing_docs)]
-pub mod network_combo {
-    pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
-    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
-}
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
+/// Regtest network processes for testing and zingo-cli regtest mode: the
+/// legacy lightwalletd indexer in front of the zebrad validator. Survives
+/// only until the infrastructure repo's Legacy stack is removed as a unit.
+#[cfg(feature = "test_lwd_zebrad")]
 #[allow(missing_docs)]
 pub mod network_combo {
     pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(all(
-    not(feature = "test_zainod_zcashd"),
-    not(feature = "test_lwd_zebrad"),
-    feature = "test_lwd_zcashd"
-))]
-#[allow(missing_docs)]
-pub mod network_combo {
-    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
-    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
-}
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(not(any(
-    feature = "test_zainod_zcashd",
-    feature = "test_lwd_zebrad",
-    feature = "test_lwd_zcashd"
-)))]
+/// Default regtest network processes for testing and zingo-cli regtest mode:
+/// the Core stack, zainod in front of zebrad.
+#[cfg(not(feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
     pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
+}
+
+/// Map the wallet-domain pool selection onto the infrastructure miner pool at
+/// the `zcash_local_net` boundary.
+fn miner_pool(mine_to_pool: PoolType) -> MinerPool {
+    match mine_to_pool {
+        PoolType::Transparent => MinerPool::Transparent,
+        PoolType::Shielded(ShieldedProtocol::Sapling) => MinerPool::Sapling,
+        PoolType::Shielded(ShieldedProtocol::Orchard) => MinerPool::Orchard,
+    }
+}
+
+/// Rebuild the wallet-domain activation heights as the `zingo_consensus` type
+/// that `zcash_local_net` validators consume.
+fn net_activation_heights(
+    heights: &ActivationHeights,
+) -> zcash_local_net::protocol::ActivationHeights {
+    zcash_local_net::protocol::ActivationHeightsBuilder::new()
+        .set_overwinter(heights.overwinter())
+        .set_sapling(heights.sapling())
+        .set_blossom(heights.blossom())
+        .set_heartwood(heights.heartwood())
+        .set_canopy(heights.canopy())
+        .set_nu5(heights.nu5())
+        .set_nu6(heights.nu6())
+        .set_nu6_1(heights.nu6_1())
+        .set_nu6_2(heights.nu6_2())
+        .set_nu6_3(heights.nu6_3())
+        .set_nu7(heights.nu7())
+        .build()
+}
+
+/// Rebuild the infrastructure activation heights as the wallet-domain type
+/// that zingolib configuration consumes. Inverse of the private
+/// `net_activation_heights`, for values coming back across the
+/// `zcash_local_net` boundary (e.g. `Validator::get_activation_heights`).
+pub fn wallet_activation_heights(
+    heights: &zcash_local_net::protocol::ActivationHeights,
+) -> ActivationHeights {
+    ActivationHeights::builder()
+        .set_overwinter(heights.overwinter())
+        .set_sapling(heights.sapling())
+        .set_blossom(heights.blossom())
+        .set_heartwood(heights.heartwood())
+        .set_canopy(heights.canopy())
+        .set_nu5(heights.nu5())
+        .set_nu6(heights.nu6())
+        .set_nu6_1(heights.nu6_1())
+        .set_nu6_2(heights.nu6_2())
+        .set_nu6_3(heights.nu6_3())
+        .set_nu7(heights.nu7())
+        .build()
 }
 
 /// To launch a `LocalNet` with darkside settings.
@@ -93,7 +126,11 @@ where
     <I as Process>::Config: Send + IndexerConfig + Default,
 {
     let mut validator_config = <V as Process>::Config::default();
-    validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
+    validator_config.set_test_parameters(
+        miner_pool(mine_to_pool),
+        net_activation_heights(&configured_activation_heights),
+        chain_cache,
+    );
     let mut indexer_config = <I as Process>::Config::default();
     indexer_config.set_listen_port(indexer_listen_port);
     LocalNet::launch_from_two_configs(validator_config, indexer_config)
@@ -261,10 +298,10 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultInd
 /// 3 blocks worth of coinbase to a preregistered spend capability.
 ///
 /// This key is registered to receive block rewards by corresponding to the
-/// address registered as the "mineraddress" field in zcash.conf
+/// address the regtest Validator mines to.
 ///
-/// The general scenario framework requires instances of zingo-cli, lightwalletd,
-/// and zcashd (in regtest mode). This setup is intended to produce the most basic
+/// The general scenario framework requires instances of zingo-cli, an Indexer,
+/// and a Validator (in regtest mode). This setup is intended to produce the most basic
 /// of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
@@ -501,7 +538,10 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         tempfile::tempdir().unwrap(),
     );
     let mut faucet = client_builder
-        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .build_faucet(
+            true,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        )
         .await;
     let recipient = client_builder
         .build_client(
@@ -512,7 +552,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            local_net.validator().get_activation_heights().await,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     faucet.sync_and_await().await.unwrap();
@@ -537,7 +577,10 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet = client_builder
-        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .build_faucet(
+            true,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        )
         .await;
     let mut recipient = client_builder
         .build_client(
@@ -548,7 +591,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            local_net.validator().get_activation_heights().await,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
@@ -602,7 +645,10 @@ pub async fn funded_transparent_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet = client_builder
-        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .build_faucet(
+            true,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        )
         .await;
     let mut recipient = client_builder
         .build_client(
@@ -613,7 +659,7 @@ pub async fn funded_transparent_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            local_net.validator().get_activation_heights().await,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
@@ -650,7 +696,10 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet = client_builder
-        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .build_faucet(
+            true,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        )
         .await;
     let mut recipient = client_builder
         .build_client(
@@ -661,7 +710,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            local_net.validator().get_activation_heights().await,
+            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
