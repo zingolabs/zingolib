@@ -508,9 +508,11 @@ mod fast {
             .unwrap();
 
         // send to the UAs so they are recorded on chain
-        local_net.validator().generate_blocks(3).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
-        from_inputs::quick_send(
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
+            .await
+            .unwrap();
+        scenarios::send_and_bump(
+            &local_net,
             &mut faucet,
             vec![
                 (&orchard_only_addr, 100_000, Some("orchard_only")),
@@ -523,9 +525,7 @@ mod fast {
                 ),
             ],
         )
-        .await
-        .unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
+        .await;
 
         // rebuild recipient and check the UAs don't exist in the wallet
         let mut recipient = client_builder
@@ -770,7 +770,7 @@ mod fast {
         .unwrap();
 
         environment.increase_chain_height().await;
-        recipient.sync_and_await().await.unwrap();
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
 
         let no_messages = &recipient.messages_containing(None).await.unwrap();
 
@@ -795,7 +795,7 @@ mod fast {
         .unwrap();
 
         environment.increase_chain_height().await;
-        recipient.sync_and_await().await.unwrap();
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
 
         let single_message = &recipient.messages_containing(None).await.unwrap();
 
@@ -1017,7 +1017,7 @@ mod fast {
         .unwrap();
 
         environment.increase_chain_height().await;
-        recipient.sync_and_await().await.unwrap();
+        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
 
         let value_transfers = &recipient.value_transfers(true).await.unwrap();
         let value_transfers1 = &recipient.value_transfers(true).await.unwrap();
@@ -3901,17 +3901,19 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
             .await
             .unwrap();
-        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        scenarios::send_and_bump(
+            &local_net,
+            &mut faucet,
+            vec![(&base_uaddress, 1_000u64, Some("1"))],
+        )
+        .await;
 
-        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        scenarios::send_and_bump(
+            &local_net,
+            &mut faucet,
+            vec![(&base_uaddress, 1_000u64, Some("1"))],
+        )
+        .await;
 
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
@@ -3919,11 +3921,12 @@ TransactionSummary {
             "2".to_string()
         );
 
-        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
-            .await
-            .unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        scenarios::send_and_bump(
+            &local_net,
+            &mut faucet,
+            vec![(&base_uaddress, 1_000u64, Some("aaaa"))],
+        )
+        .await;
 
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
@@ -4077,7 +4080,7 @@ TransactionSummary {
 
 mod basic_transactions {
     use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
-    use zingolib_testutils::scenarios::{self, generate_n_blocks_return_new_height};
+    use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -4086,10 +4089,10 @@ mod basic_transactions {
         let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
         let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
 
-        generate_n_blocks_return_new_height(&local_net, 2).await;
-
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 2)
+            .await
+            .unwrap();
+        scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
         for _ in 0..2 {
             from_inputs::quick_send(
@@ -4100,10 +4103,10 @@ mod basic_transactions {
             .unwrap();
         }
 
-        generate_n_blocks_return_new_height(&local_net, 1).await;
-
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+            .await
+            .unwrap();
+        scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
         from_inputs::quick_send(
             &mut recipient,
@@ -4112,10 +4115,10 @@ mod basic_transactions {
         .await
         .unwrap();
 
-        generate_n_blocks_return_new_height(&local_net, 1).await;
-
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+            .await
+            .unwrap();
+        scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
     }
 
     // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
