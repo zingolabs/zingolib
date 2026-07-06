@@ -3617,9 +3617,7 @@ mod testnet_test {
     #[ignore = "testnet cannot be run offline"]
     #[tokio::test]
     async fn reload_wallet_after_short_sync() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .unwrap();
+        zingolib::ensure_default_crypto_provider();
 
         const NUM_TESTS: u8 = 20;
         let mut test_count = 0;

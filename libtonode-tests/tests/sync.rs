@@ -27,9 +27,7 @@ use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]
 async fn sync_mainnet_test() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Ring to work as a default");
+    zingolib::ensure_default_crypto_provider();
     tracing_subscriber::fmt().init();
 
     let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
@@ -150,9 +148,7 @@ async fn add_subtree_roots() {
             });
     }
 
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Ring to work as a default");
+    zingolib::ensure_default_crypto_provider();
 
     let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();

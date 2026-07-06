@@ -36,11 +36,11 @@ orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
+hmac = { workspace = true }
 rand = { workspace = true }
-ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
-rustls.workspace = true
 sapling-crypto.workspace = true
+sha2 = { workspace = true }
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -58,7 +58,9 @@ zcash_client_backend = { workspace = true, features = [
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
-zcash_proofs = { workspace = true, features = ["download-params"] }
+# download-params (and its minreq/rustls-0.21/ring subtree) is build-time
+# only: build.rs fetches the sapling params; runtime code never downloads.
+zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zingo-memo = { workspace = true }

@@ -112,8 +112,7 @@ impl LightClient {
     #[allow(clippy::result_large_err)]
     pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
         // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
@@ -142,10 +141,8 @@ impl LightClient {
             }
         };
 
-        // Install the ring crypto provider for rustls. Required because both
-        // `ring` and `aws-lc-rs` features are unified in via transitive deps,
-        // preventing rustls from auto-selecting a provider.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        zingo_netutils::ensure_default_crypto_provider();
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
 
@@ -180,8 +177,7 @@ impl LightClient {
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
         // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
             .map_err(LightClientError::FileError)?;

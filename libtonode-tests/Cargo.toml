@@ -19,7 +19,6 @@ http = { workspace = true }
 proptest = { workspace = true, optional = true }
 
 [dev-dependencies]
-rustls.workspace = true
 test-log.workspace = true
 bip0039.workspace = true
 incrementalmerkletree.workspace = true
