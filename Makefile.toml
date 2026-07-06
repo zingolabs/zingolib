@@ -122,11 +122,12 @@ container_dir_hash() {
 }
 
 container_image_tag() {
-  printf 'RUST_%s-LIGHTWALLETD_%s-ZCASH_%s-ZAINO_%s-NEXTEST_%s-CONTAINER_%s' \
+  printf 'RUST_%s-LIGHTWALLETD_%s-ZCASH_%s-ZAINO_%s-ZEBRA_%s-NEXTEST_%s-CONTAINER_%s' \
     "${RUST_VERSION}" \
     "${LIGHTWALLETD_VERSION}" \
     "${ZCASH_VERSION}" \
     "${ZAINO_IMAGE_TAG}" \
+    "${ZEBRA_VERSION}" \
     "${NEXTEST_VERSION}" \
     "$(container_dir_hash)" \
     | git hash-object --stdin \
@@ -190,7 +191,7 @@ container_nextest_run() {
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
-    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod test_binaries/bins/ && exec "$@"' \
+    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
     bash \
     cargo nextest run "${args[@]}"
 }
@@ -236,6 +237,7 @@ echo "  RUST_VERSION=${RUST_VERSION}"
 echo "  LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}"
 echo "  ZCASH_VERSION=${ZCASH_VERSION}"
 echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
+echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
 echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
@@ -244,6 +246,7 @@ echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
   --build-arg "LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}" \
   --build-arg "ZCASH_VERSION=${ZCASH_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
