@@ -112,6 +112,34 @@ pub fn wallet_activation_heights(
         .build()
 }
 
+/// The default activation heights for scenario tests: the harness's regtest
+/// fixture shape (the only shape its default lockbox-disbursement and
+/// funding-stream fixtures pair with — zebrad rejects NU6.x activation
+/// blocks whose subsidy config doesn't match, so e.g. the all-at-1
+/// `ActivationHeights::default()` stalls the chain at genesis), with one
+/// amendment: NU6.3 stays unactivated. This branch's wallet builds against
+/// released librustzcash, which tops out at the NU6.2 branch id; activating
+/// NU6.3 makes zebrad reject every wallet transaction ("incorrect consensus
+/// branch id"). Re-enable NU6.3 (drop the `set_nu6_3(None)`) when the
+/// ironwood wallet feature branch lands here.
+pub fn default_test_activation_heights() -> ActivationHeights {
+    let fixture =
+        wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());
+    ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(None)
+        .set_nu7(None)
+        .build()
+}
+
 /// To launch a `LocalNet` with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
@@ -141,9 +169,10 @@ where
         .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
 
-/// Generate 100 blocks and shield the faucet if attempting to mine to a shielded pool as Zebrad does not currently
-/// support this. Also generates an additional block to confirm the shield, dumps the excess funds and generates a
-/// final block to confirm the send.
+/// When mining to a shielded pool, generate 100 blocks so the early coinbase
+/// rewards mature (they land directly in the mined-to pool — zebrad mines to
+/// Orchard natively), then dump the excess funds and generate a final block
+/// to confirm the send.
 async fn zebrad_shielded_funds<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -156,9 +185,6 @@ async fn zebrad_shielded_funds<V, I>(
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
-        faucet.sync_and_await().await.unwrap();
-        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
         faucet.sync_and_await().await.unwrap();
         quick_send(faucet, vec![(FUND_OFFLOAD_ORCHARD_ONLY, 624_960_000, None)])
             .await
@@ -294,7 +320,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(ActivationHeights::default(), None).await
+    unfunded_client(default_test_activation_heights(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -330,7 +356,7 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -378,7 +404,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet_recipient(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -479,7 +505,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            ActivationHeights::default(),
+            default_test_activation_heights(),
             None,
         )
         .await;
@@ -517,7 +543,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+        custom_clients(PoolType::ORCHARD, default_test_activation_heights(), None).await;
 
     (local_net, client_builder)
 }
@@ -527,7 +553,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
-        ActivationHeights::default(),
+        default_test_activation_heights(),
         None,
     )
     .await
