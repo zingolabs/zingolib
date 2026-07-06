@@ -103,7 +103,7 @@ jobs:
 
       - name: Run normal tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-normal.tar.zst \
             --workspace-remap ./ \
             --partition count:${{ matrix.partition }}/8 \
@@ -136,7 +136,7 @@ jobs:
 
       - name: Run darkside tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-darkside.tar.zst \
             --workspace-remap ./ \
             ${{ env.NEXTEST-FLAGS }}

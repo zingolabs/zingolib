@@ -6,7 +6,12 @@ default_to_workspace = false
 [env]
 NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
 ZINGOLIB_NEXTEST_PROFILE = "ci"
-ZINGOLIB_NEXTEST_RETRIES = "2"
+# Conditional for the same reason as ZINGOLIB_NEXTEST_FILTER below: lets a
+# shell override win. Retries default to 0 so flakes surface instead of
+# being masked; raise per-run with ZINGOLIB_NEXTEST_RETRIES=N.
+ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
+    "ZINGOLIB_NEXTEST_RETRIES",
+] } }
 # Conditional so a shell override (documented in `makers help`, and used by
 # `makers test all` to clear the filter) actually wins: cargo-make [env]
 # entries otherwise clobber inherited environment variables.
@@ -52,7 +57,7 @@ Common usage:
   cargo make container-test
 
 The container-test task runs tests inside a reproducible container image:
-  cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0 -E 'not test(slow)'
 
 Build or refresh the local image:
   makers build-image
@@ -61,7 +66,7 @@ Run the same nextest command on the host:
   makers local-run
 
 The local-run task mirrors the PR test defaults:
-  cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0 -E 'not test(slow)'
 
 Forward extra nextest flags after the task name:
   makers container-test -p zingo-memo
