@@ -2136,9 +2136,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         // Send to faucet (external) sapling
@@ -2175,6 +2177,7 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
@@ -2186,6 +2189,7 @@ mod slow {
                  scope: summary::data::Scope::from(zip32::Scope::External),
              }],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         // Send to faucet (external) transparent
@@ -2207,9 +2211,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         from_inputs::quick_send(
@@ -2286,9 +2292,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut faucet,
@@ -2325,9 +2333,11 @@ mod slow {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,
@@ -2361,6 +2371,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
@@ -2372,6 +2383,7 @@ TransactionSummary {
                  scope: summary::data::Scope::from(zip32::Scope::External),
             }],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,
@@ -2406,9 +2418,11 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,

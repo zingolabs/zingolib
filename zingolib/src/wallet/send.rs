@@ -10,7 +10,7 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, Parameters as _};
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters as _};
 use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
@@ -73,13 +73,15 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        // When `allow_v6_transactions` is false, request legacy V5 so the
-        // proposal fee and the built transaction agree, and Ironwood-pool
-        // inputs/change are never routed into the ironwood bundle before a
-        // V6-accepting node is available. When true, pass `None` and let
-        // upstream build V6 once NU6.3 is active at the target height.
-        // Must match the version floor used in `create_send_proposal`.
-        let version_floor = if self.wallet_settings.allow_v6_transactions {
+        // Pass None when NU6.3 is configured for this network: the builder derives
+        // the correct tx version from BranchId at the target height (V5 pre-activation,
+        // V6 at and after activation). Force V5 only on networks where NU6.3 is not
+        // yet configured. Must match the version floor used in `create_send_proposal`.
+        let version_floor = if self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some()
+        {
             None
         } else {
             Some(zcash_primitives::transaction::TxVersion::V5)

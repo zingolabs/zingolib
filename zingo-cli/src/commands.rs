@@ -25,7 +25,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
-use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
@@ -1782,6 +1782,7 @@ impl Command for NotesCommand {
             json::object! {
                 "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
                 "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
+                "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
             }
             .pretty(2)
         })

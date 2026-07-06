@@ -10,7 +10,7 @@ use zcash_client_backend::{
 };
 use zcash_protocol::{
     ShieldedPool,
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -44,7 +44,15 @@ impl LightWallet {
 
         // Version floor must agree with `create_proposed_transactions` in
         // `wallet/send.rs` so the proposed fee matches the built transaction.
-        let version_floor = if self.wallet_settings.allow_v6_transactions {
+        // Pass None when NU6.3 is configured: the builder derives the correct
+        // tx version from BranchId at the target height. Force V5 only on
+        // networks where NU6.3 is not yet configured (no Ironwood notes exist
+        // there, so V5 is always the right version).
+        let version_floor = if self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some()
+        {
             None
         } else {
             Some(zcash_primitives::transaction::TxVersion::V5)

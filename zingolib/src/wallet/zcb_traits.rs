@@ -23,7 +23,7 @@ use zcash_primitives::{
 };
 use zcash_protocol::{
     PoolType, ShieldedPool,
-    consensus::{self, BlockHeight, Parameters},
+    consensus::{self, BlockHeight, NetworkUpgrade, Parameters},
     memo::Memo,
 };
 use zcash_transparent::address::TransparentAddress;
@@ -883,13 +883,22 @@ impl InputSource for LightWallet {
         }
         */
 
-        // When V6 building is allowed, also select Ironwood (V3) notes from
-        // the ironwood pool and add them to the orchard vec. Upstream detects
-        // `note.version() == V3` and switches to `OrchardBuildMode::IronwoodSpends`,
-        // routing inputs and change through the ironwood bundle. The gate is
-        // mandatory: a V3 note in a V5 proposal causes `ProposalNotSupported`.
+        // Ironwood (V3) notes are added to the orchard vec of ReceivedNotes, labeled with
+        // PoolType::ORCHARD. The note's version (V3) is what the upstream builder uses to detect
+        // Ironwood inputs and switch to OrchardBuildMode::IronwoodSpends; the pool label in
+        // OutputRef is only used by the proposal engine for fee/input accounting. In
+        // IronwoodSpends mode the upstream routes the payment through add_ironwood_output using
+        // the Orchard receiver address from the UA — no separate Ironwood receiver is needed.
+        //
+        // Gate on NU6.3 being configured for this network: on networks where it is not
+        // configured there are no Ironwood notes and selection is a no-op, but passing
+        // version_floor = None to the builder is still safe (BranchId drives the tx version).
+        let ironwood_active = self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some();
         let selected_ironwood_notes: Vec<IronwoodNote> =
-            if self.wallet_settings.allow_v6_transactions {
+            if ironwood_active {
                 let exclude_ironwood: Vec<OutputId> = exclude
                     .iter()
                     .filter(|&note_id| note_id.pool_type() == PoolType::IRONWOOD)
@@ -958,9 +967,12 @@ impl InputSource for LightWallet {
             .collect::<Vec<_>>();
         orchard_recieved_notes.extend(selected_ironwood_notes.iter().map(|note| {
             ReceivedNote::from_parts(
+                // Label V3 notes as ORCHARD in the OutputRef: upstream detects Ironwood inputs
+                // by note.version() == V3, not by the pool label. Labeling IRONWOOD here
+                // confuses the proposal engine's pool-involvement accounting.
                 OutputRef::new(
                     OutputId::new(note.output_id().txid(), note.output_id().output_index()),
-                    PoolType::IRONWOOD,
+                    PoolType::ORCHARD,
                 ),
                 note.output_id().txid(),
                 note.output_id()
@@ -971,8 +983,8 @@ impl InputSource for LightWallet {
                 note.key_id().scope,
                 note.position()
                     .expect("note selection should filter on notes with positions"),
-                None, // mined_height. TODO: How should we use this here?
-                None, // max_shielding_input_height. TODO: How should we use this here?
+                None, // mined_height
+                None, // max_shielding_input_height
             )
         }));
 
