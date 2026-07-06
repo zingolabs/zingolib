@@ -9,7 +9,10 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 ZINGOLIB_NEXTEST_RETRIES = "2"
 ZINGOLIB_NEXTEST_FILTER = "not test(slow)"
 IMAGE_NAME = "zingodevops/ci-build"
-RUST_VERSION = { script = ["sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*\"\\([0-9.]*\\)\".*/\\1/p' rust-toolchain.toml | head -n1"] }
+# Single source of truth: rust-toolchain.toml's `channel`, extracted and
+# validated (concrete numeric versions only) by the workbench
+# `get-rust-version` binary.
+RUST_VERSION = { script = ["cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version"] }
 
 [tasks.default]
 alias = "help"
@@ -23,6 +26,18 @@ set -euo pipefail
 cat <<'HELP'
 Zingolib test tasks
 -------------------
+
+Test sets (front door):
+  makers test                 packages (the default): every workspace package
+                              EXCEPT libtonode-tests and zingo-cli
+  makers test packages        same as the default
+  makers test live            ONLY libtonode-tests and zingo-cli
+  makers test libtonode       exactly the libtonode-tests package
+  makers test zingo-cli       exactly the zingo-cli package
+
+Every set runs inside the reproducible CI container and forwards extra
+nextest args:
+  makers test live --no-fail-fast
 
 Common usage:
   makers container-test
@@ -259,6 +274,72 @@ script_runner = "bash"
 extend = "base-script"
 script.main = '''
 container_nextest_run "$@"
+'''
+
+# ===================================================================
+# Developer-facing test front door: a single `makers test [SET]` task.
+#
+#   makers test                packages (the default)
+#   makers test packages       every workspace package EXCEPT the live ones
+#   makers test live           ONLY the live packages
+#   makers test libtonode      exactly the libtonode-tests package
+#   makers test zingo-cli      exactly the zingo-cli package
+#
+# The live-package list is defined once (live_packages, below); `packages`
+# derives its exclusions from it and `live` derives its selections from it,
+# so the partition cannot drift. Every set delegates to the container-test
+# engine rather than re-implementing a run — set-name validation therefore
+# happens before ensure-image-exists can trigger an image build — and extra
+# args after the set name are forwarded to `cargo nextest run`.
+# ===================================================================
+
+[tasks.test]
+# clear = true fully replaces cargo-make's built-in `test` task (which runs
+# `cargo test`); without it our `script` would merge with the builtin `command`.
+clear = true
+description = "Run a test set: `makers test [packages|live|libtonode|zingo-cli]` (default: packages). Extra args are forwarded to nextest."
+script_runner = "bash"
+script = '''
+set -uo pipefail
+
+# The packages that need live network infrastructure. Single source of truth
+# for the packages/live partition.
+live_packages=(libtonode-tests zingo-cli)
+
+usage() {
+  echo "usage: makers test [packages|live|libtonode|zingo-cli] [nextest args]" >&2
+  echo "  packages (default)  every workspace package EXCEPT: ${live_packages[*]}" >&2
+  echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
+  echo "  libtonode           exactly the libtonode-tests package" >&2
+  echo "  zingo-cli           exactly the zingo-cli package" >&2
+}
+
+# A non-flag first arg selects the set and must be a known name; a flag first
+# arg (or none) keeps the default `packages` and is forwarded to nextest. So
+# `makers test --no-fail-fast` runs packages with the flag, while a mistyped
+# set name errors instead of silently running the default.
+test_set="packages"
+if [[ "$#" -gt 0 && "${1#-}" == "$1" ]]; then
+  case "$1" in
+    packages|live|libtonode|zingo-cli) test_set="$1"; shift ;;
+    *) echo "makers test: unknown set '$1'" >&2; usage; exit 2 ;;
+  esac
+fi
+
+pkg_args=()
+case "${test_set}" in
+  packages)
+    pkg_args+=(--workspace)
+    for pkg in "${live_packages[@]}"; do pkg_args+=(--exclude "${pkg}"); done ;;
+  live)
+    for pkg in "${live_packages[@]}"; do pkg_args+=(--package "${pkg}"); done ;;
+  libtonode)
+    pkg_args+=(--package libtonode-tests) ;;
+  zingo-cli)
+    pkg_args+=(--package zingo-cli) ;;
+esac
+
+exec makers container-test "${pkg_args[@]}" "$@"
 '''
 
 [tasks.rerun]
