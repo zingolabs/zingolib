@@ -127,7 +127,6 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
-    use std::str::FromStr as _;
 
     use pepper_sync::wallet::{OrchardNote, OutputInterface, TransparentCoin};
     use zcash_address::ZcashAddress;
@@ -137,7 +136,6 @@ mod fast {
     };
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
-    use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -145,9 +143,8 @@ mod fast {
         ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         config::WalletConfig,
         testutils::{
-            chain_generics::conduct_chain::ConductChain,
-            default_test_wallet_settings,
-            lightclient::{from_inputs, get_base_address},
+            chain_generics::conduct_chain::ConductChain, default_test_wallet_settings,
+            lightclient::from_inputs,
         },
         wallet::{
             keys::unified::{ReceiverSelection, UnifiedAddressId},
@@ -726,242 +723,6 @@ mod fast {
         assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
-    }
-
-    /// This tests checks that `messages_containing` returns an empty vector when empty memos are included.
-    #[tokio::test]
-    async fn filter_empty_messages() {
-        let mut environment = LibtonodeEnvironment::setup().await;
-
-        let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client().await;
-
-        environment.increase_chain_height().await;
-        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
-
-        // Tip is height 4: orchard coinbase from NU5 activation onward,
-        // block 1's pre-NU5 coinbase in the sapling receiver.
-        check_client_balances!(
-            faucet,
-            o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
-        );
-
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some(""),
-                ),
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some(""),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        environment.increase_chain_height().await;
-        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
-
-        let no_messages = &recipient.messages_containing(None).await.unwrap();
-
-        assert_eq!(no_messages.len(), 0);
-
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some("Hello"),
-                ),
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some(""),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        environment.increase_chain_height().await;
-        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
-
-        let single_message = &recipient.messages_containing(None).await.unwrap();
-
-        assert_eq!(single_message.len(), 1);
-    }
-
-    /// Test sending and receiving messages between three parties.
-    ///
-    /// This test case consists of the following sequence of events:
-    ///
-    /// 1. Alice sends a message to Bob.
-    /// 2. Alice sends another message to Bob.
-    /// 3. Bob sends a message to Alice.
-    /// 4. Alice sends a message to Charlie.
-    /// 5. Charlie sends a message to Alice.
-    ///
-    /// After the messages are sent, the test checks that the `messages_containing` method
-    /// returns the expected messages for each party in the correct order.
-    #[tokio::test]
-    async fn message_thread() {
-        // Begin test setup
-        let (local_net, mut faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(10_000_000).await;
-        macro_rules! send_and_sync {
-            ($client:ident, $message:ident) => {
-                // Propose sending the message
-                $client
-                    .propose_send($message.clone(), zip32::AccountId::ZERO)
-                    .await
-                    .unwrap();
-                // Complete and broadcast the stored proposal
-                $client.send_stored_proposal(true).await.unwrap();
-                // Increase the height and wait for the client
-                increase_height_and_wait_for_client(&local_net, &mut $client, 1)
-                    .await
-                    .unwrap();
-            };
-        }
-        // Addresses: alice, bob, charlie
-        let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
-        let (_, bob) = faucet
-            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        let (_, charlie) = faucet
-            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-
-        // messages
-        let alice_to_bob = TransactionRequest::new(vec![
-            Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.chain_type())).unwrap(),
-                Some(Zatoshis::from_u64(1_000).unwrap()),
-                Some(Memo::encode(
-                    &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
-                )),
-                None,
-                None,
-                vec![],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        let alice_to_bob_2 = TransactionRequest::new(vec![
-            Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.chain_type())).unwrap(),
-                Some(Zatoshis::from_u64(1_000).unwrap()),
-                Some(Memo::encode(
-                    &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
-                )),
-                None,
-                None,
-                vec![],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        let alice_to_charlie = TransactionRequest::new(vec![
-            Payment::new(
-                ZcashAddress::from_str(&charlie.encode(&faucet.chain_type())).unwrap(),
-                Some(Zatoshis::from_u64(1_000).unwrap()),
-                Some(Memo::encode(
-                    &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
-                        .unwrap(),
-                )),
-                None,
-                None,
-                vec![],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        let charlie_to_alice = TransactionRequest::new(vec![
-            Payment::new(
-                ZcashAddress::from_str(&alice).unwrap(),
-                Some(Zatoshis::from_u64(1_000).unwrap()),
-                Some(Memo::encode(
-                    &Memo::from_str(
-                        &("Charlie->Alice #2\nReply to\n".to_string()
-                            + &charlie.encode(&faucet.chain_type())),
-                    )
-                    .unwrap(),
-                )),
-                None,
-                None,
-                vec![],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        let bob_to_alice = TransactionRequest::new(vec![
-            Payment::new(
-                ZcashAddress::from_str(&alice).unwrap(),
-                Some(Zatoshis::from_u64(1_000).unwrap()),
-                Some(Memo::encode(
-                    &Memo::from_str(
-                        &("Bob->Alice #2\nReply to\n".to_string()
-                            + &bob.encode(&faucet.chain_type())),
-                    )
-                    .unwrap(),
-                )),
-                None,
-                None,
-                vec![],
-            )
-            .unwrap(),
-        ])
-        .unwrap();
-        // Complete test setup
-
-        // Message Sending
-        send_and_sync!(recipient, alice_to_bob);
-        send_and_sync!(recipient, alice_to_bob_2);
-        send_and_sync!(faucet, bob_to_alice);
-        send_and_sync!(recipient, alice_to_charlie);
-        send_and_sync!(faucet, charlie_to_alice);
-        // Final sync of recipient
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-
-        // Collect observations
-        let value_transfers_bob = &recipient
-            .messages_containing(Some(&bob.encode(&recipient.chain_type())))
-            .await
-            .unwrap();
-        let value_transfers_charlie = &recipient
-            .messages_containing(Some(&charlie.encode(&recipient.chain_type())))
-            .await
-            .unwrap();
-        let all_vts = &recipient.value_transfers(true).await.unwrap();
-        let all_messages = &recipient.messages_containing(None).await.unwrap();
-
-        // Make assertions
-        assert_eq!(value_transfers_bob.len(), 3);
-        assert_eq!(value_transfers_charlie.len(), 2);
-
-        // Also asserting the order now (sorry juanky)
-        // ALL MESSAGES (First one should be the oldest one)
-        assert!(
-            all_messages
-                .windows(2)
-                .all(|pair| { pair[0].blockheight <= pair[1].blockheight })
-        );
-        // ALL VTS (First one should be the most recent one)
-        assert!(
-            all_vts
-                .windows(2)
-                .all(|pair| { pair[0].blockheight >= pair[1].blockheight })
-        );
     }
 
     /// Tests that value transfers are properly sorted by block height and index.

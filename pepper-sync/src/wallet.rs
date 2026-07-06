@@ -643,6 +643,65 @@ impl WalletTransaction {
             outgoing_orchard_notes: Vec::new(),
         }
     }
+
+    /// As [`Self::new_for_test`], with received and outgoing orchard notes
+    /// attached, for tests exercising summary/value-transfer derivation
+    /// without a chain.
+    pub fn new_for_test_with_orchard_notes(
+        txid: TxId,
+        status: ConfirmationStatus,
+        orchard_notes: Vec<OrchardNote>,
+        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    ) -> Self {
+        let mut transaction = Self::new_for_test(txid, status);
+        transaction.orchard_notes = orchard_notes;
+        transaction.outgoing_orchard_notes = outgoing_orchard_notes;
+        transaction
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl<N, Nf: Copy> WalletNote<N, Nf> {
+    /// Creates a minimal received note for testing purposes.
+    pub fn new_for_test(
+        output_id: OutputId,
+        account_id: zip32::AccountId,
+        scope: zip32::Scope,
+        note: N,
+        memo: Memo,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id: KeyId::from_parts(account_id, scope),
+            note,
+            nullifier: None,
+            position: None,
+            memo,
+            spending_transaction: None,
+            refetch_nullifier_ranges: Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl<N> OutgoingNote<N> {
+    /// Creates a minimal outgoing note for testing purposes.
+    pub fn new_for_test(
+        output_id: OutputId,
+        account_id: zip32::AccountId,
+        scope: zip32::Scope,
+        note: N,
+        memo: Memo,
+        recipient_full_unified_address: Option<UnifiedAddress>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id: KeyId::from_parts(account_id, scope),
+            note,
+            memo,
+            recipient_full_unified_address,
+        }
+    }
 }
 
 #[cfg(feature = "wallet_essentials")]

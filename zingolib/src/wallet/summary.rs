@@ -745,3 +745,174 @@ impl LightWallet {
         Ok(value_transfers)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr as _;
+
+    use pepper_sync::wallet::{OrchardNote, OutgoingOrchardNote, OutputId, WalletTransaction};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::memo::Memo;
+    use zingo_common_components::protocol::ActivationHeights;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::seeds;
+
+    use crate::config::{ChainType, WalletConfig};
+    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    use crate::testutils::default_test_wallet_settings;
+    use crate::wallet::LightWallet;
+    use crate::wallet::keys::unified::ReceiverSelection;
+
+    /// Message semantics need no network: these tests were libtonode
+    /// integration tests (49s and 132s of LocalNet mining/syncing) whose
+    /// assertions are pure summary/value-transfer derivation over wallet
+    /// transaction records.
+    fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
+        LightWallet::new(
+            ChainType::Regtest(ActivationHeights::default()),
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: mnemonic_phrase.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+        )
+        .unwrap()
+    }
+
+    fn received(txid_byte: u8, height: u32, memos: &[&str]) -> WalletTransaction {
+        let txid = TxId::from_bytes([txid_byte; 32]);
+        WalletTransaction::new_for_test_with_orchard_notes(
+            txid,
+            ConfirmationStatus::Confirmed(height.into()),
+            memos
+                .iter()
+                .enumerate()
+                .map(|(index, memo)| {
+                    OrchardNote::new_for_test(
+                        OutputId::new(txid, index as u32),
+                        zip32::AccountId::ZERO,
+                        zip32::Scope::External,
+                        OrchardCryptoNoteBuilder::default().build(),
+                        Memo::from_str(memo).unwrap(),
+                    )
+                })
+                .collect(),
+            vec![],
+        )
+    }
+
+    fn sent(
+        txid_byte: u8,
+        height: u32,
+        recipient: &zcash_client_backend::address::UnifiedAddress,
+        memo: &str,
+    ) -> WalletTransaction {
+        let txid = TxId::from_bytes([txid_byte; 32]);
+        WalletTransaction::new_for_test_with_orchard_notes(
+            txid,
+            ConfirmationStatus::Confirmed(height.into()),
+            vec![],
+            vec![OutgoingOrchardNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                OrchardCryptoNoteBuilder::default().build(),
+                Memo::from_str(memo).unwrap(),
+                Some(recipient.clone()),
+            )],
+        )
+    }
+
+    /// Migrated from libtonode `fast::filter_empty_messages`.
+    #[tokio::test]
+    async fn filter_empty_messages() {
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        // Two received notes with empty memos: no messages.
+        wallet
+            .wallet_transactions
+            .insert(TxId::from_bytes([1; 32]), received(1, 10, &["", ""]));
+        assert_eq!(wallet.messages_containing(None).await.unwrap().len(), 0);
+
+        // One real memo alongside an empty one: exactly one message.
+        wallet
+            .wallet_transactions
+            .insert(TxId::from_bytes([2; 32]), received(2, 11, &["Hello", ""]));
+        assert_eq!(wallet.messages_containing(None).await.unwrap().len(), 1);
+    }
+
+    /// Migrated from libtonode `fast::message_thread`.
+    #[tokio::test]
+    async fn message_thread() {
+        // Alice is this wallet; Bob and Charlie are addresses of a foreign
+        // wallet (different seed), exactly as the integration test used the
+        // faucet's addresses.
+        let mut alice_wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let network = ChainType::Regtest(ActivationHeights::default());
+        let alice = alice_wallet
+            .unified_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .encode(&network);
+
+        let mut other_wallet = regtest_wallet(seeds::ABANDON_ART_SEED);
+        let (_, bob) = other_wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+        let (_, charlie) = other_wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+        let bob_encoded = bob.encode(&network);
+        let charlie_encoded = charlie.encode(&network);
+
+        for transaction in [
+            sent(1, 10, &bob, &format!("Alice->Bob #1\nReply to\n{alice}")),
+            sent(2, 11, &bob, &format!("Alice->Bob #2\nReply to\n{alice}")),
+            received(3, 12, &[&format!("Bob->Alice #2\nReply to\n{bob_encoded}")]),
+            sent(
+                4,
+                13,
+                &charlie,
+                &format!("Alice->Charlie #2\nReply to\n{alice}"),
+            ),
+            received(
+                5,
+                14,
+                &[&format!("Charlie->Alice #2\nReply to\n{charlie_encoded}")],
+            ),
+        ] {
+            alice_wallet
+                .wallet_transactions
+                .insert(transaction.txid(), transaction);
+        }
+
+        let messages_bob = alice_wallet
+            .messages_containing(Some(&bob_encoded))
+            .await
+            .unwrap();
+        let messages_charlie = alice_wallet
+            .messages_containing(Some(&charlie_encoded))
+            .await
+            .unwrap();
+        let all_vts = alice_wallet.value_transfers(true).await.unwrap();
+        let all_messages = alice_wallet.messages_containing(None).await.unwrap();
+
+        assert_eq!(messages_bob.len(), 3);
+        assert_eq!(messages_charlie.len(), 2);
+
+        // ALL MESSAGES (first one should be the oldest one)
+        assert!(
+            all_messages
+                .windows(2)
+                .all(|pair| pair[0].blockheight <= pair[1].blockheight)
+        );
+        // ALL VTS (first one should be the most recent one)
+        assert!(
+            all_vts
+                .windows(2)
+                .all(|pair| pair[0].blockheight >= pair[1].blockheight)
+        );
+    }
+}
