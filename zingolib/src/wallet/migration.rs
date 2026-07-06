@@ -42,8 +42,8 @@ pub mod store;
 pub use broadcast::{BroadcastClient, BroadcastError};
 pub use params::MigrationParams;
 pub use parts::{
-    BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, SigningStrategy,
-    SkipReason,
+    BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
+    SigningStrategy, SkipReason,
 };
 pub use quantize::{Denominations, decompose};
 pub use reconcile::{ChainView, PartClass, RecommendedAction, ReconcileReport, reconcile};

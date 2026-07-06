@@ -18,11 +18,13 @@ use zcash_primitives::transaction::TxId;
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, MigrationError};
+use zcash_protocol::consensus::BlockHeight;
+
 use crate::wallet::migration::{
-    BroadcastClient, ChainView, ConsentBinding, MaterializeOutcome, MigrationParams,
-    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, RecommendedAction,
-    ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration, plan_schedule,
-    reconcile, schedule,
+    BroadcastClient, ChainView, ConsentBinding, MigrationParams,
+    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
+    RecommendedAction, ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration,
+    plan_schedule, reconcile, schedule,
 };
 
 pub mod broadcast_grpc;
@@ -213,89 +215,169 @@ impl LightClient {
 
     /// The due-part broadcast loop, optionally narrowed to a single part so
     /// catch-up can sequence sends with spacing.
+    ///
+    /// Proving is parallelised across all due parts via
+    /// [`tokio::task::spawn_blocking`]: wallet reads happen under the write
+    /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
+    /// blocking thread pool without holding the lock (Phase B), and wallet
+    /// writes + submission happen sequentially under the lock again (Phase C).
+    /// The due-part broadcast loop, optionally narrowed to a single part so
+    /// catch-up can sequence sends with spacing.
+    ///
+    /// Proving is parallelised across all due parts via
+    /// [`tokio::task::spawn_blocking`]: wallet reads happen under the write
+    /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
+    /// blocking thread pool without holding the lock (Phase B), and wallet
+    /// writes + submission happen sequentially under the lock again (Phase C).
     async fn broadcast_due_parts_selected(
         &mut self,
         client: &impl BroadcastClient,
         only: Option<PartId>,
     ) -> Result<Vec<TxId>, LightClientError> {
+        type ProveHandle = tokio::task::JoinHandle<
+            Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
+        >;
+
+        // ── Phase A: prepare inputs under the wallet write lock ──────────
+        // Each Assigned part produces an owned proving closure; already-Signed
+        // parts yield their raw bytes directly. No expensive work happens here.
+        let (prove_handles, pre_proven, strategy) = {
+            let mut wallet = self.wallet().write().await;
+            let Some(mut state) = wallet.migration.take() else {
+                return Err(MigrationError::NoMigration.into());
+            };
+
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+            let current_bucket =
+                schedule::bucket_index(now_height, state.params.bucket_modulus);
+            let strategy = state.strategy;
+
+            let mut prove_handles: Vec<ProveHandle> = Vec::new();
+            let mut pre_proven: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
+
+            let phase_a: Result<(), crate::wallet::error::WalletError> = (|| {
+                for index in 0..state.parts.len() {
+                    let due = {
+                        let part = &state.parts[index];
+                        matches!(part.state, PartState::Assigned | PartState::Signed)
+                            && part.bucket_index == Some(current_bucket)
+                            && part.target_height.is_none_or(|t| now_height >= t)
+                            && only.is_none_or(|part_id| part.id == part_id)
+                    };
+                    if !due {
+                        continue;
+                    }
+
+                    if state.parts[index].state == PartState::Assigned {
+                        let account = state.account;
+                        let params = state.params.clone();
+                        match wallet.prepare_part(account, &mut state.parts[index], &params)? {
+                            PrepareResult::Ready { prove, .. } => {
+                                prove_handles.push(tokio::task::spawn_blocking(move || {
+                                    prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                }));
+                            }
+                            PrepareResult::Skip(reason) => {
+                                log::info!(
+                                    "skipping part {index}: {reason:?}; it falls to reconciliation"
+                                );
+                            }
+                        }
+                    } else {
+                        // Signed already (an earlier submit failed): recover
+                        // the bytes from the blob or the wallet's tx record.
+                        let part = &state.parts[index];
+                        let txid = part.txid.expect("signed parts have txids");
+                        let expiry =
+                            part.expiry_height.expect("signed parts have expiry heights");
+                        let bytes = match &part.signed_blob {
+                            Some(blob) => blob.clone(),
+                            None => {
+                                let tx = wallet
+                                    .wallet_transactions
+                                    .get(&txid)
+                                    .ok_or(crate::wallet::error::WalletError::TransactionNotFound(
+                                        txid,
+                                    ))?;
+                                let mut bytes = Vec::new();
+                                tx.transaction()
+                                    .write(&mut bytes)
+                                    .map_err(crate::wallet::error::WalletError::TransactionWrite)?;
+                                bytes
+                            }
+                        };
+                        pre_proven.push((index, txid, bytes, expiry));
+                    }
+                }
+                Ok(())
+            })();
+
+            wallet.migration = Some(state);
+            phase_a?;
+            (prove_handles, pre_proven, strategy)
+        }; // wallet write lock released — Phase B runs without the lock
+
+        // ── Phase B: parallel proving (no wallet lock held) ───────────────
+        // All Halo2 + Groth16 work runs concurrently on the blocking thread
+        // pool. Wall-clock cost = slowest single proof, not the sum.
+        let mut newly_proven: Vec<(usize, TxId, Vec<u8>)> = Vec::new();
+        for handle in prove_handles {
+            let result = handle
+                .await
+                .map_err(|e| crate::wallet::error::WalletError::MigrationBuild(e.to_string()))??;
+            newly_proven.push(result);
+        }
+
+        // ── Phase C: record results + submit under the wallet write lock ──
         let mut wallet = self.wallet().write().await;
         let Some(mut state) = wallet.migration.take() else {
             return Err(MigrationError::NoMigration.into());
         };
 
         let result = async {
-            let now_height = wallet
-                .sync_state
-                .last_known_chain_height()
-                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-            let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
+            // Record all newly proved parts (mark Signed, store tx in wallet).
+            let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
+                Vec::new();
+            for (index, txid, raw_tx) in newly_proven {
+                let bucket = state.parts[index]
+                    .bucket_index
+                    .expect("assigned parts carry a bucket");
+                let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
+                let target_height = boundary + 1;
+                let expiry_height = boundary + state.params.expiry_delta;
+                wallet.record_part_result(
+                    &mut state.parts[index],
+                    txid,
+                    &raw_tx,
+                    target_height,
+                    expiry_height,
+                    strategy,
+                )?;
+                newly_proven_with_expiry.push((index, txid, raw_tx, expiry_height));
+            }
+
+            // Combine proved and pre-proven, maintaining original part order.
+            let mut all_to_submit: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
+                newly_proven_with_expiry
+                    .into_iter()
+                    .chain(pre_proven.into_iter())
+                    .collect();
+            all_to_submit.sort_by_key(|(index, ..)| *index);
 
             let mut sent = Vec::new();
-            for index in 0..state.parts.len() {
-                let due = {
-                    let part = &state.parts[index];
-                    matches!(part.state, PartState::Assigned | PartState::Signed)
-                        && part.bucket_index == Some(current_bucket)
-                        && part.target_height.is_none_or(|t| now_height >= t)
-                        && only.is_none_or(|part_id| part.id == part_id)
-                };
-                if !due {
-                    continue;
-                }
-
-                let raw_tx = if state.parts[index].state == PartState::Assigned {
-                    let account = state.account;
-                    let strategy = state.strategy;
-                    let params = state.params.clone();
-                    match wallet.materialize_part(
-                        account,
-                        &mut state.parts[index],
-                        strategy,
-                        &params,
-                    )? {
-                        MaterializeOutcome::Materialized { raw_tx, .. } => raw_tx,
-                        MaterializeOutcome::Skip(reason) => {
-                            log::info!(
-                                "skipping part {index}: {reason:?}; it falls to reconciliation"
-                            );
-                            continue;
-                        }
-                    }
-                } else {
-                    // Signed already (an earlier submit failed): recover the
-                    // bytes from the blob or the wallet's transaction record.
-                    let part = &state.parts[index];
-                    match &part.signed_blob {
-                        Some(blob) => blob.clone(),
-                        None => {
-                            let txid = part.txid.expect("signed parts have txids");
-                            let transaction = wallet.wallet_transactions.get(&txid).ok_or(
-                                crate::wallet::error::WalletError::TransactionNotFound(txid),
-                            )?;
-                            let mut bytes = Vec::new();
-                            transaction
-                                .transaction()
-                                .write(&mut bytes)
-                                .map_err(crate::wallet::error::WalletError::TransactionWrite)?;
-                            bytes
-                        }
-                    }
-                };
-
-                // The attempt is recorded before submission so a crash in
-                // between is detectable (the mined part is then promoted via
-                // its nullifier on reconciliation).
+            for (index, txid, raw_tx, expiry_height) in all_to_submit {
+                // Record the attempt before submission so a crash between
+                // submit and record is detectable via nullifier on reconcile.
                 state.parts[index].record_attempt();
                 wallet.save_required = true;
-
-                let expiry_height = state.parts[index]
-                    .expiry_height
-                    .expect("signed parts have expiry heights");
                 match client.submit(raw_tx, expiry_height).await {
                     Ok(_) => {
                         state.parts[index].mark_broadcast()?;
                         wallet.save_required = true;
-                        sent.push(state.parts[index].txid.expect("signed parts have txids"));
+                        sent.push(txid);
                     }
                     Err(e) => {
                         log::warn!("part submission failed, leaving the part signed: {e}");

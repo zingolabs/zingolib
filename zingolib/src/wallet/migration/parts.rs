@@ -272,6 +272,25 @@ impl PartRecord {
     }
 }
 
+/// Outcome of [`LightWallet::prepare_part`]: either a ready proving closure
+/// or the reason the part must be skipped.
+pub enum PrepareResult {
+    /// All wallet data was extracted; the closure does the CPU-intensive
+    /// proving on a background thread.
+    Ready {
+        /// Proving closure. Takes ownership of all needed data; no wallet
+        /// reference is captured. Safe to call on any thread.
+        prove:
+            Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>,
+        /// First block of the part's bucket window (the builder's target).
+        target_height: BlockHeight,
+        /// Expiry height of the built transaction.
+        expiry_height: BlockHeight,
+    },
+    /// The wallet's tree state is not yet ready for this part.
+    Skip(SkipReason),
+}
+
 /// What materializing a part produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MaterializeOutcome {
@@ -395,30 +414,23 @@ impl crate::wallet::LightWallet {
         result
     }
 
-    /// Builds, proves, signs and records the canonical transaction for one
-    /// [`PartState::Assigned`] part: exactly one Orchard spend of the bound
-    /// note, exactly one Ironwood output of the part's denomination, no
-    /// other components, the canonical fee, the previous-boundary anchor,
-    /// the canonical expiry and `lock_time = 0`. Any deviation is a hard
-    /// error, never a fallback.
+    /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
+    /// part and returns it as an owned proving closure. Returns
+    /// [`PrepareResult::Skip`] when the tree state is unavailable.
     ///
-    /// Never triggers a synchronization: when the required tree state is
-    /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
-    /// anything.
+    /// The returned closure does not reference the wallet, so callers can run
+    /// multiple closures concurrently on background threads. Mutates
+    /// `part.anchor_witness` if the boundary witness needs capturing.
     #[allow(clippy::result_large_err)]
-    pub fn materialize_part(
+    pub fn prepare_part(
         &mut self,
         account: zip32::AccountId,
         part: &mut PartRecord,
-        strategy: SigningStrategy,
         params: &super::MigrationParams,
-    ) -> Result<MaterializeOutcome, WalletError> {
+    ) -> Result<PrepareResult, WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
         use shardtree::store::ShardStore as _;
-        use zcash_primitives::transaction::builder::{BuildConfig, Builder};
         use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
-        use zcash_protocol::memo::MemoBytes;
-        use zcash_protocol::value::Zatoshis;
 
         if part.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
@@ -450,7 +462,7 @@ impl crate::wallet::LightWallet {
             .max_checkpoint_id()
             .expect("infallible");
         if tree_tip.is_none_or(|tip| tip < boundary) {
-            return Ok(MaterializeOutcome::Skip(SkipReason::StaleTreeState {
+            return Ok(PrepareResult::Skip(SkipReason::StaleTreeState {
                 tree_tip,
                 boundary,
             }));
@@ -460,12 +472,10 @@ impl crate::wallet::LightWallet {
             part.anchor_witness = self.capture_boundary_witness(part, boundary)?;
         }
         let Some(boundary_witness) = part.anchor_witness.clone() else {
-            return Ok(MaterializeOutcome::Skip(SkipReason::MissedBoundary {
-                boundary,
-            }));
+            return Ok(PrepareResult::Skip(SkipReason::MissedBoundary { boundary }));
         };
 
-        // The bound note, revalidated against the record.
+        // Revalidate the bound note.
         let bound = part.note.expect("witnessed parts have a bound note");
         let (note, note_value) = {
             let wallet_note = self.bound_orchard_note(bound.output_id)?;
@@ -496,17 +506,22 @@ impl crate::wallet::LightWallet {
             )));
         }
 
+        // Construct the anchor and Merkle path from the cached witness bytes.
         let anchor =
             Option::<orchard::Anchor>::from(orchard::Anchor::from_bytes(boundary_witness.anchor))
                 .ok_or_else(|| {
-                WalletError::MigrationStateCorrupt("cached boundary anchor is invalid".to_string())
-            })?;
+                    WalletError::MigrationStateCorrupt(
+                        "cached boundary anchor is invalid".to_string(),
+                    )
+                })?;
         let auth_path = boundary_witness
             .auth_path
             .iter()
             .map(|node| {
                 Option::from(orchard::tree::MerkleHashOrchard::from_bytes(node)).ok_or_else(|| {
-                    WalletError::MigrationStateCorrupt("cached witness node is invalid".to_string())
+                    WalletError::MigrationStateCorrupt(
+                        "cached witness node is invalid".to_string(),
+                    )
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -520,81 +535,163 @@ impl crate::wallet::LightWallet {
             })?,
         );
 
+        // Extract owned keys from the key store — wallet access ends here.
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&account)
             .ok_or(crate::wallet::error::KeyError::NoAccountKeys)?
             .try_into()?;
-        let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
-        let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
-        let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
 
-        // Canonical structure: previous-boundary anchor, canonical expiry,
-        // exactly one spend and one Ironwood output, canonical fee.
+        let chain_type = self.chain_type;
+        let denomination = part.denomination;
+        let part_fee = params.part_fee;
         let target_height = boundary + 1;
         let expiry_height = boundary + params.expiry_delta;
-        let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-            Zatoshis::from_u64(params.part_fee)?,
-        );
-        let build_config = BuildConfig::Standard {
-            sapling_anchor: None,
-            orchard_anchor: Some(anchor),
-            // No Ironwood spends exist yet, so the empty tree anchors the
-            // output-only Ironwood bundle.
-            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-        };
-        let mut builder = Builder::new(self.chain_type, target_height, build_config)
-            .with_expiry_height(expiry_height);
-        builder
-            .add_orchard_spend::<std::convert::Infallible>(orchard_fvk.clone(), note, merkle_path)
-            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
-        builder
-            .add_ironwood_output::<std::convert::Infallible>(
-                Some(internal_ovk),
-                recipient,
-                Zatoshis::from_u64(part.denomination)?,
-                MemoBytes::empty(),
-            )
-            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+        let params_clone = params.clone();
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        let build_result = builder
-            .build(
-                &zcash_transparent::builder::TransparentSigningSet::new(),
-                &[usk.sapling().clone()],
-                &[usk.orchard().into()],
-                rand::rngs::OsRng,
-                &sapling_prover,
-                &sapling_prover,
-                &fee_rule,
-            )
-            .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
+        let prove: Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static> =
+            Box::new(move || {
+                use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+                use zcash_protocol::memo::MemoBytes;
+                use zcash_protocol::value::Zatoshis;
 
-        verify_canonical_part(
-            build_result.transaction(),
-            part.denomination,
+                let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
+                let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
+                let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
+
+                let fee_rule =
+                    zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
+                        Zatoshis::from_u64(part_fee)?,
+                    );
+                let build_config = BuildConfig::Standard {
+                    sapling_anchor: None,
+                    orchard_anchor: Some(anchor),
+                    ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                };
+                let mut builder = Builder::new(chain_type, target_height, build_config)
+                    .with_expiry_height(expiry_height);
+                builder
+                    .add_orchard_spend::<std::convert::Infallible>(
+                        orchard_fvk.clone(),
+                        note,
+                        merkle_path,
+                    )
+                    .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+                builder
+                    .add_ironwood_output::<std::convert::Infallible>(
+                        Some(internal_ovk),
+                        recipient,
+                        Zatoshis::from_u64(denomination)?,
+                        MemoBytes::empty(),
+                    )
+                    .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+
+                let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
+                    .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+                let sapling_prover = zcash_proofs::prover::LocalTxProver::from_bytes(
+                    &sapling_spend,
+                    &sapling_output,
+                );
+                let build_result = builder
+                    .build(
+                        &zcash_transparent::builder::TransparentSigningSet::new(),
+                        &[usk.sapling().clone()],
+                        &[usk.orchard().into()],
+                        rand::rngs::OsRng,
+                        &sapling_prover,
+                        &sapling_prover,
+                        &fee_rule,
+                    )
+                    .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
+
+                verify_canonical_part(
+                    build_result.transaction(),
+                    denomination,
+                    expiry_height,
+                    &params_clone,
+                )?;
+
+                let txid = build_result.transaction().txid();
+                let mut raw_tx = Vec::new();
+                build_result
+                    .transaction()
+                    .write(&mut raw_tx)
+                    .map_err(WalletError::TransactionWrite)?;
+                Ok((txid, raw_tx))
+            });
+
+        Ok(PrepareResult::Ready {
+            prove,
+            target_height,
             expiry_height,
-            params,
-        )?;
+        })
+    }
 
-        let mut raw_tx = Vec::new();
-        build_result
-            .transaction()
-            .write(&mut raw_tx)
-            .map_err(WalletError::TransactionWrite)?;
-        let txid = self.record_migration_transaction(&raw_tx, target_height)?;
-
+    /// Records a materialized part in the wallet after proving: stores the
+    /// transaction, transitions the part to [`PartState::Signed`].
+    ///
+    /// Called sequentially in Phase C after all parallel proving is complete.
+    #[allow(clippy::result_large_err)]
+    pub fn record_part_result(
+        &mut self,
+        part: &mut PartRecord,
+        txid: TxId,
+        raw_tx: &[u8],
+        target_height: BlockHeight,
+        expiry_height: BlockHeight,
+        strategy: SigningStrategy,
+    ) -> Result<(), WalletError> {
+        let recorded = self.record_migration_transaction(raw_tx, target_height)?;
+        debug_assert_eq!(recorded, txid, "txid mismatch between prove and record phases");
         let signed_blob = match strategy {
             SigningStrategy::LazyAtBoundary => None,
-            SigningStrategy::PreSigned => Some(raw_tx.clone()),
+            SigningStrategy::PreSigned => Some(raw_tx.to_vec()),
         };
         part.mark_signed(txid, expiry_height, signed_blob)?;
         self.save_required = true;
+        Ok(())
+    }
 
-        Ok(MaterializeOutcome::Materialized { txid, raw_tx })
+    /// Builds, proves, signs and records the canonical transaction for one
+    /// [`PartState::Assigned`] part: exactly one Orchard spend of the bound
+    /// note, exactly one Ironwood output of the part's denomination, no
+    /// other components, the canonical fee, the previous-boundary anchor,
+    /// the canonical expiry and `lock_time = 0`. Any deviation is a hard
+    /// error, never a fallback.
+    ///
+    /// Never triggers a synchronization: when the required tree state is
+    /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
+    /// anything.
+    ///
+    /// For parallel proving of multiple parts, see [`Self::prepare_part`] and
+    /// [`Self::record_part_result`].
+    #[allow(clippy::result_large_err)]
+    pub fn materialize_part(
+        &mut self,
+        account: zip32::AccountId,
+        part: &mut PartRecord,
+        strategy: SigningStrategy,
+        params: &super::MigrationParams,
+    ) -> Result<MaterializeOutcome, WalletError> {
+        match self.prepare_part(account, part, params)? {
+            PrepareResult::Skip(reason) => Ok(MaterializeOutcome::Skip(reason)),
+            PrepareResult::Ready {
+                prove,
+                target_height,
+                expiry_height,
+            } => {
+                let (txid, raw_tx) = prove()?;
+                self.record_part_result(
+                    part,
+                    txid,
+                    &raw_tx,
+                    target_height,
+                    expiry_height,
+                    strategy,
+                )?;
+                Ok(MaterializeOutcome::Materialized { txid, raw_tx })
+            }
+        }
     }
 }
 
