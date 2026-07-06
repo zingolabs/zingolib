@@ -646,13 +646,6 @@ mod fast {
         );
     }
 
-    // temporary for infrastrucutre integration
-    #[tokio::test]
-    async fn basic_scenario() {
-        let (_local_net, _faucet, _recipient, _) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-    }
-
     #[tokio::test]
     async fn spendable_balance_includes_notes_in_incomplete_shards() {
         let (_local_net, _faucet, recipient, _) =
