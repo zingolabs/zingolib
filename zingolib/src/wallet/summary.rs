@@ -799,6 +799,7 @@ mod tests {
                         zip32::Scope::External,
                         OrchardCryptoNoteBuilder::default().build(),
                         Memo::from_str(memo).unwrap(),
+                        None,
                     )
                 })
                 .collect(),
@@ -988,5 +989,76 @@ mod tests {
         assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
+    }
+
+    /// Migrated from libtonode
+    /// `fast::spendable_balance_includes_notes_in_incomplete_shards`: the
+    /// property is spendable-balance composition over wallet state — a
+    /// confirmed, positioned note whose block has no completed orchard
+    /// shard (sync state carries no orchard shard ranges, so the note lives
+    /// in the trailing incomplete shard) still counts as spendable. The
+    /// integration version only produced that condition incidentally via
+    /// regtest's tiny tree; here it is constructed explicitly.
+    /// (Lives here to share this module's record-fabrication rig;
+    /// `spendable_balance` itself is defined in wallet/balance.rs.)
+    #[test]
+    fn spendable_balance_includes_notes_in_incomplete_shards() {
+        use incrementalmerkletree::Position;
+        use orchard::value::NoteValue;
+        use pepper_sync::sync::{ScanPriority, ScanRange};
+        use pepper_sync::wallet::{OrchardNote as OrchardWalletNote, SyncState};
+        use zcash_protocol::consensus::BlockHeight;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        // Birthday..tip fully scanned; no completed orchard shards.
+        wallet.sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+            BlockHeight::from_u32(1)..BlockHeight::from_u32(21),
+            ScanPriority::Scanned,
+        )]);
+
+        // The anchor height is capped by the sapling tree's newest
+        // checkpoint (get_target_and_anchor_heights); give it one at the
+        // tip, as sync would have.
+        {
+            use shardtree::store::{Checkpoint, ShardStore as _};
+            wallet
+                .shard_trees
+                .sapling
+                .store_mut()
+                .add_checkpoint(BlockHeight::from_u32(20), Checkpoint::tree_empty())
+                .unwrap();
+        }
+
+        let txid = TxId::from_bytes([1; 32]);
+        wallet.wallet_transactions.insert(
+            txid,
+            WalletTransaction::new_for_test_with_orchard_notes(
+                txid,
+                ConfirmationStatus::Confirmed(10.into()),
+                vec![OrchardWalletNote::new_for_test(
+                    OutputId::new(txid, 0),
+                    zip32::AccountId::ZERO,
+                    zip32::Scope::External,
+                    OrchardCryptoNoteBuilder::default()
+                        .value(NoteValue::from_raw(100_000))
+                        .build(),
+                    Memo::Empty,
+                    Some(Position::from(0)),
+                )],
+                vec![],
+            ),
+        );
+
+        assert_eq!(
+            wallet
+                .spendable_balance::<pepper_sync::wallet::OrchardNote>(
+                    zip32::AccountId::ZERO,
+                    false
+                )
+                .unwrap()
+                .into_u64(),
+            100_000
+        );
     }
 }

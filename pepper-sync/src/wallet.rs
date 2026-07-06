@@ -661,6 +661,17 @@ impl WalletTransaction {
 }
 
 #[cfg(feature = "test-features")]
+impl SyncState {
+    /// Creates sync state with the given scan ranges, for tests exercising
+    /// spendability/witness gating without a chain.
+    pub fn new_for_test(scan_ranges: Vec<ScanRange>) -> Self {
+        let mut sync_state = Self::new();
+        sync_state.scan_ranges = scan_ranges;
+        sync_state
+    }
+}
+
+#[cfg(feature = "test-features")]
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     /// Creates a minimal received note for testing purposes.
     pub fn new_for_test(
@@ -669,13 +680,14 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
         scope: zip32::Scope,
         note: N,
         memo: Memo,
+        position: Option<Position>,
     ) -> Self {
         Self {
             output_id,
             key_id: KeyId::from_parts(account_id, scope),
             note,
             nullifier: None,
-            position: None,
+            position,
             memo,
             spending_transaction: None,
             refetch_nullifier_ranges: Vec::new(),

@@ -128,7 +128,7 @@ fn check_view_capability_bounds(
 
 mod fast {
 
-    use pepper_sync::wallet::{OrchardNote, OutputInterface, TransparentCoin};
+    use pepper_sync::wallet::{OutputInterface, TransparentCoin};
     use zcash_address::ZcashAddress;
     use zcash_client_backend::{
         encoding::encode_payment_address_p,
@@ -639,23 +639,6 @@ mod fast {
         check_client_balances!(
             faucet,
             o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
-        );
-    }
-
-    #[tokio::test]
-    async fn spendable_balance_includes_notes_in_incomplete_shards() {
-        let (_local_net, _faucet, recipient, _) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-
-        assert_eq!(
-            recipient
-                .wallet()
-                .read()
-                .await
-                .spendable_balance::<OrchardNote>(zip32::AccountId::ZERO, false)
-                .unwrap()
-                .into_u64(),
-            100_000
         );
     }
 
