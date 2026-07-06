@@ -6,7 +6,6 @@ use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
-use zingo_common_components::protocol::ActivationHeights;
 use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -366,7 +365,7 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 #[tokio::test]
 async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
-        ActivationHeights::default(),
+        scenarios::default_test_activation_heights(),
         Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
     )
     .await;
@@ -399,4 +398,123 @@ async fn store_all_checkpoints_in_verification_window() {
             "missing orchard checkpoint at height {height}"
         );
     }
+}
+
+/// Diagnostic for the container-only `add_subtree_roots` failure (wallet
+/// consistently 32 sapling shards short of the server's count).
+///
+/// Prints, for three fresh connections, how many sapling subtree roots the
+/// stream yields and the chain height at which it ends — then the count
+/// pepper-sync's own fetch path lands in the wallet. If a short stream's last
+/// completing height is months old, the connection reached a lagging backend
+/// behind the load balancer; if counts differ between connections to a
+/// current backend, the stream is being cut mid-flight.
+///
+/// Run in the environment under investigation with output visible, e.g.:
+///   ZINGOLIB_NEXTEST_FILTER='' makers container-test -p libtonode-tests \
+///     -E 'test(diagnose_subtree_root_stream)' --run-ignored all --no-capture
+#[ignore = "diagnostic: run manually against live mainnet"]
+#[tokio::test]
+async fn diagnose_subtree_root_stream() {
+    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+
+    for attempt in 1..=3 {
+        let mut grpc_client = GrpcIndexer::new(uri.clone()).await.unwrap();
+        let mut stream = grpc_client
+            .get_subtree_roots(
+                GetSubtreeRootsArg {
+                    start_index: 0,
+                    shielded_protocol: 0,
+                    max_entries: 0,
+                },
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+            .await
+            .unwrap();
+        let mut count: u64 = 0;
+        let mut last_completing_height: u64 = 0;
+        let ending = loop {
+            match stream.message().await {
+                Ok(Some(root)) => {
+                    count += 1;
+                    last_completing_height = root.completing_block_height;
+                }
+                Ok(None) => break "clean end".to_string(),
+                Err(status) => break format!("error: {status}"),
+            }
+        };
+        println!(
+            "connection {attempt}: {count} sapling subtree roots, \
+             last completing height {last_completing_height}, ending: {ending}"
+        );
+
+        // Decisive follow-up: resume from where the stream ended, on the same
+        // connection. A backend that genuinely has only `count` roots returns
+        // 0 more; a stream that was cut mid-flight returns the remainder.
+        let mut resume_stream = grpc_client
+            .get_subtree_roots(
+                GetSubtreeRootsArg {
+                    start_index: u32::try_from(count).unwrap(),
+                    shielded_protocol: 0,
+                    max_entries: 0,
+                },
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+            .await
+            .unwrap();
+        let mut resumed: u64 = 0;
+        let resume_ending = loop {
+            match resume_stream.message().await {
+                Ok(Some(_)) => resumed += 1,
+                Ok(None) => break "clean end".to_string(),
+                Err(status) => break format!("error: {status}"),
+            }
+        };
+        println!(
+            "connection {attempt}: resume from index {count} yielded {resumed} more \
+             roots, ending: {resume_ending}"
+        );
+    }
+
+    // pepper-sync's own fetch path, exactly as `add_subtree_roots` drives it.
+    let temp_dir = TempDir::new().unwrap();
+    let config = ClientConfig::builder()
+        .set_indexer_uri(uri)
+        .set_chain_type(ChainType::Mainnet)
+        .set_wallet_dir(temp_dir.path().to_path_buf())
+        .set_wallet_config(WalletConfig::MnemonicPhrase {
+            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            birthday: 2_000_000,
+            wallet_settings: default_test_wallet_settings(),
+        })
+        .build();
+    let mut lightclient = LightClient::new(config, true).await.unwrap();
+    lightclient.sync().await.unwrap();
+    while !(lightclient
+        .wallet()
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .iter()
+        .any(|range| range.priority() == ScanPriority::Scanning)
+        || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
+    {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let _ = lightclient.stop_sync();
+    let _ = lightclient.await_sync().await;
+
+    let wallet = lightclient.wallet().write().await;
+    let shard_addrs = wallet
+        .shard_trees
+        .sapling
+        .store()
+        .get_shard_roots()
+        .unwrap();
+    println!(
+        "wallet (pepper-sync fetch path): {} sapling shard roots",
+        shard_addrs.len()
+    );
 }
