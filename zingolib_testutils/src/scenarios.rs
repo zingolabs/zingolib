@@ -159,10 +159,10 @@ pub const fn mined_block_rewards_total(count: u64) -> u64 {
 }
 
 /// Chain height after a shielded-pool faucet scenario finishes setting up:
-/// 1 launch block + 2 setup blocks + 1 tip-separation block + 1 block
+/// 1 launch block + 2 setup blocks + 2 ladder-clearing blocks + 1 block
 /// confirming the offload send. (No maturity blocks: shielded coinbase has
 /// no 100-block maturity rule.)
-pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 5;
+pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 
 /// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
 /// coinbase pays the orchard receiver from the NU5 activation block (height
@@ -247,12 +247,20 @@ pub async fn sync_client_to_validator_tip<V, I>(
 /// 100-block maturity rule — the wallet spends blocks-old orchard coinbase
 /// fine (server-verified by `value_transfers`).
 ///
-/// One block is mined between the sync and the spend: zebra's mempool
-/// rejects a transaction spending a note from the tip block itself
-/// ("rejected from the mempool until the next chain tip block ... could not
-/// validate orchard proof", observed when the offload spent the tip's note).
-/// Syncing FIRST and mining after means the wallet can only select notes
-/// (and an anchor) at least one block behind zebra's tip.
+/// Two constraints govern when the offload can be sent (both observed as
+/// zebra mempool rejections):
+///
+/// 1. The wallet must be synced to the REAL tip when it builds the send —
+///    it signs for tip+1's consensus branch id, and the fixture ladder
+///    activates NU6.1/NU6.2 at height 5, right where this setup operates
+///    ("transaction uses an incorrect consensus branch id" when the wallet
+///    was held a block behind).
+/// 2. It must not spend the tip block's own note ("could not validate
+///    orchard proof" when it did).
+///
+/// Mining two extra blocks first clears the upgrade ladder (tip 5, so
+/// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
+/// four pre-tip notes so oldest-first selection never reaches the tip note.
 async fn zebrad_shielded_funds<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -264,8 +272,8 @@ async fn zebrad_shielded_funds<V, I>(
     <V as Process>::Config: Send,
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
+        local_net.validator().generate_blocks(2).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
-        local_net.validator().generate_blocks(1).await.unwrap();
         quick_send(
             faucet,
             vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
