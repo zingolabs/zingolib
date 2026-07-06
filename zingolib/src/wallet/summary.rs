@@ -757,11 +757,15 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::seeds;
 
+    use crate::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
     use crate::config::{ChainType, WalletConfig};
     use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
     use crate::testutils::default_test_wallet_settings;
     use crate::wallet::LightWallet;
     use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::wallet::summary::data::{
+        SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+    };
 
     /// Message semantics need no network: these tests were libtonode
     /// integration tests (49s and 132s of LocalNet mining/syncing) whose
@@ -914,5 +918,75 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].blockheight >= pair[1].blockheight)
         );
+    }
+
+    /// Migrated from libtonode `fast::create_send_to_self_with_zfz_active`:
+    /// the assertions are value-transfer KIND classification (a self-send
+    /// yields SendToSelf(Basic); the Zennies-for-Zingo output yields a
+    /// Sent(Send) addressed to the ZFZ address), which is pure summary
+    /// derivation. The proposal/broadcast pipeline the integration test
+    /// drove incidentally remains covered by the chain-bound send tests.
+    #[tokio::test]
+    async fn create_send_to_self_with_zfz_active() {
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let network = ChainType::Regtest(ActivationHeights::default());
+
+        let own_orchard_receiver = *wallet
+            .unified_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .orchard()
+            .unwrap();
+        let zcash_client_backend::address::Address::Unified(zfz_unified_address) =
+            zcash_client_backend::address::Address::decode(
+                &network,
+                ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+            )
+            .unwrap()
+        else {
+            panic!("ZFZ address must be unified");
+        };
+
+        let txid = TxId::from_bytes([1; 32]);
+        let transaction = WalletTransaction::new_for_test_with_orchard_notes(
+            txid,
+            ConfirmationStatus::Confirmed(10.into()),
+            vec![],
+            vec![
+                // The send-to-self output: recipient is one of the wallet's
+                // own orchard receivers.
+                OutgoingOrchardNote::new_for_test(
+                    OutputId::new(txid, 0),
+                    zip32::AccountId::ZERO,
+                    zip32::Scope::External,
+                    OrchardCryptoNoteBuilder::default()
+                        .recipient(own_orchard_receiver)
+                        .build(),
+                    Memo::Empty,
+                    None,
+                ),
+                // The Zennies-for-Zingo output.
+                OutgoingOrchardNote::new_for_test(
+                    OutputId::new(txid, 1),
+                    zip32::AccountId::ZERO,
+                    zip32::Scope::External,
+                    OrchardCryptoNoteBuilder::default().build(),
+                    Memo::Empty,
+                    Some(zfz_unified_address),
+                ),
+            ],
+        );
+        wallet.wallet_transactions.insert(txid, transaction);
+
+        let value_transfers = wallet.value_transfers(true).await.unwrap();
+
+        assert!(value_transfers.iter().any(|vt| vt.kind
+            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                SelfSendValueTransfer::Basic
+            ))));
+        assert!(value_transfers.iter().any(|vt| vt.kind
+            == ValueTransferKind::Sent(SentValueTransfer::Send)
+            && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 }

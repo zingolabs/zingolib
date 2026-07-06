@@ -140,16 +140,12 @@ mod fast {
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
-        ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         config::WalletConfig,
         testutils::{
             chain_generics::conduct_chain::ConductChain, default_test_wallet_settings,
             lightclient::from_inputs,
         },
-        wallet::{
-            keys::unified::{ReceiverSelection, UnifiedAddressId},
-            summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
-        },
+        wallet::keys::unified::{ReceiverSelection, UnifiedAddressId},
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
     use zip32::AccountId;
@@ -688,34 +684,6 @@ mod fast {
             .unwrap();
 
         recipient.send_stored_proposal(true).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn create_send_to_self_with_zfz_active() {
-        let (_local_net, _faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(5_000_000).await;
-
-        recipient
-            .propose_send_all(
-                address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
-                true,
-                None,
-                zip32::AccountId::ZERO,
-            )
-            .await
-            .unwrap();
-
-        recipient.send_stored_proposal(true).await.unwrap();
-
-        let value_transfers = &recipient.value_transfers(true).await.unwrap();
-
-        assert!(value_transfers.iter().any(|vt| vt.kind
-            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                SelfSendValueTransfer::Basic
-            ))));
-        assert!(value_transfers.iter().any(|vt| vt.kind
-            == ValueTransferKind::Sent(SentValueTransfer::Send)
-            && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
     /// Tests that value transfers are properly sorted by block height and index.
