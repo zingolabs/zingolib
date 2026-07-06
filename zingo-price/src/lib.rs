@@ -188,8 +188,20 @@ impl PriceList {
     }
 }
 
+/// Installs rustls's `aws-lc-rs` provider as the process-level default if
+/// none is installed yet (first-install-wins, so an embedder's choice is
+/// kept). Required because reqwest is built with `rustls-tls-no-provider`.
+/// Mirrors `zingo_netutils::ensure_default_crypto_provider`, which cannot be
+/// used here: zingo-netutils sits above this crate in the dependency graph.
+fn ensure_default_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
 /// Get current price of ZEC in USD
 async fn get_current_price() -> Result<Price, PriceError> {
+    ensure_default_crypto_provider();
     let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
     let mut trades = httpget
         .json::<Vec<CurrentPriceResponse>>()

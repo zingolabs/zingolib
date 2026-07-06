@@ -226,10 +226,7 @@ pub mod test {
     pub(crate) async fn sync_example_wallet(
         wallet_case: examples::NetworkSeedVersion,
     ) -> LightClient {
-        // install default crypto provider (ring)
-        if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-            log::error!("Error installing crypto provider: {e:?}");
-        }
+        zingo_netutils::ensure_default_crypto_provider();
 
         let mut lc = wallet_case.load_example_wallet().await;
 
