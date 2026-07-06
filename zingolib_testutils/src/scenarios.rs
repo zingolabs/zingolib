@@ -241,6 +241,78 @@ pub async fn sync_client_to_validator_tip<V, I>(
     sync_to_target_height(client, tip).await.unwrap();
 }
 
+/// The single lag-safe send primitive: sends `receivers` from `sender` in
+/// one transaction, then mines one block at a time — waiting for `sender`'s
+/// wallet to reach each new height — until the transaction is confirmed.
+///
+/// Owns both send hazards discovered on the zainod+zebrad stack, so callers
+/// need no choreography:
+///
+/// - Indexer tip-lag: `generate_blocks` returns when the *validator* has the
+///   block, but wallet sync talks to the *indexer*, whose poll-based
+///   ingestion lags by 100-500ms (see
+///   `indexer_tip_lags_validator_after_block_generation`). Waiting on the
+///   wallet's own height, as `increase_height_and_wait_for_client` does,
+///   closes that window.
+/// - Tip-block spends: zebra's mempool rejects a transaction spending a
+///   note from (or anchored at) the tip block itself ("rejected from the
+///   mempool until the next chain tip block"). When zebra says exactly
+///   that, one separation block is mined and the send retried once,
+///   mirroring the fix in `zebrad_shielded_funds`.
+///
+/// Confirmation is asserted (up to a few blocks of tolerance), so a
+/// transaction that misses its block for any new reason fails HERE with the
+/// txids, not downstream at some unrelated balance assert.
+pub async fn send_and_bump<V, I>(
+    local_net: &LocalNet<V, I>,
+    sender: &mut LightClient,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> nonempty::NonEmpty<zcash_primitives::transaction::TxId>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send,
+{
+    let txids = match from_inputs::quick_send(sender, receivers.clone()).await {
+        Ok(txids) => txids,
+        Err(e) if e.to_string().contains("until the next chain tip block") => {
+            // Tip-block spend rejected: separate from the tip and retry once.
+            increase_height_and_wait_for_client(local_net, sender, 1)
+                .await
+                .unwrap();
+            from_inputs::quick_send(sender, receivers)
+                .await
+                .expect("send must succeed after tip separation")
+        }
+        Err(e) => panic!("send failed: {e}"),
+    };
+
+    // The transaction can miss the immediately-following block; allow a few
+    // blocks before declaring it lost.
+    const MAX_BLOCKS_TO_CONFIRMATION: u32 = 5;
+    for _ in 0..MAX_BLOCKS_TO_CONFIRMATION {
+        increase_height_and_wait_for_client(local_net, sender, 1)
+            .await
+            .unwrap();
+        let wallet = sender.wallet();
+        let wallet = wallet.read().await;
+        if txids.iter().all(|txid| {
+            wallet
+                .wallet_transactions
+                .get(txid)
+                .is_some_and(|tx| tx.status().is_confirmed())
+        }) {
+            drop(wallet);
+            return txids;
+        }
+    }
+    panic!(
+        "transaction(s) {txids:?} still unconfirmed after mining \
+         {MAX_BLOCKS_TO_CONFIRMATION} blocks"
+    );
+}
+
 /// When mining to a shielded pool, dump the excess faucet funds and generate
 /// a block to confirm the send. Coinbase lands directly in the mined-to pool
 /// (zebrad mines to Orchard natively), and shielded coinbase has no

@@ -5182,9 +5182,11 @@ name = "zingolib_testutils"
 version = "0.1.0"
 dependencies = [
  "http",
+ "nonempty",
  "portpicker",
  "tempfile",
  "zcash_local_net",
+ "zcash_primitives",
  "zcash_protocol",
  "zingo_common_components",
  "zingo_test_vectors",
