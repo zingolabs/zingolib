@@ -1132,13 +1132,18 @@ mod fast {
         for tx in transactions {
             dbg!(tx);
         }
+        // Setup ends at FUNDED_FAUCET_SETUP_HEIGHT; faucet_funded_recipient
+        // mines one pre-send block and one funding-confirm block, so the
+        // 20_000 send targets the block after that.
+        let mempool_target_height =
+            BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 3);
         assert_eq!(
             transactions
                 .iter()
                 .find(|tx| tx.value == 20_000)
                 .unwrap()
                 .status,
-            ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
+            ConfirmationStatus::Mempool(mempool_target_height)
         );
 
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
@@ -1152,7 +1157,7 @@ mod fast {
                 .find(|tx| tx.value == 20_000)
                 .unwrap()
                 .status,
-            ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
+            ConfirmationStatus::Confirmed(mempool_target_height)
         );
     }
 
@@ -2186,8 +2191,10 @@ mod slow {
         let summary_orchard_receipt = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
-            blockheight: BlockHeight::from_u32(5),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 2,
+            )),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 2),
             kind: TransactionKind::Received,
             value: recipient_initial_funds,
             fee: Some(10_000),
@@ -2225,8 +2232,8 @@ mod slow {
         let summary_external_sapling = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)),
-            blockheight: BlockHeight::from_u32(6),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 3)),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 3),
             kind: TransactionKind::Sent(SendType::Send),
             value: first_send_to_sapling,
             fee: Some(20_000),
@@ -2259,8 +2266,10 @@ mod slow {
         let summary_external_transparent = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Transmitted(BlockHeight::from_u32(7)),
-            blockheight: BlockHeight::from_u32(7),
+            status: ConfirmationStatus::Transmitted(BlockHeight::from_u32(
+                scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 4,
+            )),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 4),
             kind: TransactionKind::Sent(SendType::Send),
             value: first_send_to_transparent,
             fee: Some(15_000),
@@ -2336,8 +2345,10 @@ mod slow {
         let summary_orchard_receipt_2 = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)),
-            blockheight: BlockHeight::from_u32(8),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 5,
+            )),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 5),
             kind: TransactionKind::Received,
             value: recipient_second_funding,
             fee: Some(10_000),
@@ -2375,8 +2386,10 @@ mod slow {
         let summary_external_transparent_2 = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)),
-            blockheight: BlockHeight::from_u32(9),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 6,
+            )),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 6),
             kind: TransactionKind::Sent(SendType::Send),
             value: second_send_to_transparent,
             fee: Some(15_000),
@@ -2413,8 +2426,8 @@ mod slow {
 TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)),
-            blockheight: BlockHeight::from_u32(9),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 6)),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 6),
             kind: TransactionKind::Sent(SendType::Send),
             value: second_send_to_sapling,
             fee: Some(20_000),
@@ -2458,8 +2471,10 @@ TransactionSummary {
         let summary_external_transparent_3 = TransactionSummary {
             txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
             datetime: 0,
-            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
-            blockheight: BlockHeight::from_u32(10),
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 7,
+            )),
+            blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 7),
             kind: TransactionKind::Sent(SendType::Send),
             value: external_transparent_3,
             fee: Some(15_000),
