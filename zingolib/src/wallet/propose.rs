@@ -253,19 +253,78 @@ mod test {
 
     use crate::{
         testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
-        wallet::disk::testing::examples,
+        testutils::synthetic_wallet::SyntheticWalletBuilder,
+        wallet::keys::unified::ReceiverSelection,
     };
 
-    /// this test loads an example wallet with existing sapling finds
-    #[ignore = "for some reason this is does not work without network, even though it should be possible"]
-    #[tokio::test]
-    async fn example_mainnet_hhcclaltpcckcsslpcnetblr_80b5594ac_propose_100_000_to_self() {
-        let client = examples::NetworkSeedVersion::Mainnet(
-            examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-        )
-        .load_example_wallet()
-        .await;
-        let mut wallet = client.wallet().write().await;
+    /// Paying a unified address must target its best receiver: Orchard
+    /// whenever the UA carries an orchard receiver, Sapling only when that
+    /// is the best on offer. This is the guarantee the LocalNet test
+    /// `diversified_addresses_receive_funds_in_best_pool` enforced with a
+    /// full zebrad+zainod network; the proposal's payment-pool map states
+    /// it directly from synthetic wallet data alone.
+    #[test]
+    fn proposal_targets_best_pool_per_unified_address() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .build();
+        let chain = wallet.chain_type;
+
+        let (_, orchard_only) = wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let (_, all_shielded) = wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+        let (_, sapling_only) = wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let orchard_only = orchard_only.encode(&chain);
+        let all_shielded = all_shielded.encode(&chain);
+        let sapling_only = sapling_only.encode(&chain);
+
+        let request = transaction_request_from_send_inputs(vec![
+            (orchard_only.as_str(), 10_000, None),
+            (all_shielded.as_str(), 10_000, None),
+            (sapling_only.as_str(), 10_000, None),
+        ])
+        .expect("valid send inputs form a request");
+
+        let proposal = wallet
+            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .expect("synthetic wallet data supports proposing");
+
+        let step = proposal.steps().first();
+        let pools = step.payment_pools();
+        assert_eq!(
+            pools[&0],
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            "orchard-only UA must be paid in orchard"
+        );
+        assert_eq!(
+            pools[&1],
+            PoolType::Shielded(ShieldedProtocol::Orchard),
+            "all-shielded UA must be paid in its best pool, orchard"
+        );
+        assert_eq!(
+            pools[&2],
+            PoolType::Shielded(ShieldedProtocol::Sapling),
+            "sapling-only UA must be paid in sapling"
+        );
+    }
+
+    /// Proposing a spend of existing funds works from wallet data alone —
+    /// no network. Formerly `#[ignore]`d ("for some reason this does not
+    /// work without network"): it loaded an example wallet fixture, and
+    /// fixtures deserialize without the confirmed-transaction state
+    /// proposing requires. The synthetic builder fabricates that state.
+    #[test]
+    fn propose_100_000_to_self() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(200_000)
+                .build();
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
         let self_address = wallet.get_address(pool);

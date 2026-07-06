@@ -12,7 +12,7 @@ license = "MIT"
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "pepper-sync/test-features"]
 
 [dependencies]
 append-only-vec = { workspace = true }

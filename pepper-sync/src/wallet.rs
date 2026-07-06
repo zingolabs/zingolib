@@ -693,6 +693,14 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
             refetch_nullifier_ranges: Vec::new(),
         }
     }
+
+    /// Attaches a nullifier, for tests exercising spend paths — the
+    /// spendable-note filter requires a known nullifier.
+    #[must_use]
+    pub fn with_nullifier_for_test(mut self, nullifier: Nf) -> Self {
+        self.nullifier = Some(nullifier);
+        self
+    }
 }
 
 #[cfg(feature = "test-features")]

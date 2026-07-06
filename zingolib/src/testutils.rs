@@ -29,6 +29,7 @@ pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
 pub mod paths;
+pub mod synthetic_wallet;
 
 // Re-export test dependencies for convenience
 pub use portpicker;

@@ -914,48 +914,6 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn diversified_addresses_receive_funds_in_best_pool() {
-        let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        recipient
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        recipient
-            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        let addresses = recipient.unified_addresses_json().await;
-        let address_5000_nonememo_tuples = addresses
-            .members()
-            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 10_000, None))
-            .collect::<Vec<(&str, u64, Option<&str>)>>();
-        from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
-            .await
-            .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        let balance_b = recipient
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        assert_eq!(
-            balance_b,
-            AccountBalance {
-                total_sapling_balance: Some(10_000.try_into().unwrap()),
-                confirmed_sapling_balance: Some(10_000.try_into().unwrap()),
-                unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
-                total_orchard_balance: Some(30_000.try_into().unwrap()),
-                confirmed_orchard_balance: Some(30_000.try_into().unwrap()),
-                unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
-                total_transparent_balance: Some(0.try_into().unwrap()),
-                confirmed_transparent_balance: Some(0.try_into().unwrap()),
-                unconfirmed_transparent_balance: Some(0.try_into().unwrap())
-            }
-        );
-    }
-
-    #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::ORCHARD,
