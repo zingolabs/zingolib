@@ -313,7 +313,15 @@ where
                     panic!("status regression to Calculated")
                 }
                 ConfirmationStatus::Transmitted(_block_height) => {
-                    panic!("status regression to Transmitted")
+                    // Not a regression: status updates are monotonic, so this
+                    // means the wallet has not yet observed the transaction in
+                    // the mempool or a block. With instant regtest mining a tx
+                    // is often mined before the mempool monitor sees it, and
+                    // the confirming block may not be scanned yet (the Indexer
+                    // lags the Validator by up to ~500ms after
+                    // generate_blocks). Keep polling; the patience bound turns
+                    // a persistent Transmitted into a failure.
+                    any_transaction_not_yet_confirmed = true;
                 }
                 ConfirmationStatus::Mempool(_block_height) => {
                     any_transaction_not_yet_confirmed = true;
