@@ -39,8 +39,10 @@ use lightwallet_protocol::{
 #[cfg(feature = "ping-very-insecure")]
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
+pub mod crypto;
 pub mod error;
 
+pub use crypto::ensure_default_crypto_provider;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
@@ -51,6 +53,9 @@ mod globally_public;
 pub use globally_public::TransparentIndexer;
 
 fn client_tls_config() -> ClientTlsConfig {
+    // The config built here is consumed by rustls at connect time; make
+    // sure a process-level CryptoProvider exists before that happens.
+    ensure_default_crypto_provider();
     // Allow self-signed certs in tests
     #[cfg(test)]
     {
@@ -589,6 +594,9 @@ mod tests {
     /// This is used to verify that the client-side root-store injection
     /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
     fn load_test_server_config() -> std::sync::Arc<rustls::ServerConfig> {
+        // Tests build rustls configs directly, outside client_tls_config's
+        // install path.
+        crate::ensure_default_crypto_provider();
         let cert_pem =
             std::fs::read("test-data/localhost.pem").expect("missing test-data/localhost.pem");
         let key_pem =
