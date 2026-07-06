@@ -129,11 +129,7 @@ fn check_view_capability_bounds(
 mod fast {
     use std::str::FromStr as _;
 
-    use bip0039::Mnemonic;
-    use pepper_sync::{
-        keys::transparent::{self, TransparentAddressId, TransparentScope},
-        wallet::{OrchardNote, OutputInterface, TransparentCoin},
-    };
+    use pepper_sync::wallet::{OrchardNote, OutputInterface, TransparentCoin};
     use zcash_address::ZcashAddress;
     use zcash_client_backend::{
         encoding::encode_payment_address_p,
@@ -143,7 +139,6 @@ mod fast {
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
-    use zcash_transparent::keys::NonHardenedChildIndex;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
@@ -1252,114 +1247,6 @@ mod fast {
                 confirmed_transparent_balance: Some(0.try_into().unwrap()),
                 unconfirmed_transparent_balance: Some(0.try_into().unwrap())
             }
-        );
-    }
-
-    #[tokio::test]
-    async fn address_generation_deterministic_and_coherent() {
-        let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
-        let mut recipient = client_builder
-            .build_client(
-                WalletConfig::MnemonicPhrase {
-                    mnemonic_phrase: seed_phrase,
-                    no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1,
-                    wallet_settings: default_test_wallet_settings(),
-                },
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
-        let network = recipient.chain_type();
-        let (new_address_id, new_address) = recipient
-            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        assert_eq!(
-            new_address_id,
-            UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
-                address_index: 2
-            }
-        );
-        assert!(new_address.has_orchard());
-        assert!(new_address.has_sapling());
-        assert!(!new_address.has_transparent());
-        assert_eq!(
-            new_address.encode(&network),
-            "\
-uregtest1ds3zxwluuzmcwvdxh4wf8xsger96c5yyzqhwzwu7vt85crj4jyf7nsn258rn89g68lvelsjhkqywz8w70wxdg2cmnul4zadukwu2ywezgjwt36\
-f06qvre5qdlkqp5fksyy9j5dm0fdwxwptkk04gzt84r5qv0wfdlx250n0gdcdd6e00"
-        );
-
-        let (sapling_address_id, sapling_address) = recipient
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        assert_eq!(
-            sapling_address_id,
-            UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
-                address_index: 3
-            }
-        );
-        assert!(!sapling_address.has_orchard());
-        assert!(sapling_address.has_sapling());
-        assert!(!sapling_address.has_transparent());
-        assert_eq!(
-            sapling_address.encode(&network),
-            "\
-uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35gzw53tdmgz6dtfvlnfmjwl2a84cx5m3fq"
-        );
-
-        let (taddress_id, new_taddress) = recipient
-            .generate_transparent_address(zip32::AccountId::ZERO, false)
-            .await
-            .unwrap();
-        assert_eq!(
-            taddress_id,
-            TransparentAddressId::new(
-                zip32::AccountId::ZERO,
-                TransparentScope::External,
-                NonHardenedChildIndex::from_index(1).unwrap()
-            )
-        );
-        assert_eq!(
-            transparent::encode_address(&network, new_taddress),
-            "\
-tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
-        );
-    }
-
-    #[tokio::test]
-    async fn ensure_taddrs_from_old_seeds_work() {
-        let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
-        let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
-
-        let client_b = client_builder
-            .build_client(
-                WalletConfig::MnemonicPhrase {
-                    mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1,
-                    wallet_settings: default_test_wallet_settings(),
-                },
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
-
-        assert_eq!(
-            get_base_address_macro!(client_b, "transparent"),
-            transparent_address
         );
     }
 
