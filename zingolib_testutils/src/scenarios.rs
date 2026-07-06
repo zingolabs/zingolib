@@ -147,7 +147,7 @@ pub const DEFERRED_STREAM_SKIM: u64 = block_rewards::CANOPY / 100;
 /// Miner reward for blocks at or above the funding-stream start height (2).
 pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREAM_SKIM;
 
-/// Amount [`zebrad_shielded_funds`] offloads from the faucet to keep its
+/// Amount `zebrad_shielded_funds` offloads from the faucet to keep its
 /// spendable balance predictable for test assertions.
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
