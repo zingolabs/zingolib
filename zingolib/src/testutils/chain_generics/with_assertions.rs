@@ -185,9 +185,30 @@ where
         sender.sync_and_await().await.unwrap();
         timestamped_test_log("cross-checking mempool records.");
 
-        // let the mempool monitor get a chance
-        // to listen
-        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+        // Wait for the mempool monitor to observe every transaction, polling
+        // for the exact condition the assertions below check instead of
+        // sleeping a fixed interval. The 6-second ceiling matches the old
+        // fixed sleep, so the worst case is unchanged while the typical
+        // wait drops to the monitor's actual latency.
+        let poll_start = std::time::Instant::now();
+        loop {
+            let all_observed = {
+                let wallet = sender.wallet();
+                let wallet = wallet.read().await;
+                txids.iter().all(|txid| {
+                    wallet
+                        .wallet_transactions
+                        .get(txid)
+                        .is_some_and(|transaction| {
+                            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+                        })
+                })
+            };
+            if all_observed || poll_start.elapsed() > std::time::Duration::from_secs(6) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
