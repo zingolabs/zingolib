@@ -59,7 +59,23 @@ fn interactive_mode_redirects_tracing_to_log_file() {
         .spawn()
         .expect("failed to spawn zingo-cli");
 
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    // Wait for the startup INFO lines to reach the log file, polling
+    // instead of sleeping a fixed interval; the ceiling only bounds the
+    // pathological case.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if std::fs::read_to_string(&log_path)
+            .unwrap_or_default()
+            .contains("INFO")
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no INFO line reached the log file within 15s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     if let Some(ref mut stdin) = child.stdin {
         let _ = writeln!(stdin, "quit");
     }
@@ -120,7 +136,7 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     let data_dir = tmp.path().join("wallets");
 
     let mut child = Command::new(zingo_cli_binary())
-        .env("RUST_LOG", "error")
+        .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
         .arg("--data-dir")
@@ -137,9 +153,28 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .spawn()
         .expect("failed to spawn zingo-cli");
 
-    // pepper_sync's UNARY_RPC_TIMEOUT is 10s. Wait long enough for the
-    // timeout to fire, the error to be logged, and the poll loop to run.
-    std::thread::sleep(std::time::Duration::from_secs(12));
+    // Wait for the tracing ERROR to reach the log file, polling instead of
+    // sleeping a fixed interval. The mock answers immediately with its
+    // configured error status, so the ERROR lands as soon as the child's
+    // first fetch call completes — typically well under a second after
+    // startup. (The multi_thread runtime flavor above is what makes that
+    // true: on the default current-thread runtime a blocking wait here
+    // starves the spawned mock server, the child's request hangs
+    // unanswered, and the child sits out its full 10-second client-side
+    // RPC timeout instead.) The ceiling only bounds the pathological case.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let log_contents = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if log_contents.contains("ERROR") && log_contents.contains(EXPECTED_ERROR) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no tracing ERROR containing '{EXPECTED_ERROR}' reached the log \
+             file within 20s.\nLog contents:\n{log_contents}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 
     if let Some(ref mut stdin) = child.stdin {
         let _ = writeln!(stdin, "quit");
