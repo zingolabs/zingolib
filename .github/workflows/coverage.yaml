@@ -45,7 +45,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
