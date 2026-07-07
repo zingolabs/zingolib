@@ -359,8 +359,7 @@ mod send_all {
 /// `simpool_no_fund_1_000_000_to_*`): the insufficient-funds and unfunded
 /// propose errors are pure proposal logic over wallet state, so a synthetic
 /// wallet replaces the LocalNet environment and its multi-hop funding
-/// chain. The sapling-source variants stay in libtonode until the builder
-/// can fabricate sapling funds.
+/// chain.
 #[cfg(test)]
 mod simpool {
     use zcash_protocol::{PoolType, ShieldedProtocol};
@@ -389,14 +388,17 @@ mod simpool {
         unified_address.encode(&external_wallet.chain_type())
     }
 
-    /// A wallet holding one orchard note `underflow_amount` short of a
-    /// 100_000 send to `pool` reports the exact shortfall.
-    async fn insufficient_orchard_to(underflow_amount: u64, pool: PoolType) {
-        let expected_fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), pool, true);
+    /// A wallet holding one `source`-pool note `underflow_amount` short of
+    /// a 100_000 send to `pool` reports the exact shortfall.
+    async fn insufficient(source: ShieldedProtocol, underflow_amount: u64, pool: PoolType) {
+        let expected_fee = fee_tables::one_to_one(Some(source), pool, true);
         let secondary_fund = 100_000 + expected_fee - underflow_amount;
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(secondary_fund)
-            .build();
+        let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
+        let wallet = match source {
+            ShieldedProtocol::Orchard => builder.orchard_note(secondary_fund),
+            ShieldedProtocol::Sapling => builder.sapling_note(secondary_fund),
+        }
+        .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
         let tertiary_fund = 100_000;
@@ -441,27 +443,27 @@ mod simpool {
 
     #[tokio::test]
     async fn insufficient_1_orchard_to_orchard() {
-        insufficient_orchard_to(1, PoolType::ORCHARD).await;
+        insufficient(ShieldedProtocol::Orchard, 1, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_1_orchard_to_sapling() {
-        insufficient_orchard_to(1, PoolType::SAPLING).await;
+        insufficient(ShieldedProtocol::Orchard, 1, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_1_orchard_to_transparent() {
-        insufficient_orchard_to(1, PoolType::Transparent).await;
+        insufficient(ShieldedProtocol::Orchard, 1, PoolType::Transparent).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_orchard() {
-        insufficient_orchard_to(10_000, PoolType::ORCHARD).await;
+        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_sapling() {
-        insufficient_orchard_to(10_000, PoolType::SAPLING).await;
+        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_transparent() {
-        insufficient_orchard_to(10_000, PoolType::Transparent).await;
+        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::Transparent).await;
     }
     #[tokio::test]
     async fn no_fund_1_000_000_to_orchard() {
@@ -474,5 +476,29 @@ mod simpool {
     #[tokio::test]
     async fn no_fund_1_000_000_to_transparent() {
         unfunded_to(1_000_000, PoolType::Transparent).await;
+    }
+    #[tokio::test]
+    async fn insufficient_1_sapling_to_orchard() {
+        insufficient(ShieldedProtocol::Sapling, 1, PoolType::ORCHARD).await;
+    }
+    #[tokio::test]
+    async fn insufficient_1_sapling_to_sapling() {
+        insufficient(ShieldedProtocol::Sapling, 1, PoolType::SAPLING).await;
+    }
+    #[tokio::test]
+    async fn insufficient_1_sapling_to_transparent() {
+        insufficient(ShieldedProtocol::Sapling, 1, PoolType::Transparent).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_sapling_to_orchard() {
+        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::ORCHARD).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_sapling_to_sapling() {
+        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::SAPLING).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_sapling_to_transparent() {
+        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::Transparent).await;
     }
 }

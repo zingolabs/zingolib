@@ -9,7 +9,6 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::chain_generics::with_assertions;
 use crate::testutils::fee_tables;
-use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
 use crate::wallet::output::query::OutputPoolQuery;
@@ -392,89 +391,6 @@ where
     assert_eq!(
         spent_sapling_outputs.len(),
         expected_inputs_for_transaction_2 as usize
-    );
-}
-
-/// the simplest test that sends from a specific shielded pool to another specific pool. error variant.
-pub async fn shpool_to_pool_insufficient_error<CC>(
-    shpool: ShieldedProtocol,
-    pool: PoolType,
-    underflow_amount: u64,
-) where
-    CC: ConductChain,
-{
-    let mut environment = CC::setup().await;
-
-    let mut primary = environment.fund_client_orchard(1_000_000).await;
-    let mut secondary = environment.create_client().await;
-    let secondary_addr = get_base_address(&secondary, PoolType::Shielded(shpool)).await;
-
-    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
-    let secondary_fund = 100_000 + expected_fee - underflow_amount;
-    with_assertions::assure_propose_send_bump_sync_all_recipients(
-        &mut environment,
-        &mut primary,
-        vec![(&secondary_addr, secondary_fund, None)],
-        vec![&mut secondary],
-        false,
-    )
-    .await
-    .unwrap();
-
-    let tertiary = environment.create_client().await;
-
-    let tertiary_fund = 100_000;
-    assert_eq!(
-        from_inputs::propose(
-            &mut secondary,
-            vec![(
-                tertiary.wallet().read().await.get_address(pool).as_str(),
-                tertiary_fund,
-                None,
-            )],
-        )
-        .await
-        .unwrap_err()
-        .to_string(),
-        format!(
-            "Insufficient balance (have {}, need {} including fee)",
-            secondary_fund,
-            tertiary_fund + expected_fee
-        )
-    );
-}
-
-/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn to_pool_unfunded_error<CC>(pool: PoolType, try_amount: u64)
-where
-    CC: ConductChain,
-{
-    let mut environment = CC::setup().await;
-
-    let mut secondary = environment.create_client().await;
-    let tertiary = environment.create_client().await;
-
-    secondary.sync_and_await().await.unwrap();
-
-    let expected_fee = fee_tables::one_to_one(None, pool, true);
-
-    assert_eq!(
-        from_inputs::propose(
-            &mut secondary,
-            vec![(
-                tertiary.wallet().read().await.get_address(pool).as_str(),
-                try_amount,
-                None,
-            )],
-        )
-        .await
-        .unwrap_err()
-        .to_string(),
-        format!(
-            "Insufficient balance (have {}, need {} including fee)",
-            0,
-            try_amount + expected_fee
-        )
     );
 }
 

@@ -18,7 +18,7 @@ use orchard::value::NoteValue;
 use shardtree::store::{Checkpoint, ShardStore as _};
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
-use pepper_sync::wallet::{OrchardNote, OutputId, SyncState, WalletTransaction};
+use pepper_sync::wallet::{OrchardNote, OutputId, SaplingNote, SyncState, WalletTransaction};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::memo::Memo;
@@ -26,7 +26,8 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::{ChainType, WalletConfig};
-use crate::mocks::nullifier::OrchardNullifierBuilder;
+use crate::mocks::SaplingCryptoNoteBuilder;
+use crate::mocks::nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder};
 use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use crate::testutils::default_test_wallet_settings;
 use crate::wallet::LightWallet;
@@ -38,6 +39,7 @@ pub struct SyntheticWalletBuilder {
     mnemonic: String,
     tip: u32,
     orchard_note_values: Vec<u64>,
+    sapling_note_values: Vec<u64>,
 }
 
 impl SyntheticWalletBuilder {
@@ -48,6 +50,7 @@ impl SyntheticWalletBuilder {
             mnemonic: mnemonic.to_string(),
             tip: 20,
             orchard_note_values: Vec::new(),
+            sapling_note_values: Vec::new(),
         }
     }
 
@@ -64,10 +67,16 @@ impl SyntheticWalletBuilder {
         self
     }
 
+    /// Adds a confirmed, unspent, spendable sapling note of `value`.
+    pub fn sapling_note(mut self, value: u64) -> Self {
+        self.sapling_note_values.push(value);
+        self
+    }
+
     /// Assembles the wallet.
     pub fn build(&self) -> LightWallet {
         assert!(
-            self.tip as usize > self.orchard_note_values.len() + 1,
+            self.tip as usize > self.orchard_note_values.len() + self.sapling_note_values.len() + 1,
             "tip must exceed the highest note confirmation height"
         );
         let mut wallet = LightWallet::new(
@@ -128,6 +137,35 @@ impl SyntheticWalletBuilder {
                     vec![note],
                     vec![],
                 ),
+            );
+        }
+
+        let mut sapling_nullifiers = SaplingNullifierBuilder::new();
+        let orchard_note_count = self.orchard_note_values.len();
+        for (index, value) in self.sapling_note_values.iter().enumerate() {
+            // Txid bytes offset past the orchard range so the two note
+            // families never collide.
+            let txid = TxId::from_bytes([0x80 + u8::try_from(index).unwrap(); 32]);
+            let mut crypto_note = SaplingCryptoNoteBuilder::default();
+            crypto_note.value(sapling_crypto::value::NoteValue::from_raw(*value));
+            let note = SaplingNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                crypto_note.build(),
+                Memo::Empty,
+                Some(Position::from(index as u64)),
+            )
+            .with_nullifier_for_test(sapling_nullifiers.assign_unique_nullifier().build());
+            wallet.wallet_transactions.insert(
+                txid,
+                WalletTransaction::new_for_test(
+                    txid,
+                    ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                        2 + u32::try_from(orchard_note_count + index).unwrap(),
+                    )),
+                )
+                .with_sapling_notes_for_test(vec![note]),
             );
         }
 

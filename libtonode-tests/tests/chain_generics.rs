@@ -24,7 +24,7 @@ mod chain_generics {
         }
     }
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+
     use zingolib::testutils::chain_generics::fixtures;
 
     #[tokio::test]
@@ -43,59 +43,5 @@ mod chain_generics {
     #[tokio::test]
     async fn note_selection_order() {
         fixtures::note_selection_order::<LibtonodeEnvironment>().await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_1_sapling_to_transparent() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::TRANSPARENT,
-            1,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_1_sapling_to_sapling() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::SAPLING,
-            1,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_1_sapling_to_orchard() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::ORCHARD,
-            1,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_10_000_sapling_to_transparent() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::TRANSPARENT,
-            10_000,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_10_000_sapling_to_sapling() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::SAPLING,
-            10_000,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn simpool_insufficient_10_000_sapling_to_orchard() {
-        fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(
-            ShieldedProtocol::Sapling,
-            PoolType::ORCHARD,
-            10_000,
-        )
-        .await;
     }
 }
