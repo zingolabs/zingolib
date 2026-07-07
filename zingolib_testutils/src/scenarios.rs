@@ -60,6 +60,40 @@ pub mod network_combo {
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
+/// Indexer-convergence dispatch. zcash_local_net's barrier
+/// (`await_indexer_convergence`, added in infra commit fa2da0b) is defined
+/// only for zainod, whose "Syncing block" log line is the observation
+/// channel. This trait lets the generic scenario helpers use the barrier
+/// where the indexer has one and fall back to a no-op where it does not —
+/// the callers' wallet-side height polling remains the functional
+/// guarantee on the legacy lightwalletd stack.
+pub trait IndexerConvergence {
+    /// Blocks until the indexer's own chain index reports `target`, where
+    /// observable; a no-op otherwise.
+    fn converge(&self, target: u32) -> impl std::future::Future<Output = ()> + Send;
+}
+
+impl<V> IndexerConvergence for LocalNet<V, zcash_local_net::indexer::zainod::Zainod>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+{
+    async fn converge(&self, target: u32) {
+        self.await_indexer_convergence(target)
+            .await
+            .expect("indexer convergence barrier failed");
+    }
+}
+
+#[cfg(feature = "test_lwd_zebrad")]
+impl<V> IndexerConvergence for LocalNet<V, zcash_local_net::indexer::lightwalletd::Lightwalletd>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+{
+    async fn converge(&self, _target: u32) {}
+}
+
 /// Map the wallet-domain pool selection onto the infrastructure miner pool at
 /// the `zcash_local_net` boundary.
 fn miner_pool(mine_to_pool: PoolType) -> MinerPool {
@@ -236,8 +270,10 @@ pub async fn sync_client_to_validator_tip<V, I>(
     V: Validator + LogsToStdoutAndStderr + Send,
     <I as Process>::Config: Send,
     <V as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
 {
     let tip = local_net.validator().get_chain_height().await;
+    local_net.converge(tip).await;
     sync_to_target_height(client, tip).await.unwrap();
 }
 
@@ -273,6 +309,7 @@ where
     <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
     <I as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
 {
     let txids = match from_inputs::quick_send(sender, receivers.clone()).await {
         Ok(txids) => txids,
@@ -342,6 +379,7 @@ async fn zebrad_shielded_funds<V, I>(
     V: Validator + LogsToStdoutAndStderr + Send,
     <I as Process>::Config: Send,
     <V as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(2).await.unwrap();
@@ -1026,6 +1064,7 @@ where
     <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
     <I as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
 {
     let txid = from_inputs::quick_send(
         sender,
@@ -1056,12 +1095,14 @@ where
     <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
     <I as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
 {
-    sync_to_target_height(
-        client,
-        generate_n_blocks_return_new_height(local_net, n).await,
-    )
-    .await
+    let target = generate_n_blocks_return_new_height(local_net, n).await;
+    // Barrier first: with the indexer's index at the validator tip, the
+    // wallet-side height poll below completes on its first pass instead
+    // of spinning against a lagging indexer.
+    local_net.converge(target).await;
+    sync_to_target_height(client, target).await
 }
 
 /// TODO: Add Doc Comment Here!

@@ -71,17 +71,18 @@
 //! | test                              | extra blocks | output pool | H-BOUNDARY says | H-COINBASE says |
 //! |-----------------------------------|--------------|-------------|-----------------|-----------------|
 //! | matrix_young_coinbase_to_orchard  | 0            | orchard     | rejected        | rejected        |
-//! | matrix_young_coinbase_to_sapling  | 0            | sapling     | rejected*       | rejected        |
-//! | matrix_aged_coinbase_to_orchard   | 10           | orchard     | ACCEPTED        | rejected**      |
+//! | matrix_young_coinbase_to_sapling  | 0            | sapling     | rejected (footnote one) | rejected        |
+//! | matrix_aged_coinbase_to_orchard   | 10           | orchard     | ACCEPTED        | rejected (footnote two) |
 //!
-//! *  H-BOUNDARY predicts rejection for BOTH output pools near the
-//!    boundary; an accept here while the orchard cell rejects reproduces
-//!    the differential under identical amounts and note selection,
-//!    eliminating H-SELECT for good.
-//! ** Ten extra blocks leave the coinbase notes still far younger than
-//!    transparent maturity; if youth is the trigger this cell still
-//!    rejects, while H-BOUNDARY says the boundary is now five blocks
-//!    behind and the send goes through.
+//! Footnote one: H-BOUNDARY predicts rejection for BOTH output pools near
+//! the boundary; an accept in the sapling cell while the orchard cell
+//! rejects reproduces the differential under identical amounts and note
+//! selection, eliminating H-SELECT for good.
+//!
+//! Footnote two: ten extra blocks leave the coinbase notes still far
+//! younger than transparent maturity; if youth is the trigger that cell
+//! still rejects, while H-BOUNDARY says the boundary is now five blocks
+//! behind and the send goes through.
 
 use zingolib::get_base_address_macro;
 use zingolib::testutils::lightclient::from_inputs;
