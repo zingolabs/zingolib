@@ -71,15 +71,18 @@
 //!   reject the same bytes the zainod path rejects?) and same-bytes
 //!   resubmission after one block (if identical bytes are later accepted,
 //!   the proof was always valid and zebra's boundary-time verdict was
-//!   wrong) both need the validator's JSON-RPC port, which zcash_local_net
-//!   picks internally and exposes to nothing but zainod. Seam: an
-//!   rpc_listen_port accessor on the running Zebrad (infrastructure-side,
-//!   two lines).
+//!   wrong) need the validator's JSON-RPC port. CORRECTION (2026-07-07):
+//!   the running Zebrad already exposes it — copy_getters generates
+//!   pub fn rpc_listen_port() — so the infrastructure side is ready
+//!   today; an earlier note here claimed otherwise after a grep for
+//!   literal `pub fn` missed the macro-generated getter.
 //! - Offline orchard-proof verification (if the wallet's proof verifies
 //!   against the standard verifying key offline, the wallet is exonerated
 //!   at the proof level) needs the built transaction's raw bytes, which
-//!   the wallet does not retain. Seam: a build-without-broadcast
-//!   test-features function in zingolib's send path.
+//!   the wallet does not retain. Seam, still missing: a
+//!   build-without-broadcast test-features function in zingolib's send
+//!   path. This is the only remaining blocker for the rejection-side
+//!   cells.
 
 use std::time::{Duration, Instant};
 
