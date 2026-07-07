@@ -519,58 +519,39 @@ async fn diagnose_subtree_root_stream() {
     );
 }
 
-/// Demonstrates the indexer tip-lag race behind the historical
-/// `unified_address_discovery` failure: after `generate_blocks` returns, the
-/// *validator* has the new block but the *indexer*'s poll-based ingestion
-/// reports the old tip for up to a few hundred milliseconds (measured
-/// 10/10 rounds, max 475ms, on zainod 0.4.3 and 0.6.0 alike). A wallet sync
-/// begun inside that window completes against the stale tip and silently
-/// misses the newest block.
-///
-/// RED until the harness (or its callers) wait for indexer convergence
-/// after block generation. Until then, tests must use wallet-height-aware
-/// helpers (`increase_height_and_wait_for_client`,
-/// `sync_client_to_validator_tip`, `send_and_bump`) instead of raw
-/// `generate_blocks` + `sync_and_await`.
-#[ignore = "diagnostic for the known indexer tip-lag race: red by design until zcash_local_net \
-            waits for indexer convergence after generate_blocks; run on demand to re-measure the lag"]
+/// The indexer tip-lag race behind the historical
+/// `unified_address_discovery` failure: after raw `generate_blocks`
+/// returns, the *validator* has the new block while the *indexer*'s
+/// poll-based ingestion reports the old tip for up to a few hundred
+/// milliseconds (measured 10/10 rounds, max 475ms, on zainod 0.4.3 and
+/// 0.6.0 alike). This test asserts the fix: after
+/// `await_indexer_convergence` (the zcash_local_net barrier this crate's
+/// helpers now route through), the indexer's served tip matches the
+/// validator's in every round.
 #[tokio::test]
-async fn indexer_tip_lags_validator_after_block_generation() {
+async fn indexer_converges_with_validator_after_block_generation() {
     let (local_net, client) = scenarios::unfunded_client_default().await;
     let mut grpc = GrpcIndexer::new(client.indexer_uri().clone())
         .await
         .unwrap();
 
     const ROUNDS: u32 = 10;
-    let mut lag_rounds = 0u32;
-    let mut max_lag = Duration::ZERO;
-    for _ in 0..ROUNDS {
+    for round in 0..ROUNDS {
         local_net.validator().generate_blocks(1).await.unwrap();
         let validator_height = u64::from(local_net.validator().get_chain_height().await);
-        let start = std::time::Instant::now();
-        let mut lagged = false;
-        loop {
-            let indexer_height = grpc
-                .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
-                .await
-                .unwrap()
-                .height;
-            if indexer_height >= validator_height {
-                break;
-            }
-            lagged = true;
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        if lagged {
-            lag_rounds += 1;
-            max_lag = max_lag.max(start.elapsed());
-        }
+        local_net
+            .await_indexer_convergence(validator_height as u32)
+            .await
+            .unwrap();
+        let indexer_height = grpc
+            .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+            .await
+            .unwrap()
+            .height;
+        assert!(
+            indexer_height >= validator_height,
+            "round {round}: indexer served tip {indexer_height} behind \
+             validator tip {validator_height} despite the convergence barrier"
+        );
     }
-    assert_eq!(
-        lag_rounds, 0,
-        "indexer tip lagged the validator after generate_blocks in \
-         {lag_rounds}/{ROUNDS} rounds (max observed lag {max_lag:?}): wallet \
-         syncs begun in this window complete against a stale tip and miss \
-         the newest block(s)"
-    );
 }
