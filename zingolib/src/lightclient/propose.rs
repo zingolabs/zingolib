@@ -353,3 +353,126 @@ mod send_all {
         );
     }
 }
+
+/// Migrated from the libtonode chain_generics simpool instantiations
+/// (`simpool_insufficient_{1,10_000}_orchard_to_*` and
+/// `simpool_no_fund_1_000_000_to_*`): the insufficient-funds and unfunded
+/// propose errors are pure proposal logic over wallet state, so a synthetic
+/// wallet replaces the LocalNet environment and its multi-hop funding
+/// chain. The sapling-source variants stay in libtonode until the builder
+/// can fabricate sapling funds.
+#[cfg(test)]
+mod simpool {
+    use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use crate::{
+        lightclient::LightClient,
+        testutils::{
+            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
+        },
+        wallet::keys::unified::ReceiverSelection,
+    };
+
+    /// An encoded destination of the given pool type, belonging to a
+    /// different wallet so the send is external.
+    fn external_address(pool: PoolType) -> String {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::Shielded(ShieldedProtocol::Orchard) => ReceiverSelection::orchard_only(),
+            PoolType::Shielded(ShieldedProtocol::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        unified_address.encode(&external_wallet.chain_type())
+    }
+
+    /// A wallet holding one orchard note `underflow_amount` short of a
+    /// 100_000 send to `pool` reports the exact shortfall.
+    async fn insufficient_orchard_to(underflow_amount: u64, pool: PoolType) {
+        let expected_fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), pool, true);
+        let secondary_fund = 100_000 + expected_fee - underflow_amount;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(secondary_fund)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let tertiary_fund = 100_000;
+        assert_eq!(
+            from_inputs::propose(
+                &mut client,
+                vec![(external_address(pool).as_str(), tertiary_fund, None)],
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            format!(
+                "Insufficient balance (have {}, need {} including fee)",
+                secondary_fund,
+                tertiary_fund + expected_fee
+            )
+        );
+    }
+
+    /// A wallet with no funds at all reports the full amount-plus-fee need.
+    async fn unfunded_to(try_amount: u64, pool: PoolType) {
+        let expected_fee = fee_tables::one_to_one(None, pool, true);
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        assert_eq!(
+            from_inputs::propose(
+                &mut client,
+                vec![(external_address(pool).as_str(), try_amount, None)],
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            format!(
+                "Insufficient balance (have {}, need {} including fee)",
+                0,
+                try_amount + expected_fee
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn insufficient_1_orchard_to_orchard() {
+        insufficient_orchard_to(1, PoolType::ORCHARD).await;
+    }
+    #[tokio::test]
+    async fn insufficient_1_orchard_to_sapling() {
+        insufficient_orchard_to(1, PoolType::SAPLING).await;
+    }
+    #[tokio::test]
+    async fn insufficient_1_orchard_to_transparent() {
+        insufficient_orchard_to(1, PoolType::Transparent).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_orchard_to_orchard() {
+        insufficient_orchard_to(10_000, PoolType::ORCHARD).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_orchard_to_sapling() {
+        insufficient_orchard_to(10_000, PoolType::SAPLING).await;
+    }
+    #[tokio::test]
+    async fn insufficient_10_000_orchard_to_transparent() {
+        insufficient_orchard_to(10_000, PoolType::Transparent).await;
+    }
+    #[tokio::test]
+    async fn no_fund_1_000_000_to_orchard() {
+        unfunded_to(1_000_000, PoolType::ORCHARD).await;
+    }
+    #[tokio::test]
+    async fn no_fund_1_000_000_to_sapling() {
+        unfunded_to(1_000_000, PoolType::SAPLING).await;
+    }
+    #[tokio::test]
+    async fn no_fund_1_000_000_to_transparent() {
+        unfunded_to(1_000_000, PoolType::Transparent).await;
+    }
+}
