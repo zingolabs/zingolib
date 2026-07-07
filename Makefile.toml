@@ -44,9 +44,12 @@ Test sets (front door):
   makers test live            ONLY libtonode-tests and zingo-cli
   makers test libtonode       exactly the libtonode-tests package
   makers test zingo-cli       exactly the zingo-cli package
-  makers test all             every test in the repo: the whole workspace,
-                              INCLUDING the slow:: tests the default filter
-                              excludes (ignored tests still need run-ignored)
+  makers test all             every test in the repo, in three gated
+                              phases: packages, then zingo-cli, then
+                              libtonode, INCLUDING the slow:: tests the
+                              default filter excludes (ignored tests still
+                              need run-ignored); a phase failure stops the
+                              later phases
 
 Every set runs inside the reproducible CI container and forwards extra
 nextest args:
@@ -300,7 +303,7 @@ container_nextest_run "$@"
 #   makers test live           ONLY the live packages
 #   makers test libtonode      exactly the libtonode-tests package
 #   makers test zingo-cli      exactly the zingo-cli package
-#   makers test all            the whole workspace, slow:: tests included
+#   makers test all            three gated phases: packages, zingo-cli, libtonode; slow:: included
 #
 # The live-package list is defined once (live_packages, below); `packages`
 # derives its exclusions from it and `live` derives its selections from it,
@@ -329,7 +332,7 @@ usage() {
   echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
   echo "  libtonode           exactly the libtonode-tests package" >&2
   echo "  zingo-cli           exactly the zingo-cli package" >&2
-  echo "  all                 the whole workspace, slow:: tests included" >&2
+  echo "  all                 three gated phases: packages, then zingo-cli, then libtonode (slow:: included)" >&2
 }
 
 # A non-flag first arg selects the set and must be a known name; a flag first
@@ -361,7 +364,16 @@ case "${test_set}" in
     # empty value survives into the container-test child process).
     # #[ignore]d tests are still skipped by design: `makers run-ignored`.
     export ZINGOLIB_NEXTEST_FILTER=""
-    pkg_args+=(--workspace) ;;
+    # Three gated phases, cheapest feedback first: the hermetic package
+    # tests run before either live suite, and zingo-cli (the faster live
+    # suite) runs before libtonode. A phase failure stops the run so an
+    # expensive live phase never runs behind, or drowns out, a cheap
+    # failure.
+    pkg_args+=(--workspace)
+    for pkg in "${live_packages[@]}"; do pkg_args+=(--exclude "${pkg}"); done
+    makers container-test "${pkg_args[@]}" "$@" || exit
+    makers container-test --package zingo-cli "$@" || exit
+    exec makers container-test --package libtonode-tests "$@" ;;
 esac
 
 exec makers container-test "${pkg_args[@]}" "$@"
