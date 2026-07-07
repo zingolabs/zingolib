@@ -419,7 +419,6 @@ where
     expire_transactions(&mut *wallet_guard)?;
 
     drop(wallet_guard);
-
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -523,10 +522,31 @@ where
                 scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
-                    // wait for mempool monitor to receive mempool transactions
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
-                    {
+                    // Give the mempool monitor a bounded window to deliver
+                    // in-flight transactions, polling instead of paying a
+                    // fixed second per pass: the monitor has been streaming
+                    // since session start and the indexer serves accepted
+                    // transactions within ~100ms, so anything outstanding
+                    // normally lands within a few polls. Fall through the
+                    // moment work appears (it is processed by this select
+                    // loop); keep the old one-second ceiling as the worst
+                    // case before re-entering the loop as before.
+                    let shutdown_poll_started = std::time::Instant::now();
+                    let mempool_drained = loop {
+                        if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
+                        {
+                            break true;
+                        }
+                        if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire)
+                            > 0
+                            || shutdown_poll_started.elapsed()
+                                >= std::time::Duration::from_secs(1)
+                        {
+                            break false;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                    };
+                    if mempool_drained {
                         tracing::info!("Sync successfully shutdown.");
                         break;
                     }
@@ -534,7 +554,6 @@ where
             }
         }
     }
-
     let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
@@ -1824,7 +1843,10 @@ async fn mempool_monitor<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    // The tick only bounds how quickly the monitor notices the shutdown
+    // flag; sync() joins this task at session end, so the tick interval
+    // is paid on the critical path of every sync session.
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
         let response =

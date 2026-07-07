@@ -171,7 +171,11 @@ impl LightClient {
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        // Completion-detection quantum: at 500ms this added up to half a
+        // second of pure quantization to every sync_and_await; the sync
+        // engine's own session on a regtest chain runs ~1.4s, so the poll
+        // interval was a visible fraction of every test's sync cost.
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
