@@ -6,11 +6,14 @@
 //! `makers test` front door), streams each run's output while capturing it,
 //! parses the nextest summary line, and aggregates the totals.
 //!
-//! Unlike a fail-fast phase chain, this runs EVERY phase even when an earlier
-//! one fails, so the summary reflects the whole suite. It then exits non-zero
-//! if any phase failed, so CI still catches it.
+//! Phases gate: a failing phase stops the later, more expensive phases from
+//! launching (a broken unit test should never cost a libtonode run). The
+//! summary table still prints for every phase, marking the ones a failure
+//! prevented from running.
 //!
-//! Adapted from zaino's `tools/test-runner` `live-summary` binary.
+//! Adapted from zaino's `tools/test-runner` `live-summary` binary, which
+//! instead runs all partitions unconditionally; the gating is deliberate
+//! divergence.
 
 #![forbid(unsafe_code)]
 
@@ -135,7 +138,7 @@ fn parse_summary(log: &str) -> Summary {
         .lines()
         .map(strip_ansi)
         .filter(|l| l.contains("run:") && l.contains("test"))
-        .last()
+        .next_back()
         .unwrap_or_default();
 
     Summary {
@@ -158,34 +161,51 @@ fn main() -> Result<(), Box<dyn Error>> {
     let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
     let mut results = Vec::new();
+    let mut failed = false;
     for phase in PHASES {
+        if failed {
+            results.push((*phase, None));
+            continue;
+        }
         println!(">>> test all: running the {phase} phase");
         let (exit_code, log) = run_phase(phase, &forwarded_args)?;
-        results.push((*phase, exit_code, parse_summary(&log)));
+        if exit_code != 0 {
+            failed = true;
+        }
+        results.push((*phase, Some((exit_code, parse_summary(&log)))));
     }
 
     println!();
     println!("====================== test summary ==========================");
     let mut total = Summary::default();
-    for (phase, _, summary) in &results {
-        print_row(&format!("{phase}:"), summary);
-        total = total.add(summary);
+    for (phase, outcome) in &results {
+        match outcome {
+            Some((_, summary)) => {
+                print_row(&format!("{phase}:"), summary);
+                total = total.add(summary);
+            }
+            None => println!(
+                "  {:<12} not run (an earlier phase failed)",
+                format!("{phase}:")
+            ),
+        }
     }
     print_row("TOTAL:", &total);
     println!("==============================================================");
 
     // A phase that errored without producing a summary line likely failed to
     // build; call it out so the zeros above aren't read as "all clear".
-    for (phase, exit_code, summary) in &results {
-        if *exit_code != 0 && summary.run == 0 {
-            println!(
-                "  warning: {phase} produced no nextest summary (build failure?) — see output above."
-            );
+    for (phase, outcome) in &results {
+        if let Some((exit_code, summary)) = outcome {
+            if *exit_code != 0 && summary.run == 0 {
+                println!(
+                    "  warning: {phase} produced no nextest summary (build failure?) — see output above."
+                );
+            }
         }
     }
 
-    // Fail the front door if any phase failed.
-    if results.iter().any(|(_, exit_code, _)| *exit_code != 0) {
+    if failed {
         std::process::exit(1);
     }
     Ok(())
