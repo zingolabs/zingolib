@@ -44,12 +44,13 @@ Test sets (front door):
   makers test live            ONLY libtonode-tests and zingo-cli
   makers test libtonode       exactly the libtonode-tests package
   makers test zingo-cli       exactly the zingo-cli package
-  makers test all             every test in the repo, in three gated
-                              phases: packages, then zingo-cli, then
-                              libtonode, INCLUDING the slow:: tests the
-                              default filter excludes (ignored tests still
-                              need run-ignored); a phase failure stops the
-                              later phases
+  makers test all             every test in the repo, in three phases:
+                              packages, then zingo-cli, then libtonode,
+                              INCLUDING the slow:: tests the default filter
+                              excludes (ignored tests still need
+                              run-ignored). All phases run even when one
+                              fails, and a combined per-phase summary table
+                              prints at the end
 
 Every set runs inside the reproducible CI container and forwards extra
 nextest args:
@@ -300,7 +301,7 @@ container_nextest_run "$@"
 #   makers test live           ONLY the live packages
 #   makers test libtonode      exactly the libtonode-tests package
 #   makers test zingo-cli      exactly the zingo-cli package
-#   makers test all            three gated phases: packages, zingo-cli, libtonode; slow:: included
+#   makers test all            three phases + combined summary (workbench test-summary)
 #
 # The live-package list is defined once (live_packages, below); `packages`
 # derives its exclusions from it and `live` derives its selections from it,
@@ -329,7 +330,7 @@ usage() {
   echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
   echo "  libtonode           exactly the libtonode-tests package" >&2
   echo "  zingo-cli           exactly the zingo-cli package" >&2
-  echo "  all                 three gated phases: packages, then zingo-cli, then libtonode (slow:: included)" >&2
+  echo "  all                 three phases + combined summary: packages, zingo-cli, libtonode (slow:: included)" >&2
 }
 
 # A non-flag first arg selects the set and must be a known name; a flag first
@@ -356,21 +357,14 @@ case "${test_set}" in
   zingo-cli)
     pkg_args+=(--package zingo-cli) ;;
   all)
-    # Genuinely everything the repo defines: clear the default
-    # `not test(slow)` filter (the [env] entry is conditional, so this
-    # empty value survives into the container-test child process).
-    # #[ignore]d tests are still skipped by design: `makers run-ignored`.
-    export ZINGOLIB_NEXTEST_FILTER=""
-    # Three gated phases, cheapest feedback first: the hermetic package
-    # tests run before either live suite, and zingo-cli (the faster live
-    # suite) runs before libtonode. A phase failure stops the run so an
-    # expensive live phase never runs behind, or drowns out, a cheap
-    # failure.
-    pkg_args+=(--workspace)
-    for pkg in "${live_packages[@]}"; do pkg_args+=(--exclude "${pkg}"); done
-    makers container-test "${pkg_args[@]}" "$@" || exit
-    makers container-test --package zingo-cli "$@" || exit
-    exec makers container-test --package libtonode-tests "$@" ;;
+    # Delegate to the workbench summary runner (zaino's live-summary
+    # pattern): it runs the packages, zingo-cli, and libtonode phases in
+    # order — ALL of them, even when an earlier phase fails, so the
+    # combined summary reflects the whole suite — then exits non-zero if
+    # any phase failed. The runner clears the default `not test(slow)`
+    # filter itself, so the slow:: tests are included. #[ignore]d tests
+    # are still skipped by design: `makers run-ignored`.
+    exec cargo run -q --manifest-path tools/workbench/Cargo.toml --bin test-summary -- "$@" ;;
 esac
 
 exec makers container-test "${pkg_args[@]}" "$@"
