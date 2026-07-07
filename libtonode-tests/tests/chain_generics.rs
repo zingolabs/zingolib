@@ -1,27 +1,138 @@
 #[cfg(feature = "chain_generic_tests")]
 mod chain_generics {
+    /// Deterministic pool matrix, replacing two former proptests.
+    ///
+    /// The proptests ran a single random-valued case each
+    /// (`Config::with_cases(1)`), and their parameter ranges reduced to a
+    /// sapling-only source with a transparent-or-sapling receiver, so
+    /// coverage differed between runs, failures were not reproducible
+    /// without the seed, and the orchard rows the "any source, any
+    /// receiver" name promised never ran at all. The matrix below
+    /// enumerates every source and receiver pair with fixed values, once
+    /// with change and once without, plus boundary values on the
+    /// sapling-to-transparent pair. The fixture logic is unchanged, and
+    /// nextest parallelizes the entries where the proptests serialized
+    /// their work inside two tests.
     #[cfg(feature = "proptests")]
-    mod proptests {
+    mod pool_matrix {
         use libtonode_tests::chain_generics::LibtonodeEnvironment;
-        use tokio::runtime::Runtime;
+        use zcash_protocol::{PoolType, ShieldedProtocol};
         use zingolib::testutils::chain_generics::fixtures;
-        use zingolib::testutils::int_to_pooltype;
-        use zingolib::testutils::int_to_shieldedprotocol;
-        proptest::proptest! {
-            #![proptest_config(proptest::test_runner::Config::with_cases(1))]
-            #[test]
-            fn any_source_sends_to_any_receiver_libtonode(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
-                Runtime::new().unwrap().block_on(async {
-                    fixtures::any_source_sends_to_any_receiver::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, change_value, true).await;
-                });
-             }
-            #[test]
-            fn any_source_sends_to_any_receiver_0_change_libtonode(send_value in 0..50_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
-                Runtime::new().unwrap().block_on(async {
-                    fixtures::any_source_sends_to_any_receiver::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, 0, true).await;
-                });
-             }
+
+        macro_rules! pool_matrix_case {
+            ($name:ident, $source:expr, $receiver:expr, $send_value:expr, $change:expr) => {
+                #[tokio::test]
+                async fn $name() {
+                    fixtures::any_source_sends_to_any_receiver::<LibtonodeEnvironment>(
+                        $source,
+                        $receiver,
+                        $send_value,
+                        $change,
+                        true,
+                    )
+                    .await;
+                }
+            };
         }
+
+        pool_matrix_case!(
+            sapling_sends_to_transparent,
+            ShieldedProtocol::Sapling,
+            PoolType::TRANSPARENT,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            sapling_sends_to_sapling,
+            ShieldedProtocol::Sapling,
+            PoolType::SAPLING,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            sapling_sends_to_orchard,
+            ShieldedProtocol::Sapling,
+            PoolType::ORCHARD,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            orchard_sends_to_transparent,
+            ShieldedProtocol::Orchard,
+            PoolType::TRANSPARENT,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            orchard_sends_to_sapling,
+            ShieldedProtocol::Orchard,
+            PoolType::SAPLING,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            orchard_sends_to_orchard,
+            ShieldedProtocol::Orchard,
+            PoolType::ORCHARD,
+            10_000,
+            1_000
+        );
+        pool_matrix_case!(
+            sapling_sends_to_transparent_no_change,
+            ShieldedProtocol::Sapling,
+            PoolType::TRANSPARENT,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            sapling_sends_to_sapling_no_change,
+            ShieldedProtocol::Sapling,
+            PoolType::SAPLING,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            sapling_sends_to_orchard_no_change,
+            ShieldedProtocol::Sapling,
+            PoolType::ORCHARD,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            orchard_sends_to_transparent_no_change,
+            ShieldedProtocol::Orchard,
+            PoolType::TRANSPARENT,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            orchard_sends_to_sapling_no_change,
+            ShieldedProtocol::Orchard,
+            PoolType::SAPLING,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            orchard_sends_to_orchard_no_change,
+            ShieldedProtocol::Orchard,
+            PoolType::ORCHARD,
+            10_000,
+            0
+        );
+        pool_matrix_case!(
+            sapling_sends_to_transparent_minimum_value,
+            ShieldedProtocol::Sapling,
+            PoolType::TRANSPARENT,
+            1,
+            0
+        );
+        pool_matrix_case!(
+            sapling_sends_to_transparent_boundary_values,
+            ShieldedProtocol::Sapling,
+            PoolType::TRANSPARENT,
+            49_999,
+            9_999
+        );
     }
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
