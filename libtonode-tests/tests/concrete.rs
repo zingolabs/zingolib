@@ -136,7 +136,6 @@ mod fast {
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
-    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::WalletConfig,
@@ -1038,7 +1037,6 @@ mod slow {
 
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::{ChainType, ClientConfig, WalletConfig};
