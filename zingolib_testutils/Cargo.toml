@@ -19,6 +19,10 @@ zingo_common_components.workspace = true
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 
+# validator JSON-RPC probes
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
 # zcash
 nonempty.workspace = true
 zcash_primitives.workspace = true

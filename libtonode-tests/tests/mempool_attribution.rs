@@ -109,6 +109,20 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
     let accepted_at = Instant::now();
     let txid_bytes: Vec<u8> = txids.first().as_ref().to_vec();
 
+    // Content parity, validator side: the acceptance marker predicts the
+    // transaction is ALREADY in zebra's mempool; getrawmempool (direct
+    // JSON-RPC, no indexer in the loop) turns that inference into an
+    // observation.
+    let validator_mempool = zingolib_testutils::validator_rpc::get_raw_mempool(
+        _local_net.validator().rpc_listen_port(),
+    )
+    .await;
+    let txid_display = txids.first().to_string();
+    assert!(
+        validator_mempool.contains(&txid_display),
+        "acceptance-marker inference falsified: zebra's own mempool does not          contain {txid_display} immediately after send_transaction returned Ok          (mempool: {validator_mempool:?})"
+    );
+
     let mut grpc_client = GrpcIndexer::new(recipient.indexer_uri().clone())
         .await
         .unwrap();

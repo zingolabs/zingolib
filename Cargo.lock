@@ -5183,6 +5183,8 @@ dependencies = [
  "http",
  "nonempty",
  "portpicker",
+ "reqwest",
+ "serde_json",
  "tempfile",
  "zcash_local_net",
  "zcash_primitives",
