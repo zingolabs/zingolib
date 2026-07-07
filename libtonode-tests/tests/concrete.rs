@@ -920,22 +920,6 @@ mod fast {
         );
     }
 
-    #[ignore = "zcash_local_net's zebrad cannot mine to Sapling (Orchard and Transparent only)"]
-    #[tokio::test]
-    async fn mine_to_sapling() {
-        let (local_net, mut faucet) = scenarios::faucet(
-            PoolType::SAPLING,
-            scenarios::default_test_activation_heights(),
-            None,
-        )
-        .await;
-        check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
-    }
-
     /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
@@ -971,31 +955,6 @@ mod fast {
                 .unwrap(),
             Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4))
         );
-    }
-
-    // test fails to exit when syncing pre-sapling
-    // possible issue with dropping child process handler?
-    #[ignore]
-    #[tokio::test]
-    async fn sync_all_epochs() {
-        let activation_heights = ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(3))
-            .set_blossom(Some(5))
-            .set_heartwood(Some(7))
-            .set_canopy(Some(9))
-            .set_nu5(Some(11))
-            .set_nu6(Some(13))
-            .set_nu6_1(Some(15))
-            .set_nu6_2(Some(17))
-            .set_nu7(None)
-            .build();
-
-        let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut lightclient, 18)
-            .await
-            .unwrap();
     }
 
     #[tokio::test]
@@ -2134,48 +2093,6 @@ TransactionSummary {
         );
     }
 
-    #[ignore = "zcash_local_net's zebrad cannot mine to Sapling, and its config writer requires Canopy at height 1"]
-    #[tokio::test]
-    async fn send_heartwood_sapling_funds() {
-        let activation_heights = ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(3))
-            .set_nu5(Some(5))
-            .set_nu6(Some(5))
-            .set_nu6_1(Some(5))
-            .set_nu6_2(Some(5))
-            .set_nu7(None)
-            .build();
-
-        let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
-            PoolType::Shielded(ShieldedProtocol::Sapling),
-            activation_heights,
-            None,
-        )
-        .await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
-            .await
-            .unwrap();
-        check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "unified"),
-                3_499_960_000u64,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 0);
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        check_client_balances!(recipient, o: 3_499_960_000u64 s: 0 t: 0);
-    }
     #[tokio::test]
     async fn send_funds_to_all_pools() {
         let (_local_net, _faucet, recipient, _orchard_txid, _sapling_txid, _transparent_txid) =
