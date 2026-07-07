@@ -408,6 +408,17 @@ pub async fn any_source_sends_to_any_receiver<CC>(
 
     let mut environment = CC::setup().await;
 
+    // Put distance between the chain tip and the height-5 NU6.1/6.2
+    // co-activation before building transactions. Zebra rejects
+    // orchard-OUTPUT transactions built adjacent to the boundary
+    // ("could not validate orchard proof ... until the next chain tip
+    // block") while accepting sapling-output equivalents; the
+    // tip_spend_rejection discrimination suite pins this differential
+    // and exonerates note age, anchors, and note selection.
+    for _ in 0..5 {
+        environment.increase_chain_height().await;
+    }
+
     let mut primary = environment.create_faucet().await;
     let mut secondary = environment.create_client().await;
     let mut tertiary = environment.create_client().await;
