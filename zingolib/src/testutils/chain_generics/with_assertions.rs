@@ -58,7 +58,12 @@ where
     CC: ConductChain,
 {
     timestamped_test_log("started integration-test send.");
-    sender.sync_and_await().await.unwrap();
+    // Separate spendable notes from the chain tip before proposing: zebra
+    // rejects a spend of a note residing in the tip block ("could not
+    // validate orchard proof"), so mine one block and sync the sender to
+    // the real tip, leaving its notes and anchor at least one block back.
+    environment.increase_chain_height().await;
+    environment.sync_client_to_tip(sender).await;
     timestamped_test_log("syncked.");
     let proposal = from_inputs::propose(sender, payments.clone())
         .await
@@ -91,7 +96,9 @@ where
     ChainConductor: ConductChain,
 {
     timestamped_test_log("started integration-test shield.");
-    client.sync_and_await().await.unwrap();
+    // The same tip-separation as assure_propose_send_bump_sync_all_recipients.
+    environment.increase_chain_height().await;
+    environment.sync_client_to_tip(client).await;
     timestamped_test_log("syncked.");
     let proposal = client
         .propose_shield(zip32::AccountId::ZERO)

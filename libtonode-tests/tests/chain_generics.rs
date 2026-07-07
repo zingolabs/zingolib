@@ -119,11 +119,16 @@ mod chain_generics {
             10_000,
             0
         );
+        // The smallest transparent receiver value zebra will relay. zcashd's
+        // regtest accepted non-standard transactions, so this case once sent
+        // a single zatoshi; zebra enforces its mempool dust rule everywhere
+        // and rejects that ("transaction is dust"), so the minimum is now
+        // the canonical 546-zatoshi dust threshold.
         pool_matrix_case!(
             sapling_sends_to_transparent_minimum_value,
             ShieldedProtocol::Sapling,
             PoolType::TRANSPARENT,
-            1,
+            546,
             0
         );
         pool_matrix_case!(
