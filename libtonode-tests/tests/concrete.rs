@@ -654,73 +654,6 @@ mod fast {
         recipient.send_stored_proposal(true).await.unwrap();
     }
 
-    /// Tests that value transfers are properly sorted by block height and index.
-    /// It also tests that retrieving the value transfers multiple times in a row returns the same results.
-    #[tokio::test]
-    async fn value_transfers() {
-        let mut environment = LibtonodeEnvironment::setup().await;
-
-        let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client().await;
-
-        environment.increase_chain_height().await;
-        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
-
-        // Tip is height 4: orchard coinbase from NU5 activation onward,
-        // block 1's pre-NU5 coinbase in the sapling receiver.
-        check_client_balances!(
-            faucet,
-            o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
-        );
-
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some("Message #1"),
-                ),
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some("Message #2"),
-                ),
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some("Message #3"),
-                ),
-                (
-                    get_base_address_macro!(recipient, "unified").as_str(),
-                    5_000,
-                    Some("Message #4"),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        environment.increase_chain_height().await;
-        scenarios::sync_client_to_validator_tip(&environment.local_net, &mut recipient).await;
-
-        let value_transfers = &recipient.value_transfers(true).await.unwrap();
-        let value_transfers1 = &recipient.value_transfers(true).await.unwrap();
-        let value_transfers2 = &recipient.value_transfers(true).await.unwrap();
-        let mut value_transfers3 = recipient.value_transfers(false).await.unwrap();
-        let mut value_transfers4 = recipient.value_transfers(false).await.unwrap();
-
-        assert_eq!(value_transfers[0].memos.len(), 4);
-
-        value_transfers3.reverse();
-        value_transfers4.reverse();
-
-        assert_eq!(value_transfers, value_transfers1);
-        assert_eq!(value_transfers, value_transfers2);
-        assert_eq!(value_transfers, &value_transfers3);
-        assert_eq!(value_transfers, &value_transfers4);
-    }
-
     pub mod tex {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
@@ -995,39 +928,6 @@ mod fast {
             scenarios::mined_block_rewards_total(4) - 30_000
         );
     }
-
-    #[tokio::test]
-    async fn mine_to_transparent_and_propose_shielding() {
-        let activation_heights = scenarios::default_test_activation_heights();
-        let (local_net, mut faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
-            .await
-            .unwrap();
-        let proposal = faucet.propose_shield(zip32::AccountId::ZERO).await.unwrap();
-        let only_step = proposal.steps().first();
-
-        // Orchard action and dummy, plus 4 transparent inputs
-        let expected_fee = 30_000;
-
-        assert_eq!(proposal.steps().len(), 1);
-        assert_eq!(only_step.transparent_inputs().len(), 4);
-        assert_eq!(
-            only_step.balance().fee_required(),
-            Zatoshis::const_from_u64(expected_fee)
-        );
-        // Only one change item. I guess change could be split between pools?
-        assert_eq!(only_step.balance().proposed_change().len(), 1);
-        assert_eq!(
-            only_step
-                .balance()
-                .proposed_change()
-                .first()
-                .unwrap()
-                .value(),
-            Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4) - expected_fee)
-        );
-    }
 }
 mod slow {
     use pepper_sync::wallet::{OrchardNote, OutputInterface, SaplingNote, TransparentCoin};
@@ -1035,8 +935,8 @@ mod slow {
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
 
+    use zcash_protocol::PoolType;
     use zcash_protocol::value::Zatoshis;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::{ChainType, ClientConfig, WalletConfig};
@@ -2092,20 +1992,6 @@ TransactionSummary {
     }
 
     #[tokio::test]
-    async fn send_funds_to_all_pools() {
-        let (_local_net, _faucet, recipient, _orchard_txid, _sapling_txid, _transparent_txid) =
-            scenarios::faucet_funded_recipient(
-                Some(100_000),
-                Some(100_000),
-                Some(100_000),
-                PoolType::Shielded(ShieldedProtocol::Orchard),
-                scenarios::default_test_activation_heights(),
-                None,
-            )
-            .await;
-        check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
-    }
-    #[tokio::test]
     async fn self_send_to_t_displays_as_one_transaction() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
@@ -2948,47 +2834,6 @@ TransactionSummary {
         )
         .await
         .unwrap();
-    }
-
-    #[tokio::test]
-    async fn by_address_finsight() {
-        let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-        let base_uaddress = get_base_address_macro!(recipient, "unified");
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
-            .await
-            .unwrap();
-        scenarios::send_and_bump(
-            &local_net,
-            &mut faucet,
-            vec![(&base_uaddress, 1_000u64, Some("1"))],
-        )
-        .await;
-
-        scenarios::send_and_bump(
-            &local_net,
-            &mut faucet,
-            vec![(&base_uaddress, 1_000u64, Some("1"))],
-        )
-        .await;
-
-        assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
-                .pretty(4),
-            "2".to_string()
-        );
-
-        scenarios::send_and_bump(
-            &local_net,
-            &mut faucet,
-            vec![(&base_uaddress, 1_000u64, Some("aaaa"))],
-        )
-        .await;
-
-        assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
-                .pretty(4),
-            "6".to_string()
-        );
     }
 
     #[tokio::test]

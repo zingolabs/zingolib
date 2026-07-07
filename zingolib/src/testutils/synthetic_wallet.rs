@@ -23,6 +23,7 @@ use pepper_sync::wallet::{
 };
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::memo::Memo;
 use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
@@ -195,10 +196,19 @@ impl SyntheticWalletBuilder {
                 .next()
                 .map(|(key_id, address)| (*key_id, address.clone()))
                 .expect("a fresh wallet carries one transparent address");
+            let script = zcash_address::ZcashAddress::try_from_encoded(&address)
+                .expect("wallet-generated address encodes validly")
+                .convert_if_network::<zcash_transparent::address::TransparentAddress>(
+                    wallet.chain_type().network_type(),
+                )
+                .expect("wallet-generated address matches the wallet network")
+                .script()
+                .into();
             let coin = TransparentCoin::new_for_test(
                 OutputId::new(txid, 0),
                 key_id,
                 address,
+                script,
                 Zatoshis::from_u64(*value).expect("coin values are valid zatoshis"),
             );
             wallet.wallet_transactions.insert(

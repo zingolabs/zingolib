@@ -502,3 +502,173 @@ mod simpool {
         insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::Transparent).await;
     }
 }
+
+/// Offline proposal-shape tests over synthetic wallets: shield proposals
+/// and note-selection behavior, migrated from LocalNet tests whose
+/// assertions were all propose-stage.
+#[cfg(test)]
+mod proposal_shape {
+    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::keys::unified::ReceiverSelection;
+
+    fn external_address(pool: PoolType) -> String {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
+            PoolType::SAPLING => ReceiverSelection::sapling_only(),
+            _ => unimplemented!("only shielded destinations are needed here"),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        unified_address.encode(&external_wallet.chain_type())
+    }
+
+    /// Migrated from libtonode `shield_transparent` (long `#[ignore]`d):
+    /// shielding transparent funds proposes without error, consuming the
+    /// coin into shielded change minus the fee. The original asserted
+    /// nothing beyond the operations succeeding, so the offline proposal
+    /// covers everything it protected.
+    #[tokio::test]
+    async fn shield_transparent() {
+        let value = 100_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client.propose_shield(zip32::AccountId::ZERO).await.unwrap();
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        assert_eq!(step.transparent_inputs().len(), 1);
+        let fee = u64::from(step.balance().fee_required());
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change + fee, value);
+    }
+
+    /// Migrated from libtonode `fast::mine_to_transparent_and_propose_shielding`:
+    /// a four-coin shield proposes as a single step spending all four
+    /// coins into one change output, with the zip317 fee for four
+    /// transparent inputs plus the orchard action pair. The original
+    /// mined the coins; the proposal shape is identical for fabricated
+    /// ones (pepper-sync's TransparentCoin carries no coinbase marker,
+    /// so propose logic cannot distinguish them).
+    #[tokio::test]
+    async fn four_coin_shield_proposal_shape() {
+        let coin_value = 1_000_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client.propose_shield(zip32::AccountId::ZERO).await.unwrap();
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        assert_eq!(step.transparent_inputs().len(), 4);
+        assert_eq!(u64::from(step.balance().fee_required()), 30_000);
+        assert_eq!(step.balance().proposed_change().len(), 1);
+        assert_eq!(
+            u64::from(step.balance().proposed_change()[0].value()),
+            4 * coin_value - 30_000
+        );
+    }
+
+    /// Migrated from the chain_generics `ignore_dust_inputs` fixture's
+    /// load-bearing half: note selection excludes dust inputs. From a
+    /// wallet holding four 1_000-zat dust notes and one 15_000-zat note
+    /// in each shielded pool, a 10_000-zat send selects exactly the two
+    /// viable notes and none of the dust.
+    #[tokio::test]
+    async fn dust_inputs_are_ignored() {
+        let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
+        let wallet = [1_000, 1_000, 1_000, 1_000, 15_000]
+            .into_iter()
+            .fold(builder, |builder, value| {
+                builder.orchard_note(value).sapling_note(value)
+            })
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedProtocol::Orchard));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 10_000, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let selected_values: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded-funds send selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert!(
+            selected_values.iter().all(|&value| value == 15_000),
+            "dust notes were selected: {selected_values:?}"
+        );
+        assert_eq!(
+            u64::from(step.balance().fee_required()),
+            4 * u64::from(MARGINAL_FEE)
+        );
+    }
+
+    /// Migrated from the chain_generics `note_selection_order` fixture's
+    /// load-bearing half: from notes of 10/20/30/40 thousand zats, a
+    /// 40_000-zat send selects the two-note covering set that leaves the
+    /// least change — not more notes, and not a higher-value covering set.
+    #[tokio::test]
+    async fn note_selection_covers_target_with_minimal_change() {
+        let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
+        let wallet = [10_000, 20_000, 30_000, 40_000]
+            .into_iter()
+            .fold(builder, |builder, value| builder.sapling_note(value))
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedProtocol::Orchard));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 40_000, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let selected_values: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded-funds send selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        let selected_total: u64 = selected_values.iter().sum();
+        let fee = u64::from(step.balance().fee_required());
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(selected_values.len(), 2, "selected: {selected_values:?}");
+        assert_eq!(selected_total, 40_000 + fee + change);
+        // The fixture's guarantee: with 10_000-granular notes available,
+        // any selection leaving 10_000 or more change used a bigger note
+        // than necessary.
+        assert!(change < 10_000, "change {change} implies oversized inputs");
+    }
+}

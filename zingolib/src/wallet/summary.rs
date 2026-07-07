@@ -1338,4 +1338,147 @@ mod tests {
             );
         }
     }
+    /// Migrated from libtonode `slow::send_funds_to_all_pools`: per-pool
+    /// balance aggregation over one confirmed note in each pool. The
+    /// original's only assertion was this balance check; the funding
+    /// round trips it ran are covered by the pool_matrix e2e family.
+    #[tokio::test]
+    async fn send_funds_to_all_pools() {
+        use crate::check_client_balances;
+        use crate::lightclient::LightClient;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        let value = 100_000;
+        let wallet = SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(value)
+            .sapling_note(value)
+            .transparent_coin(value)
+            .build();
+        let client = LightClient::new_for_test(wallet).await;
+        check_client_balances!(client, o: value s: value t: value);
+    }
+
+    /// Migrated from libtonode `slow::by_address_finsight`: the
+    /// memo-bytes-per-address summary accumulates outgoing memo lengths
+    /// keyed by recipient address. Two 1-byte memos then a 4-byte memo.
+    #[tokio::test]
+    async fn by_address_finsight() {
+        use crate::wallet::keys::unified::ReceiverSelection;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        let mut external_wallet = regtest_wallet(seeds::ABANDON_ART_SEED);
+        let (_, external_ua) = external_wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+        let external_ua_encoded = external_ua.encode(&external_wallet.chain_type());
+
+        for (txid_byte, height, memo) in [(1, 4, "1"), (2, 5, "1")] {
+            let transaction = sent(txid_byte, height, &external_ua, memo);
+            wallet
+                .wallet_transactions
+                .insert(transaction.txid(), transaction);
+        }
+        let memobytes = wallet.do_total_memobytes_to_address().await.unwrap();
+        assert_eq!(
+            json::JsonValue::from(memobytes)[&external_ua_encoded].pretty(4),
+            "2".to_string()
+        );
+
+        let transaction = sent(3, 6, &external_ua, "aaaa");
+        wallet
+            .wallet_transactions
+            .insert(transaction.txid(), transaction);
+        let memobytes = wallet.do_total_memobytes_to_address().await.unwrap();
+        assert_eq!(
+            json::JsonValue::from(memobytes)[&external_ua_encoded].pretty(4),
+            "6".to_string()
+        );
+    }
+
+    /// Migrated from libtonode `fast::value_transfers`: a four-output
+    /// memo'd receive aggregates into one value transfer carrying all
+    /// four memos, and the derivation is idempotent and sort-stable
+    /// (the descending ordering is exactly the reverse of ascending).
+    #[tokio::test]
+    async fn value_transfers_aggregation_and_ordering() {
+        use incrementalmerkletree::Position;
+        use orchard::value::NoteValue;
+        use pepper_sync::wallet::{OrchardNote, OutputId};
+        use std::str::FromStr as _;
+
+        use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        // One received transaction carrying four memo'd notes...
+        let txid = TxId::from_bytes([1; 32]);
+        let notes = (0..4u64)
+            .map(|index| {
+                OrchardNote::new_for_test(
+                    OutputId::new(txid, u32::try_from(index).unwrap()),
+                    zip32::AccountId::ZERO,
+                    zip32::Scope::External,
+                    OrchardCryptoNoteBuilder::default()
+                        .value(NoteValue::from_raw(5_000))
+                        .build(),
+                    Memo::from_str(&format!("Message #{}", index + 1)).unwrap(),
+                    Some(Position::from(index)),
+                )
+            })
+            .collect::<Vec<_>>();
+        wallet.wallet_transactions.insert(
+            txid,
+            WalletTransaction::new_for_test_with_orchard_notes(
+                txid,
+                ConfirmationStatus::Confirmed(4.into()),
+                notes,
+                vec![],
+            ),
+        );
+        // ...plus two single-note receives at later heights so the
+        // ordering assertions exercise a non-trivial sort.
+        for (txid_byte, height) in [(2u8, 5u32), (3, 6)] {
+            let txid = TxId::from_bytes([txid_byte; 32]);
+            let note = OrchardNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                OrchardCryptoNoteBuilder::default()
+                    .value(NoteValue::from_raw(1_000 * u64::from(txid_byte)))
+                    .build(),
+                Memo::Empty,
+                Some(Position::from(u64::from(txid_byte))),
+            );
+            wallet.wallet_transactions.insert(
+                txid,
+                WalletTransaction::new_for_test_with_orchard_notes(
+                    txid,
+                    ConfirmationStatus::Confirmed(height.into()),
+                    vec![note],
+                    vec![],
+                ),
+            );
+        }
+
+        let value_transfers = wallet.value_transfers(true).await.unwrap();
+        let value_transfers1 = wallet.value_transfers(true).await.unwrap();
+        let value_transfers2 = wallet.value_transfers(true).await.unwrap();
+        let mut value_transfers3 = wallet.value_transfers(false).await.unwrap();
+        let mut value_transfers4 = wallet.value_transfers(false).await.unwrap();
+
+        let four_memo_transfer = value_transfers
+            .iter()
+            .find(|transfer| transfer.txid == TxId::from_bytes([1; 32]))
+            .unwrap();
+        assert_eq!(four_memo_transfer.memos.len(), 4);
+
+        value_transfers3.reverse();
+        value_transfers4.reverse();
+
+        assert_eq!(value_transfers, value_transfers1);
+        assert_eq!(value_transfers, value_transfers2);
+        assert_eq!(value_transfers, value_transfers3);
+        assert_eq!(value_transfers, value_transfers4);
+    }
 }

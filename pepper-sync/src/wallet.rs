@@ -935,18 +935,22 @@ pub struct TransparentCoin {
 
 #[cfg(feature = "test-features")]
 impl TransparentCoin {
-    /// Creates a minimal received coin for testing purposes.
+    /// Creates a minimal received coin for testing purposes. The script
+    /// must be the real locking script for `address`: spendable-output
+    /// selection reconstructs the recipient from it and silently drops
+    /// coins whose script does not parse to an address.
     pub fn new_for_test(
         output_id: OutputId,
         key_id: TransparentAddressId,
         address: String,
+        script: Script,
         value: Zatoshis,
     ) -> Self {
         Self {
             output_id,
             key_id,
             address,
-            script: Script::default(),
+            script,
             value,
             spending_transaction: None,
         }
