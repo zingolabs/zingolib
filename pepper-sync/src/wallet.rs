@@ -651,6 +651,26 @@ impl WalletTransaction {
         self
     }
 
+    /// As [`Self::new_for_test`], with outgoing sapling notes attached.
+    #[must_use]
+    pub fn with_outgoing_sapling_notes_for_test(
+        mut self,
+        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+    ) -> Self {
+        self.outgoing_sapling_notes = outgoing_sapling_notes;
+        self
+    }
+
+    /// As [`Self::new_for_test`], with received transparent coins attached.
+    #[must_use]
+    pub fn with_transparent_coins_for_test(
+        mut self,
+        transparent_coins: Vec<TransparentCoin>,
+    ) -> Self {
+        self.transparent_coins = transparent_coins;
+        self
+    }
+
     /// As [`Self::new_for_test`], with received and outgoing orchard notes
     /// attached, for tests exercising summary/value-transfer derivation
     /// without a chain.
@@ -911,6 +931,26 @@ pub struct TransparentCoin {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+}
+
+#[cfg(feature = "test-features")]
+impl TransparentCoin {
+    /// Creates a minimal received coin for testing purposes.
+    pub fn new_for_test(
+        output_id: OutputId,
+        key_id: TransparentAddressId,
+        address: String,
+        value: Zatoshis,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id,
+            address,
+            script: Script::default(),
+            value,
+            spending_transaction: None,
+        }
+    }
 }
 
 impl TransparentCoin {

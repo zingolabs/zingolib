@@ -1061,4 +1061,281 @@ mod tests {
             100_000
         );
     }
+    /// Migrated from libtonode `slow::sapling_to_sapling_scan_together`:
+    /// transaction summaries order a sapling funding receive and its
+    /// subsequent spend by height, with correct txids and values, and the
+    /// spend's outgoing sapling notes carry the recipient and value. The
+    /// original produced these records through a LocalNet round trip; here
+    /// they are fabricated directly. (The original name hints at
+    /// scan-batching, but its assertions only ever checked summary output;
+    /// scan-batching coverage belongs to pepper-sync's scan layer.)
+    #[tokio::test]
+    async fn sapling_to_sapling_scan_together() {
+        use pepper_sync::wallet::OutgoingSaplingNote;
+        use sapling_crypto::value::NoteValue;
+        use zcash_keys::encoding::encode_payment_address;
+        use zcash_protocol::consensus::NetworkConstants as _;
+        use zcash_protocol::consensus::Parameters as _;
+
+        use crate::mocks::SaplingCryptoNoteBuilder;
+        use crate::wallet::keys::unified::ReceiverSelection;
+
+        let funding_value = 100_000;
+        let spent_value = 20_000;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let network = wallet.chain_type();
+
+        let mut external_wallet = regtest_wallet(seeds::ABANDON_ART_SEED);
+        let (_, destination_ua) = external_wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let destination = *destination_ua.sapling().unwrap();
+
+        let funding_txid = TxId::from_bytes([1; 32]);
+        let spent_txid = TxId::from_bytes([2; 32]);
+
+        let mut funded_crypto_note = SaplingCryptoNoteBuilder::default();
+        funded_crypto_note.value(NoteValue::from_raw(funding_value));
+        // The spend linkage itself is not fabricated: summary derivation
+        // validates a spent note against the spending transaction's actual
+        // bundle nullifiers, and none of this test's assertions concern
+        // spend status. (sapling_incoming_sapling_outgoing covers spend
+        // status through views that read the wallet records directly.)
+        let funded_note = pepper_sync::wallet::SaplingNote::new_for_test(
+            OutputId::new(funding_txid, 0),
+            zip32::AccountId::ZERO,
+            zip32::Scope::External,
+            funded_crypto_note.build(),
+            Memo::Empty,
+            Some(incrementalmerkletree::Position::from(0)),
+        );
+        wallet.wallet_transactions.insert(
+            funding_txid,
+            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(5.into()))
+                .with_sapling_notes_for_test(vec![funded_note]),
+        );
+
+        let mut outgoing_crypto_note = SaplingCryptoNoteBuilder::default();
+        outgoing_crypto_note.recipient(destination);
+        outgoing_crypto_note.value(NoteValue::from_raw(spent_value));
+        let outgoing_note = OutgoingSaplingNote::new_for_test(
+            OutputId::new(spent_txid, 0),
+            zip32::AccountId::ZERO,
+            zip32::Scope::External,
+            outgoing_crypto_note.build(),
+            Memo::Empty,
+            None,
+        );
+        wallet.wallet_transactions.insert(
+            spent_txid,
+            WalletTransaction::new_for_test(spent_txid, ConfirmationStatus::Confirmed(6.into()))
+                .with_outgoing_sapling_notes_for_test(vec![outgoing_note]),
+        );
+
+        let transactions = wallet.transaction_summaries(false).await.unwrap().0;
+
+        assert_eq!(transactions.first().unwrap().blockheight, 5.into());
+        assert_eq!(transactions.first().unwrap().txid, funding_txid);
+        assert_eq!(transactions.first().unwrap().value, funding_value);
+
+        assert_eq!(transactions.get(1).unwrap().blockheight, 6.into());
+        assert_eq!(transactions.get(1).unwrap().txid, spent_txid);
+        assert_eq!(transactions.get(1).unwrap().value, spent_value);
+        let expected_recipient = encode_payment_address(
+            network.network_type().hrp_sapling_payment_address(),
+            &destination,
+        );
+        assert!(
+            transactions
+                .get(1)
+                .unwrap()
+                .outgoing_sapling_notes
+                .iter()
+                .any(|note| note.recipient == expected_recipient)
+        );
+        assert!(
+            transactions
+                .get(1)
+                .unwrap()
+                .outgoing_sapling_notes
+                .iter()
+                .any(|note| note.value == spent_value)
+        );
+    }
+
+    /// Migrated from libtonode `slow::sapling_incoming_sapling_outgoing`:
+    /// balances and note/transaction views across the three states of a
+    /// sapling note's life — received and confirmed, pending spent by a
+    /// transmitted transaction, and spent by a confirmed transaction. The
+    /// original walked a LocalNet chain through those states; here each
+    /// state is fabricated and asserted directly.
+    #[tokio::test]
+    async fn sapling_incoming_sapling_outgoing() {
+        use std::str::FromStr as _;
+
+        use pepper_sync::wallet::{
+            NoteInterface as _, OutgoingNoteInterface as _, OutgoingSaplingNote,
+            OutputInterface as _, SaplingNote,
+        };
+        use sapling_crypto::value::NoteValue;
+
+        use crate::lightclient::LightClient;
+        use crate::mocks::SaplingCryptoNoteBuilder;
+        use crate::wallet::keys::unified::ReceiverSelection;
+        use crate::wallet::output::SpendStatus;
+
+        let value = 100_000;
+        let sent_value = 2_000;
+        let outgoing_memo = "Outgoing Memo";
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let (_, own_sapling_ua) = wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let own_sapling_address = *own_sapling_ua.sapling().unwrap();
+
+        let mut external_wallet = regtest_wallet(seeds::ABANDON_ART_SEED);
+        let (_, external_ua) = external_wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let external_sapling_address = *external_ua.sapling().unwrap();
+
+        // State 1: a confirmed incoming sapling note on the wallet's own
+        // sapling receiver.
+        let funding_txid = TxId::from_bytes([1; 32]);
+        let mut incoming_crypto_note = SaplingCryptoNoteBuilder::default();
+        incoming_crypto_note.recipient(own_sapling_address);
+        incoming_crypto_note.value(NoteValue::from_raw(value));
+        let incoming_note = SaplingNote::new_for_test(
+            OutputId::new(funding_txid, 0),
+            zip32::AccountId::ZERO,
+            zip32::Scope::External,
+            incoming_crypto_note.build(),
+            Memo::Empty,
+            Some(incrementalmerkletree::Position::from(0)),
+        );
+        wallet.wallet_transactions.insert(
+            funding_txid,
+            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(4.into()))
+                .with_sapling_notes_for_test(vec![incoming_note]),
+        );
+
+        let client = LightClient::new_for_test(wallet).await;
+        let balance = client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(balance.total_sapling_balance.unwrap().into_u64(), value);
+        assert_eq!(balance.confirmed_sapling_balance.unwrap().into_u64(), value);
+        assert_eq!(balance.unconfirmed_sapling_balance.unwrap().into_u64(), 0);
+        {
+            let wallet = client.wallet().read().await;
+            let received_note = wallet
+                .wallet_transactions
+                .get(&funding_txid)
+                .unwrap()
+                .sapling_notes()
+                .first()
+                .unwrap();
+            assert_eq!(received_note.value(), value);
+            assert_eq!(received_note.note().recipient(), own_sapling_address);
+        }
+
+        // State 2: the note is pending spent by a transmitted transaction
+        // carrying an outgoing note with a memo.
+        let sent_txid = TxId::from_bytes([2; 32]);
+        {
+            let mut wallet = client.wallet().write().await;
+            wallet
+                .wallet_transactions
+                .get_mut(&funding_txid)
+                .unwrap()
+                .sapling_notes_mut()
+                .first_mut()
+                .unwrap()
+                .set_spending_transaction(Some(sent_txid));
+
+            let mut outgoing_crypto_note = SaplingCryptoNoteBuilder::default();
+            outgoing_crypto_note.recipient(external_sapling_address);
+            outgoing_crypto_note.value(NoteValue::from_raw(sent_value));
+            let outgoing_note = OutgoingSaplingNote::new_for_test(
+                OutputId::new(sent_txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                outgoing_crypto_note.build(),
+                Memo::from_str(outgoing_memo).unwrap(),
+                None,
+            );
+            wallet.wallet_transactions.insert(
+                sent_txid,
+                WalletTransaction::new_for_test(
+                    sent_txid,
+                    ConfirmationStatus::Transmitted(5.into()),
+                )
+                .with_outgoing_sapling_notes_for_test(vec![outgoing_note]),
+            );
+        }
+        {
+            let wallet = client.wallet().read().await;
+            let sapling_notes = wallet.note_summaries::<SaplingNote>(true);
+            assert_eq!(wallet.wallet_outputs::<OrchardNote>().len(), 0);
+            assert_eq!(
+                sapling_notes
+                    .iter()
+                    .filter(|note| note.spend_status.is_confirmed_spent())
+                    .count(),
+                0
+            );
+            let pending_notes = sapling_notes
+                .iter()
+                .filter(|note| note.spend_status.is_pending_spent())
+                .collect::<Vec<_>>();
+            assert_eq!(pending_notes.len(), 1);
+            let pending_sapling_note = pending_notes.first().unwrap();
+            assert_eq!(pending_sapling_note.txid, funding_txid);
+            if let SpendStatus::TransmittedSpent(txid) = pending_sapling_note.spend_status {
+                assert_eq!(txid, sent_txid);
+            } else {
+                panic!("incorrect spend status!");
+            }
+
+            let sent_transaction = wallet.wallet_transactions.get(&sent_txid).unwrap();
+            assert_eq!(wallet.wallet_transactions.len(), 2);
+            assert_eq!(sent_transaction.total_value_sent(), sent_value);
+            assert!(!sent_transaction.status().is_confirmed());
+            assert_eq!(sent_transaction.status().get_height(), 5.into());
+
+            let outgoing_sapling_note = sent_transaction
+                .outgoing_sapling_notes()
+                .iter()
+                .find(|note| note.recipient() == external_sapling_address)
+                .unwrap();
+            if let Memo::Text(memo) = outgoing_sapling_note.memo() {
+                assert_eq!(&String::from(memo.clone()), outgoing_memo);
+            } else {
+                panic!("no text memo");
+            }
+            assert_eq!(outgoing_sapling_note.value(), sent_value);
+        }
+
+        // State 3: the spending transaction confirms.
+        {
+            let mut wallet = client.wallet().write().await;
+            wallet
+                .wallet_transactions
+                .get_mut(&sent_txid)
+                .unwrap()
+                .update_status(ConfirmationStatus::Confirmed(5.into()), crate::utils::now());
+        }
+        {
+            let wallet = client.wallet().read().await;
+            let sent_transaction = wallet.wallet_transactions.get(&sent_txid).unwrap();
+            assert!(sent_transaction.status().is_confirmed());
+            assert_eq!(
+                sent_transaction.status().get_confirmed_height().unwrap(),
+                5.into()
+            );
+        }
+    }
 }

@@ -18,10 +18,13 @@ use orchard::value::NoteValue;
 use shardtree::store::{Checkpoint, ShardStore as _};
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
-use pepper_sync::wallet::{OrchardNote, OutputId, SaplingNote, SyncState, WalletTransaction};
+use pepper_sync::wallet::{
+    OrchardNote, OutputId, SaplingNote, SyncState, TransparentCoin, WalletTransaction,
+};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::memo::Memo;
+use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -40,6 +43,7 @@ pub struct SyntheticWalletBuilder {
     tip: u32,
     orchard_note_values: Vec<u64>,
     sapling_note_values: Vec<u64>,
+    transparent_coin_values: Vec<u64>,
 }
 
 impl SyntheticWalletBuilder {
@@ -51,6 +55,7 @@ impl SyntheticWalletBuilder {
             tip: 20,
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
+            transparent_coin_values: Vec::new(),
         }
     }
 
@@ -73,10 +78,21 @@ impl SyntheticWalletBuilder {
         self
     }
 
+    /// Adds a confirmed, unspent transparent coin of `value`, received on
+    /// the wallet's own first transparent address.
+    pub fn transparent_coin(mut self, value: u64) -> Self {
+        self.transparent_coin_values.push(value);
+        self
+    }
+
     /// Assembles the wallet.
     pub fn build(&self) -> LightWallet {
         assert!(
-            self.tip as usize > self.orchard_note_values.len() + self.sapling_note_values.len() + 1,
+            self.tip as usize
+                > self.orchard_note_values.len()
+                    + self.sapling_note_values.len()
+                    + self.transparent_coin_values.len()
+                    + 1,
             "tip must exceed the highest note confirmation height"
         );
         let mut wallet = LightWallet::new(
@@ -166,6 +182,34 @@ impl SyntheticWalletBuilder {
                     )),
                 )
                 .with_sapling_notes_for_test(vec![note]),
+            );
+        }
+
+        let shielded_note_count = self.orchard_note_values.len() + self.sapling_note_values.len();
+        for (index, value) in self.transparent_coin_values.iter().enumerate() {
+            // Txid bytes offset past both shielded ranges.
+            let txid = TxId::from_bytes([0xC0 + u8::try_from(index).unwrap(); 32]);
+            let (key_id, address) = wallet
+                .transparent_addresses()
+                .iter()
+                .next()
+                .map(|(key_id, address)| (*key_id, address.clone()))
+                .expect("a fresh wallet carries one transparent address");
+            let coin = TransparentCoin::new_for_test(
+                OutputId::new(txid, 0),
+                key_id,
+                address,
+                Zatoshis::from_u64(*value).expect("coin values are valid zatoshis"),
+            );
+            wallet.wallet_transactions.insert(
+                txid,
+                WalletTransaction::new_for_test(
+                    txid,
+                    ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                        2 + u32::try_from(shielded_note_count + index).unwrap(),
+                    )),
+                )
+                .with_transparent_coins_for_test(vec![coin]),
             );
         }
 
