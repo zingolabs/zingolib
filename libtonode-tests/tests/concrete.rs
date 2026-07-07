@@ -1072,9 +1072,7 @@ mod fast {
     }
 }
 mod slow {
-    use pepper_sync::wallet::{
-        OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote, TransparentCoin,
-    };
+    use pepper_sync::wallet::{OrchardNote, OutputInterface, SaplingNote, TransparentCoin};
     use zcash_local_net::validator::Validator;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
