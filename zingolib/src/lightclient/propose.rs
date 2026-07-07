@@ -238,3 +238,118 @@ mod shielding {
         );
     }
 }
+
+/// Migrated from libtonode's `send_all` suite: these guarantees are pure
+/// proposal logic over wallet state, so a synthetic wallet replaces the
+/// LocalNet round trip.
+#[cfg(test)]
+mod send_all {
+    use zcash_protocol::PoolType;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::{
+        lightclient::LightClient, testutils::synthetic_wallet::SyntheticWalletBuilder,
+        utils::conversion::address_from_str, wallet::error::ProposeSendError,
+        wallet::keys::unified::ReceiverSelection,
+    };
+
+    /// An address belonging to a different wallet, so the send is external.
+    fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
+            PoolType::SAPLING => ReceiverSelection::sapling_only(),
+            _ => unimplemented!("only shielded destinations are needed here"),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
+    }
+
+    /// Migrated from libtonode `send_all::ptfm_insufficient_funds`: a
+    /// send-all whose only note cannot cover the fee of a cross-pool spend
+    /// reports the exact shortfall.
+    #[tokio::test]
+    async fn ptfm_insufficient_funds() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(10_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal_error = client
+            .propose_send_all(
+                external_address(PoolType::SAPLING),
+                false,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await;
+
+        match proposal_error {
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    available: a,
+                    required: r,
+                },
+            )) => {
+                assert_eq!(a, Zatoshis::const_from_u64(10_000));
+                assert_eq!(r, Zatoshis::const_from_u64(30_000));
+            }
+            _ => panic!("expected an InsufficientFunds error"),
+        }
+    }
+
+    /// Migrated from libtonode `send_all::ptfm_zero_value`: a send-all
+    /// whose only note is entirely consumed by the fee is rejected as a
+    /// zero-value send.
+    #[tokio::test]
+    async fn ptfm_zero_value() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(10_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal_error = client
+            .propose_send_all(
+                external_address(PoolType::ORCHARD),
+                false,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await;
+
+        assert!(matches!(
+            proposal_error,
+            Err(ProposeSendError::ZeroValueSendAll)
+        ));
+    }
+
+    /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
+    /// Zennies for Zingo enabled, the maximum sendable value deducts the
+    /// zenny amount and the fee for one orchard note in, three outputs out.
+    #[tokio::test]
+    async fn toggle_zennies_for_zingo() {
+        let initial_funds = 2_000_000;
+        let zennies_magnitude = 1_000_000;
+        let expected_fee = 15_000;
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(initial_funds)
+            .build();
+        let client = LightClient::new_for_test(wallet).await;
+
+        assert_eq!(
+            client
+                .max_send_value(
+                    external_address(PoolType::ORCHARD),
+                    true,
+                    zip32::AccountId::ZERO
+                )
+                .await
+                .unwrap(),
+            Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap()
+        );
+    }
+}

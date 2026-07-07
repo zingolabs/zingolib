@@ -314,6 +314,38 @@ mod test {
         );
     }
 
+    /// Migrated from libtonode `propose_orchard_dust_to_sapling`: a wallet
+    /// holding an ordinary orchard note and a dust note can propose a
+    /// cross-pool send to a sapling address.
+    /// FIXME: does not assert dust was included in the proposal (carried
+    /// over from the original).
+    #[test]
+    fn propose_orchard_dust_to_sapling() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(4_000)
+                .build();
+
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let (_, sapling_destination) = external_wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let sapling_destination = sapling_destination.encode(&external_wallet.chain_type());
+
+        let request = transaction_request_from_send_inputs(vec![(
+            sapling_destination.as_str(),
+            10_000,
+            None,
+        )])
+        .expect("valid send inputs form a request");
+
+        wallet
+            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .expect("orchard funds propose cleanly to a sapling destination");
+    }
+
     /// Proposing a spend of existing funds works from wallet data alone —
     /// no network. Formerly `#[ignore]`d ("for some reason this does not
     /// work without network"): it loaded an example wallet fixture, and

@@ -268,6 +268,37 @@ impl GrpcIndexer {
         })
     }
 
+    /// As [`Self::new`], but the underlying channel connects on first use
+    /// instead of eagerly. Useful when the indexer may not be reachable at
+    /// construction time — including offline tests that never issue an RPC.
+    pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
+        let scheme = uri
+            .scheme_str()
+            .ok_or(GetClientError::InvalidScheme)?
+            .to_string();
+        if scheme != "http" && scheme != "https" {
+            return Err(GetClientError::InvalidScheme);
+        }
+        let _authority = uri
+            .authority()
+            .ok_or(GetClientError::InvalidAuthority)?
+            .clone();
+
+        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+        let endpoint = if scheme == "https" {
+            endpoint.tls_config(client_tls_config())?
+        } else {
+            endpoint
+        };
+        let channel = endpoint.connect_lazy();
+        let clear_net_client = CompactTxStreamerClient::new(channel);
+
+        Ok(Self {
+            uri,
+            clear_net_client,
+        })
+    }
+
     /// Returns URI the gRPC client(s) are connected to.
     pub fn uri(&self) -> &http::Uri {
         &self.uri

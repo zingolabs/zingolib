@@ -154,6 +154,31 @@ impl LightClient {
         })
     }
 
+    /// Wraps an already-constructed wallet — typically from
+    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`] — so
+    /// client-level APIs that only read wallet state (proposing, balances,
+    /// summaries) can be exercised offline. The indexer URI points at
+    /// localhost and is never contacted; the wallet path lives under the OS
+    /// temp directory and is never written unless a test saves explicitly.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
+        zingo_netutils::ensure_default_crypto_provider();
+        let indexer =
+            zingo_netutils::GrpcIndexer::new_lazy(crate::testutils::port_to_localhost_uri(1))
+                .expect("lazy endpoint construction succeeds without connecting");
+        LightClient {
+            indexer,
+            wallet: WalletMeta::new(
+                std::env::temp_dir().join("zingolib-synthetic-wallet"),
+                wallet,
+            ),
+            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_handle: None,
+            save_active: Arc::new(AtomicBool::new(false)),
+            save_handle: None,
+        }
+    }
+
     /// Creates a [`LightClient`] by deserializing wallet bytes directly, without reading from
     /// a file.
     ///

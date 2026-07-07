@@ -8,7 +8,6 @@ use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
@@ -4008,70 +4007,13 @@ async fn mine_to_transparent_coinbase_maturity() {
     assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
-// FIXME: does not assert dust was included in the proposal
-#[tokio::test]
-async fn propose_orchard_dust_to_sapling() {
-    let (local_net, mut faucet, mut recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-
-    from_inputs::quick_send(
-        &mut faucet,
-        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-
-    from_inputs::propose(
-        &mut recipient,
-        vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
-    )
-    .await
-    .unwrap();
-}
-
 mod send_all {
 
     use pepper_sync::wallet::{OrchardNote, SaplingNote};
-    use zcash_protocol::value::Zatoshis;
-    use zingolib::{testutils::lightclient::from_inputs, wallet::error::ProposeSendError};
+
+    use zingolib::testutils::lightclient::from_inputs;
 
     use super::*;
-    #[tokio::test]
-    async fn toggle_zennies_for_zingo() {
-        let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-
-        let initial_funds = 2_000_000;
-        let zennies_magnitude = 1_000_000;
-        let expected_fee = 15_000; // 1 orchard note in, and 3 out
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(
-                &get_base_address_macro!(&recipient, "unified"),
-                initial_funds,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        let external_uaddress =
-            address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap();
-        let expected_balance =
-            Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
-        assert_eq!(
-            recipient
-                .max_send_value(external_uaddress, true, zip32::AccountId::ZERO)
-                .await
-                .unwrap(),
-            expected_balance
-        );
-    }
-
     #[tokio::test]
     async fn ptfm_general() {
         let (local_net, mut faucet, mut recipient, _) =
@@ -4154,54 +4096,6 @@ mod send_all {
                 .into_u64(),
             0
         );
-    }
-
-    #[tokio::test]
-    async fn ptfm_insufficient_funds() {
-        let (_local_net, faucet, mut recipient, _) =
-            scenarios::faucet_funded_recipient_default(10_000).await;
-
-        let proposal_error = recipient
-            .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
-            .await;
-
-        match proposal_error {
-            Err(ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available: a,
-                    required: r,
-                },
-            )) => {
-                assert_eq!(a, Zatoshis::const_from_u64(10_000));
-                assert_eq!(r, Zatoshis::const_from_u64(30_000));
-            }
-            _ => panic!("expected an InsufficientFunds error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn ptfm_zero_value() {
-        let (_local_net, faucet, mut recipient, _) =
-            scenarios::faucet_funded_recipient_default(10_000).await;
-
-        let proposal_error = recipient
-            .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
-            .await;
-
-        assert!(matches!(
-            proposal_error,
-            Err(ProposeSendError::ZeroValueSendAll)
-        ));
     }
 }
 
