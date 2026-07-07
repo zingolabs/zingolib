@@ -1,11 +1,9 @@
 ARG RUST_VERSION=1.90
 ARG LIGHTWALLETD_VERSION=0.4.18
-ARG ZCASH_VERSION=6.20.0
 ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
 ARG ZEBRA_VERSION=6.0.0-rc.0
 ARG NEXTEST_VERSION=0.9.128
 
-FROM docker.io/zodlinc/zcash:v${ZCASH_VERSION} AS zcashd-downloader
 FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG} AS zainod-downloader
 FROM docker.io/zfnd/zebra:${ZEBRA_VERSION} AS zebrad-downloader
 
@@ -43,32 +41,22 @@ RUN git clone https://github.com/zcash/lightwalletd \
     && git checkout "v${LIGHTWALLETD_VERSION}" \
     && make
 
-# Build zcashd and fetch params
-# RUN git clone https://github.com/zcash/zcash.git \
-#     && cd zcash/ \
-#     && git checkout v6.20.0 \
-#     && ./zcutil/build.sh -j$(nproc)
-
 FROM debian:trixie-slim AS runner
 
 ARG RUST_VERSION
 ARG LIGHTWALLETD_VERSION
-ARG ZCASH_VERSION
 ARG ZAINO_IMAGE_TAG
 ARG ZEBRA_VERSION
 ARG NEXTEST_VERSION
 
 LABEL org.zingolib.test-artifacts.versions.rust="${RUST_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.lightwalletd="${LIGHTWALLETD_VERSION}"
-LABEL org.zingolib.test-artifacts.versions.zcashd="${ZCASH_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.zaino="${ZAINO_IMAGE_TAG}"
 LABEL org.zingolib.test-artifacts.versions.zebra="${ZEBRA_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.nextest="${NEXTEST_VERSION}"
 
 # Copy regtest binaries and zcash params from builder
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
-COPY --from=zcashd-downloader /usr/bin/zcashd /usr/bin/
-COPY --from=zcashd-downloader /usr/bin/zcash-cli /usr/bin/
 COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
 COPY --from=zebrad-downloader /usr/local/bin/zebrad /usr/bin/
 
