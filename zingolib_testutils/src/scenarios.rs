@@ -362,23 +362,32 @@ pub struct ClientBuilder {
     pub server_id: http::Uri,
     /// Directory for wallet files
     pub zingo_datadir: TempDir,
+    /// The activation-height schedule every built wallet is configured
+    /// with. On a managed stack this is derived from the running validator
+    /// (the sole source of activation-height truth, infras ADR 0003); an
+    /// unmanaged stack (darkside) asserts its own schedule here, once.
+    activation_heights: ActivationHeights,
     client_number: u8,
 }
 
 impl ClientBuilder {
     /// TODO: Add Doc Comment Here!
-    pub fn new(server_id: http::Uri, zingo_datadir: TempDir) -> Self {
+    pub fn new(
+        server_id: http::Uri,
+        zingo_datadir: TempDir,
+        activation_heights: ActivationHeights,
+    ) -> Self {
         let client_number = 0;
         ClientBuilder {
             server_id,
             zingo_datadir,
+            activation_heights,
             client_number,
         }
     }
 
     pub fn make_unique_data_dir_and_create_config(
         &mut self,
-        configured_activation_heights: ActivationHeights,
         wallet_config: WalletConfig,
     ) -> ClientConfig {
         //! Each client requires a unique `data_dir`, we use the
@@ -391,7 +400,7 @@ impl ClientBuilder {
         );
         self.create_clientconfig(
             PathBuf::from(conf_path),
-            configured_activation_heights,
+            self.activation_heights,
             wallet_config,
         )
     }
@@ -413,11 +422,7 @@ impl ClientBuilder {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn build_faucet(
-        &mut self,
-        overwrite: bool,
-        configured_activation_heights: ActivationHeights,
-    ) -> LightClient {
+    pub async fn build_faucet(&mut self, overwrite: bool) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
             WalletConfig::MnemonicPhrase {
@@ -427,7 +432,6 @@ impl ClientBuilder {
                 wallet_settings: default_test_wallet_settings(),
             },
             overwrite,
-            configured_activation_heights,
         )
         .await
     }
@@ -437,10 +441,8 @@ impl ClientBuilder {
         &mut self,
         wallet_config: WalletConfig,
         overwrite: bool,
-        configured_activation_heights: ActivationHeights,
     ) -> LightClient {
-        let config = self
-            .make_unique_data_dir_and_create_config(configured_activation_heights, wallet_config);
+        let config = self.make_unique_data_dir_and_create_config(wallet_config);
         let mut lightclient = LightClient::new(config, overwrite).await.unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
@@ -472,7 +474,6 @@ pub async fn unfunded_client(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            configured_activation_heights,
         )
         .await;
     sync_client_to_validator_tip(&local_net, &mut lightclient).await;
@@ -504,9 +505,7 @@ pub async fn faucet(
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder
-        .build_faucet(true, configured_activation_heights)
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
 
     if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
@@ -535,9 +534,7 @@ pub async fn faucet_recipient(
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder
-        .build_faucet(true, configured_activation_heights)
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -547,7 +544,6 @@ pub async fn faucet_recipient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            configured_activation_heights,
         )
         .await;
 
@@ -697,6 +693,10 @@ pub async fn custom_clients(
     let client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
+        // The validator is the sole source of activation-height truth
+        // (infras ADR 0003): wallets take their schedule from the running
+        // validator, never from a caller-supplied vector.
+        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
 
     (local_net, client_builder)
@@ -730,13 +730,9 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
     let mut client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
+        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
-    let mut faucet = client_builder
-        .build_faucet(
-            true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
-        )
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
     let recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -746,7 +742,6 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
@@ -769,13 +764,9 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     let mut client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
+        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
-    let mut faucet = client_builder
-        .build_faucet(
-            true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
-        )
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -785,7 +776,6 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
@@ -837,13 +827,9 @@ pub async fn funded_transparent_mobileclient(
     let mut client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
+        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
-    let mut faucet = client_builder
-        .build_faucet(
-            true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
-        )
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -853,7 +839,6 @@ pub async fn funded_transparent_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
@@ -888,13 +873,9 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     let mut client_builder = ClientBuilder::new(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
+        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
-    let mut faucet = client_builder
-        .build_faucet(
-            true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
-        )
-        .await;
+    let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -904,7 +885,6 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            wallet_activation_heights(&local_net.validator().get_activation_heights().await),
         )
         .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)

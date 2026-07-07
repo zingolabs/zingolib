@@ -37,27 +37,16 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder
-            .build_faucet(
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &self.local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await
+        self.client_builder.build_faucet(false).await
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
-        self.client_builder.make_unique_data_dir_and_create_config(
-            zingolib_testutils::scenarios::wallet_activation_heights(
-                &self.local_net.validator().get_activation_heights().await,
-            ),
-            WalletConfig::NewSeed {
+        self.client_builder
+            .make_unique_data_dir_and_create_config(WalletConfig::NewSeed {
                 no_of_accounts: 1.try_into().unwrap(),
                 chain_height: 1,
                 wallet_settings: default_test_wallet_settings(),
-            },
-        )
+            })
     }
 
     async fn increase_chain_height(&mut self) {

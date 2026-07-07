@@ -450,14 +450,7 @@ mod fast {
     #[tokio::test]
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder
-            .build_faucet(
-                true,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
+        let mut faucet = client_builder.build_faucet(true).await;
         let mut recipient = client_builder
             .build_client(
                 WalletConfig::MnemonicPhrase {
@@ -467,9 +460,6 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
             )
             .await;
         let network = recipient.chain_type();
@@ -525,9 +515,6 @@ mod fast {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
             )
             .await;
         if let Some(_ua) =
@@ -1418,14 +1405,7 @@ mod slow {
         //     4.4. check that notes and utxos were detected by the wallet
 
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder
-            .build_faucet(
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
+        let mut faucet = client_builder.build_faucet(false).await;
         let mut original_recipient = client_builder
             .build_client(
                 WalletConfig::MnemonicPhrase {
@@ -1435,9 +1415,6 @@ mod slow {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
             )
             .await;
 
@@ -3037,14 +3014,7 @@ TransactionSummary {
     async fn list_value_transfers_check_fees() {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder
-            .build_faucet(
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
+        let mut faucet = client_builder.build_faucet(false).await;
         let mut pool_migration_client = client_builder
             .build_client(
                 WalletConfig::MnemonicPhrase {
@@ -3054,9 +3024,6 @@ TransactionSummary {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
             )
             .await;
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
@@ -3096,14 +3063,7 @@ TransactionSummary {
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder
-            .build_faucet(
-                false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            )
-            .await;
+        let mut faucet = client_builder.build_faucet(false).await;
         let mut client = client_builder
             .build_client(
                 WalletConfig::MnemonicPhrase {
@@ -3113,9 +3073,6 @@ TransactionSummary {
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
             )
             .await;
         let pmc_taddr = get_base_address_macro!(client, "transparent");
