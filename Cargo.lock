@@ -1832,7 +1832,6 @@ dependencies = [
  "itertools",
  "json",
  "pepper-sync",
- "proptest",
  "shardtree",
  "test-log",
  "tokio",

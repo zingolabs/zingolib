@@ -6,7 +6,9 @@ publish = false
 
 [features]
 default = ["chain_generic_tests", "proptests"]
-proptests = ["proptest"]
+# Retained as a pure cfg gate for the pool_matrix module (formerly the
+# proptest module); it no longer pulls the proptest crate.
+proptests = []
 chain_generic_tests = []
 ci = ["zingolib/ci"]
 
@@ -16,7 +18,6 @@ zingolib = { workspace = true, features = ["testutils"] }
 zingolib_testutils = { path = "../zingolib_testutils" }
 zcash_local_net = { workspace = true }
 http = { workspace = true }
-proptest = { workspace = true, optional = true }
 
 [dev-dependencies]
 test-log.workspace = true
@@ -39,6 +40,3 @@ zingo-status = { workspace = true }
 zingo_test_vectors = { workspace = true }
 zingo_common_components = { workspace = true }
 zip32 = { workspace = true }
-
-[package.metadata.cargo-shear]
-ignored = ["proptest"]
