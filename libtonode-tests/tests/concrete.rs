@@ -1817,7 +1817,13 @@ mod slow {
             blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 5),
             kind: TransactionKind::Received,
             value: recipient_second_funding,
-            fee: Some(10_000),
+            // The observed zip317 fee of the faucet's second-wave funding
+            // send on the Core stack: by this point the faucet's note pool
+            // is fragmented by the earlier waves (and selection is
+            // smallest-first), making this a four-logical-action
+            // transaction. Under the old monolithic zcashd-era funding it
+            // was two actions (10_000).
+            fee: Some(20_000),
             zec_price: None,
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
