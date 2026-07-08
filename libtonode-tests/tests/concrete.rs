@@ -2169,7 +2169,9 @@ TransactionSummary {
 }
 
 mod basic_transactions {
-    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zingolib::{
+        check_client_balances, get_base_address_macro, testutils::lightclient::from_inputs,
+    };
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
     #[tokio::test]
@@ -2209,6 +2211,11 @@ mod basic_transactions {
             .await
             .unwrap();
         scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
+
+        // The 50_000 payment plus its 10_000 ZIP-317 fee exceeds either
+        // 40_000 note alone, so the send consumed both and returned
+        // 20_000 as change: the arithmetic survived the multi-input spend.
+        check_client_balances!(recipient, o: 20_000 s: 0 t: 0);
     }
 
     // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
