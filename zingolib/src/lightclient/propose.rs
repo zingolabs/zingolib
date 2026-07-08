@@ -512,6 +512,7 @@ mod proposal_shape {
     use zcash_protocol::{PoolType, ShieldedProtocol};
 
     use crate::lightclient::LightClient;
+    use crate::testutils::fee_tables;
     use crate::testutils::lightclient::from_inputs;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::keys::unified::ReceiverSelection;
@@ -528,6 +529,42 @@ mod proposal_shape {
             .generate_unified_address(selection, zip32::AccountId::ZERO)
             .unwrap();
         unified_address.encode(&external_wallet.chain_type())
+    }
+
+    /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
+    /// of less than the fee still proposes — the fee comes out of the
+    /// selected note and the remainder returns as change. The original
+    /// asserted nothing beyond the send call succeeding; the offline
+    /// proposal now asserts the shape the name always promised.
+    #[tokio::test]
+    async fn dust_sends_change_correctly() {
+        let note_value = 100_000;
+        let sent_value = 1_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::ORCHARD);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let fee = u64::from(step.balance().fee_required());
+        assert_eq!(
+            fee,
+            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+        );
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, note_value - sent_value - fee);
     }
 
     /// Migrated from libtonode `shield_transparent` (long `#[ignore]`d):

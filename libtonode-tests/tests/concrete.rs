@@ -661,8 +661,8 @@ mod slow {
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary;
     use zingolib::wallet::summary::data::{
-        BasicNoteSummary, OutgoingNoteSummary, SendType, SentValueTransfer, TransactionKind,
-        TransactionSummary, ValueTransferKind,
+        BasicNoteSummary, OutgoingNoteSummary, SelfSendValueTransfer, SendType, SentValueTransfer,
+        TransactionKind, TransactionSummary, ValueTransferKind,
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
     use zip32::AccountId;
@@ -986,32 +986,52 @@ mod slow {
         increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
-        tracing::info!(
-            "{}",
-            &recipient
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-                .unwrap()
+
+        // The shield sweeps the whole transparent funding into orchard,
+        // less the 15_000 ZIP-317 fee (one transparent input plus the
+        // padded two-action orchard bundle).
+        let shielded_value = transparent_funding - 15_000;
+        check_client_balances!(recipient, o: shielded_value s: 0 t: 0);
+
+        let pre_rescan_summaries = recipient.transaction_summaries(false).await.unwrap();
+        let pre_rescan_value_transfers = recipient.value_transfers(true).await.unwrap();
+        // Exactly two transfers: the transparent funding receipt and the
+        // shield, the latter represented as a self-send of the Shield
+        // kind carrying the swept value into the orchard pool.
+        assert_eq!(pre_rescan_value_transfers.iter().count(), 2);
+        assert!(pre_rescan_value_transfers.iter().any(|vt| {
+            vt.kind == ValueTransferKind::Received
+                && vt.value == transparent_funding
+                && vt.pool_received.as_deref() == Some("Transparent")
+        }));
+        assert_eq!(
+            pre_rescan_value_transfers
+                .iter()
+                .filter(|vt| {
+                    vt.kind
+                        == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                            SelfSendValueTransfer::Shield,
+                        ))
+                        && vt.value == shielded_value
+                        && vt.transaction_fee == Some(15_000)
+                        && vt.pool_received.as_deref() == Some("Orchard")
+                })
+                .count(),
+            1
         );
-        tracing::info!("{}", recipient.transaction_summaries(false).await.unwrap());
-        tracing::info!(
-            "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
-        );
+
+        // Rescanning from scratch must reproduce the same balance and
+        // identical records.
         recipient.rescan_and_await().await.unwrap();
-        tracing::info!(
-            "{}",
-            &recipient
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-                .unwrap()
+        check_client_balances!(recipient, o: shielded_value s: 0 t: 0);
+        assert_eq!(
+            pre_rescan_summaries,
+            recipient.transaction_summaries(false).await.unwrap()
         );
-        tracing::info!("{}", recipient.transaction_summaries(false).await.unwrap());
-        tracing::info!(
-            "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
+        assert_eq!(
+            pre_rescan_value_transfers,
+            recipient.value_transfers(true).await.unwrap()
         );
-        // TODO: Add asserts!
     }
     #[tokio::test]
     async fn send_to_ua_saves_full_ua_in_wallet() {
