@@ -9,11 +9,12 @@
 //! repository root. That location is bind-mounted into the test container,
 //! so host tooling reads the numbers directly after a containerized run.
 //!
-//! Reading the samples: `launch_bytes` is what a chain cache would have
-//! supplied (near zero until caches exist), `setup_bytes - launch_bytes`
-//! is what setup generated live, and `teardown_bytes - setup_bytes` is
-//! test-body growth — the measured form of "does this test exercise
-//! mining behavior."
+//! Reading the samples: `launch_bytes` is the genesis-launch floor (the
+//! chain-cache replay lands after launch, so cached and live runs are
+//! distinguished by `setup_wall_ms`, not by launch size),
+//! `setup_bytes - launch_bytes` is the chain setup established, and
+//! `teardown_bytes - setup_bytes` is test-body growth — the measured
+//! form of "does this test exercise mining behavior."
 
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
