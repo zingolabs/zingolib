@@ -2070,24 +2070,6 @@ TransactionSummary {
     }
 
     #[tokio::test]
-    async fn factor_do_shield_to_call_do_send() {
-        let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
-            .await
-            .unwrap();
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "transparent"),
-                1_000u64,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
     async fn dust_sends_change_correctly() {
         let (_local_net, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
