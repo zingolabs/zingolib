@@ -56,6 +56,13 @@ metrics file is the census of them.
 _Avoid_: LocalNet test, online test, live test (that names the Makefile
 package partition, not this category)
 
+**Binary e2e test**:
+A test that exercises the shipped zingo-cli binary end-to-end through its
+public CLI surface, driving it as a Wallet (in the infrastructure repo's
+sense) against a live network combo. Contrast libtonode tests, which
+drive the wallet in-process through `LightClient`.
+_Avoid_: CLI live test, harness test
+
 **Phantom unspent note**:
 A note the wallet offers as spendable although its nullifier is already
 on-chain. Every proposal that selects one is rejected by the Validator as a
