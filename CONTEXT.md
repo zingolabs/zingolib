@@ -22,10 +22,3 @@ darkside tests and the opt-in `test_lwd_zebrad` combo.
 The test client whose spend capability receives the regtest Validator's
 mining rewards, providing the funds most scenarios start from.
 _Avoid_: miner client, funded client
-
-**Phantom unspent note**:
-A note the wallet offers as spendable although its nullifier is already
-on-chain. Every proposal that selects one is rejected by the Validator as a
-double-spend. Distinct from a pending-spent note, whose spend the wallet
-knows about and correctly excludes from selection.
-_Avoid_: stale note, stuck note
