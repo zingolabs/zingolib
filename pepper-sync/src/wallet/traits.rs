@@ -22,7 +22,7 @@ use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, set_transactions_failed};
+use crate::{Orchard, Sapling, SyncDomain, client, sync::set_transactions_failed_unchecked};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -156,7 +156,7 @@ pub trait SyncTransactions: SyncWallet {
             .map(|tx| tx.transaction().txid())
             .collect();
 
-        set_transactions_failed(self.get_wallet_transactions_mut()?, invalid_txids);
+        set_transactions_failed_unchecked(self.get_wallet_transactions_mut()?, invalid_txids);
 
         Ok(())
     }
