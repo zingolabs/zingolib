@@ -1724,13 +1724,16 @@ TransactionSummary {
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
     }
+    /// The final send must gather more than one of the recipient's three
+    /// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
+    /// making this the suite's only live broadcast of a multi-input sapling
+    /// spend with cross-pool (orchard) change. The unwraps are the
+    /// assertions: proposal, proving, and the validator's acceptance of the
+    /// bundle. Note-selection ordering itself is asserted offline by
+    /// `note_selection_covers_target_with_minimal_change` in
+    /// `zingolib::lightclient::propose`.
     #[tokio::test]
-    async fn note_selection_order() {
-        // In order to fund a transaction multiple notes may be selected and consumed.
-        // The algorithm selects the smallest covering note(s).
-        // In addition to testing the order in which notes are selected this test:
-        //   * sends to a sapling address
-        //   * sends back to the original sender's UA
+    async fn multi_input_sapling_send_with_orchard_change_no_panic() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
             .await
@@ -1772,75 +1775,6 @@ TransactionSummary {
         )
         .await
         .unwrap();
-
-        // FIXME: this test has all its assertions commented out !?
-        /*
-        let client_2_notes = recipient.do_list_notes(false).await;
-        // The 30_000 zat note to cover the value, plus another for the tx-fee.
-        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        assert!(
-            first_value == 30_000u64 && second_value == 20_000u64
-                || first_value == 20_000u64 && second_value == 30_000u64
-        );
-        //);
-        // Because the above tx fee won't consume a full note, change will be sent back to 2.
-        // This implies that client_2 will have a total of 2 unspent notes:
-        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
-        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
-        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
-        let change_note = client_2_notes["unspent_orchard_notes"]
-            .members()
-            .filter(|note| note["is_change"].as_bool().unwrap())
-            .collect::<Vec<_>>()[0];
-        // Because 2000 is the size of the second largest note.
-        assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
-        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
-            .members()
-            .filter(|note| !note["is_change"].as_bool().unwrap())
-            .map(extract_value_as_u64)
-            .collect::<Vec<u64>>();
-        */
-        // client_2 got a total of 3000+2000+1000
-        // It sent 3000 to the client_1, and also
-        // paid the default transaction fee.
-        // In non change notes it has 1000.
-        // There is an outstanding 2000 that is marked as change.
-        // After sync the unspent_sapling_notes should go to 3000.
-        /*
-        assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
-
-        increase_height_and_wait_for_client(&local_net, &recipient, 5)
-            .await
-            .unwrap();
-        let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
-        assert_eq!(
-            client_2_post_transaction_notes["pending_sapling_notes"].len(),
-            0
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
-            1
-        );
-        assert_eq!(
-            client_2_post_transaction_notes["unspent_sapling_notes"]
-                .members()
-                .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
-                .map(extract_value_as_u64)
-                .sum::<u64>(),
-            20000u64 // 10000 received and unused + (20000 - 10000 txfee)
-        );
-
-        // More explicit than ignoring the unused variable, we only care about this in order to drop it
-        */
     }
 
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
