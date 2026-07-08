@@ -29,7 +29,10 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 
+use crate::chain_cache::{self, CacheManifest, CachedStage, Disposition};
 use crate::setup_metrics::MeteredNet;
+
+pub use crate::chain_cache::ChainCachePolicy;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, block_rewards, seeds};
 use zingolib::config::WalletConfig;
@@ -496,14 +499,17 @@ impl ClientBuilder {
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
     configured_activation_heights: ActivationHeights,
-    chain_cache: Option<PathBuf>,
+    cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
-    let (mut local_net, mut client_builder) = custom_clients(
+    let load = ensure_cache(
         PoolType::ORCHARD,
         configured_activation_heights,
-        chain_cache,
+        cache,
+        CachedStage::Bare,
     )
     .await;
+    let (mut local_net, mut client_builder) =
+        custom_clients_raw(PoolType::ORCHARD, configured_activation_heights, load).await;
 
     let mut lightclient = client_builder
         .build_client(
@@ -524,7 +530,7 @@ pub async fn unfunded_client(
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (MeteredNet, LightClient) {
-    unfunded_client(default_test_activation_heights(), None).await
+    unfunded_client(default_test_activation_heights(), ChainCachePolicy::PerTest).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -540,14 +546,23 @@ pub async fn unfunded_client_default() -> (MeteredNet, LightClient) {
 pub async fn faucet(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-    chain_cache: Option<PathBuf>,
+    cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
+    let load = ensure_cache(
+        mine_to_pool,
+        configured_activation_heights,
+        cache,
+        CachedStage::Funded,
+    )
+    .await;
     let (mut local_net, mut client_builder) =
-        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
+        custom_clients_raw(mine_to_pool, configured_activation_heights, load.clone()).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
 
-    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+    // A loaded chain already contains the shielded-funds transactions;
+    // the freshly built faucet wallet recovers them by sync below.
+    if load.is_none() && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -559,17 +574,29 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (MeteredNet, LightClient) {
-    faucet(PoolType::ORCHARD, default_test_activation_heights(), None).await
+    faucet(
+        PoolType::ORCHARD,
+        default_test_activation_heights(),
+        ChainCachePolicy::PerTest,
+    )
+    .await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-    chain_cache: Option<PathBuf>,
+    cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient, LightClient) {
+    let load = ensure_cache(
+        mine_to_pool,
+        configured_activation_heights,
+        cache,
+        CachedStage::Funded,
+    )
+    .await;
     let (mut local_net, mut client_builder) =
-        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
+        custom_clients_raw(mine_to_pool, configured_activation_heights, load.clone()).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
@@ -584,7 +611,9 @@ pub async fn faucet_recipient(
         )
         .await;
 
-    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+    // A loaded chain already contains the shielded-funds transactions;
+    // the freshly built faucet wallet recovers them by sync below.
+    if load.is_none() && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -597,17 +626,25 @@ pub async fn faucet_recipient(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient) {
-    faucet_recipient(PoolType::ORCHARD, default_test_activation_heights(), None).await
+    faucet_recipient(
+        PoolType::ORCHARD,
+        default_test_activation_heights(),
+        ChainCachePolicy::PerTest,
+    )
+    .await
 }
 
 /// TODO: Add Doc Comment Here!
+/// Snapshots early (ADR 0003): the cache holds the internal
+/// `faucet_recipient` stage, and the funding sends below replay live on
+/// every run so the returned txids are minted fresh.
 pub async fn faucet_funded_recipient(
     orchard_funds: Option<u64>,
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-    chain_cache: Option<PathBuf>,
+    cache: ChainCachePolicy,
 ) -> (
     MeteredNet,
     LightClient,
@@ -617,7 +654,7 @@ pub async fn faucet_funded_recipient(
     Option<String>,
 ) {
     let (mut local_net, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, configured_activation_heights, chain_cache).await;
+        faucet_recipient(mine_to_pool, configured_activation_heights, cache).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -695,30 +732,62 @@ pub async fn faucet_funded_recipient_default(
             None,
             PoolType::ORCHARD,
             default_test_activation_heights(),
-            None,
+            ChainCachePolicy::PerTest,
         )
         .await;
 
     (local_net, faucet, recipient, orchard_txid.unwrap())
 }
 
-/// TODO: Add Doc Comment Here!
-pub async fn custom_clients(
+/// Resolve the cache policy for a scenario whose chain the given stage
+/// determines; on a miss, live-build that stage's chain, snapshot it
+/// into this test's cache, and hand back the snapshot to launch from.
+/// Returns the chain directory to load, or `None` to generate live —
+/// so every caller, including the run that just built the cache,
+/// proceeds through the identical load path (ADR 0003).
+async fn ensure_cache(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-    chain_cache: Option<PathBuf>,
+    cache: ChainCachePolicy,
+    stage: CachedStage,
+) -> Option<PathBuf> {
+    let funded = matches!(stage, CachedStage::Funded);
+    let manifest = CacheManifest::describe(mine_to_pool, &configured_activation_heights, stage);
+    match chain_cache::resolve(cache, &manifest) {
+        Disposition::Live => None,
+        Disposition::Load(chain_dir) => Some(chain_dir),
+        Disposition::Build(dir) => {
+            let (local_net, mut client_builder) =
+                custom_clients_raw(mine_to_pool, configured_activation_heights, None).await;
+            if funded && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+                let mut faucet = client_builder.build_faucet(true).await;
+                zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+            }
+            chain_cache::snapshot(local_net, &dir, &manifest).await;
+            Some(dir.chain())
+        }
+    }
+}
+
+/// The uncached launch primitive under every scenario constructor:
+/// start the network combo (from `load_chain_from` when given), mine
+/// the initial blocks otherwise, and hand back a client builder.
+async fn custom_clients_raw(
+    mine_to_pool: PoolType,
+    configured_activation_heights: ActivationHeights,
+    load_chain_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
     let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
         None,
         mine_to_pool,
         configured_activation_heights,
-        chain_cache.clone(),
+        load_chain_from.clone(),
     )
     .await;
     let mut local_net = MeteredNet::new(local_net, setup_started);
 
-    if chain_cache.is_none() {
+    if load_chain_from.is_none() {
         local_net.validator().generate_blocks(2).await.unwrap();
     }
 
@@ -736,9 +805,29 @@ pub async fn custom_clients(
 }
 
 /// TODO: Add Doc Comment Here!
+pub async fn custom_clients(
+    mine_to_pool: PoolType,
+    configured_activation_heights: ActivationHeights,
+    cache: ChainCachePolicy,
+) -> (MeteredNet, ClientBuilder) {
+    let load = ensure_cache(
+        mine_to_pool,
+        configured_activation_heights,
+        cache,
+        CachedStage::Bare,
+    )
+    .await;
+    custom_clients_raw(mine_to_pool, configured_activation_heights, load).await
+}
+
+/// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
-    let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, default_test_activation_heights(), None).await;
+    let (local_net, client_builder) = custom_clients(
+        PoolType::ORCHARD,
+        default_test_activation_heights(),
+        ChainCachePolicy::PerTest,
+    )
+    .await;
 
     (local_net, client_builder)
 }

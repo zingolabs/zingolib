@@ -438,7 +438,7 @@ mod fast {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::ORCHARD,
             scenarios::default_test_activation_heights(),
-            None,
+            scenarios::ChainCachePolicy::PerTest,
         )
         .await;
         check_client_balances!(
@@ -460,7 +460,7 @@ mod fast {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
             PoolType::Transparent,
             scenarios::default_test_activation_heights(),
-            None,
+            scenarios::ChainCachePolicy::PerTest,
         )
         .await;
 
@@ -498,8 +498,11 @@ mod fast {
         // with the fixture shape — so the expressible epoch boundaries are
         // NU5/NU6 at height 2 and NU6.1/NU6.2 at height 5. Sync across all
         // of them with room to spare.
-        let (local_net, mut lightclient) =
-            scenarios::unfunded_client(scenarios::default_test_activation_heights(), None).await;
+        let (local_net, mut lightclient) = scenarios::unfunded_client(
+            scenarios::default_test_activation_heights(),
+            scenarios::ChainCachePolicy::PerTest,
+        )
+        .await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 12)
             .await
             .unwrap();
@@ -508,8 +511,12 @@ mod fast {
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
         let activation_heights = scenarios::default_test_activation_heights();
-        let (local_net, mut faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
+        let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
+            PoolType::Transparent,
+            activation_heights,
+            scenarios::ChainCachePolicy::PerTest,
+        )
+        .await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
             .await
             .unwrap();
@@ -1359,7 +1366,7 @@ TransactionSummary {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::ORCHARD,
             scenarios::default_test_activation_heights(),
-            None,
+            scenarios::ChainCachePolicy::PerTest,
         )
         .await;
 
@@ -2563,7 +2570,7 @@ async fn mine_to_transparent_coinbase_maturity() {
     let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
         PoolType::Transparent,
         scenarios::default_test_activation_heights(),
-        None,
+        scenarios::ChainCachePolicy::PerTest,
     )
     .await;
 

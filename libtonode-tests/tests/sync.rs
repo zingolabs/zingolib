@@ -366,7 +366,9 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
         scenarios::default_test_activation_heights(),
-        Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
+        scenarios::ChainCachePolicy::LoadRaw(
+            get_cargo_manifest_dir().join("store_all_checkpoints_test"),
+        ),
     )
     .await;
 

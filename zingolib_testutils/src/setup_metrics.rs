@@ -48,6 +48,7 @@ impl MeteredNet {
                 setup_bytes: None,
                 setup_wall_ms: None,
                 setup_started,
+                disarmed: false,
             },
         }
     }
@@ -60,6 +61,14 @@ impl MeteredNet {
         self.recorder.setup_bytes = Some(dir_size(self.net.validator().data_dir().path()));
         self.recorder.setup_wall_ms =
             Some(self.recorder.setup_started.elapsed().as_millis() as u64);
+    }
+
+    /// Suppress this net's metrics row. For build-scaffolding nets that a
+    /// cache snapshot consumes: the test's measured net is the one
+    /// relaunched from the snapshot, and two rows per test would corrupt
+    /// the census.
+    pub fn disarm(&mut self) {
+        self.recorder.disarmed = true;
     }
 }
 
@@ -79,6 +88,9 @@ impl DerefMut for MeteredNet {
 
 impl Drop for MeteredNet {
     fn drop(&mut self) {
+        if self.recorder.disarmed {
+            return;
+        }
         let teardown_bytes = dir_size(self.net.validator().data_dir().path());
         self.recorder.write_row(teardown_bytes);
     }
@@ -92,6 +104,7 @@ struct SetupRecorder {
     setup_bytes: Option<u64>,
     setup_wall_ms: Option<u64>,
     setup_started: Instant,
+    disarmed: bool,
 }
 
 impl SetupRecorder {
@@ -127,16 +140,19 @@ impl SetupRecorder {
     }
 }
 
-/// The metrics file lives beside the chain caches so both survive
-/// `cargo clean` and reach the host through the container's repo
-/// bind-mount (the container's `target/` is a named volume the host
-/// cannot read).
-fn metrics_path() -> PathBuf {
+/// The gitignored cache-and-metrics root at the repository top level.
+/// It survives `cargo clean` and reaches the host through the test
+/// container's repo bind-mount (the container's `target/` is a named
+/// volume the host cannot read).
+pub(crate) fn chain_caches_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("zingolib_testutils sits directly under the repo root")
         .join("chain_caches")
-        .join("setup-metrics.jsonl")
+}
+
+fn metrics_path() -> PathBuf {
+    chain_caches_root().join("setup-metrics.jsonl")
 }
 
 /// The integration-test binary this test runs in, from the executable's
@@ -144,7 +160,7 @@ fn metrics_path() -> PathBuf {
 /// thread name alone is ambiguous: it is the test's path *within* its
 /// binary, and libtonode has several test binaries whose module paths
 /// can collide.
-fn current_binary_name() -> String {
+pub(crate) fn current_binary_name() -> String {
     let Some(stem) = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.file_stem().map(|s| s.to_string_lossy().into_owned()))
@@ -165,7 +181,7 @@ fn current_binary_name() -> String {
 /// constructor awaited inside a spawned task would land on a worker
 /// thread, so fail loudly rather than key metrics (and later, chain
 /// caches) to a garbage name.
-fn current_test_name() -> String {
+pub(crate) fn current_test_name() -> String {
     let thread = std::thread::current();
     let name = thread
         .name()
