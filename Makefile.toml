@@ -6,17 +6,12 @@ default_to_workspace = false
 [env]
 NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
 ZINGOLIB_NEXTEST_PROFILE = "ci"
-# Conditional for the same reason as ZINGOLIB_NEXTEST_FILTER below: lets a
-# shell override win. Retries default to 0 so flakes surface instead of
-# being masked; raise per-run with ZINGOLIB_NEXTEST_RETRIES=N.
+# Conditional so a shell override actually wins: cargo-make [env] entries
+# otherwise clobber inherited environment variables. Retries default to 0 so
+# flakes surface instead of being masked; raise per-run with
+# ZINGOLIB_NEXTEST_RETRIES=N.
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
     "ZINGOLIB_NEXTEST_RETRIES",
-] } }
-# Conditional so a shell override (documented in `makers help`, and used by
-# `makers test all` to clear the filter) actually wins: cargo-make [env]
-# entries otherwise clobber inherited environment variables.
-ZINGOLIB_NEXTEST_FILTER = { value = "not test(slow)", condition = { env_not_set = [
-    "ZINGOLIB_NEXTEST_FILTER",
 ] } }
 IMAGE_NAME = "zingodevops/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
@@ -37,31 +32,33 @@ cat <<'HELP'
 Zingolib test tasks
 -------------------
 
-Test sets (front door):
-  makers test                 packages (the default): every workspace package
-                              EXCEPT libtonode-tests and zingo-cli
-  makers test packages        same as the default
-  makers test live            ONLY libtonode-tests and zingo-cli
-  makers test libtonode       exactly the libtonode-tests package
-  makers test zingo-cli       exactly the zingo-cli package
-  makers test all             every test in the repo, in three gated
-                              phases: packages, then zingo-cli, then
-                              libtonode, INCLUDING the slow:: tests the
-                              default filter excludes (ignored tests still
-                              need run-ignored). A phase failure stops the
-                              later phases from launching; a combined
-                              per-phase summary table prints at the end
+Test front door — `makers test "$@"` is a containerized
+`cargo nextest run "$@"`, so every nextest idiom passes through:
+  makers test                 the whole workspace
+  makers test -p zingo-memo   one package
+  makers test some_test_name  positional test-name filter
+  makers test --no-fail-fast  any nextest flag
 
-Every set runs inside the reproducible CI container and forwards extra
-nextest args:
+Reserved first words expand to canned invocations:
+  makers test packages        every workspace package EXCEPT the live
+                              ones (libtonode-tests and zingo-cli)
+  makers test live            ONLY libtonode-tests and zingo-cli
+
+Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
+a reserved word's scope entirely. Extra args after a reserved word are
+forwarded to nextest:
   makers test live --no-fail-fast
+
+Run the three gated phases (packages, zingo-cli, libtonode) with a
+combined per-phase summary:
+  cargo run -q --manifest-path tools/workbench/Cargo.toml --bin test-summary
 
 Common usage:
   makers container-test
   cargo make container-test
 
 The container-test task runs tests inside a reproducible container image:
-  cargo nextest run --verbose --workspace --profile ci --retries 0 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0
 
 Build or refresh the local image:
   makers build-image
@@ -70,13 +67,13 @@ Run the same nextest command on the host:
   makers local-run
 
 The local-run task mirrors the PR test defaults:
-  cargo nextest run --verbose --workspace --profile ci --retries 0 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0
 
 Forward extra nextest flags after the task name:
   makers container-test -p zingo-memo
 
-Override the default nextest filter:
-  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers container-test
+Filter with a nextest expression:
+  makers test -E 'package(zingolib) & not test(slow)'
 
 Reproduce the latest failing or incomplete nextest run:
   makers rerun
@@ -137,17 +134,19 @@ container_image_tag() {
     | cut -c1-14
 }
 
-append_workspace_default() {
-  local use_default_workspace=1
+has_package_selection_args() {
   for arg in "$@"; do
     case "${arg}" in
       -p|--package|--package=*|--workspace|--all|--exclude|--exclude=*|--manifest-path|--manifest-path=*)
-        use_default_workspace=0
+        return 0
         ;;
     esac
   done
+  return 1
+}
 
-  if [[ "${use_default_workspace}" -eq 1 ]]; then
+append_workspace_default() {
+  if ! has_package_selection_args "$@"; then
     printf '%s\n' "--workspace"
   fi
 }
@@ -166,10 +165,6 @@ nextest_args() {
   workspace_arg="$(append_workspace_default "$@")"
   if [[ -n "${workspace_arg}" ]]; then
     args+=("${workspace_arg}")
-  fi
-
-  if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
-    args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
   fi
 
   printf '%s\n' "${args[@]}"
@@ -294,81 +289,58 @@ container_nextest_run "$@"
 '''
 
 # ===================================================================
-# Developer-facing test front door: a single `makers test [SET]` task.
+# Developer-facing test front door: `makers test "$@"` IS a containerized
+# `cargo nextest run "$@"` (standard profile and retries defaults), so
+# every nextest idiom passes through untouched:
 #
-#   makers test                packages (the default)
+#   makers test                     the whole workspace
+#   makers test -p zingo-memo       one package
+#   makers test some_test_name      positional test-name filter
+#
+# Two reserved first words expand to canned invocations:
+#
 #   makers test packages       every workspace package EXCEPT the live ones
-#   makers test live           ONLY the live packages
-#   makers test libtonode      exactly the libtonode-tests package
-#   makers test zingo-cli      exactly the zingo-cli package
-#   makers test all            three gated phases + combined summary (workbench test-summary)
+#   makers test live            ONLY the live packages
 #
 # The live-package list is defined once (live_packages, below); `packages`
 # derives its exclusions from it and `live` derives its selections from it,
-# so the partition cannot drift. Every set delegates to the container-test
-# engine rather than re-implementing a run — set-name validation therefore
-# happens before ensure-image-exists can trigger an image build — and extra
-# args after the set name are forwarded to `cargo nextest run`.
+# so the partition cannot drift. Explicit package-selection args replace a
+# set's scope entirely — cargo silently ignores `-p` when `--workspace` is
+# present, so merging them would swallow the user's selection.
 # ===================================================================
 
 [tasks.test]
 # clear = true fully replaces cargo-make's built-in `test` task (which runs
 # `cargo test`); without it our `script` would merge with the builtin `command`.
 clear = true
-description = "Run a test set: `makers test [packages|live|libtonode|zingo-cli|all]` (default: packages). Extra args are forwarded to nextest."
+description = "Containerized `cargo nextest run \"$@\"`. Reserved first words packages|live expand to canned invocations."
 script_runner = "bash"
-script = '''
-set -uo pipefail
-
+extend = "base-script"
+script.main = '''
 # The packages that need live network infrastructure. Single source of truth
 # for the packages/live partition.
 live_packages=(libtonode-tests zingo-cli)
 
-usage() {
-  echo "usage: makers test [packages|live|libtonode|zingo-cli|all] [nextest args]" >&2
-  echo "  packages (default)  every workspace package EXCEPT: ${live_packages[*]}" >&2
-  echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
-  echo "  libtonode           exactly the libtonode-tests package" >&2
-  echo "  zingo-cli           exactly the zingo-cli package" >&2
-  echo "  all                 three gated phases + combined summary: packages, zingo-cli, libtonode (slow:: included)" >&2
-}
-
-# A non-flag first arg selects the set and must be a known name; a flag first
-# arg (or none) keeps the default `packages` and is forwarded to nextest. So
-# `makers test --no-fail-fast` runs packages with the flag, while a mistyped
-# set name errors instead of silently running the default.
-test_set="packages"
-if [[ "$#" -gt 0 && "${1#-}" == "$1" ]]; then
+set_args=()
+if [[ "$#" -gt 0 ]]; then
   case "$1" in
-    packages|live|libtonode|zingo-cli|all) test_set="$1"; shift ;;
-    *) echo "makers test: unknown set '$1'" >&2; usage; exit 2 ;;
+    packages)
+      shift
+      set_args+=(--workspace)
+      for pkg in "${live_packages[@]}"; do set_args+=(--exclude "${pkg}"); done ;;
+    live)
+      shift
+      for pkg in "${live_packages[@]}"; do set_args+=(--package "${pkg}"); done ;;
   esac
 fi
 
-pkg_args=()
-case "${test_set}" in
-  packages)
-    pkg_args+=(--workspace)
-    for pkg in "${live_packages[@]}"; do pkg_args+=(--exclude "${pkg}"); done ;;
-  live)
-    for pkg in "${live_packages[@]}"; do pkg_args+=(--package "${pkg}"); done ;;
-  libtonode)
-    pkg_args+=(--package libtonode-tests) ;;
-  zingo-cli)
-    pkg_args+=(--package zingo-cli) ;;
-  all)
-    # Delegate to the workbench summary runner (zaino's live-summary
-    # pattern, with gating): it runs the packages, zingo-cli, and
-    # libtonode phases in order, stops launching later phases when one
-    # fails (a broken unit test never costs a libtonode run), prints a
-    # combined per-phase summary table, and exits non-zero on failure.
-    # The runner clears the default `not test(slow)` filter itself, so
-    # the slow:: tests are included. #[ignore]d tests are still skipped
-    # by design: `makers run-ignored`.
-    exec cargo run -q --manifest-path tools/workbench/Cargo.toml --bin test-summary -- "$@" ;;
-esac
+# Explicit package-selection args take over the scope completely; merging
+# them with a set's args would make cargo silently ignore the user's `-p`.
+if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
+  set_args=()
+fi
 
-exec makers container-test "${pkg_args[@]}" "$@"
+exec makers container-test "${set_args[@]}" "$@"
 '''
 
 [tasks.rerun]

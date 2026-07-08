@@ -1,10 +1,10 @@
 //! `test-summary` — run the three test phases and print a combined summary.
 //!
-//! Invoked from `makers test all` as
-//! `cargo run --bin test-summary -- <nextest args>`. Runs the `packages`,
-//! `zingo-cli`, and `libtonode` phases (each in its own CI container via the
-//! `makers test` front door), streams each run's output while capturing it,
-//! parses the nextest summary line, and aggregates the totals.
+//! Invoked directly as `cargo run --bin test-summary -- <nextest args>`.
+//! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
+//! CI container via the `makers test` front door), streams each run's output
+//! while capturing it, parses the nextest summary line, and aggregates the
+//! totals.
 //!
 //! Phases gate: a failing phase stops the later, more expensive phases from
 //! launching (a broken unit test should never cost a libtonode run). The
@@ -21,9 +21,14 @@ use std::error::Error;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-/// The phases `makers test all` runs, in order: the hermetic package tests
-/// first, then the live suites from fastest to slowest.
-const PHASES: &[&str] = &["packages", "zingo-cli", "libtonode"];
+/// The phases, in order: the hermetic package tests first, then the live
+/// suites from fastest to slowest. Each entry is (display label, the
+/// `makers test` argv that selects the phase's scope).
+const PHASES: &[(&str, &str)] = &[
+    ("packages", "packages"),
+    ("zingo-cli", "-p zingo-cli"),
+    ("libtonode", "-p libtonode-tests"),
+];
 
 /// One nextest run's tallies, zero where the summary line was absent.
 #[derive(Default)]
@@ -48,10 +53,10 @@ impl Summary {
 /// Run one phase through the `makers test` front door, streaming its combined
 /// output to our stdout while capturing it for parsing. Returns
 /// (exit_code, captured_output).
-fn run_phase(phase: &str, forwarded_args: &[String]) -> Result<(i32, String), Box<dyn Error>> {
+fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), Box<dyn Error>> {
     // `bash -c '... 2>&1'` merges stderr into stdout so the single captured
     // stream carries the nextest summary line wherever nextest emits it.
-    let mut shell_command = format!("makers test {phase}");
+    let mut shell_command = format!("makers test {invocation}");
     for arg in forwarded_args {
         shell_command.push(' ');
         // Forwarded nextest args are simple flags and filter expressions;
@@ -63,10 +68,6 @@ fn run_phase(phase: &str, forwarded_args: &[String]) -> Result<(i32, String), Bo
     let mut child = Command::new("bash")
         .arg("-c")
         .arg(shell_command)
-        // `all` includes the slow:: tests: clear the default nextest filter.
-        // The Makefile [env] entry is conditional, so the empty value
-        // survives into the container-test child process.
-        .env("ZINGOLIB_NEXTEST_FILTER", "")
         .stdout(Stdio::piped())
         .spawn()?;
 
@@ -162,13 +163,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut results = Vec::new();
     let mut failed = false;
-    for phase in PHASES {
+    for (phase, invocation) in PHASES {
         if failed {
             results.push((*phase, None));
             continue;
         }
-        println!(">>> test all: running the {phase} phase");
-        let (exit_code, log) = run_phase(phase, &forwarded_args)?;
+        println!(">>> test-summary: running the {phase} phase");
+        let (exit_code, log) = run_phase(invocation, &forwarded_args)?;
         if exit_code != 0 {
             failed = true;
         }

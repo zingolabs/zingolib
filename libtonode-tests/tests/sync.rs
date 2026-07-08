@@ -411,7 +411,7 @@ async fn store_all_checkpoints_in_verification_window() {
 /// current backend, the stream is being cut mid-flight.
 ///
 /// Run in the environment under investigation with output visible, e.g.:
-///   ZINGOLIB_NEXTEST_FILTER='' makers container-test -p libtonode-tests \
+///   makers test -p libtonode-tests \
 ///     -E 'test(diagnose_subtree_root_stream)' --run-ignored all --no-capture
 #[ignore = "diagnostic: run manually against live mainnet"]
 #[tokio::test]
