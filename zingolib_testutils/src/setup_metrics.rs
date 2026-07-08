@@ -21,25 +21,50 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use zcash_local_net::LocalNet;
+use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 
+use crate::observability::{LinkTap, StateWatch, ZainodState, ZebradState};
 use crate::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
+use zingolib::testutils::port_to_localhost_uri;
 
 /// A `LocalNet` that records the chain-setup metrics of the test holding
-/// it, writing its row when dropped. Derefs to the wrapped `LocalNet`, so
-/// call sites use it exactly as before.
+/// it and arms the pipeline observatory (state watches on zebrad and
+/// zainod, link taps on the wireable hops), writing its metrics row when
+/// dropped. Derefs to the wrapped `LocalNet`, so call sites use it
+/// exactly as before.
 pub struct MeteredNet {
     net: LocalNet<DefaultValidator, DefaultIndexer>,
     recorder: SetupRecorder,
+    zebrad_watch: StateWatch<ZebradState>,
+    zainod_watch: StateWatch<ZainodState>,
+    /// harness→zebrad hop: replay, export, and probe traffic.
+    rpc_tap: LinkTap,
+    /// wallet→zainod hop: every wallet built by the scenario dials this.
+    indexer_tap: LinkTap,
 }
 
 impl MeteredNet {
-    /// Wrap a freshly launched net, sampling the launch-time data-dir size.
-    /// `setup_started` is the instant scenario setup began, so the recorded
-    /// wall-clock includes process launch.
-    pub fn new(net: LocalNet<DefaultValidator, DefaultIndexer>, setup_started: Instant) -> Self {
+    /// Wrap a freshly launched net: sample the launch-time data-dir
+    /// size, arm the state watches, and open the link taps.
+    /// `setup_started` is the instant scenario setup began, so the
+    /// recorded wall-clock includes process launch.
+    pub async fn new(
+        net: LocalNet<DefaultValidator, DefaultIndexer>,
+        setup_started: Instant,
+    ) -> Self {
         let launch_bytes = dir_size(net.validator().data_dir().path());
+        let validator_rpc_port = net.validator().rpc_listen_port();
+        let indexer_port = net.indexer().listen_port();
         MeteredNet {
+            zebrad_watch: StateWatch::arm(ZebradState {
+                rpc_port: validator_rpc_port,
+            }),
+            zainod_watch: StateWatch::arm(ZainodState {
+                uri: port_to_localhost_uri(indexer_port),
+            }),
+            rpc_tap: LinkTap::open("harness->zebrad", validator_rpc_port).await,
+            indexer_tap: LinkTap::open("wallet->zainod", indexer_port).await,
             net,
             recorder: SetupRecorder {
                 binary: current_binary_name(),
@@ -51,6 +76,37 @@ impl MeteredNet {
                 setup_started,
             },
         }
+    }
+
+    /// The Validator's JSON-RPC port as this test should dial it: the
+    /// tapped hop, so the traffic lands in the record.
+    pub fn monitored_validator_rpc_port(&self) -> u16 {
+        self.rpc_tap.port()
+    }
+
+    /// The Indexer URI as wallets should dial it: the tapped hop.
+    pub fn monitored_indexer_uri(&self) -> http::Uri {
+        port_to_localhost_uri(self.indexer_tap.port())
+    }
+
+    /// The Validator's chain-state timeline.
+    pub fn zebrad_watch(&self) -> &StateWatch<ZebradState> {
+        &self.zebrad_watch
+    }
+
+    /// The Indexer's indexed-tip timeline.
+    pub fn zainod_watch(&self) -> &StateWatch<ZainodState> {
+        &self.zainod_watch
+    }
+
+    /// The harness→zebrad traffic record.
+    pub fn rpc_tap(&self) -> &LinkTap {
+        &self.rpc_tap
+    }
+
+    /// The wallet→zainod traffic record.
+    pub fn indexer_tap(&self) -> &LinkTap {
+        &self.indexer_tap
     }
 
     /// Record that scenario setup finished here. Nested constructors each

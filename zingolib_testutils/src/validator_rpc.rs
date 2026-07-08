@@ -10,6 +10,14 @@
 //! A mempool rejection is DATA here, not an error: the probes exist to
 //! compare verdicts, so [`RawTransactionVerdict::Rejected`] carries the
 //! validator's message for predicate matching.
+//!
+//! Every call through this module is recorded in a per-test RPC ledger
+//! (see [`ledger_snapshot`]). Together with the observability module's
+//! state watches, the ledger closes the attribution loop: a chain
+//! mutation with no matching write in the ledger came from outside the
+//! test.
+
+use std::time::Instant;
 
 /// The validator's verdict on a directly-submitted raw transaction.
 #[derive(Debug)]
@@ -20,7 +28,46 @@ pub enum RawTransactionVerdict {
     Rejected(String),
 }
 
-async fn rpc_call(rpc_port: u16, method: &str, params: serde_json::Value) -> serde_json::Value {
+/// One outgoing JSON-RPC call this crate issued.
+#[derive(Clone, Debug)]
+pub struct LedgerEntry {
+    /// When the call was issued.
+    pub at: Instant,
+    /// The JSON-RPC method name.
+    pub method: String,
+}
+
+thread_local! {
+    /// The per-test RPC ledger. Tests run single-threaded under
+    /// `#[tokio::test]`, so thread-local scope IS test scope.
+    static RPC_LEDGER: std::cell::RefCell<Vec<LedgerEntry>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Every JSON-RPC call this crate has issued from the current test, in
+/// order. Chain-mutating methods are identified by [`is_write_method`].
+pub fn ledger_snapshot() -> Vec<LedgerEntry> {
+    RPC_LEDGER.with(|ledger| ledger.borrow().clone())
+}
+
+/// Whether a JSON-RPC method can mutate the regtest chain.
+pub fn is_write_method(method: &str) -> bool {
+    matches!(method, "submitblock" | "generate" | "generatetoaddress")
+}
+
+/// Issue a JSON-RPC call, recording it in the ledger. Returns `None`
+/// on any transport or parse failure — probes that poll through launch
+/// and teardown windows want silence, not panics.
+async fn try_rpc_call(
+    rpc_port: u16,
+    method: &str,
+    params: serde_json::Value,
+) -> Option<serde_json::Value> {
+    RPC_LEDGER.with(|ledger| {
+        ledger.borrow_mut().push(LedgerEntry {
+            at: Instant::now(),
+            method: method.to_string(),
+        })
+    });
     let request_body = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -34,11 +81,35 @@ async fn rpc_call(rpc_port: u16, method: &str, params: serde_json::Value) -> ser
         .body(request_body)
         .send()
         .await
-        .expect("validator JSON-RPC must be reachable")
+        .ok()?
         .text()
         .await
-        .expect("validator JSON-RPC response must be readable");
-    serde_json::from_str(&response_text).expect("validator JSON-RPC response must be JSON")
+        .ok()?;
+    serde_json::from_str(&response_text).ok()
+}
+
+async fn rpc_call(rpc_port: u16, method: &str, params: serde_json::Value) -> serde_json::Value {
+    try_rpc_call(rpc_port, method, params)
+        .await
+        .expect("validator JSON-RPC must be reachable and answer with JSON")
+}
+
+/// Non-panicking probe of the validator's best chain: (height, best
+/// block hash). `None` when the validator is unreachable.
+pub async fn try_get_chain_info(rpc_port: u16) -> Option<(u32, String)> {
+    let response = try_rpc_call(rpc_port, "getblockchaininfo", serde_json::json!([])).await?;
+    let result = response.get("result")?;
+    let height = result.get("blocks")?.as_u64()? as u32;
+    let hash = result.get("bestblockhash")?.as_str()?.to_string();
+    Some((height, hash))
+}
+
+/// Non-panicking probe of the validator's connected peer count. On
+/// regtest this must be zero; anything else names a mutation channel
+/// the isolation assumptions exclude.
+pub async fn try_get_peer_count(rpc_port: u16) -> Option<usize> {
+    let response = try_rpc_call(rpc_port, "getpeerinfo", serde_json::json!([])).await?;
+    Some(response.get("result")?.as_array()?.len())
 }
 
 /// Submits raw transaction bytes directly to the validator's

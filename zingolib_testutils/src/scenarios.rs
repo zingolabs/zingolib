@@ -788,7 +788,7 @@ async fn custom_clients_raw(
         None,
     )
     .await;
-    let mut local_net = MeteredNet::new(local_net, setup_started);
+    let mut local_net = MeteredNet::new(local_net, setup_started).await;
 
     match replay_from {
         Some(blocks_file) => chain_cache::replay(&local_net, &blocks_file).await,
@@ -796,7 +796,9 @@ async fn custom_clients_raw(
     }
 
     let client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().listen_port()),
+        // Wallets dial the indexer through the tapped hop, so their
+        // traffic lands in the observability record.
+        local_net.monitored_indexer_uri(),
         tempfile::tempdir().unwrap(),
         // The validator is the sole source of activation-height truth
         // (infras ADR 0003): wallets take their schedule from the running

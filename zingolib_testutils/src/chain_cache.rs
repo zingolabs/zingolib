@@ -19,13 +19,11 @@
 
 use std::path::{Path, PathBuf};
 
-use zcash_local_net::LocalNet;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::PoolType;
 use zingo_common_components::protocol::ActivationHeights;
 
-use crate::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
-use crate::setup_metrics;
+use crate::setup_metrics::{self, MeteredNet};
 use crate::validator_rpc;
 
 /// Environment variable that forces cache rebuilds. Scope it to specific
@@ -120,8 +118,8 @@ impl CacheManifest {
     ) -> Self {
         CacheManifest(serde_json::json!({
             "schema": 2,
-            "validator": std::any::type_name::<DefaultValidator>(),
-            "indexer": std::any::type_name::<DefaultIndexer>(),
+            "validator": std::any::type_name::<crate::scenarios::network_combo::DefaultValidator>(),
+            "indexer": std::any::type_name::<crate::scenarios::network_combo::DefaultIndexer>(),
             "stage": format!("{stage:?}"),
             "miner_pool": format!("{mine_to_pool:?}"),
             "activation_heights": format!("{configured_activation_heights:?}"),
@@ -174,9 +172,11 @@ pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Dis
 }
 
 /// Read the chain out of the running Validator, block by block, as the
-/// replay record. Heights 1..=tip; genesis is the Validator's own.
-async fn read_chain(local_net: &LocalNet<DefaultValidator, DefaultIndexer>) -> String {
-    let rpc_port = local_net.validator().rpc_listen_port();
+/// replay record. Heights 1..=tip; genesis is the Validator's own. All
+/// traffic crosses the monitored hop, so exports appear in the
+/// observability record.
+async fn read_chain(local_net: &MeteredNet) -> String {
+    let rpc_port = local_net.monitored_validator_rpc_port();
     let tip = local_net.validator().get_chain_height().await;
     let mut blocks = String::new();
     for height in 1..=tip {
@@ -191,11 +191,7 @@ async fn read_chain(local_net: &LocalNet<DefaultValidator, DefaultIndexer>) -> S
 /// simply continues. The record is assembled in a `.building` sibling
 /// and renamed into place so a crashed build never leaves a half-cache
 /// where a later run would load it.
-pub(crate) async fn export(
-    local_net: &LocalNet<DefaultValidator, DefaultIndexer>,
-    dir: &CacheDir,
-    manifest: &CacheManifest,
-) {
+pub(crate) async fn export(local_net: &MeteredNet, dir: &CacheDir, manifest: &CacheManifest) {
     let building = dir.root.with_extension("building");
     if building.exists() {
         std::fs::remove_dir_all(&building).expect("stale .building dir must be removable");
@@ -215,7 +211,7 @@ pub(crate) async fn export(
 
 /// Export a bare replay record to an explicit path, for hand-managed
 /// caches consumed via [`ChainCachePolicy::LoadRaw`].
-pub async fn export_raw(local_net: &LocalNet<DefaultValidator, DefaultIndexer>, path: &Path) {
+pub async fn export_raw(local_net: &MeteredNet, path: &Path) {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("blocks record parent must be creatable");
     }
@@ -226,13 +222,27 @@ pub async fn export_raw(local_net: &LocalNet<DefaultValidator, DefaultIndexer>, 
 /// passes back through `submitblock` validation, and the call returns
 /// once the Validator reports the replayed tip, so callers continue
 /// exactly as if the chain had just been mined.
-pub(crate) async fn replay(
-    local_net: &LocalNet<DefaultValidator, DefaultIndexer>,
-    blocks_file: &Path,
-) {
+///
+/// Preflight: a freshly launched regtest Validator must be at height 0.
+/// Anything else means chain-mutating traffic reached it before this
+/// test's own replay — the exact cross-wiring the observability module
+/// exists to catch — so fail with the full timeline rather than a bare
+/// `submitblock` refusal downstream.
+pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) {
     let blocks = std::fs::read_to_string(blocks_file)
         .unwrap_or_else(|e| panic!("unreadable blocks record {}: {e}", blocks_file.display()));
-    let rpc_port = local_net.validator().rpc_listen_port();
+    let rpc_port = local_net.monitored_validator_rpc_port();
+
+    let (height, hash) = validator_rpc::try_get_chain_info(rpc_port)
+        .await
+        .expect("freshly launched validator must answer getblockchaininfo");
+    assert!(
+        height == 0,
+        "freshly launched validator already at height {height} (tip {hash}) before this \
+         test submitted anything — foreign chain-mutating traffic!\nzebrad timeline:\n{}",
+        local_net.zebrad_watch().render(),
+    );
+
     let mut tip = 0;
     for block_hex in blocks.lines().filter(|line| !line.is_empty()) {
         validator_rpc::submit_block(rpc_port, block_hex).await;
