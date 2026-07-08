@@ -661,7 +661,8 @@ mod slow {
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary;
     use zingolib::wallet::summary::data::{
-        BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
+        BasicNoteSummary, OutgoingNoteSummary, SendType, SentValueTransfer, TransactionKind,
+        TransactionSummary, ValueTransferKind,
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
     use zip32::AccountId;
@@ -698,17 +699,36 @@ mod slow {
             .await
             .unwrap();
 
-        tracing::info!(
-            "{}",
-            &recipient
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-                .unwrap()
+        // The zero-value receipt must not perturb spendable arithmetic:
+        // the recipient holds the 100_000 funding note less the 1_000
+        // payment and its 10_000 ZIP-317 fee (one orchard spend, two
+        // logical actions).
+        check_client_balances!(recipient, o: 89_000 s: 0 t: 0);
+
+        let value_transfers = recipient.value_transfers(true).await.unwrap();
+        // The funding receipt.
+        assert!(value_transfers
+            .iter()
+            .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000));
+        // Pinned by observation rather than specification: the zero-value
+        // receipt surfaces as a single Received transfer of zero value in
+        // the orchard pool, carried without corruption.
+        assert_eq!(
+            value_transfers
+                .iter()
+                .filter(|vt| vt.kind == ValueTransferKind::Received
+                    && vt.value == 0
+                    && vt.pool_received.as_deref() == Some("Orchard"))
+                .count(),
+            1
         );
-        tracing::info!(
-            "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(4)
-        );
+        // The subsequent spend proceeds unimpeded by the zero-value note.
+        assert!(value_transfers.iter().any(|vt| {
+            vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
+                && vt.value == 1_000
+                && vt.transaction_fee == Some(10_000)
+        }));
+        assert_eq!(value_transfers.iter().count(), 3);
     }
     #[tokio::test]
     async fn zero_value_change() {
