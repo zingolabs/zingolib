@@ -1,21 +1,32 @@
 //! The chain-cache mechanism of ADR 0003 (`docs/adr/0003-test-owned-chain-caches.md`).
 //!
 //! Each test owns at most one cache under `chain_caches/<binary>/<test>/`,
-//! holding a `chain/` clone of the Validator's data directory plus a
+//! holding a `blocks.hex` replay record of the blocks its setup generated
+//! (one hex-serialized block per line, heights 1..=tip) plus a
 //! `manifest.json` recording the chain-determining inputs. A cache is
-//! built inline by the test that finds none (or when
-//! [`REGENERATE_ENV`] is set), and the building run relaunches from its
-//! own snapshot so every run — including the builder's — reaches its
-//! assertions through the load path. Superseded caches are discarded,
-//! never moved aside.
+//! built inline by the test that finds none (or when [`REGENERATE_ENV`]
+//! is set): the run generates its chain live as always and exports the
+//! blocks over the Validator's JSON-RPC at the snapshot point. A
+//! cache-hit run launches a fresh network and resubmits the recorded
+//! blocks through `submitblock`, so the Validator revalidates every
+//! cached block and the Indexer ingests them through the same flow live
+//! mining uses. Superseded caches are discarded, never moved aside.
+//!
+//! Blocks are the cache medium because Validator state directories are
+//! not: zebra keeps everything within 100 blocks of the tip in its
+//! in-memory non-finalized state, so a copied data dir of a short
+//! regtest chain contains essentially genesis (see the ADR's history).
 
 use std::path::{Path, PathBuf};
 
+use zcash_local_net::LocalNet;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::PoolType;
 use zingo_common_components::protocol::ActivationHeights;
 
-use crate::setup_metrics::{self, MeteredNet};
+use crate::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
+use crate::setup_metrics;
+use crate::validator_rpc;
 
 /// Environment variable that forces cache rebuilds. Scope it to specific
 /// tests with ordinary nextest selection; any non-empty value other than
@@ -30,9 +41,9 @@ pub enum ChainCachePolicy {
     PerTest,
     /// Always generate the chain live; never read or write a cache.
     Disabled,
-    /// Load a raw `cache_chain` output directory verbatim, with no
-    /// manifest check and no build-on-miss. For hand-managed caches
-    /// like the ignored `store_all_checkpoints` pair.
+    /// Replay this blocks file verbatim, with no manifest check and no
+    /// build-on-miss. For hand-managed caches like the ignored
+    /// `store_all_checkpoints` pair.
     LoadRaw(PathBuf),
 }
 
@@ -40,11 +51,11 @@ pub enum ChainCachePolicy {
 pub(crate) enum Disposition {
     /// Generate live; no cache involved.
     Live,
-    /// Launch from this chain directory (a data-dir clone).
-    Load(PathBuf),
-    /// No usable cache: generate live, snapshot into `CacheDir`, then
-    /// relaunch from it.
-    Build(CacheDir),
+    /// Launch fresh, then replay this blocks file.
+    Replay(PathBuf),
+    /// No usable cache: generate live, then export the chain into
+    /// `CacheDir` at the snapshot point.
+    Export(CacheDir),
 }
 
 /// This test's cache directory: `chain_caches/<binary>/<test>/`.
@@ -62,9 +73,10 @@ impl CacheDir {
         }
     }
 
-    /// The data-dir clone the Validator launches from.
-    pub(crate) fn chain(&self) -> PathBuf {
-        self.root.join("chain")
+    /// The replay record: one hex-serialized block per line, height
+    /// order, heights 1..=tip.
+    fn blocks(&self) -> PathBuf {
+        self.root.join("blocks.hex")
     }
 
     fn manifest(&self) -> PathBuf {
@@ -107,9 +119,9 @@ impl CacheManifest {
         stage: CachedStage,
     ) -> Self {
         CacheManifest(serde_json::json!({
-            "schema": 1,
-            "validator": std::any::type_name::<crate::scenarios::network_combo::DefaultValidator>(),
-            "indexer": std::any::type_name::<crate::scenarios::network_combo::DefaultIndexer>(),
+            "schema": 2,
+            "validator": std::any::type_name::<DefaultValidator>(),
+            "indexer": std::any::type_name::<DefaultIndexer>(),
             "stage": format!("{stage:?}"),
             "miner_pool": format!("{mine_to_pool:?}"),
             "activation_heights": format!("{configured_activation_heights:?}"),
@@ -135,7 +147,7 @@ fn regenerate_requested() -> bool {
 pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Disposition {
     match policy {
         ChainCachePolicy::Disabled => Disposition::Live,
-        ChainCachePolicy::LoadRaw(chain_dir) => Disposition::Load(chain_dir),
+        ChainCachePolicy::LoadRaw(blocks_file) => Disposition::Replay(blocks_file),
         ChainCachePolicy::PerTest => {
             let dir = CacheDir::for_current_test();
             if regenerate_requested() {
@@ -144,11 +156,11 @@ pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Dis
                     dir.root.display()
                 );
                 dir.discard();
-                return Disposition::Build(dir);
+                return Disposition::Export(dir);
             }
-            if dir.chain().exists() {
+            if dir.blocks().exists() {
                 if manifest.matches_stored(&dir.manifest()) {
-                    return Disposition::Load(dir.chain());
+                    return Disposition::Replay(dir.blocks());
                 }
                 eprintln!(
                     "chain cache {} is stale (manifest mismatch): rebuilding",
@@ -156,39 +168,42 @@ pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Dis
                 );
             }
             dir.discard();
-            Disposition::Build(dir)
+            Disposition::Export(dir)
         }
     }
 }
 
-/// Snapshot a live-generated chain into the cache. Consumes the net —
-/// `cache_chain` stops the Validator, so the caller must relaunch from
-/// the snapshot (the uniform load path) to continue. The snapshot is
-/// assembled in a `.building` sibling and renamed into place so a
-/// crashed build never leaves a half-cache where a later run would
-/// load it.
-pub(crate) async fn snapshot(mut net: MeteredNet, dir: &CacheDir, manifest: &CacheManifest) {
-    // This net is build scaffolding: the test's measured net is the one
-    // relaunched from the snapshot, so this one must not write a
-    // metrics row.
-    net.disarm();
+/// Read the chain out of the running Validator, block by block, as the
+/// replay record. Heights 1..=tip; genesis is the Validator's own.
+async fn read_chain(local_net: &LocalNet<DefaultValidator, DefaultIndexer>) -> String {
+    let rpc_port = local_net.validator().rpc_listen_port();
+    let tip = local_net.validator().get_chain_height().await;
+    let mut blocks = String::new();
+    for height in 1..=tip {
+        blocks.push_str(&validator_rpc::get_block_hex(rpc_port, height).await);
+        blocks.push('\n');
+    }
+    blocks
+}
 
+/// Export the live-generated chain into this test's cache. Called at
+/// the scenario's snapshot point; the net stays up and the building run
+/// simply continues. The record is assembled in a `.building` sibling
+/// and renamed into place so a crashed build never leaves a half-cache
+/// where a later run would load it.
+pub(crate) async fn export(
+    local_net: &LocalNet<DefaultValidator, DefaultIndexer>,
+    dir: &CacheDir,
+    manifest: &CacheManifest,
+) {
     let building = dir.root.with_extension("building");
     if building.exists() {
         std::fs::remove_dir_all(&building).expect("stale .building dir must be removable");
     }
     std::fs::create_dir_all(&building).expect("cache parent dirs must be creatable");
 
-    let output = net
-        .validator_mut()
-        .cache_chain(building.join("chain"))
-        .await;
-    assert!(
-        output.status.success(),
-        "cache_chain copy failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
+    std::fs::write(building.join("blocks.hex"), read_chain(local_net).await)
+        .expect("blocks record must be writable");
     std::fs::write(
         building.join("manifest.json"),
         serde_json::to_string_pretty(&manifest.0).expect("manifest serializes"),
@@ -196,4 +211,33 @@ pub(crate) async fn snapshot(mut net: MeteredNet, dir: &CacheDir, manifest: &Cac
     .expect("manifest must be writable");
 
     std::fs::rename(&building, &dir.root).expect("completed cache must rename into place");
+}
+
+/// Export a bare replay record to an explicit path, for hand-managed
+/// caches consumed via [`ChainCachePolicy::LoadRaw`].
+pub async fn export_raw(local_net: &LocalNet<DefaultValidator, DefaultIndexer>, path: &Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("blocks record parent must be creatable");
+    }
+    std::fs::write(path, read_chain(local_net).await).expect("blocks record must be writable");
+}
+
+/// Resubmit a cached chain to a freshly launched Validator. Every block
+/// passes back through `submitblock` validation, and the call returns
+/// once the Validator reports the replayed tip, so callers continue
+/// exactly as if the chain had just been mined.
+pub(crate) async fn replay(
+    local_net: &LocalNet<DefaultValidator, DefaultIndexer>,
+    blocks_file: &Path,
+) {
+    let blocks = std::fs::read_to_string(blocks_file)
+        .unwrap_or_else(|e| panic!("unreadable blocks record {}: {e}", blocks_file.display()));
+    let rpc_port = local_net.validator().rpc_listen_port();
+    let mut tip = 0;
+    for block_hex in blocks.lines().filter(|line| !line.is_empty()) {
+        validator_rpc::submit_block(rpc_port, block_hex).await;
+        tip += 1;
+    }
+    assert!(tip > 0, "empty blocks record {}", blocks_file.display());
+    local_net.validator().poll_chain_height(tip).await;
 }

@@ -34,12 +34,12 @@ and shape-based sharing is a foreseen consolidation.
 _Avoid_: test's chain
 
 **Chain cache**:
-A saved copy of a regtest Validator's data directory, taken at
-scenario-setup completion (or at the send boundary, for scenarios that
-return transaction identifiers) and loaded into a fresh Validator at
-launch to replace live setup generation. Each test owns at most one
-cache, keyed by the test's name.
-_Avoid_: chain state snapshot, cached chain state
+A replay record of the blocks a test scenario's setup generated, read
+out of the regtest Validator at scenario-setup completion (or at the
+send boundary, for scenarios that return transaction identifiers) and
+resubmitted to a fresh Validator at launch to replace live setup
+generation. Each test owns at most one cache, keyed by the test's name.
+_Avoid_: chain state snapshot, state-directory copy
 
 **Send boundary**:
 The point in a scenario's setup before the first wallet-initiated

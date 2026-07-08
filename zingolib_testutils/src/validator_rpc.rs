@@ -4,7 +4,8 @@
 //! attribution experiments (is a surprising verdict zebra's, zainod's, or
 //! the wallet's?) need a channel that bypasses the indexer entirely. The
 //! running Zebrad exposes its JSON-RPC port via `rpc_listen_port()`;
-//! these helpers speak the two methods the attribution cells need.
+//! these helpers speak the methods the attribution cells and the
+//! chain-cache replay mechanism need.
 //!
 //! A mempool rejection is DATA here, not an error: the probes exist to
 //! compare verdicts, so [`RawTransactionVerdict::Rejected`] carries the
@@ -86,4 +87,37 @@ pub async fn get_raw_mempool(rpc_port: u16) -> Vec<String> {
         .iter()
         .filter_map(|txid| txid.as_str().map(str::to_string))
         .collect()
+}
+
+/// Returns the raw serialized block at `height` as hex (`getblock` at
+/// verbosity 0). Chain-cache export reads setup chains out block by
+/// block through this.
+pub async fn get_block_hex(rpc_port: u16, height: u32) -> String {
+    let response = rpc_call(
+        rpc_port,
+        "getblock",
+        serde_json::json!([height.to_string(), 0]),
+    )
+    .await;
+    response
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("getblock {height} must return a hex string: {response}"))
+        .to_string()
+}
+
+/// Submits a raw serialized block (hex) via `submitblock`. Panics on any
+/// verdict other than acceptance — chain-cache replay resubmits blocks
+/// the validator itself produced, so a rejection means the cache is
+/// invalid, not that rejection is interesting data.
+pub async fn submit_block(rpc_port: u16, block_hex: &str) {
+    let response = rpc_call(rpc_port, "submitblock", serde_json::json!([block_hex])).await;
+    let error = response.get("error").filter(|error| !error.is_null());
+    // submitblock signals acceptance with a null result; any string
+    // ("duplicate", "rejected", ...) is a refusal.
+    let verdict = response.get("result").filter(|result| !result.is_null());
+    assert!(
+        error.is_none() && verdict.is_none(),
+        "submitblock refused a cached block: {response}"
+    );
 }

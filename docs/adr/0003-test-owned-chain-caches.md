@@ -1,10 +1,14 @@
 # Test-owned chain caches snapshot completed setup; txid-returning scenarios snapshot early
 
 Libtonode tests regenerate their regtest chains from genesis on every run. We
-replace that per-run generation with chain caches: saved copies of the
-Validator's data directory, loaded into a fresh Validator at launch via the
-`load_chain`/`cache_chain` primitives that `zcash_local_net` already provides.
-Caching is the default regime for every libtonode test (tests that exercise
+replace that per-run generation with chain caches: replay records of the
+blocks a scenario's setup generated, read out of the running Validator over
+JSON-RPC (`getblock` at verbosity 0, one hex block per line) and resubmitted
+to a freshly launched Validator through `submitblock` on later runs. The
+Validator revalidates every replayed block and the Indexer ingests them
+through the same flow live mining uses, so a cache-hit run's network differs
+from a live run's only in where the blocks came from. Caching is the default
+regime for every libtonode test (tests that exercise
 mining behavior carry an explicit opt-out), and each test owns exactly one
 cache keyed by its own name. The snapshot is taken at scenario-setup
 completion for every scenario that returns no transaction identifiers to its
@@ -21,17 +25,18 @@ containerized run serve the next.
 A cache is built inline by the test itself when it finds no cache, or when the
 driver sets the `ZINGO_REGENERATE_CHAIN_CACHE` environment variable (scoped to
 specific tests by ordinary nextest selection). A rebuild discards the old
-cache outright; nothing is moved aside. Because `cache_chain` stops the
-Validator before copying, the building run relaunches from the snapshot it
-just wrote and continues from there, so every run — including the one that
-builds the cache — reaches its assertions through the load-from-cache path,
-and a broken snapshot fails on the run that created it. Each cache carries an
-inputs manifest recording its chain-determining inputs (activation heights,
-miner pool, validator process and version, infrastructure dependency
-revision); a mismatch at load time is treated as a miss and triggers a
-rebuild, so consensus-parameter drift — imminent on this branch as the
-ironwood migration moves activation heights — cannot silently serve a chain
-mined under old rules.
+cache outright; nothing is moved aside. A build run is simply a live run plus
+the export: it generates its chain as always, writes the replay record at the
+snapshot point (assembled in a `.building` sibling and atomically renamed, so
+a crashed build never leaves a half-cache), and continues on its own live net.
+The replay path is exercised by every warm run, and because replayed blocks
+pass back through full `submitblock` validation, a corrupt cache fails loudly
+at load rather than silently skewing assertions. Each cache carries an inputs
+manifest recording its chain-determining inputs (setup stage, activation
+heights, miner pool, validator and indexer identity); a mismatch at load time
+is treated as a miss and triggers a rebuild, so consensus-parameter drift —
+imminent on this branch as the ironwood migration moves activation heights —
+cannot silently serve a chain mined under old rules.
 
 ## Considered Options
 
@@ -58,6 +63,22 @@ manifest recording the funding txids remains the path to moving
 `faucet_funded_recipient`'s snapshot past its sends, and its schema design
 is still deliberately unblocked from the MVP.
 
+The mechanism as first implemented copied the Validator's data directory via
+`zcash_local_net`'s `cache_chain`/`load_chain` primitives, with the building
+run relaunching from its own snapshot. The first cold run (2026-07-08) refuted
+that design for this stack: zebra holds every block within 100 of the tip in
+its in-memory non-finalized state, so a copied data dir of a 4–6-block setup
+chain contains essentially genesis — and `Zebrad::stop()` is a SIGKILL, so
+even the finalized portion is copied without a graceful flush. The relaunched
+Validator served a chain zainod could not index ("could not determine best
+chain"). The infrastructure repo's own zebrad cache generator corroborates
+the boundary: it mines 150 blocks — past the finalization depth — before
+calling `cache_chain`. State-directory caches are therefore only viable for
+100+-block chains, and block replay was adopted in their place. The
+builder-relaunch property was consciously dropped with them: replay is
+ordinary `submitblock` plus standard convergence, not a state transplant, so
+warm-run exercise suffices.
+
 Moving a superseded cache aside instead of discarding it was rejected because
 chain generation is not byte-deterministic, so a kept copy serves only
 speculative diagnostics; a driver who wants the old bytes can copy the
@@ -71,6 +92,11 @@ directory before regenerating.
   assert on those txids — the txid-free scenarios by definition never hand
   them out — but tests asserting on other non-consensus chain details must
   opt out; none are known to at the time of writing.
+- The cache medium is human-auditable: `blocks.hex` is the chain itself, one
+  serialized block per line, and any zcash tooling that parses raw blocks can
+  inspect it. Nothing validator-internal (database format, state layout) is
+  ever stored, so validator upgrades cannot corrupt caches — at worst a new
+  validator rejects an old block on replay, which is a loud rebuild signal.
 - The regenerate knob is deliberately not representable in source. An
   in-source per-test bool whose "on" state must never be committed would be a
   standing commit hazard; the environment variable plus nextest filtering

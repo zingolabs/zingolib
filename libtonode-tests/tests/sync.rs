@@ -324,7 +324,7 @@ async fn sync_test() {
 #[ignore = "only for building chain cache"]
 #[tokio::test]
 async fn store_all_checkpoints_in_verification_window_chain_cache() {
-    let (mut local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
+    let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
 
     let recipient_orchard_addr = get_base_address_macro!(recipient, "unified");
     let recipient_sapling_addr = get_base_address_macro!(recipient, "sapling");
@@ -355,10 +355,11 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
             .unwrap();
     }
 
-    local_net
-        .validator_mut()
-        .cache_chain(get_cargo_manifest_dir().join("store_all_checkpoints_test"))
-        .await;
+    zingolib_testutils::chain_cache::export_raw(
+        &local_net,
+        &get_cargo_manifest_dir().join("store_all_checkpoints_test.blocks"),
+    )
+    .await;
 }
 
 #[ignore = "ignored until we add framework for chain caches as we don't want to check these into the zingolib repo"]
@@ -367,7 +368,7 @@ async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
         scenarios::default_test_activation_heights(),
         scenarios::ChainCachePolicy::LoadRaw(
-            get_cargo_manifest_dir().join("store_all_checkpoints_test"),
+            get_cargo_manifest_dir().join("store_all_checkpoints_test.blocks"),
         ),
     )
     .await;

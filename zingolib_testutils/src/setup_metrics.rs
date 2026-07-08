@@ -48,7 +48,6 @@ impl MeteredNet {
                 setup_bytes: None,
                 setup_wall_ms: None,
                 setup_started,
-                disarmed: false,
             },
         }
     }
@@ -61,14 +60,6 @@ impl MeteredNet {
         self.recorder.setup_bytes = Some(dir_size(self.net.validator().data_dir().path()));
         self.recorder.setup_wall_ms =
             Some(self.recorder.setup_started.elapsed().as_millis() as u64);
-    }
-
-    /// Suppress this net's metrics row. For build-scaffolding nets that a
-    /// cache snapshot consumes: the test's measured net is the one
-    /// relaunched from the snapshot, and two rows per test would corrupt
-    /// the census.
-    pub fn disarm(&mut self) {
-        self.recorder.disarmed = true;
     }
 }
 
@@ -88,9 +79,6 @@ impl DerefMut for MeteredNet {
 
 impl Drop for MeteredNet {
     fn drop(&mut self) {
-        if self.recorder.disarmed {
-            return;
-        }
         let teardown_bytes = dir_size(self.net.validator().data_dir().path());
         self.recorder.write_row(teardown_bytes);
     }
@@ -104,7 +92,6 @@ struct SetupRecorder {
     setup_bytes: Option<u64>,
     setup_wall_ms: Option<u64>,
     setup_started: Instant,
-    disarmed: bool,
 }
 
 impl SetupRecorder {

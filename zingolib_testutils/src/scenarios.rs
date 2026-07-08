@@ -501,15 +501,14 @@ pub async fn unfunded_client(
     configured_activation_heights: ActivationHeights,
     cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
-    let load = ensure_cache(
+    let (replay, export) = resolve_cache(
         PoolType::ORCHARD,
-        configured_activation_heights,
+        &configured_activation_heights,
         cache,
         CachedStage::Bare,
-    )
-    .await;
+    );
     let (mut local_net, mut client_builder) =
-        custom_clients_raw(PoolType::ORCHARD, configured_activation_heights, load).await;
+        custom_clients_raw(PoolType::ORCHARD, configured_activation_heights, replay).await;
 
     let mut lightclient = client_builder
         .build_client(
@@ -524,6 +523,9 @@ pub async fn unfunded_client(
         .await;
     sync_client_to_validator_tip(&local_net, &mut lightclient).await;
 
+    if let Some((dir, manifest)) = export {
+        chain_cache::export(&local_net, &dir, &manifest).await;
+    }
     local_net.mark_setup_complete("unfunded_client");
     (local_net, lightclient)
 }
@@ -548,26 +550,29 @@ pub async fn faucet(
     configured_activation_heights: ActivationHeights,
     cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
-    let load = ensure_cache(
+    let (replay, export) = resolve_cache(
         mine_to_pool,
-        configured_activation_heights,
+        &configured_activation_heights,
         cache,
         CachedStage::Funded,
-    )
-    .await;
+    );
+    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
-        custom_clients_raw(mine_to_pool, configured_activation_heights, load.clone()).await;
+        custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
 
-    // A loaded chain already contains the shielded-funds transactions;
+    // A replayed chain already contains the shielded-funds transactions;
     // the freshly built faucet wallet recovers them by sync below.
-    if load.is_none() && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    if let Some((dir, manifest)) = export {
+        chain_cache::export(&local_net, &dir, &manifest).await;
+    }
     local_net.mark_setup_complete("faucet");
     (local_net, faucet)
 }
@@ -588,15 +593,15 @@ pub async fn faucet_recipient(
     configured_activation_heights: ActivationHeights,
     cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient, LightClient) {
-    let load = ensure_cache(
+    let (replay, export) = resolve_cache(
         mine_to_pool,
-        configured_activation_heights,
+        &configured_activation_heights,
         cache,
         CachedStage::Funded,
-    )
-    .await;
+    );
+    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
-        custom_clients_raw(mine_to_pool, configured_activation_heights, load.clone()).await;
+        custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
     let mut recipient = client_builder
@@ -611,15 +616,18 @@ pub async fn faucet_recipient(
         )
         .await;
 
-    // A loaded chain already contains the shielded-funds transactions;
+    // A replayed chain already contains the shielded-funds transactions;
     // the freshly built faucet wallet recovers them by sync below.
-    if load.is_none() && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
     sync_client_to_validator_tip(&local_net, &mut recipient).await;
 
+    if let Some((dir, manifest)) = export {
+        chain_cache::export(&local_net, &dir, &manifest).await;
+    }
     local_net.mark_setup_complete("faucet_recipient");
     (local_net, faucet, recipient)
 }
@@ -741,54 +749,50 @@ pub async fn faucet_funded_recipient_default(
 
 /// Resolve the cache policy for a scenario whose chain the given stage
 /// determines; on a miss, live-build that stage's chain, snapshot it
-/// into this test's cache, and hand back the snapshot to launch from.
-/// Returns the chain directory to load, or `None` to generate live —
-/// so every caller, including the run that just built the cache,
-/// proceeds through the identical load path (ADR 0003).
-async fn ensure_cache(
+/// Resolve the cache policy into what the launch needs: a blocks file
+/// to replay instead of live generation, and/or a pending export for
+/// the constructor to perform at its snapshot point. A build run is a
+/// live run plus the export — it keeps its net and continues, and the
+/// warm runs exercise the replay path (ADR 0003).
+fn resolve_cache(
     mine_to_pool: PoolType,
-    configured_activation_heights: ActivationHeights,
+    configured_activation_heights: &ActivationHeights,
     cache: ChainCachePolicy,
     stage: CachedStage,
-) -> Option<PathBuf> {
-    let funded = matches!(stage, CachedStage::Funded);
-    let manifest = CacheManifest::describe(mine_to_pool, &configured_activation_heights, stage);
+) -> (
+    Option<PathBuf>,
+    Option<(chain_cache::CacheDir, CacheManifest)>,
+) {
+    let manifest = CacheManifest::describe(mine_to_pool, configured_activation_heights, stage);
     match chain_cache::resolve(cache, &manifest) {
-        Disposition::Live => None,
-        Disposition::Load(chain_dir) => Some(chain_dir),
-        Disposition::Build(dir) => {
-            let (local_net, mut client_builder) =
-                custom_clients_raw(mine_to_pool, configured_activation_heights, None).await;
-            if funded && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
-                let mut faucet = client_builder.build_faucet(true).await;
-                zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
-            }
-            chain_cache::snapshot(local_net, &dir, &manifest).await;
-            Some(dir.chain())
-        }
+        Disposition::Live => (None, None),
+        Disposition::Replay(blocks_file) => (Some(blocks_file), None),
+        Disposition::Export(dir) => (None, Some((dir, manifest))),
     }
 }
 
 /// The uncached launch primitive under every scenario constructor:
-/// start the network combo (from `load_chain_from` when given), mine
-/// the initial blocks otherwise, and hand back a client builder.
+/// start the network combo, establish the initial chain — by replaying
+/// `replay_from` when given, by mining otherwise — and hand back a
+/// client builder.
 async fn custom_clients_raw(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-    load_chain_from: Option<PathBuf>,
+    replay_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
     let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
         None,
         mine_to_pool,
         configured_activation_heights,
-        load_chain_from.clone(),
+        None,
     )
     .await;
     let mut local_net = MeteredNet::new(local_net, setup_started);
 
-    if load_chain_from.is_none() {
-        local_net.validator().generate_blocks(2).await.unwrap();
+    match replay_from {
+        Some(blocks_file) => chain_cache::replay(&local_net, &blocks_file).await,
+        None => local_net.validator().generate_blocks(2).await.unwrap(),
     }
 
     let client_builder = ClientBuilder::new(
@@ -810,14 +814,18 @@ pub async fn custom_clients(
     configured_activation_heights: ActivationHeights,
     cache: ChainCachePolicy,
 ) -> (MeteredNet, ClientBuilder) {
-    let load = ensure_cache(
+    let (replay, export) = resolve_cache(
         mine_to_pool,
-        configured_activation_heights,
+        &configured_activation_heights,
         cache,
         CachedStage::Bare,
-    )
-    .await;
-    custom_clients_raw(mine_to_pool, configured_activation_heights, load).await
+    );
+    let (local_net, client_builder) =
+        custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
+    if let Some((dir, manifest)) = export {
+        chain_cache::export(&local_net, &dir, &manifest).await;
+    }
+    (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
