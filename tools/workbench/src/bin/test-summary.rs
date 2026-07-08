@@ -1,6 +1,7 @@
 //! `test-summary` — run the three test phases and print a combined summary.
 //!
-//! Invoked directly as `cargo run --bin test-summary -- <nextest args>`.
+//! Invoked as `makers hierarchy-test`, which runs
+//! `cargo run --bin test-summary -- <nextest args>`.
 //! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
 //! CI container via the `makers test` front door), streams each run's output
 //! while capturing it, parses the nextest summary line, and aggregates the
@@ -20,6 +21,17 @@
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+
+/// Whether `arg` is a cargo package-selection flag. Mirrors the
+/// `has_package_selection_args` case list in Makefile.toml's base-script.
+fn is_package_selection_arg(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-p" | "--package" | "--workspace" | "--all" | "--exclude" | "--manifest-path"
+    ) || arg.starts_with("--package=")
+        || arg.starts_with("--exclude=")
+        || arg.starts_with("--manifest-path=")
+}
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
@@ -161,6 +173,17 @@ fn print_row(label: &str, s: &Summary) {
 fn main() -> Result<(), Box<dyn Error>> {
     let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
+    // Forwarded args reach every phase's nextest invocation, where a
+    // package selection would silently replace all three phase scopes
+    // with the same one.
+    if let Some(arg) = forwarded_args.iter().find(|a| is_package_selection_arg(a)) {
+        eprintln!(
+            "test-summary: package-selection arg '{arg}' is not accepted; each phase selects \
+             its own scope. Use 'makers test -p <package>' to scope a single run."
+        );
+        std::process::exit(2);
+    }
+
     let mut results = Vec::new();
     let mut failed = false;
     for (phase, invocation) in PHASES {
@@ -210,6 +233,42 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod package_selection_guard {
+    use super::*;
+
+    #[test]
+    fn rejects_every_selection_flag_form() {
+        for arg in [
+            "-p",
+            "--package",
+            "--package=zingolib",
+            "--workspace",
+            "--all",
+            "--exclude",
+            "--exclude=zingo-cli",
+            "--manifest-path",
+            "--manifest-path=Cargo.toml",
+        ] {
+            assert!(is_package_selection_arg(arg), "should reject {arg}");
+        }
+    }
+
+    #[test]
+    fn passes_ordinary_nextest_args() {
+        for arg in [
+            "--no-fail-fast",
+            "--no-capture",
+            "-E",
+            "test(slow)",
+            "some_test_name",
+            "--run-ignored",
+        ] {
+            assert!(!is_package_selection_arg(arg), "should pass {arg}");
+        }
+    }
 }
 
 #[cfg(test)]

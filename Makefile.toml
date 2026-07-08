@@ -49,9 +49,10 @@ a reserved word's scope entirely. Extra args after a reserved word are
 forwarded to nextest:
   makers test live --no-fail-fast
 
-Run the three gated phases (packages, zingo-cli, libtonode) with a
-combined per-phase summary:
-  cargo run -q --manifest-path tools/workbench/Cargo.toml --bin test-summary
+Run the three gated phases (packages, zingo-cli, libtonode), where a
+failing phase stops the later, more expensive ones, with a combined
+per-phase summary:
+  makers hierarchy-test
 
 Common usage:
   makers container-test
@@ -342,6 +343,20 @@ fi
 
 exec makers container-test "${set_args[@]}" "$@"
 '''
+
+[tasks.hierarchy-test]
+description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "test-summary",
+    "--",
+    "${@}",
+]
 
 [tasks.rerun]
 clear = true
