@@ -326,6 +326,110 @@ mod send_all {
         ));
     }
 
+    /// Migrated from libtonode `send_all::ptfm_general`: a send-all from a
+    /// wallet fragmented across both shielded pools drains every non-dust
+    /// note and leaves the dust behind. The original assembled the
+    /// fragmentation with five LocalNet sends and asserted zero
+    /// balances-excluding-dust after mining — which is this same contract,
+    /// one mined round trip later: send-all pays out the dust-excluded
+    /// spendable balance minus the fee, so notes at or below the 5_000-zat
+    /// `MARGINAL_FEE` dust line (which cannot pay for their own input) are
+    /// never selected.
+    #[tokio::test]
+    async fn ptfm_general() {
+        let viable_values = [100_000u64, 50_000];
+        let orchard_values = [100_000, 5_000, 4_000];
+        let sapling_values = [50_000, 4_000];
+
+        let mut builder =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
+        for value in orchard_values {
+            builder = builder.orchard_note(value);
+        }
+        for value in sapling_values {
+            builder = builder.sapling_note(value);
+        }
+        let mut client = LightClient::new_for_test(builder.build()).await;
+
+        let proposal = client
+            .propose_send_all(
+                external_address(PoolType::SAPLING),
+                false,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let mut selected: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded-funds send-all selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        selected.sort_unstable();
+        assert_eq!(
+            selected,
+            [50_000, 100_000],
+            "send-all selects exactly the non-dust notes of both pools"
+        );
+        let fee = u64::from(step.balance().fee_required());
+        let payment: u64 = step
+            .transaction_request()
+            .payments()
+            .values()
+            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .sum();
+        assert_eq!(payment + fee, viable_values.iter().sum::<u64>());
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, 0, "send-all leaves no non-dust value behind");
+    }
+
+    /// Migrated from libtonode `fast::send_not_fully_synced` (renamed: no
+    /// sync exists offline). The original proposed a send-all to the
+    /// wallet's own sapling address while the validator ran five blocks
+    /// ahead, asserting only that propose-and-send succeeded. Proposing
+    /// never consults the server, so the offline half is exactly this
+    /// self-destination send-all; the behind-tip send half remains covered
+    /// by `load_wallet::verify_old_wallet_uses_server_height_in_send`.
+    #[tokio::test]
+    async fn send_all_to_own_sapling_proposes() {
+        let note_value = 100_000;
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(note_value)
+                .build();
+        let (_, own_sapling) = wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let destination = address_from_str(&own_sapling.encode(&wallet.chain_type())).unwrap();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client
+            .propose_send_all(destination, false, None, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let fee = u64::from(step.balance().fee_required());
+        let payment: u64 = step
+            .transaction_request()
+            .payments()
+            .values()
+            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .sum();
+        assert_eq!(payment + fee, note_value);
+    }
+
     /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
     /// Zennies for Zingo enabled, the maximum sendable value deducts the
     /// zenny amount and the fee for one orchard note in, three outputs out.

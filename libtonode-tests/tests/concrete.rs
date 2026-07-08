@@ -8,7 +8,6 @@ use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
@@ -129,9 +128,8 @@ mod fast {
 
     use pepper_sync::wallet::{OutputInterface, TransparentCoin};
     use zcash_client_backend::encoding::encode_payment_address_p;
-    use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
-    use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
+    use zcash_protocol::{PoolType, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::WalletConfig,
@@ -327,33 +325,6 @@ mod fast {
             faucet,
             o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
         );
-    }
-
-    #[tokio::test]
-    async fn send_not_fully_synced() {
-        let (local_net, _faucet, mut recipient, _, _, _) = scenarios::faucet_funded_recipient(
-            Some(200_000),
-            Some(100_000),
-            None,
-            PoolType::Shielded(ShieldedProtocol::Orchard),
-            scenarios::default_test_activation_heights(),
-            None,
-        )
-        .await;
-
-        local_net.validator().generate_blocks(5).await.unwrap();
-
-        recipient
-            .propose_send_all(
-                address_from_str(&get_base_address_macro!(&recipient, "sapling")).unwrap(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
-            .await
-            .unwrap();
-
-        recipient.send_stored_proposal(true).await.unwrap();
     }
 
     #[tokio::test]
@@ -2655,98 +2626,6 @@ async fn mine_to_transparent_coinbase_maturity() {
 
     // Should have 3 blocks worth of rewards
     assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
-}
-
-mod send_all {
-
-    use pepper_sync::wallet::{OrchardNote, SaplingNote};
-
-    use zingolib::testutils::lightclient::from_inputs;
-
-    use super::*;
-    #[tokio::test]
-    async fn ptfm_general() {
-        let (local_net, mut faucet, mut recipient, _) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(
-                &get_base_address_macro!(&recipient, "sapling"),
-                50_000,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-        recipient.sync_and_await().await.unwrap();
-
-        recipient
-            .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
-            .await
-            .unwrap();
-        recipient.send_stored_proposal(true).await.unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        faucet.sync_and_await().await.unwrap();
-
-        assert_eq!(
-            recipient
-                .wallet()
-                .read()
-                .await
-                .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
-                .unwrap()
-                .into_u64(),
-            0
-        );
-        assert_eq!(
-            recipient
-                .wallet()
-                .read()
-                .await
-                .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
-                .unwrap()
-                .into_u64(),
-            0
-        );
-    }
 }
 
 mod testnet_test {
