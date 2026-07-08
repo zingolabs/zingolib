@@ -624,6 +624,70 @@ mod proposal_shape {
         );
     }
 
+    /// Migrated from libtonode `slow::zero_value_change`: a send that
+    /// leaves exactly zero after the fee still proposes an orchard change
+    /// output — of value zero. The original mined the transaction and then
+    /// counted one unspent zero-value note and one confirmed-spent funding
+    /// note; the note-state bookkeeping it exercised is covered by the
+    /// pepper-sync spend-status rig, and the load-bearing claim — the
+    /// builder emits the zero-value change — is decided at proposal time.
+    #[tokio::test]
+    async fn zero_value_change() {
+        let note_value = 100_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true);
+        let destination = external_address(PoolType::ORCHARD);
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(destination.as_str(), note_value - fee, None)],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        assert_eq!(u64::from(step.balance().fee_required()), fee);
+        let change = step.balance().proposed_change();
+        assert_eq!(change.len(), 1);
+        assert_eq!(u64::from(change[0].value()), 0);
+        assert_eq!(change[0].output_pool(), PoolType::ORCHARD);
+    }
+
+    /// Migrated from libtonode `slow::zero_value_change_to_orchard_created`:
+    /// same zero-value-change arithmetic on a cross-pool send — an 80_000
+    /// payment to an external sapling address out of a 100_000 orchard note
+    /// costs exactly the 20_000 cross-pool fee, so the orchard change
+    /// output is proposed at value zero.
+    #[tokio::test]
+    async fn zero_value_change_to_orchard_created() {
+        let note_value = 100_000;
+        let sent_value = 80_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::SAPLING);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::SAPLING, true);
+        assert_eq!(u64::from(step.balance().fee_required()), fee);
+        assert_eq!(note_value - sent_value - fee, 0);
+        let change = step.balance().proposed_change();
+        assert_eq!(change.len(), 1);
+        assert_eq!(u64::from(change[0].value()), 0);
+        assert_eq!(change[0].output_pool(), PoolType::ORCHARD);
+    }
+
     /// Migrated from the chain_generics `ignore_dust_inputs` fixture's
     /// load-bearing half: note selection excludes dust inputs. From a
     /// wallet holding four 1_000-zat dust notes and one 15_000-zat note

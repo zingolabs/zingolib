@@ -151,7 +151,6 @@ mod fast {
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
-
     #[tokio::test]
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
@@ -637,7 +636,7 @@ mod fast {
     }
 }
 mod slow {
-    use pepper_sync::wallet::{OrchardNote, OutputInterface, SaplingNote, TransparentCoin};
+    use pepper_sync::wallet::{OrchardNote, OutputInterface, SaplingNote};
     use zcash_local_net::validator::Validator;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
@@ -655,7 +654,6 @@ mod slow {
         build_fvks_from_unified_keystore, default_test_wallet_settings,
     };
     use zingolib::utils;
-    use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
 
     use zingolib::wallet::output::SpendStatus;
@@ -707,9 +705,11 @@ mod slow {
 
         let value_transfers = recipient.value_transfers(true).await.unwrap();
         // The funding receipt.
-        assert!(value_transfers
-            .iter()
-            .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000));
+        assert!(
+            value_transfers
+                .iter()
+                .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000)
+        );
         // Pinned by observation rather than specification: the zero-value
         // receipt surfaces as a single Received transfer of zero value in
         // the orchard pool, carried without corruption.
@@ -729,75 +729,6 @@ mod slow {
                 && vt.transaction_fee == Some(10_000)
         }));
         assert_eq!(value_transfers.iter().count(), 3);
-    }
-    #[tokio::test]
-    async fn zero_value_change() {
-        let value = 100_000;
-        let (local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(value).await;
-
-        let sent_value = value - u64::from(MINIMUM_FEE);
-        let sent_transaction_id = from_inputs::quick_send(
-            &mut recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                sent_value,
-                None,
-            )],
-        )
-        .await
-        .unwrap()
-        .first()
-        .to_string();
-
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
-            .await
-            .unwrap();
-
-        let recipient_wallet = recipient.wallet().read().await;
-        let transparent_coins = recipient_wallet.wallet_outputs::<TransparentCoin>();
-        assert_eq!(transparent_coins.len(), 0);
-        let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
-        assert_eq!(sapling_notes.len(), 0);
-        let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
-        let unspent_orchard_notes = orchard_notes
-            .iter()
-            .filter(|&&note| recipient_wallet.output_spend_status(note).is_unspent())
-            .collect::<Vec<_>>();
-        let spent_orchard_notes = orchard_notes
-            .iter()
-            .filter(|&&note| {
-                recipient_wallet
-                    .output_spend_status(note)
-                    .is_confirmed_spent()
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(unspent_orchard_notes.len(), 1);
-        assert_eq!(
-            orchard_notes
-                .iter()
-                .filter(|&&note| recipient_wallet
-                    .output_spend_status(note)
-                    .is_pending_spent())
-                .count(),
-            0
-        );
-        assert_eq!(spent_orchard_notes.len(), 1);
-
-        assert_eq!(unspent_orchard_notes.first().unwrap().value(), 0);
-        assert_eq!(
-            spent_orchard_notes
-                .first()
-                .unwrap()
-                .spending_transaction()
-                .unwrap()
-                .to_string(),
-            sent_transaction_id
-        );
-        drop(recipient_wallet);
-
-        check_client_balances!(recipient, o: 0 s: 0 t: 0);
     }
     #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
@@ -2279,50 +2210,6 @@ TransactionSummary {
         .unwrap();
     }
 
-    #[tokio::test]
-    async fn zero_value_change_to_orchard_created() {
-        let (local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-
-        // 1. Send a transaction to an external z addr
-        let sent_zvalue = 80_000;
-        let sent_zmemo = "Ext z";
-        let sent_transaction_id = from_inputs::quick_send(
-            &mut recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "sapling"),
-                sent_zvalue,
-                Some(sent_zmemo),
-            )],
-        )
-        .await
-        .unwrap()
-        .first()
-        .to_string();
-
-        // Validate transaction
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-
-        let sent_txid = txid_from_hex_encoded_str(&sent_transaction_id).unwrap();
-        let orchard_note = recipient
-            .wallet()
-            .read()
-            .await
-            .wallet_transactions
-            .get(&sent_txid)
-            .unwrap()
-            .orchard_notes()
-            .first()
-            .unwrap()
-            .clone();
-        assert_eq!(orchard_note.value(), 0);
-    }
     #[tokio::test]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (local_net, faucet, mut recipient, _txid) =
