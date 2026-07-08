@@ -1,6 +1,5 @@
 //! libtonode tests use a regtest-mode Validator (zebrad) to mock a chain
 
-use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 
@@ -13,12 +12,12 @@ use zingolib::testutils::timestamped_test_log;
 
 use zingolib_testutils::scenarios::ClientBuilder;
 use zingolib_testutils::scenarios::custom_clients_default;
-use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
+use zingolib_testutils::setup_metrics::MeteredNet;
 
 /// includes utilities for connecting to the regtest Validator
 pub struct LibtonodeEnvironment {
     /// Local network
-    pub local_net: LocalNet<DefaultValidator, DefaultIndexer>,
+    pub local_net: MeteredNet,
     /// Client builder
     pub client_builder: ClientBuilder,
 }

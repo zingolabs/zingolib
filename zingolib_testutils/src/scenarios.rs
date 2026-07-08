@@ -28,6 +28,8 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
+
+use crate::setup_metrics::MeteredNet;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, block_rewards, seeds};
 use zingolib::config::WalletConfig;
@@ -495,8 +497,8 @@ impl ClientBuilder {
 pub async fn unfunded_client(
     configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    let (local_net, mut client_builder) = custom_clients(
+) -> (MeteredNet, LightClient) {
+    let (mut local_net, mut client_builder) = custom_clients(
         PoolType::ORCHARD,
         configured_activation_heights,
         chain_cache,
@@ -516,12 +518,12 @@ pub async fn unfunded_client(
         .await;
     sync_client_to_validator_tip(&local_net, &mut lightclient).await;
 
+    local_net.mark_setup_complete("unfunded_client");
     (local_net, lightclient)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
-{
+pub async fn unfunded_client_default() -> (MeteredNet, LightClient) {
     unfunded_client(default_test_activation_heights(), None).await
 }
 
@@ -539,8 +541,8 @@ pub async fn faucet(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    let (local_net, mut client_builder) =
+) -> (MeteredNet, LightClient) {
+    let (mut local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
@@ -551,11 +553,12 @@ pub async fn faucet(
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    local_net.mark_setup_complete("faucet");
     (local_net, faucet)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
+pub async fn faucet_default() -> (MeteredNet, LightClient) {
     faucet(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
@@ -564,12 +567,8 @@ pub async fn faucet_recipient(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (
-    LocalNet<DefaultValidator, DefaultIndexer>,
-    LightClient,
-    LightClient,
-) {
-    let (local_net, mut client_builder) =
+) -> (MeteredNet, LightClient, LightClient) {
+    let (mut local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
@@ -592,15 +591,12 @@ pub async fn faucet_recipient(
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
     sync_client_to_validator_tip(&local_net, &mut recipient).await;
 
+    local_net.mark_setup_complete("faucet_recipient");
     (local_net, faucet, recipient)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_recipient_default() -> (
-    LocalNet<DefaultValidator, DefaultIndexer>,
-    LightClient,
-    LightClient,
-) {
+pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient) {
     faucet_recipient(PoolType::ORCHARD, default_test_activation_heights(), None).await
 }
 
@@ -613,14 +609,14 @@ pub async fn faucet_funded_recipient(
     configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<DefaultValidator, DefaultIndexer>,
+    MeteredNet,
     LightClient,
     LightClient,
     Option<String>,
     Option<String>,
     Option<String>,
 ) {
-    let (local_net, mut faucet, mut recipient) =
+    let (mut local_net, mut faucet, mut recipient) =
         faucet_recipient(mine_to_pool, configured_activation_heights, chain_cache).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -677,6 +673,7 @@ pub async fn faucet_funded_recipient(
         .unwrap();
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    local_net.mark_setup_complete("faucet_funded_recipient");
     (
         local_net,
         faucet,
@@ -690,12 +687,7 @@ pub async fn faucet_funded_recipient(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
-) -> (
-    LocalNet<DefaultValidator, DefaultIndexer>,
-    LightClient,
-    LightClient,
-    String,
-) {
+) -> (MeteredNet, LightClient, LightClient, String) {
     let (local_net, faucet, recipient, orchard_txid, _sapling_txid, _transparent_txid) =
         faucet_funded_recipient(
             Some(orchard_funds),
@@ -715,7 +707,8 @@ pub async fn custom_clients(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder) {
+) -> (MeteredNet, ClientBuilder) {
+    let setup_started = std::time::Instant::now();
     let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
         None,
         mine_to_pool,
@@ -723,6 +716,7 @@ pub async fn custom_clients(
         chain_cache.clone(),
     )
     .await;
+    let mut local_net = MeteredNet::new(local_net, setup_started);
 
     if chain_cache.is_none() {
         local_net.validator().generate_blocks(2).await.unwrap();
@@ -737,12 +731,12 @@ pub async fn custom_clients(
         wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
 
+    local_net.mark_setup_complete("custom_clients");
     (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
-{
+pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     let (local_net, client_builder) =
         custom_clients(PoolType::ORCHARD, default_test_activation_heights(), None).await;
 
