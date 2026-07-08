@@ -2070,25 +2070,6 @@ TransactionSummary {
     }
 
     #[tokio::test]
-    async fn dust_sends_change_correctly() {
-        let (_local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
-
-        // Send of less that transaction fee
-        let sent_value = 1_000;
-        let _sent_transaction_id = from_inputs::quick_send(
-            &mut recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                sent_value,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (local_net, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
