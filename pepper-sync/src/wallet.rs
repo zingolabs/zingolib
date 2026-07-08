@@ -609,7 +609,7 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl WalletTransaction {
     /// Creates a minimal `WalletTransaction` for testing purposes.
     ///
@@ -698,7 +698,7 @@ impl SyncState {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     /// Creates a minimal received note for testing purposes.
     pub fn new_for_test(
