@@ -688,6 +688,64 @@ mod proposal_shape {
         assert_eq!(change[0].output_pool(), PoolType::ORCHARD);
     }
 
+    /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
+    /// TEX address proposes as the ZIP-320 two-step — shield to an
+    /// ephemeral transparent output, then the transparent leg to the TEX
+    /// destination funded entirely by step one. The original's only
+    /// proposal-level assertion was the step count; the offline version
+    /// also pins the inter-step wiring. The broadcast half (both steps
+    /// mined, three wallet records) retires with the LocalNet original.
+    #[tokio::test]
+    async fn send_to_tex() {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
+        use zcash_client_backend::zip321::{Payment, TransactionRequest};
+        use zcash_protocol::value::Zatoshis;
+        use zcash_transparent::address::TransparentAddress;
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(5_000_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        // A TEX destination derived from an external wallet's first
+        // transparent address, as ZIP 320 prescribes.
+        let external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let taddr = external_wallet
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+        else {
+            panic!("a wallet-generated first taddr is p2pkh")
+        };
+        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
+            taddr_bytes,
+            &external_wallet.chain_type(),
+        );
+
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            Zatoshis::from_u64(100_000).unwrap(),
+        )])
+        .unwrap();
+        let proposal = client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.steps().len(), 2);
+        let transparent_leg = proposal.steps().last();
+        assert!(
+            !transparent_leg.prior_step_inputs().is_empty(),
+            "the transparent leg spends step one's ephemeral output"
+        );
+    }
+
     /// Migrated from the chain_generics `ignore_dust_inputs` fixture's
     /// load-bearing half: note selection excludes dust inputs. From a
     /// wallet holding four 1_000-zat dust notes and one 15_000-zat note

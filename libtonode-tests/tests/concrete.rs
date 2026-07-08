@@ -128,11 +128,7 @@ fn check_view_capability_bounds(
 mod fast {
 
     use pepper_sync::wallet::{OutputInterface, TransparentCoin};
-    use zcash_address::ZcashAddress;
-    use zcash_client_backend::{
-        encoding::encode_payment_address_p,
-        zip321::{Payment, TransactionRequest},
-    };
+    use zcash_client_backend::encoding::encode_payment_address_p;
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
@@ -358,77 +354,6 @@ mod fast {
             .unwrap();
 
         recipient.send_stored_proposal(true).await.unwrap();
-    }
-
-    pub mod tex {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
-        use zcash_primitives::transaction::TxId;
-        use zcash_transparent::address::TransparentAddress;
-        use zingolib::{testutils, wallet::LightWallet};
-
-        use super::*;
-
-        fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
-            let taddr = wallet.transparent_addresses().values().next().unwrap();
-            let Address::Transparent(taddr) =
-                decode_address(&wallet.chain_type(), taddr.as_str()).unwrap()
-            else {
-                panic!("not t addr")
-            };
-
-            let taddr_bytes = match taddr {
-                TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
-                TransparentAddress::ScriptHash(_) => panic!(),
-            };
-            let tex_string =
-                testutils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.chain_type());
-
-            ZcashAddress::try_from_encoded(&tex_string).unwrap()
-        }
-        #[tokio::test]
-        async fn send_to_tex() {
-            let (ref local_net, ref faucet, mut sender, _txid) =
-                scenarios::faucet_funded_recipient_default(5_000_000).await;
-
-            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
-            let payment = vec![Payment::without_memo(
-                tex_addr_from_first.clone(),
-                Zatoshis::from_u64(100_000).unwrap(),
-            )];
-
-            let transaction_request = TransactionRequest::new(payment).unwrap();
-
-            let proposal = sender
-                .propose_send(transaction_request, zip32::AccountId::ZERO)
-                .await
-                .unwrap();
-            assert_eq!(proposal.steps().len(), 2usize);
-            let _sent_txids_according_to_broadcast =
-                sender.send_stored_proposal(true).await.unwrap();
-            let _txids = sender
-                .wallet()
-                .read()
-                .await
-                .wallet_transactions
-                .keys()
-                .copied()
-                .collect::<Vec<TxId>>();
-            increase_height_and_wait_for_client(local_net, &mut sender, 1)
-                .await
-                .unwrap();
-            assert_eq!(
-                sender.wallet().read().await.wallet_transactions.len(),
-                3usize
-            );
-
-            // FIXME: add tex addresses to encoded memos
-            // let val_tranfers = sender.value_transfers(true).await.unwrap();
-            // assert_eq!(
-            //     val_tranfers[0].recipient_address().unwrap(),
-            //     tex_addr_from_first.encode()
-            // );
-        }
     }
 
     #[tokio::test]
