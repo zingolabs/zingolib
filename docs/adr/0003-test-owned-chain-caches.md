@@ -1,17 +1,22 @@
-# Test-owned chain caches snapshot mined-only setup at the send boundary
+# Test-owned chain caches snapshot completed setup; txid-returning scenarios snapshot early
 
 Libtonode tests regenerate their regtest chains from genesis on every run. We
 replace that per-run generation with chain caches: saved copies of the
 Validator's data directory, loaded into a fresh Validator at launch via the
 `load_chain`/`cache_chain` primitives that `zcash_local_net` already provides.
 Caching is the default regime for every libtonode test (tests that exercise
-mining behavior carry an explicit opt-out), each test owns exactly one cache
-keyed by its own name, and the snapshot is taken at the send boundary — the
-point before setup performs its first wallet-initiated transaction. Everything
-before the boundary is pure mining and comes from the cache; sends and their
-confirmation mining replay live on every run. Caches live in a gitignored
-`chain_caches/` directory at the repository root, which the test container
-bind-mounts, so caches built in one containerized run serve the next.
+mining behavior carry an explicit opt-out), and each test owns exactly one
+cache keyed by its own name. The snapshot is taken at scenario-setup
+completion for every scenario that returns no transaction identifiers to its
+caller (`custom_clients`, `unfunded_client`, `faucet`, `faucet_recipient`):
+their setup sends are embedded in the cache, and wallets recover their view
+of those transactions by syncing the cached chain. Only
+`faucet_funded_recipient` — the one constructor whose funding txids escape to
+the test — snapshots early, at its internal `faucet_recipient` stage, and
+replays its funding sends live so the returned txids are minted fresh each
+run. Caches live in a gitignored `chain_caches/` directory at the repository
+root, which the test container bind-mounts, so caches built in one
+containerized run serve the next.
 
 A cache is built inline by the test itself when it finds no cache, or when the
 driver sets the `ZINGO_REGENERATE_CHAIN_CACHE` environment variable (scoped to
@@ -38,13 +43,20 @@ parallelism, whereas test-owned caches are never contended. Shape-keyed
 deduplication remains the intended consolidation once the MVP has proven the
 mechanism; the "chain shape" term is defined in `CONTEXT.md` for that purpose.
 
-Snapshotting at scenario-setup completion rather than at the send boundary was
-rejected for the MVP because setup transactions mint txids at build time that
-tests later assert against; returning them on a cache hit requires a
-per-scenario outputs manifest whose schema design we chose not to block on.
-The cost is real and accepted: for scenarios whose setup is mostly sends
-(`faucet_funded_recipient` and kin), most of the per-run cost remains until an
-outputs manifest moves the snapshot point past the sends.
+The decision as first recorded (earlier on 2026-07-07) snapshotted *every*
+scenario at the send boundary — the point before setup's first
+wallet-initiated transaction — to dodge the txid-return problem wholesale.
+The same day's baseline instrumentation refuted the premise: setup costs 895
+aggregate seconds across the 41 LocalNet tests, almost all of it in
+post-send-boundary work (sends, confirmation mining, sync — the
+`mine_to_transparent*` tests prove the send-free floor is ~4-6 s), and only
+`faucet_funded_recipient` actually returns txids. A universal send boundary
+would have recovered one to two minutes of the fifteen; snapshotting
+completed setup for the txid-free scenarios recovers roughly twelve, at no
+manifest cost. The amendment was adopted on that evidence. An outputs
+manifest recording the funding txids remains the path to moving
+`faucet_funded_recipient`'s snapshot past its sends, and its schema design
+is still deliberately unblocked from the MVP.
 
 Moving a superseded cache aside instead of discarding it was rejected because
 chain generation is not byte-deterministic, so a kept copy serves only
@@ -54,9 +66,11 @@ directory before regenerating.
 ## Consequences
 
 - A cache-hit run's chain differs from a live-generated run's chain in
-  non-consensus details (block timestamps, hashes). Tests asserting on such
-  details must opt out; none are known to at the time of writing, since the
-  MVP cache covers only launch plus the initial two-block generation.
+  non-consensus details (block timestamps, hashes), and setup transactions
+  embedded in a cache keep their build-time txids across runs. No test can
+  assert on those txids — the txid-free scenarios by definition never hand
+  them out — but tests asserting on other non-consensus chain details must
+  opt out; none are known to at the time of writing.
 - The regenerate knob is deliberately not representable in source. An
   in-source per-test bool whose "on" state must never be committed would be a
   standing commit hazard; the environment variable plus nextest filtering

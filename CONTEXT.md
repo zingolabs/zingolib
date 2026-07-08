@@ -34,17 +34,19 @@ and shape-based sharing is a foreseen consolidation.
 _Avoid_: test's chain
 
 **Chain cache**:
-A saved copy of a regtest Validator's data directory, taken at a
-scenario setup's send boundary and loaded into a fresh Validator at
-launch to replace live generation of the mined-only setup. Each test
-owns at most one cache, keyed by the test's name.
+A saved copy of a regtest Validator's data directory, taken at
+scenario-setup completion (or at the send boundary, for scenarios that
+return transaction identifiers) and loaded into a fresh Validator at
+launch to replace live setup generation. Each test owns at most one
+cache, keyed by the test's name.
 _Avoid_: chain state snapshot, cached chain state
 
 **Send boundary**:
-The point in a scenario's setup before its first wallet-initiated
-transaction. Setup work before the boundary is pure mining and is
-covered by the chain cache; setup work at or after the boundary replays
-live on every run.
+The point in a scenario's setup before the first wallet-initiated
+transaction whose identifier escapes to the caller. Scenarios that
+return txids snapshot their chain cache here and replay the sends live,
+so the returned identifiers are minted fresh each run; txid-free
+scenarios snapshot at setup completion instead.
 
 **Chain-bound test**:
 A test that must run against a live network combo because the behavior
