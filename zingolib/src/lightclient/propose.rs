@@ -607,6 +607,205 @@ mod simpool {
     }
 }
 
+/// Migrated from the libtonode chain_generics pool matrix: every shielded
+/// source paired with every receiver pool, with and without change, plus
+/// the transparent minimum-value and boundary-value rows. The matrix's
+/// fee, value, and change assertions are pure proposer arithmetic, so a
+/// synthetic wallet funded with exactly `value + change + fee` replaces
+/// the LocalNet environment and its two-hop funding chain; each case
+/// asserts the proposal pays `value`, charges the `fee_tables::one_to_one`
+/// fee, and returns exactly `change`. The Transmitted-to-Mempool-to-
+/// Confirmed round trip the matrix also exercised remains covered by the
+/// two surviving chain_generics fixtures, which drive the same
+/// follow_proposal machinery.
+#[cfg(test)]
+mod pool_matrix {
+    use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use crate::{
+        lightclient::LightClient,
+        testutils::{
+            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
+        },
+        wallet::keys::unified::ReceiverSelection,
+    };
+
+    /// An encoded destination of the given pool type, belonging to a
+    /// different wallet so the send is external.
+    fn external_address(pool: PoolType) -> String {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::Shielded(ShieldedProtocol::Orchard) => ReceiverSelection::orchard_only(),
+            PoolType::Shielded(ShieldedProtocol::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        unified_address.encode(&external_wallet.chain_type())
+    }
+
+    /// One matrix cell: a wallet holding a single `source` note of exactly
+    /// `receiver_value + change + fee` proposes a `receiver_value` send to
+    /// a `pool` destination, and the proposal's fee and change land on the
+    /// fee table's prediction to the zatoshi.
+    async fn matrix_case(
+        source: ShieldedProtocol,
+        pool: PoolType,
+        receiver_value: u64,
+        change: u64,
+    ) {
+        let expected_fee = fee_tables::one_to_one(Some(source), pool, true);
+        let funding = receiver_value + change + expected_fee;
+        let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
+        let wallet = match source {
+            ShieldedProtocol::Orchard => builder.orchard_note(funding),
+            ShieldedProtocol::Sapling => builder.sapling_note(funding),
+        }
+        .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(pool);
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(destination.as_str(), receiver_value, None)],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        assert_eq!(u64::from(step.balance().fee_required()), expected_fee);
+        let proposed_change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(proposed_change, change);
+        let payment: u64 = step
+            .transaction_request()
+            .payments()
+            .values()
+            .map(|payment| u64::from(payment.amount().expect("matrix payments carry amounts")))
+            .sum();
+        assert_eq!(payment, receiver_value);
+    }
+
+    macro_rules! pool_matrix_case {
+        ($name:ident, $source:expr, $receiver:expr, $send_value:expr, $change:expr) => {
+            #[tokio::test]
+            async fn $name() {
+                matrix_case($source, $receiver, $send_value, $change).await;
+            }
+        };
+    }
+
+    pool_matrix_case!(
+        sapling_sends_to_transparent,
+        ShieldedProtocol::Sapling,
+        PoolType::TRANSPARENT,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        sapling_sends_to_sapling,
+        ShieldedProtocol::Sapling,
+        PoolType::SAPLING,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        sapling_sends_to_orchard,
+        ShieldedProtocol::Sapling,
+        PoolType::ORCHARD,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_transparent,
+        ShieldedProtocol::Orchard,
+        PoolType::TRANSPARENT,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_sapling,
+        ShieldedProtocol::Orchard,
+        PoolType::SAPLING,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_orchard,
+        ShieldedProtocol::Orchard,
+        PoolType::ORCHARD,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        sapling_sends_to_transparent_no_change,
+        ShieldedProtocol::Sapling,
+        PoolType::TRANSPARENT,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        sapling_sends_to_sapling_no_change,
+        ShieldedProtocol::Sapling,
+        PoolType::SAPLING,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        sapling_sends_to_orchard_no_change,
+        ShieldedProtocol::Sapling,
+        PoolType::ORCHARD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        orchard_sends_to_transparent_no_change,
+        ShieldedProtocol::Orchard,
+        PoolType::TRANSPARENT,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        orchard_sends_to_sapling_no_change,
+        ShieldedProtocol::Orchard,
+        PoolType::SAPLING,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        orchard_sends_to_orchard_no_change,
+        ShieldedProtocol::Orchard,
+        PoolType::ORCHARD,
+        10_000,
+        0
+    );
+    // 546 zatoshis is the canonical transparent dust threshold. The
+    // proposer permits it; whether a relay accepts it is the network's
+    // business — zebra's mempool dust rule was the reason this row's
+    // LocalNet ancestor sent 546 rather than 1.
+    pool_matrix_case!(
+        sapling_sends_to_transparent_minimum_value,
+        ShieldedProtocol::Sapling,
+        PoolType::TRANSPARENT,
+        546,
+        0
+    );
+    pool_matrix_case!(
+        sapling_sends_to_transparent_boundary_values,
+        ShieldedProtocol::Sapling,
+        PoolType::TRANSPARENT,
+        49_999,
+        9_999
+    );
+}
+
 /// Offline proposal-shape tests over synthetic wallets: shield proposals
 /// and note-selection behavior, migrated from LocalNet tests whose
 /// assertions were all propose-stage.
