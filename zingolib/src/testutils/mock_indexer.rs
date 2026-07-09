@@ -54,7 +54,7 @@ use zaino_proto::tonic::{self, Request, Response, Status};
 
 use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
-use zcash_primitives::merkle_tree::write_commitment_tree;
+use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zingo_common_components::protocol::ActivationHeights;
@@ -87,11 +87,26 @@ pub struct MockChain {
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
+    /// Bumped by [`MockChain::reorg_to`]; folded into the hashes of
+    /// blocks mined afterwards so a re-mined branch is distinguishable
+    /// from the branch it replaced. A wallet detects the reorg by hash
+    /// mismatch, exactly as against a real chain.
+    branch_seed: u32,
 }
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
+    fabricated_branch_hash(height, 0)
+}
+
+/// Height- and branch-seeded fabricated hash. Seed 0 reproduces the
+/// pre-reorg hashes byte for byte, so chains that never reorg are
+/// unchanged by the branching machinery.
+fn fabricated_branch_hash(height: u32, branch_seed: u32) -> Vec<u8> {
     let mut hash = vec![0x5a; 32];
     hash[..4].copy_from_slice(&height.to_le_bytes());
+    if branch_seed != 0 {
+        hash[4..8].copy_from_slice(&branch_seed.to_le_bytes());
+    }
     hash
 }
 
@@ -123,6 +138,7 @@ impl MockChain {
             orchard_tree,
             mempool: Vec::new(),
             taddr_request_log: Vec::new(),
+            branch_seed: 0,
         }
     }
 
@@ -183,15 +199,18 @@ impl MockChain {
             self.transactions
                 .insert(*transaction.txid().as_ref(), (height, bytes));
         }
-        let prev_hash = if height == 1 {
-            vec![0u8; 32]
-        } else {
-            fabricated_block_hash(height - 1)
-        };
+        // Chain from the stored predecessor hash rather than recomputing
+        // it: after a reorg the predecessor may belong to a different
+        // branch seed than this block.
+        let prev_hash = self
+            .blocks
+            .last()
+            .map(|block| block.hash.clone())
+            .unwrap_or_else(|| vec![0u8; 32]);
         self.blocks.push(CompactBlock {
             proto_version: 4,
             height: u64::from(height),
-            hash: fabricated_block_hash(height),
+            hash: fabricated_branch_hash(height, self.branch_seed),
             prev_hash,
             time: 1_700_000_000 + height,
             header: vec![],
@@ -212,6 +231,49 @@ impl MockChain {
         }
     }
 
+    /// Rewinds the chain to `height`, discarding every block above it —
+    /// the reorg primitive. Blocks mined afterwards carry a new branch
+    /// seed in their hashes, so a syncing wallet sees a hash mismatch
+    /// above `height` and truncates, exactly as against a real reorg.
+    /// Returns the raw bytes of the discarded transactions in mined
+    /// order; the caller models miner behavior by resubmitting them to
+    /// the mempool, re-mining them at new heights, or dropping them to
+    /// let the wallet expire them.
+    pub fn reorg_to(&mut self, height: u32) -> Vec<Vec<u8>> {
+        assert!(
+            height <= self.tip(),
+            "reorg_to({height}) above the tip {}",
+            self.tip()
+        );
+        self.blocks.truncate(height as usize);
+        self.tree_states.truncate(height as usize + 1);
+        let (sapling_hex, orchard_hex) = self.tree_states[height as usize].clone();
+        self.sapling_tree = read_commitment_tree(
+            hex::decode(sapling_hex)
+                .expect("stored tree state is valid hex")
+                .as_slice(),
+        )
+        .expect("stored sapling tree state deserializes");
+        self.orchard_tree = read_commitment_tree(
+            hex::decode(orchard_hex)
+                .expect("stored tree state is valid hex")
+                .as_slice(),
+        )
+        .expect("stored orchard tree state deserializes");
+        let mut evicted: Vec<(u32, Vec<u8>)> = Vec::new();
+        self.transactions.retain(|_, (mined_height, bytes)| {
+            if *mined_height > height {
+                evicted.push((*mined_height, bytes.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        evicted.sort_by_key(|(mined_height, _)| *mined_height);
+        self.branch_seed += 1;
+        evicted.into_iter().map(|(_, bytes)| bytes).collect()
+    }
+
     fn parse_transaction(&self, bytes: &[u8], height: u32) -> Transaction {
         Transaction::read(
             bytes,
@@ -222,10 +284,17 @@ impl MockChain {
 
     fn tree_state_at(&self, height: u32) -> Option<TreeState> {
         let (sapling_tree, orchard_tree) = self.tree_states.get(height as usize)?.clone();
+        // The stored block's own hash, so tree states follow the
+        // current branch after a reorg. Height 0 predates the chain.
+        let hash = if height == 0 {
+            fabricated_block_hash(0)
+        } else {
+            self.blocks[height as usize - 1].hash.clone()
+        };
         Some(TreeState {
             network: "regtest".to_string(),
             height: u64::from(height),
-            hash: hex::encode(fabricated_block_hash(height)),
+            hash: hex::encode(hash),
             time: 1_700_000_000 + height,
             sapling_tree,
             orchard_tree,
