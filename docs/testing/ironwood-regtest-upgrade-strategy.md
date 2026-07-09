@@ -76,12 +76,24 @@ two adopts it verbatim so the branches converge:
   `zcash/librustzcash` rev `4d9a68dc80508e7644aa99e1b4add7c831057bba`
   (canonical upstream main, pinned) — the git-pin option, already
   chosen upstream of us.
-- **zebra**: `zebra-chain`/`zebra-rpc`/`zebra-node-services` patched to
-  the `zcashfoundation/zebra` branch `nu63-ironwood` (the ZIN-37
-  ironwood-value-pool fork, built against orchard 0.15.0-pre.1). Side
-  effect worth noting: zebra crates enter the dependency graph for the
-  first time, which may let the max-reorg/finalization-depth constant
-  become an import instead of a documented mirror.
+- **zebra — a decision point, not an inevitability.** PR #2428's zebra
+  patches (`zebra-chain`/`zebra-rpc`/`zebra-node-services` → the
+  `nu63-ironwood` fork) exist only because that branch's
+  *infrastructure pin* (`zcash_local_net` 0.6.0 @ `84d9c97`) names
+  zebra crates ("zebra witness serving"); once any graph member names
+  `zebra-chain`, the crates.io release (orchard 0.14) clashes with the
+  ironwood librustzcash stack (orchard 0.15.0-pre.1) and the fork
+  patch becomes mandatory, dragging the zebra subtree in transitively.
+  Our branch's infra pin (`bump_to_NU6.3` @ 0.7.0) has **no** zebra
+  dependencies, and adopting the librustzcash patch set does not add
+  any. Zebra enters our graph only if our infra pin converges on that
+  lineage — and it should be challenged first: this repo's own
+  validator interaction (replay, probes, the whole observatory) runs
+  on plain JSON-RPC with zero zebra crates, so the infra repo owes an
+  answer to whether typed zebra interfaces are worth the subtree
+  before consumers inherit it. If inherited, one silver lining: the
+  max-reorg/finalization-depth constant could become an import instead
+  of a documented mirror.
 - **Surroundings**: orchard 0.15.0-pre.1, zcash_address 0.13.0-pre.0,
   `zcash_primitives` gains the `non-standard-fees` feature, and
   `lightwallet-protocol` is patched to the fork rev carrying the
