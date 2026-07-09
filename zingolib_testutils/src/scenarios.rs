@@ -30,6 +30,7 @@ use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 
 use crate::chain_cache::{self, CacheManifest, CachedStage, Disposition};
+use crate::observability::LinkTap;
 use crate::setup_metrics::MeteredNet;
 
 pub use crate::chain_cache::ChainCachePolicy;
@@ -771,6 +772,41 @@ fn resolve_cache(
     }
 }
 
+/// Launch the network combo with the zainod→zebrad hop interposed: the
+/// Validator first, then a recording link tap in front of its JSON-RPC
+/// port, then the Indexer dialing the tap — assembled via
+/// `LocalNet::from_parts`. `launch_from_two_configs` wires the two
+/// processes directly and leaves no seam, which is why the seam was
+/// added upstream (infrastructure commit 63b31a0).
+async fn launch_observed(
+    mine_to_pool: PoolType,
+    configured_activation_heights: ActivationHeights,
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, LinkTap) {
+    // The harness probes the Validator's RPC over reqwest/rustls before
+    // any LightClient (the usual installer) exists.
+    zingolib::ensure_default_crypto_provider();
+    let mut validator_config = <DefaultValidator as Process>::Config::default();
+    validator_config.set_test_parameters(
+        miner_pool(mine_to_pool),
+        net_activation_heights(&configured_activation_heights),
+        None,
+    );
+    let validator = <DefaultValidator as Process>::launch(validator_config)
+        .await
+        .expect("validator must launch");
+
+    let validator_tap = LinkTap::open("zainod->zebrad", validator.rpc_listen_port()).await;
+
+    let mut indexer_config = <DefaultIndexer as Process>::Config::default();
+    indexer_config.set_listen_port(None);
+    indexer_config.validator_port = validator_tap.port();
+    let indexer = <DefaultIndexer as Process>::launch(indexer_config)
+        .await
+        .expect("indexer must launch");
+
+    (LocalNet::from_parts(validator, indexer), validator_tap)
+}
+
 /// The uncached launch primitive under every scenario constructor:
 /// start the network combo, establish the initial chain — by replaying
 /// `replay_from` when given, by mining otherwise — and hand back a
@@ -781,14 +817,9 @@ async fn custom_clients_raw(
     replay_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
-    let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
-        None,
-        mine_to_pool,
-        configured_activation_heights,
-        None,
-    )
-    .await;
-    let mut local_net = MeteredNet::new(local_net, setup_started).await;
+    let (local_net, validator_tap) =
+        launch_observed(mine_to_pool, configured_activation_heights).await;
+    let mut local_net = MeteredNet::new(local_net, validator_tap, setup_started).await;
 
     match replay_from {
         Some(blocks_file) => chain_cache::replay(&local_net, &blocks_file).await,

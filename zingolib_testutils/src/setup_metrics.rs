@@ -42,6 +42,10 @@ pub struct MeteredNet {
     rpc_tap: LinkTap,
     /// wallet→zainod hop: every wallet built by the scenario dials this.
     indexer_tap: LinkTap,
+    /// zainod→zebrad hop: the Indexer's own validator traffic. Opened
+    /// before the Indexer launches (it dials the tap), so it arrives
+    /// here ready-made from `launch_observed`.
+    validator_tap: LinkTap,
 }
 
 impl MeteredNet {
@@ -51,6 +55,7 @@ impl MeteredNet {
     /// recorded wall-clock includes process launch.
     pub async fn new(
         net: LocalNet<DefaultValidator, DefaultIndexer>,
+        validator_tap: LinkTap,
         setup_started: Instant,
     ) -> Self {
         let launch_bytes = dir_size(net.validator().data_dir().path());
@@ -65,6 +70,7 @@ impl MeteredNet {
             }),
             rpc_tap: LinkTap::open("harness->zebrad", validator_rpc_port).await,
             indexer_tap: LinkTap::open("wallet->zainod", indexer_port).await,
+            validator_tap,
             net,
             recorder: SetupRecorder {
                 binary: current_binary_name(),
@@ -107,6 +113,11 @@ impl MeteredNet {
     /// The wallet→zainod traffic record.
     pub fn indexer_tap(&self) -> &LinkTap {
         &self.indexer_tap
+    }
+
+    /// The zainod→zebrad traffic record.
+    pub fn validator_tap(&self) -> &LinkTap {
+        &self.validator_tap
     }
 
     /// Record that scenario setup finished here. Nested constructors each

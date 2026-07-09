@@ -68,10 +68,12 @@ async fn chain_mutates_only_via_owned_rpc() {
          zebrad timeline:\n{}\n\
          zainod timeline:\n{}\n\
          harness->zebrad tap:\n{}\n\
-         wallet->zainod tap:\n{}",
+         wallet->zainod tap:\n{}\n\
+         zainod->zebrad tap:\n{}",
         local_net.zebrad_watch().render(),
         local_net.zainod_watch().render(),
         local_net.rpc_tap().render(),
         local_net.indexer_tap().render(),
+        local_net.validator_tap().render(),
     );
 }
