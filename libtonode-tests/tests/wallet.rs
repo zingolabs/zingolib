@@ -4,7 +4,7 @@ mod load_wallet {
     use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn verify_old_wallet_uses_server_height_in_send() {
         // An earlier version of zingolib used the _wallet's_ 'height' when
         // constructing transactions.  This worked well enough when the

@@ -146,7 +146,7 @@ mod fast {
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet = client_builder.build_faucet(true).await;
@@ -314,7 +314,7 @@ mod fast {
     ///   transparent output instead;
     /// - balances short by whole blocks: the deterministic
     ///   sync_client_to_validator_tip is not actually deterministic.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn orchard_miner_coinbase_distribution() {
         let mut environment = LibtonodeEnvironment::setup().await;
         let mut faucet = environment.create_faucet().await;
@@ -328,7 +328,7 @@ mod fast {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
         tracing_subscriber::fmt().init();
 
@@ -382,7 +382,7 @@ mod fast {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         from_inputs::quick_send(
@@ -434,7 +434,7 @@ mod fast {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::ORCHARD,
@@ -456,7 +456,7 @@ mod fast {
     }
 
     /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn mine_to_transparent() {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
             PoolType::Transparent,
@@ -492,7 +492,7 @@ mod fast {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn sync_all_expressible_epochs() {
         // The zebrad config writer requires every upgrade through Canopy
         // active at height 1, and the harness subsidy fixtures pair only
@@ -509,7 +509,7 @@ mod fast {
             .unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn mine_to_transparent_and_shield() {
         let activation_heights = scenarios::default_test_activation_heights();
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
@@ -571,7 +571,7 @@ mod slow {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn zero_value_receipts() {
         let (local_net, mut faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
@@ -634,7 +634,7 @@ mod slow {
         }));
         assert_eq!(value_transfers.iter().count(), 3);
     }
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
         // # Scenario:
         // 3. reset wallet
@@ -796,7 +796,7 @@ mod slow {
             ));
         }
     }
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
         let transparent_funding = 100_000;
         let (ref local_net, mut faucet, mut recipient) =
@@ -868,7 +868,7 @@ mod slow {
             recipient.value_transfers(true).await.unwrap()
         );
     }
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_to_ua_saves_full_ua_in_wallet() {
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
         //utils::increase_height_and_wait_for_client(&local_net, &faucet, 5).await;
@@ -912,7 +912,7 @@ mod slow {
             json::stringify_pretty(rescanned_transactions.clone(), 4)
         );
     }
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
         // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
@@ -1269,7 +1269,7 @@ TransactionSummary {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_orchard_back_and_forth() {
         // setup
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
@@ -1358,7 +1358,7 @@ TransactionSummary {
         check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_mined_orchard_to_orchard() {
         // This test shows a confirmation changing the state of balance by
         // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
@@ -1399,7 +1399,7 @@ TransactionSummary {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn self_send_to_t_displays_as_one_transaction() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
@@ -1472,7 +1472,7 @@ TransactionSummary {
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn sapling_dust_fee_collection() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         let recipient_sapling = get_base_address_macro!(recipient, "sapling");
@@ -1515,7 +1515,7 @@ TransactionSummary {
     mod rescan_still_have_outgoing_notes {
         use super::*;
 
-        #[tokio::test(flavor = "multi_thread")]
+        #[tokio::test]
         async fn self_send() {
             let (local_net, mut faucet) = scenarios::faucet_default().await;
             let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
@@ -1540,7 +1540,7 @@ TransactionSummary {
             let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
-        #[tokio::test(flavor = "multi_thread")]
+        #[tokio::test]
         async fn external_send() {
             let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
             let _external_send_txid_with_memo = *from_inputs::quick_send(
@@ -1576,7 +1576,7 @@ TransactionSummary {
             let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
-        #[tokio::test(flavor = "multi_thread")]
+        #[tokio::test]
         async fn check_list_value_transfers_across_rescan() {
             let inital_value = 100_000;
             let (ref local_net, faucet, mut recipient, _txid) =
@@ -1608,7 +1608,7 @@ TransactionSummary {
     /// remediation plan). Note-selection ordering itself is asserted
     /// offline by `note_selection_covers_target_with_minimal_change` in
     /// `zingolib::lightclient::propose`.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn multi_input_sapling_send_with_orchard_change_no_panic() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
@@ -1664,7 +1664,7 @@ TransactionSummary {
     }
 
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn mempool_and_balance() {
         let value = 100_000;
         let (local_net, faucet, mut recipient, _txid) =
@@ -1734,7 +1734,7 @@ TransactionSummary {
 
     // FIXME: add unified address discovery to pepper sync and add a test here
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn list_value_transfers_check_fees() {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
@@ -1783,7 +1783,7 @@ TransactionSummary {
         bump_and_check_pmc!(o: 15_000 s: 30_000 t: 30_000);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
@@ -2088,7 +2088,7 @@ TransactionSummary {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (local_net, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
@@ -2193,7 +2193,7 @@ mod basic_transactions {
     };
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
 
@@ -2238,7 +2238,7 @@ mod basic_transactions {
     }
 
     // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
-    // #[tokio::test(flavor = "multi_thread")]
+    // #[tokio::test]
     // async fn standard_send_fees() {
     //     let (local_net, faucet, recipient) =
     //         scenarios::faucet_recipient_default().await;
@@ -2438,7 +2438,7 @@ mod basic_transactions {
     //     assert_eq!(calculated_fee_txid4, expected_fee_txid4 as u64);
     // }
 
-    // #[tokio::test(flavor = "multi_thread")]
+    // #[tokio::test]
     // async fn dust_send_fees() {
     //     let (local_net, faucet, recipient) =
     //         scenarios::faucet_recipient_default().await;
@@ -2496,7 +2496,7 @@ mod basic_transactions {
     //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
     // }
 
-    // #[tokio::test(flavor = "multi_thread")]
+    // #[tokio::test]
     // async fn shield_send_fees() {
     //     let (local_net, faucet, recipient) =
     //         scenarios::faucet_recipient_default().await;
@@ -2577,7 +2577,7 @@ mod basic_transactions {
 }
 
 /// Tests that transparent coinbases mature after `COINBASE_MATURITY_BLOCKS`.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn mine_to_transparent_coinbase_maturity() {
     let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
         PoolType::Transparent,
@@ -2627,7 +2627,7 @@ mod testnet_test {
     };
 
     #[ignore = "testnet cannot be run offline"]
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn reload_wallet_after_short_sync() {
         zingolib::ensure_default_crypto_provider();
 

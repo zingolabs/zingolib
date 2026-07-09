@@ -11,11 +11,11 @@ mod chain_generics {
 
     use zingolib::testutils::chain_generics::fixtures;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
         fixtures::create_various_value_transfers::<LibtonodeEnvironment>().await;
     }
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn send_shield_cycle() {
         fixtures::send_shield_cycle::<LibtonodeEnvironment>(1).await;
     }

@@ -139,14 +139,14 @@ async fn run_cell(depth: u32, target_pool: &str) -> (Verdict, String) {
 /// on note freshness, anchors, or output pool in this environment). A
 /// fresh non-coinbase orchard note on a tall chain spends fine with an
 /// orchard output; the assertion pins that observed invariant.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn tip_note_to_orchard() {
     let (verdict, observables) = run_cell(0, "unified").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
 }
 
 /// Round-one verdict: ACCEPTED, same invariant with a sapling output.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn tip_note_to_sapling() {
     let (verdict, observables) = run_cell(0, "sapling").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
@@ -155,7 +155,7 @@ async fn tip_note_to_sapling() {
 /// Sorts H-NOTE (accepted) from H-ANCHOR (rejected): the note is three
 /// blocks deep, but the wallet is synced to the tip so the anchor still
 /// references the tip.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn aged_note_to_orchard() {
     let (verdict, observables) = run_cell(3, "unified").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
@@ -163,7 +163,7 @@ async fn aged_note_to_orchard() {
 
 /// Control cell: an aged note with a sapling output; every hypothesis
 /// predicts acceptance, so a rejection here falsifies the whole space.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn aged_note_to_sapling() {
     let (verdict, observables) = run_cell(3, "sapling").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
@@ -200,7 +200,7 @@ async fn run_matrix_cell(extra_blocks: u32, target_pool: &str) -> (Verdict, Stri
 }
 
 /// The in-suite reproduction of the pool_matrix orchard-row failure.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn matrix_young_coinbase_to_orchard() {
     let (verdict, observables) = run_matrix_cell(0, "unified").await;
     assert_eq!(verdict, Verdict::TipRejected, "{observables}");
@@ -209,7 +209,7 @@ async fn matrix_young_coinbase_to_orchard() {
 /// The differential under identical amounts and note selection: same
 /// sender, same young coinbase funds, sapling output. The pool_matrix
 /// sapling rows say this is accepted; H-COINBASE says rejected.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn matrix_young_coinbase_to_sapling() {
     let (verdict, observables) = run_matrix_cell(0, "sapling").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
@@ -217,7 +217,7 @@ async fn matrix_young_coinbase_to_sapling() {
 
 /// Sorts H-BOUNDARY (accepted: the activation is now well behind) from
 /// H-COINBASE (rejected: the coinbase notes are still young).
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn matrix_aged_coinbase_to_orchard() {
     let (verdict, observables) = run_matrix_cell(10, "unified").await;
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
@@ -249,7 +249,7 @@ async fn matrix_aged_coinbase_to_orchard() {
 ///   zebra); if they are still rejected, the wallet built a transaction
 ///   only valid under post-boundary rules and zebra was right both
 ///   times (H-WALLET-CONTEXT).
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn boundary_rejection_attribution() {
     use zcash_local_net::validator::Validator as _;
     use zingo_status::confirmation_status::ConfirmationStatus;
