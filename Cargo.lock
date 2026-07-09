@@ -788,37 +788,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkside-tests"
-version = "0.1.0"
-dependencies = [
- "bip0039",
- "futures-util",
- "hex",
- "http",
- "incrementalmerkletree",
- "orchard",
- "proptest",
- "prost",
- "sapling-crypto",
- "serde_json",
- "tokio",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tracing",
- "tracing-subscriber",
- "zcash_local_net",
- "zcash_primitives",
- "zcash_protocol",
- "zingo-netutils",
- "zingo_common_components",
- "zingo_test_vectors",
- "zingolib",
- "zingolib_testutils",
- "zip32",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

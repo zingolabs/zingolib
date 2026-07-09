@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "darkside-tests",
     "libtonode-tests",
     "pepper-sync",
     "zingo-cli",
