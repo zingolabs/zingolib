@@ -18,21 +18,20 @@
 //!   exist for all three pipeline nodes: [`ZebradState`] (tip + peer
 //!   count), [`ZainodState`] (indexed tip), and [`WalletState`] (synced
 //!   height).
-//! - [`LinkTap`] is an interposable TCP relay that records the traffic
-//!   crossing one hop. The wallet→zainod and harness→zebrad hops are
-//!   wireable from this crate (we mint both endpoints); the
-//!   zainod→zebrad hop is NOT — `LocalNet::launch` overwrites
-//!   `ZainodConfig::validator_port` with the real validator port, so
-//!   interposing there needs a `zcash_local_net` addition
-//!   (`LocalNet::from_parts` or a port override). Foreign clients dial
-//!   zebra's listener directly and no userspace tap can see them;
-//!   their *effects* are what [`StateWatch`] captures.
+//! - [`FrontRecord`] registers as a `zcash_local_net` front-proxy
+//!   observer. Since the front-proxy inversion (infrastructure commit
+//!   1a7bb7e), every port accessor on a launched process returns an
+//!   observing front bound *before* the process starts, so a
+//!   registered record sees every client of that process — including
+//!   the launch-mine, which adjudicated the hypothesis above: the
+//!   once-invisible mutation is an ordinary RPC, now observed.
+//!   [`LinkTap`], the hand-wired TCP relay the fronts superseded,
+//!   remains available for hops no front covers.
 //!
-//! This module is deliberately prototyped here rather than in
-//! `zcash_local_net`: iteration against live failures beats pinning a
-//! new infra revision per tweak. The trait vocabulary mirrors the infra
-//! crate's process model so the proven design can migrate there, where
-//! process wiring (and the missing zainod→zebrad hop) natively lives.
+//! The state-watch half is still prototyped here rather than in
+//! `zcash_local_net`; its trait vocabulary mirrors the infra crate's
+//! process model so it can migrate there alongside the launch-contract
+//! sentinels (`tests/sentinels.rs`) when the consolidation happens.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

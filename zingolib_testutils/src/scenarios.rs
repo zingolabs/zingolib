@@ -30,7 +30,7 @@ use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 
 use crate::chain_cache::{self, CacheManifest, CachedStage, Disposition};
-use crate::observability::LinkTap;
+use crate::observability::FrontRecord;
 use crate::setup_metrics::MeteredNet;
 
 pub use crate::chain_cache::ChainCachePolicy;
@@ -788,30 +788,38 @@ fn resolve_cache(
 async fn launch_observed(
     mine_to_pool: PoolType,
     configured_activation_heights: ActivationHeights,
-) -> (LocalNet<DefaultValidator, DefaultIndexer>, LinkTap) {
+) -> (
+    LocalNet<DefaultValidator, DefaultIndexer>,
+    std::sync::Arc<FrontRecord>,
+    std::sync::Arc<FrontRecord>,
+) {
     // The harness probes the Validator's RPC over reqwest/rustls before
     // any LightClient (the usual installer) exists.
     zingolib::ensure_default_crypto_provider();
+
+    // Registered before launch, the fronts see every client of each
+    // process — including the launch-mine, which no post-launch tap
+    // could reach.
+    let zebrad_front = FrontRecord::arm("zebrad front");
+    let zainod_front = FrontRecord::arm("zainod front");
+
     let mut validator_config = <DefaultValidator as Process>::Config::default();
     validator_config.set_test_parameters(
         miner_pool(mine_to_pool),
         net_activation_heights(&configured_activation_heights),
         None,
     );
-    let validator = <DefaultValidator as Process>::launch(validator_config)
-        .await
-        .expect("validator must launch");
-
-    let validator_tap = LinkTap::open("zainod->zebrad", validator.rpc_listen_port()).await;
+    validator_config.rpc_front_observer = Some(zebrad_front.clone());
 
     let mut indexer_config = <DefaultIndexer as Process>::Config::default();
     indexer_config.set_listen_port(None);
-    indexer_config.validator_port = validator_tap.port();
-    let indexer = <DefaultIndexer as Process>::launch(indexer_config)
-        .await
-        .expect("indexer must launch");
+    indexer_config.grpc_front_observer = Some(zainod_front.clone());
 
-    (LocalNet::from_parts(validator, indexer), validator_tap)
+    let local_net = LocalNet::launch_from_two_configs(validator_config, indexer_config)
+        .await
+        .expect("network combo must launch");
+
+    (local_net, zebrad_front, zainod_front)
 }
 
 /// The uncached launch primitive under every scenario constructor:
@@ -824,9 +832,9 @@ async fn custom_clients_raw(
     replay_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
-    let (local_net, validator_tap) =
+    let (local_net, zebrad_front, zainod_front) =
         launch_observed(mine_to_pool, configured_activation_heights).await;
-    let mut local_net = MeteredNet::new(local_net, validator_tap, setup_started).await;
+    let mut local_net = MeteredNet::new(local_net, zebrad_front, zainod_front, setup_started);
 
     match replay_from {
         Some(blocks_file) => {
@@ -841,9 +849,9 @@ async fn custom_clients_raw(
     }
 
     let client_builder = ClientBuilder::new(
-        // Wallets dial the indexer through the tapped hop, so their
-        // traffic lands in the observability record.
-        local_net.monitored_indexer_uri(),
+        // The Indexer's listen port IS its observing front since the
+        // front-proxy inversion, so wallet traffic lands in the record.
+        port_to_localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
         // The validator is the sole source of activation-height truth
         // (infras ADR 0003): wallets take their schedule from the running

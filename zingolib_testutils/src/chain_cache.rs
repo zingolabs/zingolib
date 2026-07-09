@@ -178,7 +178,9 @@ pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Dis
 /// traffic crosses the monitored hop, so exports appear in the
 /// observability record.
 async fn read_chain(local_net: &MeteredNet) -> String {
-    let rpc_port = local_net.monitored_validator_rpc_port();
+    // The accessor returns the observing front, so exports appear in
+    // the zebrad front's record.
+    let rpc_port = local_net.validator().rpc_listen_port();
     let tip = local_net.validator().get_chain_height().await;
     let mut blocks = String::new();
     for height in 1..=tip {
@@ -238,7 +240,9 @@ pub async fn export_raw(local_net: &MeteredNet, path: &Path) {
 pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) -> u32 {
     let blocks = std::fs::read_to_string(blocks_file)
         .unwrap_or_else(|e| panic!("unreadable blocks record {}: {e}", blocks_file.display()));
-    let rpc_port = local_net.monitored_validator_rpc_port();
+    // The accessor returns the observing front, so replay traffic
+    // appears in the zebrad front's record.
+    let rpc_port = local_net.validator().rpc_listen_port();
 
     let (height, hash) = validator_rpc::try_get_chain_info(rpc_port)
         .await
