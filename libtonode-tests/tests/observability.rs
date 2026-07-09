@@ -43,7 +43,7 @@ async fn launch_bare_transparent_zebrad(chain_cache: Option<PathBuf>) -> Default
 /// calls, and the tip is byte-stable over an idle window. A rising or
 /// changing tip disproves H1 (something mines on its own); height ≠ 1
 /// at launch-return disproves the launch-mine account itself.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
     let mut zebrad = launch_bare_transparent_zebrad(None).await;
     let rpc_port = zebrad.rpc_listen_port();
@@ -86,7 +86,7 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
 /// seconds apart must produce the same block-1 hash (the hash covers
 /// the header and, through the merkle root, the whole block).
 /// Inequality disproves H2 and reopens the duplicate explanation.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn transparent_launch_block_is_byte_deterministic() {
     let mut first = launch_bare_transparent_zebrad(None).await;
     let (_, first_tip) = validator_rpc::try_get_chain_info(first.rpc_listen_port())
@@ -118,7 +118,7 @@ async fn transparent_launch_block_is_byte_deterministic() {
 /// sustained. Height 1 immediately would mean short-chain state
 /// persists after all (revising the finalization claim, not H1);
 /// height rising during the idle window would disprove H1 outright.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn suppressed_launch_generate_leaves_genesis() {
     let mut donor = launch_bare_transparent_zebrad(None).await;
     let cache_dir = std::env::temp_dir().join(format!(
@@ -164,7 +164,7 @@ async fn suppressed_launch_generate_leaves_genesis() {
 /// tests, making it both the likeliest victim and the likeliest
 /// attacker of the cross-wire hypothesis, and the deterministic
 /// reproducer of the warm-suite failures when run alongside them.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn chain_mutates_only_via_owned_rpc() {
     let (local_net, _faucet, _recipient) = scenarios::faucet_recipient(
         PoolType::Transparent,

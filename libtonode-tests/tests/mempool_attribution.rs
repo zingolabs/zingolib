@@ -87,7 +87,7 @@ use zingolib_testutils::scenarios;
 /// H-LAG and H-FAITHFUL-ACCEPT: measure how long after zebra accepts a
 /// transaction the indexer's mempool view shows it, and assert it shows
 /// at all.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn indexer_mempool_view_trails_validator_acceptance() {
     let (ref _local_net, faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(100_000).await;
@@ -164,7 +164,7 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
 /// the SENDER's own wallet record reaches Mempool status. Together with
 /// the indexer cell this completes the attribution triangle:
 /// validator-accept -> indexer-visible -> wallet-record.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn wallet_mempool_record_trails_validator_acceptance() {
     use zingo_status::confirmation_status::ConfirmationStatus;
 

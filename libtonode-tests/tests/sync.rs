@@ -25,7 +25,7 @@ use zingolib::{
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
 #[ignore = "temporary mainnet test for sync development"]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sync_mainnet_test() {
     zingolib::ensure_default_crypto_provider();
     tracing_subscriber::fmt().init();
@@ -74,7 +74,7 @@ async fn sync_mainnet_test() {
     // dbg!(&wallet.sync_state);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn add_subtree_roots() {
     fn assert_subtree_roots_match_server(
         shard_trees: &mut ShardTrees,
@@ -274,7 +274,7 @@ async fn add_subtree_roots() {
 // temporary test for sync development
 #[ignore = "sync development only"]
 #[allow(unused_mut, unused_variables)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
@@ -322,7 +322,7 @@ async fn sync_test() {
 }
 
 #[ignore = "only for building chain cache"]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn store_all_checkpoints_in_verification_window_chain_cache() {
     let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
 
@@ -363,7 +363,7 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 }
 
 #[ignore = "ignored until we add framework for chain caches as we don't want to check these into the zingolib repo"]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
         scenarios::default_test_activation_heights(),
@@ -417,7 +417,7 @@ async fn store_all_checkpoints_in_verification_window() {
 ///   makers test -p libtonode-tests \
 ///     -E 'test(diagnose_subtree_root_stream)' --run-ignored all --no-capture
 #[ignore = "diagnostic: run manually against live mainnet"]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn diagnose_subtree_root_stream() {
     let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
 
@@ -531,7 +531,7 @@ async fn diagnose_subtree_root_stream() {
 /// `await_indexer_convergence` (the zcash_local_net barrier this crate's
 /// helpers now route through), the indexer's served tip matches the
 /// validator's in every round.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn indexer_converges_with_validator_after_block_generation() {
     let (local_net, client) = scenarios::unfunded_client_default().await;
     let mut grpc = GrpcIndexer::new(client.indexer_uri().clone())
