@@ -48,6 +48,15 @@ return txids snapshot their chain cache here and replay the sends live,
 so the returned identifiers are minted fresh each run; txid-free
 scenarios snapshot at setup completion instead.
 
+**Launch block**:
+The single block `zcash_local_net` mines inside `Zebrad::launch` on
+regtest to prove the mining service before returning. Every freshly
+launched Validator is therefore at height 1, not 0, and block 1's
+coinbase (the pre-NU5 sapling payout the balance constants encode)
+is minted at launch, not by test code. Chain-cache replay submits the
+cached chain as a competitor to the launch block and wins the reorg.
+_Avoid_: genesis block (that is height 0, the network's own)
+
 **Chain-bound test**:
 A test that must run against a live network combo because the behavior
 under test involves chain interaction — mining, mempool acceptance,

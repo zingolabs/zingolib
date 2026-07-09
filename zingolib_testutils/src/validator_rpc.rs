@@ -181,12 +181,22 @@ pub async fn get_block_hex(rpc_port: u16, height: u32) -> String {
 /// verdict other than acceptance — chain-cache replay resubmits blocks
 /// the validator itself produced, so a rejection means the cache is
 /// invalid, not that rejection is interesting data.
+///
+/// A `"duplicate"` verdict counts as acceptance: it means the validator
+/// already holds this exact block, which is the replay's desired
+/// postcondition. It occurs legitimately when a cached block collides
+/// with the launch block (`Zebrad::launch` mines one block on regtest,
+/// and transparent-pool regtest blocks are byte-deterministic, so the
+/// cached and launch-mined block 1 can be the same block).
 pub async fn submit_block(rpc_port: u16, block_hex: &str) {
     let response = rpc_call(rpc_port, "submitblock", serde_json::json!([block_hex])).await;
     let error = response.get("error").filter(|error| !error.is_null());
     // submitblock signals acceptance with a null result; any string
-    // ("duplicate", "rejected", ...) is a refusal.
-    let verdict = response.get("result").filter(|result| !result.is_null());
+    // other than "duplicate" ("rejected", "inconclusive", ...) is a
+    // refusal.
+    let verdict = response
+        .get("result")
+        .filter(|result| !result.is_null() && result.as_str() != Some("duplicate"));
     assert!(
         error.is_none() && verdict.is_none(),
         "submitblock refused a cached block: {response}"

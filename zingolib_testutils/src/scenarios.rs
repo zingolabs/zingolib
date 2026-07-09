@@ -822,7 +822,14 @@ async fn custom_clients_raw(
     let mut local_net = MeteredNet::new(local_net, validator_tap, setup_started).await;
 
     match replay_from {
-        Some(blocks_file) => chain_cache::replay(&local_net, &blocks_file).await,
+        Some(blocks_file) => {
+            let tip = chain_cache::replay(&local_net, &blocks_file).await;
+            // The replay reorgs the launch block away; the Indexer may
+            // have already ingested it (it starts syncing within
+            // milliseconds of launch). Barrier on convergence to the
+            // replayed tip so no wallet ever syncs the orphaned branch.
+            local_net.converge(tip).await;
+        }
         None => local_net.validator().generate_blocks(2).await.unwrap(),
     }
 

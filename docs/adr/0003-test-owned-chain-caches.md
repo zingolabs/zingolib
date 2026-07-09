@@ -84,6 +84,22 @@ chain generation is not byte-deterministic, so a kept copy serves only
 speculative diagnostics; a driver who wants the old bytes can copy the
 directory before regenerating.
 
+The first fully-observed warm run (2026-07-08, with the pipeline
+observatory armed) adjudicated the replay design's last wrong
+assumption: a freshly launched regtest Validator is at height 1, not 0,
+because `Zebrad::launch` mines one block (the launch block) to prove the
+mining service. Replay therefore works by competition, not by appending:
+the cached branch (always ≥ 3 blocks) forks around or duplicates the
+launch block and wins the reorg. Three consequences were fixed on that
+evidence: `submitblock`'s "duplicate" verdict counts as acceptance
+(transparent-pool regtest blocks are byte-deterministic, so the cached
+and launch-mined block 1 can be the same block), the replay preflight
+expects height ≤ 1, and replay barriers on Indexer convergence to the
+replayed tip before any wallet syncs — the Indexer starts ingesting
+within milliseconds of launch and would otherwise briefly serve the
+orphaned launch block, which is exactly how the matrix_young pair
+failed.
+
 ## Consequences
 
 - A cache-hit run's chain differs from a live-generated run's chain in

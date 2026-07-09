@@ -218,17 +218,22 @@ pub async fn export_raw(local_net: &MeteredNet, path: &Path) {
     std::fs::write(path, read_chain(local_net).await).expect("blocks record must be writable");
 }
 
-/// Resubmit a cached chain to a freshly launched Validator. Every block
-/// passes back through `submitblock` validation, and the call returns
-/// once the Validator reports the replayed tip, so callers continue
-/// exactly as if the chain had just been mined.
+/// Resubmit a cached chain to a freshly launched Validator, returning
+/// the replayed tip height. Every block passes back through
+/// `submitblock` validation, and the call returns once the Validator
+/// reports the replayed tip, so callers continue exactly as if the
+/// chain had just been mined.
 ///
-/// Preflight: a freshly launched regtest Validator must be at height 0.
-/// Anything else means chain-mutating traffic reached it before this
-/// test's own replay — the exact cross-wiring the observability module
-/// exists to catch — so fail with the full timeline rather than a bare
-/// `submitblock` refusal downstream.
-pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) {
+/// A freshly launched regtest Validator is at height 1, not 0:
+/// `Zebrad::launch` mines one block to prove the mining service (the
+/// launch block). Replay therefore submits the cached chain as a
+/// competitor: the cached block 1 either IS the launch block
+/// (transparent chains are byte-deterministic — `submitblock` says
+/// "duplicate", which is acceptance) or forks around it, and the cached
+/// branch wins the reorg because every cache is at least three blocks
+/// long. The height-≤1 preflight still catches genuinely foreign
+/// chain-mutating traffic, with the observatory timeline attached.
+pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) -> u32 {
     let blocks = std::fs::read_to_string(blocks_file)
         .unwrap_or_else(|e| panic!("unreadable blocks record {}: {e}", blocks_file.display()));
     let rpc_port = local_net.monitored_validator_rpc_port();
@@ -237,9 +242,10 @@ pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) {
         .await
         .expect("freshly launched validator must answer getblockchaininfo");
     assert!(
-        height == 0,
-        "freshly launched validator already at height {height} (tip {hash}) before this \
-         test submitted anything — foreign chain-mutating traffic!\nzebrad timeline:\n{}",
+        height <= 1,
+        "freshly launched validator at height {height} (tip {hash}); at most the launch \
+         block is expected before this test submits anything — foreign chain-mutating \
+         traffic!\nzebrad timeline:\n{}",
         local_net.zebrad_watch().render(),
     );
 
@@ -248,6 +254,12 @@ pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) {
         validator_rpc::submit_block(rpc_port, block_hex).await;
         tip += 1;
     }
-    assert!(tip > 0, "empty blocks record {}", blocks_file.display());
+    assert!(
+        tip > 1,
+        "blocks record {} holds {tip} block(s); the cached branch must outrank the \
+         launch block to win the reorg",
+        blocks_file.display()
+    );
     local_net.validator().poll_chain_height(tip).await;
+    tip
 }
