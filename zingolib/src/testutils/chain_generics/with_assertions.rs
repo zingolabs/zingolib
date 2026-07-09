@@ -58,10 +58,14 @@ where
     CC: ConductChain,
 {
     timestamped_test_log("started integration-test send.");
-    // Separate spendable notes from the chain tip before proposing: zebra
-    // rejects a spend of a note residing in the tip block ("could not
-    // validate orchard proof"), so mine one block and sync the sender to
-    // the real tip, leaving its notes and anchor at least one block back.
+    // Mine one block and sync the sender to the real tip before proposing.
+    // This cures zebra's "could not validate orchard proof ... until the
+    // next chain tip block" rejection, but not because tip-block notes are
+    // unspendable — tip_spend_rejection's tip_note_to_orchard proves those
+    // spend fine. The rejection hits orchard-output transactions built
+    // adjacent to the height-5 NU6.1/6.2 co-activation (a wrong consensus
+    // branch id from a stale wallet view); syncing to the true tip keeps
+    // the builder on the post-activation branch.
     environment.increase_chain_height().await;
     environment.sync_client_to_tip(sender).await;
     timestamped_test_log("syncked.");

@@ -61,28 +61,20 @@
 //! its poll replacement now exits immediately after the helper's own
 //! sync — consistent with the observed drop in per-case time.
 //!
-//! # Designed cells blocked on two plumbing seams
+//! # Designed cells: one remaining
 //!
-//! The rejection-side attribution cells for the boundary-adjacent
-//! orchard-output phenomenon (see tip_spend_rejection.rs) need seams that
-//! do not exist yet:
-//!
-//! - Direct-submission verdict parity (does zebra's sendrawtransaction
-//!   reject the same bytes the zainod path rejects?) and same-bytes
-//!   resubmission after one block (if identical bytes are later accepted,
-//!   the proof was always valid and zebra's boundary-time verdict was
-//!   wrong) need the validator's JSON-RPC port. CORRECTION (2026-07-07):
-//!   the running Zebrad already exposes it — copy_getters generates
-//!   pub fn rpc_listen_port() — so the infrastructure side is ready
-//!   today; an earlier note here claimed otherwise after a grep for
-//!   literal `pub fn` missed the macro-generated getter.
-//! - Offline orchard-proof verification (if the wallet's proof verifies
-//!   against the standard verifying key offline, the wallet is exonerated
-//!   at the proof level) needs the built transaction's raw bytes, which
-//!   the wallet does not retain. Seam, still missing: a
-//!   build-without-broadcast test-features function in zingolib's send
-//!   path. This is the only remaining blocker for the rejection-side
-//!   cells.
+//! Of the rejection-side attribution cells for the boundary-adjacent
+//! orchard-output phenomenon, two are now built in tip_spend_rejection's
+//! boundary_rejection_attribution: direct-submission verdict parity
+//! (zebra's sendrawtransaction judging the captured bytes) and same-bytes
+//! resubmission after five blocks of distance, both fed by the Failed
+//! record's retained Transaction and the validator's rpc_listen_port.
+//! The one cell still unbuilt is offline orchard-proof verification (a
+//! proof that verifies against the standard verifying key offline
+//! exonerates the wallet at the proof level); its input is recoverable
+//! from the same Failed record — an earlier note here claimed the wallet
+//! does not retain the built bytes, which boundary_rejection_attribution
+//! disproves.
 
 use std::time::{Duration, Instant};
 
@@ -158,10 +150,9 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
 
-    // H-LAG observable, reported through the test name in nextest output:
-    // the panic below never fires; it exists to keep the measurement in
-    // the assertion so a regression (lag beyond the bound) fails loudly
-    // with the number attached.
+    // H-LAG observable, printed below (nextest shows it on failure or
+    // with --no-capture). The assertion pins the bound so a regression
+    // (lag beyond it) fails loudly with the number attached.
     println!("indexer mempool ingestion lag after validator acceptance: {indexer_lag:?}");
     assert!(
         indexer_lag < bound,

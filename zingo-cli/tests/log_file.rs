@@ -157,11 +157,12 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     // sleeping a fixed interval. The mock answers immediately with its
     // configured error status, so the ERROR lands as soon as the child's
     // first fetch call completes — typically well under a second after
-    // startup. (The multi_thread runtime flavor above is what makes that
-    // true: on the default current-thread runtime a blocking wait here
-    // starves the spawned mock server, the child's request hangs
-    // unanswered, and the child sits out its full 10-second client-side
-    // RPC timeout instead.) The ceiling only bounds the pathological case.
+    // startup. (Awaiting tokio::time::sleep between polls is what makes
+    // that true: this test runs on the default current-thread runtime, so
+    // a blocking wait here would starve the spawned mock server, leave the
+    // child's request unanswered, and make the child sit out its full
+    // 10-second client-side RPC timeout instead.) The ceiling only bounds
+    // the pathological case.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
         let log_contents = std::fs::read_to_string(&log_path).unwrap_or_default();

@@ -333,8 +333,8 @@ mod send_all {
     /// balances-excluding-dust after mining — which is this same contract,
     /// one mined round trip later: send-all pays out the dust-excluded
     /// spendable balance minus the fee, so notes at or below the 5_000-zat
-    /// `MARGINAL_FEE` dust line (which cannot pay for their own input) are
-    /// never selected.
+    /// `MARGINAL_FEE` dust line (which net nothing after paying for their
+    /// own input) are never selected.
     #[tokio::test]
     async fn ptfm_general() {
         let viable_values = [100_000u64, 50_000];
@@ -459,7 +459,7 @@ mod send_all {
 }
 
 /// Migrated from the libtonode chain_generics simpool instantiations
-/// (`simpool_insufficient_{1,10_000}_orchard_to_*` and
+/// (`simpool_insufficient_{1,10_000}_{orchard,sapling}_to_*` and
 /// `simpool_no_fund_1_000_000_to_*`): the insufficient-funds and unfunded
 /// propose errors are pure proposal logic over wallet state, so a synthetic
 /// wallet replaces the LocalNet environment and its multi-hop funding
@@ -614,10 +614,11 @@ mod simpool {
 /// synthetic wallet funded with exactly `value + change + fee` replaces
 /// the LocalNet environment and its two-hop funding chain; each case
 /// asserts the proposal pays `value`, charges the `fee_tables::one_to_one`
-/// fee, and returns exactly `change`. The Transmitted-to-Mempool-to-
-/// Confirmed round trip the matrix also exercised remains covered by the
-/// two surviving chain_generics fixtures, which drive the same
-/// follow_proposal machinery.
+/// fee, and returns exactly `change`. The Transmitted-to-Confirmed round
+/// trip the matrix also exercised remains covered by the two surviving
+/// chain_generics fixtures, which drive the same follow_proposal machinery
+/// (with test_mempool off, so the Mempool-status leg is not asserted
+/// there).
 #[cfg(test)]
 mod pool_matrix {
     use zcash_protocol::{PoolType, ShieldedProtocol};
@@ -901,9 +902,12 @@ mod proposal_shape {
     /// a four-coin shield proposes as a single step spending all four
     /// coins into one change output, with the zip317 fee for four
     /// transparent inputs plus the orchard action pair. The original
-    /// mined the coins; the proposal shape is identical for fabricated
-    /// ones (pepper-sync's TransparentCoin carries no coinbase marker,
-    /// so propose logic cannot distinguish them).
+    /// mined the coins and waited out coinbase maturity; propose logic
+    /// detects coinbase through the stored transaction's transparent
+    /// bundle (`spendable_transparent_coins` demands 100 extra
+    /// confirmations for it), and fabricated records carry no transparent
+    /// bundle, so these coins present as ordinary mature ones and the
+    /// proposal shape is identical.
     #[tokio::test]
     async fn four_coin_shield_proposal_shape() {
         let coin_value = 1_000_000;

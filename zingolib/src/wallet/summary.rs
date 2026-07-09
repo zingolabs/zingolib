@@ -767,10 +767,10 @@ mod tests {
         SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
     };
 
-    /// Message semantics need no network: these tests were libtonode
-    /// integration tests (49s and 132s of LocalNet mining/syncing) whose
-    /// assertions are pure summary/value-transfer derivation over wallet
-    /// transaction records.
+    /// Message semantics need no network: the ported tests in this module
+    /// were libtonode integration tests (the first two ports alone cost
+    /// 49s and 132s of LocalNet mining/syncing) whose assertions are pure
+    /// summary/value-transfer derivation over wallet transaction records.
     fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
         LightWallet::new(
             ChainType::Regtest(ActivationHeights::default()),
@@ -1340,8 +1340,10 @@ mod tests {
     }
     /// Migrated from libtonode `slow::send_funds_to_all_pools`: per-pool
     /// balance aggregation over one confirmed note in each pool. The
-    /// original's only assertion was this balance check; the funding
-    /// round trips it ran are covered by the pool_matrix e2e family.
+    /// original asserted this balance check plus txid uniqueness across
+    /// its transaction summaries; its live funding round trips are covered
+    /// by the two surviving chain_generics fixtures (the pool matrix
+    /// itself is now offline in `lightclient::propose::pool_matrix`).
     #[tokio::test]
     async fn send_funds_to_all_pools() {
         use crate::check_client_balances;

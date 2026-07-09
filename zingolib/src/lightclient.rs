@@ -109,7 +109,7 @@ impl LightClient {
     /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
     pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
-        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = match config.wallet_config() {
@@ -139,7 +139,7 @@ impl LightClient {
             }
         };
 
-        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
@@ -198,7 +198,7 @@ impl LightClient {
         bytes: Vec<u8>,
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
-        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())

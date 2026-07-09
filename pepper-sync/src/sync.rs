@@ -967,9 +967,9 @@ pub fn reset_spends(
 /// cannot fail — only a reorg can un-mine it, and reorgs are handled by truncation, which
 /// reopens the affected scan ranges. For a confirmed transaction the note's
 /// `spending_transaction` field is the wallet's only durable record of the on-chain spend
-/// (the nullifier-map entry was consumed at detection and its block is behind the
-/// fully-scanned frontier), so resetting it here would create a permanent phantom unspent
-/// note that no forward sync can correct.
+/// (detection consumed the nullifier-map entry when the spending block was scanned), so
+/// resetting it here would create a permanent phantom unspent note that no forward sync
+/// can correct.
 pub fn set_transactions_failed(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     failed_txids: Vec<TxId>,
@@ -2099,10 +2099,12 @@ mod test {
         /// unspent note: every future proposal selects it and is rejected as a
         /// double-spend, and no forward sync can correct it.
         ///
-        /// The damage is permanent IFF sync has raced ahead of the spending transaction —
-        /// that is, its block is already behind the fully-scanned frontier, which is also
-        /// exactly when its record is `Confirmed`. If the reset lands before that block is
-        /// scanned, the future scan re-observes the nullifier and heals the wallet
+        /// The damage is permanent IFF the spending block has already been scanned:
+        /// detection consumes the nullifier-map entry at scan time, and scan time is
+        /// exactly when the record becomes `Confirmed` (scan ranges complete out of
+        /// order, so this can precede the fully-scanned frontier reaching that height).
+        /// If the reset lands before that block is scanned, the future scan re-observes
+        /// the nullifier and heals the wallet
         /// (see [`reset_before_scan_heals_on_spend_detection`]). This equivalence is why
         /// guarding the failure path on `Confirmed` status is coextensive with the harm.
         ///
