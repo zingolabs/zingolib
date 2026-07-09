@@ -51,8 +51,14 @@ the pressure loop's blast radius to the 32-test default tier.
 and the run log as the pre-ironwood baseline. Cheap, already routine.
 
 **Phase 1 — indexer bump, heights unchanged.** New docker-ci image:
-zebrad stays 6.0.0-rc.0, zainod 0.4.3-ironwood.1 → 0.6.0-rc.1
-(makers-tasks lane owns the image). Heights fixture untouched, so all
+zebrad stays 6.0.0-rc.0; zainod tracks zaino's `dev` lineage via the
+per-commit image tags its CI publishes (`ZAINO_IMAGE_TAG` build-arg) —
+`df443c9` today (the RC-cut content), advancing to the dev tip
+(`17df071`, which carries a post-RC ironwood DB-migration fix) when its
+image publishes. Per-commit sha tags, never rolling tags:
+`ensure-image-exists` keys on tag presence, so a rolling tag would
+neither rebuild nor reproduce. The `zaino-proto` crate rev advances to
+the same sha. (makers-tasks lane owns the image.) Heights fixture untouched, so all
 caches remain valid (zainod's version is deliberately not in the
 manifest) and any failure is a zainod behavior change, not ironwood.
 Gates: sentinels green, default tier 32/32. Bonus obligation: retest
