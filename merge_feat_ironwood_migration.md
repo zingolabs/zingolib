@@ -81,13 +81,14 @@ deltas, all in `concrete.rs`:
   offline twin was already rewritten as a flat single-pattern match that
   supersedes it — left as is.
 - **Hunk 2** — `diversified_addresses_receive_funds_in_best_pool` (a test
-  our side rewrote): its `PoolBalances` literal gains
-  `total/confirmed/unconfirmed_ironwood_balance: Some(0)`. The staged
-  `wallet/balance.rs` adds those fields to the struct itself, so every
-  surviving constructor fails to compile until it carries them — this
-  class of delta is compiler-enforced, and the legs are added at each
-  surviving literal during the compile wave (entry to be completed with
-  the list of touched files).
+  our side migrated offline into `zingolib/src/wallet/propose.rs`): its
+  balance literal gains `total/confirmed/unconfirmed_ironwood_balance:
+  Some(0)`. The staged `wallet/balance.rs` adds those fields to the
+  struct itself, so this delta class is compiler-enforced: any surviving
+  exhaustive constructor fails with E0063 until it carries the legs. The
+  post-resolution workspace check surfaced **zero** such sites — the
+  migrated twin asserts balances through accessors rather than struct
+  literals — so nothing needed porting; the compiler adjudicated.
 
 Everything else in the four files was rename-only on their side and moot
 on deleted code. **Resolved take-ours.**
@@ -96,14 +97,67 @@ on deleted code. **Resolved take-ours.**
 
 The one three-way line: ours added `sync::set_transactions_failed_unchecked`
 (the silent-spend fix's variant), theirs dropped `Orchard, Sapling` (their
-domain generalization). The import is resolved to exactly what the merged
-body references. Note the guarded `set_transactions_failed` (refuses to
-fail `Confirmed` transactions — commit `b07a49673`) still exists and is
-re-exported at the crate root, so their auto-merged call sites inherit the
-guard by default. (Entry to be completed with the final import line.)
+domain generalization). The merged file already imports `Ironwood,
+Orchard, Sapling` from `crate::wallet` two lines up (their generalization
+moved the types there — taking our line verbatim would have created
+duplicate imports), and its body calls only the `_unchecked` variant.
+Final line:
+
+```rust
+use crate::{SyncDomain, client, sync::set_transactions_failed_unchecked};
+```
+
+Note the guarded `set_transactions_failed` (refuses to fail `Confirmed`
+transactions — commit `b07a49673`) still exists and is re-exported at the
+crate root, so their auto-merged call sites inherit the guard by default;
+the silent-spend fix's invariant survives the merge intact.
 
 ### 8. `Cargo.lock`: never hand-merged
 
-Resolved by taking one side wholesale and letting cargo re-resolve against
-the reconciled manifests; with decision 2 the zebra subtree drops out of
-the lock. (Entry to be completed with the regeneration command used.)
+Resolved with `git checkout --theirs Cargo.lock` (their side already
+locked the ironwood universe), then the first `cargo check` re-resolved
+it against the reconciled `Cargo.toml`: the infrastructure source moved
+back to `bump_to_NU6.3` and the entire zebra subtree dropped out.
+
+### 9. `zcash_history` patch: dropped
+
+PR #2428 included it in the lrz patch set only because zebra-chain
+consumes it; with the zebra patches gone (decision 2) cargo reported the
+patch unused in the crate graph, so the entry was deleted.
+
+### 10. The post-resolution compile wave
+
+`cargo check --workspace --all-targets` clean was the gate; the wave was
+far smaller than feared because upstream kept `ShieldedProtocol` as a
+deprecated alias of the new `ShieldedPool` (rename, not removal). What
+actually broke, and the fixes:
+
+- `pepper-sync/src/wallet.rs` — our `test-features` note constructors
+  (`WalletNote`/`OutgoingNote::new_for_test`) predate the pool-marker
+  generic their side added; gained the `P` parameter and
+  `marker: PhantomData`.
+- `pepper-sync/src/sync.rs` — the silent-spend-fix test helper
+  `run_spend_detection` adapted to the three-pool `spend::` signatures
+  (nullifier triples, ironwood scan-target legs).
+- `zingolib/src/lightclient.rs` — our offline `new_for_test` constructor
+  gained their new `migration_broadcast_uri: None` field.
+- `zingolib/src/lightclient/propose.rs` — the offline simpool/pool-matrix
+  twins' pool matches gained explicit
+  `ShieldedPool::Ironwood => unimplemented!(...)` arms
+  (`SyntheticWalletBuilder` does not model ironwood notes yet).
+- `zingolib_testutils/src/scenarios.rs` — the `miner_pool` boundary map
+  gained an explicit `Ironwood => unimplemented!` arm
+  (`zcash_local_net` has no ironwood miner pool).
+- Deprecated-alias cleanup: `ShieldedProtocol` → `ShieldedPool` swept via
+  per-file whole-token replacement (after verifying no file uses the
+  unrelated proto-service `ShieldedProtocol` types) in
+  `lightclient/{propose,darkside,mock_chain_tests}.rs`,
+  `wallet/propose.rs`, `testutils/chain_generics/fixtures.rs`, and
+  `zingolib_testutils/src/scenarios.rs`.
+- `rustfmt` over the files this resolution touched plus the merge's new
+  `lightclient/migrate.rs` (which arrived unformatted).
+
+End state: `cargo check --workspace --all-targets` finishes with zero
+errors and zero warnings. Not yet run (deliberately): the LocalNet suite —
+the merge gate remains sentinels + default tier green at unchanged
+activation heights, driven by the user per shared-tree practice.
