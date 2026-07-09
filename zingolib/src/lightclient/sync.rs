@@ -182,7 +182,16 @@ impl LightClient {
             match self.poll_sync() {
                 PollReport::NoHandle => return Err(LightClientError::SyncNotRunning),
                 PollReport::NotReady => (),
-                PollReport::Ready(result) => return result.map_err(LightClientError::SyncError),
+                PollReport::Ready(result) => {
+                    let result = result.map_err(LightClientError::SyncError);
+                    if result.is_ok() {
+                        // Boundary checkpoints are only retained for a finite
+                        // window; capture migration part witnesses while they
+                        // are available.
+                        self.wallet().write().await.refresh_part_witnesses()?;
+                    }
+                    return result;
+                }
             }
         }
     }

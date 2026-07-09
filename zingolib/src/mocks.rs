@@ -327,6 +327,7 @@ pub mod orchard_note {
                 self.value.unwrap(),
                 self.rho.unwrap(),
                 self.random_seed.unwrap(),
+                orchard::note::NoteVersion::V2,
             )
             .unwrap()
         }
@@ -390,7 +391,7 @@ pub mod proposal {
     use zcash_primitives::transaction::fees::zip317::FeeRule;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use super::{default_txid, default_zaddr};
     use crate::testutils::{build_method, build_method_push};
@@ -470,7 +471,7 @@ pub mod proposal {
     pub struct StepBuilder {
         transaction_request: Option<TransactionRequest>,
         payment_pools: Option<BTreeMap<usize, PoolType>>,
-        transparent_inputs: Option<Vec<WalletTransparentOutput>>,
+        transparent_inputs: Option<Vec<WalletTransparentOutput<()>>>,
         shielded_inputs: Option<Option<ShieldedInputs<OutputRef>>>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
@@ -495,7 +496,7 @@ pub mod proposal {
         build_method!(transaction_request, TransactionRequest);
         build_method!(payment_pools, BTreeMap<usize, PoolType>
         );
-        build_method!(transparent_inputs, Vec<WalletTransparentOutput>);
+        build_method!(transparent_inputs, Vec<WalletTransparentOutput<()>>);
         build_method!(shielded_inputs, Option<ShieldedInputs<OutputRef>>);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);
@@ -529,7 +530,7 @@ pub mod proposal {
                 Rseed::AfterZip212([7; 32]),
             );
             let mut payment_pools = BTreeMap::new();
-            payment_pools.insert(0, PoolType::Shielded(ShieldedProtocol::Orchard));
+            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Orchard));
 
             let mut builder = Self::new();
             builder
@@ -642,6 +643,46 @@ pub mod proposal {
                 )
                 .amount(Zatoshis::from_u64(100_000).unwrap());
             builder
+        }
+    }
+}
+
+/// Mock for the migration broadcast client.
+pub(crate) mod broadcast {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+
+    /// Records every submission; fails with a transport error while `fail`
+    /// is set (the raw transaction is then not consumed, mirroring the real
+    /// client's transient-failure contract).
+    #[derive(Default)]
+    pub struct MockBroadcastClient {
+        /// Raw transactions received, with their expiry heights.
+        pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
+        /// When set, every submit fails.
+        pub fail: AtomicBool,
+    }
+
+    impl BroadcastClient for MockBroadcastClient {
+        async fn submit(
+            &self,
+            raw_tx: Vec<u8>,
+            expiry_height: BlockHeight,
+        ) -> Result<zcash_primitives::transaction::TxId, BroadcastError> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(BroadcastError::Transport(
+                    "mock transport failure".to_string(),
+                ));
+            }
+            self.submissions
+                .lock()
+                .unwrap()
+                .push((raw_tx, expiry_height));
+            Ok(super::default_txid())
         }
     }
 }

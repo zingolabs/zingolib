@@ -24,7 +24,7 @@
 //! feature question, zingolabs/zingolib#2447).
 
 use zcash_protocol::PoolType;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -57,7 +57,7 @@ async fn reorg_removes_receipt() {
     let mut wallet = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
-    let address = get_base_address(&wallet, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+    let address = get_base_address(&wallet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &address).await;
 
     wallet.sync_and_await().await.unwrap();
@@ -83,7 +83,7 @@ async fn reorg_moves_receipt_to_new_height() {
     let mut wallet = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
-    let address = get_base_address(&wallet, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+    let address = get_base_address(&wallet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &address).await;
 
     wallet.sync_and_await().await.unwrap();
@@ -135,10 +135,9 @@ async fn reorg_expires_outgoing_transaction() {
     // so its change output would land in this wallet and pollute the
     // recipient's balance assertions.
     let mut recipient = net.client(zingo_test_vectors::seeds::DARKSIDE_SEED).await;
-    let sender_address =
-        get_base_address(&sender, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+    let sender_address = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_address =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &sender_address).await;
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, o: FUNDING s: 0 t: 0);

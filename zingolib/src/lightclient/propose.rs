@@ -518,7 +518,7 @@ mod send_all {
 /// chain.
 #[cfg(test)]
 mod simpool {
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::{
         lightclient::LightClient,
@@ -534,8 +534,11 @@ mod simpool {
         let mut external_wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
         let selection = match pool {
-            PoolType::Shielded(ShieldedProtocol::Orchard) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedProtocol::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Shielded(ShieldedPool::Orchard) => ReceiverSelection::orchard_only(),
+            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Shielded(ShieldedPool::Ironwood) => {
+                unimplemented!("synthetic-wallet tests do not model ironwood receivers yet")
+            }
             PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
         };
         let (_, unified_address) = external_wallet
@@ -546,13 +549,16 @@ mod simpool {
 
     /// A wallet holding one `source`-pool note `underflow_amount` short of
     /// a 100_000 send to `pool` reports the exact shortfall.
-    async fn insufficient(source: ShieldedProtocol, underflow_amount: u64, pool: PoolType) {
+    async fn insufficient(source: ShieldedPool, underflow_amount: u64, pool: PoolType) {
         let expected_fee = fee_tables::one_to_one(Some(source), pool, true);
         let secondary_fund = 100_000 + expected_fee - underflow_amount;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
-            ShieldedProtocol::Orchard => builder.orchard_note(secondary_fund),
-            ShieldedProtocol::Sapling => builder.sapling_note(secondary_fund),
+            ShieldedPool::Orchard => builder.orchard_note(secondary_fund),
+            ShieldedPool::Sapling => builder.sapling_note(secondary_fund),
+            ShieldedPool::Ironwood => {
+                unimplemented!("SyntheticWalletBuilder does not model ironwood notes yet")
+            }
         }
         .build();
         let mut client = LightClient::new_for_test(wallet).await;
@@ -599,27 +605,27 @@ mod simpool {
 
     #[tokio::test]
     async fn insufficient_1_orchard_to_orchard() {
-        insufficient(ShieldedProtocol::Orchard, 1, PoolType::ORCHARD).await;
+        insufficient(ShieldedPool::Orchard, 1, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_1_orchard_to_sapling() {
-        insufficient(ShieldedProtocol::Orchard, 1, PoolType::SAPLING).await;
+        insufficient(ShieldedPool::Orchard, 1, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_1_orchard_to_transparent() {
-        insufficient(ShieldedProtocol::Orchard, 1, PoolType::Transparent).await;
+        insufficient(ShieldedPool::Orchard, 1, PoolType::Transparent).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_orchard() {
-        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::ORCHARD).await;
+        insufficient(ShieldedPool::Orchard, 10_000, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_sapling() {
-        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::SAPLING).await;
+        insufficient(ShieldedPool::Orchard, 10_000, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_orchard_to_transparent() {
-        insufficient(ShieldedProtocol::Orchard, 10_000, PoolType::Transparent).await;
+        insufficient(ShieldedPool::Orchard, 10_000, PoolType::Transparent).await;
     }
     #[tokio::test]
     async fn no_fund_1_000_000_to_orchard() {
@@ -635,27 +641,27 @@ mod simpool {
     }
     #[tokio::test]
     async fn insufficient_1_sapling_to_orchard() {
-        insufficient(ShieldedProtocol::Sapling, 1, PoolType::ORCHARD).await;
+        insufficient(ShieldedPool::Sapling, 1, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_1_sapling_to_sapling() {
-        insufficient(ShieldedProtocol::Sapling, 1, PoolType::SAPLING).await;
+        insufficient(ShieldedPool::Sapling, 1, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_1_sapling_to_transparent() {
-        insufficient(ShieldedProtocol::Sapling, 1, PoolType::Transparent).await;
+        insufficient(ShieldedPool::Sapling, 1, PoolType::Transparent).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_sapling_to_orchard() {
-        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::ORCHARD).await;
+        insufficient(ShieldedPool::Sapling, 10_000, PoolType::ORCHARD).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_sapling_to_sapling() {
-        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::SAPLING).await;
+        insufficient(ShieldedPool::Sapling, 10_000, PoolType::SAPLING).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_sapling_to_transparent() {
-        insufficient(ShieldedProtocol::Sapling, 10_000, PoolType::Transparent).await;
+        insufficient(ShieldedPool::Sapling, 10_000, PoolType::Transparent).await;
     }
 }
 
@@ -673,7 +679,7 @@ mod simpool {
 /// there).
 #[cfg(test)]
 mod pool_matrix {
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::{
         lightclient::LightClient,
@@ -689,8 +695,11 @@ mod pool_matrix {
         let mut external_wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
         let selection = match pool {
-            PoolType::Shielded(ShieldedProtocol::Orchard) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedProtocol::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Shielded(ShieldedPool::Orchard) => ReceiverSelection::orchard_only(),
+            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
+            PoolType::Shielded(ShieldedPool::Ironwood) => {
+                unimplemented!("synthetic-wallet tests do not model ironwood receivers yet")
+            }
             PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
         };
         let (_, unified_address) = external_wallet
@@ -703,18 +712,16 @@ mod pool_matrix {
     /// `receiver_value + change + fee` proposes a `receiver_value` send to
     /// a `pool` destination, and the proposal's fee and change land on the
     /// fee table's prediction to the zatoshi.
-    async fn matrix_case(
-        source: ShieldedProtocol,
-        pool: PoolType,
-        receiver_value: u64,
-        change: u64,
-    ) {
+    async fn matrix_case(source: ShieldedPool, pool: PoolType, receiver_value: u64, change: u64) {
         let expected_fee = fee_tables::one_to_one(Some(source), pool, true);
         let funding = receiver_value + change + expected_fee;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
-            ShieldedProtocol::Orchard => builder.orchard_note(funding),
-            ShieldedProtocol::Sapling => builder.sapling_note(funding),
+            ShieldedPool::Orchard => builder.orchard_note(funding),
+            ShieldedPool::Sapling => builder.sapling_note(funding),
+            ShieldedPool::Ironwood => {
+                unimplemented!("SyntheticWalletBuilder does not model ironwood notes yet")
+            }
         }
         .build();
         let mut client = LightClient::new_for_test(wallet).await;
@@ -757,84 +764,84 @@ mod pool_matrix {
 
     pool_matrix_case!(
         sapling_sends_to_transparent,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::TRANSPARENT,
         10_000,
         1_000
     );
     pool_matrix_case!(
         sapling_sends_to_sapling,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::SAPLING,
         10_000,
         1_000
     );
     pool_matrix_case!(
         sapling_sends_to_orchard,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::ORCHARD,
         10_000,
         1_000
     );
     pool_matrix_case!(
         orchard_sends_to_transparent,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::TRANSPARENT,
         10_000,
         1_000
     );
     pool_matrix_case!(
         orchard_sends_to_sapling,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::SAPLING,
         10_000,
         1_000
     );
     pool_matrix_case!(
         orchard_sends_to_orchard,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::ORCHARD,
         10_000,
         1_000
     );
     pool_matrix_case!(
         sapling_sends_to_transparent_no_change,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::TRANSPARENT,
         10_000,
         0
     );
     pool_matrix_case!(
         sapling_sends_to_sapling_no_change,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::SAPLING,
         10_000,
         0
     );
     pool_matrix_case!(
         sapling_sends_to_orchard_no_change,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::ORCHARD,
         10_000,
         0
     );
     pool_matrix_case!(
         orchard_sends_to_transparent_no_change,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::TRANSPARENT,
         10_000,
         0
     );
     pool_matrix_case!(
         orchard_sends_to_sapling_no_change,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::SAPLING,
         10_000,
         0
     );
     pool_matrix_case!(
         orchard_sends_to_orchard_no_change,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         PoolType::ORCHARD,
         10_000,
         0
@@ -845,14 +852,14 @@ mod pool_matrix {
     // LocalNet ancestor sent 546 rather than 1.
     pool_matrix_case!(
         sapling_sends_to_transparent_minimum_value,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::TRANSPARENT,
         546,
         0
     );
     pool_matrix_case!(
         sapling_sends_to_transparent_boundary_values,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         PoolType::TRANSPARENT,
         49_999,
         9_999
@@ -865,7 +872,7 @@ mod pool_matrix {
 #[cfg(test)]
 mod proposal_shape {
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::lightclient::LightClient;
     use crate::testutils::fee_tables;
@@ -912,7 +919,7 @@ mod proposal_shape {
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
         );
         let change: u64 = step
             .balance()
@@ -958,7 +965,7 @@ mod proposal_shape {
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
         );
         let change: u64 = step
             .balance()
@@ -1007,7 +1014,7 @@ mod proposal_shape {
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
         );
         let change: u64 = step
             .balance()
@@ -1094,7 +1101,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true);
+        let fee = fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true);
         let destination = external_address(PoolType::ORCHARD);
         let proposal = from_inputs::propose(
             &mut client,
@@ -1134,7 +1141,7 @@ mod proposal_shape {
 
         assert_eq!(proposal.steps().len(), 1);
         let step = proposal.steps().first();
-        let fee = fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::SAPLING, true);
+        let fee = fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::SAPLING, true);
         assert_eq!(u64::from(step.balance().fee_required()), fee);
         assert_eq!(note_value - sent_value - fee, 0);
         let change = step.balance().proposed_change();
@@ -1217,7 +1224,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedProtocol::Orchard));
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Orchard));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 10_000, None)])
                 .await
@@ -1255,7 +1262,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedProtocol::Orchard));
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Orchard));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 40_000, None)])
                 .await

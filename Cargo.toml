@@ -16,11 +16,11 @@ resolver = "2"
 [workspace.dependencies]
 ### Workspace
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.1"
+zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
+# zingo-memo = "0.1.1"
 zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.1"
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+# zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -55,7 +55,11 @@ hyper-rustls = { version = "0.27", default-features = false, features = [
     "native-tokio",
 ] }
 hyper-util = "0.1.20"
-lightwallet-protocol = "0.3.0"
+# The `rebuild-proto` feature regenerates the bindings from the patched
+# crate's proto files (see the [patch.crates-io] entry), which carry the
+# Ironwood fields the checked-in generated code lacks. Requires `protoc`.
+# Drop the feature and the patch once upstream regenerates and publishes.
+lightwallet-protocol = { version = "0.3.0", features = ["rebuild-proto"] }
 rustls-pemfile = "2"
 tokio-rustls = { version = "0.26", default-features = false, features = [
     "aws_lc_rs",
@@ -67,26 +71,28 @@ x509-parser = "0.18"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
-orchard = "0.14.0"
+orchard = "0.15.0-pre.1"
 sapling-crypto = "0.7.0"
 shardtree = "0.6.2"
-zcash_address = "0.12.0"
+zcash_address = "0.13.0-pre.0"
 zcash_client_backend = { version = "0.23.0", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
 ] }
 zcash_encoding = "0.4.0"
-zcash_keys = { version = "0.14.0", features = [
+zcash_keys = { version = "0.15.0-pre.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
 zcash_note_encryption = "0.4.1"
-zcash_primitives = "0.28.0"
-zcash_proofs = "0.28.0"
-zcash_protocol = "0.9.0" # public API (TODO: remove from public API)
-zcash_transparent = "0.8.0"
+# non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
+# on Ironwood migration transactions.
+zcash_primitives = { version = "0.29.0-pre.0", features = ["non-standard-fees"] }
+zcash_proofs = "0.29.0-pre.0"
+zcash_protocol = "0.10.0-pre.0" # public API (TODO: remove from public API)
+zcash_transparent = "0.9.0-pre.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
@@ -94,6 +100,7 @@ bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
 ### Cryptographic
+blake2b_simd = "1"
 hmac = "0.12"
 jubjub = "0.10.0"
 secp256k1 = "0.31.1"
@@ -159,6 +166,33 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
+
+# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
+# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
+# upstream main after PR #5 merged the Ironwood protos; the crate version is still
+# 0.3.0. The generated code on that rev predates the proto change, which is why the
+# workspace dependency enables `rebuild-proto`.
+lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
+
+# librustzcash. Consume the canonical upstream `zcash/librustzcash` main
+# branch, pinned to a specific rev for reproducibility (its main is the
+# internally-consistent latest). A source swap over the same crate names;
+# (The upstream PR #2428 source of this block also patched zebra-chain/-rpc/
+# -node-services and included `zcash_history` for zebra's benefit; this
+# workspace's infrastructure pin has no zebra dependencies, so the zebra
+# patches were dropped at merge time — see merge_feat_ironwood_migration.md.)
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+equihash = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+f4jumble = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+
+# zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "feat/ironwood" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]

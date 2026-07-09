@@ -1,13 +1,16 @@
 //! creating proposals from wallet data
 
 use zcash_client_backend::{
-    data_api::wallet::{ConfirmationsPolicy, input_selection::GreedyInputSelector},
+    data_api::wallet::{
+        ConfirmationsPolicy,
+        input_selection::{GreedyInputSelector, TransparentSpendPolicy},
+    },
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
 use zcash_protocol::{
-    ShieldedProtocol,
-    consensus::{BlockHeight, Parameters},
+    ShieldedPool,
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -34,11 +37,26 @@ impl LightWallet {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             Some(memo),
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
         let chain_type = self.chain_type;
 
+        // Version floor must agree with `create_proposed_transactions` in
+        // `wallet/send.rs` so the proposed fee matches the built transaction.
+        // Pass None when NU6.3 is configured: the builder derives the correct
+        // tx version from BranchId at the target height. Force V5 only on
+        // networks where NU6.3 is not yet configured (no Ironwood notes exist
+        // there, so V5 is always the right version).
+        let version_floor = if self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some()
+        {
+            None
+        } else {
+            Some(zcash_primitives::transaction::TxVersion::V5)
+        };
         zcash_client_backend::data_api::wallet::propose_transfer::<
             LightWallet,
             ChainType,
@@ -57,7 +75,8 @@ impl LightWallet {
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            None,
+            &TransparentSpendPolicy::ShieldedOnly,
+            version_floor,
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -78,7 +97,7 @@ impl LightWallet {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             None,
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
         let chain_type = self.chain_type;
@@ -115,7 +134,7 @@ impl LightWallet {
             account_id,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            zcash_client_backend::data_api::TransparentOutputFilter::All,
+            zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
         )
         .map_err(ProposeShieldError::Component)?;
 
@@ -249,7 +268,7 @@ impl LightWallet {
 
 #[cfg(test)]
 mod test {
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::{
         testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
@@ -299,17 +318,17 @@ mod test {
         let pools = step.payment_pools();
         assert_eq!(
             pools[&0],
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
             "orchard-only UA must be paid in orchard"
         );
         assert_eq!(
             pools[&1],
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
             "all-shielded UA must be paid in its best pool, orchard"
         );
         assert_eq!(
             pools[&2],
-            PoolType::Shielded(ShieldedProtocol::Sapling),
+            PoolType::Shielded(ShieldedPool::Sapling),
             "sapling-only UA must be paid in sapling"
         );
     }
@@ -358,7 +377,7 @@ mod test {
                 .orchard_note(200_000)
                 .build();
 
-        let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
+        let pool = PoolType::Shielded(ShieldedPool::Orchard);
         let self_address = wallet.get_address(pool);
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];

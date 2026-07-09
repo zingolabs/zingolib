@@ -450,6 +450,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
             orchard::value::NoteValue::from_raw(value),
             rho_nullifier,
             random_seed,
+            orchard::note::NoteVersion::V2,
         ))
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
     }

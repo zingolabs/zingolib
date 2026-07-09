@@ -40,9 +40,10 @@ use crate::{
 };
 use error::LightClientError;
 
-pub mod error;
 #[cfg(test)]
 mod darkside;
+pub mod error;
+pub mod migrate;
 #[cfg(test)]
 mod mock_chain_tests;
 pub mod propose;
@@ -98,6 +99,7 @@ impl WalletMeta {
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     indexer: zingo_netutils::GrpcIndexer,
+    migration_broadcast_uri: Option<http::Uri>,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -150,6 +152,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            migration_broadcast_uri: config.migration_broadcast_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -172,6 +175,7 @@ impl LightClient {
                 .expect("lazy endpoint construction succeeds without connecting");
         LightClient {
             indexer,
+            migration_broadcast_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
@@ -212,6 +216,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            migration_broadcast_uri: config.migration_broadcast_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,

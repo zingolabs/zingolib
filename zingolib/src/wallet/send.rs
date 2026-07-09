@@ -10,8 +10,8 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, Parameters as _};
-use zcash_protocol::{ShieldedProtocol, TxId};
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
@@ -73,6 +73,19 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        // Pass None when NU6.3 is configured for this network: the builder derives
+        // the correct tx version from BranchId at the target height (V5 pre-activation,
+        // V6 at and after activation). Force V5 only on networks where NU6.3 is not
+        // yet configured. Must match the version floor used in `create_send_proposal`.
+        let version_floor = if self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some()
+        {
+            None
+        } else {
+            Some(zcash_primitives::transaction::TxVersion::V5)
+        };
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
@@ -81,7 +94,7 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
-            None,
+            version_floor,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -98,37 +111,53 @@ impl LightWallet {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();
-
-        match N::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Orchard => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.orchard_shard_ranges(),
-            ),
-            ShieldedProtocol::Sapling => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.sapling_shard_ranges(),
-            ),
-        }
+        let pool_start = effective_pool_birthday(birthday, &self.chain_type, N::SHIELDED_PROTOCOL);
+        let shard_ranges = match N::SHIELDED_PROTOCOL {
+            ShieldedPool::Ironwood => self.sync_state.ironwood_shard_ranges(),
+            ShieldedPool::Orchard => self.sync_state.orchard_shard_ranges(),
+            ShieldedPool::Sapling => self.sync_state.sapling_shard_ranges(),
+        };
+        check_note_shards_are_scanned(
+            note_height,
+            anchor_height,
+            pool_start,
+            scan_ranges,
+            shard_ranges,
+        )
     }
+}
+
+/// Returns `max(pool_activation_height, wallet_birthday)` — the earliest block height
+/// that must be scanned before a note in `pool` can be witnessed.
+///
+/// Each pool's commitment tree only starts at its activation height. Sapling and
+/// Orchard implicitly rely on `wallet_birthday >= activation` (this applies for all current
+/// wallets). Ironwood makes the invariant explicit because wallets created before NU6.3
+/// can hold Ironwood notes immediately after activation.
+fn effective_pool_birthday(
+    birthday: BlockHeight,
+    params: &impl Parameters,
+    pool: ShieldedPool,
+) -> BlockHeight {
+    let activation = match pool {
+        ShieldedPool::Ironwood => params.activation_height(NetworkUpgrade::Nu6_3),
+        ShieldedPool::Orchard => params.activation_height(NetworkUpgrade::Nu5),
+        ShieldedPool::Sapling => params.activation_height(NetworkUpgrade::Sapling),
+    };
+    activation.map_or(birthday, |a| a.max(birthday))
 }
 
 fn check_note_shards_are_scanned(
     note_height: BlockHeight,
     anchor_height: BlockHeight,
-    wallet_birthday: BlockHeight,
+    pool_start: BlockHeight,
     scan_ranges: &[ScanRange],
     shard_ranges: &[Range<BlockHeight>],
 ) -> bool {
     let incomplete_shard_range = if let Some(shard_range) = shard_ranges.last() {
         shard_range.end - 1..anchor_height + 1
     } else {
-        wallet_birthday..anchor_height + 1
+        pool_start..anchor_height + 1
     };
     let mut shard_ranges = shard_ranges.to_vec();
     shard_ranges.push(incomplete_shard_range);
@@ -180,7 +209,7 @@ fn check_note_shards_are_scanned(
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)
-                            || note_shard_range.start < wallet_birthday)
+                            || note_shard_range.start < pool_start)
                 })
         })
 }

@@ -164,9 +164,11 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         // Send to faucet (external) sapling
@@ -203,6 +205,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
@@ -214,6 +217,7 @@ mod unit_test_twins {
                  scope: summary::data::Scope::from(zip32::Scope::External),
              }],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         // Send to faucet (external) transparent
@@ -237,9 +241,11 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
 
         from_inputs::quick_send(
@@ -324,9 +330,11 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut faucet,
@@ -365,9 +373,11 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,
@@ -401,6 +411,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
@@ -412,6 +423,7 @@ TransactionSummary {
                  scope: summary::data::Scope::from(zip32::Scope::External),
             }],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,
@@ -448,9 +460,11 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
         };
         from_inputs::quick_send(
             &mut recipient,
@@ -856,22 +870,18 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
-                if let ProposeSendError::Proposal(insufficient_funds) = e {
-                    match insufficient_funds {
-                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                            available,
-                            required,
-                        } => {
-                            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
-                        }
-                        _ => {
-                            panic!()
-                        }
-                    }
-                } else {
-                    panic!()
-                }
+                let ProposeSendError::Proposal(
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    },
+                ) = e
+                else {
+                    panic!("unexpected error: {e:?}");
+                };
+
+                assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
             }
             _ => panic!(),
         }

@@ -15,6 +15,7 @@ zcash_keys = { workspace = true }
 zcash_protocol = { workspace = true }
 
 clap = { workspace = true }
+hex = { workspace = true }
 http = { workspace = true }
 indoc = { workspace = true }
 json = { workspace = true }

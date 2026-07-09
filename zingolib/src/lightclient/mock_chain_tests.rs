@@ -10,7 +10,7 @@
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
 use zcash_protocol::PoolType;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
@@ -54,7 +54,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
     let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
@@ -89,7 +89,7 @@ async fn zero_value_receipts() {
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
     let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
@@ -147,10 +147,10 @@ async fn list_value_transfers_check_fees() {
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
     let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_taddr = get_base_address(&recipient, PoolType::Transparent).await;
     let recipient_sapling =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
@@ -186,10 +186,10 @@ async fn self_send_to_t_displays_as_one_transaction() {
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
     let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_taddr = get_base_address(&recipient, PoolType::Transparent).await;
     let recipient_zaddr =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 80_000, None)], 0).await;
@@ -287,7 +287,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
     let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     // The external destinations: the abandon-art wallet's sapling UA and
     // first taddr — the same derivations the live faucet answers with.
     let external_sapling = external_address(PoolType::SAPLING);
@@ -330,9 +330,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
 
     // Send to external sapling, mined at height 3.
@@ -362,6 +364,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![OutgoingNoteSummary {
             output_index: 0,
@@ -373,6 +376,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             scope: SummaryScope::from(zip32::Scope::External),
         }],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
 
     // Send to external transparent, left in the mempool: Transmitted,
@@ -395,9 +399,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
     from_inputs::quick_send(
         &mut recipient,
@@ -479,9 +485,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
 
     // Second wave of external sends: transparent and sapling mined into
@@ -519,9 +527,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
     let summary_external_sapling_2 = TransactionSummary {
         txid: placeholder_txid,
@@ -540,6 +550,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![OutgoingNoteSummary {
             output_index: 0,
@@ -551,6 +562,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             scope: SummaryScope::from(zip32::Scope::External),
         }],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
 
     // Third external transparent, mined at height 7.
@@ -580,9 +592,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )],
         sapling_notes: vec![],
         transparent_coins: vec![],
+        ironwood_notes: vec![],
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        outgoing_ironwood_notes: vec![],
     };
 
     assert_transaction_summary_equality(
@@ -642,11 +656,9 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     let mut client = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
-    let pmc_unified =
-        get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+    let pmc_unified = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let pmc_taddr = get_base_address(&client, PoolType::Transparent).await;
-    let pmc_sapling =
-        get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+    let pmc_sapling = get_base_address(&client, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
     net.chain.write().await.mine_empty_blocks(1);
 
