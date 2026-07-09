@@ -130,6 +130,13 @@ fn net_activation_heights(
         .build()
 }
 
+/// The default test activation heights in the infrastructure's own
+/// vocabulary, for diagnostics that drive `zcash_local_net` processes
+/// directly (e.g. the launch-block falsification tests).
+pub fn default_net_activation_heights() -> zcash_local_net::protocol::ActivationHeights {
+    net_activation_heights(&default_test_activation_heights())
+}
+
 /// Rebuild the infrastructure activation heights as the wallet-domain type
 /// that zingolib configuration consumes. Inverse of the private
 /// `net_activation_heights`, for values coming back across the
