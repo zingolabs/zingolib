@@ -235,6 +235,65 @@ impl Observable for WalletState {
     }
 }
 
+/// Recording observer for an infrastructure front proxy — the
+/// registration-based successor to hand-wired [`LinkTap`]s. Since the
+/// front-proxy inversion (infrastructure commit 1a7bb7e), every port
+/// accessor on a launched process returns an observing front, so a
+/// registered `FrontRecord` receives every chunk from every client of
+/// that process — including traffic this crate never issues, such as
+/// the launch-mine and the Indexer's own validator connection, which
+/// no hand-wired tap could reach.
+pub struct FrontRecord {
+    label: &'static str,
+    armed_wall: std::time::SystemTime,
+    events: Mutex<Vec<TapEvent>>,
+}
+
+impl FrontRecord {
+    /// Create a record ready to register as a
+    /// `zcash_local_net::front::FrontObserver` (pass a clone of the
+    /// `Arc` into the process config before launch).
+    pub fn arm(label: &'static str) -> Arc<Self> {
+        Arc::new(FrontRecord {
+            label,
+            armed_wall: std::time::SystemTime::now(),
+            events: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// The traffic record so far.
+    pub fn events(&self) -> Vec<TapEvent> {
+        self.events.lock().unwrap().clone()
+    }
+
+    /// Render the record for assertion messages and the observatory
+    /// log file.
+    pub fn render(&self) -> String {
+        render_tap_events(self.label, &self.events.lock().unwrap())
+    }
+
+    /// One line for the teardown summary.
+    pub fn summary(&self) -> String {
+        summarize_tap_events(self.label, &self.events.lock().unwrap())
+    }
+}
+
+impl zcash_local_net::front::FrontObserver for FrontRecord {
+    fn on_chunk(&self, event: &zcash_local_net::front::ChunkEvent) {
+        let at = event.at.duration_since(self.armed_wall).unwrap_or_default();
+        self.events.lock().unwrap().push(TapEvent {
+            at,
+            connection: event.connection as usize,
+            direction: match event.direction {
+                zcash_local_net::front::Direction::ToBackend => "->",
+                zcash_local_net::front::Direction::ToClient => "<-",
+            },
+            bytes: event.byte_count(),
+            note: json_rpc_method_note(&event.payload),
+        });
+    }
+}
+
 /// One recorded traffic chunk crossing a tapped hop.
 #[derive(Clone, Debug)]
 pub struct TapEvent {
@@ -331,59 +390,63 @@ impl LinkTap {
     /// Render the record for assertion messages and the observatory
     /// log file.
     pub fn render(&self) -> String {
-        let events = self.events.lock().unwrap();
-        if events.is_empty() {
-            return format!("  ({}: no traffic)", self.label);
-        }
-        events
-            .iter()
-            .map(|e| {
-                format!(
-                    "  {:>8.3}s conn{} {} {:>5}B {}",
-                    e.at.as_secs_f64(),
-                    e.connection,
-                    e.direction,
-                    e.bytes,
-                    e.note
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        render_tap_events(self.label, &self.events.lock().unwrap())
     }
 
-    /// One line for the teardown summary: connection and chunk counts,
-    /// byte totals per direction, and how many chain-mutating calls
-    /// crossed the hop.
+    /// One line for the teardown summary.
     pub fn summary(&self) -> String {
-        let events = self.events.lock().unwrap();
-        if events.is_empty() {
-            return format!("{}: no traffic", self.label);
-        }
-        let connections = events.iter().map(|e| e.connection).max().unwrap_or(0) + 1;
-        let sent: usize = events
-            .iter()
-            .filter(|e| e.direction == "->")
-            .map(|e| e.bytes)
-            .sum();
-        let received: usize = events
-            .iter()
-            .filter(|e| e.direction == "<-")
-            .map(|e| e.bytes)
-            .sum();
-        let writes = events
-            .iter()
-            .filter(|e| crate::validator_rpc::is_write_method(&e.note))
-            .count();
-        format!(
-            "{}: {} conns, {} chunks, {}B ->, {}B <-, {} chain-mutating calls",
-            self.label,
-            connections,
-            events.len(),
-            sent,
-            received,
-            writes
-        )
+        summarize_tap_events(self.label, &self.events.lock().unwrap())
     }
+}
+
+/// Render a traffic record for assertion messages and the observatory
+/// log file.
+fn render_tap_events(label: &str, events: &[TapEvent]) -> String {
+    if events.is_empty() {
+        return format!("  ({label}: no traffic)");
+    }
+    events
+        .iter()
+        .map(|e| {
+            format!(
+                "  {:>8.3}s conn{} {} {:>5}B {}",
+                e.at.as_secs_f64(),
+                e.connection,
+                e.direction,
+                e.bytes,
+                e.note
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One-line summary of a traffic record: connection and chunk counts,
+/// byte totals per direction, and how many chain-mutating calls
+/// crossed the hop.
+fn summarize_tap_events(label: &str, events: &[TapEvent]) -> String {
+    if events.is_empty() {
+        return format!("{label}: no traffic");
+    }
+    let connections = events.iter().map(|e| e.connection).max().unwrap_or(0) + 1;
+    let sent: usize = events
+        .iter()
+        .filter(|e| e.direction == "->")
+        .map(|e| e.bytes)
+        .sum();
+    let received: usize = events
+        .iter()
+        .filter(|e| e.direction == "<-")
+        .map(|e| e.bytes)
+        .sum();
+    let writes = events
+        .iter()
+        .filter(|e| crate::validator_rpc::is_write_method(&e.note))
+        .count();
+    format!(
+        "{label}: {connections} conns, {} chunks, {sent}B ->, {received}B <-, {writes} chain-mutating calls",
+        events.len(),
+    )
 }
 
 impl Drop for LinkTap {
