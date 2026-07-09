@@ -647,9 +647,22 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     }
 
     let mut total_expected_fee = 0;
-    // 1 receive 50_000 transparent
+    // 1 receive 50_000 transparent. Expanded rather than using
+    // bump_and_check so a failure surfaces the mock's taddr-request
+    // ledger and the wallet's record count (nextest shows this stderr
+    // only when the test fails).
     fund(&net, vec![(&pmc_taddr, 50_000, None)], 0).await;
-    bump_and_check!(o: 0 s: 0 t: 50_000);
+    net.chain.write().await.mine_mempool();
+    client.sync_and_await().await.unwrap();
+    {
+        let chain = net.chain.read().await;
+        eprintln!("step-1 diagnostics: mock tip {}", chain.tip());
+        eprintln!("taddr requests served: {:#?}", chain.taddr_request_log());
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        eprintln!("wallet transactions: {}", wallet.wallet_transactions.len());
+    }
+    check_client_balances!(client, o: 0 s: 0 t: 50_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 2 shield 50_000 transparent to orchard: 15_000 (1 t-in, 2 orchard)

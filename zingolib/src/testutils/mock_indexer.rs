@@ -83,6 +83,10 @@ pub struct MockChain {
     sapling_tree: SaplingTree,
     orchard_tree: OrchardTree,
     mempool: Vec<Vec<u8>>,
+    /// One entry per `GetTaddressTxids` request served: the address, the
+    /// requested range, and how many transactions were streamed back.
+    /// Diagnostic surface for transparent-detection failures.
+    taddr_request_log: Vec<String>,
 }
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
@@ -118,7 +122,14 @@ impl MockChain {
             sapling_tree,
             orchard_tree,
             mempool: Vec::new(),
+            taddr_request_log: Vec::new(),
         }
+    }
+
+    /// The `GetTaddressTxids` requests served so far — for diagnosing
+    /// transparent-detection failures in tests.
+    pub fn taddr_request_log(&self) -> &[String] {
+        &self.taddr_request_log
     }
 
     /// The height of the chain tip (0 on an empty chain).
@@ -485,6 +496,12 @@ impl CompactTxStreamer for MockIndexerService {
                 })
             })
             .collect();
+        let served = raw.len();
+        drop(chain);
+        self.chain.write().await.taddr_request_log.push(format!(
+            "address={} range=[{start},{end}] served={served}",
+            filter.address
+        ));
         Ok(Response::new(Box::pin(tokio_stream::iter(raw))))
     }
 
