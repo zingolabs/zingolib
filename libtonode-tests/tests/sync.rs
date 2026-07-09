@@ -531,6 +531,14 @@ async fn diagnose_subtree_root_stream() {
 /// `await_indexer_convergence` (the zcash_local_net barrier this crate's
 /// helpers now route through), the indexer's served tip matches the
 /// validator's in every round.
+///
+/// Ignored while zaino#1386 is open: zainod's "Syncing block" log line
+/// is not linearized with its serving path, so the log-based barrier
+/// can report satisfied while the gRPC surface still serves the prior
+/// tip (observed flaking on both runtime flavors, always as "served
+/// tip N-1 behind validator tip N"). Re-enable as the verification of
+/// the zaino fix.
+#[ignore = "zaino#1386: indexer log-vs-serve gap makes this flaky; re-enable on fix"]
 #[tokio::test]
 async fn indexer_converges_with_validator_after_block_generation() {
     let (local_net, client) = scenarios::unfunded_client_default().await;
