@@ -15,6 +15,16 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 test-group = 'local-net'
 
+# store_all_checkpoints_in_verification_window builds its ~116-block
+# chain on the first run per machine (or under
+# ZINGO_REGENERATE_CHAIN_CACHE): 507s measured solo, which clears the
+# default 600s ceiling with no margin for container contention (this
+# file documents 5-7x stretch under load). Replay runs (~24s) fit the
+# normal budget untouched.
+[[profile.default.overrides]]
+filter = 'test(store_all_checkpoints_in_verification_window)'
+slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
+
 [profile.ci]
 failure-output = "immediate-final"
 fail-fast = false
@@ -23,3 +33,8 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 [[profile.ci.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 test-group = 'local-net'
+
+# Same first-run build allowance as the default profile (see above).
+[[profile.ci.overrides]]
+filter = 'test(store_all_checkpoints_in_verification_window)'
+slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
