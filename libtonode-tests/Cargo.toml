@@ -20,8 +20,13 @@ unit_test_twins = []
 # default: run them when the environment moves — infra pin bumps,
 # container-image bumps, activation-height changes.
 sentinels = []
+# Repo-wide policy gate (docs/testing/slow-gate-policy.md): a test whose
+# steady-state solo runtime exceeds 2x the median of this crate's
+# default suite moves behind this non-default feature at the next
+# re-baseline. Currently empty pending the next recorded full-suite run.
+slow = []
 # Everything beyond the default suite, in one switch.
-extra-credit-tests = ["sentinels", "unit_test_twins"]
+extra-credit-tests = ["sentinels", "unit_test_twins", "slow"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
