@@ -6,6 +6,7 @@ use pepper_sync::wallet::{
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::{PoolType, value::Zatoshis};
 
 use crate::utils;
@@ -15,11 +16,6 @@ use super::{
     error::{BalanceError, KeyError},
     keys::unified::UnifiedKeyStore,
 };
-
-/// Minimum number of confirmations required for transparent coinbase outputs.
-/// Per Zcash consensus rules (ZIP-213), transparent coinbase outputs cannot be
-/// spent until they are 100 blocks deep.
-const COINBASE_MATURITY: u32 = 100;
 
 /// Balance for a wallet account.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,7 +136,8 @@ impl LightWallet {
     /// Returns `true` if the output can be included in balance calculations:
     /// - For non-transparent outputs: always `true`
     /// - For regular transparent outputs: always `true`
-    /// - For coinbase transparent outputs: `true` only if >= 100 confirmations
+    /// - For coinbase transparent outputs: `true` only at or beyond
+    ///   [`COINBASE_MATURITY_BLOCKS`] confirmations
     fn is_transparent_output_mature<Op: OutputInterface>(
         &self,
         transaction: &WalletTransaction,
@@ -172,7 +169,7 @@ impl LightWallet {
             }
 
             let confirmations = current_height_u32 - tx_height_u32;
-            confirmations >= COINBASE_MATURITY
+            confirmations >= COINBASE_MATURITY_BLOCKS
         } else {
             true
         }

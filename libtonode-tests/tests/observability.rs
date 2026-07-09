@@ -111,8 +111,9 @@ async fn transparent_launch_block_is_byte_deterministic() {
 /// H1 counterfactual: the launch-mine is skipped when the config
 /// carries a chain cache (`zebrad.rs` gates the generate on
 /// `chain_cache.is_none()`), and a state-dir cache of a 1-block chain
-/// holds essentially genesis (blocks within 100 of the tip live only
-/// in memory). Launching from such a cache therefore removes the
+/// holds essentially genesis (blocks within the finalization depth —
+/// zebra's `MAX_BLOCK_REORG_HEIGHT`, mirrored here by
+/// `pepper_sync::sync::MAX_REORG_ALLOWANCE` — live only in memory). Launching from such a cache therefore removes the
 /// hypothesized cause; H1 predicts the effect disappears too: height 0,
 /// sustained. Height 1 immediately would mean short-chain state
 /// persists after all (revising the finalization claim, not H1);

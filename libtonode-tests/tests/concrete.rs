@@ -6,6 +6,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
+use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::wallet::balance::AccountBalance;
@@ -517,7 +518,7 @@ mod fast {
             scenarios::ChainCachePolicy::PerTest,
         )
         .await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
             .await
             .unwrap();
         faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
@@ -2564,7 +2565,7 @@ mod basic_transactions {
     // }
 }
 
-/// Tests that transparent coinbases are matured after 100 blocks.
+/// Tests that transparent coinbases mature after `COINBASE_MATURITY_BLOCKS`.
 #[tokio::test]
 async fn mine_to_transparent_coinbase_maturity() {
     let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
@@ -2577,7 +2578,7 @@ async fn mine_to_transparent_coinbase_maturity() {
     // After 3 blocks...
     check_client_balances!(faucet, o: 0 s: 0 t: 0);
 
-    // Balance should be 0 because coinbase needs 100 confirmations
+    // Balance should be 0 because coinbase needs COINBASE_MATURITY_BLOCKS confirmations
     assert_eq!(
         faucet
             .wallet()
@@ -2589,7 +2590,7 @@ async fn mine_to_transparent_coinbase_maturity() {
         0
     );
 
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
+    increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
         .await
         .unwrap();
 

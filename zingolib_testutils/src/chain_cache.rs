@@ -13,7 +13,9 @@
 //! mining uses. Superseded caches are discarded, never moved aside.
 //!
 //! Blocks are the cache medium because Validator state directories are
-//! not: zebra keeps everything within 100 blocks of the tip in its
+//! not: zebra keeps everything within its finalization depth
+//! (`zebra_state::MAX_BLOCK_REORG_HEIGHT`, mirrored in this repository
+//! by `pepper_sync::sync::MAX_REORG_ALLOWANCE`) of the tip in its
 //! in-memory non-finalized state, so a copied data dir of a short
 //! regtest chain contains essentially genesis (see the ADR's history).
 

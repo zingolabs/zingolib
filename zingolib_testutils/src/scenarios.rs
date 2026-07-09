@@ -207,8 +207,8 @@ pub const fn mined_block_rewards_total(count: u64) -> u64 {
 
 /// Chain height after a shielded-pool faucet scenario finishes setting up:
 /// 1 launch block + 2 setup blocks + 2 ladder-clearing blocks + 1 block
-/// confirming the offload send. (No maturity blocks: shielded coinbase has
-/// no 100-block maturity rule.)
+/// confirming the offload send. (No maturity blocks: shielded coinbase is
+/// exempt from the transparent `COINBASE_MATURITY_BLOCKS` rule.)
 pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 
 /// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
@@ -366,7 +366,7 @@ where
 /// When mining to a shielded pool, dump the excess faucet funds and generate
 /// a block to confirm the send. Coinbase lands directly in the mined-to pool
 /// (zebrad mines to Orchard natively), and shielded coinbase has no
-/// 100-block maturity rule — the wallet spends blocks-old orchard coinbase
+/// `COINBASE_MATURITY_BLOCKS` rule — the wallet spends blocks-old orchard coinbase
 /// fine (server-verified by `value_transfers`).
 ///
 /// Two constraints govern when the offload can be sent (both observed as

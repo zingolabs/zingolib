@@ -50,7 +50,15 @@ pub(crate) mod transparent;
 pub(crate) mod spend;
 pub(crate) mod state;
 
-pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
+/// The deepest chain reorganization the wallet tolerates, and the
+/// repository's single source of truth for that depth. It mirrors the
+/// validator's finalization boundary — zebra's
+/// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
+/// final and no deeper reorg can occur. Zebra crates are not
+/// dependencies of this workspace, so the value is pinned to its
+/// upstream by documentation rather than import; if zebra ever moves
+/// its boundary, this constant is the one place that follows it.
+pub const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
