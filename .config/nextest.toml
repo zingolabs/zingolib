@@ -1,19 +1,9 @@
-# Heavy tests in libtonode-tests and zingo-cli each launch a private
-# zebrad+zainod pair. Unbounded parallelism oversubscribes the container:
-# measured stretch on individual LocalNet tests is five to seven times
-# their solo wall-clock (a 17s test reading 120s+) once ~40 node pairs
-# contend. The local-net group caps how many run at once; everything
-# else (unit tests and the like) still uses full parallelism.
-[test-groups]
-local-net = { max-threads = 8 }
-
 [profile.default]
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 
 [[profile.default.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
-test-group = 'local-net'
 
 # store_all_checkpoints_in_verification_window builds its ~116-block
 # chain on the first run per machine (or under
@@ -32,7 +22,6 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 
 [[profile.ci.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
-test-group = 'local-net'
 
 # Same first-run build allowance as the default profile (see above).
 [[profile.ci.overrides]]
