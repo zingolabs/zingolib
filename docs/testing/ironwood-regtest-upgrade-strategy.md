@@ -65,15 +65,49 @@ Gates: sentinels green, default tier 32/32. Bonus obligation: retest
 the zaino#1386 findings against the RC — the parked convergence
 regression test is the ready-made verifier; un-ignore it for one run.
 
-**Phase 2 — librustzcash bump, heights still off.** Take the coherent
-lrz set (pre-release pair now + `zcash_client_backend` when cut, or
-one git pin). Expect mechanical breakage: `NetworkUpgrade` grows
-`Nu6_3`, so exhaustive matches across zingolib/pepper-sync need arms;
-the wallet/porter lanes own those files. The heights fixture still
-keeps nu6_3 off, so behavior must not change: default tier green is
-the gate, and any balance drift here is a bug, not ironwood. Check the
-infrastructure repo's `zingo-consensus` for a matching bump (its
-config writer already emits the NU6.3 key).
+**Phase 2 — adopt PR #2428's dependency universe, heights still off.**
+The open ironwood PoC (zingolabs/zingolib#2428, `feat/ironwood-migration`
+→ `feat/ironwood`) already defines the coherent target set, and phase
+two adopts it verbatim so the branches converge:
+
+- **librustzcash**: `[patch.crates-io]` source-swap of the whole family
+  (client_backend, address, encoding, history, keys, primitives,
+  proofs, protocol, transparent, equihash, f4jumble) to
+  `zcash/librustzcash` rev `4d9a68dc80508e7644aa99e1b4add7c831057bba`
+  (canonical upstream main, pinned) — the git-pin option, already
+  chosen upstream of us.
+- **zebra**: `zebra-chain`/`zebra-rpc`/`zebra-node-services` patched to
+  the `zcashfoundation/zebra` branch `nu63-ironwood` (the ZIN-37
+  ironwood-value-pool fork, built against orchard 0.15.0-pre.1). Side
+  effect worth noting: zebra crates enter the dependency graph for the
+  first time, which may let the max-reorg/finalization-depth constant
+  become an import instead of a documented mirror.
+- **Surroundings**: orchard 0.15.0-pre.1, zcash_address 0.13.0-pre.0,
+  `zcash_primitives` gains the `non-standard-fees` feature, and
+  `lightwallet-protocol` is patched to the fork rev carrying the
+  Ironwood proto fields with `rebuild-proto` (build environments need
+  `protoc` — a container-image requirement for the makers-tasks lane).
+- **Compiler cfg**: ironwood sits behind `--cfg zcash_unstable="nu6.3"`
+  RUSTFLAGS via the in-repo `.cargo/config.toml`, which the container
+  inherits through the bind mount.
+
+The proto fields settle a structural fact the phases below must plan
+for: **Ironwood is a new shielded pool**, not just consensus-rule
+changes — `CompactTx.ironwoodActions`, `TreeState.ironwoodTree`,
+`ShieldedProtocol.ironwood`, `ChainMetadata.ironwoodCommitmentTreeSize`,
+and PR #2428's pepper-sync diff carries ironwood commitment trees,
+nullifiers, and OVKs alongside sapling and orchard. Phase three's blast
+radius therefore includes the pool vocabulary end to end: miner-pool
+options, the balance-assertion macros' pool legs, scenario constants,
+and zaino's era-serving behavior.
+
+Expect mechanical breakage in this phase: `NetworkUpgrade` grows
+`Nu6_3` and the pool enums grow a variant, so exhaustive matches across
+zingolib/pepper-sync need arms; the wallet/porter lanes own those
+files. The heights fixture still keeps nu6_3 off, so behavior must not
+change: default tier green is the gate, and any balance drift here is a
+bug, not ironwood. Check the infrastructure repo's `zingo-consensus`
+for a matching bump (its config writer already emits the NU6.3 key).
 
 **Phase 3 — the flip (libtonode only).** `default_test_activation_heights`
 gains nu6_3 at a fixture height chosen to match zaino's devtool
