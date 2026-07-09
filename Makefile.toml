@@ -378,3 +378,17 @@ script.main = '''
 mapfile -t args < <(nextest_args --run-ignored all "$@")
 cargo nextest run "${args[@]}"
 '''
+
+# The extra-credit libtonode suite: the sentinels (environment-contract
+# checks) and unit_test_twins (pre-migration live originals of the offline
+# unit twins, docs/testing/live-offline-twins.md). Both are off by default
+# and behind the `extra-credit-tests` feature; this is their scheduled
+# entry point — a containerized nextest run so a cron or CI job can invoke
+# one canonical command. Extra nextest args pass through.
+[tasks.test-extra-credit]
+description = "Containerized run of libtonode's extra-credit suite (sentinels + unit_test_twins twins)"
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
+'''

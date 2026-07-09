@@ -25,6 +25,10 @@
 //! so no fabricated transaction is mistaken for a coinbase; the mempool
 //! stream hangs until sync's shutdown drops it (pepper-sync's monitor
 //! polls its shutdown flag alongside the stream).
+//!
+//! Available to zingolib's own unit tests and, via the `testutils`
+//! feature, to downstream test crates (e.g. libtonode-tests) — the
+//! rescan-idempotence family's offline seam.
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -66,7 +70,7 @@ type SaplingTree =
 type OrchardTree = CommitmentTree<MerkleHashOrchard, 32>;
 
 /// The fabricated chain: blocks, transactions, tree states, mempool.
-pub(crate) struct MockChain {
+pub struct MockChain {
     chain_type: ChainType,
     /// `blocks[i]` is the block at height `i + 1`.
     blocks: Vec<CompactBlock>,
@@ -102,7 +106,7 @@ impl MockChain {
     /// at height 1) activation schedule — matching
     /// [`SyntheticWalletBuilder`]'s default and [`MockNet::client`]'s
     /// config.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let sapling_tree = SaplingTree::empty();
         let orchard_tree = OrchardTree::empty();
         let genesis_state = tree_state_hex(&sapling_tree, &orchard_tree);
@@ -117,13 +121,14 @@ impl MockChain {
         }
     }
 
-    pub(crate) fn tip(&self) -> u32 {
+    /// The height of the chain tip (0 on an empty chain).
+    pub fn tip(&self) -> u32 {
         self.blocks.len() as u32
     }
 
     /// Accepts raw transaction bytes into the mempool, returning the
     /// txid in the display encoding `send_transaction` answers with.
-    pub(crate) fn submit_transaction(&mut self, bytes: Vec<u8>) -> String {
+    pub fn submit_transaction(&mut self, bytes: Vec<u8>) -> String {
         let transaction = self.parse_transaction(&bytes, self.tip() + 1);
         let txid = transaction.txid().to_string();
         self.mempool.push(bytes);
@@ -131,14 +136,14 @@ impl MockChain {
     }
 
     /// Mines every mempool transaction into the next block.
-    pub(crate) fn mine_mempool(&mut self) {
+    pub fn mine_mempool(&mut self) {
         let pending = std::mem::take(&mut self.mempool);
         self.mine_block(pending);
     }
 
     /// Mines the given raw transactions (plus nothing else) into the
     /// next block.
-    pub(crate) fn mine_block(&mut self, raw_transactions: Vec<Vec<u8>>) {
+    pub fn mine_block(&mut self, raw_transactions: Vec<Vec<u8>>) {
         let height = self.tip() + 1;
         let mut vtx = Vec::new();
         for (i, bytes) in raw_transactions.into_iter().enumerate() {
@@ -189,7 +194,8 @@ impl MockChain {
             .push(tree_state_hex(&self.sapling_tree, &self.orchard_tree));
     }
 
-    pub(crate) fn mine_empty_blocks(&mut self, count: u32) {
+    /// Mines `count` empty blocks, advancing the tip without new outputs.
+    pub fn mine_empty_blocks(&mut self, count: u32) {
         for _ in 0..count {
             self.mine_block(vec![]);
         }
@@ -279,7 +285,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 
 /// Serves a [`MockChain`] over the `CompactTxStreamer` protocol.
-pub(crate) struct MockIndexerService {
+pub struct MockIndexerService {
     chain: Arc<RwLock<MockChain>>,
 }
 
@@ -597,8 +603,9 @@ fn taddr_script_bytes(address: &str, chain_type: &ChainType) -> Result<Vec<u8>, 
 
 /// A launched mock network: the chain handle, the serving task, and a
 /// factory for `LightClient`s dialed at it.
-pub(crate) struct MockNet {
-    pub(crate) chain: Arc<RwLock<MockChain>>,
+pub struct MockNet {
+    /// The fabricated chain the server reads and the test mutates.
+    pub chain: Arc<RwLock<MockChain>>,
     indexer_uri: http::Uri,
     _wallet_dirs: Vec<tempfile::TempDir>,
     _server: tokio::task::JoinHandle<()>,
@@ -607,7 +614,7 @@ pub(crate) struct MockNet {
 impl MockNet {
     /// Launches the mock server on an ephemeral localhost port with an
     /// empty chain.
-    pub(crate) async fn launch() -> Self {
+    pub async fn launch() -> Self {
         let chain = Arc::new(RwLock::new(MockChain::new()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -640,7 +647,7 @@ impl MockNet {
     /// Builds a `LightClient` for `mnemonic` (birthday 1) dialed at the
     /// mock, with its wallet directory in a tempdir this net keeps
     /// alive.
-    pub(crate) async fn client(&mut self, mnemonic: &str) -> LightClient {
+    pub async fn client(&mut self, mnemonic: &str) -> LightClient {
         let wallet_dir = tempfile::tempdir().expect("a tempdir is creatable");
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
@@ -675,9 +682,7 @@ impl MockNet {
 /// chain's funding primitive. Each call uses a fresh faucet whose
 /// fabricated backing note never exists on the mock chain; nothing
 /// validates that, and the recipient-facing outputs are real.
-pub(crate) async fn faucet_funding_transaction(
-    receivers: Vec<(&str, u64, Option<&str>)>,
-) -> Vec<u8> {
+pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
     let total: u64 = receivers.iter().map(|(_, value, _)| value).sum();
     let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
         // Generous headroom over payments + any fee.

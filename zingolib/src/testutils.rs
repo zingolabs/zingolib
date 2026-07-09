@@ -28,10 +28,7 @@ pub mod chain_generics;
 pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
-// cfg(test)-only (not the testutils feature): the stateful mock indexer
-// uses dev-dependencies, which only unit tests can see.
-#[cfg(test)]
-pub(crate) mod mock_indexer;
+pub mod mock_indexer;
 pub mod paths;
 pub mod synthetic_wallet;
 
