@@ -106,6 +106,22 @@ InsufficientFunds refusals with identical shortfall numbers (20_000 and
 205_000 confirmed-fee total. Live-only residue: zebra accepting each of
 the twelve broadcasts.
 
+**Status (2026-07-08): `#[ignore]`d pending zingolabs/zingolib#2447.**
+This twin's step-1 funding is purely transparent, and pepper-sync's
+SUBTRACTIVE `darkside_test` feature deletes transparent-address
+discovery at compile time. Cargo feature unification enables that
+feature for every crate co-built with darkside-tests, so the twin fails
+deterministically in multi-package invocations (`makers test packages`,
+`--workspace`) while passing in `-p zingolib` ones — root-caused via the
+mock's taddr-request ledger (empty in failing builds, populated in
+passing ones) and reproduced both directions on one host. The twin
+itself is sound: it runs green solo via `--run-ignored`. Un-ignore when
+#2447 converts the feature to runtime configuration. The same landmine
+would strip transparent discovery from the libtonode live suite in any
+whole-workspace invocation; the live originals are unaffected in the
+packages/live partition because darkside never co-builds with them
+there.
+
 ## Side-by-side runs (2026-07-08, host stack, this machine)
 
 Twins (one `cargo nextest run -p zingolib` invocation):

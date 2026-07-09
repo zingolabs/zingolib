@@ -619,6 +619,18 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 /// every funding source and self-send combination, two shields, exact
 /// per-step balances, and the cumulative confirmed-fee total — driven
 /// through real scanning of the mock chain.
+///
+/// Ignored, not broken: pepper-sync's SUBTRACTIVE `darkside_test`
+/// feature deletes transparent-address discovery at compile time, and
+/// cargo feature unification enables it for every crate co-built with
+/// darkside-tests (`makers test packages`, `--workspace`), so this
+/// test's purely-transparent step-1 funding is silently never detected
+/// in those invocation shapes while passing in `-p zingolib` ones. Runs
+/// green via `--run-ignored` in a single-package invocation. Un-ignore
+/// when the feature becomes runtime configuration.
+#[ignore = "zingolabs/zingolib#2447: pepper-sync's subtractive darkside_test feature, when \
+            unified into multi-package builds, compiles out the transparent-address discovery \
+            this test's funding depends on"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     use crate::lightclient::error::{LightClientError, SendError};
