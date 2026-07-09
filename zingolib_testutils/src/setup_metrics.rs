@@ -149,6 +149,73 @@ impl Drop for MeteredNet {
     fn drop(&mut self) {
         let teardown_bytes = dir_size(self.net.validator().data_dir().path());
         self.recorder.write_row(teardown_bytes);
+        self.write_observatory_log();
+    }
+}
+
+impl MeteredNet {
+    /// Write the full observatory record — watch timelines, tap
+    /// traffic, and the RPC ledger — to the per-test log under
+    /// `test-logs/observatory/`, leaving a single pointer line on
+    /// stderr. The location is gitignored and bind-mounted into the
+    /// test container, so host tooling reads (and scp reaches) the
+    /// logs directly. Best-effort: runs in `Drop`, possibly during a
+    /// panic unwind, and must never mask the test's own outcome.
+    fn write_observatory_log(&self) {
+        let ledger = crate::validator_rpc::ledger_snapshot()
+            .iter()
+            .map(|entry| {
+                format!(
+                    "  {:>8.3}s {}",
+                    entry
+                        .at
+                        .duration_since(self.recorder.setup_started)
+                        .as_secs_f64(),
+                    entry.method
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let report = format!(
+            "==== observatory record: {}::{} ====\n\
+             -- summaries --\n  {}\n  {}\n  {}\n  {}\n  {}\n\
+             -- zebrad timeline --\n{}\n\
+             -- zainod timeline --\n{}\n\
+             -- harness->zebrad tap --\n{}\n\
+             -- wallet->zainod tap --\n{}\n\
+             -- zainod->zebrad tap --\n{}\n\
+             -- rpc ledger (this crate's outgoing calls) --\n{}\n",
+            self.recorder.binary,
+            self.recorder.test,
+            self.zebrad_watch.summary(),
+            self.zainod_watch.summary(),
+            self.rpc_tap.summary(),
+            self.indexer_tap.summary(),
+            self.validator_tap.summary(),
+            self.zebrad_watch.render(),
+            self.zainod_watch.render(),
+            self.rpc_tap.render(),
+            self.indexer_tap.render(),
+            self.validator_tap.render(),
+            ledger,
+        );
+        let path = observatory_log_path(&self.recorder.binary, &self.recorder.test);
+        let written = path
+            .parent()
+            .map(std::fs::create_dir_all)
+            .transpose()
+            .and_then(|_| {
+                use std::io::Write as _;
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)?;
+                file.write_all(report.as_bytes())
+            });
+        match written {
+            Ok(()) => eprintln!("observatory log: {}", path.display()),
+            Err(e) => eprintln!("observatory log unwritable ({}): {e}", path.display()),
+        }
     }
 }
 
@@ -208,6 +275,18 @@ pub(crate) fn chain_caches_root() -> PathBuf {
 
 fn metrics_path() -> PathBuf {
     chain_caches_root().join("setup-metrics.jsonl")
+}
+
+/// The per-test observatory log: `test-logs/observatory/<binary>__<test>.log`
+/// at the repository root — gitignored, bind-mounted, appended per net
+/// so a test that builds several nets keeps every record.
+fn observatory_log_path(binary: &str, test: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("zingolib_testutils sits directly under the repo root")
+        .join("test-logs")
+        .join("observatory")
+        .join(format!("{binary}__{}.log", test.replace("::", "__")))
 }
 
 /// The integration-test binary this test runs in, from the executable's

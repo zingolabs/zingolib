@@ -71,8 +71,9 @@ pub struct StateEvent {
 }
 
 /// Records every transition of an [`Observable`]'s fingerprint until
-/// dropped. Dumps its timeline to stderr on drop, so a failing test's
-/// captured output always carries the record.
+/// dropped. The full timeline lands in the per-test observatory log at
+/// teardown (see `setup_metrics`); assertion messages embed it via
+/// [`StateWatch::render`].
 pub struct StateWatch<O: Observable> {
     events: Arc<Mutex<Vec<StateEvent>>>,
     armed: Instant,
@@ -125,7 +126,8 @@ impl<O: Observable> StateWatch<O> {
         self.armed.elapsed()
     }
 
-    /// Render the timeline for assertion messages.
+    /// Render the timeline for assertion messages and the observatory
+    /// log file.
     pub fn render(&self) -> String {
         let events = self.events.lock().unwrap();
         if events.is_empty() {
@@ -144,12 +146,27 @@ impl<O: Observable> StateWatch<O> {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// One line for the teardown summary: transition count and the
+    /// final fingerprint.
+    pub fn summary(&self) -> String {
+        let events = self.events.lock().unwrap();
+        match events.last() {
+            None => format!("{}: never observed", O::NODE),
+            Some(last) => format!(
+                "{}: {} transitions, final at {:.3}s: {}",
+                O::NODE,
+                events.len(),
+                last.at.as_secs_f64(),
+                last.fingerprint
+            ),
+        }
+    }
 }
 
 impl<O: Observable> Drop for StateWatch<O> {
     fn drop(&mut self) {
         self.task.abort();
-        eprintln!("{} state timeline:\n{}", O::NODE, self.render());
     }
 }
 
@@ -237,7 +254,8 @@ pub struct TapEvent {
 
 /// An interposable TCP relay recording all traffic on one hop. Clients
 /// dial [`LinkTap::port`]; the tap forwards to the upstream port and
-/// records every chunk in both directions. Dumps its record on drop.
+/// records every chunk in both directions. The full record lands in
+/// the per-test observatory log at teardown (see `setup_metrics`).
 pub struct LinkTap {
     label: &'static str,
     port: u16,
@@ -310,7 +328,8 @@ impl LinkTap {
         self.events.lock().unwrap().clone()
     }
 
-    /// Render the record for assertion messages.
+    /// Render the record for assertion messages and the observatory
+    /// log file.
     pub fn render(&self) -> String {
         let events = self.events.lock().unwrap();
         if events.is_empty() {
@@ -331,12 +350,45 @@ impl LinkTap {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// One line for the teardown summary: connection and chunk counts,
+    /// byte totals per direction, and how many chain-mutating calls
+    /// crossed the hop.
+    pub fn summary(&self) -> String {
+        let events = self.events.lock().unwrap();
+        if events.is_empty() {
+            return format!("{}: no traffic", self.label);
+        }
+        let connections = events.iter().map(|e| e.connection).max().unwrap_or(0) + 1;
+        let sent: usize = events
+            .iter()
+            .filter(|e| e.direction == "->")
+            .map(|e| e.bytes)
+            .sum();
+        let received: usize = events
+            .iter()
+            .filter(|e| e.direction == "<-")
+            .map(|e| e.bytes)
+            .sum();
+        let writes = events
+            .iter()
+            .filter(|e| crate::validator_rpc::is_write_method(&e.note))
+            .count();
+        format!(
+            "{}: {} conns, {} chunks, {}B ->, {}B <-, {} chain-mutating calls",
+            self.label,
+            connections,
+            events.len(),
+            sent,
+            received,
+            writes
+        )
+    }
 }
 
 impl Drop for LinkTap {
     fn drop(&mut self) {
         self.task.abort();
-        eprintln!("link tap [{}] traffic:\n{}", self.label, self.render());
     }
 }
 
