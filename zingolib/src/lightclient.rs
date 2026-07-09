@@ -272,26 +272,29 @@ impl LightClient {
         Ok(())
     }
 
-    /// Returns server information.
+    /// Returns server information as a JSON string.
+    ///
+    /// The data channel carries only JSON; failure travels on the error
+    /// channel. Callers never inspect the returned value's content to
+    /// learn whether the call succeeded (zingolabs/zingolib#2446).
     // TODO: return concrete struct with from json impl
-    pub async fn do_info(&mut self) -> String {
-        match self.indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await {
-            Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer.uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
-            }
-            Err(e) => format!("{e:?}"),
-        }
+    pub async fn do_info(&mut self) -> Result<String, LightClientError> {
+        let i = self
+            .indexer
+            .get_lightd_info(DEFAULT_REQUEST_TIMEOUT)
+            .await?;
+        let o = json::object! {
+            "version" => i.version,
+            "git_commit" => i.git_commit,
+            "server_uri" => self.indexer.uri().to_string(),
+            "vendor" => i.vendor,
+            "taddr_support" => i.taddr_support,
+            "chain_name" => i.chain_name,
+            "sapling_activation_height" => i.sapling_activation_height,
+            "consensus_branch_id" => i.consensus_branch_id,
+            "latest_block_height" => i.block_height
+        };
+        Ok(o.pretty(2))
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
@@ -522,5 +525,45 @@ mod tests {
             source.unified_addresses_json().await[0]["encoded_address"],
             restored.unified_addresses_json().await[0]["encoded_address"],
         );
+    }
+
+    /// The `do_info` data/error channel contract (zingolabs/zingolib#2446).
+    ///
+    /// Failure must travel on the error channel; the data channel carries
+    /// only JSON. Downstream FFIs must never have to inspect a returned
+    /// value's content to learn whether the call succeeded.
+    mod info_contract {
+        use crate::lightclient::LightClient;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        /// The test client's lazy endpoint (localhost:1) is never
+        /// listening, so the info request must fail — and that failure
+        /// must not surface as prose in the data channel.
+        ///
+        /// This began as the red TDD test for the migration: `do_info`
+        /// returned `String`, and the connection failure arrived as a
+        /// `Status {..}` Debug string indistinguishable by type from
+        /// data. It now pins the migrated contract: the failure is a
+        /// typed `IndexerError` on the error channel, and the only
+        /// remaining `Ok` construction site builds JSON.
+        #[tokio::test]
+        async fn do_info_failure_stays_out_of_the_data_channel() {
+            let wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .build();
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let error = client
+                .do_info()
+                .await
+                .expect_err("nothing listens on the test endpoint");
+            assert!(
+                matches!(
+                    error,
+                    crate::lightclient::error::LightClientError::IndexerError(_)
+                ),
+                "the failure must be typed, not prose: {error}"
+            );
+        }
     }
 }
