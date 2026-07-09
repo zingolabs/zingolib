@@ -15,7 +15,12 @@ maintenance = { status = "actively-developed" }
 default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
 wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
-# removes failing calls to `GetSubTreeRoots` in darkside testing
+# Orphaned as of the darkside-tests deletion (ADR 0005): nothing enables
+# this any longer, so its subtractive cfg gates never activate in a
+# workspace build (that dead activation was the cause of #2447). The
+# gates remain in the source pending a mechanical sweep; the feature is
+# retained meanwhile so those `cfg(feature = "darkside_test")` sites stay
+# recognized and warning-free.
 darkside_test = []
 # exposes test constructors for wallet types
 test-features = []
