@@ -1,0 +1,20 @@
+[package]
+name = "zingo-cli-harness"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The Wallet/WalletConfig traits (infrastructure PR #280) live past the
+# zcash_local_net_v0.6.0 tag the rest of the workspace pins; this crate
+# carries its own branch pin until the workspace moves wholesale.
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "bump_to_NU6.3" }
+
+zingo_test_vectors = { workspace = true }
+
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+zcash_address = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
