@@ -36,8 +36,9 @@ barrier).
 | darkside | 6 | 6 |
 | zingo-netutils / memo / status | 12 | 12 |
 
-The e2e (LocalNet) share fell from 75 to 42 while the unit share rose from
-166 to 216, plus 10 new live diagnostics and 6 unchanged darkside tests.
+The e2e (LocalNet) share fell from 75 to 42 (10 of the 42 are the new live
+diagnostics) while the unit share rose from 166 to 226, plus 6 unchanged
+darkside tests.
 
 ## Classification
 
@@ -54,8 +55,8 @@ between the two revisions.
   shape, and byte-identical summaries across rescan), zero_value_receipts
   (log-only → 89_000 balance, three-entry value-transfer shape with the
   zero-value receipt pinned as one Received{0, Orchard}).
-- **Recalibrated-equivalent (11):** the mining/balance family
-  (mine_to_orchard, mine_to_transparent, mine_to_transparent_and_shield,
+- **Recalibrated-equivalent (9):** the mining/balance family
+  (mine_to_transparent, mine_to_transparent_and_shield,
   mine_to_transparent_coinbase_maturity, send_orchard_back_and_forth,
   send_to_transparent_and_sapling_maintain_balance,
   received_tx_status_pending_to_confirmed_with_mempool_monitor,
@@ -110,16 +111,19 @@ carried over fabricated notes; confirmed-balances-via-real-scan is
 covered by the two surviving chain_generics fixtures).
 
 Keys (→ wallet/keys.rs): address_generation_deterministic_and_coherent
-and taddrs_from_old_seeds_stay_stable both PRESERVED byte-for-byte
+and taddrs_from_old_seeds_stay_stable (renamed from
+ensure_taddrs_from_old_seeds_work) both PRESERVED byte-for-byte
 (pinned encodings and seed vectors; the network was always scaffolding).
 
-Proposal rig (→ lightclient/propose.rs, wallet/propose.rs):
+Proposal rig (→ lightclient/propose.rs, wallet/propose.rs, and
+lightclient/send.rs for the transparent-policy case):
 ptfm_insufficient_funds PRESERVED (exact InsufficientFunds{10_000,
 30_000}); ptfm_zero_value PRESERVED (ZeroValueSendAll);
 toggle_zennies_for_zingo PRESERVED (max_send_value arithmetic);
 propose_orchard_dust_to_sapling PRESERVED (Ok, FIXME carried);
-four_coin_shield_proposal_shape PRESERVED (steps, 4 inputs, 30_000 fee,
-sum-minus-fee change); t_incoming_t_outgoing_disallowed PRESERVED
+four_coin_shield_proposal_shape (from
+fast::mine_to_transparent_and_propose_shielding) PRESERVED (steps, 4
+inputs, 30_000 fee, sum-minus-fee change); t_incoming_t_outgoing_disallowed PRESERVED
 (summary surfacing + refusal error chain).
 PRESERVED+: dust_sends_change_correctly (original asserted only Ok; the
 port adds fee-table and change arithmetic) and shield_transparent
@@ -129,14 +133,16 @@ NARROWED: ptfm_general (drain contract sharpened to exact selection
 [50_000, 100_000], dust line, zero change; live confirmed-drain covered
 by chain_generics fixtures); send_not_fully_synced →
 send_all_to_own_sapling_proposes (see the behind-tip caveat below);
-proposal_targets_best_pool_per_unified_address (best-pool routing now
+proposal_targets_best_pool_per_unified_address (from
+diversified_addresses_receive_funds_in_best_pool; best-pool routing now
 asserted directly on payment_pools; live scan-delivery dropped);
 send_to_tex (two-step shape plus new ZIP-320 prior_step_inputs wiring;
 the live broadcast is gone — see gaps); zero_value_change and
 zero_value_change_to_orchard_created (zero-value change asserted at
 proposal time with explicit arithmetic; post-mine bookkeeping covered by
 pepper-sync); dust_inputs_are_ignored and
-note_selection_covers_target_with_minimal_change (dust exclusion and
+note_selection_covers_target_with_minimal_change (from the chain_generics
+fixtures ignore_dust_inputs and note_selection_order; dust exclusion and
 minimal-change selection sharpened; the fixtures' recorded-fee round
 trips covered by the surviving fixtures).
 
@@ -157,8 +163,11 @@ generate_a_range_of_value_transfers, which drive the same
 follow_proposal machinery live.
 
 **Residual live-coverage gaps opened by the migration (consolidated):**
-1. **Live sapling-source spend**: no surviving test spends a sapling
-   note on a live chain (platform-forced; see deletions).
+1. **Live sapling-source spend, post-state unasserted**: the live spend
+   itself survives (multi_input_sapling_send_with_orchard_change_no_panic,
+   two sapling inputs, zebra accepts) but nothing asserts its post-state;
+   the first edition of this audit wrongly recorded the spend as absent
+   (corrected 2026-07-08; see deletions).
 2. **Live ZFZ output injection**: zennies coverage is now entirely
    offline (classification + max_send_value); no live send with
    zfz=true remains (verified: zero zennies references in any live
@@ -221,11 +230,13 @@ from reading the dev bodies:
    to orchard (mine_to_orchard is live again) but not to the sapling
    pool — so the deletion is forced. The
    arithmetic is pinned offline by the sapling-source pool-matrix and
-   simpool tests. **Residual gap, recorded honestly: no surviving test
-   spends a sapling note on a live chain.** The last live sapling-source
-   broadcast left the suite with this test; recovering it requires funding
-   a sapling note by a send (not mining) and spending it, which no AFTER
-   test currently does.
+   simpool tests. **Correction (2026-07-08):** the first edition of this
+   audit claimed no surviving test spends a sapling note on a live chain;
+   that was wrong. `multi_input_sapling_send_with_orchard_change_no_panic`
+   funds its recipient exclusively through its sapling address and spends
+   two of those notes live. The accurate residual: that test asserts
+   acceptance only (no post-broadcast balance or record assertions), and
+   the mined-sapling-coinbase premise specifically remains inexpressible.
 
 Two dev-side #[ignore]d tests (never census members) were also deleted by
 fc4f77c9a: mine_to_sapling (mining to the sapling pool specifically is
@@ -279,3 +290,61 @@ Change ledgers were extracted from `git log -p dev..HEAD` (56 test removals,
 protection verdicts come from reading both bodies of every changed test.
 The dev census required CXXFLAGS="-include cstdint" (host GCC vs vendored
 rocksdb 8.x).
+
+## Gap remediation plan (unit-first, 2026-07-08)
+
+One cross-cutting investment unlocks most of the unit-level coverage: a
+**build-without-broadcast seam** in zingolib's send path — calculate the
+`Transaction` from a proposal and return it instead of broadcasting,
+under a test-features flag. The mempool-attribution work already wants
+this seam for its rejection-side cells, so it pays twice. Orchard-only
+builds need no proving parameters; sapling spend proofs require the
+sapling proving parameters in the unit environment, which is the one
+named precondition below.
+
+**Gap 1 — sapling-source spend post-state.** Live acceptance already
+exists (see correction above). Two steps: (a) now — observe-and-pin a
+closing balance assert on
+`multi_input_sapling_send_with_orchard_change_no_panic`, upgrading it
+the same way the multi-note orchard test was upgraded, at zero new
+runtime; (b) after the seam and with sapling parameters available — a
+unit test that builds (proves) a two-input sapling spend over fabricated
+notes and asserts the bundle shape: two spend descriptions, one orchard
+change output.
+
+**Gap 2 — ZFZ output injection.** No seam needed; fully unit-coverable
+today. Injection happens at propose time
+(`lightclient/propose.rs` appends the Zennies payment to the
+transaction request), so a proposal-shape unit test over
+`SyntheticWalletBuilder` asserting that `propose_send_all(zfz = true)`
+yields a proposal whose payments include
+`ZENNIES_FOR_ZINGO_REGTEST_ADDRESS` at `ZENNIES_FOR_ZINGO_AMOUNT`
+covers the injection mechanism itself. Once the proposal provably
+carries the payment, propose-to-broadcast fidelity is the same generic
+pipeline the chain_generics fixtures exercise live; a dedicated live
+ZFZ send adds little.
+
+**Gap 3 — TEX two-step.** `zcash_client_backend` constructs both steps
+at build time, feeding step 1's ephemeral transparent output into step
+2 before anything touches a network, so behind the seam a unit test can
+build the entire ZIP-320 pair offline: assert step 2's transparent
+input spends step 1's ephemeral output and the final output pays the
+TEX-decoded address. The orchard-source variant keeps it
+parameter-free. The only class left live is zebra's mempool accepting
+the chained unmined pair — generic mempool chaining, worth at most one
+thin smoke on the mempool_attribution harness if we want it pinned.
+
+**Gap 4 — behind-tip broadcast.** The live singleton
+(`verify_old_wallet_uses_server_height_in_send`) stays, but the
+property's failure mode is unit-pinnable behind the seam: build from a
+synthetic wallet whose sync state sits at height H and assert the built
+transaction's expiry and consensus branch id derive from H + 1 —
+including the cell at H = activation boundary − 1, which is exactly the
+wallet-side builder bug the boundary-rejection attribution isolated.
+That turns the branch-id fix, when it lands, into a permanent unit
+fence rather than a LocalNet observation.
+
+**Suggested order:** the ZFZ proposal test (no preconditions), the
+sapling balance pin (one observe-and-pin run), the seam plus the gap-4
+branch-id cells (highest defect-history value), the TEX two-step build
+test, and last the sapling bundle-build test (parameters precondition).
