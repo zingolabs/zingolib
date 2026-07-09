@@ -3,6 +3,7 @@ members = [
     "libtonode-tests",
     "pepper-sync",
     "zingo-cli",
+    "zingo-cli-harness",
     "zingo-memo",
     "zingo-price",
     "zingo-status",

@@ -4932,6 +4932,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-cli-harness"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "zcash_address",
+ "zcash_local_net",
+ "zingo_test_vectors",
+]
+
+[[package]]
 name = "zingo-consensus"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
