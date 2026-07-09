@@ -111,6 +111,7 @@ where
             set_verify_scan_range(sync_state, chain_height, VerifyEnd::VerifyHighest);
         }
     }
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(reorg_detection_start_height)
 }
