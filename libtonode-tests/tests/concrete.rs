@@ -512,30 +512,23 @@ mod fast {
 mod slow {
     use pepper_sync::wallet::{OrchardNote, OutputInterface, SaplingNote};
     use zcash_local_net::validator::Validator;
-    
-    
 
     use zcash_protocol::PoolType;
-    
-    
-    
+
     use zingolib::config::{ChainType, ClientConfig, WalletConfig};
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::from_inputs;
-    use zingolib::testutils::{
-        build_fvks_from_unified_keystore, default_test_wallet_settings,
-    };
-    
+    use zingolib::testutils::{build_fvks_from_unified_keystore, default_test_wallet_settings};
+
     use zingolib::wallet::error::CalculateTransactionError;
 
     use zingolib::wallet::output::SpendStatus;
-    
+
     use zingolib::wallet::summary::data::{
         SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
-    
 
     use super::*;
 
@@ -977,50 +970,28 @@ mod slow {
             let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
-        #[tokio::test]
-        async fn external_send() {
-            let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-            let _external_send_txid_with_memo = *from_inputs::quick_send(
-                &mut faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    Some("foo"),
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            let _external_send_txid_no_memo = *from_inputs::quick_send(
-                &mut faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    None,
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            // TODO:  This chain height bump should be unnecessary. I think removing
-            // this increase_height call reveals a bug!
-            increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-                .await
-                .unwrap();
-
-            let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
-            faucet.rescan_and_await().await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
-            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-        }
+        /// Rescan survival of the spender's records, asserted on BOTH
+        /// `value_transfers` and `transaction_summaries`, across the
+        /// full {sapling, orchard} × {memo, memoless} outgoing-output
+        /// matrix in one transaction. Absorbs the former
+        /// `external_send` (sapling memo/memoless outgoing metadata
+        /// across rescan) per the protection-dominance analysis, and
+        /// adds the previously untested orchard-with-memo cell.
         #[tokio::test]
         async fn check_list_value_transfers_across_rescan() {
             let inital_value = 100_000;
             let (ref local_net, faucet, mut recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
+            let faucet_sapling = get_base_address_macro!(faucet, "sapling");
+            let faucet_unified = get_base_address_macro!(faucet, "unified");
             from_inputs::quick_send(
                 &mut recipient,
-                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+                vec![
+                    (faucet_sapling.as_str(), 10_000, Some("sapling with memo")),
+                    (faucet_sapling.as_str(), 10_000, None),
+                    (faucet_unified.as_str(), 10_000, Some("orchard with memo")),
+                    (faucet_unified.as_str(), 10_000, None),
+                ],
             )
             .await
             .unwrap();
@@ -1100,179 +1071,174 @@ mod slow {
         check_client_balances!(recipient, o: 0 s: 10_000 t: 0);
     }
 
-    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
-    #[tokio::test]
-    async fn mempool_and_balance() {
-        let value = 100_000;
-        let (local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(value).await;
-
-        let bal = recipient
+    /// Assert the recipient's three-way orchard balance split.
+    async fn assert_orchard_split(
+        client: &zingolib::lightclient::LightClient,
+        total: u64,
+        confirmed: u64,
+        unconfirmed: u64,
+    ) {
+        let balance = client
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
-        tracing::info!("{bal}");
-        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
-        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
-        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
+        assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), total);
+        assert_eq!(
+            balance.confirmed_orchard_balance.unwrap().into_u64(),
+            confirmed
+        );
+        assert_eq!(
+            balance.unconfirmed_orchard_balance.unwrap().into_u64(),
+            unconfirmed
+        );
+    }
 
-        // 3. Mine 10 blocks
+    /// Assert the recipient holds no sapling notes and exactly the
+    /// expected orchard notes, each with its expected `SpendStatus` and
+    /// (where given) its transaction's confirmation state.
+    async fn assert_orchard_note_statuses(
+        client: &zingolib::lightclient::LightClient,
+        expected: &[(u64, SpendStatus, Option<bool>)],
+    ) {
+        let wallet = client.wallet().read().await;
+        assert_eq!(wallet.wallet_outputs::<SaplingNote>().len(), 0);
+        let orchard_notes = wallet.wallet_outputs::<OrchardNote>();
+        assert_eq!(orchard_notes.len(), expected.len());
+        for (value, status, confirmed) in expected {
+            let note = (*orchard_notes
+                .iter()
+                .find(|&&note| note.value() == *value)
+                .unwrap_or_else(|| panic!("no orchard note of value {value}")))
+            .clone();
+            assert_eq!(wallet.output_spend_status(&note), *status, "note {value}");
+            if let Some(want_confirmed) = confirmed {
+                assert_eq!(
+                    wallet.output_transaction(&note).status().is_confirmed(),
+                    *want_confirmed,
+                    "note {value} transaction confirmation"
+                );
+            }
+        }
+    }
+
+    /// Coalesced from the former `mempool_and_balance` and
+    /// `mempool_spends_correctly_marked_pending_spent`
+    /// (protection-dominance analysis): one funded recipient walks two
+    /// complete mempool-then-confirmed spend cycles, asserted at BOTH
+    /// granularities — the three-way orchard balance split and per-note
+    /// `SpendStatus` — at every phase, including the pre-spend steady
+    /// state and a post-confirmation stability window neither original
+    /// covered at note level. Both former send amounts survive the
+    /// merge deliberately: the 2_000-zat cycle preserves near-dust
+    /// change arithmetic; the 100_000 cycle preserves the note-status
+    /// shape of the original per-note test.
+    #[tokio::test]
+    async fn mempool_spend_balance_and_note_status_accounting() {
+        let funded = 1_000_000;
+        let (local_net, faucet, mut recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(funded).await;
+
+        // Steady state, and its stability across an empty ten-block mine.
+        assert_orchard_split(&recipient, funded, funded, 0).await;
         increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
             .await
             .unwrap();
-        let bal = recipient
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
-        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
-        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
+        assert_orchard_split(&recipient, funded, funded, 0).await;
 
-        // 4. Spend the funds
-        let sent_value = 2000;
-        let outgoing_memo = "Outgoing Memo";
-
-        let _sent_transaction_id = from_inputs::quick_send(
+        // Cycle one: a small send whose change sits near the dust line.
+        let small = 2_000;
+        let small_txids = from_inputs::quick_send(
             &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
-                sent_value,
-                Some(outgoing_memo),
+                small,
+                Some("Outgoing Memo"),
             )],
         )
         .await
         .unwrap();
+        recipient.sync_and_await().await.unwrap();
+        let after_small = funded - (small + u64::from(MINIMUM_FEE));
+        assert_orchard_split(&recipient, after_small, 0, after_small).await;
+        assert_orchard_note_statuses(
+            &recipient,
+            &[
+                (
+                    funded,
+                    SpendStatus::MempoolSpent(*small_txids.first()),
+                    None,
+                ),
+                (after_small, SpendStatus::Unspent, Some(false)),
+            ],
+        )
+        .await;
 
-        let bal = recipient
-            .account_balance(zip32::AccountId::ZERO)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
+        assert_orchard_split(&recipient, after_small, after_small, 0).await;
+        assert_orchard_note_statuses(
+            &recipient,
+            &[
+                (funded, SpendStatus::Spent(*small_txids.first()), None),
+                (after_small, SpendStatus::Unspent, Some(true)),
+            ],
+        )
+        .await;
 
-        // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
-        let new_bal = value - (sent_value + u64::from(MINIMUM_FEE));
-        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), new_bal);
-        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), 0);
-        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), new_bal);
-
-        // 5. Mine the pending block, making the funds verified and spendable.
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
-            .await
-            .unwrap();
-
-        let bal = recipient
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-
-        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), new_bal);
-        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), new_bal);
-        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
-    }
-
-    // FIXME: add unified address discovery to pepper sync and add a test here
-
-    #[tokio::test]
-    async fn mempool_spends_correctly_marked_pending_spent() {
-        let (local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(1_000_000).await;
-        let sent_txids = from_inputs::quick_send(
+        // Cycle two: a larger cross-pool send, spending the change note.
+        let big = 100_000;
+        let big_txids = from_inputs::quick_send(
             &mut recipient,
-            vec![(&get_base_address_macro!(faucet, "sapling"), 100_000, None)],
+            vec![(&get_base_address_macro!(faucet, "sapling"), big, None)],
         )
         .await
         .unwrap();
         recipient.sync_and_await().await.unwrap();
-        {
-            let recipient_wallet = recipient.wallet().read().await;
-            let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
-            assert_eq!(sapling_notes.len(), 0);
-            let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
-            assert_eq!(orchard_notes.len(), 2);
-            let spent_orchard_note = (*orchard_notes
-                .iter()
-                .find(|&&note| note.value() == 1_000_000)
-                .unwrap())
-            .clone();
-            assert_eq!(
-                recipient_wallet.output_spend_status(&spent_orchard_note),
-                SpendStatus::MempoolSpent(*sent_txids.first())
-            );
-            let orchard_change_note = (*orchard_notes
-                .iter()
-                .find(|&&note| note.value() == 880_000)
-                .unwrap())
-            .clone();
-            assert_eq!(
-                recipient_wallet.output_spend_status(&orchard_change_note),
-                SpendStatus::Unspent
-            );
-            assert!(
-                !recipient_wallet
-                    .output_transaction(&orchard_change_note)
-                    .status()
-                    .is_confirmed()
-            );
-        }
-        let balance = recipient
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), 880_000);
-        assert_eq!(balance.confirmed_orchard_balance.unwrap().into_u64(), 0);
-        assert_eq!(
-            balance.unconfirmed_orchard_balance.unwrap().into_u64(),
-            880_000
-        );
+        // One orchard spend, one sapling output, orchard change: the
+        // ZIP-317 fee the former test pinned implicitly via its
+        // 880_000 post-state.
+        let big_fee = 2 * u64::from(MINIMUM_FEE);
+        let after_big = after_small - (big + big_fee);
+        assert_orchard_split(&recipient, after_big, 0, after_big).await;
+        assert_orchard_note_statuses(
+            &recipient,
+            &[
+                (funded, SpendStatus::Spent(*small_txids.first()), None),
+                (
+                    after_small,
+                    SpendStatus::MempoolSpent(*big_txids.first()),
+                    None,
+                ),
+                (after_big, SpendStatus::Unspent, Some(false)),
+            ],
+        )
+        .await;
+
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        {
-            let recipient_wallet = recipient.wallet().read().await;
-            let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
-            assert_eq!(sapling_notes.len(), 0);
-            let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
-            assert_eq!(orchard_notes.len(), 2);
-            let spent_orchard_note = (*orchard_notes
-                .iter()
-                .find(|&&note| note.value() == 1_000_000)
-                .unwrap())
-            .clone();
-            assert_eq!(
-                recipient_wallet.output_spend_status(&spent_orchard_note),
-                SpendStatus::Spent(*sent_txids.first())
-            );
-            let orchard_change_note = (*orchard_notes
-                .iter()
-                .find(|&&note| note.value() == 880_000)
-                .unwrap())
-            .clone();
-            assert_eq!(
-                recipient_wallet.output_spend_status(&orchard_change_note),
-                SpendStatus::Unspent
-            );
-            assert!(
-                recipient_wallet
-                    .output_transaction(&orchard_change_note)
-                    .status()
-                    .is_confirmed()
-            );
-        }
-        let balance = recipient
-            .account_balance(zip32::AccountId::ZERO)
+        assert_orchard_split(&recipient, after_big, after_big, 0).await;
+        let settled = [
+            (funded, SpendStatus::Spent(*small_txids.first()), None),
+            (after_small, SpendStatus::Spent(*big_txids.first()), None),
+            (after_big, SpendStatus::Unspent, Some(true)),
+        ];
+        assert_orchard_note_statuses(&recipient, &settled).await;
+
+        // Stability window: nine further blocks change nothing at
+        // either granularity.
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 9)
             .await
             .unwrap();
-        assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), 880_000);
-        assert_eq!(
-            balance.confirmed_orchard_balance.unwrap().into_u64(),
-            880_000
-        );
-        assert_eq!(balance.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
+        assert_orchard_split(&recipient, after_big, after_big, 0).await;
+        assert_orchard_note_statuses(&recipient, &settled).await;
     }
+
+    // FIXME: add unified address discovery to pepper sync and add a test here
 }
 
 mod basic_transactions {
-    
-    
 
     // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
     // #[tokio::test]
