@@ -923,6 +923,102 @@ mod proposal_shape {
         assert_eq!(change, note_value - sent_value - fee);
     }
 
+    /// Offline twin of libtonode
+    /// `basic_transactions::send_and_sync_with_multiple_notes_no_panic`,
+    /// which stays live as the pipeline control: a 50_000 payment from
+    /// two 40_000 notes must gather both — either alone is consumed by
+    /// the payment plus the 10_000 one-to-one fee — and return exactly
+    /// 20_000 change.
+    #[tokio::test]
+    async fn payment_no_single_note_covers_gathers_both_and_changes() {
+        let note_value = 40_000;
+        let sent_value = 50_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::ORCHARD);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let selected: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded payment selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(selected, [note_value, note_value], "both notes gathered");
+        let fee = u64::from(step.balance().fee_required());
+        assert_eq!(
+            fee,
+            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+        );
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, 2 * note_value - sent_value - fee);
+        assert_eq!(change, 20_000);
+    }
+
+    /// Offline twin of libtonode `slow::sapling_dust_fee_collection`,
+    /// which stays live as the pipeline control: from 100_000 orchard
+    /// plus a 1_000-zat sapling dust note, a 50_000 send selects only
+    /// the orchard note (dust cannot pay for its own input), charges the
+    /// plain one-to-one fee, and leaves 40_000 change — the live test's
+    /// closing balance, derived here at proposal time. The dust note
+    /// stays behind untouched.
+    #[tokio::test]
+    async fn sapling_dust_is_not_collected_toward_fees() {
+        let orchard_value = 100_000;
+        let sapling_dust = 1_000;
+        let sent_value = 50_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(orchard_value)
+            .sapling_note(sapling_dust)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::ORCHARD);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let selected: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded payment selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(selected, [orchard_value], "the dust note is not selected");
+        let fee = u64::from(step.balance().fee_required());
+        assert_eq!(
+            fee,
+            fee_tables::one_to_one(Some(ShieldedProtocol::Orchard), PoolType::ORCHARD, true)
+        );
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, orchard_value - sent_value - fee);
+        assert_eq!(change, 40_000);
+    }
+
     /// Migrated from libtonode `shield_transparent` (long `#[ignore]`d):
     /// shielding transparent funds proposes without error, consuming the
     /// coin into shielded change minus the fee. The original asserted

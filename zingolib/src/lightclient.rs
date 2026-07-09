@@ -41,6 +41,8 @@ use crate::{
 use error::LightClientError;
 
 pub mod error;
+#[cfg(test)]
+mod mock_chain_tests;
 pub mod propose;
 pub mod save;
 pub mod send;

@@ -312,6 +312,62 @@ mod built_transaction_shape {
         );
     }
 
+    /// Offline twin of libtonode `fast::mine_to_transparent_and_shield`,
+    /// which stays live as the pipeline control (its coinbase provenance
+    /// and the documented shield-eligibility race are inexpressible
+    /// offline): four transparent coins shield in one step, and the
+    /// built transaction nets exactly their sum minus the 30_000
+    /// four-input shield fee into orchard. The live assert is the
+    /// post-confirmation orchard balance; the offline equivalent is the
+    /// orchard bundle's value balance on the built transaction.
+    #[tokio::test]
+    async fn four_coin_shield_builds_and_nets_input_minus_fee() {
+        let coin_value = 1_000_000u64;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .transparent_coin(coin_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client.propose_shield(zip32::AccountId::ZERO).await.unwrap();
+        let txids = client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(txids.len(), 1);
+
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        let transaction = wallet
+            .wallet_transactions
+            .get(&txids[0])
+            .unwrap()
+            .transaction();
+        let transparent = transaction
+            .transparent_bundle()
+            .expect("a shield spends transparent coins");
+        assert_eq!(transparent.vin.len(), 4, "all four coins consumed");
+        assert!(
+            transparent.vout.is_empty(),
+            "a shield pays no transparent outputs"
+        );
+        let orchard = transaction
+            .orchard_bundle()
+            .expect("a shield produces orchard change");
+        // Negative value balance is value flowing INTO the orchard pool:
+        // the four coins minus the 30_000 zip317 fee (four transparent
+        // inputs plus the orchard action pair).
+        assert_eq!(
+            i64::from(orchard.value_balance()),
+            -i64::try_from(4 * coin_value - 30_000).unwrap()
+        );
+    }
+
     /// Gap-1b cell of the remediation plan, mirroring the live
     /// multi_input_sapling_send_with_orchard_change_no_panic offline: a
     /// payment that no single sapling note covers builds (proves) a
