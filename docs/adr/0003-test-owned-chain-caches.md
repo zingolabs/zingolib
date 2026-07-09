@@ -1,4 +1,4 @@
-# Test-owned chain caches snapshot completed setup; txid-returning scenarios snapshot early
+# Test-owned chain caches snapshot completed setup and record returned outputs
 
 Libtonode tests regenerate their regtest chains from genesis on every run. We
 replace that per-run generation with chain caches: replay records of the
@@ -11,14 +11,15 @@ from a live run's only in where the blocks came from. Caching is the default
 regime for every libtonode test (tests that exercise
 mining behavior carry an explicit opt-out), and each test owns exactly one
 cache keyed by its own name. The snapshot is taken at scenario-setup
-completion for every scenario that returns no transaction identifiers to its
-caller (`custom_clients`, `unfunded_client`, `faucet`, `faucet_recipient`):
-their setup sends are embedded in the cache, and wallets recover their view
-of those transactions by syncing the cached chain. Only
-`faucet_funded_recipient` — the one constructor whose funding txids escape to
-the test — snapshots early, at its internal `faucet_recipient` stage, and
-replays its funding sends live so the returned txids are minted fresh each
-run. Caches live in a gitignored `chain_caches/` directory at the repository
+completion for every scenario: setup sends are embedded in the cache, and
+wallets recover their view of those transactions by syncing the cached
+chain. `faucet_funded_recipient` — the one constructor whose funding txids
+escape to the test — additionally records the identifiers its build-time
+sends minted in the cache's `outputs.json`, written under the same atomic
+rename as the blocks; a warm run replays the chain those transactions are
+in and returns the recorded identifiers. The stage recorded in the inputs
+manifest carries the funding amounts, so a test that changes what it asks
+for discards its cache automatically. Caches live in a gitignored `chain_caches/` directory at the repository
 root, which the test container bind-mounts, so caches built in one
 containerized run serve the next.
 
@@ -58,10 +59,12 @@ post-send-boundary work (sends, confirmation mining, sync — the
 `faucet_funded_recipient` actually returns txids. A universal send boundary
 would have recovered one to two minutes of the fifteen; snapshotting
 completed setup for the txid-free scenarios recovers roughly twelve, at no
-manifest cost. The amendment was adopted on that evidence. An outputs
-manifest recording the funding txids remains the path to moving
-`faucet_funded_recipient`'s snapshot past its sends, and its schema design
-is still deliberately unblocked from the MVP.
+manifest cost. The amendment was adopted on that evidence, with
+`faucet_funded_recipient` alone holding an early snapshot until the outputs
+manifest existed. That manifest landed once the replay mechanism was proven:
+`outputs.json` records the scenario's returned identifiers atomically with
+the blocks, closing the last ~180 aggregate seconds of live setup sends the
+early snapshot had preserved.
 
 The mechanism as first implemented copied the Validator's data directory via
 `zcash_local_net`'s `cache_chain`/`load_chain` primitives, with the building

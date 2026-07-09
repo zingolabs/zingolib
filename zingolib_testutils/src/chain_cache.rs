@@ -94,15 +94,27 @@ impl CacheDir {
     }
 }
 
-/// Which setup stage a cache holds: the bare launch chain, or the
-/// funded chain that includes the faucet's shielded-offload
-/// transactions. Recorded in the manifest so a test that switches
-/// scenario constructors between runs cannot load a wrong-stage chain
-/// past an otherwise-matching manifest.
+/// Which setup stage a cache holds: the bare launch chain, the funded
+/// chain that includes the faucet's shielded-offload transactions, or
+/// the recipient-funded chain that additionally embeds
+/// `faucet_funded_recipient`'s funding sends (whose returned txids
+/// live in the cache's `outputs.json`). Recorded in the manifest so a
+/// test that switches scenario constructors — or changes its funding
+/// amounts — between runs cannot load a wrong chain past an
+/// otherwise-matching manifest.
 #[derive(Debug)]
 pub(crate) enum CachedStage {
     Bare,
     Funded,
+    // The fields are consumed through the derived Debug impl, which
+    // serializes the stage — amounts included — into the manifest;
+    // dead-code analysis ignores derive-only reads by design.
+    #[allow(dead_code)]
+    RecipientFunded {
+        orchard_funds: Option<u64>,
+        sapling_funds: Option<u64>,
+        transparent_funds: Option<u64>,
+    },
 }
 
 /// The chain-determining inputs a cache records at build time and every
@@ -196,6 +208,29 @@ async fn read_chain(local_net: &MeteredNet) -> String {
 /// and renamed into place so a crashed build never leaves a half-cache
 /// where a later run would load it.
 pub(crate) async fn export(local_net: &MeteredNet, dir: &CacheDir, manifest: &CacheManifest) {
+    export_inner(local_net, dir, manifest, None).await;
+}
+
+/// [`export`], additionally recording the scenario's returned outputs
+/// (e.g. `faucet_funded_recipient`'s funding txids) in the cache's
+/// `outputs.json`. The outputs ride the same atomic rename as the
+/// blocks, so a cache with an outputs-bearing stage can never exist
+/// without them.
+pub(crate) async fn export_with_outputs(
+    local_net: &MeteredNet,
+    dir: &CacheDir,
+    manifest: &CacheManifest,
+    outputs: serde_json::Value,
+) {
+    export_inner(local_net, dir, manifest, Some(outputs)).await;
+}
+
+async fn export_inner(
+    local_net: &MeteredNet,
+    dir: &CacheDir,
+    manifest: &CacheManifest,
+    outputs: Option<serde_json::Value>,
+) {
     let building = dir.root.with_extension("building");
     if building.exists() {
         std::fs::remove_dir_all(&building).expect("stale .building dir must be removable");
@@ -209,8 +244,26 @@ pub(crate) async fn export(local_net: &MeteredNet, dir: &CacheDir, manifest: &Ca
         serde_json::to_string_pretty(&manifest.0).expect("manifest serializes"),
     )
     .expect("manifest must be writable");
+    if let Some(outputs) = outputs {
+        std::fs::write(
+            building.join("outputs.json"),
+            serde_json::to_string_pretty(&outputs).expect("outputs serialize"),
+        )
+        .expect("outputs record must be writable");
+    }
 
     std::fs::rename(&building, &dir.root).expect("completed cache must rename into place");
+}
+
+/// Read the recorded scenario outputs that live beside a blocks
+/// record. `None` when no `outputs.json` exists — legitimate only for
+/// hand-managed [`ChainCachePolicy::LoadRaw`] caches; a `PerTest`
+/// cache whose stage records outputs writes them atomically with the
+/// blocks, so absence there means a corrupt cache (discard it).
+pub(crate) fn load_outputs(blocks_file: &Path) -> Option<serde_json::Value> {
+    let outputs_path = blocks_file.with_file_name("outputs.json");
+    let text = std::fs::read_to_string(outputs_path).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 /// Export a bare replay record to an explicit path, for hand-managed

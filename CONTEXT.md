@@ -35,18 +35,15 @@ _Avoid_: test's chain
 
 **Chain cache**:
 A replay record of the blocks a test scenario's setup generated, read
-out of the regtest Validator at scenario-setup completion (or at the
-send boundary, for scenarios that return transaction identifiers) and
+out of the regtest Validator at scenario-setup completion and
 resubmitted to a fresh Validator at launch to replace live setup
-generation. Each test owns at most one cache, keyed by the test's name.
-_Avoid_: chain state snapshot, state-directory copy
-
-**Send boundary**:
-The point in a scenario's setup before the first wallet-initiated
-transaction whose identifier escapes to the caller. Scenarios that
-return txids snapshot their chain cache here and replay the sends live,
-so the returned identifiers are minted fresh each run; txid-free
-scenarios snapshot at setup completion instead.
+generation. Scenarios that return transaction identifiers record them
+in the cache alongside the blocks, so warm runs return identifiers that
+name transactions in the replayed chain. Each test owns at most one
+cache, keyed by the test's name.
+_Avoid_: chain state snapshot, state-directory copy, send boundary
+(a superseded interim design in which txid-returning scenarios
+snapshotted before their sends; see ADR 0003's history)
 
 **Launch block**:
 The single block `zcash_local_net` mines inside `Zebrad::launch` on

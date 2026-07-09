@@ -650,10 +650,12 @@ pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient
     .await
 }
 
-/// TODO: Add Doc Comment Here!
-/// Snapshots early (ADR 0003): the cache holds the internal
-/// `faucet_recipient` stage, and the funding sends below replay live on
-/// every run so the returned txids are minted fresh.
+/// Like every other scenario, snapshots at full setup completion
+/// (ADR 0003): the funding sends are embedded in the cache, and the
+/// txids they minted at build time are recorded in the cache's
+/// `outputs.json` — a warm run replays the chain and returns the
+/// recorded identifiers, which name transactions that are literally in
+/// the replayed blocks.
 pub async fn faucet_funded_recipient(
     orchard_funds: Option<u64>,
     sapling_funds: Option<u64>,
@@ -669,8 +671,65 @@ pub async fn faucet_funded_recipient(
     Option<String>,
     Option<String>,
 ) {
-    let (mut local_net, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, configured_activation_heights, cache).await;
+    let manifest = CacheManifest::describe(
+        mine_to_pool,
+        &configured_activation_heights,
+        CachedStage::RecipientFunded {
+            orchard_funds,
+            sapling_funds,
+            transparent_funds,
+        },
+    );
+    let disposition = chain_cache::resolve(cache, &manifest);
+
+    if let Disposition::Replay(blocks_file) = disposition {
+        // The warm path is exactly a faucet_recipient over the cached
+        // chain — the funding transactions are in the replayed blocks,
+        // and the freshly built wallets recover them by sync.
+        let (mut local_net, faucet, recipient) = faucet_recipient(
+            mine_to_pool,
+            configured_activation_heights,
+            ChainCachePolicy::LoadRaw(blocks_file.clone()),
+        )
+        .await;
+        let outputs = chain_cache::load_outputs(&blocks_file).unwrap_or_else(|| {
+            panic!(
+                "cache for this test lacks outputs.json ({}); a PerTest cache writes it \
+                 atomically with the blocks, so this cache is corrupt or hand-rolled — \
+                 discard it (or craft the outputs) and rerun",
+                blocks_file.display()
+            )
+        });
+        let recorded = |key: &str| {
+            outputs
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        let (orchard_txid, sapling_txid, transparent_txid) = (
+            recorded("orchard_txid"),
+            recorded("sapling_txid"),
+            recorded("transparent_txid"),
+        );
+        local_net.mark_setup_complete("faucet_funded_recipient");
+        return (
+            local_net,
+            faucet,
+            recipient,
+            orchard_txid,
+            sapling_txid,
+            transparent_txid,
+        );
+    }
+
+    // Live run or cache build: generate everything, then export the
+    // completed setup — blocks and minted txids together — if building.
+    let (mut local_net, mut faucet, mut recipient) = faucet_recipient(
+        mine_to_pool,
+        configured_activation_heights,
+        ChainCachePolicy::Disabled,
+    )
+    .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -726,6 +785,19 @@ pub async fn faucet_funded_recipient(
         .unwrap();
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    if let Disposition::Export(dir) = disposition {
+        chain_cache::export_with_outputs(
+            &local_net,
+            &dir,
+            &manifest,
+            serde_json::json!({
+                "orchard_txid": orchard_txid,
+                "sapling_txid": sapling_txid,
+                "transparent_txid": transparent_txid,
+            }),
+        )
+        .await;
+    }
     local_net.mark_setup_complete("faucet_funded_recipient");
     (
         local_net,
