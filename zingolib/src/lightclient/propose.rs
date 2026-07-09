@@ -430,6 +430,58 @@ mod send_all {
         assert_eq!(payment + fee, note_value);
     }
 
+    /// Gap-2 remediation from the protection audit (§ Gap remediation
+    /// plan): with Zennies for Zingo enabled, the proposal itself carries
+    /// the injected zenny payment. toggle_zennies_for_zingo pins the
+    /// max-send arithmetic; this pins the injection mechanism — the
+    /// request `propose_send_all` builds contains exactly one payment to
+    /// the Zennies for Zingo address at `ZENNIES_FOR_ZINGO_AMOUNT`,
+    /// alongside the send-all payment, and the step still balances.
+    #[tokio::test]
+    async fn send_all_with_zfz_injects_the_zennies_payment() {
+        let initial_funds = 2_000_000;
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(initial_funds)
+            .build();
+        let zfz_address = crate::get_zennies_for_zingo_address(wallet.chain_type());
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client
+            .propose_send_all(
+                external_address(PoolType::ORCHARD),
+                true,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let zennies_payments: Vec<u64> = step
+            .transaction_request()
+            .payments()
+            .values()
+            .filter(|payment| payment.recipient_address().encode() == zfz_address)
+            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .collect();
+        assert_eq!(
+            zennies_payments,
+            [crate::ZENNIES_FOR_ZINGO_AMOUNT],
+            "exactly one zenny payment, at the fixed donation amount"
+        );
+        assert_eq!(step.transaction_request().payments().len(), 2);
+        let fee = u64::from(step.balance().fee_required());
+        let payment: u64 = step
+            .transaction_request()
+            .payments()
+            .values()
+            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .sum();
+        assert_eq!(payment + fee, initial_funds);
+    }
+
     /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
     /// Zennies for Zingo enabled, the maximum sendable value deducts the
     /// zenny amount and the fee for one orchard note in, three outputs out.

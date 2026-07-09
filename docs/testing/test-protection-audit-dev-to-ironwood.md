@@ -348,3 +348,29 @@ fence rather than a LocalNet observation.
 sapling balance pin (one observe-and-pin run), the seam plus the gap-4
 branch-id cells (highest defect-history value), the TEX two-step build
 test, and last the sapling bundle-build test (parameters precondition).
+
+### Executed (2026-07-08)
+
+All five items landed, in the suggested order. The seam needed no new
+API: `LightWallet::calculate_transactions` already builds, proves, and
+stores without broadcasting; what it needed was buildable synthetic
+wallets, so `SyntheticWalletBuilder` now addresses fabricated notes to
+the wallet's own keys, appends their commitments to the shard trees at
+the claimed positions, checkpoints at the covering position, and takes
+an activation-heights override. The parameters precondition dissolved:
+the sapling proving parameters are embedded in the zingolib crate.
+
+- Gap 2: `send_all::send_all_with_zfz_injects_the_zennies_payment`
+  (zingolib/src/lightclient/propose.rs).
+- Gap 1a: closing balance pinned on
+  `multi_input_sapling_send_with_orchard_change_no_panic` (o: 0,
+  s: 10_000; observed green solo, 72.6s).
+- Gaps 4, 3, 1b: `mod built_transaction_shape`
+  (zingolib/src/lightclient/send.rs) — expiry/branch-id derivation from
+  synced height + 1, the activation-boundary-minus-one branch-id fence,
+  the offline ZIP-320 pair with ephemeral-output wiring, and the proved
+  two-input sapling spend with orchard change.
+
+Residual live classes, unchanged by design: zebra's mempool accepting
+the chained unmined TEX pair, the behind-tip live singleton, and the
+offline orchard-proof-verification cell of mempool_attribution.

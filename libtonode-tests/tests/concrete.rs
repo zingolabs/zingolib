@@ -1602,10 +1602,11 @@ TransactionSummary {
     /// The final send must gather more than one of the recipient's three
     /// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
     /// making this the suite's only live broadcast of a multi-input sapling
-    /// spend with cross-pool (orchard) change. The unwraps are the
-    /// assertions: proposal, proving, and the validator's acceptance of the
-    /// bundle. Note-selection ordering itself is asserted offline by
-    /// `note_selection_covers_target_with_minimal_change` in
+    /// spend with cross-pool (orchard) change. The unwraps assert proposal,
+    /// proving, and the validator's acceptance of the bundle; the closing
+    /// balance check pins the spend's post-state (gap 1a of the audit's
+    /// remediation plan). Note-selection ordering itself is asserted
+    /// offline by `note_selection_covers_target_with_minimal_change` in
     /// `zingolib::lightclient::propose`.
     #[tokio::test]
     async fn multi_input_sapling_send_with_orchard_change_no_panic() {
@@ -1650,6 +1651,16 @@ TransactionSummary {
         )
         .await
         .unwrap();
+
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+            .await
+            .unwrap();
+        // Post-state, observed and pinned: the 30_000 payment plus its
+        // 20_000 ZIP-317 fee (two sapling spends, two orchard actions) is
+        // covered exactly by the 20_000 and 30_000 notes, so the untouched
+        // 10_000 sapling note is the whole remaining balance and the
+        // orchard change is zero-value.
+        check_client_balances!(recipient, o: 0 s: 10_000 t: 0);
     }
 
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?

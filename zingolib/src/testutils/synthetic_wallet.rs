@@ -5,17 +5,25 @@
 //! ranges), anchor checkpoints in BOTH shard-tree stores, and notes that
 //! are confirmed at or below the anchor carrying a position, a nullifier,
 //! and no spend. This builder fabricates exactly those invariants.
-//! Witnesses are never computed at proposal time, so the shard trees can
-//! stay empty — only their checkpoint stores matter.
+//!
+//! Beyond proposing, the wallets can BUILD transactions offline
+//! (`LightWallet::calculate_transactions` — the build-without-broadcast
+//! seam of the protection audit's gap remediation plan): each fabricated
+//! note is addressed to the wallet's own keys and its commitment is
+//! appended to the corresponding shard tree at the note's claimed
+//! position, so witness computation and spend proving work without a
+//! chain. Sapling proving parameters are embedded in the crate.
 //!
 //! Example wallet fixture files cannot serve this purpose: they
 //! deserialize with keys and tree frontiers but no confirmed transaction
 //! state (the root cause of the historically-ignored offline propose
 //! test).
 
-use incrementalmerkletree::Position;
+use incrementalmerkletree::{Position, Retention};
+use orchard::tree::MerkleHashOrchard;
 use orchard::value::NoteValue;
 use shardtree::store::{Checkpoint, ShardStore as _};
+use zcash_keys::keys::UnifiedSpendingKey;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::{
@@ -42,6 +50,7 @@ use crate::wallet::LightWallet;
 pub struct SyntheticWalletBuilder {
     mnemonic: String,
     tip: u32,
+    activation_heights: ActivationHeights,
     orchard_note_values: Vec<u64>,
     sapling_note_values: Vec<u64>,
     transparent_coin_values: Vec<u64>,
@@ -54,6 +63,7 @@ impl SyntheticWalletBuilder {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
+            activation_heights: ActivationHeights::default(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
             transparent_coin_values: Vec::new(),
@@ -64,6 +74,14 @@ impl SyntheticWalletBuilder {
     /// 2, 3, … so the tip must exceed the number of notes by at least 2.
     pub fn tip(mut self, tip: u32) -> Self {
         self.tip = tip;
+        self
+    }
+
+    /// Overrides the regtest activation-height schedule (default: every
+    /// expressible upgrade active at height 1). The gap-4 boundary cells
+    /// use this to position an activation just above the synced tip.
+    pub fn activation_heights(mut self, heights: ActivationHeights) -> Self {
+        self.activation_heights = heights;
         self
     }
 
@@ -97,7 +115,7 @@ impl SyntheticWalletBuilder {
             "tip must exceed the highest note confirmation height"
         );
         let mut wallet = LightWallet::new(
-            ChainType::Regtest(ActivationHeights::default()),
+            ChainType::Regtest(self.activation_heights),
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: self.mnemonic.clone(),
                 no_of_accounts: 1.try_into().expect("hard-coded non-zero"),
@@ -113,33 +131,44 @@ impl SyntheticWalletBuilder {
             ScanPriority::Scanned,
         )]);
 
-        // The anchor is capped by the sapling tree's newest checkpoint,
-        // and note selection requires a checkpoint at the anchor in BOTH
-        // stores.
-        let tip = BlockHeight::from_u32(self.tip);
-        wallet
-            .shard_trees
-            .sapling
-            .store_mut()
-            .add_checkpoint(tip, Checkpoint::tree_empty())
-            .expect("infallible on the memory store");
-        wallet
-            .shard_trees
-            .orchard
-            .store_mut()
-            .add_checkpoint(tip, Checkpoint::tree_empty())
-            .expect("infallible on the memory store");
+        // Notes must be addressed to the wallet's own keys: proposing
+        // never checks ownership, but the spend builders refuse (orchard)
+        // or mis-prove (sapling) notes whose recipient the spending key
+        // does not derive.
+        let unified_spending_key: UnifiedSpendingKey = wallet
+            .unified_key_store
+            .get(&zip32::AccountId::ZERO)
+            .expect("a fresh mnemonic wallet carries account zero")
+            .try_into()
+            .expect("mnemonic wallets carry spend capability");
+        let unified_full_viewing_key = unified_spending_key.to_unified_full_viewing_key();
 
         let mut nullifiers = OrchardNullifierBuilder::new();
+        let orchard_recipient = unified_full_viewing_key
+            .orchard()
+            .expect("unified key carries an orchard fvk")
+            .address_at(0u32, zip32::Scope::External);
         for (index, value) in self.orchard_note_values.iter().enumerate() {
             let txid = TxId::from_bytes([u8::try_from(index).unwrap() + 1; 32]);
+            let crypto_note = OrchardCryptoNoteBuilder::default()
+                .recipient(orchard_recipient)
+                .value(NoteValue::from_raw(*value))
+                .build();
+            // Give the note's claimed position a real leaf, so witness
+            // computation (and thus transaction building) works offline.
+            wallet
+                .shard_trees
+                .orchard
+                .append(
+                    MerkleHashOrchard::from_cmx(&crypto_note.commitment().into()),
+                    Retention::Marked,
+                )
+                .expect("appending to the in-memory orchard tree succeeds");
             let note = OrchardNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
-                OrchardCryptoNoteBuilder::default()
-                    .value(NoteValue::from_raw(*value))
-                    .build(),
+                crypto_note,
                 Memo::Empty,
                 Some(Position::from(index as u64)),
             )
@@ -159,17 +188,33 @@ impl SyntheticWalletBuilder {
 
         let mut sapling_nullifiers = SaplingNullifierBuilder::new();
         let orchard_note_count = self.orchard_note_values.len();
+        let sapling_recipient = unified_full_viewing_key
+            .sapling()
+            .expect("unified key carries a sapling dfvk")
+            .default_address()
+            .1;
         for (index, value) in self.sapling_note_values.iter().enumerate() {
             // Txid bytes offset past the orchard range so the two note
             // families never collide.
             let txid = TxId::from_bytes([0x80 + u8::try_from(index).unwrap(); 32]);
             let mut crypto_note = SaplingCryptoNoteBuilder::default();
-            crypto_note.value(sapling_crypto::value::NoteValue::from_raw(*value));
+            crypto_note
+                .recipient(sapling_recipient)
+                .value(sapling_crypto::value::NoteValue::from_raw(*value));
+            let crypto_note = crypto_note.build();
+            wallet
+                .shard_trees
+                .sapling
+                .append(
+                    sapling_crypto::Node::from_cmu(&crypto_note.cmu()),
+                    Retention::Marked,
+                )
+                .expect("appending to the in-memory sapling tree succeeds");
             let note = SaplingNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
-                crypto_note.build(),
+                crypto_note,
                 Memo::Empty,
                 Some(Position::from(index as u64)),
             )
@@ -185,6 +230,31 @@ impl SyntheticWalletBuilder {
                 .with_sapling_notes_for_test(vec![note]),
             );
         }
+
+        // The anchor is capped by the sapling tree's newest checkpoint,
+        // and note selection requires a checkpoint at the anchor in BOTH
+        // stores. Each checkpoint must cover the leaves appended above,
+        // or witnesses would come out empty at the anchor.
+        let tip = BlockHeight::from_u32(self.tip);
+        let checkpoint_covering = |leaf_count: usize| {
+            if leaf_count == 0 {
+                Checkpoint::tree_empty()
+            } else {
+                Checkpoint::at_position(Position::from(leaf_count as u64 - 1))
+            }
+        };
+        wallet
+            .shard_trees
+            .sapling
+            .store_mut()
+            .add_checkpoint(tip, checkpoint_covering(self.sapling_note_values.len()))
+            .expect("infallible on the memory store");
+        wallet
+            .shard_trees
+            .orchard
+            .store_mut()
+            .add_checkpoint(tip, checkpoint_covering(self.orchard_note_values.len()))
+            .expect("infallible on the memory store");
 
         let shielded_note_count = self.orchard_note_values.len() + self.sapling_note_values.len();
         for (index, value) in self.transparent_coin_values.iter().enumerate() {
