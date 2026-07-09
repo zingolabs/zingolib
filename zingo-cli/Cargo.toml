@@ -25,6 +25,8 @@ shellwords = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = "1.1.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
