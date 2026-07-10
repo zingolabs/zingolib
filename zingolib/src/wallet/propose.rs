@@ -318,17 +318,17 @@ mod test {
         let pools = step.payment_pools();
         assert_eq!(
             pools[&0],
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
             "orchard-only UA must be paid in orchard"
         );
         assert_eq!(
             pools[&1],
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
             "all-shielded UA must be paid in its best pool, orchard"
         );
         assert_eq!(
             pools[&2],
-            PoolType::Shielded(ShieldedProtocol::Sapling),
+            PoolType::Shielded(ShieldedPool::Sapling),
             "sapling-only UA must be paid in sapling"
         );
     }

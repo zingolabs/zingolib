@@ -2149,14 +2149,23 @@ mod test {
         /// trips: match derived note nullifiers against the wallet's nullifier map and
         /// mark the matches spent.
         fn run_spend_detection(wallet: &mut MockWallet) {
-            let (sapling_nullifiers, orchard_nullifiers) =
+            let (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers) =
                 spend::collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
-            let (sapling_targets, orchard_targets) = spend::detect_shielded_spends(
-                wallet.get_nullifiers_mut().unwrap(),
-                sapling_nullifiers,
-                orchard_nullifiers,
-            );
-            spend::update_spent_notes(wallet, sapling_targets, orchard_targets, true).unwrap();
+            let (sapling_targets, orchard_targets, ironwood_targets) =
+                spend::detect_shielded_spends(
+                    wallet.get_nullifiers_mut().unwrap(),
+                    sapling_nullifiers,
+                    orchard_nullifiers,
+                    ironwood_nullifiers,
+                );
+            spend::update_spent_notes(
+                wallet,
+                sapling_targets,
+                orchard_targets,
+                ironwood_targets,
+                true,
+            )
+            .unwrap();
         }
 
         /// A spend reset *before* the spending transaction's block is scanned heals.
