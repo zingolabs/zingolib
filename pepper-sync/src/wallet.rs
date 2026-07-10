@@ -755,7 +755,7 @@ impl SyncState {
 }
 
 #[cfg(any(test, feature = "test-features"))]
-impl<N, Nf: Copy> WalletNote<N, Nf> {
+impl<N, Nf: Copy, P> WalletNote<N, Nf, P> {
     /// Creates a minimal received note for testing purposes.
     pub fn new_for_test(
         output_id: OutputId,
@@ -774,6 +774,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
             memo,
             spending_transaction: None,
             refetch_nullifier_ranges: Vec::new(),
+            marker: std::marker::PhantomData,
         }
     }
 
@@ -787,7 +788,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
 }
 
 #[cfg(feature = "test-features")]
-impl<N> OutgoingNote<N> {
+impl<N, P> OutgoingNote<N, P> {
     /// Creates a minimal outgoing note for testing purposes.
     pub fn new_for_test(
         output_id: OutputId,
@@ -803,6 +804,7 @@ impl<N> OutgoingNote<N> {
             note,
             memo,
             recipient_full_unified_address,
+            marker: std::marker::PhantomData,
         }
     }
 }

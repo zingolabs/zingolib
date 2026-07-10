@@ -23,7 +23,7 @@ use crate::wallet::{
     WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, sync::set_transactions_failed_unchecked};
+use crate::{SyncDomain, client, sync::set_transactions_failed_unchecked};
 
 use super::{FetchRequest, ScanTarget, witness};
 

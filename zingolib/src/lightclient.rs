@@ -176,6 +176,7 @@ impl LightClient {
                 .expect("lazy endpoint construction succeeds without connecting");
         LightClient {
             indexer,
+            migration_broadcast_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use zcash_local_net::LocalNet;
 use zcash_local_net::MinerPool;
@@ -105,8 +105,10 @@ where
 fn miner_pool(mine_to_pool: PoolType) -> MinerPool {
     match mine_to_pool {
         PoolType::Transparent => MinerPool::Transparent,
-        PoolType::Shielded(ShieldedProtocol::Sapling) => MinerPool::Sapling,
-        PoolType::Shielded(ShieldedProtocol::Orchard) => MinerPool::Orchard,
+        PoolType::Shielded(ShieldedPool::Sapling) => MinerPool::Sapling,
+        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::Shielded(ShieldedPool::Ironwood) => {
+            MinerPool::Orchard
+        }
     }
 }
 
