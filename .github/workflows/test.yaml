@@ -89,7 +89,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -103,7 +103,7 @@ jobs:
 
       - name: Run normal tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-normal.tar.zst \
             --workspace-remap ./ \
             --partition count:${{ matrix.partition }}/8 \
@@ -127,7 +127,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Download darkside archive
         uses: actions/download-artifact@v8
@@ -136,7 +136,7 @@ jobs:
 
       - name: Run darkside tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-darkside.tar.zst \
             --workspace-remap ./ \
             ${{ env.NEXTEST-FLAGS }}

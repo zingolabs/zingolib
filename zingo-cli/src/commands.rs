@@ -595,7 +595,14 @@ impl Command for InfoCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.do_info().await })
+        // The presentation boundary: typed failure becomes display text
+        // here, and nowhere earlier.
+        RT.block_on(async move {
+            lightclient
+                .do_info()
+                .await
+                .unwrap_or_else(|e| e.to_string())
+        })
     }
 }
 

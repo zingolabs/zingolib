@@ -6,8 +6,13 @@ default_to_workspace = false
 [env]
 NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
 ZINGOLIB_NEXTEST_PROFILE = "ci"
-ZINGOLIB_NEXTEST_RETRIES = "2"
-ZINGOLIB_NEXTEST_FILTER = "not test(slow)"
+# Conditional so a shell override actually wins: cargo-make [env] entries
+# otherwise clobber inherited environment variables. Retries default to 0 so
+# flakes surface instead of being masked; raise per-run with
+# ZINGOLIB_NEXTEST_RETRIES=N.
+ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
+    "ZINGOLIB_NEXTEST_RETRIES",
+] } }
 IMAGE_NAME = "zingodevops/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
@@ -27,24 +32,34 @@ cat <<'HELP'
 Zingolib test tasks
 -------------------
 
-Test sets (front door):
-  makers test                 packages (the default): every workspace package
-                              EXCEPT libtonode-tests and zingo-cli
-  makers test packages        same as the default
-  makers test live            ONLY libtonode-tests and zingo-cli
-  makers test libtonode       exactly the libtonode-tests package
-  makers test zingo-cli       exactly the zingo-cli package
+Test front door — `makers test "$@"` is a containerized
+`cargo nextest run "$@"`, so every nextest idiom passes through:
+  makers test                 the whole workspace
+  makers test -p zingo-memo   one package
+  makers test some_test_name  positional test-name filter
+  makers test --no-fail-fast  any nextest flag
 
-Every set runs inside the reproducible CI container and forwards extra
-nextest args:
+Reserved first words expand to canned invocations:
+  makers test packages        every workspace package EXCEPT the live
+                              ones (libtonode-tests and zingo-cli)
+  makers test live            ONLY libtonode-tests and zingo-cli
+
+Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
+a reserved word's scope entirely. Extra args after a reserved word are
+forwarded to nextest:
   makers test live --no-fail-fast
+
+Run the three gated phases (packages, zingo-cli, libtonode), where a
+failing phase stops the later, more expensive ones, with a combined
+per-phase summary:
+  makers hierarchy-test
 
 Common usage:
   makers container-test
   cargo make container-test
 
 The container-test task runs tests inside a reproducible container image:
-  cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0
 
 Build or refresh the local image:
   makers build-image
@@ -53,13 +68,13 @@ Run the same nextest command on the host:
   makers local-run
 
 The local-run task mirrors the PR test defaults:
-  cargo nextest run --verbose --workspace --profile ci --retries 2 -E 'not test(slow)'
+  cargo nextest run --verbose --workspace --profile ci --retries 0
 
 Forward extra nextest flags after the task name:
   makers container-test -p zingo-memo
 
-Override the default nextest filter:
-  ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers container-test
+Filter with a nextest expression:
+  makers test -E 'package(zingolib) & not test(slow)'
 
 Reproduce the latest failing or incomplete nextest run:
   makers rerun
@@ -109,28 +124,30 @@ container_dir_hash() {
 }
 
 container_image_tag() {
-  printf 'RUST_%s-LIGHTWALLETD_%s-ZCASH_%s-ZAINO_%s-NEXTEST_%s-CONTAINER_%s' \
+  printf 'RUST_%s-LIGHTWALLETD_%s-ZAINO_%s-ZEBRA_%s-NEXTEST_%s-CONTAINER_%s' \
     "${RUST_VERSION}" \
     "${LIGHTWALLETD_VERSION}" \
-    "${ZCASH_VERSION}" \
     "${ZAINO_IMAGE_TAG}" \
+    "${ZEBRA_VERSION}" \
     "${NEXTEST_VERSION}" \
     "$(container_dir_hash)" \
     | git hash-object --stdin \
     | cut -c1-14
 }
 
-append_workspace_default() {
-  local use_default_workspace=1
+has_package_selection_args() {
   for arg in "$@"; do
     case "${arg}" in
       -p|--package|--package=*|--workspace|--all|--exclude|--exclude=*|--manifest-path|--manifest-path=*)
-        use_default_workspace=0
+        return 0
         ;;
     esac
   done
+  return 1
+}
 
-  if [[ "${use_default_workspace}" -eq 1 ]]; then
+append_workspace_default() {
+  if ! has_package_selection_args "$@"; then
     printf '%s\n' "--workspace"
   fi
 }
@@ -149,10 +166,6 @@ nextest_args() {
   workspace_arg="$(append_workspace_default "$@")"
   if [[ -n "${workspace_arg}" ]]; then
     args+=("${workspace_arg}")
-  fi
-
-  if [[ -n "${ZINGOLIB_NEXTEST_FILTER:-}" ]]; then
-    args+=(-E "${ZINGOLIB_NEXTEST_FILTER}")
   fi
 
   printf '%s\n' "${args[@]}"
@@ -177,7 +190,7 @@ container_nextest_run() {
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
-    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli /usr/bin/zainod test_binaries/bins/ && exec "$@"' \
+    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
     bash \
     cargo nextest run "${args[@]}"
 }
@@ -221,16 +234,16 @@ tag="$(container_image_tag)"
 echo "Building ${IMAGE_NAME}:${tag}"
 echo "  RUST_VERSION=${RUST_VERSION}"
 echo "  LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}"
-echo "  ZCASH_VERSION=${ZCASH_VERSION}"
 echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
+echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
 echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
   --build-arg "LIGHTWALLETD_VERSION=${LIGHTWALLETD_VERSION}" \
-  --build-arg "ZCASH_VERSION=${ZCASH_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
@@ -277,70 +290,73 @@ container_nextest_run "$@"
 '''
 
 # ===================================================================
-# Developer-facing test front door: a single `makers test [SET]` task.
+# Developer-facing test front door: `makers test "$@"` IS a containerized
+# `cargo nextest run "$@"` (standard profile and retries defaults), so
+# every nextest idiom passes through untouched:
 #
-#   makers test                packages (the default)
+#   makers test                     the whole workspace
+#   makers test -p zingo-memo       one package
+#   makers test some_test_name      positional test-name filter
+#
+# Two reserved first words expand to canned invocations:
+#
 #   makers test packages       every workspace package EXCEPT the live ones
-#   makers test live           ONLY the live packages
-#   makers test libtonode      exactly the libtonode-tests package
-#   makers test zingo-cli      exactly the zingo-cli package
+#   makers test live            ONLY the live packages
 #
 # The live-package list is defined once (live_packages, below); `packages`
 # derives its exclusions from it and `live` derives its selections from it,
-# so the partition cannot drift. Every set delegates to the container-test
-# engine rather than re-implementing a run — set-name validation therefore
-# happens before ensure-image-exists can trigger an image build — and extra
-# args after the set name are forwarded to `cargo nextest run`.
+# so the partition cannot drift. Explicit package-selection args replace a
+# set's scope entirely — cargo silently ignores `-p` when `--workspace` is
+# present, so merging them would swallow the user's selection.
 # ===================================================================
 
 [tasks.test]
 # clear = true fully replaces cargo-make's built-in `test` task (which runs
 # `cargo test`); without it our `script` would merge with the builtin `command`.
 clear = true
-description = "Run a test set: `makers test [packages|live|libtonode|zingo-cli]` (default: packages). Extra args are forwarded to nextest."
+description = "Containerized `cargo nextest run \"$@\"`. Reserved first words packages|live expand to canned invocations."
 script_runner = "bash"
-script = '''
-set -uo pipefail
-
+extend = "base-script"
+script.main = '''
 # The packages that need live network infrastructure. Single source of truth
 # for the packages/live partition.
 live_packages=(libtonode-tests zingo-cli)
 
-usage() {
-  echo "usage: makers test [packages|live|libtonode|zingo-cli] [nextest args]" >&2
-  echo "  packages (default)  every workspace package EXCEPT: ${live_packages[*]}" >&2
-  echo "  live                ONLY the live packages: ${live_packages[*]}" >&2
-  echo "  libtonode           exactly the libtonode-tests package" >&2
-  echo "  zingo-cli           exactly the zingo-cli package" >&2
-}
-
-# A non-flag first arg selects the set and must be a known name; a flag first
-# arg (or none) keeps the default `packages` and is forwarded to nextest. So
-# `makers test --no-fail-fast` runs packages with the flag, while a mistyped
-# set name errors instead of silently running the default.
-test_set="packages"
-if [[ "$#" -gt 0 && "${1#-}" == "$1" ]]; then
+set_args=()
+if [[ "$#" -gt 0 ]]; then
   case "$1" in
-    packages|live|libtonode|zingo-cli) test_set="$1"; shift ;;
-    *) echo "makers test: unknown set '$1'" >&2; usage; exit 2 ;;
+    packages)
+      shift
+      set_args+=(--workspace)
+      for pkg in "${live_packages[@]}"; do set_args+=(--exclude "${pkg}"); done ;;
+    live)
+      shift
+      for pkg in "${live_packages[@]}"; do set_args+=(--package "${pkg}"); done ;;
   esac
 fi
 
-pkg_args=()
-case "${test_set}" in
-  packages)
-    pkg_args+=(--workspace)
-    for pkg in "${live_packages[@]}"; do pkg_args+=(--exclude "${pkg}"); done ;;
-  live)
-    for pkg in "${live_packages[@]}"; do pkg_args+=(--package "${pkg}"); done ;;
-  libtonode)
-    pkg_args+=(--package libtonode-tests) ;;
-  zingo-cli)
-    pkg_args+=(--package zingo-cli) ;;
-esac
+# Explicit package-selection args take over the scope completely; merging
+# them with a set's args would make cargo silently ignore the user's `-p`.
+if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
+  set_args=()
+fi
 
-exec makers container-test "${pkg_args[@]}" "$@"
+exec makers container-test "${set_args[@]}" "$@"
 '''
+
+[tasks.hierarchy-test]
+description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "test-summary",
+    "--",
+    "${@}",
+]
 
 [tasks.rerun]
 clear = true
@@ -361,4 +377,18 @@ extend = "base-script"
 script.main = '''
 mapfile -t args < <(nextest_args --run-ignored all "$@")
 cargo nextest run "${args[@]}"
+'''
+
+# The extra-credit libtonode suite: the sentinels (environment-contract
+# checks) and unit_test_twins (pre-migration live originals of the offline
+# unit twins, docs/testing/live-offline-twins.md). Both are off by default
+# and behind the `extra-credit-tests` feature; this is their scheduled
+# entry point — a containerized nextest run so a cron or CI job can invoke
+# one canonical command. Extra nextest args pass through.
+[tasks.test-extra-credit]
+description = "Containerized run of libtonode's extra-credit suite (sentinels + unit_test_twins twins)"
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
 '''

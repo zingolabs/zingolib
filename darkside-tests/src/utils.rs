@@ -377,11 +377,14 @@ pub mod scenarios {
             set_port: Option<zingolib::testutils::portpicker::Port>,
         ) -> DarksideEnvironment {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
+            let configured_activation_heights = ActivationHeights::default();
+            // Darkside is an unmanaged stack (no validator to query), so the
+            // caller asserts the schedule here, once (infras ADR 0003).
             let client_builder = ClientBuilder::new(
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
+                configured_activation_heights,
             );
-            let configured_activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
@@ -421,7 +424,6 @@ pub mod scenarios {
                             wallet_settings: default_test_wallet_settings(),
                         },
                         true,
-                        self.configured_activation_heights,
                     )
                     .await,
             );
@@ -459,7 +461,6 @@ pub mod scenarios {
                         wallet_settings: default_test_wallet_settings(),
                     },
                     true,
-                    self.configured_activation_heights,
                 )
                 .await;
             self.lightclients.push(lightclient);

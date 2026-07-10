@@ -3,8 +3,9 @@ use std::io;
 use zcash_protocol::consensus::NetworkConstants;
 
 use crate::config::ClientConfig;
-use ring::hmac::{self, Context, Key};
+use hmac::{Hmac, Mac};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use sha2::Sha512;
 use std::sync::LazyLock;
 use zcash_encoding::Vector;
 
@@ -72,24 +73,26 @@ pub struct ExtendedPrivKey {
     pub chain_code: ChainCode,
 }
 
+type HmacSha512 = Hmac<Sha512>;
+
+/// HMAC-SHA512 over the concatenation of `parts`, keyed by `key` (BIP32).
+fn hmac_sha512(key: &[u8], parts: &[&[u8]]) -> [u8; 64] {
+    let mut mac = HmacSha512::new_from_slice(key).expect("HMAC-SHA512 accepts any key length");
+    for part in parts {
+        mac.update(part);
+    }
+    mac.finalize().into_bytes().into()
+}
+
 // Uses type inference from return to get 32 byte chunk size
-// the argument MUST be 32 bytes or this is unsafe
-fn get_32_byte_key_chunk_and_cc(signature: ring::hmac::Tag) -> ([u8; 32], Vec<u8>) {
-    let (k, cc) = signature
-        .as_ref()
-        .split_first_chunk()
-        .expect("signature.len >= 32");
+fn get_32_byte_key_chunk_and_cc(signature: [u8; 64]) -> ([u8; 32], Vec<u8>) {
+    let (k, cc) = signature.split_first_chunk().expect("signature.len >= 32");
     (*k, cc.to_vec())
 }
 impl ExtendedPrivKey {
     /// Generate an `ExtendedPrivKey` from seed
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
-        let signature = {
-            let signing_key = Key::new(hmac::HMAC_SHA512, b"Bitcoin seed");
-            let mut h = Context::with_key(&signing_key);
-            h.update(seed);
-            h.sign()
-        };
+        let signature = hmac_sha512(b"Bitcoin seed", &[seed]);
         let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
         let private_key = SecretKey::from_byte_array(key)?;
         Ok(ExtendedPrivKey {
@@ -121,22 +124,19 @@ impl ExtendedPrivKey {
             .unwrap()
     }
 
-    fn sign_hardened_key(&self, index: u32) -> ring::hmac::Tag {
-        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
-        let mut h = Context::with_key(&signing_key);
-        h.update(&[0x00]);
-        h.update(&self.private_key[..]);
-        h.update(&index.to_be_bytes());
-        h.sign()
+    fn sign_hardened_key(&self, index: u32) -> [u8; 64] {
+        hmac_sha512(
+            &self.chain_code,
+            &[&[0x00], &self.private_key[..], &index.to_be_bytes()],
+        )
     }
 
-    fn sign_normal_key(&self, index: u32) -> ring::hmac::Tag {
-        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
-        let mut h = Context::with_key(&signing_key);
+    fn sign_normal_key(&self, index: u32) -> [u8; 64] {
         let public_key = PublicKey::from_secret_key(&SECP256K1_SIGN_ONLY, &self.private_key);
-        h.update(&public_key.serialize());
-        h.update(&index.to_be_bytes());
-        h.sign()
+        hmac_sha512(
+            &self.chain_code,
+            &[&public_key.serialize(), &index.to_be_bytes()],
+        )
     }
 
     /// Derive a child key from `ExtendedPrivKey`.
@@ -201,12 +201,11 @@ pub struct ExtendedPubKey {
 }
 
 impl ExtendedPubKey {
-    fn sign_normal_key(&self, index: u32) -> ring::hmac::Tag {
-        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
-        let mut h = Context::with_key(&signing_key);
-        h.update(&self.public_key.serialize());
-        h.update(&index.to_be_bytes());
-        h.sign()
+    fn sign_normal_key(&self, index: u32) -> [u8; 64] {
+        hmac_sha512(
+            &self.chain_code,
+            &[&self.public_key.serialize(), &index.to_be_bytes()],
+        )
     }
 
     /// Derive a child key from `ExtendedPubKey`.

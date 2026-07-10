@@ -12,7 +12,14 @@ license = "MIT"
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile"]
+testutils = [
+    "portpicker",
+    "zingo_test_vectors",
+    "tempfile",
+    "pepper-sync/test-features",
+    "dep:zaino-proto",
+    "dep:tokio-stream",
+]
 
 [dependencies]
 append-only-vec = { workspace = true }
@@ -36,11 +43,11 @@ orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
+hmac = { workspace = true }
 rand = { workspace = true }
-ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
-rustls.workspace = true
 sapling-crypto.workspace = true
+sha2 = { workspace = true }
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -58,7 +65,9 @@ zcash_client_backend = { workspace = true, features = [
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
-zcash_proofs = { workspace = true, features = ["download-params"] }
+# download-params (and its minreq/rustls-0.21/ring subtree) is build-time
+# only: build.rs fetches the sapling params; runtime code never downloads.
+zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zingo-memo = { workspace = true }
@@ -68,6 +77,8 @@ zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
+zaino-proto = { git = "https://github.com/zingolabs/zaino.git", rev = "2e2816cb3755e7ff4d18bed1a96b95dc07c1549c", version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
+tokio-stream = { workspace = true, optional = true }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
@@ -77,6 +88,8 @@ pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
 tempfile = { workspace = true }
+tokio-stream.workspace = true
+zaino-proto = { git = "https://github.com/zingolabs/zaino.git", rev = "2e2816cb3755e7ff4d18bed1a96b95dc07c1549c", default-features = false, features = ["grpc_proxy_server"] }
 zingo_test_vectors = { workspace = true }
 
 [badges]
