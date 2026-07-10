@@ -651,7 +651,7 @@ mod config_template {
                             performance_level: PerformanceLevel::High,
                         },
                         min_confirmations: NonZeroU32::try_from(3).unwrap(),
-                        allow_v6_transactions: false,
+                        allow_v6_transactions: true,
                     },
                 }
             );

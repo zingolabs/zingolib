@@ -65,7 +65,7 @@ impl Default for WalletSettings {
         Self {
             sync_config: SyncConfig::default(),
             min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
-            allow_v6_transactions: false,
+            allow_v6_transactions: true,
         }
     }
 }

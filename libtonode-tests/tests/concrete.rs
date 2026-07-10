@@ -312,7 +312,7 @@ async fn orchard_miner_coinbase_distribution() {
     // Tip is height 4: launch block + 2 setup blocks + 1 above.
     check_client_balances!(
         faucet,
-        o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
+        o: (scenarios::ironwood_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
     );
 }
 
@@ -431,14 +431,14 @@ async fn mine_to_orchard() {
     .await;
     check_client_balances!(
         faucet,
-        o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        o: (scenarios::funded_faucet_ironwood_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
     check_client_balances!(
         faucet,
-        o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        o: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
@@ -800,7 +800,7 @@ async fn send_orchard_back_and_forth() {
         wallet_fully_scanned_height,
         scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
     );
-    let setup_reward = scenarios::funded_faucet_orchard_balance();
+    let setup_reward = scenarios::funded_faucet_ironwood_balance();
     check_client_balances!(faucet, o: setup_reward s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
 
     // post transfer to recipient, and verify
@@ -907,7 +907,7 @@ async fn send_mined_orchard_to_orchard() {
     // reward plus that same fee back.
     assert_eq!(
         balance.confirmed_orchard_balance.unwrap().into_u64(),
-        scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD
+        scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
     );
 }
 

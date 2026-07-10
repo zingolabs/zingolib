@@ -711,7 +711,7 @@ mod pool_matrix {
         let funding = receiver_value + change + expected_fee;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
-            ShieldedPool::Ironwood => todo!(),
+            ShieldedPool::Ironwood => builder.ironwood_note(funding),
             ShieldedPool::Orchard => builder.orchard_note(funding),
             ShieldedPool::Sapling => builder.sapling_note(funding),
         }
@@ -769,30 +769,30 @@ mod pool_matrix {
         1_000
     );
     pool_matrix_case!(
-        sapling_sends_to_orchard,
+        sapling_sends_to_ironwood,
         ShieldedPool::Sapling,
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         10_000,
         1_000
     );
     pool_matrix_case!(
-        orchard_sends_to_transparent,
-        ShieldedPool::Orchard,
+        ironwood_sends_to_transparent,
+        ShieldedPool::Ironwood,
         PoolType::TRANSPARENT,
         10_000,
         1_000
     );
     pool_matrix_case!(
-        orchard_sends_to_sapling,
-        ShieldedPool::Orchard,
+        ironwood_sends_to_sapling,
+        ShieldedPool::Ironwood,
         PoolType::SAPLING,
         10_000,
         1_000
     );
     pool_matrix_case!(
-        orchard_sends_to_orchard,
-        ShieldedPool::Orchard,
-        PoolType::ORCHARD,
+        ironwood_sends_to_ironwood,
+        ShieldedPool::Ironwood,
+        PoolType::IRONWOOD,
         10_000,
         1_000
     );
@@ -811,9 +811,9 @@ mod pool_matrix {
         0
     );
     pool_matrix_case!(
-        sapling_sends_to_orchard_no_change,
+        sapling_sends_to_ironwood_no_change,
         ShieldedPool::Sapling,
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         10_000,
         0
     );
@@ -835,6 +835,27 @@ mod pool_matrix {
         orchard_sends_to_orchard_no_change,
         ShieldedPool::Orchard,
         PoolType::ORCHARD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        orchard_sends_to_ironwood_no_change,
+        ShieldedPool::Orchard,
+        PoolType::IRONWOOD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        ironwood_sends_to_transparent_no_change,
+        ShieldedPool::Ironwood,
+        PoolType::TRANSPARENT,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        ironwood_sends_to_sapling_no_change,
+        ShieldedPool::Ironwood,
+        PoolType::SAPLING,
         10_000,
         0
     );

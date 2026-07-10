@@ -833,7 +833,7 @@ mod tests {
 
     fn received(txid_byte: u8, height: u32, memos: &[&str]) -> WalletTransaction {
         let txid = TxId::from_bytes([txid_byte; 32]);
-        WalletTransaction::new_for_test_with_orchard_notes(
+        WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(height.into()),
             memos
@@ -861,7 +861,7 @@ mod tests {
         memo: &str,
     ) -> WalletTransaction {
         let txid = TxId::from_bytes([txid_byte; 32]);
-        WalletTransaction::new_for_test_with_orchard_notes(
+        WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(height.into()),
             vec![],
@@ -997,7 +997,7 @@ mod tests {
         };
 
         let txid = TxId::from_bytes([1; 32]);
-        let transaction = WalletTransaction::new_for_test_with_orchard_notes(
+        let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(10.into()),
             vec![],
@@ -1080,7 +1080,7 @@ mod tests {
         let txid = TxId::from_bytes([1; 32]);
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            WalletTransaction::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(10.into()),
                 vec![OrchardWalletNote::new_for_test(
@@ -1478,7 +1478,7 @@ mod tests {
             .collect::<Vec<_>>();
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            WalletTransaction::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(4.into()),
                 notes,
@@ -1501,7 +1501,7 @@ mod tests {
             );
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_orchard_notes(
+                WalletTransaction::new_for_test_with_ironwood_notes(
                     txid,
                     ConfirmationStatus::Confirmed(height.into()),
                     vec![note],

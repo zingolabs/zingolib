@@ -20,7 +20,6 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 use zcash_local_net::LocalNet;
 use zcash_local_net::MinerPool;
-use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
 use zcash_local_net::process::Process;
@@ -35,7 +34,7 @@ use crate::setup_metrics::MeteredNet;
 
 pub use crate::chain_cache::ChainCachePolicy;
 use zingo_common_components::protocol::ActivationHeights;
-use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, block_rewards, seeds};
+use zingo_test_vectors::{block_rewards, seeds};
 use zingolib::config::WalletConfig;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::get_base_address_macro;
@@ -184,7 +183,7 @@ pub fn default_test_activation_heights() -> ActivationHeights {
         .set_nu6(fixture.nu6())
         .set_nu6_1(fixture.nu6_1())
         .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(None)
+        .set_nu6_3(fixture.nu6_3())
         .set_nu7(None)
         .build()
 }
@@ -216,31 +215,31 @@ pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 /// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
 /// coinbase pays the orchard receiver from the NU5 activation block (height
 /// 2 under [`default_test_activation_heights`]) onward. If orchard coinbase
-/// actually starts one block later, every orchard expectation derived from
+/// actually starts one block later, every ironwood expectation derived from
 /// this constant fails high by exactly one [`POST_STREAM_BLOCK_REWARD`] —
 /// flip this to 3 and nothing else.
-pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
+pub const IRONWOOD_COINBASE_START_HEIGHT: u32 = 2;
 
-/// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
+/// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an ironwood
 /// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
-/// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
+/// SAPLING receiver — observed as `s_balance: 625000000` in ironwood-mined
 /// scenarios. If refuted, s-balance expectations fail by exactly this value.
 pub const BLOCK_ONE_SAPLING_COINBASE: u64 = block_rewards::CANOPY;
 
-/// Total orchard coinbase received by the faucet at `tip` under an Orchard
+/// Total ironwood coinbase received by the faucet at `tip` under an ironwood
 /// miner pool: one post-funding-stream reward per block from
-/// [`ORCHARD_COINBASE_START_HEIGHT`] through `tip`.
-pub const fn orchard_coinbase_total(tip: u32) -> u64 {
-    (tip - ORCHARD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
+/// [`IRONWOOD_COINBASE_START_HEIGHT`] through `tip`.
+pub const fn ironwood_coinbase_total(tip: u32) -> u64 {
+    (tip - IRONWOOD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
 }
 
-/// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
-/// finishes setting up: orchard coinbase through
+/// The faucet's ironwood balance right after a `PoolType::IRONWOOD` scenario
+/// finishes setting up: ironwood coinbase through
 /// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload amount. The offload's
 /// fee cancels out: the faucet pays it, then collects it right back in the
 /// coinbase of the confirming block it mines.
-pub const fn funded_faucet_orchard_balance() -> u64 {
-    orchard_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
+pub const fn funded_faucet_ironwood_balance() -> u64 {
+    ironwood_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
 }
 
 /// To launch a `LocalNet` with darkside settings.
@@ -365,50 +364,6 @@ where
     );
 }
 
-/// When mining to a shielded pool, dump the excess faucet funds and generate
-/// a block to confirm the send. Coinbase lands directly in the mined-to pool
-/// (zebrad mines to Orchard natively), and shielded coinbase has no
-/// `COINBASE_MATURITY_BLOCKS` rule — the wallet spends blocks-old orchard coinbase
-/// fine (server-verified by `value_transfers`).
-///
-/// Two constraints govern when the offload can be sent (both observed as
-/// zebra mempool rejections):
-///
-/// 1. The wallet must be synced to the REAL tip when it builds the send —
-///    it signs for tip+1's consensus branch id, and the fixture ladder
-///    activates NU6.1/NU6.2 at height 5, right where this setup operates
-///    ("transaction uses an incorrect consensus branch id" when the wallet
-///    was held a block behind).
-/// 2. It must not spend the tip block's own note ("could not validate
-///    orchard proof" when it did).
-///
-/// Mining two extra blocks first clears the upgrade ladder (tip 5, so
-/// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
-/// four pre-tip notes so oldest-first selection never reaches the tip note.
-async fn zebrad_shielded_funds<V, I>(
-    local_net: &LocalNet<V, I>,
-    mine_to_pool: PoolType,
-    faucet: &mut LightClient,
-) where
-    I: Indexer + LogsToStdoutAndStderr,
-    V: Validator + LogsToStdoutAndStderr + Send,
-    <I as Process>::Config: Send,
-    <V as Process>::Config: Send,
-    LocalNet<V, I>: IndexerConvergence,
-{
-    if !matches!(mine_to_pool, PoolType::Transparent) {
-        local_net.validator().generate_blocks(2).await.unwrap();
-        sync_client_to_validator_tip(local_net, faucet).await;
-        quick_send(
-            faucet,
-            vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
-        )
-        .await
-        .unwrap();
-        local_net.validator().generate_blocks(1).await.unwrap();
-    }
-}
-
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
     /// Indexer URI
@@ -512,13 +467,13 @@ pub async fn unfunded_client(
     cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
     let (replay, export) = resolve_cache(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         &configured_activation_heights,
         cache,
         CachedStage::Bare,
     );
     let (mut local_net, mut client_builder) =
-        custom_clients_raw(PoolType::ORCHARD, configured_activation_heights, replay).await;
+        custom_clients_raw(PoolType::IRONWOOD, configured_activation_heights, replay).await;
 
     let mut lightclient = client_builder
         .build_client(
@@ -566,17 +521,10 @@ pub async fn faucet(
         cache,
         CachedStage::Funded,
     );
-    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
         custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
     let mut faucet = client_builder.build_faucet(true).await;
-
-    // A replayed chain already contains the shielded-funds transactions;
-    // the freshly built faucet wallet recovers them by sync below.
-    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
-        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
-    }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
@@ -590,7 +538,7 @@ pub async fn faucet(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (MeteredNet, LightClient) {
     faucet(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )
@@ -609,7 +557,6 @@ pub async fn faucet_recipient(
         cache,
         CachedStage::Funded,
     );
-    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
         custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
@@ -626,12 +573,6 @@ pub async fn faucet_recipient(
         )
         .await;
 
-    // A replayed chain already contains the shielded-funds transactions;
-    // the freshly built faucet wallet recovers them by sync below.
-    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
-        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
-    }
-
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
     sync_client_to_validator_tip(&local_net, &mut recipient).await;
 
@@ -645,7 +586,7 @@ pub async fn faucet_recipient(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient) {
     faucet_recipient(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )
@@ -820,7 +761,7 @@ pub async fn faucet_funded_recipient_default(
             Some(orchard_funds),
             None,
             None,
-            PoolType::ORCHARD,
+            PoolType::IRONWOOD,
             default_test_activation_heights(),
             ChainCachePolicy::PerTest,
         )
@@ -960,7 +901,7 @@ pub async fn custom_clients(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     let (local_net, client_builder) = custom_clients(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )

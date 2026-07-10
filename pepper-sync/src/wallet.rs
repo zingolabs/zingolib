@@ -741,6 +741,21 @@ impl WalletTransaction {
         transaction.outgoing_orchard_notes = outgoing_orchard_notes;
         transaction
     }
+
+    /// As [`Self::new_for_test`], with received and outgoing ironwood notes
+    /// attached, for tests exercising summary/value-transfer derivation
+    /// without a chain.
+    pub fn new_for_test_with_ironwood_notes(
+        txid: TxId,
+        status: ConfirmationStatus,
+        ironwood_notes: Vec<IronwoodNote>,
+        outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
+    ) -> Self {
+        let mut transaction = Self::new_for_test(txid, status);
+        transaction.ironwood_notes = ironwood_notes;
+        transaction.outgoing_ironwood_notes = outgoing_ironwood_notes;
+        transaction
+    }
 }
 
 #[cfg(feature = "test-features")]
