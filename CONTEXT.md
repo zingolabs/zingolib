@@ -88,6 +88,14 @@ sense) against a live network combo. Contrast libtonode tests, which
 drive the wallet in-process through `LightClient`.
 _Avoid_: CLI live test, harness test
 
+**Coin**:
+A transparent output held by the wallet — the transparent counterpart
+of a shielded note. Never a unit of currency: amounts are zatoshis, and
+the whole-ZEC conversion factor is named ZATS_PER_ZEC, not COIN
+(upstream zcash_protocol's name for it notwithstanding).
+_Avoid_: coin as a whole-ZEC unit, UTXO (in prose; the transparent
+counterpart of "note" is "coin")
+
 **Phantom unspent note**:
 A note the wallet offers as spendable although its nullifier is already
 on-chain. Every proposal that selects one is rejected by the Validator as a
