@@ -64,6 +64,23 @@ metrics file is the census of them.
 _Avoid_: LocalNet test, online test, live test (that names the Makefile
 package partition, not this category)
 
+**Twin fixture**:
+A test body written once, generic over its chain environment, and
+instantiated twice: as an offline twin and as a live control. Because
+the body is shared, a result divergence between the two instantiations
+implicates the environment, never test-body drift. The live
+instantiation is an environment control, not a body control: it cannot
+detect a weakening edit to the fixture itself, which lands on both
+sides at once.
+_Avoid_: live original (the superseded regime in which the live side
+was a verbatim preserved copy of a pre-port test)
+
+**Offline twin**:
+The instantiation of a twin fixture that runs without any network
+combo, against fabricated chain state. Contrast the live control, the
+same fixture run as a chain-bound test.
+_Avoid_: mock test, unit twin
+
 **Binary e2e test**:
 A test that exercises the shipped zingo-cli binary end-to-end through its
 public CLI surface, driving it as a Wallet (in the infrastructure repo's

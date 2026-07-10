@@ -1,17 +1,39 @@
 # Live/offline twins: equivalence record
 
-**Directive (2026-07-08):** the eight portable libtonode tests gain
-offline twins; the live originals are never removed. After the
-side-by-side runs below, the originals moved into their permanent home:
-`libtonode-tests/tests/unit_test_twins.rs` — a non-default feature, a
-module, and a file all named `unit_test_twins` (also reachable through
-the `extra-credit-tests` bundle). Run them with
+**Directive (2026-07-09, superseding 2026-07-08's verbatim
+preservation):** each twin's body lives exactly once, as an
+environment-generic fixture in `zingolib::testutils::twin_fixtures`,
+instantiated offline against the mock indexer
+(`zingolib::lightclient::mock_chain_tests`) and live against LocalNet
+(`libtonode-tests/tests/unit_test_twins.rs`, behind the non-default
+`unit_test_twins` feature, also reachable through the
+`extra-credit-tests` bundle). The verbatim pre-unification originals
+were deleted; git history is their accepted archive. This changes what
+the live control detects: body drift between twin and original is now
+impossible by construction, so a live/offline divergence implicates
+the environment, never the test body — and, symmetrically, a weakening
+edit to a fixture weakens both sides at once, a risk accepted as a
+review-discipline concern rather than a reason to keep a second copy.
+Run the live instantiations with
 `cargo nextest run -p libtonode-tests --features unit_test_twins`.
+
+**Directive (2026-07-08, historical):** the eight portable libtonode
+tests gain offline twins; the live originals are never removed. After
+the side-by-side runs below, the originals moved into their permanent
+home in `unit_test_twins.rs`. The equivalence record below dates from
+this regime: it compares the verbatim live originals against
+hand-ported twin bodies, a comparison the 2026-07-09 unification made
+moot for the five fixture-backed tests (the three tier-1 twins keep
+distinct bodies and remain covered by verdicts 1–3 as written).
 
 **Census note:** the move takes the eight originals out of the default
 suite, so the default non-ignored census drops by eight relative to the
-protection audit's 274 (they remain runnable, verbatim, behind the
-gate). The offline twins run in zingolib's default unit suite.
+protection audit's 274 (they remain runnable behind the gate — since
+2026-07-09 as fixture instantiations, not verbatim copies). The offline
+twins run in zingolib's default unit suite. Exception: while the
+`from_t_z_o` offline twin is `#[ignore]`d on zingolabs/zingolib#2447,
+a default-suite live instantiation of its fixture stands in
+`concrete.rs`, alongside the gated control.
 
 **The twins' two hosts.** Tier 1 (three tests) runs on the synthetic
 wallet rig alone: fabricated spendable funds, real proposal/build logic,

@@ -255,17 +255,7 @@ mod send_all {
 
     /// An address belonging to a different wallet, so the send is external.
     fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
-            PoolType::SAPLING => ReceiverSelection::sapling_only(),
-            _ => unimplemented!("only shielded destinations are needed here"),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
+        address_from_str(&crate::testutils::synthetic_wallet::external_address(pool)).unwrap()
     }
 
     /// Migrated from libtonode `send_all::ptfm_insufficient_funds`: a
@@ -523,29 +513,11 @@ mod simpool {
     use crate::{
         lightclient::LightClient,
         testutils::{
-            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
+            fee_tables,
+            lightclient::from_inputs,
+            synthetic_wallet::{SyntheticWalletBuilder, external_address},
         },
-        wallet::keys::unified::ReceiverSelection,
     };
-
-    /// An encoded destination of the given pool type, belonging to a
-    /// different wallet so the send is external.
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::Shielded(ShieldedPool::Orchard) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
-            PoolType::Shielded(ShieldedPool::Ironwood) => {
-                unimplemented!("synthetic-wallet tests do not model ironwood receivers yet")
-            }
-            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
 
     /// A wallet holding one `source`-pool note `underflow_amount` short of
     /// a 100_000 send to `pool` reports the exact shortfall.
@@ -684,29 +656,11 @@ mod pool_matrix {
     use crate::{
         lightclient::LightClient,
         testutils::{
-            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
+            fee_tables,
+            lightclient::from_inputs,
+            synthetic_wallet::{SyntheticWalletBuilder, external_address},
         },
-        wallet::keys::unified::ReceiverSelection,
     };
-
-    /// An encoded destination of the given pool type, belonging to a
-    /// different wallet so the send is external.
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::Shielded(ShieldedPool::Orchard) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
-            PoolType::Shielded(ShieldedPool::Ironwood) => {
-                unimplemented!("synthetic-wallet tests do not model ironwood receivers yet")
-            }
-            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
 
     /// One matrix cell: a wallet holding a single `source` note of exactly
     /// `receiver_value + change + fee` proposes a `receiver_value` send to
@@ -877,22 +831,7 @@ mod proposal_shape {
     use crate::lightclient::LightClient;
     use crate::testutils::fee_tables;
     use crate::testutils::lightclient::from_inputs;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::wallet::keys::unified::ReceiverSelection;
-
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
-            PoolType::SAPLING => ReceiverSelection::sapling_only(),
-            _ => unimplemented!("only shielded destinations are needed here"),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
+    use crate::testutils::synthetic_wallet::{SyntheticWalletBuilder, external_address};
 
     /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
     /// of less than the fee still proposes — the fee comes out of the

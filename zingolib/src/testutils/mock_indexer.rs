@@ -57,7 +57,6 @@ use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
-use zingo_common_components::protocol::ActivationHeights;
 
 use crate::config::{ChainType, ClientConfig, WalletConfig};
 use crate::lightclient::LightClient;
@@ -130,7 +129,7 @@ impl MockChain {
         let orchard_tree = OrchardTree::empty();
         let genesis_state = tree_state_hex(&sapling_tree, &orchard_tree);
         Self {
-            chain_type: ChainType::Regtest(ActivationHeights::default()),
+            chain_type: ChainType::Regtest(crate::testutils::pre_ironwood_activation_heights()),
             blocks: Vec::new(),
             transactions: HashMap::new(),
             tree_states: vec![genesis_state],
@@ -736,7 +735,9 @@ impl MockNet {
     pub async fn client(&mut self, mnemonic: &str) -> LightClient {
         let wallet_dir = tempfile::tempdir().expect("a tempdir is creatable");
         let config = ClientConfig::builder()
-            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_chain_type(ChainType::Regtest(
+                crate::testutils::pre_ironwood_activation_heights(),
+            ))
             .set_indexer_uri(self.indexer_uri.clone())
             .set_wallet_dir(wallet_dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::MnemonicPhrase {
@@ -797,4 +798,102 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
         .write(&mut bytes)
         .expect("in-memory serialization is infallible");
     bytes
+}
+
+/// The mock indexer as a twin-fixture environment
+/// ([`crate::testutils::twin_fixtures::TwinChain`]): a real sending
+/// faucet on the abandon-art identity — backed by one large fabricated
+/// note, so its sends flow through the mock mempool exactly as the live
+/// faucet's flow through zebrad — and a hospital-museum recipient.
+pub struct MockTwinChain {
+    /// The launched mock network.
+    pub net: MockNet,
+    funded_height: u32,
+}
+
+impl crate::testutils::twin_fixtures::TwinChain for MockTwinChain {
+    async fn setup_faucet_recipient() -> (Self, LightClient, LightClient) {
+        use zcash_protocol::{PoolType, ShieldedPool};
+
+        let mut net = MockNet::launch().await;
+        // Launch-block parity with the live layout.
+        net.chain.write().await.mine_empty_blocks(1);
+
+        let mut faucet = net
+            .client(zingo_test_vectors::seeds::ABANDON_ART_SEED)
+            .await;
+        let faucet_ua = crate::testutils::lightclient::get_base_address(
+            &faucet,
+            PoolType::Shielded(ShieldedPool::Orchard),
+        )
+        .await;
+        // The faucet's backing funds: one large fabricated note, the
+        // mock's stand-in for mining income.
+        let backing = faucet_funding_transaction(vec![(&faucet_ua, 1_000_000_000, None)]).await;
+        net.chain.write().await.mine_block(vec![backing]);
+        faucet.sync_and_await().await.unwrap();
+
+        let recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        (
+            Self {
+                net,
+                funded_height: 0,
+            },
+            faucet,
+            recipient,
+        )
+    }
+
+    async fn setup_funded_recipient(initial: u64) -> (Self, LightClient, LightClient) {
+        use zcash_protocol::{PoolType, ShieldedPool};
+
+        let (mut env, mut faucet, mut recipient) = Self::setup_faucet_recipient().await;
+        let recipient_ua = crate::testutils::lightclient::get_base_address(
+            &recipient,
+            PoolType::Shielded(ShieldedPool::Orchard),
+        )
+        .await;
+        from_inputs::quick_send(&mut faucet, vec![(recipient_ua.as_str(), initial, None)])
+            .await
+            .unwrap();
+        {
+            let mut chain = env.net.chain.write().await;
+            chain.mine_mempool();
+            env.funded_height = chain.tip();
+        }
+        faucet.sync_and_await().await.unwrap();
+        recipient.sync_and_await().await.unwrap();
+        (env, faucet, recipient)
+    }
+
+    async fn bump(&mut self) {
+        self.net.chain.write().await.mine_mempool();
+    }
+
+    async fn sync(&self, client: &mut LightClient) {
+        client.sync_and_await().await.unwrap();
+    }
+
+    fn funded_setup_height(&self) -> u32 {
+        self.funded_height
+    }
+
+    fn second_wave_faucet_fee(&self) -> u64 {
+        // The mock faucet spends one large change note: two logical
+        // actions. (Live, wave-driven fragmentation makes it four.)
+        10_000
+    }
+
+    async fn step1_diagnostics(&self, client: &LightClient) {
+        // Surfaces the zingolabs/zingolib#2447 failure shape: nextest
+        // shows this stderr only when the test fails.
+        let chain = self.net.chain.read().await;
+        eprintln!("step-1 diagnostics: mock tip {}", chain.tip());
+        eprintln!("taddr requests served: {:#?}", chain.taddr_request_log());
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        eprintln!("wallet transactions: {}", wallet.wallet_transactions.len());
+    }
 }

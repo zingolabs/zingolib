@@ -161,3 +161,19 @@ End state: `cargo check --workspace --all-targets` finishes with zero
 errors and zero warnings. Not yet run (deliberately): the LocalNet suite —
 the merge gate remains sentinels + default tier green at unchanged
 activation heights, driven by the user per shared-tree practice.
+
+### 11. Post-merge behavioral regression (found and fixed after commit)
+
+The compile gate passed, but the first post-merge run of the OFFLINE
+suite found every mock-chain-scanning test failing (balance 0, sync
+"successful"): `zingo_common_components::ActivationHeights::default()`
+declares `nu6_3: Some(1)`, which was inert under zcash_protocol 0.9 but —
+with the merge's `--cfg zcash_unstable="nu6.3"` — put the mock regtest in
+the ironwood era from height 1. Builders then emitted V6 transactions
+that `default_test_wallet_settings`'s `allow_v6_transactions: false`
+silently refuses to scan. The live suite was never exposed because it
+pins its own heights fixture with NU6.3 off. **Fix:**
+`zingolib::testutils::pre_ironwood_activation_heights()` — the offline
+environments (mock indexer, synthetic wallets) now pin the same
+pre-ironwood era the live fixture pins; both flip together in phase 3.
+Verified: the full zingolib offline suite (161 tests) green.

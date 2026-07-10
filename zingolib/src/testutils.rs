@@ -31,6 +31,7 @@ pub mod macros;
 pub mod mock_indexer;
 pub mod paths;
 pub mod synthetic_wallet;
+pub mod twin_fixtures;
 
 // Re-export test dependencies for convenience
 pub use portpicker;
@@ -638,4 +639,31 @@ pub fn encoded_orchard_only_from_ua(
     )
     .unwrap()
     .encode(consensus_parameters)
+}
+
+/// Pre-ironwood regtest activation heights for offline tests: every
+/// upgrade through NU6.2 active at height 1, NU6.3 unset.
+///
+/// `ActivationHeights::default()` activates NU6.3 at height 1, which —
+/// now that the workspace builds with `--cfg zcash_unstable="nu6.3"` —
+/// makes builders emit V6 transactions that
+/// [`default_test_wallet_settings`]'s `allow_v6_transactions: false`
+/// silently refuses to scan. Offline tests therefore pin the same
+/// pre-ironwood era the live suite's heights fixture pins; both flip
+/// together in the ironwood heights phase
+/// (docs/testing/ironwood-regtest-upgrade-strategy.md, phase 3).
+pub fn pre_ironwood_activation_heights() -> zingo_common_components::protocol::ActivationHeights {
+    zingo_common_components::protocol::ActivationHeights::builder()
+        .set_overwinter(Some(1))
+        .set_sapling(Some(1))
+        .set_blossom(Some(1))
+        .set_heartwood(Some(1))
+        .set_canopy(Some(1))
+        .set_nu5(Some(1))
+        .set_nu6(Some(1))
+        .set_nu6_1(Some(1))
+        .set_nu6_2(Some(1))
+        .set_nu6_3(None)
+        .set_nu7(None)
+        .build()
 }

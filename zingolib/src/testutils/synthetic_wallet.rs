@@ -63,7 +63,7 @@ impl SyntheticWalletBuilder {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
-            activation_heights: ActivationHeights::default(),
+            activation_heights: crate::testutils::pre_ironwood_activation_heights(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
             transparent_coin_values: Vec::new(),
@@ -295,4 +295,29 @@ impl SyntheticWalletBuilder {
 
         wallet
     }
+}
+
+/// An encoded destination of the given pool type belonging to the
+/// abandon-art wallet — external to any hospital-museum test wallet, and
+/// identical to the live faucet's derivations (the faucet runs on the
+/// same seed).
+pub fn external_address(pool: zcash_protocol::PoolType) -> String {
+    use zcash_protocol::{PoolType, ShieldedPool};
+
+    use crate::wallet::keys::unified::ReceiverSelection;
+
+    let mut external_wallet =
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+    let selection = match pool {
+        PoolType::Shielded(ShieldedPool::Orchard) => ReceiverSelection::orchard_only(),
+        PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
+        PoolType::Shielded(ShieldedPool::Ironwood) => {
+            unimplemented!("synthetic-wallet tests do not model ironwood receivers yet")
+        }
+        PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
+    };
+    let (_, unified_address) = external_wallet
+        .generate_unified_address(selection, zip32::AccountId::ZERO)
+        .unwrap();
+    unified_address.encode(&external_wallet.chain_type())
 }
