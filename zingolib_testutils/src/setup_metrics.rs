@@ -30,7 +30,7 @@ use zingolib::testutils::port_to_localhost_uri;
 
 /// A `LocalNet` that records the chain-setup metrics of the test holding
 /// it and carries the pipeline observatory (state watches on zebrad and
-/// zainod, plus the front records registered before launch), writing its
+/// zainod, plus the front records connected before launch), writing its
 /// metrics row when dropped. Derefs to the wrapped `LocalNet`, so call
 /// sites use it exactly as before.
 ///
@@ -51,8 +51,8 @@ pub struct MeteredNet {
 
 impl MeteredNet {
     /// Wrap a freshly launched net: sample the launch-time data-dir
-    /// size, arm the state watches, and adopt the front records that
-    /// were registered before launch. `setup_started` is the instant
+    /// size, prime the state watches, and adopt the front records that
+    /// were connected before launch. `setup_started` is the instant
     /// scenario setup began, so the recorded wall-clock includes
     /// process launch.
     pub fn new(
@@ -63,10 +63,10 @@ impl MeteredNet {
     ) -> Self {
         let launch_bytes = dir_size(net.validator().data_dir().path());
         MeteredNet {
-            zebrad_watch: StateWatch::arm(ZebradState {
+            zebrad_watch: StateWatch::prime(ZebradState {
                 rpc_port: net.validator().rpc_listen_port(),
             }),
-            zainod_watch: StateWatch::arm(ZainodState {
+            zainod_watch: StateWatch::prime(ZainodState {
                 uri: port_to_localhost_uri(net.indexer().listen_port()),
             }),
             zebrad_front,

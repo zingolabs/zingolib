@@ -18,11 +18,11 @@
 //!   exist for all three pipeline nodes: [`ZebradState`] (tip + peer
 //!   count), [`ZainodState`] (indexed tip), and [`WalletState`] (synced
 //!   height).
-//! - [`FrontRecord`] registers as a `zcash_local_net` front-proxy
+//! - [`FrontRecord`] connects as a `zcash_local_net` front-proxy
 //!   observer. Since the front-proxy inversion (infrastructure commit
 //!   1a7bb7e), every port accessor on a launched process returns an
 //!   observing front bound *before* the process starts, so a
-//!   registered record sees every client of that process — including
+//!   connected record sees every client of that process — including
 //!   the launch-mine, which adjudicated the hypothesis above: the
 //!   once-invisible mutation is an ordinary RPC, now observed.
 //!   [`LinkTap`], the hand-wired TCP relay the fronts superseded,
@@ -63,7 +63,7 @@ pub trait Observable: Send + 'static {
 /// One observed change of an [`Observable`]'s fingerprint.
 #[derive(Clone, Debug)]
 pub struct StateEvent {
-    /// Time since the watch was armed.
+    /// Time since the watch was primed.
     pub at: Duration,
     /// The fingerprint observed.
     pub fingerprint: String,
@@ -75,16 +75,16 @@ pub struct StateEvent {
 /// [`StateWatch::render`].
 pub struct StateWatch<O: Observable> {
     events: Arc<Mutex<Vec<StateEvent>>>,
-    armed: Instant,
+    primed: Instant,
     task: tokio::task::JoinHandle<()>,
     _observer: std::marker::PhantomData<O>,
 }
 
 impl<O: Observable> StateWatch<O> {
-    /// Arm the watch: spawn the poll task and start recording.
-    pub fn arm(observer: O) -> Self {
+    /// Prime the watch: spawn the poll task and start recording.
+    pub fn prime(observer: O) -> Self {
         let events: Arc<Mutex<Vec<StateEvent>>> = Arc::default();
-        let armed = Instant::now();
+        let primed = Instant::now();
         let recorder = events.clone();
         let task = tokio::spawn(async move {
             let mut last: Option<String> = None;
@@ -94,7 +94,7 @@ impl<O: Observable> StateWatch<O> {
                 {
                     last = Some(fingerprint.clone());
                     recorder.lock().unwrap().push(StateEvent {
-                        at: armed.elapsed(),
+                        at: primed.elapsed(),
                         fingerprint,
                     });
                 }
@@ -103,7 +103,7 @@ impl<O: Observable> StateWatch<O> {
         });
         StateWatch {
             events,
-            armed,
+            primed,
             task,
             _observer: std::marker::PhantomData,
         }
@@ -119,10 +119,10 @@ impl<O: Observable> StateWatch<O> {
         self.events.lock().unwrap().last().cloned()
     }
 
-    /// Seconds since the watch was armed, for correlating external
+    /// Seconds since the watch was primed, for correlating external
     /// timestamps with [`StateEvent::at`].
     pub fn elapsed(&self) -> Duration {
-        self.armed.elapsed()
+        self.primed.elapsed()
     }
 
     /// Render the timeline for assertion messages and the observatory
@@ -213,8 +213,8 @@ impl Observable for ZainodState {
     }
 }
 
-/// A wallet's externally observable state: its synced height. Arm one
-/// per wallet under scrutiny; scenario constructors do not arm these
+/// A wallet's externally observable state: its synced height. Prime one
+/// per wallet under scrutiny; scenario constructors do not prime these
 /// automatically because wallets outlive and outnumber the net handle.
 pub struct WalletState {
     /// Name in reports (e.g. "faucet", "recipient").
@@ -235,27 +235,27 @@ impl Observable for WalletState {
 }
 
 /// Recording observer for an infrastructure front proxy — the
-/// registration-based successor to hand-wired [`LinkTap`]s. Since the
+/// connected-observer successor to hand-wired [`LinkTap`]s. Since the
 /// front-proxy inversion (infrastructure commit 1a7bb7e), every port
 /// accessor on a launched process returns an observing front, so a
-/// registered `FrontRecord` receives every chunk from every client of
+/// connected `FrontRecord` receives every chunk from every client of
 /// that process — including traffic this crate never issues, such as
 /// the launch-mine and the Indexer's own validator connection, which
 /// no hand-wired tap could reach.
 pub struct FrontRecord {
     label: &'static str,
-    armed_wall: std::time::SystemTime,
+    primed_wall: std::time::SystemTime,
     events: Mutex<Vec<TapEvent>>,
 }
 
 impl FrontRecord {
-    /// Create a record ready to register as a
+    /// Create a record ready to connect as a
     /// `zcash_local_net::front::FrontObserver` (pass a clone of the
     /// `Arc` into the process config before launch).
-    pub fn arm(label: &'static str) -> Arc<Self> {
+    pub fn prime(label: &'static str) -> Arc<Self> {
         Arc::new(FrontRecord {
             label,
-            armed_wall: std::time::SystemTime::now(),
+            primed_wall: std::time::SystemTime::now(),
             events: Mutex::new(Vec::new()),
         })
     }
@@ -279,7 +279,10 @@ impl FrontRecord {
 
 impl zcash_local_net::front::FrontObserver for FrontRecord {
     fn on_chunk(&self, event: &zcash_local_net::front::ChunkEvent) {
-        let at = event.at.duration_since(self.armed_wall).unwrap_or_default();
+        let at = event
+            .at
+            .duration_since(self.primed_wall)
+            .unwrap_or_default();
         self.events.lock().unwrap().push(TapEvent {
             at,
             connection: event.connection as usize,
