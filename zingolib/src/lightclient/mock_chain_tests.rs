@@ -817,3 +817,61 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 }
+
+/// Deterministic reproduction of issue #2450 (no live original: the
+/// live shape is a load-dependent flake — three libtonode tests
+/// failing whenever a slow validator response crosses the wallet's
+/// send timeout). The first submission is accepted into the mock
+/// mempool but its response is lost; the wallet's retry then receives
+/// the validator's duplicate rejection, verbatim as zainod surfaces it
+/// (zingolabs/zaino#1392). That rejection is proof of successful
+/// transmission: the send must return Ok, the transaction must not be
+/// marked Failed, and it must confirm with ordinary balance
+/// arithmetic.
+#[tokio::test]
+async fn send_survives_lost_response_and_duplicate_rejection() {
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let recipient_ua =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+
+    net.chain.write().await.lose_next_send_response = true;
+
+    let txids = from_inputs::quick_send(
+        &mut recipient,
+        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+    )
+    .await
+    .expect("a duplicate-in-mempool rejection proves transmission succeeded");
+
+    // The wallet must not record the live transaction as Failed.
+    {
+        let wallet = recipient.wallet().read().await;
+        for txid in txids.iter() {
+            let status = wallet
+                .wallet_transactions
+                .get(txid)
+                .expect("the transmitted transaction stays in the wallet")
+                .status();
+            assert!(
+                !matches!(status, ConfirmationStatus::Failed(_)),
+                "transaction {txid} marked Failed while live in the mempool"
+            );
+        }
+    }
+
+    net.chain.write().await.mine_mempool();
+    recipient.sync_and_await().await.unwrap();
+    // Identical arithmetic to `funded_send_confirms_on_the_mock_chain`:
+    // the lost response and duplicate rejection must not perturb it.
+    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+}

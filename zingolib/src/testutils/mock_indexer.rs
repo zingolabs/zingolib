@@ -83,6 +83,11 @@ pub struct MockChain {
     sapling_tree: SaplingTree,
     orchard_tree: OrchardTree,
     mempool: Vec<Vec<u8>>,
+    /// One-shot fault: the next `send_transaction` accepts the bytes
+    /// into the mempool but answers with an error — the
+    /// accepted-but-unanswered submission of issue #2450. Cleared on
+    /// use.
+    pub lose_next_send_response: bool,
     /// One entry per `GetTaddressTxids` request served: the address, the
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
@@ -143,6 +148,7 @@ impl MockChain {
             sapling_tree,
             orchard_tree,
             mempool: Vec::new(),
+            lose_next_send_response: false,
             taddr_request_log: Vec::new(),
             branch_seed: 0,
         }
@@ -500,7 +506,27 @@ impl CompactTxStreamer for MockIndexerService {
         request: Request<RawTransaction>,
     ) -> Result<Response<SendResponse>, Status> {
         let mut chain = self.chain.write().await;
-        let txid = chain.submit_transaction(request.into_inner().data);
+        let bytes = request.into_inner().data;
+        // The validator rejects resubmitted bytes rather than
+        // re-accepting them; reproduce that rejection verbatim as
+        // zainod 0.6.0-rc.1 surfaces it (zingolabs/zaino#1392), so
+        // client handling is exercised against the message it really
+        // receives.
+        if chain.mempool.contains(&bytes) {
+            return Err(Status::internal(
+                "unhandled rpc-specific zaino_fetch::jsonrpsee::response::SendTransactionError \
+                 error: RPC Error (code: -1): transaction already exists in mempool",
+            ));
+        }
+        let txid = chain.submit_transaction(bytes);
+        if chain.lose_next_send_response {
+            chain.lose_next_send_response = false;
+            // The fault of issue #2450: acceptance happened, the
+            // caller never learns.
+            return Err(Status::deadline_exceeded(
+                "mock fault: response lost after mempool acceptance",
+            ));
+        }
         Ok(Response::new(SendResponse {
             error_code: 0,
             error_message: txid,

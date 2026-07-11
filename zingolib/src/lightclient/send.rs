@@ -197,6 +197,22 @@ impl LightClient {
                         break Ok(txid);
                     }
                     Err(e) => {
+                        // The node's rejection of resubmitted bytes is
+                        // positive confirmation that an earlier
+                        // submission succeeded: the transaction is
+                        // live, so transmission is complete (issue
+                        // #2450). A substring match because zainod
+                        // surfaces the rejection untyped
+                        // (zingolabs/zaino#1392); upgrade to a typed
+                        // check when that lands.
+                        if let SendError::TransmissionError(TransmissionError::TransmissionFailed(
+                            message,
+                        )) = &e
+                            && (message.contains("transaction already exists in mempool")
+                                || message.contains("transaction already in block chain"))
+                        {
+                            break Ok(txid.to_string());
+                        }
                         if retry_count >= MAX_RETRIES {
                             pepper_sync::set_transactions_failed(
                                 &mut wallet.wallet_transactions,
