@@ -120,6 +120,12 @@ fn tree_state_hex(sapling_tree: &SaplingTree, orchard_tree: &OrchardTree) -> (St
     (hex::encode(sapling_bytes), hex::encode(orchard_bytes))
 }
 
+impl Default for MockChain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockChain {
     /// An empty regtest chain at height 0 with the default (everything
     /// at height 1) activation schedule — matching
