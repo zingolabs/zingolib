@@ -64,6 +64,17 @@ metrics file is the census of them.
 _Avoid_: LocalNet test, online test, live test (that names the Makefile
 package partition, not this category)
 
+**Armed**:
+The state of an observability instrument (a state watch or a front
+record) whose recording window is open: the arming instant is time zero
+for every event it records. Instruments are armed before the observed
+process launches so the window covers the launch itself. Arming is
+distinct from registration — a front record receives traffic only once
+it is also registered with the process it observes; an
+armed-but-unregistered record is valid and silently empty (how the
+Legacy stack runs, whose Indexer accepts no observer).
+_Avoid_: started, created (neither implies the open recording window)
+
 **Binary e2e test**:
 A test that exercises the shipped zingo-cli binary end-to-end through its
 public CLI surface, driving it as a Wallet (in the infrastructure repo's

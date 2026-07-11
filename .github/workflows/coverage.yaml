@@ -9,13 +9,17 @@ permissions:
   contents: write
 
 jobs:
+  compute-image-tag:
+    uses: ./.github/workflows/compute-image-tag.yaml
+
   coverage:
     name: Coverage
+    needs: compute-image-tag
     runs-on: ubuntu-24.04
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository

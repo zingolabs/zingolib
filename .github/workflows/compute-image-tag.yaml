@@ -1,0 +1,40 @@
+name: Compute CI Image Tag
+
+# Resolves the content-addressed tag of the reproducible test image
+# (zingodevops/ci-build). The computation itself lives in Makefile.toml
+# (container_image_tag); this workflow only calls it, so the tag CI
+# consumes and the tag `makers build-image` produces cannot drift.
+# Replicates the zaino dev method: see zingolabs/zaino
+# .github/workflows/compute-tag.yml, with content-addressed tagging per
+# zingolabs/zaino@d8754b72a.
+
+on:
+  workflow_call:
+    outputs:
+      image-tag:
+        description: "Content-addressed tag of the docker-ci image"
+        value: ${{ jobs.compute-tag.outputs.image-tag }}
+
+jobs:
+  compute-tag:
+    name: Compute CI image tag
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.taggen.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install cargo-make
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make
+
+      - name: Compute the content-addressed image tag
+        id: taggen
+        run: |
+          # The tag is the only 14-hex-char line the task prints;
+          # cargo-make's INFO chatter shares stdout with it.
+          TAG=$(makers compute-image-tag | grep -E '^[0-9a-f]{14}$')
+          echo "Computed tag: ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
