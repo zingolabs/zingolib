@@ -34,7 +34,9 @@ jobs:
         id: taggen
         run: |
           # The tag is the only 14-hex-char line the task prints;
-          # cargo-make's INFO chatter shares stdout with it.
-          TAG=$(makers compute-image-tag | grep -E '^[0-9a-f]{14}$')
+          # cargo-make's INFO chatter shares stdout with it. The
+          # install-action provides the `cargo-make` binary only, not
+          # the `makers` alias, so invoke it as a cargo subcommand.
+          TAG=$(cargo make compute-image-tag | grep -E '^[0-9a-f]{14}$')
           echo "Computed tag: ${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"

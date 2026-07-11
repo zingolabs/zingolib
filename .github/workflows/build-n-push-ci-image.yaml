@@ -51,13 +51,15 @@ jobs:
       - name: Compute the content-addressed image tag
         id: taggen
         run: |
-          # The tag is the only 14-hex-char line the task prints.
-          TAG=$(makers compute-image-tag | grep -E '^[0-9a-f]{14}$')
+          # The tag is the only 14-hex-char line the task prints. The
+          # install-action provides the `cargo-make` binary only, not
+          # the `makers` alias, so invoke it as a cargo subcommand.
+          TAG=$(cargo make compute-image-tag | grep -E '^[0-9a-f]{14}$')
           echo "Computed tag: ${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build the image via the makers front door
-        run: makers build-image
+        run: cargo make build-image
 
       - name: Push the image
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
