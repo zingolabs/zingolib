@@ -40,9 +40,9 @@ use crate::{
 };
 use error::LightClientError;
 
-pub mod error;
 #[cfg(test)]
 mod darkside;
+pub mod error;
 #[cfg(test)]
 mod mock_chain_tests;
 pub mod propose;

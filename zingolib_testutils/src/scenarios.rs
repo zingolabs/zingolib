@@ -885,7 +885,13 @@ async fn launch_observed(
 
     let mut indexer_config = <DefaultIndexer as Process>::Config::default();
     indexer_config.set_listen_port(None);
-    indexer_config.grpc_front_observer = Some(zainod_front.clone());
+    // `LightwalletdConfig` carries no observer seam; under the legacy
+    // stack the front stays armed but records nothing, matching the
+    // no-op `IndexerConvergence` impl above.
+    #[cfg(not(feature = "test_lwd_zebrad"))]
+    {
+        indexer_config.grpc_front_observer = Some(zainod_front.clone());
+    }
 
     let local_net = LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await
