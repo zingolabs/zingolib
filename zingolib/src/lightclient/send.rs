@@ -20,6 +20,14 @@ use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;
 
+/// A "queued for download" duplicate rejection proves delivery but not
+/// minability: zebra is still verifying the earlier submission
+/// (observed to lag it by seconds under load). Each resubmission is a
+/// free probe of zebra's own state; wait up to this many probes, on
+/// the retry loop's one-second cadence, for the verdict to become
+/// storage-backed (issue #2450).
+const MAX_QUEUED_PROBES: u8 = 30;
+
 impl LightClient {
     async fn send(
         &mut self,
@@ -160,6 +168,7 @@ impl LightClient {
                 })?;
 
             let mut retry_count = 0;
+            let mut queued_probes = 0;
             let txid_from_server = loop {
                 let transmission_result = self
                     .indexer
@@ -183,21 +192,44 @@ impl LightClient {
                         break Ok(txid);
                     }
                     Err(e) => {
-                        // The node's rejection of resubmitted bytes is
-                        // positive confirmation that an earlier
-                        // submission succeeded: the transaction is
-                        // live, so transmission is complete (issue
-                        // #2450). A substring match because zainod
-                        // surfaces the rejection untyped
-                        // (zingolabs/zaino#1392); upgrade to a typed
-                        // check when that lands.
-                        if let SendError::TransmissionError(TransmissionError::TransmissionFailed(
-                            message,
-                        )) = &e
-                            && (message.contains("transaction already exists in mempool")
-                                || message.contains("transaction already in block chain"))
+                        // The node's rejections of resubmitted bytes
+                        // are positive confirmation that an earlier
+                        // submission was received (issue #2450).
+                        // Substring matches because zainod surfaces
+                        // the rejections untyped (zingolabs/zaino#1392);
+                        // upgrade to typed checks when that lands.
+                        if let SendError::TransmissionError(
+                            TransmissionError::TransmissionFailed(message),
+                        ) = &e
                         {
-                            break Ok(txid.to_string());
+                            // Storage-backed duplicates: the earlier
+                            // submission is minable (in the mempool)
+                            // or already mined, so transmission is
+                            // complete.
+                            if message.contains("transaction already exists in mempool")
+                                || message.contains("transaction already in block chain")
+                            {
+                                break Ok(txid.to_string());
+                            }
+                            // "Queued for download" proves delivery,
+                            // not minability: zebra is still verifying
+                            // the earlier submission. Hold success
+                            // until the verdict is storage-backed, so
+                            // send-Ok keeps meaning the transaction is
+                            // minable now.
+                            if message.contains("already queued for download") {
+                                if queued_probes >= MAX_QUEUED_PROBES {
+                                    pepper_sync::set_transactions_failed(
+                                        &mut wallet.wallet_transactions,
+                                        vec![*txid],
+                                    );
+                                    wallet.save_required = true;
+                                    break Err(e);
+                                }
+                                queued_probes += 1;
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                continue;
+                            }
                         }
                         if retry_count >= MAX_RETRIES {
                             pepper_sync::set_transactions_failed(

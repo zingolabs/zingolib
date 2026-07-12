@@ -83,11 +83,24 @@ pub struct MockChain {
     sapling_tree: SaplingTree,
     orchard_tree: OrchardTree,
     mempool: Vec<Vec<u8>>,
-    /// One-shot fault: the next `send_transaction` accepts the bytes
-    /// into the mempool but answers with an error — the
-    /// accepted-but-unanswered submission of issue #2450. Cleared on
-    /// use.
-    pub lose_next_send_response: bool,
+    /// Raw transactions delivered but still in the validator's
+    /// download/verification queue: present enough to reject a
+    /// resubmission ("already queued for download"), not yet in the
+    /// mempool. [`MockChain::promote_download_queue`] is the validator
+    /// finishing verification.
+    download_queue: Vec<Vec<u8>>,
+    /// One-shot fault: the next `send_transaction` takes the bytes —
+    /// into the mempool or the download queue per the destination —
+    /// but answers with an error. The accepted-but-unanswered
+    /// submission of issue #2450, in either of the validator's two
+    /// pre-mining phases. Cleared on use.
+    pub lose_next_send_response: Option<LostSendDestination>,
+    /// The verification delay, made deterministic: how many "already
+    /// queued for download" rejections the mock answers before the
+    /// download queue promotes to the mempool. Decremented on each
+    /// duplicate probe of a queued transaction; at zero the probe is
+    /// answered with the mempool-phase rejection instead.
+    pub queued_rejections_before_promotion: u8,
     /// One entry per `GetTaddressTxids` request served: the address, the
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
@@ -101,6 +114,20 @@ pub struct MockChain {
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
+}
+
+/// Where a lost-response submission lands, mirroring the validator's
+/// two pre-mining phases: zebra queues a submission for download and
+/// verification before accepting it into the mempool, and rejects a
+/// duplicate differently in each phase.
+#[derive(Clone, Copy, Debug)]
+pub enum LostSendDestination {
+    /// Verification already finished: the duplicate rejection reads
+    /// "transaction already exists in mempool".
+    Mempool,
+    /// Verification still pending: the duplicate rejection reads
+    /// "transaction dropped because it is already queued for download".
+    DownloadQueue,
 }
 
 /// Height- and branch-seeded fabricated hash. Seed 0 reproduces the
@@ -148,7 +175,9 @@ impl MockChain {
             sapling_tree,
             orchard_tree,
             mempool: Vec::new(),
-            lose_next_send_response: false,
+            download_queue: Vec::new(),
+            lose_next_send_response: None,
+            queued_rejections_before_promotion: 0,
             taddr_request_log: Vec::new(),
             branch_seed: 0,
         }
@@ -172,6 +201,13 @@ impl MockChain {
         let txid = transaction.txid().to_string();
         self.mempool.push(bytes);
         txid
+    }
+
+    /// The validator finishing verification: queued transactions enter
+    /// the mempool.
+    pub fn promote_download_queue(&mut self) {
+        let verified = std::mem::take(&mut self.download_queue);
+        self.mempool.extend(verified);
     }
 
     /// Mines every mempool transaction into the next block.
@@ -508,29 +544,57 @@ impl CompactTxStreamer for MockIndexerService {
         let mut chain = self.chain.write().await;
         let bytes = request.into_inner().data;
         // The validator rejects resubmitted bytes rather than
-        // re-accepting them; reproduce that rejection verbatim as
-        // zainod 0.6.0-rc.1 surfaces it (zingolabs/zaino#1392), so
-        // client handling is exercised against the message it really
-        // receives.
+        // re-accepting them, with a phase-specific message; reproduce
+        // both rejections verbatim as zainod 0.6.0-rc.1 surfaces them
+        // (zingolabs/zaino#1392), so client handling is exercised
+        // against the messages it really receives.
         if chain.mempool.contains(&bytes) {
             return Err(Status::internal(
                 "unhandled rpc-specific zaino_fetch::jsonrpsee::response::SendTransactionError \
                  error: RPC Error (code: -1): transaction already exists in mempool",
             ));
         }
-        let txid = chain.submit_transaction(bytes);
-        if chain.lose_next_send_response {
-            chain.lose_next_send_response = false;
-            // The fault of issue #2450: acceptance happened, the
-            // caller never learns.
-            return Err(Status::deadline_exceeded(
-                "mock fault: response lost after mempool acceptance",
+        if chain.download_queue.contains(&bytes) {
+            if chain.queued_rejections_before_promotion == 0 {
+                // Verification finished between probes: the queue
+                // promotes and this probe already sees the
+                // mempool-phase rejection.
+                chain.promote_download_queue();
+                return Err(Status::internal(
+                    "unhandled rpc-specific zaino_fetch::jsonrpsee::response::SendTransactionError \
+                     error: RPC Error (code: -1): transaction already exists in mempool",
+                ));
+            }
+            chain.queued_rejections_before_promotion -= 1;
+            return Err(Status::internal(
+                "unhandled rpc-specific zaino_fetch::jsonrpsee::response::SendTransactionError \
+                 error: RPC Error (code: -1): transaction dropped because it is already queued \
+                 for download",
             ));
         }
-        Ok(Response::new(SendResponse {
-            error_code: 0,
-            error_message: txid,
-        }))
+        // The fault of issue #2450: delivery happened, the caller
+        // never learns.
+        match chain.lose_next_send_response.take() {
+            Some(LostSendDestination::Mempool) => {
+                chain.submit_transaction(bytes);
+                Err(Status::deadline_exceeded(
+                    "mock fault: response lost after mempool acceptance",
+                ))
+            }
+            Some(LostSendDestination::DownloadQueue) => {
+                chain.download_queue.push(bytes);
+                Err(Status::deadline_exceeded(
+                    "mock fault: response lost while queued for download",
+                ))
+            }
+            None => {
+                let txid = chain.submit_transaction(bytes);
+                Ok(Response::new(SendResponse {
+                    error_code: 0,
+                    error_message: txid,
+                }))
+            }
+        }
     }
 
     type GetTaddressTxidsStream = ResponseStream<RawTransaction>;

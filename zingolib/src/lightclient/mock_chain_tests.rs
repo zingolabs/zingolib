@@ -830,6 +830,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 /// arithmetic.
 #[tokio::test]
 async fn send_survives_lost_response_and_duplicate_rejection() {
+    use crate::testutils::mock_indexer::LostSendDestination;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     let mut net = MockNet::launch().await;
@@ -844,7 +845,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
 
-    net.chain.write().await.lose_next_send_response = true;
+    net.chain.write().await.lose_next_send_response = Some(LostSendDestination::Mempool);
 
     let txids = from_inputs::quick_send(
         &mut recipient,
@@ -873,5 +874,72 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     // Identical arithmetic to `funded_send_confirms_on_the_mock_chain`:
     // the lost response and duplicate rejection must not perturb it.
+    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+}
+
+/// Twin of [`send_survives_lost_response_and_duplicate_rejection`] for
+/// the validator's earlier phase: the lost-response submission is
+/// still in the download/verification queue when the retry arrives, so
+/// the rejection reads "transaction dropped because it is already
+/// queued for download" (zebra's pre-acceptance duplicate check) —
+/// observed live in the 2026-07-11 container runs, where verification
+/// lagged the send by seconds under load. That rejection proves
+/// delivery but not minability, so the wallet must hold success until
+/// its probes see the storage-backed mempool rejection — and only then
+/// return Ok, keeping send-Ok ⇒ minable-now. The mock answers two
+/// queued rejections before promoting, so the probe loop is exercised
+/// deterministically; mining immediately after the send must therefore
+/// confirm the transaction.
+#[tokio::test]
+async fn send_survives_lost_response_and_queued_duplicate_rejection() {
+    use crate::testutils::mock_indexer::LostSendDestination;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let recipient_ua =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+
+    {
+        let mut chain = net.chain.write().await;
+        chain.lose_next_send_response = Some(LostSendDestination::DownloadQueue);
+        chain.queued_rejections_before_promotion = 2;
+    }
+
+    let txids = from_inputs::quick_send(
+        &mut recipient,
+        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+    )
+    .await
+    .expect("probing resubmissions reach the storage-backed verdict");
+
+    // The wallet must not record the delivered transaction as Failed.
+    {
+        let wallet = recipient.wallet().read().await;
+        for txid in txids.iter() {
+            let status = wallet
+                .wallet_transactions
+                .get(txid)
+                .expect("the transmitted transaction stays in the wallet")
+                .status();
+            assert!(
+                !matches!(status, ConfirmationStatus::Failed(_)),
+                "transaction {txid} marked Failed while queued for download"
+            );
+        }
+    }
+
+    // send-Ok means minable NOW: mining immediately — the very race
+    // that broke test_scanning_in_watch_only_mode live — must include
+    // the transaction, with no verification-delay allowance.
+    net.chain.write().await.mine_mempool();
+    recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
 }
