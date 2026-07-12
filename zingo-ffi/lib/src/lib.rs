@@ -39,7 +39,10 @@ use zcash_address::ZcashAddress;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zingo_netutils::{GrpcIndexer, Indexer};
-use zingolib::config::{ChainType, ClientConfig, WalletConfig, construct_lightwalletd_uri};
+use zingolib::config::{
+    ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
+    construct_lightwalletd_uri,
+};
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
 use zingolib::data::receivers::Receivers;
@@ -241,16 +244,29 @@ fn build_connection_params(
     performance_level: String,
     min_confirmations: u32,
 ) -> Result<ConnectionParams, String> {
-    // if uri is empty -> Offline Mode.
-    let lightwalletd_uri = construct_lightwalletd_uri(Some(uri))
-        .map_err(|e| format!("Error: Invalid lightwalletd uri: {e}"))?;
-
     let chain_type = match chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
+
+    // Offline Mode = empty uri. The client never connects, but tonic still
+    // parses the URI and rejects a scheme-less one ("bad uri: invalid scheme").
+    // `Some("")` maps to http::Uri::default() ("/"), so hand it the chain's
+    // default indexer URI instead — syntactically valid, and never actually
+    // dialed while offline. It is replaced as soon as a real server is chosen.
+    let lightwalletd_uri = if uri.is_empty() {
+        let default = match chain_type {
+            ChainType::Mainnet => DEFAULT_INDEXER_URI,
+            ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
+            ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
+        };
+        construct_lightwalletd_uri(Some(default.to_string()))
+    } else {
+        construct_lightwalletd_uri(Some(uri))
+    }
+    .map_err(|e| format!("Error: Invalid lightwalletd uri: {e}"))?;
     let performancetype = match performance_level.as_str() {
         "Maximum" => PerformanceLevel::Maximum,
         "High" => PerformanceLevel::High,
@@ -427,15 +443,7 @@ pub fn init_from_b64(
 ) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         reset_lightclient();
-        let params = match build_connection_params(
-            server_uri,
-            chain_hint,
-            performance_level,
-            min_confirmations,
-        ) {
-            Ok(p) => p,
-            Err(e) => return Ok(format!("Error: {e}")),
-        };
+
         let decoded_bytes = match STANDARD.decode(&base64_data) {
             Ok(b) => b,
             Err(e) => {
@@ -448,19 +456,65 @@ pub fn init_from_b64(
             }
         };
 
+        // Offline (empty server uri) has no server, so the caller-supplied
+        // `chain_hint` is meaningless — and the wallet already stores its own
+        // chain. Try each chain and keep the one the wallet deserializes under,
+        // so an Offline open works regardless of any residual chain value (a
+        // mainnet wallet opened while settings still say "test", and vice
+        // versa). Online we honor the hint strictly: a chain that disagrees
+        // with the selected server is a genuine mismatch and must error.
+        let chain_hints: Vec<String> = if server_uri.is_empty() {
+            vec![
+                "main".to_string(),
+                "test".to_string(),
+                "regtest".to_string(),
+            ]
+        } else {
+            vec![chain_hint]
+        };
+
         // `LightClient::from_bytes` deserializes the wallet straight from memory.
         // The native layer (Kotlin/Swift) owns all wallet persistence and ships
-        // the bytes across the FFI; nothing here touches the filesystem.
+        // the bytes across the FFI; nothing here touches the filesystem. It reads
+        // (and chain-validates) the wallet BEFORE building the indexer, so a chain
+        // mismatch fails fast and cheaply — no network is ever dialed, which is
+        // what makes trying several chains offline essentially free.
         //
-        // This replaces the previous staging-to-`std::env::temp_dir()` workaround
-        // that satisfied v5's `WalletConfig::Read` variant. That workaround failed
-        // with `Permission denied (os error 13)` on Android devices where `TMPDIR`
-        // is unset and the app UID cannot write to `/tmp`.
-        let config = build_client_config(&params, WalletConfig::Read);
+        // (This whole path replaced the previous staging-to-`std::env::temp_dir()`
+        // workaround that satisfied v5's `WalletConfig::Read` variant, which failed
+        // with `Permission denied (os error 13)` on Android where `TMPDIR` is unset
+        // and the app UID cannot write to `/tmp`.)
+        let mut built: Option<(LightClient, ConnectionParams)> = None;
+        let mut last_error = String::from("could not read the wallet with any chain");
+        for hint in chain_hints {
+            let params = match build_connection_params(
+                server_uri.clone(),
+                hint,
+                performance_level.clone(),
+                min_confirmations,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    last_error = e;
+                    continue;
+                }
+            };
+            let config = build_client_config(&params, WalletConfig::Read);
+            match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
+                Ok(l) => {
+                    built = Some((l, params));
+                    break;
+                }
+                Err(e) => {
+                    last_error = format!("{e}");
+                    continue;
+                }
+            }
+        }
 
-        let lightclient = match RT.block_on(LightClient::from_bytes(decoded_bytes, config)) {
-            Ok(l) => l,
-            Err(e) => return Ok(format!("Error: {e}")),
+        let (lightclient, params) = match built {
+            Some(v) => v,
+            None => return Ok(format!("Error: {last_error}")),
         };
 
         // Override the wallet's settings with the caller-supplied ones, since the
@@ -694,6 +748,17 @@ pub fn info_server() -> Result<String, ZingolibError> {
     })
 }
 
+/// The loaded wallet's chain as the short token the JS layer uses
+/// (`ChainNameEnum`: "main" / "test" / "regtest"). Read straight from the
+/// wallet, so it is reliable even Offline (no server).
+fn chain_name_short(chain: ChainType) -> &'static str {
+    match chain {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    }
+}
+
 // TODO: rename "get_seed_phrase" or "get_mnemonic_phrase"
 // or if other recovery info is being used could rename "get_recovery_info" ?
 pub fn get_seed() -> Result<String, ZingolibError> {
@@ -705,8 +770,23 @@ pub fn get_seed() -> Result<String, ZingolibError> {
             Ok(RT.block_on(async move {
                 let wallet = lightclient.wallet().read().await;
                 match wallet.recovery_info() {
-                    Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
-                        .unwrap_or_else(|_| "Error: get seed. failed to serialize".to_string()),
+                    Some(recovery_info) => {
+                        // Surface the wallet's own chain alongside the recovery
+                        // info so the JS layer can track it even Offline.
+                        let mut val = serde_json::to_value(&recovery_info)
+                            .unwrap_or(serde_json::Value::Null);
+                        if let Some(obj) = val.as_object_mut() {
+                            obj.insert(
+                                "chain_name".to_string(),
+                                serde_json::Value::String(
+                                    chain_name_short(wallet.chain_type()).to_string(),
+                                ),
+                            );
+                        }
+                        serde_json::to_string_pretty(&val).unwrap_or_else(|_| {
+                            "Error: get seed. failed to serialize".to_string()
+                        })
+                    }
                     None => {
                         "Error: get seed. no mnemonic found. wallet loaded from key.".to_string()
                     }
@@ -737,7 +817,8 @@ pub fn get_ufvk() -> Result<String, ZingolibError> {
                 };
                 object! {
                     "ufvk" => ufvk.encode(&wallet.chain_type()),
-                    "birthday" => u32::from(wallet.birthday())
+                    "birthday" => u32::from(wallet.birthday()),
+                    "chain_name" => chain_name_short(wallet.chain_type())
                 }
                 .pretty(2)
             }))
@@ -754,7 +835,19 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             let uri = if server_uri.is_empty() {
-                http::Uri::default()
+                // Offline: no server. `http::Uri::default()` is scheme-less and
+                // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
+                // hand it the chain's default indexer URI instead —
+                // syntactically valid, and never actually dialed while offline.
+                let default = match lightclient.chain_type() {
+                    ChainType::Mainnet => DEFAULT_INDEXER_URI,
+                    ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
+                    ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
+                };
+                match construct_lightwalletd_uri(Some(default.to_string())) {
+                    Ok(u) => u,
+                    Err(_) => return Ok("Error: invalid server uri".to_string()),
+                }
             } else {
                 match construct_lightwalletd_uri(Some(server_uri)) {
                     Ok(u) => u,
