@@ -467,7 +467,24 @@ async fn store_all_checkpoints_in_verification_window() {
 }
 
 /// Diagnostic for the container-only `add_subtree_roots` failure (wallet
-/// consistently 32 sapling shards short of the server's count).
+/// consistently 32 sapling shards short of the server's count, 1096 vs
+/// 1128).
+///
+/// Reproduction record (issue #2440): the failures occurred only in
+/// container runs — twice, the wallet at exactly 1096 both times, under
+/// `makers container-test` (podman on the originating machine) — while
+/// host runs of the same commit passed. "Container-only" records where
+/// it happened, not a mechanism: in the same failing container process
+/// a parallel fresh connection to the same URI saw all 1128 roots, so
+/// the healthy backend was reachable from inside the container, and a
+/// backend's state is client-independent. What pinned the wallet's
+/// channel to the stuck backend in exactly the container runs is
+/// unresolved — logging the resolved backend identity (the issue's open
+/// question) would make a recurrence attributable. Note the
+/// stream-resume defense of 9d40495b9 converts mid-flight cuts into
+/// completions but cannot conjure shards a stuck backend does not have,
+/// so present-day non-reproduction indicates a healthy backend pool
+/// (a day-later container run pulled 1128 cleanly), not a client fix.
 ///
 /// Prints, for three fresh connections, how many sapling subtree roots the
 /// stream yields and the chain height at which it ends — then the count
