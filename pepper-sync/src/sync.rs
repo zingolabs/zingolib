@@ -356,11 +356,14 @@ where
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
+    let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
+    let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
             client,
             mempool_transaction_sender,
             unprocessed_mempool_transactions_count_clone,
+            mempool_stream_connected_at_clone,
             shutdown_mempool_clone,
         )
         .await
@@ -530,29 +533,31 @@ where
                 scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
-                    // Give the mempool monitor a bounded window to deliver
-                    // in-flight transactions, polling instead of paying a
-                    // fixed second per pass: the monitor has been streaming
-                    // since session start and the indexer serves accepted
-                    // transactions within ~100ms, so anything outstanding
-                    // normally lands within a few polls. Fall through the
-                    // moment work appears (it is processed by this select
-                    // loop); keep the old one-second ceiling as the worst
-                    // case before re-entering the loop as before.
+                    // Drain check on a 25ms cadence instead of the old
+                    // unconditional one-second sleep. The policy lives in
+                    // [`drain_verdict`]: shutdown requires a drained
+                    // scanner AND a mempool stream that has been connected
+                    // long enough to have served pre-existing content, so
+                    // a first-loop shutdown on a fully synced chain waits
+                    // for the subscription instead of closing the session
+                    // before the monitor ever connects. The old one-second
+                    // ceiling remains the worst case.
                     let shutdown_poll_started = std::time::Instant::now();
                     let mempool_drained = loop {
-                        if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
-                        {
-                            break true;
+                        let verdict = drain_verdict(
+                            scanner.worker_poolsize(),
+                            unprocessed_mempool_transactions_count
+                                .load(atomic::Ordering::Acquire),
+                            mempool_stream_connected_at.get().map(|at| at.elapsed()),
+                            shutdown_poll_started.elapsed(),
+                        );
+                        match verdict {
+                            DrainVerdict::Shutdown => break true,
+                            DrainVerdict::Reenter => break false,
+                            DrainVerdict::KeepPolling => {
+                                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                            }
                         }
-                        if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire)
-                            > 0
-                            || shutdown_poll_started.elapsed()
-                                >= std::time::Duration::from_secs(1)
-                        {
-                            break false;
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                     };
                     if mempool_drained {
                         tracing::info!("Sync successfully shutdown.");
@@ -1023,15 +1028,55 @@ pub(crate) fn set_transactions_failed_unchecked(
 }
 
 /// Returns true if the scanner and mempool are shutdown.
-fn is_shutdown<P>(
-    scanner: &Scanner<P>,
-    mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-) -> bool
-where
-    P: consensus::Parameters + Sync + Send + 'static,
-{
-    scanner.worker_poolsize() == 0
-        && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
+/// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
+/// snapshot — the caller loads the atomics and clocks; this only
+/// decides, so the whole policy is table-testable without a runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DrainVerdict {
+    /// Drained and the mempool stream has settled: end the session.
+    Shutdown,
+    /// Work appeared, or the ceiling expired with workers running:
+    /// re-enter the processing loop.
+    Reenter,
+    /// Undecided: sleep one cadence and poll again.
+    KeepPolling,
+}
+
+/// The drain policy for scanner shutdown.
+///
+/// `connected_for` is the age of the mempool stream subscription
+/// (`None` until it is established). Connection — not first delivery —
+/// is deliberately the grace trigger: an empty mempool never delivers,
+/// and a delivery-based grace would hold every such session for the
+/// full ceiling, restoring the fixed second c90f8d309 removed. The
+/// settle window covers the gap between subscribing and receiving
+/// pre-existing mempool content (served within ~100ms of connect).
+fn drain_verdict(
+    scan_workers: usize,
+    unprocessed_mempool_transactions: u8,
+    connected_for: Option<Duration>,
+    poll_elapsed: Duration,
+) -> DrainVerdict {
+    /// The pre-c90f8d309 unconditional sleep, demoted to worst case: a
+    /// stream that never connects must not hold the session open.
+    const CEILING: Duration = Duration::from_secs(1);
+    /// One settle window after subscription.
+    const SETTLE: Duration = Duration::from_millis(200);
+
+    if unprocessed_mempool_transactions > 0 {
+        return DrainVerdict::Reenter;
+    }
+    if poll_elapsed >= CEILING {
+        return if scan_workers == 0 {
+            DrainVerdict::Shutdown
+        } else {
+            DrainVerdict::Reenter
+        };
+    }
+    match connected_for {
+        Some(age) if age >= SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        _ => DrainVerdict::KeepPolling,
+    }
 }
 
 /// Scan post-processing
@@ -1879,6 +1924,7 @@ async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
+    stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
 where
@@ -1895,6 +1941,11 @@ where
 
         match response {
             Ok(mut mempool_stream) => {
+                // First successful subscription: the drain policy's
+                // grace window keys on this instant. Deliberately not
+                // reset on reconnect — any successful connect proves
+                // the indexer serves the stream.
+                let _already_set = stream_connected_at.set(std::time::Instant::now());
                 interval.reset();
                 loop {
                     tokio::select! {
@@ -1971,6 +2022,62 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
+    /// The drain policy for scanner shutdown, exercised as a table:
+    /// pure inputs, no runtime, no clocks.
+    mod drain_verdict {
+        use std::time::Duration;
+
+        use crate::sync::DrainVerdict::{self, KeepPolling, Reenter, Shutdown};
+        use crate::sync::drain_verdict;
+
+        fn ms(millis: u64) -> Duration {
+            Duration::from_millis(millis)
+        }
+
+        #[test]
+        fn table() {
+            // (workers, unprocessed, connected_for, poll_elapsed) → verdict
+            let cases: &[(usize, u8, Option<u64>, u64, DrainVerdict, &str)] = &[
+                // The reported bug: first-loop shutdown on a fully
+                // synced chain, stream not yet connected — hold the
+                // session open instead of closing it instantly.
+                (0, 0, None, 0, KeepPolling, "no stream yet"),
+                // Connected but inside the settle window: still hold.
+                (0, 0, Some(50), 100, KeepPolling, "settling"),
+                // The typical session: stream connected long ago,
+                // scanner drained — immediate shutdown, no added cost.
+                (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
+                // Exactly the settle boundary counts as settled.
+                (0, 0, Some(200), 0, Shutdown, "settle boundary"),
+                // Unprocessed work always re-enters the processing
+                // loop, whatever the stream state — no deadline caps
+                // the processing itself.
+                (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
+                (5, 1, None, 999, Reenter, "work trumps missing stream"),
+                // Workers still draining: keep polling inside the
+                // ceiling, re-enter the loop once it expires.
+                (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
+                (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
+                // Ceiling with a stream that never connected: the
+                // pre-c90f8d309 semantics — a dead stream must not
+                // hold the session open.
+                (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
+            ];
+            for (workers, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
+                assert_eq!(
+                    drain_verdict(
+                        *workers,
+                        *unprocessed,
+                        connected_ms.map(ms),
+                        ms(*elapsed_ms)
+                    ),
+                    *expected,
+                    "{name}"
+                );
+            }
+        }
+    }
+
     /// The lifecycle of a note's spend mark across spend detection and `reset_spends`.
     ///
     /// The wallet remembers an on-chain spend observation in exactly one durable place: the
