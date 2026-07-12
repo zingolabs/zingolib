@@ -37,7 +37,7 @@ portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
-rust-embed = { workspace = true, features = ["debug-embed"] }
+rust-embed = { workspace = true, features = ["debug-embed", "interpolate-folder-path"] }
 rustls.workspace = true
 sapling-crypto.workspace = true
 secp256k1 = { workspace = true }

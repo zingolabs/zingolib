@@ -52,9 +52,11 @@ fn get_zcash_params() {
         }
     };
 
-    // Copy the params to the internal location.
-    let internal_params_path = Path::new("zcash-params");
-    std::fs::create_dir_all(internal_params_path).unwrap();
+    // Copy the params to OUT_DIR so they can be embedded by rust_embed
+    // without writing to the source directory.
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let internal_params_path = Path::new(&out_dir).join("zcash-params");
+    std::fs::create_dir_all(&internal_params_path).unwrap();
     std::fs::copy(
         params_path.spend,
         internal_params_path.join("sapling-spend.params"),
