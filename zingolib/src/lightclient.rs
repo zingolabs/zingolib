@@ -587,16 +587,18 @@ mod tests {
         use crate::lightclient::LightClient;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-        /// The test client's lazy endpoint (localhost:1) is never
-        /// listening, so the info request must fail — and that failure
-        /// must not surface as prose in the data channel.
+        /// The test client is Indexerless, so the info request must fail —
+        /// and that failure must not surface as prose in the data channel.
         ///
         /// This began as the red TDD test for the migration: `do_info`
         /// returned `String`, and the connection failure arrived as a
         /// `Status {..}` Debug string indistinguishable by type from
-        /// data. It now pins the migrated contract: the failure is a
-        /// typed `IndexerError` on the error channel, and the only
-        /// remaining `Ok` construction site builds JSON.
+        /// data. It originally pinned a typed `IndexerError` from a
+        /// never-listening lazy endpoint; the offline-mode work replaced
+        /// that placeholder with a genuinely Indexerless client, whose
+        /// typed failure is `Offline`. The contract is unchanged: failure
+        /// travels on the error channel, and the only remaining `Ok`
+        /// construction site builds JSON.
         #[tokio::test]
         async fn do_info_failure_stays_out_of_the_data_channel() {
             let wallet =
@@ -607,12 +609,9 @@ mod tests {
             let error = client
                 .do_info()
                 .await
-                .expect_err("nothing listens on the test endpoint");
+                .expect_err("an Indexerless client cannot serve do_info");
             assert!(
-                matches!(
-                    error,
-                    crate::lightclient::error::LightClientError::IndexerError(_)
-                ),
+                matches!(error, crate::lightclient::error::LightClientError::Offline),
                 "the failure must be typed, not prose: {error}"
             );
         }

@@ -15,27 +15,42 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use crate::wallet::error::WalletError;
+use crate::wallet::error::{CalculateTransactionError, WalletError};
 use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;
 
 impl LightClient {
-    async fn send(
+    /// Calculates transactions from a proposal and transmits them. The gate
+    /// on a connected Indexer sits here, before calculation, so a doomed
+    /// send fails without storing Calculated transactions it cannot
+    /// transmit. `wrap_calculate_error` names the [`SendError`] variant the
+    /// caller's proposal kind reports calculation failure through.
+    async fn calculate_and_transmit<NoteRef>(
         &mut self,
-        proposal: Proposal<zip317::FeeRule, OutputRef>,
-        sending_account: zip32::AccountId,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
+        account: zip32::AccountId,
+        wrap_calculate_error: impl FnOnce(CalculateTransactionError<NoteRef>) -> SendError,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         self.require_indexer()?;
         let calculated_txids = self
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, sending_account)
+            .calculate_transactions(proposal, account)
             .await
-            .map_err(SendError::CalculateSendError)?;
+            .map_err(wrap_calculate_error)?;
 
         self.transmit_transactions(calculated_txids).await
+    }
+
+    async fn send(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, OutputRef>,
+        sending_account: zip32::AccountId,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.calculate_and_transmit(proposal, sending_account, SendError::CalculateSendError)
+            .await
     }
 
     async fn shield(
@@ -43,16 +58,8 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
-        let calculated_txids = self
-            .wallet()
-            .write()
+        self.calculate_and_transmit(proposal, shielding_account, SendError::CalculateShieldError)
             .await
-            .calculate_transactions(proposal, shielding_account)
-            .await
-            .map_err(SendError::CalculateShieldError)?;
-
-        self.transmit_transactions(calculated_txids).await
     }
 
     /// Creates and transmits transactions from a stored proposal.
@@ -95,7 +102,8 @@ impl LightClient {
         account_id: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
+        // Proposing is an Indexerless capability; only the calculate/transmit
+        // stage below demands a connection.
         let _ignore_error = self.pause_sync();
         let proposal = self
             .wallet()
@@ -116,7 +124,8 @@ impl LightClient {
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
+        // Proposing is an Indexerless capability; only the calculate/transmit
+        // stage below demands a connection.
         let proposal = self
             .wallet()
             .write()
