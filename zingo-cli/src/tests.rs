@@ -288,6 +288,35 @@ mod communication_mode {
         let matches = parse(&[examples::BIN_NAME]);
         assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
     }
+
+    #[test]
+    fn offline_flag_pins_offline() {
+        let matches = parse(&[examples::BIN_NAME, "--offline"]);
+        assert_eq!(get_communication_mode(&matches), CommunicationMode::Offline);
+    }
+
+    #[test]
+    fn offline_conflicts_with_server() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([
+                    examples::BIN_NAME,
+                    "--offline",
+                    "--server",
+                    examples::SERVER_URI
+                ])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn offline_conflicts_with_waitsync() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--waitsync"])
+                .is_err()
+        );
+    }
 }
 
 mod is_interactive {
@@ -434,6 +463,52 @@ mod config_template {
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
     fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
         build_zingo_config(&fill(args).unwrap()).unwrap()
+    }
+
+    mod offline {
+        use super::*;
+        use crate::CommunicationMode;
+
+        #[test]
+        fn fill_resolves_no_server_and_disables_sync() {
+            let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
+            assert_eq!(config.communication_mode, CommunicationMode::Offline);
+            assert!(config.server.is_none());
+            assert!(!config.sync, "an Offline-mode session cannot sync");
+        }
+
+        #[test]
+        fn restored_wallet_builds_an_indexerless_client_config() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-indexerless-test");
+            let config = fill_and_build(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--seed",
+                examples::SEED_PHRASE,
+                "--birthday",
+                "1",
+                "--data-dir",
+                data_dir.to_str().expect("temp dir path is valid unicode"),
+            ]);
+            assert!(
+                config.indexer_uri().is_none(),
+                "an Offline-mode session never configures an Indexer"
+            );
+        }
+
+        /// A new wallet's birthday normally comes from the server's chain
+        /// tip; Offline mode has no server, so the user must supply one.
+        #[test]
+        fn new_wallet_without_birthday_is_refused() {
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--data-dir",
+                "/nonexistent-zingo-cli-offline-test",
+            ])
+            .unwrap();
+            assert!(build_zingo_config(&filled).is_err());
+        }
     }
 
     mod happy_paths {
