@@ -70,7 +70,45 @@ impl LightClient {
             .await
     }
 
+    /// Calculates and transmits transactions from a proposal value the
+    /// caller holds — the pure-core two-phase send entry point (ADR 0006).
+    ///
+    /// The proposal is borrowed, so an Indexerless attempt fails with
+    /// [`LightClientError::Offline`] while the caller's value remains
+    /// intact by construction, ready to retry once an Indexer is
+    /// configured.
+    ///
+    /// If sync was running prior to proposing, sync will have been paused.
+    /// If `resume_sync` is `true`, sync will be resumed after transmission.
+    pub async fn send_proposal(
+        &mut self,
+        proposal: &ZingoProposal,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        let txids = match proposal {
+            ZingoProposal::Send {
+                proposal,
+                sending_account,
+            } => self.send(proposal.clone(), *sending_account).await,
+            ZingoProposal::Shield {
+                proposal,
+                shielding_account,
+            } => self.shield(proposal.clone(), *shielding_account).await,
+        }?;
+
+        if resume_sync {
+            let _ignore_error = self.resume_sync();
+        }
+
+        Ok(txids)
+    }
+
     /// Creates and transmits transactions from a stored proposal.
+    ///
+    /// Pending retirement (ADR 0006): the wallet-stored proposal is hidden
+    /// state; shells hold a [`ZingoProposal`] value and call
+    /// [`Self::send_proposal`] instead. The early Indexer gate is what
+    /// leaves the stored proposal intact on an Indexerless attempt.
     ///
     /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
     pub async fn send_stored_proposal(
@@ -80,22 +118,7 @@ impl LightClient {
         self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
-            let txids = match proposal {
-                ZingoProposal::Send {
-                    proposal,
-                    sending_account,
-                } => self.send(proposal, sending_account).await,
-                ZingoProposal::Shield {
-                    proposal,
-                    shielding_account,
-                } => self.shield(proposal, shielding_account).await,
-            }?;
-
-            if resume_sync {
-                let _ignore_error = self.resume_sync();
-            }
-
-            Ok(txids)
+            self.send_proposal(&proposal, resume_sync).await
         } else {
             Err(SendError::NoStoredProposal.into())
         }

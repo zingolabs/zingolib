@@ -103,6 +103,30 @@ mod test {
         );
     }
 
+    /// The value-taking two-phase send entry point (ADR 0006): an
+    /// Indexerless attempt fails with the typed `Offline` error, and the
+    /// caller's proposal value is intact by construction — it was only
+    /// borrowed.
+    #[tokio::test]
+    async fn offline_send_proposal_returns_offline_and_borrows() {
+        use crate::mocks::proposal::ProposalBuilder;
+        let mut lc = create_offline_client().await;
+
+        let proposal = crate::data::proposal::ZingoProposal::Send {
+            proposal: ProposalBuilder::default().build(),
+            sending_account: zip32::AccountId::ZERO,
+        };
+
+        assert!(matches!(
+            lc.send_proposal(&proposal, false).await,
+            Err(LightClientError::Offline)
+        ));
+
+        // The caller still owns `proposal`; retrying once an Indexer is
+        // configured needs no recovery step.
+        let _still_ours = &proposal;
+    }
+
     #[tokio::test]
     async fn offline_create_account_works() {
         let mut lc = create_offline_client().await;

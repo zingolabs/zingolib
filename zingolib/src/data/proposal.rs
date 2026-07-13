@@ -15,17 +15,20 @@ use crate::wallet::output::OutputRef;
 /// as the fee structure for a transaction series. This innovation was created in response
 /// "Binance Constraint" that t-addresses that only receive from t-addresses be supported.
 /// <https://zips.z.cash/zip-0320>
-pub(crate) type ProportionalFeeProposal = Proposal<zip317::FeeRule, OutputRef>;
+pub type ProportionalFeeProposal = Proposal<zip317::FeeRule, OutputRef>;
 
 /// A proposed shielding.
 /// The `zcash_client_backend` Proposal type exposes a "`NoteRef`" generic
 /// parameter to track Shielded inputs to the proposal these are
 /// disallowed in Zingo `ShieldedProposals`
-pub(crate) type ProportionalFeeShieldProposal = Proposal<zip317::FeeRule, Infallible>;
+pub type ProportionalFeeShieldProposal = Proposal<zip317::FeeRule, Infallible>;
 
-/// The `LightClient` holds one proposal at a time while the user decides whether to accept the fee.
+/// A proposal value paired with the account it spends from — the unit the
+/// two-phase send flow carries between proposing and transmission. The
+/// caller (a CLI session, an FFI bridge) holds this value while the user
+/// decides whether to accept the fee; see ADR 0006.
 #[derive(Debug, Clone)]
-pub(crate) enum ZingoProposal {
+pub enum ZingoProposal {
     /// Send proposal.
     Send {
         proposal: ProportionalFeeProposal,
