@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 use portpicker::Port;
 use tempfile::TempDir;
+use zcash_local_net::ProcessId;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use zcash_local_net::LocalNet;
@@ -565,6 +566,7 @@ pub async fn faucet(
         cache,
         CachedStage::Funded,
     );
+    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
         custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
