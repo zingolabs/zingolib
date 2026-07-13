@@ -166,9 +166,13 @@ async fn add_subtree_roots() {
         .build();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
-    let mut grpc_client = GrpcIndexer::new(lightclient.indexer_uri().clone())
-        .await
-        .unwrap();
+    let mut grpc_client = GrpcIndexer::new(
+        lightclient
+            .indexer_uri()
+            .expect("live-net client is connected"),
+    )
+    .await
+    .unwrap();
 
     let mut sapling_subtree_roots_server = Vec::new();
     let mut sapling_subtree_roots_stream = grpc_client
@@ -622,7 +626,7 @@ async fn diagnose_subtree_root_stream() {
 #[tokio::test]
 async fn indexer_converges_with_validator_after_block_generation() {
     let (local_net, client) = scenarios::unfunded_client_default().await;
-    let mut grpc = GrpcIndexer::new(client.indexer_uri().clone())
+    let mut grpc = GrpcIndexer::new(client.indexer_uri().expect("live-net client is connected"))
         .await
         .unwrap();
 
