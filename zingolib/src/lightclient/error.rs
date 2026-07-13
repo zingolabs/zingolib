@@ -41,6 +41,9 @@ pub enum LightClientError {
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
 }
 
 #[derive(Debug, thiserror::Error)]

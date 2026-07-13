@@ -115,9 +115,13 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
         "acceptance-marker inference falsified: zebra's own mempool does not          contain {txid_display} immediately after send_transaction returned Ok          (mempool: {validator_mempool:?})"
     );
 
-    let mut grpc_client = GrpcIndexer::new(recipient.indexer_uri().clone())
-        .await
-        .unwrap();
+    let mut grpc_client = GrpcIndexer::new(
+        recipient
+            .indexer_uri()
+            .expect("live-net client is connected"),
+    )
+    .await
+    .unwrap();
     let bound = Duration::from_secs(10);
     let indexer_lag = loop {
         let mut mempool_stream = grpc_client
