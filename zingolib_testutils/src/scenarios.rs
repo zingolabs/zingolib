@@ -28,6 +28,7 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
+use zingo_test_vectors::FUND_OFFLOAD_ORCHARD_ONLY;
 
 use crate::chain_cache::{self, CacheManifest, CachedStage, Disposition};
 use crate::observability::FrontRecord;
