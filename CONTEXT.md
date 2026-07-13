@@ -64,6 +64,18 @@ metrics file is the census of them.
 _Avoid_: LocalNet test, online test, live test (that names the Makefile
 package partition, not this category)
 
+**Primed**:
+The state of an observability instrument (a state watch or a front
+record) whose recording window is open: the priming instant is time
+zero for every event it records. Instruments are primed before the
+observed process launches so the window covers the launch itself.
+Priming is distinct from connection — a front record receives traffic
+only once it is also connected to the process it observes; a
+primed-but-unconnected record is valid and silently empty (how the
+Legacy stack runs, whose Indexer accepts no observer).
+_Avoid_: armed, registered (the superseded pair); started, created
+(neither implies the open recording window)
+
 **Binary e2e test**:
 A test that exercises the shipped zingo-cli binary end-to-end through its
 public CLI surface, driving it as a Wallet (in the infrastructure repo's

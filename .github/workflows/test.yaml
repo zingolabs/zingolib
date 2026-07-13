@@ -13,10 +13,14 @@ env:
   NEXTEST_VERSION: "0.9.132"
 
 jobs:
+  compute-image-tag:
+    uses: ./.github/workflows/compute-image-tag.yaml
+
   build-test-artifacts:
     name: Build test artifacts
+    needs: compute-image-tag
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     env:
@@ -71,11 +75,11 @@ jobs:
     name: Run normal tests
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
-    needs: build-test-artifacts
+    needs: [build-test-artifacts, compute-image-tag]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     strategy:
       fail-fast: false
@@ -113,11 +117,11 @@ jobs:
     name: Run darkside tests
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
-    needs: build-test-artifacts
+    needs: [build-test-artifacts, compute-image-tag]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository

@@ -406,8 +406,7 @@ async fn build_checkpoint_window_chain() {
         dense_cycle!();
     }
 
-    zingolib_testutils::chain_cache::export_raw(&local_net, &checkpoint_window_blocks_path())
-        .await;
+    zingolib_testutils::chain_cache::export_raw(&local_net, &checkpoint_window_blocks_path()).await;
 }
 
 #[tokio::test]

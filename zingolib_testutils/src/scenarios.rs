@@ -812,11 +812,11 @@ async fn launch_observed(
     // any LightClient (the usual installer) exists.
     zingolib::ensure_default_crypto_provider();
 
-    // Registered before launch, the fronts see every client of each
+    // Connected before launch, the fronts see every client of each
     // process — including the launch-mine, which no post-launch tap
     // could reach.
-    let zebrad_front = FrontRecord::arm("zebrad front");
-    let zainod_front = FrontRecord::arm("zainod front");
+    let zebrad_front = FrontRecord::prime("zebrad front");
+    let zainod_front = FrontRecord::prime("zainod front");
 
     let mut validator_config = <DefaultValidator as Process>::Config::default();
     validator_config.set_test_parameters(
@@ -828,7 +828,13 @@ async fn launch_observed(
 
     let mut indexer_config = <DefaultIndexer as Process>::Config::default();
     indexer_config.set_listen_port(None);
-    indexer_config.grpc_front_observer = Some(zainod_front.clone());
+    // `LightwalletdConfig` carries no observer seam; under the legacy
+    // stack the front stays primed but unconnected and records nothing,
+    // matching the no-op `IndexerConvergence` impl above.
+    #[cfg(not(feature = "test_lwd_zebrad"))]
+    {
+        indexer_config.grpc_front_observer = Some(zainod_front.clone());
+    }
 
     let local_net = LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await

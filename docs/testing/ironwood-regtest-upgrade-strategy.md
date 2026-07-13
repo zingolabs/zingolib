@@ -58,7 +58,15 @@ per-commit image tags its CI publishes (`ZAINO_IMAGE_TAG` build-arg) —
 image publishes. Per-commit sha tags, never rolling tags:
 `ensure-image-exists` keys on tag presence, so a rolling tag would
 neither rebuild nor reproduce. The `zaino-proto` crate rev advances to
-the same sha. (makers-tasks lane owns the image.) Heights fixture untouched, so all
+the same sha. (makers-tasks lane owns the image.) The publish side
+replicates zaino's dev method (zingolabs/zaino
+`.github/workflows/build-n-push-ci-image.yaml`, content-addressed
+tagging per zingolabs/zaino@d8754b72a): `build-n-push-ci-image.yaml`
+rebuilds and pushes `zingodevops/ci-build:<content-tag>` whenever the
+tag's hash inputs change, and the test/coverage workflows resolve the
+same tag through the reusable `compute-image-tag.yaml`, so CI always
+runs the image the working tree's pins describe — the hardcoded
+`ci-build:011` reference is gone. Heights fixture untouched, so all
 caches remain valid (zainod's version is deliberately not in the
 manifest) and any failure is a zainod behavior change, not ironwood.
 Gates: sentinels green, default tier 32/32. Bonus obligation: retest
