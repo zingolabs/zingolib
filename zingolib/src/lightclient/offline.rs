@@ -65,11 +65,50 @@ mod test {
         assert!(matches!(lc.rescan().await, Err(LightClientError::Offline)));
     }
 
+    #[tokio::test]
+    async fn offline_send_stored_proposal_returns_offline() {
+        let mut lc = create_offline_client().await;
+        // Offline always takes priority, even when there is no stored proposal.
+        assert!(matches!(
+            lc.send_stored_proposal(false).await,
+            Err(LightClientError::Offline)
+        ));
+    }
+
+    #[tokio::test]
+    async fn offline_send_stored_proposal_preserves_proposal() {
+        use crate::mocks::proposal::ProposalBuilder;
+        let mut lc = create_offline_client().await;
+
+        // Manually store a proposal in the wallet.
+        let proposal = ProposalBuilder::default().build();
+        lc.wallet()
+            .write()
+            .await
+            .store_proposal(crate::data::proposal::ZingoProposal::Send {
+                proposal,
+                sending_account: zip32::AccountId::ZERO,
+            });
+
+        // send_stored_proposal while offline must return Offline without consuming the proposal.
+        assert!(matches!(
+            lc.send_stored_proposal(false).await,
+            Err(LightClientError::Offline)
+        ));
+
+        // Proposal must still be present — take it out to verify.
+        assert!(
+            lc.wallet().write().await.take_proposal().is_some(),
+            "proposal must survive an offline send attempt"
+        );
+    }
+
     /// Offline signing (ADR 0006): an Indexerless client calculates —
-    /// selects witnesses, proves, and signs — a real transaction from a
-    /// proposal over synthetic wallet state, with no Indexer anywhere.
-    /// The signed transaction lands in the wallet with `Calculated`
-    /// status, and only the transmission half demands a connection.
+    /// selects witnesses, proves, and signs — a real transaction from the
+    /// stored proposal over synthetic wallet state, with no Indexer
+    /// anywhere. The signed transaction lands in the wallet with
+    /// `Calculated` status, and only the transmission half demands a
+    /// connection.
     #[tokio::test]
     async fn offline_calculate_signs_and_transmit_refuses() {
         use crate::testutils::lightclient::from_inputs;
@@ -81,18 +120,15 @@ mod test {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let proposal = from_inputs::propose(
+        // Proposing stores the proposal in the wallet, as it always has.
+        from_inputs::propose(
             &mut client,
             vec![(zingo_test_vectors::EXT_TADDR, 10_000, None)],
         )
         .await
         .unwrap();
-        let proposal = crate::data::proposal::ZingoProposal::Send {
-            proposal,
-            sending_account: zip32::AccountId::ZERO,
-        };
 
-        let calculated_txids = client.calculate_proposal(&proposal).await.unwrap();
+        let calculated_txids = client.calculate_stored_proposal().await.unwrap();
         {
             let wallet = client.wallet().read().await;
             for txid in calculated_txids.iter() {
@@ -111,30 +147,6 @@ mod test {
         ));
     }
 
-    /// The value-taking two-phase send entry point (ADR 0006): an
-    /// Indexerless attempt fails with the typed `Offline` error, and the
-    /// caller's proposal value is intact by construction — it was only
-    /// borrowed.
-    #[tokio::test]
-    async fn offline_send_proposal_returns_offline_and_borrows() {
-        use crate::mocks::proposal::ProposalBuilder;
-        let mut lc = create_offline_client().await;
-
-        let proposal = crate::data::proposal::ZingoProposal::Send {
-            proposal: ProposalBuilder::default().build(),
-            sending_account: zip32::AccountId::ZERO,
-        };
-
-        assert!(matches!(
-            lc.send_proposal(&proposal, false).await,
-            Err(LightClientError::Offline)
-        ));
-
-        // The caller still owns `proposal`; retrying once an Indexer is
-        // configured needs no recovery step.
-        let _still_ours = &proposal;
-    }
-
     #[tokio::test]
     async fn offline_create_account_works() {
         let mut lc = create_offline_client().await;
@@ -149,6 +161,12 @@ mod test {
             .await
             .expect("spending wallet has recovery info");
         assert_eq!(info.seed_phrase, seeds::HOSPITAL_MUSEUM_SEED);
+    }
+
+    #[tokio::test]
+    async fn offline_clear_proposal_does_not_panic() {
+        let mut lc = create_offline_client().await;
+        lc.clear_proposal().await; // should be a no-op, not a panic
     }
 
     /// Round-trip: create wallet → force save → reload from file path (offline).

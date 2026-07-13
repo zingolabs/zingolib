@@ -325,9 +325,6 @@ pub(crate) fn command_loop(
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        // The session's pending proposal, folded through the command
-        // dispatches by value (ADR 0006: the shell holds the state).
-        let mut pending: commands::PendingProposal = None;
         while let Ok((cmd, args)) = command_receiver.recv() {
             // The Offline-mode pin: this session never configures an Indexer.
             if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
@@ -342,9 +339,7 @@ pub(crate) fn command_loop(
             }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
 
-            let (cmd_response, next_pending) =
-                commands::do_user_command_with_session(&cmd, &args[..], &mut lightclient, pending);
-            pending = next_pending;
+            let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
             resp_transmitter.send(cmd_response).unwrap();
 
             if cmd == "quit" || cmd == "exit" {

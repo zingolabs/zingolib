@@ -430,6 +430,11 @@ impl LightClient {
         self.wallet().read().await.recovery_info()
     }
 
+    /// Clears any stored send proposal.
+    pub async fn clear_proposal(&mut self) {
+        self.wallet().write().await.clear_proposal();
+    }
+
     /// Returns `true` if the wallet has unsaved changes.
     pub async fn is_save_required(&self) -> bool {
         self.wallet().read().await.save_required

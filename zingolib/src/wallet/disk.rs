@@ -51,7 +51,7 @@ impl LightWallet {
     }
 
     /// Serialize into `writer`
-    pub fn write<W: Write>(
+    pub(crate) fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
@@ -128,7 +128,7 @@ impl LightWallet {
 
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
@@ -346,6 +346,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             chain_type,
+            send_proposal: None,
             save_required: false,
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
@@ -612,6 +613,7 @@ impl LightWallet {
             sync_state,
             wallet_settings,
             price_list,
+            send_proposal: None,
             save_required: false,
         })
     }

@@ -1,9 +1,12 @@
 //! TODO: Add Mod Description Here!
 
+use std::convert::Infallible;
+
 use nonempty::NonEmpty;
 
+use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::{TxId, fees::zip317};
 
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
@@ -12,7 +15,8 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use crate::wallet::error::WalletError;
+use crate::wallet::error::{CalculateTransactionError, WalletError};
+use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;
 
@@ -25,39 +29,115 @@ const MAX_RETRIES: u8 = 3;
 const MAX_QUEUED_PROBES: u8 = 30;
 
 impl LightClient {
-    /// Calculates (signs) transactions from a proposal value the caller
-    /// holds, without an Indexer — the offline-signing half of the
-    /// Indexerless capability set (ADR 0006). The signed transactions are
-    /// stored in the wallet with `Calculated` status; transmit them with
-    /// [`Self::transmit_calculated`] once an Indexer is configured.
+    /// Calculates transactions from a proposal and transmits them. The gate
+    /// on a connected Indexer sits here, before calculation, so a doomed
+    /// send fails without storing Calculated transactions it cannot
+    /// transmit. `wrap_calculate_error` names the [`SendError`] variant the
+    /// caller's proposal kind reports calculation failure through.
+    async fn calculate_and_transmit<NoteRef>(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
+        account: zip32::AccountId,
+        wrap_calculate_error: impl FnOnce(CalculateTransactionError<NoteRef>) -> SendError,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
+        let calculated_txids = self
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, account)
+            .await
+            .map_err(wrap_calculate_error)?;
+
+        self.transmit_transactions(calculated_txids).await
+    }
+
+    async fn send(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, OutputRef>,
+        sending_account: zip32::AccountId,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.calculate_and_transmit(proposal, sending_account, SendError::CalculateSendError)
+            .await
+    }
+
+    async fn shield(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, Infallible>,
+        shielding_account: zip32::AccountId,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.calculate_and_transmit(proposal, shielding_account, SendError::CalculateShieldError)
+            .await
+    }
+
+    /// Creates and transmits transactions from a stored proposal.
+    ///
+    /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
+    pub async fn send_stored_proposal(
+        &mut self,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
+        let opt_proposal = self.wallet().write().await.take_proposal();
+        if let Some(proposal) = opt_proposal {
+            let txids = match proposal {
+                ZingoProposal::Send {
+                    proposal,
+                    sending_account,
+                } => self.send(proposal, sending_account).await,
+                ZingoProposal::Shield {
+                    proposal,
+                    shielding_account,
+                } => self.shield(proposal, shielding_account).await,
+            }?;
+
+            if resume_sync {
+                let _ignore_error = self.resume_sync();
+            }
+
+            Ok(txids)
+        } else {
+            Err(SendError::NoStoredProposal.into())
+        }
+    }
+
+    /// Calculates (signs) transactions from the stored proposal without an
+    /// Indexer — the offline-signing half of the Indexerless capability set
+    /// (ADR 0006). The stored proposal is consumed, exactly as
+    /// [`Self::send_stored_proposal`] consumes it, and the signed
+    /// transactions land in the wallet with `Calculated` status; transmit
+    /// them with [`Self::transmit_calculated`] once an Indexer is
+    /// configured.
     ///
     /// The transactions' expiry heights derive from the proposal's target
     /// height — the wallet's possibly stale chain view — so a transaction
     /// calculated long offline can be expired by transmission time. The
     /// ratified no-expiry sentinel for offline signing is blocked on
-    /// upstream expiry control in `zcash_client_backend`.
-    pub async fn calculate_proposal(
-        &mut self,
-        proposal: &ZingoProposal,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
+    /// upstream expiry control in `zcash_client_backend` (issue #2455).
+    pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
         let mut wallet = self.wallet().write().await;
-        let txids = match proposal {
-            ZingoProposal::Send {
-                proposal,
-                sending_account,
-            } => wallet
-                .calculate_transactions(proposal.clone(), *sending_account)
-                .await
-                .map_err(SendError::CalculateSendError)?,
-            ZingoProposal::Shield {
-                proposal,
-                shielding_account,
-            } => wallet
-                .calculate_transactions(proposal.clone(), *shielding_account)
-                .await
-                .map_err(SendError::CalculateShieldError)?,
-        };
-        Ok(txids)
+        let opt_proposal = wallet.take_proposal();
+        if let Some(proposal) = opt_proposal {
+            let txids = match proposal {
+                ZingoProposal::Send {
+                    proposal,
+                    sending_account,
+                } => wallet
+                    .calculate_transactions(proposal, sending_account)
+                    .await
+                    .map_err(SendError::CalculateSendError)?,
+                ZingoProposal::Shield {
+                    proposal,
+                    shielding_account,
+                } => wallet
+                    .calculate_transactions(proposal, shielding_account)
+                    .await
+                    .map_err(SendError::CalculateShieldError)?,
+            };
+            Ok(txids)
+        } else {
+            Err(SendError::NoStoredProposal.into())
+        }
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
@@ -70,35 +150,6 @@ impl LightClient {
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         self.transmit_transactions(calculated_txids).await
-    }
-
-    /// Calculates and transmits transactions from a proposal value the
-    /// caller holds — the pure-core two-phase send entry point (ADR 0006).
-    ///
-    /// The proposal is borrowed, so an Indexerless attempt fails with
-    /// [`LightClientError::Offline`] while the caller's value remains
-    /// intact by construction, ready to retry once an Indexer is
-    /// configured. The gate sits before calculation, so this one-shot
-    /// online path never leaves Calculated transactions it cannot
-    /// transmit; the deliberate offline flow is
-    /// [`Self::calculate_proposal`] then [`Self::transmit_calculated`].
-    ///
-    /// If sync was running prior to proposing, sync will have been paused.
-    /// If `resume_sync` is `true`, sync will be resumed after transmission.
-    pub async fn send_proposal(
-        &mut self,
-        proposal: &ZingoProposal,
-        resume_sync: bool,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
-        let calculated_txids = self.calculate_proposal(proposal).await?;
-        let txids = self.transmit_transactions(calculated_txids).await?;
-
-        if resume_sync {
-            let _ignore_error = self.resume_sync();
-        }
-
-        Ok(txids)
     }
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
@@ -119,14 +170,12 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .map_err(SendError::ProposeSendError)?;
-        self.send_proposal(
-            &ZingoProposal::Send {
-                proposal,
-                sending_account: account_id,
-            },
-            resume_sync,
-        )
-        .await
+        let txids = self.send(proposal, account_id).await?;
+        if resume_sync {
+            let _ignore_error = self.resume_sync();
+        }
+
+        Ok(txids)
     }
 
     /// Shields all transparent funds skipping proposal confirmation.
@@ -143,14 +192,7 @@ impl LightClient {
             .create_shield_proposal(account_id)
             .map_err(SendError::ProposeShieldError)?;
 
-        self.send_proposal(
-            &ZingoProposal::Shield {
-                proposal,
-                shielding_account: account_id,
-            },
-            false,
-        )
-        .await
+        self.shield(proposal, account_id).await
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -700,11 +742,8 @@ mod test {
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let mut lc = create_basic_client().await;
-        let proposal = crate::data::proposal::ZingoProposal::Send {
-            proposal: ProposalBuilder::default().build(),
-            sending_account: zip32::AccountId::ZERO,
-        };
-        let err = lc.send_proposal(&proposal, false).await.unwrap_err();
+        let proposal = ProposalBuilder::default().build();
+        let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         assert!(matches!(err, LightClientError::Offline));
     }
 

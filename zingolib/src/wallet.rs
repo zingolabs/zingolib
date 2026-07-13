@@ -19,6 +19,7 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
+use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
@@ -138,6 +139,8 @@ pub struct LightWallet {
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
+    /// Send proposal
+    send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub(crate) save_required: bool,
 }
@@ -231,6 +234,7 @@ impl LightWallet {
             wallet_settings,
             price_list: PriceList::new(),
             save_required: true,
+            send_proposal: None,
         })
     }
 
@@ -318,6 +322,11 @@ impl LightWallet {
                 })
                 .collect::<Vec<_>>(),
         )
+    }
+
+    /// Clears the proposal in the `send_proposal` field.
+    pub fn clear_proposal(&mut self) {
+        self.send_proposal = None;
     }
 
     /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.

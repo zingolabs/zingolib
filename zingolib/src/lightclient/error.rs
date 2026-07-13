@@ -60,6 +60,9 @@ pub enum SendError {
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
+    /// No proposal found in the wallet.
+    #[error("No proposal found in the wallet.")]
+    NoStoredProposal,
     /// Transmission error.
     #[error("Transmission error. {0}")]
     TransmissionError(#[from] TransmissionError),
