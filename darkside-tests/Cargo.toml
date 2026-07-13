@@ -13,7 +13,9 @@ zingo-netutils = { workspace = true }
 zingo_common_components = { workspace = true }
 
 zingolib_testutils = { path = "../zingolib_testutils" }
-zcash_local_net.workspace = true
+# legacy-stack: darkside is lightwalletd's darksidewalletd mode, so these tests
+# need the infrastructure repo's legacy lightwalletd indexer unconditionally.
+zcash_local_net = { workspace = true, features = ["legacy-stack"] }
 zingo_test_vectors.workspace = true
 
 orchard = { workspace = true }

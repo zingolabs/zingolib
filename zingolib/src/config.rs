@@ -266,8 +266,8 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> Result<http::Uri, I
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
-    /// URI of the indexer the lightclient is connected to.
-    indexer_uri: http::Uri,
+    /// URI of the indexer the lightclient is connected to. `None` means offline (no network connection).
+    indexer_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -285,9 +285,9 @@ impl ClientConfig {
         ClientConfigBuilder::default()
     }
 
-    /// Returns indexer URI.
+    /// Returns indexer URI, or `None` if the client is configured for offline use.
     #[must_use]
-    pub fn indexer_uri(&self) -> http::Uri {
+    pub fn indexer_uri(&self) -> Option<http::Uri> {
         self.indexer_uri.clone()
     }
 
@@ -341,7 +341,9 @@ impl ClientConfigBuilder {
         Self::default()
     }
 
-    /// Set indexer URI.
+    /// Connect to an indexer at the given URI.
+    ///
+    /// Without this call the client starts offline. See [`Self::build`].
     ///
     /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
     /// `zingo-netutils` instead of `http::Uri`.
@@ -375,14 +377,18 @@ impl ClientConfigBuilder {
     }
 
     /// Build a [`ClientConfig`] from the builder.
+    ///
+    /// The default indexer is `None` — the resulting [`crate::lightclient::LightClient`] starts
+    /// in offline mode. All local operations (balance, addresses, proposals) work immediately.
+    /// Call [`crate::lightclient::LightClient::set_indexer_uri`] to connect when the network
+    /// is available, then [`crate::lightclient::LightClient::sync`] to fetch blocks.
+    ///
+    /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
     pub fn build(self) -> ClientConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
         let wallet_name = wallet_name_or_default(self.wallet_name);
         ClientConfig {
-            indexer_uri: self
-                .indexer_uri
-                .clone()
-                .unwrap_or_else(|| DEFAULT_INDEXER_URI.parse().expect("valid constant URI")),
+            indexer_uri: self.indexer_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -487,7 +493,7 @@ mod tests {
             .set_wallet_dir(temp_path)
             .build();
 
-        assert_eq!(valid_config.indexer_uri(), valid_uri);
+        assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
     }
 }

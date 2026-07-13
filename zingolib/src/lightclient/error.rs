@@ -32,12 +32,18 @@ pub enum LightClientError {
     /// gPRC client error.
     #[error("gRPC client error. {0}")]
     ClientError(#[from] GetClientError),
+    /// Indexer request error.
+    #[error("Indexer request error. {0}")]
+    IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
 }
 
 #[derive(Debug, thiserror::Error)]
