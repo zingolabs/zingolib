@@ -34,4 +34,4 @@ tempfile.workspace = true
 http.workspace = true
 zip32.workspace = true
 tokio = { workspace = true, features = ["net", "time", "rt", "io-util", "sync", "macros"] }
-zingo-netutils = { version = "5.0.1", path = "../zingo-netutils" }
+zingo-netutils.workspace = true
