@@ -797,7 +797,9 @@ impl LightWallet {
 mod tests {
     use std::str::FromStr as _;
 
-    use pepper_sync::wallet::{OrchardNote, OutgoingOrchardNote, OutputId, WalletTransaction};
+    use pepper_sync::wallet::{
+        IronwoodNote, OrchardNote, OutgoingIronwoodNote, OutputId, WalletTransaction,
+    };
     use zcash_primitives::transaction::TxId;
     use zcash_protocol::memo::Memo;
     use zingo_common_components::protocol::ActivationHeights;
@@ -840,7 +842,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, memo)| {
-                    OrchardNote::new_for_test(
+                    IronwoodNote::new_for_test(
                         OutputId::new(txid, index as u32),
                         zip32::AccountId::ZERO,
                         zip32::Scope::External,
@@ -865,7 +867,7 @@ mod tests {
             txid,
             ConfirmationStatus::Confirmed(height.into()),
             vec![],
-            vec![OutgoingOrchardNote::new_for_test(
+            vec![OutgoingIronwoodNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
@@ -1004,7 +1006,7 @@ mod tests {
             vec![
                 // The send-to-self output: recipient is one of the wallet's
                 // own orchard receivers.
-                OutgoingOrchardNote::new_for_test(
+                OutgoingIronwoodNote::new_for_test(
                     OutputId::new(txid, 0),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1015,7 +1017,7 @@ mod tests {
                     None,
                 ),
                 // The Zennies-for-Zingo output.
-                OutgoingOrchardNote::new_for_test(
+                OutgoingIronwoodNote::new_for_test(
                     OutputId::new(txid, 1),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1053,7 +1055,7 @@ mod tests {
         use incrementalmerkletree::Position;
         use orchard::value::NoteValue;
         use pepper_sync::sync::{ScanPriority, ScanRange};
-        use pepper_sync::wallet::{OrchardNote as OrchardWalletNote, SyncState};
+        use pepper_sync::wallet::SyncState;
         use zcash_protocol::consensus::BlockHeight;
 
         let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
@@ -1083,7 +1085,7 @@ mod tests {
             WalletTransaction::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(10.into()),
-                vec![OrchardWalletNote::new_for_test(
+                vec![IronwoodNote::new_for_test(
                     OutputId::new(txid, 0),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1099,7 +1101,7 @@ mod tests {
 
         assert_eq!(
             wallet
-                .spendable_balance::<pepper_sync::wallet::OrchardNote>(
+                .spendable_balance::<pepper_sync::wallet::IronwoodNote>(
                     zip32::AccountId::ZERO,
                     false
                 )
@@ -1453,7 +1455,7 @@ mod tests {
     async fn value_transfers_aggregation_and_ordering() {
         use incrementalmerkletree::Position;
         use orchard::value::NoteValue;
-        use pepper_sync::wallet::{OrchardNote, OutputId};
+        use pepper_sync::wallet::OutputId;
         use std::str::FromStr as _;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
@@ -1464,7 +1466,7 @@ mod tests {
         let txid = TxId::from_bytes([1; 32]);
         let notes = (0..4u64)
             .map(|index| {
-                OrchardNote::new_for_test(
+                IronwoodNote::new_for_test(
                     OutputId::new(txid, u32::try_from(index).unwrap()),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1489,7 +1491,7 @@ mod tests {
         // ordering assertions exercise a non-trivial sort.
         for (txid_byte, height) in [(2u8, 5u32), (3, 6)] {
             let txid = TxId::from_bytes([txid_byte; 32]);
-            let note = OrchardNote::new_for_test(
+            let note = IronwoodNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
