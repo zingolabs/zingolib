@@ -4,10 +4,12 @@ use std::convert::Infallible;
 
 use nonempty::NonEmpty;
 
+use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -26,15 +28,47 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet()
-            .write()
-            .await
+        let mut wallet = self.wallet().write().await;
+        let highest_refund_address_index = wallet.highest_refund_address_index();
+        let calculated_txids = wallet
             .calculate_transactions(proposal, sending_account)
             .await
-            .map_err(SendError::CalculateSendError)?;
+            .map_err(|e| {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
 
-        self.transmit_transactions(calculated_txids).await
+                SendError::CalculateSendError(e)
+            })?;
+        drop(wallet);
+
+        let transmission_result = self.transmit_transactions(calculated_txids).await;
+        if transmission_result.is_err() {
+            let mut wallet = self.wallet().write().await;
+            let new_refund_address_index = highest_refund_address_index
+                .map_or(Some(NonHardenedChildIndex::ZERO), |i| i.next());
+            let new_refund_address = new_refund_address_index.and_then(|i| {
+                wallet
+                    .transparent_addresses()
+                    .get(&TransparentAddressId::new(
+                        sending_account,
+                        TransparentScope::Refund,
+                        i,
+                    ))
+                    .cloned()
+            });
+            let truncate = new_refund_address.is_some_and(|addr| {
+                let deshielding_tx = wallet.wallet_transactions.values().find(|tx| {
+                    tx.transparent_coins()
+                        .iter()
+                        .any(|coin| coin.address() == addr)
+                });
+                deshielding_tx.is_some_and(|tx| tx.status().is_failed())
+            });
+            if truncate {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
+            }
+        }
+
+        transmission_result
     }
 
     async fn shield(

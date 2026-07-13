@@ -237,28 +237,25 @@ impl WalletConfig {
     }
 }
 
-/// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
+/// Constructs a [`http::Uri`] from a `server` string.
+///
+/// [`DEFAULT_INDEXER_URI`] or [`DEFAULT_INDEXER_URI_TESTNET`] may be used as default mainnet and testnet servers, respectively.
 /// If the provided string is missing the http prefix, a prefix of `http://` will be added.
 /// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_lightwalletd_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return Ok(http::Uri::default());
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse()?;
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
+pub fn construct_lightwalletd_uri(server: String) -> Result<http::Uri, InvalidUri> {
+    if server.is_empty() {
+        return Ok(http::Uri::default());
+    } else {
+        let mut s = if server.starts_with("http") {
+            server
+        } else {
+            "http://".to_string() + &server
+        };
+        let uri: http::Uri = s.parse()?;
+        if uri.port().is_none() {
+            s += ":9067";
         }
-        None => DEFAULT_INDEXER_URI.to_string(),
+        s
     }
     .parse()
 }
@@ -482,14 +479,11 @@ pub enum ClientConfigError {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ChainType, ClientConfig};
+    use crate::config::{ChainType, ClientConfig, DEFAULT_INDEXER_URI, construct_lightwalletd_uri};
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some(
-            crate::config::DEFAULT_INDEXER_URI.to_string(),
-        ))
-        .unwrap();
+        let valid_uri = construct_lightwalletd_uri(DEFAULT_INDEXER_URI.to_string()).unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();

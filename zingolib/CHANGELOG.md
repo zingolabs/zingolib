@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
+- `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
+  updated to include options for defaults.
 
 ### Removed
 

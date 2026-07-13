@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use crate::commands::RT;
 use crate::most_up_indexer_uris::MOST_UP_INDEXER_URIS;
 use zingo_netutils::{GrpcIndexer, Indexer as _};
+use zingolib::config::DEFAULT_INDEXER_URI;
 
 /// A server that responded successfully to `get_info()`, with its measured latency.
 #[derive(Debug)]
@@ -88,7 +89,7 @@ pub(crate) fn resolve_server(
 ) -> Result<(http::Uri, Vec<RankedServer>), http::uri::InvalidUri> {
     if let Some(explicit) = matches.get_one::<http::Uri>("server") {
         Ok((
-            zingolib::config::construct_lightwalletd_uri(Some(explicit.to_string()))?,
+            zingolib::config::construct_lightwalletd_uri(explicit.to_string())?,
             vec![],
         ))
     } else {
@@ -96,7 +97,7 @@ pub(crate) fn resolve_server(
         let server = if let Some(best) = ranked.first() {
             best.uri.clone()
         } else {
-            zingolib::config::construct_lightwalletd_uri(None)?
+            zingolib::config::construct_lightwalletd_uri(DEFAULT_INDEXER_URI.to_string())?
         };
         Ok((server, ranked))
     }
