@@ -2049,7 +2049,8 @@ mod slow {
                     birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 })
-                .build();
+                .build()
+                .unwrap();
             let mut watch_client = LightClient::new(zingo_config, false).await.unwrap();
             // assert empty wallet before rescan
             let balance = watch_client
@@ -4759,7 +4760,8 @@ mod testnet_test {
                     wallet_settings: default_test_wallet_settings(),
                 })
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
-                .build();
+                .build()
+                .unwrap();
 
             let mut lightclient = LightClient::new(config, true).await.unwrap();
             lightclient.save_task().await;
@@ -4785,7 +4787,8 @@ mod testnet_test {
                 .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
-                .build();
+                .build()
+                .unwrap();
             LightClient::new(config, true).await.unwrap();
 
             test_count += 1;

@@ -388,7 +388,8 @@ mod tests {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
 
         let mut lc = LightClient::new(config.clone(), false).await.unwrap();
 

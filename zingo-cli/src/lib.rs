@@ -556,12 +556,13 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         }
     };
 
-    Ok(ClientConfig::builder()
+    ClientConfig::builder()
         .set_indexer_uri(filled_template.server.clone())
         .set_chain_type(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
         .set_wallet_config(wallet_config)
-        .build())
+        .build()
+        .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
