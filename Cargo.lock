@@ -5160,6 +5160,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-subscriber",
  "zaino-proto",
  "zcash_address",
  "zcash_client_backend",
