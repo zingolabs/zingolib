@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{self, AtomicBool, AtomicU8};
+use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::time::{Duration, SystemTime};
 
 use tokio::sync::{RwLock, mpsc};
@@ -345,7 +345,7 @@ where
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
     let shutdown_mempool_clone = shutdown_mempool.clone();
-    let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
+    let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
     let mempool_handle = tokio::spawn(async move {
@@ -965,7 +965,7 @@ pub fn set_transactions_failed(
 /// Returns true if the scanner and mempool are shutdown.
 fn is_shutdown<P>(
     scanner: &Scanner<P>,
-    mempool_unprocessed_transactions_count: Arc<AtomicU8>,
+    mempool_unprocessed_transactions_count: Arc<AtomicU32>,
 ) -> bool
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -1818,7 +1818,7 @@ where
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
-    unprocessed_transactions_count: Arc<AtomicU8>,
+    unprocessed_transactions_count: Arc<AtomicU32>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
 where
@@ -1838,10 +1838,18 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                     let _ignore_error = mempool_transaction_sender
+                                     match mempool_transaction_sender
                                         .send(raw_transaction)
-                                        .await;
-                                    unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                        .await {
+                                            Ok(_) => {
+                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                            }
+                                            Err(_) => {
+                                                unprocessed_transactions_count.store(0, atomic::Ordering::Release);
+                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                break 'main;
+                                            }
+                                        }
                                 }
                                 None => {
                                     continue 'main;
