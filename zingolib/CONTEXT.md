@@ -72,11 +72,13 @@
 
 **LightClient** — The user-facing entry point. Owns the connection to the Indexer, manages the sync lifecycle, and exposes operations such as send, shield, rescan, and balance.
 
-**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. Two implementations exist: **lightwalletd** (Go, current production default at `zec.rocks:443`) and **zainod** (Rust, part of the zaino project, not yet production-ready). The ecosystem is actively migrating from lightwalletd to zainod.
+**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. Two implementations exist: **lightwalletd** (Go, the longstanding public-server deployment, e.g. `zec.rocks:443`) and **zainod** (Rust, part of the zaino project). The ecosystem is migrating from lightwalletd to zainod; this repo's test suites already default to zainod (the Core stack — see the test-infrastructure glossary), while lightwalletd survives in one opt-in legacy combo.
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
-**Offline Mode** — A `LightClient` without a configured Indexer. All local operations (balance, addresses, transaction history, proposals) work normally. Network operations (`sync`, `send`, `do_info`) return `LightClientError::Offline`. The client transitions online by calling `set_indexer_uri()`. The default configuration starts offline. See `docs/adr/0001-offline-by-default.md`.
+**Indexerless** — The state of a `LightClient` that has no configured Indexer. An Indexerless client can create and restore wallets, load wallet files, read balances and history from stored state, and propose and sign transactions, yielding serialized transactions for later broadcast; sync, broadcast, and mempool observation require an Indexer and return `LightClientError::Offline`. The state *may* be transitional — configuring an Indexer via `set_indexer_uri()` exits it — but a consumer may equally remain Indexerless for an entire session. The default configuration starts Indexerless. See `docs/adr/0001-offline-by-default.md`. *Avoid*: offline client, serverless ("Offline mode" names the CLI session concept below).
+
+**Offline mode** — The zingo-cli session mode, committed at argument-parse time, in which the session never configures an Indexer: the client remains Indexerless for the life of the session, and every capability of that state is available at the prompt. Contrast a default session, which connects to an Indexer and may still pass through the Indexerless state before connecting. *Avoid*: serverless mode, standalone wallet (retired names for this concept).
 
 **WalletConfig** — Specifies how a `LightClient` should initialise its wallet. Five variants:
 - `NewSeed` — generate a fresh wallet from a new random mnemonic.
@@ -111,7 +113,7 @@
 
 **Proposal** — A pre-computed spend plan produced by `LightWallet::create_send_proposal`. Stores the selected inputs and outputs but does not yet build the transaction. Exposed intentionally so callers can inspect fees before committing.
 
-**ZingoProposal** — Wrapper over `zcash_client_backend::proposal::Proposal`, stored in the wallet between proposal creation and transaction calculation. Consumed (removed from the wallet) only when `send_stored_proposal` successfully reaches the transmission step. An offline attempt leaves the proposal intact so it can be retried once the client comes online.
+**ZingoProposal** — Wrapper over `zcash_client_backend::proposal::Proposal`, stored in the wallet between proposal creation and transaction calculation. Consumed (removed from the wallet) only when `send_stored_proposal` successfully reaches the transmission step. An Indexerless attempt leaves the proposal intact so it can be retried once an Indexer is configured.
 
 **ConfirmationStatus** — The lifecycle state of a transaction. Ordered for sorting (confirmed first): `Confirmed(height)` → `Mempool(target_height)` → `Transmitted(target_height)` → `Calculated(target_height)` → `Failed(height)`. For non-confirmed states the embedded height is the chain height at time of creation + 1 (the intended target block), not an actual confirmation height. `Failed` is a permanent terminal state — failed transactions remain in the wallet as a record. Consumers filter them out at the display layer using `ConfirmationStatus`.
 
@@ -183,11 +185,11 @@
 
 ## Testing
 
-**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair. Four backend combos are supported via compile-time features: `zcashd+lightwalletd` (default CI), `zcashd+zainod`, `zebrad+lightwalletd`, `zebrad+zainod`.
+**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair; the pair is selected at compile time (the test-infrastructure glossary's "Network combo"). The no-feature default is `zainod+zebrad`; `lightwalletd+zebrad` survives as an opt-in combo; zcashd-backed combos were removed in July 2026.
 
-**darkside-tests** — Integration tests using lightwalletd's "darkside" mode, which allows injecting arbitrary blocks without mining. Used for deterministic edge-case testing.
+**darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving lightwalletd's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
 
-**Validator** — The consensus node in a test local net: either `zcashd` or `zebrad`.
+**Validator** — The consensus node in a test local net: `zebrad`. (zcashd-backed combos were removed from this repo in July 2026.)
 
 **DefaultValidator / DefaultIndexer** — Type aliases in `zingolib_testutils` that resolve to the active backend combo at compile time, allowing test code to remain backend-agnostic.
 
