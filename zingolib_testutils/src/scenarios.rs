@@ -195,7 +195,7 @@ pub const DEFERRED_STREAM_SKIM: u64 = block_rewards::CANOPY / 100;
 /// Miner reward for blocks at or above the funding-stream start height (2).
 pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREAM_SKIM;
 
-/// Amount `zebrad_shielded_funds` offloads from the faucet to keep its
+/// Amount `normalize_shielded_faucet_balance` offloads from the faucet to keep its
 /// spendable balance predictable for test assertions.
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
@@ -308,7 +308,7 @@ pub async fn sync_client_to_validator_tip<V, I>(
 ///   note from (or anchored at) the tip block itself ("rejected from the
 ///   mempool until the next chain tip block"). When zebra says exactly
 ///   that, one separation block is mined and the send retried once,
-///   mirroring the fix in `zebrad_shielded_funds`.
+///   mirroring the fix in `normalize_shielded_faucet_balance`.
 ///
 /// Confirmation is asserted (up to a few blocks of tolerance), so a
 /// transaction that misses its block for any new reason fails HERE with the
@@ -362,6 +362,50 @@ where
         "transaction(s) {txids:?} still unconfirmed after mining \
          {MAX_BLOCKS_TO_CONFIRMATION} blocks"
     );
+}
+
+/// When mining to a shielded pool, dump the excess faucet funds and generate
+/// a block to confirm the send. Coinbase lands directly in the mined-to pool
+/// (zebrad mines to Orchard natively), and shielded coinbase has no
+/// `COINBASE_MATURITY_BLOCKS` rule — the wallet spends blocks-old orchard coinbase
+/// fine (server-verified by `value_transfers`).
+///
+/// Two constraints govern when the offload can be sent (both observed as
+/// zebra mempool rejections):
+///
+/// 1. The wallet must be synced to the REAL tip when it builds the send —
+///    it signs for tip+1's consensus branch id, and the fixture ladder
+///    activates NU6.1/NU6.2 at height 5, right where this setup operates
+///    ("transaction uses an incorrect consensus branch id" when the wallet
+///    was held a block behind).
+/// 2. It must not spend the tip block's own note ("could not validate
+///    orchard proof" when it did).
+///
+/// Mining two extra blocks first clears the upgrade ladder (tip 5, so
+/// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
+/// four pre-tip notes so oldest-first selection never reaches the tip note.
+async fn normalize_shielded_faucet_balance<V, I>(
+    local_net: &LocalNet<V, I>,
+    mine_to_pool: PoolType,
+    faucet: &mut LightClient,
+) where
+    I: Indexer + LogsToStdoutAndStderr,
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <I as Process>::Config: Send,
+    <V as Process>::Config: Send,
+    LocalNet<V, I>: IndexerConvergence,
+{
+    if !matches!(mine_to_pool, PoolType::Transparent) {
+        local_net.validator().generate_blocks(2).await.unwrap();
+        sync_client_to_validator_tip(local_net, faucet).await;
+        quick_send(
+            faucet,
+            vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
+        )
+        .await
+        .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+    }
 }
 
 /// Struct for building lightclients for integration testing
@@ -526,6 +570,12 @@ pub async fn faucet(
 
     let mut faucet = client_builder.build_faucet(true).await;
 
+    // A replayed chain already contains the balance-normalization offload;
+    // the freshly built faucet wallet recovers it by sync below.
+    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+        normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
+    }
+
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
     if let Some((dir, manifest)) = export {
@@ -572,6 +622,12 @@ pub async fn faucet_recipient(
             true,
         )
         .await;
+
+    // A replayed chain already contains the balance-normalization offload;
+    // the freshly built faucet wallet recovers it by sync below.
+    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+        normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
+    }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
     sync_client_to_validator_tip(&local_net, &mut recipient).await;
