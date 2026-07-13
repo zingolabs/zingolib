@@ -673,8 +673,8 @@ impl WalletTransaction {
         use zcash_protocol::consensus::BranchId;
 
         let transaction = TransactionData::from_parts(
-            TxVersion::V5,
-            BranchId::Nu5,
+            TxVersion::V6,
+            BranchId::Nu6_3,
             0,
             BlockHeight::from_u32(0),
             None,
