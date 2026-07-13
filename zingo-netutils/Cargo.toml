@@ -13,6 +13,7 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 http.workspace = true
+rustls.workspace = true
 thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
