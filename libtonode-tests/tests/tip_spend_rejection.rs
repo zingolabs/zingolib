@@ -8,7 +8,7 @@
 //! until the next chain tip block", during the funding send (orchard spends
 //! with an orchard output). The sapling-source rows — whose funding sends
 //! make the SAME orchard spends but with a sapling output — pass. The
-//! zebrad_shielded_funds offload historically hit the same rejection when
+//! normalize_shielded_faucet_balance offload historically hit the same rejection when
 //! it spent the tip block's coinbase note (fixed by sync-then-mine
 //! separation in f39cee419).
 //!

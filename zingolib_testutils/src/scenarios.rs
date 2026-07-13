@@ -194,7 +194,7 @@ pub const DEFERRED_STREAM_SKIM: u64 = block_rewards::CANOPY / 100;
 /// Miner reward for blocks at or above the funding-stream start height (2).
 pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREAM_SKIM;
 
-/// Amount `zebrad_shielded_funds` offloads from the faucet to keep its
+/// Amount `normalize_shielded_faucet_balance` offloads from the faucet to keep its
 /// spendable balance predictable for test assertions.
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
@@ -307,7 +307,7 @@ pub async fn sync_client_to_validator_tip<V, I>(
 ///   note from (or anchored at) the tip block itself ("rejected from the
 ///   mempool until the next chain tip block"). When zebra says exactly
 ///   that, one separation block is mined and the send retried once,
-///   mirroring the fix in `zebrad_shielded_funds`.
+///   mirroring the fix in `normalize_shielded_faucet_balance`.
 ///
 /// Confirmation is asserted (up to a few blocks of tolerance), so a
 /// transaction that misses its block for any new reason fails HERE with the
@@ -383,7 +383,7 @@ where
 /// Mining two extra blocks first clears the upgrade ladder (tip 5, so
 /// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
 /// four pre-tip notes so oldest-first selection never reaches the tip note.
-async fn zebrad_shielded_funds<V, I>(
+async fn normalize_shielded_faucet_balance<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
     faucet: &mut LightClient,
@@ -570,10 +570,10 @@ pub async fn faucet(
 
     let mut faucet = client_builder.build_faucet(true).await;
 
-    // A replayed chain already contains the shielded-funds transactions;
-    // the freshly built faucet wallet recovers them by sync below.
+    // A replayed chain already contains the balance-normalization offload;
+    // the freshly built faucet wallet recovers it by sync below.
     if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
-        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+        normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
     }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
@@ -624,10 +624,10 @@ pub async fn faucet_recipient(
         )
         .await;
 
-    // A replayed chain already contains the shielded-funds transactions;
-    // the freshly built faucet wallet recovers them by sync below.
+    // A replayed chain already contains the balance-normalization offload;
+    // the freshly built faucet wallet recovers it by sync below.
     if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
-        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+        normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
     }
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
