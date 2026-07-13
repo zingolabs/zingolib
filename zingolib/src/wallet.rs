@@ -374,12 +374,12 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    /// `save_required` field must be manually set back to false after wallet data has been successfully persisted to disk.
     pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &chain_type)?;
-            self.save_required = false;
             Ok(Some(wallet_bytes))
         } else {
             Ok(None)
