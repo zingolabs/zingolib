@@ -13,6 +13,7 @@ namespace zingo {
   [Throws=ZingolibError]
   string init_new(
       string serveruri,
+      u32 birthday,
       string chainhint,
       string performancelevel,
       u32 minconfirmations

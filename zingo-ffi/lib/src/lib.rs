@@ -235,7 +235,10 @@ fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
 struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
-    lightwalletd_uri: http::Uri,
+    /// `None` in Offline mode: no Indexer is ever configured and the client
+    /// stays Indexerless (zingolib ADR 0001). `Some(uri)` when a real server
+    /// was selected.
+    lightwalletd_uri: Option<http::Uri>,
 }
 
 fn build_connection_params(
@@ -251,22 +254,17 @@ fn build_connection_params(
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
 
-    // Offline Mode = empty uri. The client never connects, but tonic still
-    // parses the URI and rejects a scheme-less one ("bad uri: invalid scheme").
-    // `Some("")` maps to http::Uri::default() ("/"), so hand it the chain's
-    // default indexer URI instead — syntactically valid, and never actually
-    // dialed while offline. It is replaced as soon as a real server is chosen.
+    // Offline Mode = empty uri → no Indexer is ever configured; the client
+    // stays Indexerless (zingolib ADR 0001), and `require_indexer()` gates
+    // sync/send with `Offline`. A real server yields `Some(uri)`.
     let lightwalletd_uri = if uri.is_empty() {
-        let default = match chain_type {
-            ChainType::Mainnet => DEFAULT_INDEXER_URI,
-            ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
-            ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
-        };
-        construct_lightwalletd_uri(Some(default.to_string()))
+        None
     } else {
-        construct_lightwalletd_uri(Some(uri))
-    }
-    .map_err(|e| format!("Error: Invalid lightwalletd uri: {e}"))?;
+        Some(
+            construct_lightwalletd_uri(Some(uri))
+                .map_err(|e| format!("Error: Invalid lightwalletd uri: {e}"))?,
+        )
+    };
     let performancetype = match performance_level.as_str() {
         "Maximum" => PerformanceLevel::Maximum,
         "High" => PerformanceLevel::High,
@@ -294,12 +292,17 @@ fn build_client_config(
     params: &ConnectionParams,
     wallet_config: WalletConfig,
 ) -> ClientConfig {
-    ClientConfig::builder()
-        .set_indexer_uri(params.lightwalletd_uri.clone())
+    let builder = ClientConfig::builder()
         .set_chain_type(params.chain_type)
         .set_wallet_dir(PathBuf::new())
-        .set_wallet_config(wallet_config)
-        .build()
+        .set_wallet_config(wallet_config);
+    // Offline (no uri) → leave the client Indexerless. Only configure the
+    // Indexer when a real server was selected. Mirrors zingo-cli.
+    let builder = match params.lightwalletd_uri.clone() {
+        Some(uri) => builder.set_indexer_uri(uri),
+        None => builder,
+    };
+    builder.build()
 }
 
 pub fn init_logging() -> Result<String, ZingolibError> {
@@ -319,6 +322,7 @@ pub fn init_logging() -> Result<String, ZingolibError> {
 
 pub fn init_new(
     server_uri: String,
+    birthday: u32,
     chain_hint: String,
     performance_level: String,
     min_confirmations: u32,
@@ -334,17 +338,35 @@ pub fn init_new(
             Ok(p) => p,
             Err(e) => return Ok(format!("Error: {e}")),
         };
-        let chain_height = match RT.block_on(async {
-            let mut indexer = GrpcIndexer::new(params.lightwalletd_uri.clone())
-                .await
-                .map_err(|e| e.to_string())?;
-            indexer
-                .get_latest_block(INDEXER_REQUEST_TIMEOUT)
-                .await
-                .map_err(|e| e.to_string())
-        }) {
-            Ok(block_id) => block_id.height as u32,
-            Err(e) => return Ok(format!("Error: {e}")),
+        // Online: ask the Indexer for the chain tip. Offline (Indexerless):
+        // the caller-supplied `birthday` stands in for it, since there is no
+        // server to query. Mirrors zingo-cli's offline new-wallet path.
+        let chain_height = match &params.lightwalletd_uri {
+            Some(uri) => {
+                let uri = uri.clone();
+                match RT.block_on(async move {
+                    let mut indexer = GrpcIndexer::new(uri)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    indexer
+                        .get_latest_block(INDEXER_REQUEST_TIMEOUT)
+                        .await
+                        .map_err(|e| e.to_string())
+                }) {
+                    Ok(block_id) => block_id.height as u32,
+                    Err(e) => return Ok(format!("Error: {e}")),
+                }
+            }
+            None => {
+                if birthday > 0 {
+                    birthday
+                } else {
+                    return Ok("Error: Creating a new wallet in Offline mode requires a \
+                               birthday with a recent block height, because there is no \
+                               Indexer to ask for the chain tip."
+                        .to_string());
+                }
+            }
         };
         let wallet_config = WalletConfig::NewSeed {
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -741,7 +763,12 @@ pub fn info_server() -> Result<String, ZingolibError> {
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move { lightclient.do_info().await }))
+            Ok(RT.block_on(async move {
+                match lightclient.do_info().await {
+                    Ok(info) => info,
+                    Err(e) => format!("Error: {e}"),
+                }
+            }))
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
@@ -1457,8 +1484,8 @@ pub fn get_wallet_save_required() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                object! { "save_required" => wallet.save_required }.pretty(2)
+                let save_required = lightclient.is_save_required().await;
+                object! { "save_required" => save_required }.pretty(2)
             }))
         } else {
             Err(ZingolibError::LightclientNotInitialized)
@@ -1476,7 +1503,7 @@ pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
                 let mut wallet = lightclient.wallet().write().await;
                 wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(1).unwrap();
                 wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium;
-                wallet.save_required = true;
+                wallet.mark_dirty();
                 "Successfully set config wallet to test. (1 - Medium)".to_string()
             }))
         } else {
@@ -1511,7 +1538,7 @@ pub fn set_config_wallet_to_prod(
                         }
                     };
                 wallet.wallet_settings.sync_config.performance_level = performancetype;
-                wallet.save_required = true;
+                wallet.mark_dirty();
                 "Successfully set config wallet to prod.".to_string()
             }))
         } else {
