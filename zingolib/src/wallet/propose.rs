@@ -1,13 +1,16 @@
 //! creating proposals from wallet data
 
 use zcash_client_backend::{
-    data_api::wallet::{ConfirmationsPolicy, input_selection::GreedyInputSelector},
+    data_api::wallet::{
+        ConfirmationsPolicy,
+        input_selection::{GreedyInputSelector, TransparentSpendPolicy},
+    },
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
 use zcash_protocol::{
     ShieldedPool,
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -39,6 +42,21 @@ impl LightWallet {
         );
         let chain_type = self.chain_type;
 
+        // Version floor must agree with `create_proposed_transactions` in
+        // `wallet/send.rs` so the proposed fee matches the built transaction.
+        // Pass None when NU6.3 is configured: the builder derives the correct
+        // tx version from BranchId at the target height. Force V5 only on
+        // networks where NU6.3 is not yet configured (no Ironwood notes exist
+        // there, so V5 is always the right version).
+        let version_floor = if self
+            .chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some()
+        {
+            None
+        } else {
+            Some(zcash_primitives::transaction::TxVersion::V5)
+        };
         zcash_client_backend::data_api::wallet::propose_transfer::<
             LightWallet,
             ChainType,
@@ -57,7 +75,8 @@ impl LightWallet {
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            None,
+            &TransparentSpendPolicy::ShieldedOnly,
+            version_floor,
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -115,7 +134,7 @@ impl LightWallet {
             account_id,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            zcash_client_backend::data_api::TransparentOutputFilter::All,
+            zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
         )
         .map_err(ProposeShieldError::Component)?;
 

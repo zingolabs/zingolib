@@ -32,6 +32,7 @@ pub mod utils;
 pub mod balance;
 pub mod disk;
 pub mod keys;
+pub mod migration;
 pub mod output;
 pub mod propose;
 pub mod send;
@@ -51,6 +52,12 @@ pub struct WalletSettings {
     pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
+    /// When true, proposals use `None` for the version floor, allowing the
+    /// upstream builder to produce V6 transactions post-NU6.3 activation
+    /// and route Ironwood-pool inputs and change through the ironwood bundle.
+    /// Defaults to false until a V6-accepting node is available in the
+    /// test environment and Ironwood scanning is fully exercised.
+    pub allow_v6_transactions: bool,
 }
 
 impl Default for WalletSettings {
@@ -58,6 +65,7 @@ impl Default for WalletSettings {
         Self {
             sync_config: SyncConfig::default(),
             min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
+            allow_v6_transactions: false,
         }
     }
 }
@@ -141,6 +149,10 @@ pub struct LightWallet {
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
+    /// Orchard→Ironwood migration state, present while a migration is
+    /// planned or in flight. Wallet-file-local by design: restore-from-seed
+    /// starts fresh.
+    pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
@@ -235,6 +247,7 @@ impl LightWallet {
             sync_state: SyncState::new(),
             wallet_settings,
             price_list: PriceList::new(),
+            migration: None,
             save_required: true,
             send_proposal: None,
         })

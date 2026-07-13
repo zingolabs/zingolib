@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::OrchardDomain;
+use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
@@ -21,7 +21,7 @@ use zingo_netutils::lightwallet_protocol::CompactBlock;
 
 use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
-use crate::keys::ScanningKeyOps as _;
+use crate::keys::ScanningKeyOps;
 use crate::keys::ScanningKeys;
 use crate::utils::get_compact_action;
 use crate::utils::get_compact_block_hash;
@@ -47,21 +47,31 @@ type TaggedOrchardBatch =
 type TaggedOrchardBatchRunner<Tasks> =
     BatchRunner<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor, Tasks>;
 
+type TaggedIronwoodBatch =
+    Batch<IronwoodDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
+type TaggedIronwoodBatchRunner<Tasks> =
+    BatchRunner<IronwoodDomain, orchard::note_encryption::CompactAction, CompactDecryptor, Tasks>;
+
 pub(crate) trait SaplingTasks: Tasks<TaggedSaplingBatch> {}
 impl<T: Tasks<TaggedSaplingBatch>> SaplingTasks for T {}
 
 pub(crate) trait OrchardTasks: Tasks<TaggedOrchardBatch> {}
 impl<T: Tasks<TaggedOrchardBatch>> OrchardTasks for T {}
 
-pub(crate) struct BatchRunners<TS: SaplingTasks, TO: OrchardTasks> {
+pub(crate) trait IronwoodTasks: Tasks<TaggedIronwoodBatch> {}
+impl<T: Tasks<TaggedIronwoodBatch>> IronwoodTasks for T {}
+
+pub(crate) struct BatchRunners<TS: SaplingTasks, TO: OrchardTasks, TI: IronwoodTasks> {
     pub(crate) sapling: TaggedSaplingBatchRunner<TS>,
     pub(crate) orchard: TaggedOrchardBatchRunner<TO>,
+    pub(crate) ironwood: TaggedIronwoodBatchRunner<TI>,
 }
 
-impl<TS, TO> BatchRunners<TS, TO>
+impl<TS, TO, TI> BatchRunners<TS, TO, TI>
 where
     TS: SaplingTasks,
     TO: OrchardTasks,
+    TI: IronwoodTasks,
 {
     pub(crate) fn for_keys(batch_size_threshold: usize, scanning_keys: &ScanningKeys) -> Self {
         BatchRunners {
@@ -74,10 +84,21 @@ where
             ),
             orchard: BatchRunner::new(
                 batch_size_threshold,
-                scanning_keys
-                    .orchard
-                    .iter()
-                    .map(|(id, key)| (*id, key.prepare())),
+                scanning_keys.orchard.iter().map(|(id, key)| {
+                    (
+                        *id,
+                        ScanningKeyOps::<OrchardDomain, orchard::note::Nullifier>::prepare(key),
+                    )
+                }),
+            ),
+            ironwood: BatchRunner::new(
+                batch_size_threshold,
+                scanning_keys.ironwood.iter().map(|(id, key)| {
+                    (
+                        *id,
+                        ScanningKeyOps::<IronwoodDomain, orchard::note::Nullifier>::prepare(key),
+                    )
+                }),
             ),
         }
     }
@@ -85,6 +106,7 @@ where
     pub(crate) fn flush(&mut self) {
         self.sapling.flush();
         self.orchard.flush();
+        self.ironwood.flush();
     }
 
     #[tracing::instrument(skip_all, fields(height = block.height))]
@@ -134,6 +156,25 @@ where
                             at_height: block_height,
                             txid,
                             pool_type: ShieldedPool::Orchard,
+                            index: i,
+                            error: e,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+
+            self.ironwood.add_outputs(
+                block_hash,
+                txid,
+                IronwoodDomain::for_compact_action,
+                &tx.ironwood_actions
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, action)| {
+                        get_compact_action(&action).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedPool::Ironwood,
                             index: i,
                             error: e,
                         })

@@ -557,6 +557,9 @@ where
         for note in transaction.orchard_notes.as_mut_slice() {
             note.refetch_nullifier_ranges = Vec::new();
         }
+        for note in transaction.ironwood_notes.as_mut_slice() {
+            note.refetch_nullifier_ranges = Vec::new();
+        }
     }
     wallet_guard
         .set_save_flag()
@@ -839,23 +842,28 @@ where
         &mut pending_transaction_outpoints,
         transparent_output_ids,
     );
-    let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
+    let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions);
-    let (sapling_spend_scan_targets, orchard_spend_scan_targets) = spend::detect_shielded_spends(
-        &mut pending_transaction_nullifiers,
-        sapling_derived_nullifiers,
-        orchard_derived_nullifiers,
-    );
+    let (sapling_spend_scan_targets, orchard_spend_scan_targets, ironwood_spend_scan_targets) =
+        spend::detect_shielded_spends(
+            &mut pending_transaction_nullifiers,
+            sapling_derived_nullifiers,
+            orchard_derived_nullifiers,
+            ironwood_derived_nullifiers,
+        );
 
     // return if transaction is not relevant to the wallet
     if pending_transaction.transparent_coins().is_empty()
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
+        && pending_transaction.ironwood_notes().is_empty()
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
+        && pending_transaction.outgoing_ironwood_notes().is_empty()
         && transparent_spend_scan_targets.is_empty()
         && sapling_spend_scan_targets.is_empty()
         && orchard_spend_scan_targets.is_empty()
+        && ironwood_spend_scan_targets.is_empty()
     {
         return Ok(());
     }
@@ -873,6 +881,7 @@ where
         wallet,
         sapling_spend_scan_targets,
         orchard_spend_scan_targets,
+        ironwood_spend_scan_targets,
         false,
     )
     .map_err(SyncError::WalletError)?;
@@ -1005,6 +1014,7 @@ where
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
+                ironwood_located_trees,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1118,8 +1128,10 @@ where
                     if max_nullifier_map_size(performance_level).is_some_and(|max| {
                         nullifier_map.orchard.len()
                             + nullifier_map.sapling.len()
+                            + nullifier_map.ironwood.len()
                             + nullifiers.orchard.len()
                             + nullifiers.sapling.len()
+                            + nullifiers.ironwood.len()
                             > max
                     }) {
                         *nullifier_map_limit_exceeded = true;
@@ -1182,6 +1194,7 @@ where
                     wallet_transactions,
                     sapling_located_trees,
                     orchard_located_trees,
+                    ironwood_located_trees,
                 )
                 .await?;
                 spend::update_transparent_spends(
@@ -1456,6 +1469,7 @@ async fn update_wallet_data<W>(
     mut transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
@@ -1477,6 +1491,12 @@ where
             consensus_parameters,
             sync_state,
             ShieldedPool::Orchard,
+            transaction,
+        );
+        state::update_found_note_shard_priority(
+            consensus_parameters,
+            sync_state,
+            ShieldedPool::Ironwood,
             transaction,
         );
     }
@@ -1509,6 +1529,9 @@ where
         for note in transaction.orchard_notes.as_mut_slice() {
             note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
         }
+        for note in transaction.ironwood_notes.as_mut_slice() {
+            note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
+        }
     }
     for transaction in transactions.values() {
         discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
@@ -1534,6 +1557,7 @@ where
             highest_scanned_height,
             sapling_located_trees,
             orchard_located_trees,
+            ironwood_located_trees,
         )
         .await?;
 
@@ -1550,6 +1574,26 @@ where
 {
     for note in transaction
         .orchard_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .orchard()
+            .expect("fvk must exist to decrypt this note")
+            .to_ivk(zip32::Scope::External);
+
+        wallet.add_orchard_address(
+            note.key_id().account_id(),
+            note.note().recipient(),
+            ivk.diversifier_index(&note.note().recipient())
+                .expect("must be key used to create this address"),
+        )?;
+    }
+    // Ironwood recipients are orchard receivers, discovered the same way.
+    for note in transaction
+        .ironwood_notes()
         .iter()
         .filter(|&note| note.key_id().scope == zip32::Scope::External)
     {
@@ -1609,6 +1653,10 @@ where
     wallet
         .get_nullifiers_mut()?
         .orchard
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
+    wallet
+        .get_nullifiers_mut()?
+        .ironwood
         .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_sync_state_mut()?
@@ -1713,13 +1761,36 @@ where
         .get_shard_roots()
         .expect("infallible")
         .len() as u32;
-    let (sapling_subtree_roots, orchard_subtree_roots) = futures::join!(
+    let ironwood_start_index = wallet
+        .get_shard_trees()
+        .map_err(SyncError::WalletError)?
+        .ironwood
+        .store()
+        .get_shard_roots()
+        .expect("infallible")
+        .len() as u32;
+    let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
         client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
-        client::get_subtree_roots(fetch_request_sender, orchard_start_index, 1, 0)
+        client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),
+        client::get_subtree_roots(fetch_request_sender, ironwood_start_index, 2, 0)
     );
 
     let sapling_subtree_roots = sapling_subtree_roots?;
     let orchard_subtree_roots = orchard_subtree_roots?;
+    // Ironwood subtree roots are requested only where NU6.3 exists, and a
+    // server that cannot serve them is tolerated: the shard ranges remain
+    // empty and scan prioritisation falls back to the whole-pool range.
+    let ironwood_subtree_roots = if consensus_parameters
+        .activation_height(consensus::NetworkUpgrade::Nu6_3)
+        .is_some()
+    {
+        ironwood_subtree_roots.unwrap_or_else(|e| {
+            tracing::debug!("server does not serve ironwood subtree roots: {e}");
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
 
     let sync_state = wallet
         .get_sync_state_mut()
@@ -1736,6 +1807,14 @@ where
         sync_state,
         &orchard_subtree_roots,
     );
+    if !ironwood_subtree_roots.is_empty() {
+        state::add_shard_ranges(
+            consensus_parameters,
+            ShieldedPool::Ironwood,
+            sync_state,
+            &ironwood_subtree_roots,
+        );
+    }
 
     let shard_trees = wallet
         .get_shard_trees_mut()
@@ -1749,6 +1828,11 @@ where
         orchard_start_index as usize,
         orchard_subtree_roots,
         &mut shard_trees.orchard,
+    )?;
+    witness::add_subtree_roots(
+        ironwood_start_index as usize,
+        ironwood_subtree_roots,
+        &mut shard_trees.ironwood,
     )?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
@@ -1799,6 +1883,16 @@ where
             .orchard
             .insert_frontier(
                 frontiers.final_orchard_tree().clone(),
+                Retention::Checkpoint {
+                    id: birthday,
+                    marking: Marking::None,
+                },
+            )
+            .expect("infallible");
+        shard_trees
+            .ironwood
+            .insert_frontier(
+                frontiers.final_ironwood_tree().clone(),
                 Retention::Checkpoint {
                     id: birthday,
                     marking: Marking::None,
@@ -1921,7 +2015,7 @@ mod test {
             nu6: Some(BlockHeight::from_u32(3)),
             nu6_1: Some(BlockHeight::from_u32(3)),
             nu6_2: Some(BlockHeight::from_u32(3)),
-            nu6_3: None, // FIXME: implement ironwood
+            nu6_3: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height

@@ -26,8 +26,10 @@ pub(crate) const SHARD_HEIGHT: u8 = 16;
 pub(crate) struct WitnessData {
     pub(crate) sapling_initial_position: Position,
     pub(crate) orchard_initial_position: Position,
+    pub(crate) ironwood_initial_position: Position,
     pub(crate) sapling_leaves_and_retentions: Vec<(sapling_crypto::Node, Retention<BlockHeight>)>,
     pub(crate) orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)>,
+    pub(crate) ironwood_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)>,
 }
 
 impl WitnessData {
@@ -35,12 +37,15 @@ impl WitnessData {
     pub(crate) fn new(
         sapling_initial_position: Position,
         orchard_initial_position: Position,
+        ironwood_initial_position: Position,
     ) -> Self {
         WitnessData {
             sapling_initial_position,
             orchard_initial_position,
+            ironwood_initial_position,
             sapling_leaves_and_retentions: Vec::new(),
             orchard_leaves_and_retentions: Vec::new(),
+            ironwood_leaves_and_retentions: Vec::new(),
         }
     }
 }
@@ -157,6 +162,8 @@ pub(crate) struct Frontiers {
         Frontier<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>,
     final_orchard_tree:
         Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
+    final_ironwood_tree:
+        Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
 }
 
 #[allow(dead_code)]
@@ -168,6 +175,7 @@ impl Frontiers {
             block_hash,
             final_sapling_tree: Frontier::empty(),
             final_orchard_tree: Frontier::empty(),
+            final_ironwood_tree: Frontier::empty(),
         }
     }
 
@@ -183,12 +191,17 @@ impl Frontiers {
             orchard::tree::MerkleHashOrchard,
             { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
         >,
+        final_ironwood_tree: Frontier<
+            orchard::tree::MerkleHashOrchard,
+            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+        >,
     ) -> Self {
         Self {
             block_height,
             block_hash,
             final_sapling_tree,
             final_orchard_tree,
+            final_ironwood_tree,
         }
     }
 
@@ -218,6 +231,16 @@ impl Frontiers {
     {
         &self.final_orchard_tree
     }
+
+    /// Returns the frontier of the Ironwood note commitment tree as of the end of the block at
+    /// [`Self::block_height`]. Empty pre-activation, and also when the server
+    /// does not serve the ironwood tree state yet.
+    pub(crate) fn final_ironwood_tree(
+        &self,
+    ) -> &Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>
+    {
+        &self.final_ironwood_tree
+    }
 }
 
 impl TryFrom<TreeState> for Frontiers {
@@ -245,6 +268,7 @@ impl TryFrom<TreeState> for Frontiers {
             })?,
             get_sapling_tree(&value)?.to_frontier(),
             get_orchard_tree(&value)?.to_frontier(),
+            get_ironwood_tree(&value)?.to_frontier(),
         ))
     }
 }
@@ -268,7 +292,7 @@ pub(crate) fn get_sapling_tree(
     }
 }
 
-/// Deserializes and returns the Sapling note commitment tree field of the tree state.
+/// Deserializes and returns the Orchard note commitment tree field of the tree state.
 pub(crate) fn get_orchard_tree(
     tree_state: &TreeState,
 ) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
@@ -284,6 +308,29 @@ pub(crate) fn get_orchard_tree(
         })?;
         read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
             &orchard_tree_bytes[..],
+        )
+    }
+}
+
+/// Deserializes and returns the Ironwood note commitment tree field of the
+/// tree state. An empty field means the tree is empty, which covers both
+/// pre-activation heights and servers that do not serve the ironwood tree
+/// state yet.
+pub(crate) fn get_ironwood_tree(
+    tree_state: &TreeState,
+) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
+{
+    if tree_state.ironwood_tree.is_empty() {
+        Ok(CommitmentTree::empty())
+    } else {
+        let ironwood_tree_bytes = hex::decode(&tree_state.ironwood_tree).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Hex decoding of Ironwood tree bytes failed: {e:?}"),
+            )
+        })?;
+        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
+            &ironwood_tree_bytes[..],
         )
     }
 }

@@ -302,3 +302,56 @@ async fn reload_wallet_from_file() {
 
     // NOTE: removed balance check as need to sync to restore transaction data.
 }
+
+/// A pre-42 wallet loads with no migration section, and a populated
+/// [`crate::wallet::migration::MigrationState`] survives a full wallet
+/// write/read round trip at version 42.
+#[tokio::test]
+async fn wallet_v42_round_trips_migration_state() {
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::{
+        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+        PartRecord, SigningStrategy,
+    };
+    use pepper_sync::wallet::OutputId;
+    use zcash_primitives::transaction::TxId;
+
+    let client = NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
+    ))
+    .load_example_wallet()
+    .await;
+    let mut wallet = client.wallet().write().await;
+    assert!(wallet.migration.is_none(), "pre-42 wallet has no migration");
+
+    let params = MigrationParams::provisional(wallet.chain_type());
+    let mut part = PartRecord::new(
+        PartId(0),
+        100_000_000,
+        BoundNote {
+            output_id: OutputId::new(TxId::from_bytes([3; 32]), 1),
+            nullifier: [4; 32],
+            commitment: [5; 32],
+        },
+    );
+    part.assign(12).unwrap();
+    let state = MigrationState {
+        consent: ConsentBinding {
+            params_hash: params.params_hash(),
+            plan_hash: [6; 32],
+            consented_at: 1_782_000_000,
+        },
+        params,
+        strategy: SigningStrategy::LazyAtBoundary,
+        account: zip32::AccountId::ZERO,
+        phase: MigrationPhase::PartsScheduled,
+        parts: vec![part],
+    };
+    wallet.migration = Some(state.clone());
+    wallet.save_required = true;
+
+    let bytes = wallet.save().unwrap().expect("save required");
+    let recovered = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
+    assert_eq!(recovered.current_version(), 42);
+    assert_eq!(recovered.migration, Some(state));
+}

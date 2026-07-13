@@ -307,12 +307,21 @@ fn set_chain_tip_scan_range(
         chain_height,
         Some(ShieldedPool::Orchard),
     );
+    let ironwood_incomplete_shard = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        chain_height,
+        Some(ShieldedPool::Ironwood),
+    );
 
-    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
-        sapling_incomplete_shard
-    } else {
-        orchard_incomplete_shard
-    };
+    let chain_tip = [
+        sapling_incomplete_shard,
+        orchard_incomplete_shard,
+        ironwood_incomplete_shard,
+    ]
+    .into_iter()
+    .min_by_key(|r| r.start)
+    .expect("non-empty");
 
     punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
@@ -530,14 +539,24 @@ fn determine_block_range(
                         break;
                     }
                 }
-                ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+                ShieldedPool::Ironwood => {
+                    // Treat a missing NU6.3 activation height as not active.
+                    if consensus_parameters
+                        .activation_height(consensus::NetworkUpgrade::Nu6_3)
+                        .is_none_or(|activation| block_height < activation)
+                    {
+                        shielded_protocol = ShieldedPool::Orchard;
+                    } else {
+                        break;
+                    }
+                }
             }
         }
 
         let shard_ranges = match shielded_protocol {
             ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_slice(),
             ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_slice(),
-            ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+            ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_slice(),
         };
 
         let target_ranges = shard_ranges
@@ -892,6 +911,10 @@ where
             sapling_final_tree_size: chain_tip_sapling_final_tree_size,
             orchard_initial_tree_size: birthday_orchard_initial_tree_size,
             orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+            // Only used for sync progress reporting, where the ironwood
+            // share of outputs is counted with zero weight for now.
+            ironwood_initial_tree_size: 0,
+            ironwood_final_tree_size: 0,
         },
         previously_scanned_blocks,
         previously_scanned_sapling_outputs,
@@ -1004,6 +1027,8 @@ where
         sapling_final_tree_size: end_block.tree_bounds().sapling_final_tree_size,
         orchard_initial_tree_size: start_block.tree_bounds().orchard_initial_tree_size,
         orchard_final_tree_size: end_block.tree_bounds().orchard_final_tree_size,
+        ironwood_initial_tree_size: start_block.tree_bounds().ironwood_initial_tree_size,
+        ironwood_final_tree_size: end_block.tree_bounds().ironwood_final_tree_size,
     })
 }
 
@@ -1026,13 +1051,15 @@ pub(super) fn add_shard_ranges(
         ShieldedPool::Orchard => consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Nu5)
             .expect("activation height should exist for this network upgrade!"),
-        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+        ShieldedPool::Ironwood => consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Nu6_3)
+            .expect("activation height should exist for this network upgrade!"),
     };
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
         ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
         ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
-        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
     };
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
@@ -1081,7 +1108,7 @@ pub(super) fn update_found_note_shard_priority(
     let found_note = match shielded_protocol {
         ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
         ShieldedPool::Orchard => !wallet_transaction.orchard_notes().is_empty(),
-        ShieldedPool::Ironwood => todo!(), // FIXME: implement ironwood
+        ShieldedPool::Ironwood => !wallet_transaction.ironwood_notes().is_empty(),
     };
     if found_note {
         set_found_note_scan_range(
@@ -1096,6 +1123,84 @@ pub(super) fn update_found_note_shard_priority(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zcash_protocol::local_consensus::LocalNetwork;
+
+    const BASE_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(100)),
+    };
+
+    const NO_NU6_3_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: None,
+    };
+
+    fn sync_state_with_ranges(birthday: u32, tip: u32) -> SyncState {
+        let mut s = SyncState::new();
+        s.scan_ranges = vec![ScanRange::from_parts(
+            BlockHeight::from_u32(birthday)..BlockHeight::from_u32(tip + 1),
+            ScanPriority::Historic,
+        )];
+        s
+    }
+
+    #[test]
+    fn ironwood_before_nu6_3_downgrades_to_orchard() {
+        let sync_state = sync_state_with_ranges(1, 200);
+        let range = determine_block_range(
+            &BASE_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(50),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert!(
+            range.contains(&BlockHeight::from_u32(50)),
+            "range should cover the requested height even after downgrade"
+        );
+    }
+
+    #[test]
+    fn ironwood_without_nu6_3_always_downgrades_to_orchard() {
+        let sync_state = sync_state_with_ranges(1, 200);
+        let range = determine_block_range(
+            &NO_NU6_3_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(150),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert!(range.contains(&BlockHeight::from_u32(150)));
+    }
+
+    #[test]
+    fn ironwood_at_nu6_3_activation_uses_ironwood_shard_ranges() {
+        let mut sync_state = sync_state_with_ranges(1, 200);
+        sync_state.ironwood_shard_ranges =
+            vec![BlockHeight::from_u32(100)..BlockHeight::from_u32(150)];
+        let range = determine_block_range(
+            &BASE_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(120),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert_eq!(range.start, BlockHeight::from_u32(100));
+        assert_eq!(range.end, BlockHeight::from_u32(150));
+    }
 
     #[test]
     fn truncate_scan_ranges() {

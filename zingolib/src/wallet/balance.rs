@@ -1,8 +1,8 @@
 //! Balance methods and types for `crate::wallet::LightWallet`.
 
 use pepper_sync::wallet::{
-    KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
-    WalletTransaction,
+    IronwoodNote, KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote,
+    TransparentCoin, WalletTransaction,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -31,6 +31,13 @@ pub struct AccountBalance {
     /// Sum of confirmed and unconfirmed orchard balances.
     pub total_orchard_balance: Option<Zatoshis>,
 
+    /// Sum of unspent ironwood note values in confirmed blocks excluding dust.
+    pub confirmed_ironwood_balance: Option<Zatoshis>,
+    /// Sum of unspent ironwood note values in unconfirmed blocks excluding dust.
+    pub unconfirmed_ironwood_balance: Option<Zatoshis>,
+    /// Sum of confirmed and unconfirmed ironwood balances.
+    pub total_ironwood_balance: Option<Zatoshis>,
+
     /// Sum of unspent sapling note values in confirmed blocks excluding dust.
     pub confirmed_sapling_balance: Option<Zatoshis>,
     /// Sum of unspent sapling note values in unconfirmed blocks excluding dust.
@@ -55,6 +62,10 @@ impl std::fmt::Display for AccountBalance {
     unconfirmed_orchard_balance: {}
     total_orchard_balance: {}
 
+    confirmed_ironwood_balance: {}
+    unconfirmed_ironwood_balance: {}
+    total_ironwood_balance: {}
+
     confirmed_sapling_balance: {}
     unconfirmed_sapling_balance: {}
     total_sapling_balance: {}
@@ -72,6 +83,18 @@ impl std::fmt::Display for AccountBalance {
                     format_zatoshis(zats)
                 }),
             self.total_orchard_balance
+                .map_or("no view capability".to_string(), |zats| {
+                    format_zatoshis(zats)
+                }),
+            self.confirmed_ironwood_balance
+                .map_or("no view capability".to_string(), |zats| {
+                    format_zatoshis(zats)
+                }),
+            self.unconfirmed_ironwood_balance
+                .map_or("no view capability".to_string(), |zats| {
+                    format_zatoshis(zats)
+                }),
+            self.total_ironwood_balance
                 .map_or("no view capability".to_string(), |zats| {
                     format_zatoshis(zats)
                 }),
@@ -109,6 +132,9 @@ impl From<AccountBalance> for json::JsonValue {
             "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "total_orchard_balance" => value.total_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "confirmed_ironwood_balance" => value.confirmed_ironwood_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "unconfirmed_ironwood_balance" => value.unconfirmed_ironwood_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "total_ironwood_balance" => value.total_ironwood_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "unconfirmed_sapling_balance" => value.unconfirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "total_sapling_balance" => value.total_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
@@ -198,6 +224,21 @@ impl LightWallet {
         let total_orchard_balance =
             confirmed_orchard_balance.and_then(|confirmed| unconfirmed_orchard_balance + confirmed);
 
+        let confirmed_ironwood_balance =
+            match self.confirmed_balance_excluding_dust::<IronwoodNote>(account_id) {
+                Ok(zats) => Some(zats),
+                Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+                Err(e) => return Err(e),
+            };
+        let unconfirmed_ironwood_balance =
+            match self.unconfirmed_balance_excluding_dust::<IronwoodNote>(account_id) {
+                Ok(zats) => Some(zats),
+                Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+                Err(e) => return Err(e),
+            };
+        let total_ironwood_balance = confirmed_ironwood_balance
+            .and_then(|confirmed| unconfirmed_ironwood_balance + confirmed);
+
         let confirmed_sapling_balance =
             match self.confirmed_balance_excluding_dust::<SaplingNote>(account_id) {
                 Ok(zats) => Some(zats),
@@ -232,6 +273,9 @@ impl LightWallet {
             confirmed_orchard_balance,
             unconfirmed_orchard_balance,
             total_orchard_balance,
+            confirmed_ironwood_balance,
+            unconfirmed_ironwood_balance,
+            total_ironwood_balance,
             confirmed_sapling_balance,
             unconfirmed_sapling_balance,
             total_sapling_balance,
@@ -281,7 +325,13 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
-                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+                PoolType::IRONWOOD => {
+                    // Ironwood reuses the Orchard keys: viewing capability
+                    // for the pool is the Orchard FVK.
+                    if ufvk.orchard().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    }
+                }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }
@@ -343,7 +393,13 @@ impl LightWallet {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }
-                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+                PoolType::IRONWOOD => {
+                    // Ironwood reuses the Orchard keys: viewing capability
+                    // for the pool is the Orchard FVK.
+                    if ufvk.orchard().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    }
+                }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
         }
@@ -545,8 +601,19 @@ impl LightWallet {
             Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
             Err(e) => Err(e),
         }?;
+        // Zero while ironwood notes carry no positions, which is right
+        // because those notes are not witnessable.
+        let ironwood_balance = match self
+            .spendable_balance::<IronwoodNote>(account_id, include_potentially_spent_notes)
+        {
+            Ok(zats) => Ok(zats),
+            Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
+            Err(e) => Err(e),
+        }?;
 
-        (orchard_balance + sapling_balance).ok_or(BalanceError::Overflow)
+        (orchard_balance + sapling_balance)
+            .and_then(|balance| balance + ironwood_balance)
+            .ok_or(BalanceError::Overflow)
     }
 }
 

@@ -69,6 +69,8 @@ pub struct OutputPoolQuery {
     pub sapling: bool,
     /// will the query include orchard notes?
     pub orchard: bool,
+    /// will the query include ironwood notes?
+    pub ironwood: bool,
 }
 impl OutputPoolQuery {
     /// a query that accepts outputs from any pool.
@@ -78,6 +80,7 @@ impl OutputPoolQuery {
             transparent: true,
             sapling: true,
             orchard: true,
+            ironwood: true,
         }
     }
     /// a query that accepts notes from a shielded pool.
@@ -87,6 +90,7 @@ impl OutputPoolQuery {
             transparent: false,
             sapling: true,
             orchard: true,
+            ironwood: true,
         }
     }
     /// a query that will match only a specific pool.
@@ -97,18 +101,26 @@ impl OutputPoolQuery {
                 transparent: true,
                 sapling: false,
                 orchard: false,
+                ironwood: false,
             },
             PoolType::Shielded(ShieldedPool::Sapling) => Self {
                 transparent: false,
                 sapling: true,
                 orchard: false,
+                ironwood: false,
             },
             PoolType::Shielded(ShieldedPool::Orchard) => Self {
                 transparent: false,
                 sapling: false,
                 orchard: true,
+                ironwood: false,
             },
-            PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+            PoolType::Shielded(ShieldedPool::Ironwood) => Self {
+                transparent: false,
+                sapling: false,
+                orchard: false,
+                ironwood: true,
+            },
         }
     }
 }
@@ -147,6 +159,7 @@ impl OutputQuery {
 
     /// build a query, specifying each stipulation
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn stipulations(
         unspent: bool,
         pending_spent: bool,
@@ -154,6 +167,7 @@ impl OutputQuery {
         transparent: bool,
         sapling: bool,
         orchard: bool,
+        ironwood: bool,
     ) -> Self {
         Self {
             spend_status: OutputSpendStatusQuery {
@@ -165,6 +179,7 @@ impl OutputQuery {
                 transparent,
                 sapling,
                 orchard,
+                ironwood,
             },
         }
     }
@@ -197,5 +212,10 @@ impl OutputQuery {
     #[must_use]
     pub fn orchard(&self) -> bool {
         self.pools.orchard
+    }
+    /// will the query include ironwood notes?
+    #[must_use]
+    pub fn ironwood(&self) -> bool {
+        self.pools.ironwood
     }
 }

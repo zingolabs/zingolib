@@ -514,6 +514,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
             performance_level: PerformanceLevel::High,
         },
         min_confirmations: NonZeroU32::try_from(3).unwrap(),
+        allow_v6_transactions: false,
     };
 
     let wallet_config = if let Some(seed_phrase) = filled_template.seed.clone() {

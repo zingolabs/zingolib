@@ -327,7 +327,7 @@ pub mod orchard_note {
                 self.value.unwrap(),
                 self.rho.unwrap(),
                 self.random_seed.unwrap(),
-                orchard::NoteVersion::V2, // FIXME: implement ironwood
+                orchard::note::NoteVersion::V2,
             )
             .unwrap()
         }
@@ -643,6 +643,46 @@ pub mod proposal {
                 )
                 .amount(Zatoshis::from_u64(100_000).unwrap());
             builder
+        }
+    }
+}
+
+/// Mock for the migration broadcast client.
+pub(crate) mod broadcast {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+
+    /// Records every submission; fails with a transport error while `fail`
+    /// is set (the raw transaction is then not consumed, mirroring the real
+    /// client's transient-failure contract).
+    #[derive(Default)]
+    pub struct MockBroadcastClient {
+        /// Raw transactions received, with their expiry heights.
+        pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
+        /// When set, every submit fails.
+        pub fail: AtomicBool,
+    }
+
+    impl BroadcastClient for MockBroadcastClient {
+        async fn submit(
+            &self,
+            raw_tx: Vec<u8>,
+            expiry_height: BlockHeight,
+        ) -> Result<zcash_primitives::transaction::TxId, BroadcastError> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(BroadcastError::Transport(
+                    "mock transport failure".to_string(),
+                ));
+            }
+            self.submissions
+                .lock()
+                .unwrap()
+                .push((raw_tx, expiry_height));
+            Ok(super::default_txid())
         }
     }
 }

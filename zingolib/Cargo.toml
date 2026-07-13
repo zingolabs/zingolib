@@ -19,6 +19,7 @@ append-only-vec = { workspace = true }
 bech32 = { workspace = true }
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+blake2b_simd = { workspace = true }
 bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
 chrono = { workspace = true }
@@ -74,6 +75,7 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
 zingo_test_vectors = { workspace = true }
 

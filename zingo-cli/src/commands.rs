@@ -25,13 +25,14 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
-use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
+use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -1781,6 +1782,7 @@ impl Command for NotesCommand {
             json::object! {
                 "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
                 "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
+                "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
             }
             .pretty(2)
         })
@@ -1945,6 +1947,260 @@ impl Command for QuitCommand {
     }
 }
 
+fn render_migration_phase(phase: &MigrationPhase) -> String {
+    match phase {
+        MigrationPhase::Planned => "planned".to_string(),
+        MigrationPhase::NoteSplitting { round, .. } => {
+            format!("note splitting (round {round})")
+        }
+        MigrationPhase::PartsScheduled => "parts scheduled".to_string(),
+        MigrationPhase::Complete { residual } => {
+            format!("complete ({residual} zatoshis residual)")
+        }
+    }
+}
+
+struct MigrateCommand {}
+impl Command for MigrateCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Migrate all Orchard funds to the Ironwood pool in one interactive run.
+
+            Executes ZIP 318's two phases back to back: note-splitting rounds (Orchard
+            self-sends, each awaited to confirmation), then one migration transaction per
+            part, broadcast immediately.
+
+            Privacy disclosure (ZIP 318): the immediate mode sends parts at the same time
+            as each other and as synchronization, so the server can correlate them with
+            this wallet's activity. The scheduled flow (see the migration command) spreads
+            parts across anchor-height buckets instead.
+
+            Usage:
+            migrate
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Migrate all Orchard funds to the Ironwood pool in one interactive run"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if !args.is_empty() {
+            return "Error: migrate command expects no arguments. Type \"help migrate\" for usage."
+                .to_string();
+        }
+
+        RT.block_on(async move {
+            match lightclient.migrate_to_ironwood(zip32::AccountId::ZERO).await {
+                Ok(summary) => object! {
+                    "split_txids" => summary.split_txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "part_txids" => summary.part_txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "stranded" => summary.stranded,
+                }
+                .pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
+struct MigrationCommand {}
+impl Command for MigrationCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Drive the scheduled Orchard to Ironwood migration (ZIP 318).
+
+            Sub-commands:
+            `plan` computes the migration plan (note-splitting rounds, parts, fees,
+            stranded dust) from the wallet's spendable Orchard notes and prints its plan
+            hash. Nothing is signed or sent.
+            `start <plan_hash> [--per-bucket N]` records consent to the plan with that
+            hash and begins the migration. --per-bucket N caps how many parts share each
+            broadcast window (lower = more sessions, better privacy; higher = fewer
+            sessions, faster). Fails if the wallet's notes changed since planning.
+            `auto` syncs the wallet, then broadcasts any parts whose random target block
+            within the current bucket window has been reached. Run this periodically
+            to drive the migration without manual steps.
+            `status` reports progress: the Orchard-pool confirmed-spendable balance, the
+            phase, part counts and values, and the coming broadcast windows.
+            `reconcile` checks the persisted schedule against the chain and applies the
+            actions that are safe unattended. Run it after every sync.
+            `catchup [spacing_seconds]` sends overdue parts now, in sequence with the
+            given spacing (default 30 seconds). Disclosure (ZIP 318): sending at
+            catch-up time correlates the broadcasts with this wallet's activity.
+            `cancel` abandons the migration. Confirmed parts stand; pending parts are
+            dropped and their notes released.
+
+            Usage:
+            migration plan
+            migration start <plan_hash> [--per-bucket N]
+            migration auto
+            migration status
+            migration reconcile
+            migration catchup [spacing_seconds]
+            migration cancel
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Drive the scheduled Orchard to Ironwood migration"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        let Some(sub_command) = args.first() else {
+            return "Error: migration command expects a sub-command. Type \"help migration\" for usage."
+                .to_string();
+        };
+
+        match *sub_command {
+            "plan" => RT.block_on(async move {
+                match lightclient
+                    .plan_ironwood_migration(zip32::AccountId::ZERO)
+                    .await
+                {
+                    Ok(plan) => object! {
+                        "split_rounds" => plan.split_rounds.len(),
+                        "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
+                        "split_fee" => plan.split_fee(),
+                        "parts" => plan.parts.clone(),
+                        "stranded" => plan.stranded,
+                        "plan_hash" => hex::encode(migration::plan_hash(&plan)),
+                    }
+                    .pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
+            "start" => {
+                let Some(hash_hex) = args.get(1) else {
+                    return "Error: migration start expects the plan hash printed by \"migration plan\"."
+                        .to_string();
+                };
+                let hash: [u8; 32] = match hex::decode(hash_hex)
+                    .ok()
+                    .and_then(|bytes| bytes.try_into().ok())
+                {
+                    Some(hash) => hash,
+                    None => return "Error: the plan hash must be 64 hex characters.".to_string(),
+                };
+                // Parse optional --per-bucket N flag from remaining args.
+                let per_bucket = {
+                    let mut value = None;
+                    let mut iter = args[2..].iter();
+                    while let Some(arg) = iter.next() {
+                        if *arg == "--per-bucket" {
+                            match iter.next().and_then(|v| v.parse::<u32>().ok()) {
+                                Some(n) => { value = Some(n); }
+                                None => return "Error: --per-bucket expects a positive integer.".to_string(),
+                            }
+                        }
+                    }
+                    value
+                };
+                RT.block_on(async move {
+                    match lightclient
+                        .start_ironwood_migration(
+                            zip32::AccountId::ZERO,
+                            migration::SigningStrategy::LazyAtBoundary,
+                            hash,
+                            per_bucket,
+                        )
+                        .await
+                    {
+                        Ok(()) => "Migration started.".to_string(),
+                        Err(e) => format!("Error: {e}"),
+                    }
+                })
+            }
+            "auto" => RT.block_on(async move {
+                if let Err(e) = lightclient.sync_and_await().await {
+                    return format!("Error: sync failed: {e}");
+                }
+                match lightclient.auto_broadcast_if_due().await {
+                    Ok(txids) if txids.is_empty() => "No parts due yet.".to_string(),
+                    Ok(txids) => object! {
+                        "broadcast" => txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    }
+                    .pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
+            "status" => RT.block_on(async move {
+                match lightclient.migration_status().await {
+                    Ok(status) => object! {
+                        "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
+                        "phase" => status.phase.as_ref().map(render_migration_phase),
+                        "parts_total" => status.parts_total,
+                        "parts_confirmed" => status.parts_confirmed,
+                        "value_total" => status.value_total,
+                        "value_migrated" => status.value_migrated,
+                        "next_wakes" => status
+                            .next_wakes
+                            .iter()
+                            .map(|wake| object! {
+                                "bucket_index" => wake.bucket_index,
+                                "boundary" => u32::from(wake.boundary),
+                                "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                                "estimated_unix_time" => wake.estimated_unix_time,
+                            })
+                            .collect::<Vec<_>>(),
+                    }
+                    .pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
+            "reconcile" => RT.block_on(async move {
+                match lightclient.reconcile_migration().await {
+                    Ok(report) => object! {
+                        "assessments" => report
+                            .assessments
+                            .iter()
+                            .map(|assessment| object! {
+                                "part" => assessment.id.0,
+                                "class" => format!("{:?}", assessment.class),
+                            })
+                            .collect::<Vec<_>>(),
+                        "actions" => report
+                            .actions
+                            .iter()
+                            .map(|action| format!("{action:?}"))
+                            .collect::<Vec<_>>(),
+                    }
+                    .pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
+            "catchup" => {
+                let spacing = match args.get(1) {
+                    Some(seconds) => match seconds.parse::<u64>() {
+                        Ok(seconds) => std::time::Duration::from_secs(seconds),
+                        Err(_) => {
+                            return "Error: spacing must be a number of seconds.".to_string();
+                        }
+                    },
+                    None => std::time::Duration::from_secs(30),
+                };
+                RT.block_on(async move {
+                    match lightclient.catch_up_migration(spacing).await {
+                        Ok(txids) if txids.is_empty() => "No overdue parts.".to_string(),
+                        Ok(txids) => object! {
+                            "part_txids" => txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                        }
+                        .pretty(2),
+                        Err(e) => format!("Error: {e}"),
+                    }
+                })
+            }
+            "cancel" => RT.block_on(async move {
+                match lightclient.cancel_ironwood_migration().await {
+                    Ok(()) => "Migration canceled.".to_string(),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
+            _ => "Error: invalid sub-command. Type \"help migration\" for usage.".to_string(),
+        }
+    }
+}
+
 /// Commands that do not require a wallet connection.
 pub fn get_standalone_commands() -> HashMap<&'static str, Box<dyn Command>> {
     vec![
@@ -1982,6 +2238,8 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
             Box::new(MemoBytesToAddressCommand {}),
         ),
         ("messages", Box::new(MessagesFilterCommand {})),
+        ("migrate", Box::new(MigrateCommand {})),
+        ("migration", Box::new(MigrationCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
         (

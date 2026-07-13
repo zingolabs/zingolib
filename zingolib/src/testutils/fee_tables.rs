@@ -23,19 +23,25 @@ pub fn one_to_one(
     let mut sapling_outputs = 0;
     let mut orchard_inputs = 0;
     let mut orchard_outputs = 0;
+    let mut ironwood_inputs = 0;
+    let mut ironwood_outputs = 0;
     match source_protocol {
         Some(ShieldedPool::Sapling) => sapling_inputs += 1,
         Some(ShieldedPool::Orchard) => orchard_inputs += 1,
-        _ => {}
+        Some(ShieldedPool::Ironwood) => ironwood_inputs += 1,
+        None => {}
     }
     match target_pool {
         PoolType::Transparent => transparent_outputs += 1,
         PoolType::Shielded(ShieldedPool::Sapling) => sapling_outputs += 1,
         PoolType::Shielded(ShieldedPool::Orchard) => orchard_outputs += 1,
-        PoolType::Shielded(ShieldedPool::Ironwood) => todo!(), // FIXME: implement ironwood
+        PoolType::Shielded(ShieldedPool::Ironwood) => ironwood_outputs += 1,
     }
     if change {
-        if orchard_inputs + orchard_outputs == 0 {
+        if ironwood_inputs + ironwood_outputs > 0 {
+            // ironwood change
+            ironwood_outputs += 1;
+        } else if orchard_inputs + orchard_outputs == 0 {
             // sapling change
             sapling_outputs += 1;
         } else {
@@ -50,12 +56,22 @@ pub fn one_to_one(
     if orchard_actions > 0 {
         orchard_actions = max(orchard_actions, 2); //MIN_SHIELDED_OUTPUTS;
     }
+    // A V6 transaction carries distinct orchard and ironwood bundles, each
+    // padded to its own two-action floor.
+    let mut ironwood_actions = max(ironwood_inputs, ironwood_outputs);
+    if ironwood_actions > 0 {
+        ironwood_actions = max(ironwood_actions, 2); //MIN_SHIELDED_OUTPUTS;
+    }
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = max(sapling_outputs, sapling_inputs);
     let contribution_orchard = orchard_actions;
+    let contribution_ironwood = ironwood_actions;
     let total_fee = MARGINAL_FEE
         * max(
-            contribution_transparent + contribution_sapling + contribution_orchard,
+            contribution_transparent
+                + contribution_sapling
+                + contribution_orchard
+                + contribution_ironwood,
             GRACE_ACTIONS,
         );
     total_fee
