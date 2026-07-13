@@ -308,6 +308,14 @@ impl LightWallet {
         &self.transparent_addresses
     }
 
+    /// Returns transparent addresses as mutable reference.
+    #[must_use]
+    pub(crate) fn transparent_addresses_mut(
+        &mut self,
+    ) -> &mut BTreeMap<TransparentAddressId, String> {
+        &mut self.transparent_addresses
+    }
+
     /// Returns transparent addresses in a JSON array.
     #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {

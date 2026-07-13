@@ -993,11 +993,19 @@ mod fast {
     }
 
     pub mod tex {
+        use std::time::Duration;
+
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
-        use zcash_primitives::transaction::TxId;
+        use zcash_local_net::process::Process;
         use zcash_transparent::address::TransparentAddress;
-        use zingolib::{testutils, wallet::LightWallet};
+        use zingolib::{
+            testutils::{
+                self,
+                lightclient::from_inputs::{propose, quick_send},
+            },
+            wallet::LightWallet,
+        };
 
         use super::*;
 
@@ -1018,48 +1026,185 @@ mod fast {
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
+
         #[tokio::test]
         async fn send_to_tex() {
-            let (ref local_net, ref faucet, mut sender, _txid) =
+            let (local_net, faucet, mut sender, _txid) =
                 scenarios::faucet_funded_recipient_default(5_000_000).await;
 
+            assert_eq!(sender.wallet().read().await.wallet_transactions.len(), 1);
             let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
-            let payment = vec![Payment::without_memo(
-                tex_addr_from_first.clone(),
-                Zatoshis::from_u64(100_000).unwrap(),
-            )];
-
-            let transaction_request = TransactionRequest::new(payment).unwrap();
-
-            let proposal = sender
-                .propose_send(transaction_request, zip32::AccountId::ZERO)
+            let proposal = propose(
+                &mut sender,
+                vec![(&tex_addr_from_first.encode(), 100_000, None)],
+            )
+            .await
+            .unwrap();
+            assert_eq!(proposal.steps().len(), 2usize);
+            sender.send_stored_proposal(true).await.unwrap();
+            increase_height_and_wait_for_client(&local_net, &mut sender, 1)
                 .await
                 .unwrap();
-            assert_eq!(proposal.steps().len(), 2usize);
-            let _sent_txids_according_to_broadcast =
-                sender.send_stored_proposal(true).await.unwrap();
-            let _txids = sender
+            let wallet_txs = &sender.transaction_summaries(false).await.unwrap().0;
+            assert_eq!(wallet_txs.len(), 3);
+            for tx in wallet_txs {
+                assert!(tx.status.is_confirmed());
+            }
+            let tex_addr_on_chain = faucet
                 .wallet()
                 .read()
                 .await
-                .wallet_transactions
-                .keys()
-                .copied()
-                .collect::<Vec<TxId>>();
-            increase_height_and_wait_for_client(local_net, &mut sender, 1)
+                .transparent_addresses()
+                .values()
+                .next()
+                .unwrap()
+                .clone();
+            assert!(wallet_txs.iter().any(|tx| {
+                tx.outgoing_transparent_coins
+                    .iter()
+                    .any(|outgoing_coin| outgoing_coin.recipient == tex_addr_on_chain)
+            }));
+            assert!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .wallet_transactions
+                    .values()
+                    .any(|tx| tx
+                        .transparent_coins()
+                        .iter()
+                        .any(|coin| { coin.key_id().scope() == TransparentScope::Refund }))
+            );
+        }
+
+        #[tokio::test]
+        async fn send_fail_removes_unused_refund_address() {
+            let (mut local_net, faucet, mut sender, _txid) =
+                scenarios::faucet_funded_recipient_default(5_000_000).await;
+
+            // send a failing tex and assert the refund address was not retained in the wallet
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                0
+            );
+            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
+            let proposal = propose(
+                &mut sender,
+                vec![(&tex_addr_from_first.encode(), 100_000, None)],
+            )
+            .await
+            .unwrap();
+            assert_eq!(proposal.steps().len(), 2usize);
+            local_net.stop();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            sender
+                .send_stored_proposal(true)
+                .await
+                .expect_err("send incorrectly succeeded before local network managed to shutdown!");
+            let wallet_txs = &sender.transaction_summaries(false).await.unwrap().0;
+            assert!(
+                wallet_txs.iter().any(|tx| tx.status.is_failed()),
+                "send incorrectly succeeded before local network managed to shutdown!"
+            );
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                0
+            );
+        }
+
+        #[tokio::test]
+        async fn send_fail_removes_unused_refund_address_nonzero() {
+            let (mut local_net, faucet, mut sender, _txid) =
+                scenarios::faucet_funded_recipient_default(5_000_000).await;
+
+            // send an initial successful tex so the start length of refund addresses is non-zero and to verify the
+            // refund address is retained in the wallet on successful tex sends
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                0
+            );
+            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
+            quick_send(
+                &mut sender,
+                vec![(&tex_addr_from_first.encode(), 100_000, None)],
+            )
+            .await
+            .unwrap();
+            increase_height_and_wait_for_client(&local_net, &mut sender, 1)
                 .await
                 .unwrap();
+
+            let wallet_txs = &sender.transaction_summaries(false).await.unwrap().0;
+            assert!(!wallet_txs.iter().any(|tx| tx.status.is_failed()),);
             assert_eq!(
-                sender.wallet().read().await.wallet_transactions.len(),
-                3usize
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                1
             );
 
-            // FIXME: add tex addresses to encoded memos
-            // let val_tranfers = sender.value_transfers(true).await.unwrap();
-            // assert_eq!(
-            //     val_tranfers[0].recipient_address().unwrap(),
-            //     tex_addr_from_first.encode()
-            // );
+            // send a failing tex and assert the refund address was not retained in the wallet
+            let proposal = propose(
+                &mut sender,
+                vec![(&tex_addr_from_first.encode(), 100_000, None)],
+            )
+            .await
+            .unwrap();
+            assert_eq!(proposal.steps().len(), 2usize);
+            local_net.stop();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            sender
+                .send_stored_proposal(true)
+                .await
+                .expect_err("send incorrectly succeeded before local network managed to shutdown!");
+            let wallet_txs = &sender.transaction_summaries(false).await.unwrap().0;
+            assert!(
+                wallet_txs.iter().any(|tx| tx.status.is_failed()),
+                "send incorrectly succeeded before local network managed to shutdown!"
+            );
+            assert_eq!(
+                sender
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .keys()
+                    .filter(|id| id.scope() == TransparentScope::Refund)
+                    .collect::<Vec<_>>()
+                    .len(),
+                1
+            );
         }
     }
 
