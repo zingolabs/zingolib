@@ -610,6 +610,7 @@ pub async fn faucet_recipient(
         cache,
         CachedStage::Funded,
     );
+    let replayed = replay.is_some();
     let (mut local_net, mut client_builder) =
         custom_clients_raw(mine_to_pool, configured_activation_heights, replay).await;
 
