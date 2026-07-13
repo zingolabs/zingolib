@@ -113,7 +113,7 @@
 
 **Proposal** — A pre-computed spend plan produced by `LightWallet::create_send_proposal`. Stores the selected inputs and outputs but does not yet build the transaction. Exposed intentionally so callers can inspect fees before committing.
 
-**ZingoProposal** — Wrapper over `zcash_client_backend::proposal::Proposal`, stored in the wallet between proposal creation and transaction calculation. Consumed (removed from the wallet) only when `send_stored_proposal` successfully reaches the transmission step. An Indexerless attempt leaves the proposal intact so it can be retried once an Indexer is configured.
+**ZingoProposal** — A proposal paired with the account it spends from: the value the two-phase send flow carries between proposing and transmission. The library never stores it; the shell that hosts the library (a CLI session, an FFI bridge) holds the value while the user decides whether to accept the fee, and transmission borrows it — so an Indexerless attempt fails typed while the caller's value remains intact, ready to retry once an Indexer is configured. See ADR 0006.
 
 **ConfirmationStatus** — The lifecycle state of a transaction. Ordered for sorting (confirmed first): `Confirmed(height)` → `Mempool(target_height)` → `Transmitted(target_height)` → `Calculated(target_height)` → `Failed(height)`. For non-confirmed states the embedded height is the chain height at time of creation + 1 (the intended target block), not an actual confirmation height. `Failed` is a permanent terminal state — failed transactions remain in the wallet as a record. Consumers filter them out at the display layer using `ConfirmationStatus`.
 

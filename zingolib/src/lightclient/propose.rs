@@ -7,7 +7,6 @@ use zcash_protocol::value::Zatoshis;
 use crate::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
-use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::Receiver;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::get_zennies_for_zingo_address;
@@ -26,7 +25,8 @@ impl LightClient {
         receivers.push(dev_donation_receiver);
     }
 
-    /// Creates and stores a proposal from a transaction request.
+    /// Creates a proposal from a transaction request, returning it as a
+    /// value for the caller to hold (ADR 0006).
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
@@ -34,16 +34,12 @@ impl LightClient {
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
-
-        Ok(proposal)
+        wallet.create_send_proposal(request, account_id)
     }
 
-    /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
+    /// Creates a proposal for sending all shielded funds from a specified
+    /// account to a given `address`, returning it as a value for the caller
+    /// to hold (ADR 0006).
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
@@ -65,28 +61,17 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
-
-        Ok(proposal)
+        wallet.create_send_proposal(request, account_id)
     }
 
-    /// Creates and stores a proposal for shielding all transparent funds..
+    /// Creates a proposal for shielding all transparent funds, returning it
+    /// as a value for the caller to hold (ADR 0006).
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_shield_proposal(account_id)?;
-        wallet.store_proposal(ZingoProposal::Shield {
-            proposal: proposal.clone(),
-            shielding_account: account_id,
-        });
-
-        Ok(proposal)
+        wallet.create_shield_proposal(account_id)
     }
 
     /// Returns the maximum value that can be sent from the given `account_id`.

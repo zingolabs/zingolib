@@ -103,27 +103,6 @@ impl LightClient {
         Ok(txids)
     }
 
-    /// Creates and transmits transactions from a stored proposal.
-    ///
-    /// Pending retirement (ADR 0006): the wallet-stored proposal is hidden
-    /// state; shells hold a [`ZingoProposal`] value and call
-    /// [`Self::send_proposal`] instead. The early Indexer gate is what
-    /// leaves the stored proposal intact on an Indexerless attempt.
-    ///
-    /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
-    pub async fn send_stored_proposal(
-        &mut self,
-        resume_sync: bool,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
-        let opt_proposal = self.wallet().write().await.take_proposal();
-        if let Some(proposal) = opt_proposal {
-            self.send_proposal(&proposal, resume_sync).await
-        } else {
-            Err(SendError::NoStoredProposal.into())
-        }
-    }
-
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
     /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.

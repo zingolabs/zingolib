@@ -65,44 +65,6 @@ mod test {
         assert!(matches!(lc.rescan().await, Err(LightClientError::Offline)));
     }
 
-    #[tokio::test]
-    async fn offline_send_stored_proposal_returns_offline() {
-        let mut lc = create_offline_client().await;
-        // Offline always takes priority, even when there is no stored proposal.
-        assert!(matches!(
-            lc.send_stored_proposal(false).await,
-            Err(LightClientError::Offline)
-        ));
-    }
-
-    #[tokio::test]
-    async fn offline_send_stored_proposal_preserves_proposal() {
-        use crate::mocks::proposal::ProposalBuilder;
-        let mut lc = create_offline_client().await;
-
-        // Manually store a proposal in the wallet.
-        let proposal = ProposalBuilder::default().build();
-        lc.wallet()
-            .write()
-            .await
-            .store_proposal(crate::data::proposal::ZingoProposal::Send {
-                proposal,
-                sending_account: zip32::AccountId::ZERO,
-            });
-
-        // send_stored_proposal while offline must return Offline without consuming the proposal.
-        assert!(matches!(
-            lc.send_stored_proposal(false).await,
-            Err(LightClientError::Offline)
-        ));
-
-        // Proposal must still be present — take it out to verify.
-        assert!(
-            lc.wallet().write().await.take_proposal().is_some(),
-            "proposal must survive an offline send attempt"
-        );
-    }
-
     /// The value-taking two-phase send entry point (ADR 0006): an
     /// Indexerless attempt fails with the typed `Offline` error, and the
     /// caller's proposal value is intact by construction — it was only
@@ -141,12 +103,6 @@ mod test {
             .await
             .expect("spending wallet has recovery info");
         assert_eq!(info.seed_phrase, seeds::HOSPITAL_MUSEUM_SEED);
-    }
-
-    #[tokio::test]
-    async fn offline_clear_proposal_does_not_panic() {
-        let mut lc = create_offline_client().await;
-        lc.clear_proposal().await; // should be a no-op, not a panic
     }
 
     /// Round-trip: create wallet → force save → reload from file path (offline).

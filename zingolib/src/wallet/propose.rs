@@ -16,10 +16,7 @@ use super::{
     LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
-use crate::{
-    config::ChainType,
-    data::proposal::{ProportionalFeeProposal, ZingoProposal},
-};
+use crate::{config::ChainType, data::proposal::ProportionalFeeProposal};
 use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
 
 impl LightWallet {
@@ -132,17 +129,6 @@ impl LightWallet {
         }
 
         Ok(proposed_shield)
-    }
-
-    /// Stores a proposal in the `send_proposal` field.
-    /// This field must be populated in order to then construct and transmit transactions.
-    pub(crate) fn store_proposal(&mut self, proposal: ZingoProposal) {
-        self.send_proposal = Some(proposal);
-    }
-
-    /// Takes the proposal from the `send_proposal` field, leaving the field empty.
-    pub(crate) fn take_proposal(&mut self) -> Option<ZingoProposal> {
-        self.send_proposal.take()
     }
 
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
