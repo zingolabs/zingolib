@@ -109,11 +109,13 @@ impl LightClient {
     /// them with [`Self::transmit_calculated`] once an Indexer is
     /// configured.
     ///
-    /// The transactions' expiry heights derive from the proposal's target
-    /// height — the wallet's possibly stale chain view — so a transaction
-    /// calculated long offline can be expired by transmission time. The
-    /// ratified no-expiry sentinel for offline signing is blocked on
-    /// upstream expiry control in `zcash_client_backend` (issue #2455).
+    /// These transactions are built with **no expiry height** — the ZIP 203
+    /// sentinel, `nExpiryHeight = 0` — because they are meant to outlive the
+    /// wallet's possibly stale chain view until an Indexer is available.
+    /// They never expire: a Calculated transaction remains transmittable
+    /// indefinitely, until it is transmitted or its inputs are spent by
+    /// another transaction, so treat the Calculated record as live value in
+    /// flight (issue #2455).
     pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
@@ -123,14 +125,14 @@ impl LightClient {
                     proposal,
                     sending_account,
                 } => wallet
-                    .calculate_transactions(proposal, sending_account)
+                    .calculate_transactions_no_expiry(proposal, sending_account)
                     .await
                     .map_err(SendError::CalculateSendError)?,
                 ZingoProposal::Shield {
                     proposal,
                     shielding_account,
                 } => wallet
-                    .calculate_transactions(proposal, shielding_account)
+                    .calculate_transactions_no_expiry(proposal, shielding_account)
                     .await
                     .map_err(SendError::CalculateShieldError)?,
             };

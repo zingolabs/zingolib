@@ -193,6 +193,25 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn calculate() {
+            assert_no_arg_command("calculate");
+        }
+
+        #[test]
+        fn transmit() {
+            assert_no_arg_command("transmit");
+        }
+
+        #[test]
+        fn transmit_with_txids() {
+            assert_command(
+                &[examples::BIN_NAME, "transmit", examples::TXID],
+                "transmit",
+                &[examples::TXID],
+            );
+        }
+
+        #[test]
         fn shield() {
             assert_no_arg_command("shield");
         }

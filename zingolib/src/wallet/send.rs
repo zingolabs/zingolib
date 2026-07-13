@@ -23,9 +23,33 @@ impl LightWallet {
         proposal: Proposal<zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
+        self.calculate_transactions_inner(proposal, sending_account, false)
+            .await
+    }
+
+    /// [`Self::calculate_transactions`], but the transactions are built with
+    /// the ZIP 203 no-expiry sentinel (`nExpiryHeight = 0`): they never
+    /// expire. This is the offline-signing build — a transaction calculated
+    /// against an Indexerless wallet's stale chain view must not be expired
+    /// by the time an Indexer is available to transmit it (issue #2455).
+    pub(crate) async fn calculate_transactions_no_expiry<NoteRef>(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
+        self.calculate_transactions_inner(proposal, sending_account, true)
+            .await
+    }
+
+    async fn calculate_transactions_inner<NoteRef>(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
+        no_expiry: bool,
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let calculated_txids = match proposal.steps().len() {
             1 => {
-                self.create_proposed_transactions(proposal, sending_account)
+                self.create_proposed_transactions(proposal, sending_account, no_expiry)
                     .await?
             }
             2 if proposal.steps()[1]
@@ -44,7 +68,7 @@ impl LightWallet {
                     )
                 }) =>
             {
-                self.create_proposed_transactions(proposal, sending_account)
+                self.create_proposed_transactions(proposal, sending_account, no_expiry)
                     .await?
             }
 
@@ -59,6 +83,7 @@ impl LightWallet {
         &mut self,
         proposal: Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
+        no_expiry: bool,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let chain_type = self.chain_type;
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
@@ -73,6 +98,12 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        // The guard is thread-scoped and `create_proposed_transactions` below
+        // is synchronous, so the override cannot leak across an `.await`; it
+        // drops when this function returns. Do not move an `.await` inside
+        // the guard's lifetime.
+        let _no_expiry_guard = no_expiry
+            .then(zcash_primitives::transaction::builder::ExpiryHeightOverrideGuard::no_expiry);
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,

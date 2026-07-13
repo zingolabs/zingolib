@@ -159,6 +159,22 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
+# The librustzcash workspace at the zcash_client_backend-0.23.0 release tag
+# (every crate version below matches its crates.io release exactly) plus one
+# additive seam in zcash_primitives: an expiry-height override so offline
+# signing can build with the ZIP 203 no-expiry sentinel
+# (zingolabs/zingolib#2455). The sibling crates are patched to the same
+# commit so the whole family keeps a single type identity.
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+zip321 = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+equihash = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
+f4jumble = { git = "https://github.com/zingolabs/librustzcash", branch = "zingo_expiry_override_zp_0_28_0" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["tonic-prost"]

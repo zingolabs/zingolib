@@ -107,8 +107,11 @@ mod test {
     /// selects witnesses, proves, and signs — a real transaction from the
     /// stored proposal over synthetic wallet state, with no Indexer
     /// anywhere. The signed transaction lands in the wallet with
-    /// `Calculated` status, and only the transmission half demands a
-    /// connection.
+    /// `Calculated` status, is built with **no expiry height** (the
+    /// ZIP 203 sentinel, `nExpiryHeight = 0` — it never expires, so the
+    /// stale offline chain view cannot invalidate it before
+    /// transmission; issue #2455), and only the transmission half
+    /// demands a connection.
     #[tokio::test]
     async fn offline_calculate_signs_and_transmit_refuses() {
         use crate::testutils::lightclient::from_inputs;
@@ -132,10 +135,17 @@ mod test {
         {
             let wallet = client.wallet().read().await;
             for txid in calculated_txids.iter() {
+                let transaction = wallet.wallet_transactions.get(txid).unwrap();
                 assert!(matches!(
-                    wallet.wallet_transactions.get(txid).unwrap().status(),
+                    transaction.status(),
                     ConfirmationStatus::Calculated(_)
                 ));
+                assert_eq!(
+                    u32::from(transaction.transaction().expiry_height()),
+                    0,
+                    "offline-calculated transactions carry the ZIP 203 \
+                     no-expiry sentinel: no expiry height is used"
+                );
             }
         }
 

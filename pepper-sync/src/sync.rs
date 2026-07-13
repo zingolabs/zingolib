@@ -1984,6 +1984,12 @@ where
 }
 
 /// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
+///
+/// An expiry height of zero is the ZIP 203 no-expiry sentinel — the
+/// transaction never expires (offline signing builds with it, see
+/// zingolib issue #2455) — so zero is excluded here: naively compared,
+/// every chain height exceeds zero and the transaction would be failed
+/// on the first sync after it was calculated.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
@@ -2000,8 +2006,10 @@ where
     let expired_txids = wallet_transactions
         .values()
         .filter(|transaction| {
+            let expiry_height = transaction.transaction().expiry_height();
             transaction.status().is_pending()
-                && last_known_chain_height >= transaction.transaction().expiry_height()
+                && u32::from(expiry_height) != 0
+                && last_known_chain_height >= expiry_height
         })
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();

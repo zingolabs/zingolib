@@ -1405,6 +1405,143 @@ impl Command for ConfirmCommand {
     }
 }
 
+struct CalculateCommand {}
+impl Command for CalculateCommand {
+    fn help(&self) -> &'static str {
+        concat!(
+            "Calculates (signs) the latest proposal without transmitting it, for offline signing.\n",
+            "Consumes the stored proposal, builds and signs its transaction(s) with no Indexer\n",
+            "required, and stores them in the wallet with Calculated status. Transmit them later\n",
+            "with the 'transmit' command once an Indexer is available.\n",
+            "Fails if a proposal has not already been created with the 'send', 'send_all' or\n",
+            "'shield' commands.\n",
+            "\n",
+            "NO EXPIRY HEIGHT: transactions calculated by this command are deliberately built\n",
+            "without an expiry height (nExpiryHeight = 0, the ZIP 203 no-expiry sentinel), so a\n",
+            "stale offline chain view cannot invalidate them before transmission. They NEVER\n",
+            "expire: each remains valid to transmit at any later time, until it is transmitted\n",
+            "or its inputs are spent by another transaction. Treat a Calculated transaction as\n",
+            "live value in flight.\n",
+            "\n",
+            "Usage:\n",
+            "    calculate\n",
+            "Example:\n",
+            "    send ",
+            crate::examples::sapling_address!(),
+            " ",
+            crate::examples::amount_zatoshis!(),
+            " \"",
+            crate::examples::memo!(),
+            "\"\n",
+            "    calculate\n",
+            "    transmit\n",
+        )
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Signs the latest proposal without transmitting it; built with no expiry height, it never expires."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if !args.is_empty() {
+            return format!(
+                "Error: {}\nTry 'help calculate' for correct usage and examples.",
+                error::CommandError::InvalidArguments
+            );
+        }
+
+        RT.block_on(async move {
+            match lightclient.calculate_stored_proposal().await {
+                Ok(txids) => {
+                    object! {
+                        "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
+                        "expiry_height" => "none: built with the ZIP 203 no-expiry sentinel, this transaction never expires",
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct TransmitCommand {}
+impl Command for TransmitCommand {
+    fn help(&self) -> &'static str {
+        concat!(
+            "Transmits previously calculated transactions to the Indexer.\n",
+            "With no arguments, transmits every transaction in the wallet with Calculated\n",
+            "status, ordered by target height. To control the order explicitly — required for\n",
+            "multi-step proposals such as TEX sends, whose first step must be transmitted\n",
+            "first — pass the txids in the order the 'calculate' command printed them.\n",
+            "\n",
+            "Remember that transactions from 'calculate' carry no expiry height: any that you\n",
+            "do not transmit remain valid indefinitely, until their inputs are spent.\n",
+            "\n",
+            "Usage:\n",
+            "    transmit [txid ...]\n",
+            "Example:\n",
+            "    transmit\n",
+        )
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Transmits previously calculated transactions to the Indexer."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let txids = if args.is_empty() {
+                // All Calculated transactions, ordered by target height and
+                // then txid for determinism.
+                let wallet = lightclient.wallet().read().await;
+                let mut calculated: Vec<_> = wallet
+                    .wallet_transactions
+                    .iter()
+                    .filter(|(_, transaction)| {
+                        matches!(
+                            transaction.status(),
+                            zingo_status::confirmation_status::ConfirmationStatus::Calculated(_)
+                        )
+                    })
+                    .map(|(txid, transaction)| (transaction.status().get_height(), *txid))
+                    .collect();
+                calculated.sort_by_key(|&(height, txid)| (height, txid.as_ref().to_owned()));
+                calculated.into_iter().map(|(_, txid)| txid).collect()
+            } else {
+                match args
+                    .iter()
+                    .map(|arg| zingolib::utils::conversion::txid_from_hex_encoded_str(arg))
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(txids) => txids,
+                    Err(e) => {
+                        return format!(
+                            "Error: {e}\nTry 'help transmit' for correct usage and examples."
+                        );
+                    }
+                }
+            };
+
+            let Some(txids) = nonempty::NonEmpty::from_vec(txids) else {
+                return object! { "error" => "no calculated transactions to transmit" }.pretty(2);
+            };
+
+            match lightclient.transmit_calculated(txids).await {
+                Ok(txids) => {
+                    object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
 // TODO: add a decline command which deletes latest proposal?
 
 struct DeleteCommand {}
@@ -1977,7 +2114,9 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("check_address", Box::new(CheckAddressCommand {})),
         ("clear", Box::new(ClearCommand {})),
         ("coins", Box::new(CoinsCommand {})),
+        ("calculate", Box::new(CalculateCommand {})),
         ("confirm", Box::new(ConfirmCommand {})),
+        ("transmit", Box::new(TransmitCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("delete", Box::new(DeleteCommand {})),
         ("export_ufvk", Box::new(ExportUfvkCommand {})),
