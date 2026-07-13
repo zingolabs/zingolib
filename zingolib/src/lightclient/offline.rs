@@ -65,6 +65,52 @@ mod test {
         assert!(matches!(lc.rescan().await, Err(LightClientError::Offline)));
     }
 
+    /// Offline signing (ADR 0006): an Indexerless client calculates —
+    /// selects witnesses, proves, and signs — a real transaction from a
+    /// proposal over synthetic wallet state, with no Indexer anywhere.
+    /// The signed transaction lands in the wallet with `Calculated`
+    /// status, and only the broadcast half demands a connection.
+    #[tokio::test]
+    async fn offline_calculate_signs_and_broadcast_refuses() {
+        use crate::testutils::lightclient::from_inputs;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(zingo_test_vectors::EXT_TADDR, 10_000, None)],
+        )
+        .await
+        .unwrap();
+        let proposal = crate::data::proposal::ZingoProposal::Send {
+            proposal,
+            sending_account: zip32::AccountId::ZERO,
+        };
+
+        let calculated_txids = client.calculate_proposal(&proposal).await.unwrap();
+        {
+            let wallet = client.wallet().read().await;
+            for txid in calculated_txids.iter() {
+                assert!(matches!(
+                    wallet.wallet_transactions.get(txid).unwrap().status(),
+                    ConfirmationStatus::Calculated(_)
+                ));
+            }
+        }
+
+        // Broadcast is the half that demands an Indexer; the Calculated
+        // transactions stay in the wallet for a later, connected attempt.
+        assert!(matches!(
+            client.broadcast_calculated(calculated_txids).await,
+            Err(LightClientError::Offline)
+        ));
+    }
+
     /// The value-taking two-phase send entry point (ADR 0006): an
     /// Indexerless attempt fails with the typed `Offline` error, and the
     /// caller's proposal value is intact by construction — it was only
