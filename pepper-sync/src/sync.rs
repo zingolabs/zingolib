@@ -730,8 +730,14 @@ where
         / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
+    if percentage_session_blocks_scanned.is_nan() {
+        percentage_session_blocks_scanned = 100.0;
+    }
     let mut percentage_total_blocks_scanned =
         ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
+    if percentage_total_blocks_scanned.is_nan() {
+        percentage_total_blocks_scanned = 100.0;
+    }
 
     let session_sapling_outputs_scanned = total_sapling_outputs_scanned
         - sync_state
@@ -752,8 +758,14 @@ where
         / (total_outputs - previously_scanned_outputs) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
+    if percentage_session_outputs_scanned.is_nan() {
+        percentage_session_outputs_scanned = 100.0;
+    }
     let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
+    if percentage_total_outputs_scanned.is_nan() {
+        percentage_total_outputs_scanned = 100.0;
+    }
 
     if sync_state.scan_ranges().iter().any(|scan_range| {
         scan_range.priority() == ScanPriority::ScannedWithoutMapping
