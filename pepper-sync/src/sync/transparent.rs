@@ -168,6 +168,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         .map_err(SyncError::WalletError)?
         .scan_targets
         .append(&mut scan_targets);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
