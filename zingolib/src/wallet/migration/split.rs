@@ -17,9 +17,6 @@ use super::quantize::decompose;
 /// to the crate constant by test.
 pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
-/// ZIP-317 grace actions, from the crate.
-const GRACE_ACTIONS: u64 = zcash_primitives::transaction::fees::zip317::GRACE_ACTIONS as u64;
-
 /// Orchard pads every non-empty bundle to at least this many actions
 /// (`orchard::builder`'s `MIN_ACTIONS`, which is private). Pinned to
 /// `BundleType::num_actions` by test.
@@ -32,34 +29,67 @@ const MIN_BUNDLE_ACTIONS: u64 = 2;
 /// exactly.
 pub const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
 
+/// The number of logical actions the builder will produce for a bundle of
+/// `n_in` spends and `n_out` outputs at the given bundle version, asked of the
+/// orchard crate rather than re-derived: it owns both the minimum-action
+/// padding and the rule that a bundle with cross-address transfers disabled
+/// (Orchard from NU6.3, but never Ironwood) cannot share an action between a
+/// spend and an output.
+pub(in crate::wallet::migration) fn bundle_actions(
+    version: orchard::bundle::BundleVersion,
+    n_in: usize,
+    n_out: usize,
+) -> usize {
+    orchard::builder::BundleType::DEFAULT
+        .num_actions(version.default_flags(), n_in, n_out)
+        .expect("the default bundle type permits both spends and outputs")
+}
+
+/// The ZIP-317 conventional fee of a fully-shielded transaction whose bundles
+/// carry the given action counts, from the crate's own fee rule.
+///
+/// ZIP-317's conventional fee depends on nothing but the action counts, so the
+/// rule ignores the network and target height it is handed and the
+/// placeholders below never reach a decision.
+pub(in crate::wallet::migration) fn zip317_fee(
+    orchard_actions: usize,
+    ironwood_actions: usize,
+) -> u64 {
+    use zcash_primitives::transaction::fees::{FeeRule as _, transparent, zip317};
+
+    zip317::FeeRule::standard()
+        .fee_required(
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            zcash_protocol::consensus::BlockHeight::from_u32(1),
+            std::iter::empty::<transparent::InputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            orchard_actions,
+            ironwood_actions,
+        )
+        .expect("a shielded action count cannot overflow the fee")
+        .into_u64()
+}
+
+/// The bundle version of the Orchard bundle a migration transaction spends
+/// from, on either side of the NU6.3 boundary. The two differ in whether
+/// cross-address transfers are permitted, which changes the action count.
+fn orchard_version(post_activation: bool) -> orchard::bundle::BundleVersion {
+    if post_activation {
+        orchard::bundle::BundleVersion::orchard_v3()
+    } else {
+        orchard::bundle::BundleVersion::orchard_v2()
+    }
+}
+
 /// The ZIP-317 conventional fee for an Orchard-only note-splitting
 /// transaction with `n_in` spends and `n_out` outputs.
-///
-/// The action count depends on the era: before NU6.3 activation the Orchard
-/// bundle permits cross-address transfers, so a spend and an output can share
-/// an action (`max(n_in, n_out)`). From NU6.3 the Orchard bundle disables
-/// cross-address transfers and every spend and output occupies its own action
-/// (`n_in + n_out`). Both are padded to the bundle minimum of 2.
-pub const fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
-    let requested = if post_activation {
-        (n_in + n_out) as u64
-    } else if n_in > n_out {
-        n_in as u64
-    } else {
-        n_out as u64
-    };
-    let actions = if requested > MIN_BUNDLE_ACTIONS {
-        requested
-    } else {
-        MIN_BUNDLE_ACTIONS
-    };
-    // GRACE_ACTIONS == MIN_BUNDLE_ACTIONS, so the grace floor is already met.
-    let logical = if actions > GRACE_ACTIONS {
-        actions
-    } else {
-        GRACE_ACTIONS
-    };
-    MARGINAL_FEE * logical
+pub fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
+    zip317_fee(
+        bundle_actions(orchard_version(post_activation), n_in, n_out),
+        0,
+    )
 }
 
 /// If a note of value `v` is already part-ready, sized exactly
@@ -87,6 +117,28 @@ impl NoteSplitTx {
     /// The implied fee: `sum(inputs) − sum(outputs)`.
     pub fn fee(&self) -> u64 {
         self.inputs.iter().sum::<u64>() - self.outputs.iter().sum::<u64>()
+    }
+}
+
+/// The output side of a migration transaction. The input side is always
+/// pre-Ironwood (V2) Orchard notes. Only the destination differs.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::wallet::migration) enum MigrationOutputs<'a> {
+    /// Phase 1 note splitting: Orchard→Orchard self-sends, one output per
+    /// value. Nothing crosses a pool boundary.
+    Orchard(&'a [u64]),
+    /// A pool-crossing transfer into Ironwood: exactly one output, no change.
+    /// Both the ZIP 318 parts and the immediate drain are built this way.
+    Ironwood(u64),
+}
+
+impl MigrationOutputs<'_> {
+    /// Total value across the outputs, in zatoshis.
+    fn total(&self) -> u64 {
+        match self {
+            MigrationOutputs::Orchard(values) => values.iter().sum(),
+            MigrationOutputs::Ironwood(value) => *value,
+        }
     }
 }
 
@@ -374,7 +426,11 @@ impl crate::wallet::LightWallet {
         account: zip32::AccountId,
         planned: &NoteSplitTx,
     ) -> Result<zcash_primitives::transaction::TxId, crate::wallet::error::WalletError> {
-        self.build_migration_transaction_inner(account, &planned.inputs, &planned.outputs)
+        self.build_migration_transaction_inner(
+            account,
+            &planned.inputs,
+            MigrationOutputs::Orchard(&planned.outputs),
+        )
     }
 
     pub(in crate::wallet::migration) fn get_migration_heights(
@@ -394,11 +450,11 @@ impl crate::wallet::LightWallet {
     }
 
     #[allow(clippy::result_large_err)]
-    fn build_migration_transaction_inner(
+    pub(in crate::wallet::migration) fn build_migration_transaction_inner(
         &mut self,
         account: zip32::AccountId,
         input_values: &[u64],
-        output_values: &[u64],
+        outputs: MigrationOutputs<'_>,
     ) -> Result<zcash_primitives::transaction::TxId, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
         use zcash_primitives::transaction::builder::{BuildConfig, Builder};
@@ -477,15 +533,25 @@ impl crate::wallet::LightWallet {
         // least the ZIP-317 conventional fee and may exceed it where residue
         // was folded in. A non-standard fixed fee rule pins the builder to it.
         let input_sum: u64 = input_values.iter().sum();
-        let output_sum: u64 = output_values.iter().sum();
+        let output_sum: u64 = outputs.total();
         let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-            Zatoshis::from_u64(input_sum - output_sum)?,
+            Zatoshis::from_u64(input_sum.checked_sub(output_sum).ok_or(
+                WalletError::MigrationDeviation(format!(
+                    "planned outputs {output_sum} exceed planned inputs {input_sum}"
+                )),
+            )?)?,
         );
 
         let build_config = BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
-            ironwood_anchor: None,
+            // The Ironwood bundle holds outputs only, never spends, so its
+            // anchor is the empty tree. `None` would leave no bundle to put
+            // the output in.
+            ironwood_anchor: match outputs {
+                MigrationOutputs::Orchard(_) => None,
+                MigrationOutputs::Ironwood(_) => Some(orchard::Anchor::empty_tree()),
+            },
         };
         let mut builder = Builder::new(self.chain_type, target_height, build_config);
         for (note, merkle_path) in notes.into_iter().zip(merkle_paths) {
@@ -497,20 +563,37 @@ impl crate::wallet::LightWallet {
                 )
                 .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
         }
-        for &value in output_values {
-            // Post-NU6.3, cross-address Orchard transfers are banned; only
-            // wallet-controlled change is allowed. Note-splitting outputs are
-            // always wallet-internal self-sends, so add_orchard_change_output
-            // is correct in both eras.
-            builder
-                .add_orchard_change_output::<std::convert::Infallible>(
-                    orchard_fvk.clone(),
-                    Some(internal_ovk.clone()),
-                    recipient,
-                    Zatoshis::from_u64(value)?,
-                    MemoBytes::empty(),
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+        match outputs {
+            MigrationOutputs::Orchard(output_values) => {
+                for &value in output_values {
+                    // Post-NU6.3, cross-address Orchard transfers are banned; only
+                    // wallet-controlled change is allowed. Note-splitting outputs are
+                    // always wallet-internal self-sends, so add_orchard_change_output
+                    // is correct in both eras.
+                    builder
+                        .add_orchard_change_output::<std::convert::Infallible>(
+                            orchard_fvk.clone(),
+                            Some(internal_ovk.clone()),
+                            recipient,
+                            Zatoshis::from_u64(value)?,
+                            MemoBytes::empty(),
+                        )
+                        .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+                }
+            }
+            MigrationOutputs::Ironwood(value) => {
+                // Below NU6.3 the builder has no Ironwood bundle to put this
+                // in, and says so with `Error::IronwoodBuilderNotAvailable`.
+                // The output is never silently dropped.
+                builder
+                    .add_ironwood_output::<std::convert::Infallible>(
+                        Some(internal_ovk.clone()),
+                        recipient,
+                        Zatoshis::from_u64(value)?,
+                        MemoBytes::empty(),
+                    )
+                    .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+            }
         }
 
         let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
@@ -593,71 +676,33 @@ mod tests {
         MigrationParams::provisional(ChainType::Mainnet)
     }
 
+    /// `MARGINAL_FEE` and `MIN_BUNDLE_ACTIONS` are the only numbers this module
+    /// still restates, and each has a reason: `Zatoshis` cannot be unwrapped in
+    /// `const` context, and orchard's `MIN_ACTIONS` is private. Pin both to
+    /// their sources.
     #[test]
-    fn fee_constants_match_the_zip317_crate() {
+    fn mirrored_constants_match_the_crates() {
+        use orchard::bundle::BundleVersion;
         use zcash_primitives::transaction::fees::zip317;
+
         assert_eq!(MARGINAL_FEE, zip317::MARGINAL_FEE.into_u64());
-        assert_eq!(GRACE_ACTIONS, zip317::GRACE_ACTIONS as u64);
+        // Every non-empty bundle is padded to the minimum, whatever it holds.
+        assert_eq!(
+            bundle_actions(BundleVersion::orchard_v3(), 1, 0) as u64,
+            MIN_BUNDLE_ACTIONS
+        );
+        assert_eq!(
+            bundle_actions(BundleVersion::ironwood_v3(), 0, 1) as u64,
+            MIN_BUNDLE_ACTIONS
+        );
     }
 
-    /// Orchard bundle action count for the given spend/output counts, straight
-    /// from the orchard crate (which also pins our `MIN_BUNDLE_ACTIONS` mirror
-    /// of its private `MIN_ACTIONS`). The flags come from the bundle version's
-    /// own defaults, the same choice `zcash_primitives`' builder makes.
-    fn crate_bundle_actions(
-        n_in: usize,
-        n_out: usize,
-        version: orchard::bundle::BundleVersion,
-    ) -> usize {
-        orchard::builder::BundleType::DEFAULT
-            .num_actions(version.default_flags(), n_in, n_out)
-            .expect("valid action count")
-    }
-
-    /// The crate's conventional fee for a fully-shielded transaction with the
-    /// given total logical action count.
-    fn crate_fee(actions: usize) -> u64 {
-        use zcash_primitives::transaction::fees::{FeeRule as _, zip317};
-        zip317::FeeRule::standard()
-            .fee_required(
-                &zcash_protocol::consensus::MAIN_NETWORK,
-                zcash_protocol::consensus::BlockHeight::from_u32(1_000_000),
-                std::iter::empty::<zcash_primitives::transaction::fees::transparent::InputSize>(),
-                std::iter::empty::<usize>(),
-                0,
-                0,
-                actions,
-                0,
-            )
-            .expect("fee computes")
-            .into_u64()
-    }
-
+    /// The action-count rule the fee model rests on: an Orchard bundle from
+    /// NU6.3 disables cross-address transfers, so a spend and an output no
+    /// longer share an action. The crates own that rule and the split fee
+    /// follows it by asking them. These figures pin the answer.
     #[test]
-    fn note_split_fee_matches_the_crates() {
-        // Pre-activation (orchard_v2 bundle): cross-address transfers
-        // permitted → max(in, out). Post-activation (orchard_v3): disabled →
-        // in + out. Both padded to 2 per bundle.
-        for &(n_in, n_out) in &[(1, 1), (2, 1), (1, 2), (3, 1), (5, 14), (32, 1), (1, 32)] {
-            assert_eq!(
-                note_split_fee(n_in, n_out, false),
-                crate_fee(crate_bundle_actions(
-                    n_in,
-                    n_out,
-                    orchard::bundle::BundleVersion::orchard_v2()
-                )),
-                "pre-activation fee mismatch for ({n_in}, {n_out})"
-            );
-            assert_eq!(
-                note_split_fee(n_in, n_out, true),
-                crate_fee(crate_bundle_actions(
-                    n_in,
-                    n_out,
-                    orchard::bundle::BundleVersion::orchard_v3()
-                )),
-                "post-activation fee mismatch for ({n_in}, {n_out})"
-            );
-        }
+    fn note_split_fee_follows_the_activation_boundary() {
         assert_eq!(note_split_fee(1, 1, false), 10_000);
         assert_eq!(note_split_fee(32, 1, false), 160_000);
         assert_eq!(note_split_fee(32, 1, true), 165_000);
@@ -665,16 +710,17 @@ mod tests {
 
     #[test]
     fn part_fee_matches_the_crates() {
+        use orchard::bundle::BundleVersion;
+
         // A part has an Orchard bundle (1 spend, cross-address disabled
         // post-NU6.3) and an Ironwood bundle (1 output, cross-address
         // enabled). The fee covers the sum of both bundles' padded actions.
-        let orchard_actions =
-            crate_bundle_actions(1, 0, orchard::bundle::BundleVersion::orchard_v3());
-        let ironwood_actions =
-            crate_bundle_actions(0, 1, orchard::bundle::BundleVersion::ironwood_v3());
         assert_eq!(
             CANONICAL_PART_FEE,
-            crate_fee(orchard_actions + ironwood_actions)
+            zip317_fee(
+                bundle_actions(BundleVersion::orchard_v3(), 1, 0),
+                bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
+            )
         );
         assert_eq!(CANONICAL_PART_FEE, 20_000);
         assert_eq!(params().part_fee, CANONICAL_PART_FEE);

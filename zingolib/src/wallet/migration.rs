@@ -29,8 +29,14 @@
 //! and never touches the network, so callers (the one-call
 //! `migrate_to_ironwood` orchestration, or a mobile client scheduling steps
 //! itself) can present the whole plan for consent before anything is sent.
+//!
+//! ZIP 318 also permits an **immediate** migration, a single transfer with no
+//! delay and minimal privacy, as an explicit alternative the user may choose
+//! over the private path above. That is [`drain`], which shares nothing with
+//! this two-phase design but the transaction builder.
 
 pub mod broadcast;
+pub mod drain;
 pub mod params;
 pub mod parts;
 pub mod quantize;
@@ -40,6 +46,7 @@ pub mod split;
 pub mod store;
 
 pub use broadcast::{BroadcastClient, BroadcastError};
+pub use drain::{DrainPlan, DrainTx, drain_fee};
 pub use params::MigrationParams;
 pub use parts::{
     BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,

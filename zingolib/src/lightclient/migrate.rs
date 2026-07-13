@@ -10,6 +10,11 @@
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
 //! immediate migration ZIP 318 permits with a disclosed privacy trade-off.
+//!
+//! [`LightClient::drain_orchard_to_ironwood`] is the other option ZIP 318
+//! offers the user: move everything at once, no note splitting and no
+//! schedule, accepting that the transfers are correlated and the amounts are
+//! the wallet's own.
 
 use std::time::Duration;
 
@@ -21,10 +26,10 @@ use crate::lightclient::error::{LightClientError, MigrationError};
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::migration::{
-    BroadcastClient, ChainView, ConsentBinding, MigrationParams,
-    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
-    RecommendedAction, ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration,
-    plan_schedule, reconcile, schedule,
+    BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationParams, MigrationPhase,
+    MigrationPlan, MigrationState, PartId, PartState, PrepareResult, RecommendedAction,
+    ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration, plan_schedule,
+    reconcile, schedule,
 };
 
 pub mod broadcast_grpc;
@@ -39,6 +44,21 @@ const MAX_ROUNDS: usize = 64;
 /// How many buckets ahead [`LightClient::migration_status`] reports wakes
 /// for.
 const WAKE_HORIZON_BUCKETS: u64 = 32;
+
+/// The transactions of a completed drain
+/// ([`LightClient::drain_orchard_to_ironwood`]).
+#[derive(Debug, Clone)]
+pub struct DrainSummary {
+    /// The drain transactions, in broadcast order. More than one only when the
+    /// account held more notes than fit in a single transaction.
+    pub txids: Vec<TxId>,
+    /// Value (zatoshis) sent into the Ironwood pool.
+    pub migrated: u64,
+    /// Total fees paid, in zatoshis.
+    pub fee: u64,
+    /// Dust value (zatoshis) left unmigrated in the Orchard pool.
+    pub stranded: u64,
+}
 
 /// The transactions of a completed migration.
 #[derive(Debug, Clone)]
@@ -251,8 +271,7 @@ impl LightClient {
                 .sync_state
                 .last_known_chain_height()
                 .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-            let current_bucket =
-                schedule::bucket_index(now_height, state.params.bucket_modulus);
+            let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
             let strategy = state.strategy;
 
             let mut prove_handles: Vec<ProveHandle> = Vec::new();
@@ -291,17 +310,15 @@ impl LightClient {
                         // the bytes from the blob or the wallet's tx record.
                         let part = &state.parts[index];
                         let txid = part.txid.expect("signed parts have txids");
-                        let expiry =
-                            part.expiry_height.expect("signed parts have expiry heights");
+                        let expiry = part
+                            .expiry_height
+                            .expect("signed parts have expiry heights");
                         let bytes = match &part.signed_blob {
                             Some(blob) => blob.clone(),
                             None => {
-                                let tx = wallet
-                                    .wallet_transactions
-                                    .get(&txid)
-                                    .ok_or(crate::wallet::error::WalletError::TransactionNotFound(
-                                        txid,
-                                    ))?;
+                                let tx = wallet.wallet_transactions.get(&txid).ok_or(
+                                    crate::wallet::error::WalletError::TransactionNotFound(txid),
+                                )?;
                                 let mut bytes = Vec::new();
                                 tx.transaction()
                                     .write(&mut bytes)
@@ -339,8 +356,7 @@ impl LightClient {
 
         let result = async {
             // Record all newly proved parts (mark Signed, store tx in wallet).
-            let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
-                Vec::new();
+            let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
             for (index, txid, raw_tx) in newly_proven {
                 let bucket = state.parts[index]
                     .bucket_index
@@ -617,6 +633,138 @@ impl LightClient {
             value_migrated,
             next_wakes: wakes,
         })
+    }
+
+    /// Plans an immediate drain of the account's Orchard pool into Ironwood.
+    ///
+    /// Pure and deterministic, nothing is signed or sent, so the plan (its
+    /// transaction count, fees and stranded dust) can be shown to the user for
+    /// consent before [`Self::drain_orchard_to_ironwood`] executes it.
+    pub async fn plan_orchard_drain(
+        &self,
+        account: zip32::AccountId,
+    ) -> Result<DrainPlan, LightClientError> {
+        let wallet = self.wallet().read().await;
+        let params = MigrationParams::provisional(wallet.chain_type());
+        Ok(wallet.plan_drain(account, &params)?)
+    }
+
+    /// Spends every spendable Orchard note in `account` into the Ironwood pool,
+    /// in one round of independent transactions.
+    ///
+    /// This is the *migrate immediately* path ZIP 318 offers alongside the
+    /// private one. All the transfers are broadcast at once, so they correlate with each other and
+    /// with the user's activity. Every one of those identifies the wallet on-chain.
+    /// **The caller must disclose this.** For the private path, use
+    /// [`Self::migrate_to_ironwood`].
+    ///
+    /// Notes worth at most [`MigrationParams::sweep_min`] are left behind.
+    /// Spending one costs more than it carries, and their total is reported as
+    /// [`DrainSummary::stranded`].
+    ///
+    /// This function is idempotent over wallet state: a call that fails partway leaves the notes
+    /// of every unsent transaction spendable. Calling it again re-plans and
+    /// sends the remainder.
+    pub async fn drain_orchard_to_ironwood(
+        &mut self,
+        account: zip32::AccountId,
+    ) -> Result<DrainSummary, LightClientError> {
+        // A scheduled migration soft-reserves the notes its parts are bound to.
+        // Draining them would invalidate those parts behind its back.
+        if self.wallet().read().await.migration.is_some() {
+            return Err(MigrationError::AlreadyInProgress.into());
+        }
+
+        self.sync_and_await().await?;
+        let plan = self.plan_orchard_drain(account).await?;
+        if plan.is_empty() {
+            return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
+        }
+
+        let _ignore_error = self.pause_sync();
+        let built = self.build_drain_transactions(account, &plan).await;
+        let txids = match built {
+            Ok(txids) => txids,
+            Err(e) => {
+                let _ignore_error = self.resume_sync();
+                return Err(e);
+            }
+        };
+
+        let transmitted = self
+            .transmit_transactions(
+                NonEmpty::from_vec(txids.clone()).expect("a non-empty plan builds transactions"),
+            )
+            .await;
+        let _ignore_error = self.resume_sync();
+
+        if let Err(e) = transmitted {
+            // `transmit_transactions` marks the transaction that failed, but
+            // the ones queued behind it stay `Calculated`: their notes would
+            // remain spent by transactions that will never reach the network.
+            // Fail them so the next call re-plans them.
+            self.fail_unsent_drain_transactions(&txids).await;
+            return Err(e);
+        }
+
+        Ok(DrainSummary {
+            txids,
+            migrated: plan.migrated,
+            fee: plan.fee,
+            stranded: plan.stranded,
+        })
+    }
+
+    /// Builds every transaction of a drain plan under one wallet lock. On
+    /// failure, fails the transactions already built so their notes do not stay
+    /// spent by transactions that will never be sent.
+    async fn build_drain_transactions(
+        &mut self,
+        account: zip32::AccountId,
+        plan: &DrainPlan,
+    ) -> Result<Vec<TxId>, LightClientError> {
+        let mut wallet = self.wallet().write().await;
+        let mut txids = Vec::with_capacity(plan.transactions.len());
+
+        for planned in &plan.transactions {
+            match wallet.build_drain_transaction(account, planned) {
+                Ok(txid) => txids.push(txid),
+                Err(e) => {
+                    if !txids.is_empty() {
+                        pepper_sync::set_transactions_failed(
+                            &mut wallet.wallet_transactions,
+                            txids,
+                        );
+                        wallet.save_required = true;
+                    }
+                    return Err(e.into());
+                }
+            }
+        }
+
+        Ok(txids)
+    }
+
+    /// Marks every drain transaction still sitting in `Calculated` as failed,
+    /// releasing the notes it reserved.
+    async fn fail_unsent_drain_transactions(&mut self, txids: &[TxId]) {
+        let mut wallet = self.wallet().write().await;
+        let unsent: Vec<TxId> = txids
+            .iter()
+            .copied()
+            .filter(|txid| {
+                wallet.wallet_transactions.get(txid).is_some_and(|tx| {
+                    matches!(
+                        tx.status(),
+                        zingo_status::confirmation_status::ConfirmationStatus::Calculated(_)
+                    )
+                })
+            })
+            .collect();
+        if !unsent.is_empty() {
+            pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, unsent);
+            wallet.save_required = true;
+        }
     }
 
     /// Runs a full Orchard→Ironwood migration in one call: executes
