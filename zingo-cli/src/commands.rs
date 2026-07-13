@@ -27,8 +27,10 @@ use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
+use zingolib::data::proposal::ZingoProposal;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
+use zingolib::lightclient::error::LightClientError;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -47,7 +49,26 @@ pub trait Command {
     /// consumers occasionally make assumptions about this
     /// e. expect it to be a json object
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String;
+
+    /// Executes with the session's pending proposal threaded through by
+    /// value: the session owns the [`ZingoProposal`] between the
+    /// propose-family commands and `confirm` (the shell-held state
+    /// ADR 0006 prescribes). The default is the pure identity thread —
+    /// commands outside the proposal flow run [`Self::exec`] and pass the
+    /// pending value along unchanged. Only `send`, `send_all`, `shield`,
+    /// and `confirm` override this.
+    fn exec_with_session(
+        &self,
+        args: &[&str],
+        lightclient: &mut LightClient,
+        pending: PendingProposal,
+    ) -> (String, PendingProposal) {
+        (self.exec(args, lightclient), pending)
+    }
 }
+
+/// The proposal a CLI session holds between proposing and confirming.
+pub type PendingProposal = Option<ZingoProposal>;
 
 /// A command that can execute without an active [`LightClient`].
 ///
@@ -1100,17 +1121,32 @@ impl Command for SendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        self.exec_with_session(args, lightclient, None).0
+    }
+
+    fn exec_with_session(
+        &self,
+        args: &[&str],
+        lightclient: &mut LightClient,
+        pending: PendingProposal,
+    ) -> (String, PendingProposal) {
         let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
-                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
+                return (
+                    format!("Error: {e}\nTry 'help send' for correct usage and examples."),
+                    pending,
+                );
             }
         };
         let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
         {
             Ok(request) => request,
             Err(e) => {
-                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
+                return (
+                    format!("Error: {e}\nTry 'help send' for correct usage and examples."),
+                    pending,
+                );
             }
         };
         RT.block_on(async move {
@@ -1119,17 +1155,23 @@ impl Command for SendCommand {
                 .await
             {
                 Ok(proposal) => {
-                    let fee = match zingolib::data::proposal::total_fee(&proposal) {
-                        Ok(fee) => fee,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    let output = match zingolib::data::proposal::total_fee(&proposal) {
+                        Ok(fee) => object! { "fee" => fee.into_u64() },
+                        Err(e) => object! { "error" => e.to_string() },
                     };
-                    object! { "fee" => fee.into_u64() }
+                    // The proposal exists either way; only its display failed.
+                    (
+                        output.pretty(2),
+                        Some(ZingoProposal::Send {
+                            proposal,
+                            sending_account: zip32::AccountId::ZERO,
+                        }),
+                    )
                 }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                // A failed re-propose leaves the previous proposal in place,
+                // as the wallet-stored flow did.
+                Err(e) => (object! { "error" => e.to_string() }.pretty(2), pending),
             }
-            .pretty(2)
         })
     }
 }
@@ -1165,10 +1207,22 @@ impl Command for SendAllCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        self.exec_with_session(args, lightclient, None).0
+    }
+
+    fn exec_with_session(
+        &self,
+        args: &[&str],
+        lightclient: &mut LightClient,
+        pending: PendingProposal,
+    ) -> (String, PendingProposal) {
         let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
             Ok(parse_results) => parse_results,
             Err(e) => {
-                return format!("Error: {e}\nTry 'help sendall' for correct usage and examples.");
+                return (
+                    format!("Error: {e}\nTry 'help sendall' for correct usage and examples."),
+                    pending,
+                );
             }
         };
         RT.block_on(async move {
@@ -1177,24 +1231,29 @@ impl Command for SendAllCommand {
                 .await
             {
                 Ok(proposal) => {
-                    let amount = match proposal::total_payment_amount(&proposal) {
-                        Ok(amount) => amount,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    let output = match (
+                        proposal::total_payment_amount(&proposal),
+                        proposal::total_fee(&proposal),
+                    ) {
+                        (Ok(amount), Ok(fee)) => object! {
+                            "amount" => amount.into_u64(),
+                            "fee" => fee.into_u64(),
+                        },
+                        (Err(e), _) | (_, Err(e)) => object! { "error" => e.to_string() },
                     };
-                    let fee = match proposal::total_fee(&proposal) {
-                        Ok(fee) => fee,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-                    };
-                    object! {
-                        "amount" => amount.into_u64(),
-                        "fee" => fee.into_u64(),
-                    }
+                    // The proposal exists either way; only its display failed.
+                    (
+                        output.pretty(2),
+                        Some(ZingoProposal::Send {
+                            proposal,
+                            sending_account: zip32::AccountId::ZERO,
+                        }),
+                    )
                 }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                // A failed re-propose leaves the previous proposal in place,
+                // as the wallet-stored flow did.
+                Err(e) => (object! { "error" => e.to_string() }.pretty(2), pending),
             }
-            .pretty(2)
         })
     }
 }
@@ -1276,39 +1335,60 @@ impl Command for ShieldCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        self.exec_with_session(args, lightclient, None).0
+    }
+
+    fn exec_with_session(
+        &self,
+        args: &[&str],
+        lightclient: &mut LightClient,
+        pending: PendingProposal,
+    ) -> (String, PendingProposal) {
         if !args.is_empty() {
-            return format!(
-                "Error: {}\nTry 'help shield' for correct usage and examples.",
-                error::CommandError::InvalidArguments
+            return (
+                format!(
+                    "Error: {}\nTry 'help shield' for correct usage and examples.",
+                    error::CommandError::InvalidArguments
+                ),
+                pending,
             );
         }
 
         RT.block_on(async move {
             match lightclient.propose_shield(zip32::AccountId::ZERO).await {
                 Ok(proposal) => {
-                    if proposal.steps().len() != 1 {
-                        return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
-                    }
-                    let step = proposal.steps().first();
-                    let Some(value_to_shield) = step
-                        .balance()
-                        .proposed_change()
-                        .iter()
-                        .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
-                            return object! { "error" => "shield amount outside valid range of zatoshis" }
-                                .pretty(2);
+                    let output = if proposal.steps().len() != 1 {
+                        object! { "error" => "shielding transactions should not have multiple proposal steps" }
+                    } else {
+                        let step = proposal.steps().first();
+                        match step
+                            .balance()
+                            .proposed_change()
+                            .iter()
+                            .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
+                        {
+                            Some(value_to_shield) => object! {
+                                "value_to_shield" => value_to_shield.into_u64(),
+                                "fee" => step.balance().fee_required().into_u64(),
+                            },
+                            None => {
+                                object! { "error" => "shield amount outside valid range of zatoshis" }
+                            }
+                        }
                     };
-                    let fee = step.balance().fee_required();
-                    object! {
-                        "value_to_shield" => value_to_shield.into_u64(),
-                        "fee" => fee.into_u64(),
-                    }
+                    // The proposal exists either way; only its display failed.
+                    (
+                        output.pretty(2),
+                        Some(ZingoProposal::Shield {
+                            proposal,
+                            shielding_account: zip32::AccountId::ZERO,
+                        }),
+                    )
                 }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                // A failed re-propose leaves the previous proposal in place,
+                // as the wallet-stored flow did.
+                Err(e) => (object! { "error" => e.to_string() }.pretty(2), pending),
             }
-            .pretty(2)
         })
     }
 }
@@ -1382,25 +1462,49 @@ impl Command for ConfirmCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        self.exec_with_session(args, lightclient, None).0
+    }
+
+    fn exec_with_session(
+        &self,
+        args: &[&str],
+        lightclient: &mut LightClient,
+        pending: PendingProposal,
+    ) -> (String, PendingProposal) {
         if !args.is_empty() {
-            return format!(
-                "Error: {}\nTry 'help confirm' for correct usage and examples.",
-                error::CommandError::InvalidArguments
+            return (
+                format!(
+                    "Error: {}\nTry 'help confirm' for correct usage and examples.",
+                    error::CommandError::InvalidArguments
+                ),
+                pending,
             );
         }
 
+        let Some(proposal) = pending else {
+            return (
+                object! { "error" => "no pending proposal to confirm; propose with send, send_all, or shield first" }
+                    .pretty(2),
+                None,
+            );
+        };
         RT.block_on(async move {
-            match lightclient
-                .send_stored_proposal(true)
-                .await {
-                Ok(txids) => {
+            match lightclient.send_proposal(&proposal, true).await {
+                Ok(txids) => (
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                        .pretty(2),
+                    None,
+                ),
+                // An Indexerless attempt keeps the proposal for retry once
+                // an Indexer is configured.
+                Err(e @ LightClientError::Offline) => (
+                    object! { "error" => e.to_string() }.pretty(2),
+                    Some(proposal),
+                ),
+                // Any other failure consumes the attempt, as the
+                // wallet-stored flow did.
+                Err(e) => (object! { "error" => e.to_string() }.pretty(2), None),
             }
-            .pretty(2)
         })
     }
 }
@@ -2030,10 +2134,28 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
 /// Dispatches a user command by name to the appropriate [`Command`] implementation.
 ///
 /// Returns the command's output string, or an "Unknown command" message
-/// if no command with the given name exists.
+/// if no command with the given name exists. Session-less: the pending
+/// proposal is threaded as `None` and discarded, so the proposal flow
+/// needs [`do_user_command_with_session`].
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
+    do_user_command_with_session(cmd, args, lightclient, None).0
+}
+
+/// Dispatches a user command, threading the session's pending proposal
+/// through by value. The interactive command loop folds its session state
+/// over calls to this function; commands outside the proposal flow pass
+/// the value along unchanged.
+pub fn do_user_command_with_session(
+    cmd: &str,
+    args: &[&str],
+    lightclient: &mut LightClient,
+    pending: PendingProposal,
+) -> (String, PendingProposal) {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
-        Some(cmd) => cmd.exec(args, lightclient),
-        None => format!("Unknown command : {cmd}. Type 'help' for a list of commands"),
+        Some(cmd) => cmd.exec_with_session(args, lightclient, pending),
+        None => (
+            format!("Unknown command : {cmd}. Type 'help' for a list of commands"),
+            pending,
+        ),
     }
 }
