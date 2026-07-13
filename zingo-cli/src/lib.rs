@@ -78,7 +78,7 @@ pub fn build_clap_app() -> clap::Command {
                 .long("offline")
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with_all(["server", "waitsync"])
-                .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, broadcast, and server commands are unavailable."))
+                .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")

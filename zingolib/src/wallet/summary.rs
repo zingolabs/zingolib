@@ -925,7 +925,7 @@ mod tests {
     /// the assertions are value-transfer KIND classification (a self-send
     /// yields SendToSelf(Basic); the Zennies-for-Zingo output yields a
     /// Sent(Send) addressed to the ZFZ address), which is pure summary
-    /// derivation. The proposal/broadcast pipeline the integration test
+    /// derivation. The proposal/transmission pipeline the integration test
     /// drove incidentally remains covered by the chain-bound send tests.
     #[tokio::test]
     async fn create_send_to_self_with_zfz_active() {

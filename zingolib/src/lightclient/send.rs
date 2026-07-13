@@ -28,12 +28,12 @@ impl LightClient {
     /// Calculates (signs) transactions from a proposal value the caller
     /// holds, without an Indexer — the offline-signing half of the
     /// Indexerless capability set (ADR 0006). The signed transactions are
-    /// stored in the wallet with `Calculated` status; broadcast them with
-    /// [`Self::broadcast_calculated`] once an Indexer is configured.
+    /// stored in the wallet with `Calculated` status; transmit them with
+    /// [`Self::transmit_calculated`] once an Indexer is configured.
     ///
     /// The transactions' expiry heights derive from the proposal's target
     /// height — the wallet's possibly stale chain view — so a transaction
-    /// calculated long offline can be expired by broadcast time. The
+    /// calculated long offline can be expired by transmission time. The
     /// ratified no-expiry sentinel for offline signing is blocked on
     /// upstream expiry control in `zcash_client_backend`.
     pub async fn calculate_proposal(
@@ -61,11 +61,11 @@ impl LightClient {
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
-    /// given order — the broadcast half of the offline-signing flow.
+    /// given order — the transmission half of the offline-signing flow.
     /// Requires an Indexer; an Indexerless attempt fails with
     /// [`LightClientError::Offline`] and the Calculated transactions remain
-    /// in the wallet, ready to broadcast once connected.
-    pub async fn broadcast_calculated(
+    /// in the wallet, ready to transmit once connected.
+    pub async fn transmit_calculated(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
@@ -81,7 +81,7 @@ impl LightClient {
     /// configured. The gate sits before calculation, so this one-shot
     /// online path never leaves Calculated transactions it cannot
     /// transmit; the deliberate offline flow is
-    /// [`Self::calculate_proposal`] then [`Self::broadcast_calculated`].
+    /// [`Self::calculate_proposal`] then [`Self::transmit_calculated`].
     ///
     /// If sync was running prior to proposing, sync will have been paused.
     /// If `resume_sync` is `true`, sync will be resumed after transmission.

@@ -4,9 +4,9 @@ The Indexerless capability set (ADR 0001; the library glossary in
 `zingolib/CONTEXT.md`) is exposed as value-returning pure functions over
 wallet state: proposing takes wallet state and a transaction request and
 returns a `Proposal`; calculating takes wallet state and a proposal and
-returns signed transaction bytes for later broadcast. These operations do
+returns signed transaction bytes for later transmission. These operations do
 not mutate the wallet. The effects a wallet application genuinely needs —
-file I/O, broadcast, and any state a multi-call protocol requires — belong
+file I/O, transmission, and any state a multi-call protocol requires — belong
 to the shell that hosts the library: zingo-cli's `main`, or zingo-mobile's
 UniFFI bridge crate.
 
@@ -40,7 +40,7 @@ value would make the mobile flow value-oriented end to end, but it changes
 the UDL and every React Native call site, and transaction expiry
 (~40 blocks) caps the useful lifetime of a carried proposal at under an
 hour, so the durability it buys is illusory; that shape is reserved for
-the future calculate/broadcast endpoints, whose natural payload is the
+the future calculate/transmit endpoints, whose natural payload is the
 signed transaction. Persisting proposals across process restarts was
 rejected outright and recorded as a non-goal: the wallet reader has always
 reset `send_proposal` to `None` on load, and a proposal's target height

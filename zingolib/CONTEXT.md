@@ -44,7 +44,7 @@
 
 **Account** — A ZIP-32 account within the key store, identified by `zip32::AccountId`. A wallet may hold multiple accounts, each with its own derived `UnifiedKeyStore`. Accounts are created sequentially; the limit is the 31-bit `AccountId` ceiling (effectively unreachable).
 
-**Spending Wallet** — A wallet created from a mnemonic phrase or Unified Spending Key. Has full spend capability: can propose transactions, calculate them, and sign them for broadcast. Returns `RecoveryInfo` on request.
+**Spending Wallet** — A wallet created from a mnemonic phrase or Unified Spending Key. Has full spend capability: can propose transactions, calculate them, and sign them for Transmission. Returns `RecoveryInfo` on request.
 
 **View-only Wallet** — A wallet created from a Unified Full Viewing Key. Can scan the chain, detect received funds, and report balances, but cannot sign transactions. Has no `RecoveryInfo`.
 
@@ -76,7 +76,7 @@
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
-**Indexerless** — The state of a `LightClient` that has no configured Indexer. An Indexerless client can create and restore wallets, load wallet files, read balances and history from stored state, and propose and sign transactions, yielding serialized transactions for later broadcast; sync, broadcast, and mempool observation require an Indexer and return `LightClientError::Offline`. The state *may* be transitional — configuring an Indexer via `set_indexer_uri()` exits it — but a consumer may equally remain Indexerless for an entire session. The default configuration starts Indexerless. See `docs/adr/0001-offline-by-default.md`. *Avoid*: offline client, serverless ("Offline mode" names the CLI session concept below).
+**Indexerless** — The state of a `LightClient` that has no configured Indexer. An Indexerless client can create and restore wallets, load wallet files, read balances and history from stored state, and propose and sign transactions, yielding Calculated Transactions for later Transmission; sync, Transmission, and mempool observation require an Indexer and return `LightClientError::Offline`. The state *may* be transitional — configuring an Indexer via `set_indexer_uri()` exits it — but a consumer may equally remain Indexerless for an entire session. The default configuration starts Indexerless. See `docs/adr/0001-offline-by-default.md`. *Avoid*: offline client, serverless ("Offline mode" names the CLI session concept below).
 
 **Offline mode** — The zingo-cli session mode, committed at argument-parse time, in which the session never configures an Indexer: the client remains Indexerless for the life of the session, and every capability of that state is available at the prompt. Contrast a default session, which connects to an Indexer and may still pass through the Indexerless state before connecting. *Avoid*: serverless mode, standalone wallet (retired names for this concept).
 
@@ -113,13 +113,13 @@
 
 **Proposal** — A pre-computed spend plan produced by `LightWallet::create_send_proposal`. Stores the selected inputs and outputs but does not yet build the transaction. Exposed intentionally so callers can inspect fees before committing.
 
-**ZingoProposal** — A proposal paired with the account it spends from: the value the two-phase send flow carries between proposing and transmission. The library never stores it; the shell that hosts the library (a CLI session, an FFI bridge) holds the value while the user decides whether to accept the fee, and transmission borrows it — so an Indexerless attempt fails typed while the caller's value remains intact, ready to retry once an Indexer is configured. See ADR 0006.
+**ZingoProposal** — A proposal paired with the account it spends from: the value the two-phase send flow carries between proposing and Transmission. The library never stores it; the shell that hosts the library (a CLI session, an FFI bridge) holds the value while the user decides whether to accept the fee, and the send path borrows it — so an Indexerless attempt fails typed while the caller's value remains intact, ready to retry once an Indexer is configured. See ADR 0006.
 
 **ConfirmationStatus** — The lifecycle state of a transaction. Ordered for sorting (confirmed first): `Confirmed(height)` → `Mempool(target_height)` → `Transmitted(target_height)` → `Calculated(target_height)` → `Failed(height)`. For non-confirmed states the embedded height is the chain height at time of creation + 1 (the intended target block), not an actual confirmation height. `Failed` is a permanent terminal state — failed transactions remain in the wallet as a record. Consumers filter them out at the display layer using `ConfirmationStatus`.
 
-**Calculated Transaction** — A fully built but not yet broadcast transaction. Status: `Calculated`.
+**Calculated Transaction** — A fully built and signed but not yet transmitted transaction. Status: `Calculated`.
 
-**Transmission** — The step that broadcasts a Calculated Transaction to the Indexer. Verifies that the server-reported txid matches the locally calculated txid.
+**Transmission** — The step in which the client attempts a send: it submits a Calculated Transaction to the Indexer and verifies that the server-reported txid matches the locally calculated txid. *Avoid*: broadcast (reserved for a distinct future concept — a memo that multiple recipients can decrypt).
 
 **Two-phase Send** — The standard send path: `propose_send` (or `propose_shield`) followed by `send_stored_proposal`. Allows the caller to inspect the Proposal (e.g. fees) before committing. Proposing automatically pauses the sync engine to release the wallet write lock; `send_stored_proposal(resume_sync: true)` resumes it after transmission. `quick_send` / `quick_shield` are single-shot convenience wrappers that handle the pause/resume cycle internally.
 
@@ -163,7 +163,7 @@
 
 ## Privacy
 
-**Tor** — Experimental opt-in privacy layer. `LightClient` can hold a `tor::Client` (from `zcash_client_backend`). Currently only wired to price fetching — not to sync or transaction broadcast. Not suitable for production use.
+**Tor** — Experimental opt-in privacy layer. `LightClient` can hold a `tor::Client` (from `zcash_client_backend`). Currently only wired to price fetching — not to sync or Transmission. Not suitable for production use.
 
 ---
 
@@ -201,4 +201,4 @@
 
 **zingo-price** — Price feed integration (Gemini exchange).
 
-**zingo-status** — `ConfirmationStatus` type: the confirmation state of a transaction (mempool, broadcast, confirmed, etc.).
+**zingo-status** — `ConfirmationStatus` type: the confirmation state of a transaction (calculated, transmitted, mempool, confirmed, etc.).
