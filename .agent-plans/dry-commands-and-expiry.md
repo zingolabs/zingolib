@@ -1,7 +1,9 @@
 # Claim: commands DRY + expiry retarget (grilling session, 2026-07-13)
 
 Session working in the `dry-commands` worktree on branch
-`dry_commands_run_core` (stacked on PR #2458).
+`remove_stringly_typed_errors_from_zingo_cli` (rebased onto dev
+2026-07-14; formerly `dry_commands_run_core` stacked on PR #2458, which
+dev's retarget work superseded). Live PR: #2464.
 
 ## Decisions ratified so far
 
