@@ -430,9 +430,10 @@ mod built_transaction_shape {
     /// and the documented shield-eligibility race are inexpressible
     /// offline): four transparent coins shield in one step, and the
     /// built transaction nets exactly their sum minus the 30_000
-    /// four-input shield fee into orchard. The live assert is the
-    /// post-confirmation orchard balance; the offline equivalent is the
-    /// orchard bundle's value balance on the built transaction.
+    /// four-input shield fee into the Ironwood pool (a V6 shield's
+    /// change lands in the ironwood bundle, ADR 0007). The live assert
+    /// is the post-confirmation balance; the offline equivalent is the
+    /// ironwood bundle's value balance on the built transaction.
     #[tokio::test]
     async fn four_coin_shield_builds_and_nets_input_minus_fee() {
         let coin_value = 1_000_000u64;
@@ -469,27 +470,139 @@ mod built_transaction_shape {
             transparent.vout.is_empty(),
             "a shield pays no transparent outputs"
         );
-        let orchard = transaction
-            .orchard_bundle()
-            .expect("a shield produces orchard change");
-        // Negative value balance is value flowing INTO the orchard pool:
+        let ironwood = transaction
+            .ironwood_bundle()
+            .expect("a V6 shield produces ironwood change");
+        // Negative value balance is value flowing INTO the ironwood pool:
         // the four coins minus the 30_000 zip317 fee (four transparent
-        // inputs plus the orchard action pair).
+        // inputs plus the ironwood action pair).
         assert_eq!(
-            i64::from(orchard.value_balance()),
+            i64::from(ironwood.value_balance()),
             -i64::try_from(4 * coin_value - 30_000).unwrap()
+        );
+    }
+
+    /// The ADR 0007 Orchard-era opt-out, and the coverage of the wired
+    /// `allow_v6_transactions` flag (zingo-cli runs with it off): with
+    /// the flag false the builder floors at V5, so on an NU6.3-configured
+    /// chain an external orchard payment is refused outright — once
+    /// NU6.3 rules apply, a legacy orchard bundle may not pay a foreign
+    /// address (`CrossAddressDisabled`); external orchard-receiver value
+    /// must travel as Ironwood, which V5 cannot carry.
+    #[tokio::test]
+    async fn allow_v6_false_refuses_external_orchard_payment() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(50_000)
+                .build();
+        wallet.wallet_settings.allow_v6_transactions = false;
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let proposal = client
+            .propose_send_all(
+                external_orchard_address(),
+                false,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await
+            .unwrap();
+
+        let result = client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(
+                    crate::wallet::error::CalculateTransactionError::Calculation(
+                        zcash_client_backend::data_api::error::Error::Builder(
+                            zcash_primitives::transaction::builder::Error::OrchardRecipient(_),
+                        ),
+                    ),
+                )
+            ),
+            "a V5 external orchard payment is refused post-NU6.3: {result:?}"
+        );
+    }
+
+    /// The wired `allow_v6_transactions` flag on a buildable V5 shape: a
+    /// sapling-to-sapling send floors at V5, builds a sapling bundle, and
+    /// carries no ironwood bundle. With the flag on (the default), the
+    /// same chain would produce a V6 transaction.
+    #[tokio::test]
+    async fn allow_v6_false_floors_sapling_send_at_v5() {
+        use zcash_client_backend::zip321::{Payment, TransactionRequest};
+        use zcash_protocol::value::Zatoshis;
+
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .sapling_note(50_000)
+                .build();
+        wallet.wallet_settings.allow_v6_transactions = false;
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let (_, external_ua) = external_wallet
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let destination =
+            address_from_str(&external_ua.encode(&external_wallet.chain_type())).unwrap();
+
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            destination,
+            Zatoshis::const_from_u64(25_000),
+        )])
+        .unwrap();
+        let proposal = client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let txids = client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        let transaction = wallet
+            .wallet_transactions
+            .get(&txids[0])
+            .unwrap()
+            .transaction();
+        assert_eq!(
+            transaction.version(),
+            zcash_primitives::transaction::TxVersion::V5,
+            "the flag floors building at V5"
+        );
+        assert!(
+            transaction.sapling_bundle().is_some(),
+            "the payment and change travel in the sapling bundle"
+        );
+        assert!(
+            transaction.ironwood_bundle().is_none(),
+            "no ironwood bundle exists below V6"
         );
     }
 
     /// Gap-1b cell of the remediation plan, mirroring the live
     /// multi_input_sapling_send_with_orchard_change_no_panic offline: a
     /// payment that no single sapling note covers builds (proves) a
-    /// two-input sapling spend whose change crosses to orchard. The
-    /// sapling proving parameters are embedded in the crate, so the
-    /// plan's parameters precondition is satisfied in the unit
-    /// environment.
+    /// two-input sapling spend. Under V6 the change stays in Sapling —
+    /// the upstream change selector avoids pool-crossing when no orchard
+    /// flow exists (ADR 0007) — while the payment to the orchard receiver
+    /// lands in the ironwood bundle. The sapling proving parameters are
+    /// embedded in the crate, so the plan's parameters precondition is
+    /// satisfied in the unit environment.
     #[tokio::test]
-    async fn two_input_sapling_spend_with_orchard_change_builds_offline() {
+    async fn two_input_sapling_spend_with_sapling_change_builds_offline() {
         use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
 
@@ -499,9 +612,9 @@ mod built_transaction_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        // 25_000 plus the 20_000 ZIP-317 fee (two sapling spends, two
-        // orchard actions) exceeds either note alone, so both are
-        // gathered and 5_000 returns as orchard change.
+        // 25_000 plus the 20_000 ZIP-317 fee (two sapling spends covering
+        // the change, plus the ironwood payment pair) exceeds either note
+        // alone, so both are gathered and 5_000 returns as sapling change.
         let request = TransactionRequest::new(vec![Payment::without_memo(
             external_orchard_address(),
             Zatoshis::const_from_u64(25_000),
@@ -517,8 +630,8 @@ mod built_transaction_shape {
         assert_eq!(u64::from(change[0].value()), 5_000);
         assert_eq!(
             change[0].output_pool(),
-            zcash_protocol::PoolType::ORCHARD,
-            "the change crosses to orchard"
+            zcash_protocol::PoolType::SAPLING,
+            "V6 change stays in sapling when no orchard flow exists"
         );
 
         let txids = client
@@ -545,15 +658,20 @@ mod built_transaction_shape {
             2,
             "both fabricated sapling notes are spent"
         );
-        // The sapling outputs are the builder's dummy padding; the real
-        // change is the orchard action asserted above.
-        let orchard_bundle = transaction
-            .orchard_bundle()
-            .expect("the orchard payment and change produce an orchard bundle");
+        // The sapling bundle carries the spends and the change output;
+        // the payment to the orchard receiver lands in the ironwood
+        // bundle, and no legacy orchard bundle exists.
+        assert!(
+            transaction.orchard_bundle().is_none(),
+            "no orchard flow, no orchard bundle"
+        );
+        let ironwood_bundle = transaction
+            .ironwood_bundle()
+            .expect("the payment to the orchard receiver produces an ironwood bundle");
         assert_eq!(
-            orchard_bundle.actions().len(),
+            ironwood_bundle.actions().len(),
             2,
-            "payment plus change, the orchard minimum"
+            "payment plus dummy padding, the bundle minimum"
         );
     }
 

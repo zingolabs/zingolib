@@ -167,11 +167,11 @@ pub fn wallet_activation_heights(
 /// funding-stream fixtures pair with — zebrad rejects NU6.x activation
 /// blocks whose subsidy config doesn't match, so e.g. the all-at-1
 /// `ActivationHeights::default()` stalls the chain at genesis), with one
-/// amendment: NU6.3 stays unactivated. This branch's wallet builds against
-/// released librustzcash, which tops out at the NU6.2 branch id; activating
-/// NU6.3 makes zebrad reject every wallet transaction ("incorrect consensus
-/// branch id"). Re-enable NU6.3 (drop the `set_nu6_3(None)`) when the
-/// ironwood wallet feature branch lands here.
+/// amendment: NU7 stays off. NU6.3 activates at the fixture's height 5,
+/// so wallet activity is Ironwood-era by default (ADR 0007) while
+/// coinbase blocks 2..=4 still yield legacy Orchard notes — a mixed
+/// chain by design, since behavior *relative to* Ironwood is a primary
+/// test subject during the migration window.
 pub fn default_test_activation_heights() -> ActivationHeights {
     let fixture =
         wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());

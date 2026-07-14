@@ -105,9 +105,10 @@ mod unit_test_twins {
 
         // The zero-value receipt must not perturb spendable arithmetic:
         // the recipient holds the 100_000 funding note less the 1_000
-        // payment and its 10_000 ZIP-317 fee (one orchard spend, two
-        // logical actions).
-        check_client_balances!(recipient, o: 89_000 s: 0 t: 0);
+        // payment and its 20_000 ZIP-317 fee (the ironwood spend counted
+        // in the orchard bundle view plus the ironwood payment-and-change
+        // pair — ADR 0007).
+        check_client_balances!(recipient, o: 0 i: 79_000 s: 0 t: 0);
 
         let value_transfers = recipient.value_transfers(true).await.unwrap();
         // The funding receipt.
@@ -569,7 +570,7 @@ TransactionSummary {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         let recipient_sapling = get_base_address_macro!(recipient, "sapling");
         let recipient_unified = get_base_address_macro!(recipient, "unified");
-        check_client_balances!(recipient, o: 0 s: 0 t: 0);
+        check_client_balances!(recipient, o: 0 i: 0 s: 0 t: 0);
         let fee = u64::from(MINIMUM_FEE);
         let for_orchard = dbg!(fee * 10);
         let for_sapling = dbg!(fee / 10);
@@ -585,7 +586,7 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, o: for_orchard s: 0 t: 0 );
+        check_client_balances!(recipient, o: 0 i: for_orchard s: 0 t: 0 );
 
         from_inputs::quick_send(
             &mut recipient,
@@ -600,8 +601,11 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        let remaining_orchard = for_orchard - (6 * fee);
-        check_client_balances!(recipient, o: remaining_orchard s: 0 t: 0);
+        // The send pays the V6 two-bundle fee (20_000): the ironwood spend
+        // in the orchard bundle view plus the ironwood payment-and-change
+        // pair (ADR 0007).
+        let remaining_ironwood = for_orchard - (5 * fee) - 20_000;
+        check_client_balances!(recipient, o: 0 i: remaining_ironwood s: 0 t: 0);
     }
     #[tokio::test]
     async fn list_value_transfers_check_fees() {
@@ -627,29 +631,31 @@ TransactionSummary {
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
-            (o: $o:tt s: $s:tt t: $t:tt) => {
+            (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
                 increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
-                check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+                check_client_balances!(pool_migration_client, o:$o i:$i s:$s t:$t);
             };
         }
 
-        // pmc receives 100_000 orchard
+        // pmc receives 100_000 at its unified address; the V6 payment
+        // lands in the ironwood pool (ADR 0007).
         from_inputs::quick_send(&mut faucet, vec![(&pmc_unified, 100_000, None)])
             .await
             .unwrap();
-        bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
+        bump_and_check_pmc!(o: 0 i: 100_000 s: 0 t: 0);
 
-        // to transparent and sapling from orchard
+        // to transparent and sapling from ironwood
         //
-        // Expected Fees:
-        // 5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
+        // Expected Fees: 5_000 for the transparent output + 10_000 for the
+        // orchard bundle view carrying the ironwood spend + 10_000 for the
+        // sapling pair + 10_000 for the ironwood change pair == 35_000
         from_inputs::quick_send(
             &mut pool_migration_client,
             vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
         )
         .await
         .unwrap();
-        bump_and_check_pmc!(o: 15_000 s: 30_000 t: 30_000);
+        bump_and_check_pmc!(o: 0 i: 5_000 s: 30_000 t: 30_000);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
@@ -677,9 +683,9 @@ TransactionSummary {
             .unwrap();
 
         macro_rules! bump_and_check {
-            (o: $o:tt s: $s:tt t: $t:tt) => {
+            (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
                 increase_height_and_wait_for_client(&local_net, &mut client, 1).await.unwrap();
-                check_client_balances!(client, o:$o s:$s t:$t);
+                check_client_balances!(client, o:$o i:$i s:$s t:$t);
             };
         }
 
@@ -691,16 +697,17 @@ TransactionSummary {
         from_inputs::quick_send(&mut faucet, vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 0 t: 50_000);
+        bump_and_check!(o: 0 i: 0 s: 0 t: 50_000);
         assert_eq!(test_dev_total_expected_fee, 0);
 
         // 2 pmc shields 50_000 transparent, to orchard paying fee
         //  t -> o
         //  # Expected Fees to recipient:
         //    - legacy: 10_000
-        //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
+        //    - 317:    15_000 = 1 transparent in + the padded ironwood pair
+        //      (a V6 shield's change lands in the ironwood bundle, ADR 0007)
         client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-        bump_and_check!(o: 35_000 s: 0 t: 0);
+        bump_and_check!(o: 0 i: 35_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
@@ -714,55 +721,63 @@ TransactionSummary {
         from_inputs::quick_send(&mut faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 35_000 s: 50_000 t: 0);
+        bump_and_check!(o: 0 i: 35_000 s: 50_000 t: 0);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 4 pmc migrates 40_000 from sapling to orchard plus fee
-        //  z -> o
+        // 4 pmc migrates 50_000 from sapling to ironwood plus fee
+        //  z -> i
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    20_000
+        //    - 317:    20_000 = the sapling pair (spend plus its zero-value
+        //      change: V6 keeps change in sapling when no orchard flow
+        //      exists) + the ironwood payment pair. The selector widens
+        //      past the 35_000 ironwood note to the sapling note and then
+        //      uses sapling alone.
         from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 65_000 s: 0 t: 0);
+        bump_and_check!(o: 0 i: 65_000 s: 0 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 5 Self send of 55_000 paying 10_000 fee
-        //  o -> o
+        // 5 Self send of 45_000 paying the 20_000 V6 fee (ironwood spend
+        //   in the orchard bundle view + the ironwood payment pair); the
+        //   55_000 the pre-V6 ledger sent no longer fits in the note.
+        //  i -> i
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000
-        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 55_000, None)])
+        //    - 317:    20_000
+        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 45_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 55_000 s: 0 t: 0);
-        test_dev_total_expected_fee += 10_000;
+        bump_and_check!(o: 0 i: 45_000 s: 0 t: 0);
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 6 to transparent and sapling from orchard
-        //  o -> tz
+        // 6 to transparent and sapling from ironwood
+        //  i -> tz
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    5_000 for transparent out + 10_000 for orchard + 10_000 for sapling == 25_000
+        //    - 317:    5_000 transparent out + 10_000 orchard bundle view
+        //      (the ironwood spend) + 10_000 sapling pair + 10_000
+        //      ironwood change pair == 35_000, exactly draining the note.
         from_inputs::quick_send(
             &mut client,
-            vec![(&pmc_taddr, 10_000, None), (&pmc_sapling, 10_000, None)],
+            vec![(&pmc_taddr, 5_000, None), (&pmc_sapling, 5_000, None)],
         )
         .await
         .unwrap();
-        bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
-        test_dev_total_expected_fee += 25_000;
+        bump_and_check!(o: 0 i: 0 s: 5_000 t: 5_000);
+        test_dev_total_expected_fee += 35_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -772,7 +787,7 @@ TransactionSummary {
         from_inputs::quick_send(&mut faucet, vec![(&pmc_taddr, 500_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
+        bump_and_check!(o: 0 i: 0 s: 5_000 t: 505_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -782,41 +797,46 @@ TransactionSummary {
         //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
+        //    - 317:    20_000 = 10_000 for the two transparent inputs +
+        //      10_000 for the ironwood pair receiving the shielded value
         client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-        bump_and_check!(o: 500_000 s: 10_000 t: 0);
+        bump_and_check!(o: 0 i: 485_000 s: 5_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 9 self o send orchard to orchard
+        // 9 self send ironwood to ironwood
         // TODO: already tested!?
-        //  o -> o
+        //  i -> i
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000
+        //    - 317:    20_000 (orchard bundle view for the spend + the
+        //      ironwood payment-and-change pair)
         from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 490_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee += 10_000;
+        bump_and_check!(o: 0 i: 465_000 s: 5_000 t: 0);
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 10 Orchard and Sapling demote all to transparent self-send
-        //  oz -> t
+        // 10 Ironwood and Sapling demote all to transparent self-send.
+        //  iz -> t
         //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
-        from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
+        //    - 317: 35_000 = 10_000 sapling pair + 10_000 orchard bundle
+        //      view (the ironwood spend) + 5_000 transparent out + 10_000
+        //      ironwood change pair. A transparent-destination gather
+        //      always includes sapling in the selection, so the maximum
+        //      drain is the two pools' total less this fee.
+        from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 435_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 0 t: 470_000);
-        test_dev_total_expected_fee += 30_000;
+        bump_and_check!(o: 0 i: 0 s: 0 t: 435_000);
+        test_dev_total_expected_fee += 35_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -834,7 +854,12 @@ TransactionSummary {
                     } = insufficient
                     {
                         assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                        assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
+                        // HYPOTHESIS (server-run adjudicated): 10_000
+                        // payment + 15_000 fee (one transparent output
+                        // plus the ironwood change pair the V6 change
+                        // policy adds). If the proposer prices change
+                        // differently here, only this constant moves.
+                        assert_eq!(required, Zatoshis::from_u64(25_000).unwrap());
                     } else {
                         panic!()
                     }
@@ -845,7 +870,7 @@ TransactionSummary {
             },
             _ => panic!(),
         }
-        bump_and_check!(o: 0 s: 0 t: 470_000);
+        bump_and_check!(o: 0 i: 0 s: 0 t: 435_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -875,7 +900,7 @@ TransactionSummary {
             }
             _ => panic!(),
         }
-        bump_and_check!(o: 0 s: 0 t: 470_000);
+        bump_and_check!(o: 0 i: 0 s: 0 t: 435_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -885,56 +910,60 @@ TransactionSummary {
         //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    15_000 1t and 2o
+        //    - 317:    15_000 = 1 transparent in + the ironwood pair
         client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-        bump_and_check!(o: 455_000 s: 0 t: 0);
+        bump_and_check!(o: 0 i: 420_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 13 Orchard to Sapling
-        //  o -> z
+        // 13 Ironwood to Sapling
+        //  i -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    20_000 2o and 2s
+        //    - 317:    30_000 = orchard bundle view (the ironwood spend)
+        //      + the sapling payment pair + the ironwood change pair
         from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 425_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee += 20_000;
+        bump_and_check!(o: 0 i: 380_000 s: 10_000 t: 0);
+        test_dev_total_expected_fee += 30_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard self-send
-        //  o -> o
+        // 14 Ironwood self-send
+        //  i -> i
         // TODO: already tested!?
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000
+        //    - 317:    20_000
         from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 415_000 s: 10_000 t: 0);
-        test_dev_total_expected_fee += 10_000;
+        bump_and_check!(o: 0 i: 360_000 s: 10_000 t: 0);
+        test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard and Sapling to Sapling
-        //  zo -> z
+        // 14 Ironwood and Sapling to Sapling: the sapling-destination
+        //    gather starts from sapling and widens to the ironwood notes,
+        //    draining both pools exactly.
+        //  zi -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    20_000
-        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
+        //    - 317:    30_000 = sapling pair + orchard bundle view (the
+        //      ironwood spends) + ironwood change pair
+        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 340_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 405_000 t: 0);
-        test_dev_total_expected_fee += 20_000;
+        bump_and_check!(o: 0 i: 0 s: 340_000 t: 0);
+        test_dev_total_expected_fee += 30_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -944,11 +973,12 @@ TransactionSummary {
         //  z -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000
-        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
+        //    - 317:    10_000 (single sapling bundle: V6 change stays in
+        //      sapling when no orchard flow exists)
+        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 300_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 395_000 t: 0);
+        bump_and_check!(o: 0 i: 0 s: 330_000 t: 0);
         test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
@@ -998,10 +1028,12 @@ TransactionSummary {
                 .unwrap();
             scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
-            // The 50_000 payment plus its 10_000 ZIP-317 fee exceeds either
-            // 40_000 note alone, so the send consumed both and returned
-            // 20_000 as change: the arithmetic survived the multi-input spend.
-            check_client_balances!(recipient, o: 20_000 s: 0 t: 0);
+            // The 50_000 payment plus its 20_000 V6 ZIP-317 fee (ironwood
+            // spends in the orchard bundle view, payment and change in the
+            // ironwood bundle) exceeds either 40_000 note alone, so the send
+            // consumed both and returned 10_000 as ironwood change: the
+            // arithmetic survived the multi-input spend.
+            check_client_balances!(recipient, o: 0 i: 10_000 s: 0 t: 0);
         }
     }
 }

@@ -20,9 +20,11 @@
 
 ## Pools and Outputs
 
-**Pool** — A shielding protocol or address type. Three pools exist: `Transparent`, `Sapling`, and `Orchard`.
+**Pool** — A shielding protocol or address type. Four pools exist: `Transparent`, `Sapling`, `Orchard`, and `Ironwood`. The Ironwood pool activates at NU6.3 and succeeds Orchard; the Orchard→Ironwood migration (ZIP 318) moves value between them.
 
-**Note** — A shielded output belonging to either the Sapling or Orchard pool.
+**Ironwood** — The shielded pool introduced by NU6.3. An Ironwood note is addressed through the same receiver as an Orchard note: the Ironwood receiver of a Unified Address *is* its Orchard receiver, and the transaction's era decides which pool a shielded output to that receiver lands in.
+
+**Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 
 **Coin** — A transparent output (UTXO).
 
@@ -129,7 +131,7 @@
 
 ## Balance
 
-**AccountBalance** — A per-account snapshot of spendable funds, broken down by pool (Orchard, Sapling, Transparent) and confirmation state (confirmed, unconfirmed, total). `None` for a pool means the account has no view key for that pool. Dust outputs are excluded from all figures. Coinbase transparent outputs require 100 confirmations before appearing as spendable (ZIP-213 `COINBASE_MATURITY`).
+**AccountBalance** — A per-account snapshot of spendable funds, broken down by pool (Orchard, Ironwood, Sapling, Transparent) and confirmation state (confirmed, unconfirmed, total). `None` for a pool means the account has no view key for that pool. Dust outputs are excluded from all figures. Coinbase transparent outputs require 100 confirmations before appearing as spendable (ZIP-213 `COINBASE_MATURITY`).
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
 

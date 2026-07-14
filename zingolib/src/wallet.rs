@@ -52,11 +52,13 @@ pub struct WalletSettings {
     pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
-    /// When true, proposals use `None` for the version floor, allowing the
-    /// upstream builder to produce V6 transactions post-NU6.3 activation
-    /// and route Ironwood-pool inputs and change through the ironwood bundle.
-    /// Defaults to false until a V6-accepting node is available in the
-    /// test environment and Ironwood scanning is fully exercised.
+    /// When true (the default), proposal and transaction building pass
+    /// `None` for the version floor, letting the upstream builder produce
+    /// V6 transactions at and after NU6.3 activation and route
+    /// Ironwood-pool inputs and change through the ironwood bundle. When
+    /// false, building is floored at V5, so outputs land in the legacy
+    /// pools even on an NU6.3-configured chain (ADR 0007's Orchard-era
+    /// opt-out). See [`LightWallet::transaction_version_floor`].
     pub allow_v6_transactions: bool,
 }
 
@@ -158,6 +160,29 @@ pub struct LightWallet {
 }
 
 impl LightWallet {
+    /// The minimum transaction version passed to the upstream builder.
+    ///
+    /// `None` (no floor) lets the builder derive the version from the
+    /// consensus branch id at the target height, producing V6 transactions
+    /// at and after NU6.3 activation. The floor is V5 when
+    /// [`WalletSettings::allow_v6_transactions`] is false, or on networks
+    /// where NU6.3 is not configured (no Ironwood notes exist there, so V5
+    /// is always the right version). Proposal and calculation share this
+    /// floor so the proposed fee matches the built transaction.
+    pub(crate) fn transaction_version_floor(
+        &self,
+    ) -> Option<zcash_primitives::transaction::TxVersion> {
+        let nu6_3_configured = self
+            .chain_type
+            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu6_3)
+            .is_some();
+        if self.wallet_settings.allow_v6_transactions && nu6_3_configured {
+            None
+        } else {
+            Some(zcash_primitives::transaction::TxVersion::V5)
+        }
+    }
+
     /// Create a new in-memory wallet from [`crate::config::WalletConfig`].
     ///
     /// # Error

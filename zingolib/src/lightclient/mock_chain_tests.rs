@@ -60,7 +60,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
 
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 100_000 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -71,9 +71,11 @@ async fn funded_send_confirms_on_the_mock_chain() {
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
 
-    // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
-    // spend, two-logical-action ZIP-317 fee.
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    // 100_000 funding minus the 20_000 payment and its 20_000 ZIP-317 fee
+    // (the ironwood spend is counted in the orchard bundle view and the
+    // payment and change land in the ironwood bundle, two padded action
+    // pairs — ADR 0007).
+    check_client_balances!(recipient, o: 0 i: 60_000 s: 0 t: 0);
 }
 
 /// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
@@ -107,9 +109,10 @@ async fn zero_value_receipts() {
     net.chain.write().await.mine_empty_blocks(1);
     recipient.sync_and_await().await.unwrap();
 
-    // Identical to the live pin: the recipient holds the 100_000 funding
-    // note less the 1_000 payment and its 10_000 ZIP-317 fee.
-    check_client_balances!(recipient, o: 89_000 s: 0 t: 0);
+    // The recipient holds the 100_000 funding note less the 1_000 payment
+    // and its 20_000 ZIP-317 fee (ironwood spend counted in the orchard
+    // bundle view, payment and change in the ironwood bundle — ADR 0007).
+    check_client_balances!(recipient, o: 0 i: 79_000 s: 0 t: 0);
 
     let value_transfers = recipient.value_transfers(true).await.unwrap();
     assert!(
@@ -129,7 +132,7 @@ async fn zero_value_receipts() {
     assert!(value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.value == 1_000
-            && vt.transaction_fee == Some(10_000)
+            && vt.transaction_fee == Some(20_000)
     }));
 }
 
@@ -137,9 +140,10 @@ async fn zero_value_receipts() {
 /// (live original kept as the control): a two-output cross-pool send to
 /// the wallet's own transparent and sapling addresses costs the exact
 /// composite ZIP-317 fee — 5_000 for the transparent output, 10_000 for
-/// the orchard side, 10_000 for the sapling output — and every pool
-/// balance lands where the live test pinned it. The self-receipts
-/// arrive through real scanning of the mock blocks.
+/// the orchard bundle view carrying the ironwood spend, 10_000 for the
+/// sapling output pair, 10_000 for the ironwood change pair (ADR
+/// 0007) — and every pool balance lands where the arithmetic says. The
+/// self-receipts arrive through real scanning of the mock blocks.
 #[tokio::test]
 async fn list_value_transfers_check_fees() {
     let mut net = MockNet::launch().await;
@@ -155,7 +159,7 @@ async fn list_value_transfers_check_fees() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 100_000 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -169,8 +173,8 @@ async fn list_value_transfers_check_fees() {
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
 
-    // 100_000 − 30_000 − 30_000 − 25_000 fee = 15_000 orchard change.
-    check_client_balances!(recipient, o: 15_000 s: 30_000 t: 30_000);
+    // 100_000 − 30_000 − 30_000 − 35_000 fee = 5_000 ironwood change.
+    check_client_balances!(recipient, o: 0 i: 5_000 s: 30_000 t: 30_000);
 }
 
 /// Mock-chain twin of libtonode
@@ -644,7 +648,9 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 /// when the feature becomes runtime configuration.
 #[ignore = "zingolabs/zingolib#2447: pepper-sync's subtractive darkside_test feature, when \
             unified into multi-package builds, compiles out the transparent-address discovery \
-            this test's funding depends on"]
+            this test's funding depends on. ALSO: the ledger's fees and amounts predate V6 — \
+            re-derive every step per ADR 0007 before un-ignoring (step 10's drain amount goes \
+            insufficient under V6 two-bundle fees)"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     use crate::lightclient::error::{LightClientError, SendError};
@@ -663,10 +669,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     net.chain.write().await.mine_empty_blocks(1);
 
     macro_rules! bump_and_check {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
+        (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
             net.chain.write().await.mine_mempool();
             client.sync_and_await().await.unwrap();
-            check_client_balances!(client, o:$o s:$s t:$t);
+            check_client_balances!(client, o:$o i:$i s:$s t:$t);
         };
     }
 
@@ -686,25 +692,25 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         let wallet = wallet.read().await;
         eprintln!("wallet transactions: {}", wallet.wallet_transactions.len());
     }
-    check_client_balances!(client, o: 0 s: 0 t: 50_000);
+    check_client_balances!(client, o: 0 i: 0 s: 0 t: 50_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 2 shield 50_000 transparent to orchard: 15_000 (1 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 35_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 35_000 s: 0 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 3 receive 50_000 sapling
     fund(&net, vec![(&pmc_sapling, 50_000, None)], 0).await;
-    bump_and_check!(o: 35_000 s: 50_000 t: 0);
+    bump_and_check!(o: 0 i: 35_000 s: 50_000 t: 0);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 4 migrate sapling to orchard: 20_000 (2 sapling, 2 orchard)
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 65_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 65_000 s: 0 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -712,7 +718,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 55_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 55_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 55_000 s: 0 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -723,18 +729,18 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     )
     .await
     .unwrap();
-    bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 10_000);
     total_expected_fee += 25_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 7 receive 500_000 transparent
     fund(&net, vec![(&pmc_taddr, 500_000, None)], 0).await;
-    bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 510_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 8 shield both coins: 20_000 (2 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 500_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 500_000 s: 10_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -742,7 +748,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 490_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 490_000 s: 10_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -750,7 +756,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     total_expected_fee += 30_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -770,7 +776,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 11 transparent-to-sapling likewise refused.
@@ -788,12 +794,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 12 shield: 15_000 (1 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 455_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 455_000 s: 0 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -801,7 +807,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 425_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 425_000 s: 10_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -809,7 +815,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 415_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 415_000 s: 10_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -817,7 +823,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 405_000 t: 0);
+    bump_and_check!(o: 0 i: 0 s: 405_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -825,7 +831,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 395_000 t: 0);
+    bump_and_check!(o: 0 i: 0 s: 395_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 }
@@ -855,7 +861,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 100_000 s: 0 t: 0);
 
     net.chain.write().await.lose_next_send_response = Some(LostSendDestination::Mempool);
 
@@ -886,7 +892,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     // Identical arithmetic to `funded_send_confirms_on_the_mock_chain`:
     // the lost response and duplicate rejection must not perturb it.
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 60_000 s: 0 t: 0);
 }
 
 /// Twin of [`send_survives_lost_response_and_duplicate_rejection`] for
@@ -917,7 +923,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 100_000 s: 0 t: 0);
 
     {
         let mut chain = net.chain.write().await;
@@ -953,5 +959,5 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     // the transaction, with no verification-delay allowance.
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, o: 0 i: 60_000 s: 0 t: 0);
 }

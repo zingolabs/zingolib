@@ -37,20 +37,20 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
 
-use zaino_proto::proto::compact_formats::{
-    ChainMetadata, CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend,
-    CompactTx, CompactTxIn, TxOut as CompactTxOut,
-};
-use zaino_proto::proto::service::compact_tx_streamer_server::{
-    CompactTxStreamer, CompactTxStreamerServer,
-};
-use zaino_proto::proto::service::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, Duration as ProtoDuration,
-    Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest,
-    GetSubtreeRootsArg, LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
-};
+// The message types come from `lightwallet_protocol` — the same generated
+// proto the wallet's client side (pepper-sync via `zingo_netutils`) reads —
+// because its `CompactTx` carries the `ironwood_actions` field the pinned
+// `zaino-proto` predates. `zaino_proto::tonic` remains solely as the tonic
+// re-export (the lock resolves a single tonic, so the types unify).
 use zaino_proto::tonic::{self, Request, Response, Status};
+use zingo_netutils::lightwallet_protocol::{
+    Address, AddressList, Balance, BlockId, BlockRange, ChainMetadata, ChainSpec, CompactBlock,
+    CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend, CompactTx, CompactTxIn,
+    CompactTxStreamer, CompactTxStreamerServer, Duration as ProtoDuration, Empty,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest,
+    GetSubtreeRootsArg, LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,
+    TransparentAddressBlockFilter, TreeState, TxFilter, TxOut as CompactTxOut,
+};
 
 use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
@@ -76,12 +76,15 @@ pub struct MockChain {
     blocks: Vec<CompactBlock>,
     /// Full transaction bytes and mined height, by txid (natural order).
     transactions: HashMap<[u8; 32], (u32, Vec<u8>)>,
-    /// `tree_states[h]` is the serialized (sapling, orchard) tree state
-    /// hex as of the END of height `h`; index 0 is the empty pre-chain
-    /// state.
-    tree_states: Vec<(String, String)>,
+    /// `tree_states[h]` is the serialized (sapling, orchard, ironwood)
+    /// tree state hex as of the END of height `h`; index 0 is the empty
+    /// pre-chain state.
+    tree_states: Vec<(String, String, String)>,
     sapling_tree: SaplingTree,
     orchard_tree: OrchardTree,
+    /// The Ironwood pool's note commitment tree is orchard-shaped (the
+    /// pool shares the Orchard cryptography).
+    ironwood_tree: OrchardTree,
     mempool: Vec<Vec<u8>>,
     /// Raw transactions delivered but still in the validator's
     /// download/verification queue: present enough to reject a
@@ -142,14 +145,25 @@ fn fabricated_branch_hash(height: u32, branch_seed: u32) -> Vec<u8> {
     hash
 }
 
-fn tree_state_hex(sapling_tree: &SaplingTree, orchard_tree: &OrchardTree) -> (String, String) {
+fn tree_state_hex(
+    sapling_tree: &SaplingTree,
+    orchard_tree: &OrchardTree,
+    ironwood_tree: &OrchardTree,
+) -> (String, String, String) {
     let mut sapling_bytes = vec![];
     write_commitment_tree(sapling_tree, &mut sapling_bytes)
         .expect("in-memory serialization is infallible");
     let mut orchard_bytes = vec![];
     write_commitment_tree(orchard_tree, &mut orchard_bytes)
         .expect("in-memory serialization is infallible");
-    (hex::encode(sapling_bytes), hex::encode(orchard_bytes))
+    let mut ironwood_bytes = vec![];
+    write_commitment_tree(ironwood_tree, &mut ironwood_bytes)
+        .expect("in-memory serialization is infallible");
+    (
+        hex::encode(sapling_bytes),
+        hex::encode(orchard_bytes),
+        hex::encode(ironwood_bytes),
+    )
 }
 
 impl Default for MockChain {
@@ -166,7 +180,8 @@ impl MockChain {
     pub fn new() -> Self {
         let sapling_tree = SaplingTree::empty();
         let orchard_tree = OrchardTree::empty();
-        let genesis_state = tree_state_hex(&sapling_tree, &orchard_tree);
+        let ironwood_tree = OrchardTree::empty();
+        let genesis_state = tree_state_hex(&sapling_tree, &orchard_tree, &ironwood_tree);
         Self {
             chain_type: ChainType::Regtest(ActivationHeights::default()),
             blocks: Vec::new(),
@@ -174,6 +189,7 @@ impl MockChain {
             tree_states: vec![genesis_state],
             sapling_tree,
             orchard_tree,
+            ironwood_tree,
             mempool: Vec::new(),
             download_queue: Vec::new(),
             lose_next_send_response: None,
@@ -241,6 +257,15 @@ impl MockChain {
                     .append(MerkleHashOrchard::from_cmx(action.cmx()))
                     .expect("the fabricated chain stays far below tree capacity");
             }
+            for action in transaction
+                .ironwood_bundle()
+                .iter()
+                .flat_map(|bundle| bundle.actions())
+            {
+                self.ironwood_tree
+                    .append(MerkleHashOrchard::from_cmx(action.cmx()))
+                    .expect("the fabricated chain stays far below tree capacity");
+            }
             // Indices start at 1: light clients treat index 0 as the
             // coinbase, and no fabricated transaction is one.
             vtx.push(compact_transaction(i as u64 + 1, &transaction));
@@ -256,7 +281,6 @@ impl MockChain {
             .map(|block| block.hash.clone())
             .unwrap_or_else(|| vec![0u8; 32]);
         self.blocks.push(CompactBlock {
-            proto_version: 4,
             height: u64::from(height),
             hash: fabricated_branch_hash(height, self.branch_seed),
             prev_hash,
@@ -266,10 +290,14 @@ impl MockChain {
             chain_metadata: Some(ChainMetadata {
                 sapling_commitment_tree_size: self.sapling_tree.size() as u32,
                 orchard_commitment_tree_size: self.orchard_tree.size() as u32,
+                ironwood_commitment_tree_size: self.ironwood_tree.size() as u32,
             }),
         });
-        self.tree_states
-            .push(tree_state_hex(&self.sapling_tree, &self.orchard_tree));
+        self.tree_states.push(tree_state_hex(
+            &self.sapling_tree,
+            &self.orchard_tree,
+            &self.ironwood_tree,
+        ));
     }
 
     /// Mines `count` empty blocks, advancing the tip without new outputs.
@@ -295,7 +323,7 @@ impl MockChain {
         );
         self.blocks.truncate(height as usize);
         self.tree_states.truncate(height as usize + 1);
-        let (sapling_hex, orchard_hex) = self.tree_states[height as usize].clone();
+        let (sapling_hex, orchard_hex, ironwood_hex) = self.tree_states[height as usize].clone();
         self.sapling_tree = read_commitment_tree(
             hex::decode(sapling_hex)
                 .expect("stored tree state is valid hex")
@@ -308,6 +336,12 @@ impl MockChain {
                 .as_slice(),
         )
         .expect("stored orchard tree state deserializes");
+        self.ironwood_tree = read_commitment_tree(
+            hex::decode(ironwood_hex)
+                .expect("stored tree state is valid hex")
+                .as_slice(),
+        )
+        .expect("stored ironwood tree state deserializes");
         let mut evicted: Vec<(u32, Vec<u8>)> = Vec::new();
         self.transactions.retain(|_, (mined_height, bytes)| {
             if *mined_height > height {
@@ -331,7 +365,8 @@ impl MockChain {
     }
 
     fn tree_state_at(&self, height: u32) -> Option<TreeState> {
-        let (sapling_tree, orchard_tree) = self.tree_states.get(height as usize)?.clone();
+        let (sapling_tree, orchard_tree, ironwood_tree) =
+            self.tree_states.get(height as usize)?.clone();
         // The stored block's own hash, so tree states follow the
         // current branch after a reorg. Height 0 predates the chain.
         let hash = if height == 0 {
@@ -346,6 +381,7 @@ impl MockChain {
             time: 1_700_000_000 + height,
             sapling_tree,
             orchard_tree,
+            ironwood_tree,
         })
     }
 }
@@ -380,6 +416,17 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
         })
         .collect();
+    let ironwood_actions = transaction
+        .ironwood_bundle()
+        .iter()
+        .flat_map(|bundle| bundle.actions())
+        .map(|action| CompactOrchardAction {
+            nullifier: action.nullifier().to_bytes().to_vec(),
+            cmx: action.cmx().to_bytes().to_vec(),
+            ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+        })
+        .collect();
     let vin = transaction
         .transparent_bundle()
         .iter()
@@ -405,6 +452,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
         spends,
         outputs,
         actions,
+        ironwood_actions,
         vin,
         vout,
     }

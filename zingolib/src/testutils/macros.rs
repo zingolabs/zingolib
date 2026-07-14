@@ -49,9 +49,14 @@ macro_rules! get_base_address_macro {
 /// then check that the overall balance as calculated by
 /// summing the amounts listed in `tx_summaries` matches the
 /// sum of the balances.
+///
+/// The `i:` slot is required (ADR 0007): on the default Ironwood-era
+/// chains, shielded value received after NU6.3 activation lands in the
+/// Ironwood pool, so every call site states where its funds actually
+/// live rather than silently asserting only the legacy pools.
 #[macro_export]
 macro_rules! check_client_balances {
-    ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
+    ($client:ident, o: $orchard:tt i: $ironwood:tt s: $sapling:tt t: $transparent:tt) => {
         let balance = $client
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -62,6 +67,13 @@ macro_rules! check_client_balances {
             "\no_balance: {} expectation: {} ",
             balance.total_orchard_balance.unwrap().into_u64(),
             $orchard
+        );
+        assert_eq!(
+            balance.total_ironwood_balance.unwrap().into_u64(),
+            $ironwood,
+            "\ni_balance: {} expectation: {} ",
+            balance.total_ironwood_balance.unwrap().into_u64(),
+            $ironwood
         );
         assert_eq!(
             balance.total_sapling_balance.unwrap().into_u64(),
