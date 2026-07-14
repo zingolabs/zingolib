@@ -418,7 +418,15 @@ mod sync {
 
     #[test]
     fn not_launched_fully_synced() {
-        assert_eq!(idle_indicator(progress(10_000, 10_000, true)), " [Synced]");
+        assert_eq!(
+            idle_indicator(progress(10_000, 10_000, true)),
+            " [Synced 10000 / 10000 outputs]"
+        );
+    }
+
+    #[test]
+    fn synced_with_unavailable_status() {
+        assert_eq!(synced_indicator(None), " [Synced]");
     }
 
     #[test]
