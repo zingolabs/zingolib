@@ -1718,7 +1718,7 @@ min confirmations: {}
                 .to_string();}
             }
 
-            wallet.save_required = true;
+            wallet.mark_dirty();
 
             "Successfully updated settings.".to_string()
         })

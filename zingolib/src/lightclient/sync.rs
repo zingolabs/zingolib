@@ -31,7 +31,7 @@ impl LightClient {
             ));
         }
 
-        let client = self.indexer.clone();
+        let client = self.require_indexer()?.clone();
         let chain_type = self.chain_type();
         let sync_config = self
             .wallet()

@@ -44,6 +44,9 @@ pub enum LightClientError {
     /// Ironwood migration error.
     #[error("Ironwood migration error. {0}")]
     MigrationError(#[from] MigrationError),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

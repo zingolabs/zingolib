@@ -15,26 +15,50 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use crate::wallet::error::WalletError;
+use crate::wallet::error::{CalculateTransactionError, WalletError};
 use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;
 
+/// A "queued for download" duplicate rejection proves delivery but not
+/// minability: zebra is still verifying the earlier submission
+/// (observed to lag it by seconds under load). Each resubmission is a
+/// free probe of zebra's own state; wait up to this many probes, on
+/// the retry loop's one-second cadence, for the verdict to become
+/// storage-backed (issue #2450).
+const MAX_QUEUED_PROBES: u8 = 30;
+
 impl LightClient {
+    /// Calculates transactions from a proposal and transmits them. The gate
+    /// on a connected Indexer sits here, before calculation, so a doomed
+    /// send fails without storing Calculated transactions it cannot
+    /// transmit. `wrap_calculate_error` names the [`SendError`] variant the
+    /// caller's proposal kind reports calculation failure through.
+    async fn calculate_and_transmit<NoteRef>(
+        &mut self,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
+        account: zip32::AccountId,
+        wrap_calculate_error: impl FnOnce(CalculateTransactionError<NoteRef>) -> SendError,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
+        let calculated_txids = self
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, account)
+            .await
+            .map_err(wrap_calculate_error)?;
+
+        self.transmit_transactions(calculated_txids).await
+    }
+
     async fn send(
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet()
-            .write()
+        self.calculate_and_transmit(proposal, sending_account, SendError::CalculateSendError)
             .await
-            .calculate_transactions(proposal, sending_account)
-            .await
-            .map_err(SendError::CalculateSendError)?;
-
-        self.transmit_transactions(calculated_txids).await
     }
 
     async fn shield(
@@ -42,15 +66,8 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet()
-            .write()
+        self.calculate_and_transmit(proposal, shielding_account, SendError::CalculateShieldError)
             .await
-            .calculate_transactions(proposal, shielding_account)
-            .await
-            .map_err(SendError::CalculateShieldError)?;
-
-        self.transmit_transactions(calculated_txids).await
     }
 
     /// Creates and transmits transactions from a stored proposal.
@@ -60,6 +77,7 @@ impl LightClient {
         &mut self,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let txids = match proposal {
@@ -83,6 +101,57 @@ impl LightClient {
         }
     }
 
+    /// Calculates (signs) transactions from the stored proposal without an
+    /// Indexer — the offline-signing half of the Indexerless capability set
+    /// (ADR 0006). The stored proposal is consumed, exactly as
+    /// [`Self::send_stored_proposal`] consumes it, and the signed
+    /// transactions land in the wallet with `Calculated` status; transmit
+    /// them with [`Self::transmit_calculated`] once an Indexer is
+    /// configured.
+    ///
+    /// The transactions' expiry heights derive from the proposal's target
+    /// height — the wallet's possibly stale chain view — so a transaction
+    /// calculated long offline can be expired by transmission time. The
+    /// ratified no-expiry sentinel for offline signing is blocked on
+    /// upstream expiry control in `zcash_client_backend` (issue #2455).
+    pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
+        let mut wallet = self.wallet().write().await;
+        let opt_proposal = wallet.take_proposal();
+        if let Some(proposal) = opt_proposal {
+            let txids = match proposal {
+                ZingoProposal::Send {
+                    proposal,
+                    sending_account,
+                } => wallet
+                    .calculate_transactions(proposal, sending_account)
+                    .await
+                    .map_err(SendError::CalculateSendError)?,
+                ZingoProposal::Shield {
+                    proposal,
+                    shielding_account,
+                } => wallet
+                    .calculate_transactions(proposal, shielding_account)
+                    .await
+                    .map_err(SendError::CalculateShieldError)?,
+            };
+            Ok(txids)
+        } else {
+            Err(SendError::NoStoredProposal.into())
+        }
+    }
+
+    /// Transmits previously calculated transactions to the Indexer, in the
+    /// given order — the transmission half of the offline-signing flow.
+    /// Requires an Indexer; an Indexerless attempt fails with
+    /// [`LightClientError::Offline`] and the Calculated transactions remain
+    /// in the wallet, ready to transmit once connected.
+    pub async fn transmit_calculated(
+        &mut self,
+        calculated_txids: NonEmpty<TxId>,
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.transmit_transactions(calculated_txids).await
+    }
+
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
     /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
@@ -92,6 +161,8 @@ impl LightClient {
         account_id: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        // Proposing is an Indexerless capability; only the calculate/transmit
+        // stage below demands a connection.
         let _ignore_error = self.pause_sync();
         let proposal = self
             .wallet()
@@ -112,6 +183,8 @@ impl LightClient {
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        // Proposing is an Indexerless capability; only the calculate/transmit
+        // stage below demands a connection.
         let proposal = self
             .wallet()
             .write()
@@ -128,6 +201,7 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        let indexer = self.require_indexer()?.clone();
         let mut wallet = self.wallet().write().await;
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
@@ -160,9 +234,9 @@ impl LightClient {
                 })?;
 
             let mut retry_count = 0;
+            let mut queued_probes = 0;
             let txid_from_server = loop {
-                let transmission_result = self
-                    .indexer
+                let transmission_result = indexer
                     .clone()
                     .send_transaction(
                         RawTransaction {
@@ -183,6 +257,45 @@ impl LightClient {
                         break Ok(txid);
                     }
                     Err(e) => {
+                        // The node's rejections of resubmitted bytes
+                        // are positive confirmation that an earlier
+                        // submission was received (issue #2450).
+                        // Substring matches because zainod surfaces
+                        // the rejections untyped (zingolabs/zaino#1392);
+                        // upgrade to typed checks when that lands.
+                        if let SendError::TransmissionError(
+                            TransmissionError::TransmissionFailed(message),
+                        ) = &e
+                        {
+                            // Storage-backed duplicates: the earlier
+                            // submission is minable (in the mempool)
+                            // or already mined, so transmission is
+                            // complete.
+                            if message.contains("transaction already exists in mempool")
+                                || message.contains("transaction already in block chain")
+                            {
+                                break Ok(txid.to_string());
+                            }
+                            // "Queued for download" proves delivery,
+                            // not minability: zebra is still verifying
+                            // the earlier submission. Hold success
+                            // until the verdict is storage-backed, so
+                            // send-Ok keeps meaning the transaction is
+                            // minable now.
+                            if message.contains("already queued for download") {
+                                if queued_probes >= MAX_QUEUED_PROBES {
+                                    pepper_sync::set_transactions_failed(
+                                        &mut wallet.wallet_transactions,
+                                        vec![*txid],
+                                    );
+                                    wallet.save_required = true;
+                                    break Err(e);
+                                }
+                                queued_probes += 1;
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                continue;
+                            }
+                        }
                         if retry_count >= MAX_RETRIES {
                             pepper_sync::set_transactions_failed(
                                 &mut wallet.wallet_transactions,
@@ -602,7 +715,7 @@ mod test {
 
     use crate::{
         config::{ClientConfig, WalletConfig},
-        lightclient::{LightClient, sync::test::sync_example_wallet},
+        lightclient::{LightClient, error::LightClientError, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
         testutils::{
             chain_generics::{
@@ -630,8 +743,8 @@ mod test {
     async fn complete_and_broadcast_unconnected_error() {
         let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
-        lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
-        // TODO: match on specific error
+        let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
+        assert!(matches!(err, LightClientError::Offline));
     }
 
     /// live sync: execution time increases linearly until example wallet is upgraded
