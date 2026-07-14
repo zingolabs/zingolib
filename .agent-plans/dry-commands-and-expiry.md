@@ -19,6 +19,28 @@ Session working in the `dry-commands` worktree on branch
   derived from it); upstream issue filed asking zcash_protocol to
   export a named constant, to be adopted at a normal version bump.
 
+## In progress (2026-07-14)
+
+- Eliminate the REPL's in-band error sniffing in `zingo-cli/src/lib.rs`
+  (the internal instance of issue #2446's problem; same family as the
+  Least Authority audit's Issue Q, which itself concerns zingo-mobile's
+  FFI bridges). The prompt indicator and the save check move onto the
+  command-loop thread and use typed calls (`poll_sync`,
+  `pepper_sync::sync_status`, `check_save_error`); the channel request
+  becomes an enum so no consumer classifies a response by its content.
+  All printed bytes are preserved, including the dependence removal on
+  pepper-sync's misspelled success message — except the sync progress
+  itself, which by user direction is now an exact integer ratio
+  (`X / Y outputs`), never a float. To support that,
+  `pepper-sync/src/sync.rs` (claimed) exposes the ratio's integers on
+  `SyncStatus` (`total_outputs_scanned` / `total_outputs`, both `u64`)
+  and an `is_complete()` that preserves the refetching-nullifiers
+  nuance the old 99% override encoded.
+- Branch rebased onto zingolabs/dev (2026-07-14): the fork-based stack
+  base b84459994 and the local ADR 0007 were dropped as superseded by
+  dev's retarget implementation (c007996aa) and ADR 0008; the ADR 0006
+  pointer fix and this file were replayed as the rebase remnant.
+
 ## File claims
 
 - `zingolib/CONTEXT.md` (glossary updates as terms resolve)

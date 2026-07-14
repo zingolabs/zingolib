@@ -80,6 +80,27 @@ pub struct SyncStatus {
     pub total_orchard_outputs_scanned: u32,
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
+    /// Numerator of the exact scan-progress ratio: outputs scanned so far
+    /// across both shielded pools.
+    pub total_outputs_scanned: u64,
+    /// Denominator of the exact scan-progress ratio: outputs in the chain
+    /// between the wallet birthday and the last known chain height, across
+    /// both shielded pools. Zero when sync has never started.
+    pub total_outputs: u64,
+}
+
+impl SyncStatus {
+    /// Whether sync is complete: every output between the wallet birthday
+    /// and the last known chain height is scanned and no scan range still
+    /// awaits nullifier mapping or refetching.
+    pub fn is_complete(&self) -> bool {
+        self.total_outputs > 0
+            && self.total_outputs_scanned >= self.total_outputs
+            && !self.scan_ranges.iter().any(|scan_range| {
+                scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
+            })
+    }
 }
 
 // TODO: complete display, scan ranges in raw form are too verbose
@@ -120,6 +141,8 @@ impl From<SyncStatus> for json::JsonValue {
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
+            "total_outputs_scanned" => value.total_outputs_scanned,
+            "total_outputs" => value.total_outputs,
         }
     }
 }
@@ -731,6 +754,8 @@ where
             total_orchard_outputs_scanned: 0,
             percentage_session_outputs_scanned: 0.0,
             percentage_total_outputs_scanned: 0.0,
+            total_outputs_scanned: 0,
+            total_outputs: 0,
         });
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
@@ -822,6 +847,8 @@ where
         total_orchard_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
+        total_outputs_scanned: u64::from(total_outputs_scanned),
+        total_outputs: u64::from(total_outputs),
     })
 }
 
