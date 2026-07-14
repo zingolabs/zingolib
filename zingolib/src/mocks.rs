@@ -380,6 +380,7 @@ pub mod proposal {
     //! Module for mocking structs from [`zcash_client_backend::proposal`]
 
     use std::collections::BTreeMap;
+    use std::num::NonZero;
 
     use nonempty::NonEmpty;
 
@@ -388,6 +389,7 @@ pub mod proposal {
     use sapling_crypto::Rseed;
     use sapling_crypto::value::NoteValue;
     use zcash_address::ZcashAddress;
+    use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
@@ -415,6 +417,8 @@ pub mod proposal {
         fee_rule: Option<FeeRule>,
         min_target_height: Option<BlockHeight>,
         steps: Option<NonEmpty<Step<OutputRef>>>,
+        confirmations_policy: Option<ConfirmationsPolicy>,
+        ironwood_active: Option<bool>,
     }
 
     #[allow(dead_code)]
@@ -426,12 +430,16 @@ pub mod proposal {
                 fee_rule: None,
                 min_target_height: None,
                 steps: None,
+                confirmations_policy: None,
+                ironwood_active: None,
             }
         }
 
         build_method!(fee_rule, FeeRule);
         build_method!(min_target_height, BlockHeight);
         build_method!(steps, NonEmpty<Step<OutputRef>>);
+        build_method!(confirmations_policy, ConfirmationsPolicy);
+        build_method!(ironwood_active, bool);
 
         /// Builds after all fields have been set.
         #[must_use]
@@ -442,10 +450,13 @@ pub mod proposal {
                 step.payment_pools().clone(),
                 step.transparent_inputs().to_vec(),
                 step.shielded_inputs().cloned(),
+                step.anchor_height().unwrap(),
                 step.balance().clone(),
                 self.fee_rule.unwrap(),
                 self.min_target_height.unwrap().into(),
+                self.confirmations_policy.unwrap(),
                 step.is_shielding(),
+                self.ironwood_active.unwrap(),
             )
             .unwrap()
         }
@@ -458,7 +469,12 @@ pub mod proposal {
             builder
                 .fee_rule(FeeRule::standard())
                 .min_target_height(BlockHeight::from_u32(1))
-                .steps(NonEmpty::singleton(StepBuilder::default().build()));
+                .steps(NonEmpty::singleton(StepBuilder::default().build()))
+                .confirmations_policy(ConfirmationsPolicy::new_symmetrical(
+                    NonZero::try_from(1).unwrap(),
+                    false,
+                ))
+                .ironwood_active(true);
             builder
         }
     }
@@ -477,9 +493,11 @@ pub mod proposal {
         payment_pools: Option<BTreeMap<usize, PoolType>>,
         transparent_inputs: Option<Vec<WalletTransparentOutput<()>>>,
         shielded_inputs: Option<Option<ShieldedInputs<OutputRef>>>,
+        anchor_height: Option<BlockHeight>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
         is_shielding: Option<bool>,
+        ironwood_active: Option<bool>,
     }
 
     impl StepBuilder {
@@ -491,9 +509,11 @@ pub mod proposal {
                 payment_pools: None,
                 transparent_inputs: None,
                 shielded_inputs: None,
+                anchor_height: None,
                 prior_step_inputs: None,
                 balance: None,
                 is_shielding: None,
+                ironwood_active: None,
             }
         }
 
@@ -502,9 +522,11 @@ pub mod proposal {
         );
         build_method!(transparent_inputs, Vec<WalletTransparentOutput<()>>);
         build_method!(shielded_inputs, Option<ShieldedInputs<OutputRef>>);
+        build_method!(anchor_height, BlockHeight);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);
         build_method!(is_shielding, bool);
+        build_method!(ironwood_active, bool);
 
         /// Builds after all fields have been set.
         #[must_use]
@@ -515,9 +537,11 @@ pub mod proposal {
                 self.payment_pools.unwrap(),
                 self.transparent_inputs.unwrap(),
                 self.shielded_inputs.unwrap(),
+                self.anchor_height,
                 self.prior_step_inputs.unwrap(),
                 self.balance.unwrap(),
                 self.is_shielding.unwrap(),
+                self.ironwood_active.unwrap(),
             )
             .unwrap()
         }
@@ -542,9 +566,8 @@ pub mod proposal {
                 .payment_pools(payment_pools)
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
-                .shielded_inputs(Some(ShieldedInputs::from_parts(
-                    BlockHeight::from_u32(1),
-                    NonEmpty::singleton(ReceivedNote::from_parts(
+                .shielded_inputs(Some(ShieldedInputs::from_parts(NonEmpty::singleton(
+                    ReceivedNote::from_parts(
                         OutputRef::new(OutputId::new(txid, 0), PoolType::SAPLING),
                         txid,
                         0,
@@ -553,8 +576,9 @@ pub mod proposal {
                         Position::from(1),
                         None, // mined_height. TODO: How should we use this here?
                         None, // max_shielding_input_height. TODO: How should we use this here?
-                    )),
-                )))
+                    ),
+                ))))
+                .anchor_height(BlockHeight::from_u32(1))
                 .prior_step_inputs(vec![])
                 .balance(TransactionBalance::new(vec![], Zatoshis::const_from_u64(20_000)).unwrap())
                 .is_shielding(false);

@@ -66,6 +66,7 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     Proposal::multi_step(
         proposal.fee_rule().clone(),
         TargetHeight::from(lifted_target),
+        proposal.confirmations_policy(),
         proposal.steps().clone(),
     )
 }

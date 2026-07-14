@@ -73,19 +73,6 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-        // Pass None when NU6.3 is configured for this network: the builder derives
-        // the correct tx version from BranchId at the target height (V5 pre-activation,
-        // V6 at and after activation). Force V5 only on networks where NU6.3 is not
-        // yet configured. Must match the version floor used in `create_send_proposal`.
-        let version_floor = if self
-            .chain_type
-            .activation_height(NetworkUpgrade::Nu6_3)
-            .is_some()
-        {
-            None
-        } else {
-            Some(zcash_primitives::transaction::TxVersion::V5)
-        };
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
@@ -94,7 +81,6 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
-            version_floor,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
