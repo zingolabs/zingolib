@@ -516,17 +516,47 @@ mod config_template {
         }
 
         /// A new wallet's birthday normally comes from the server's chain
-        /// tip; Offline mode has no server, so the user must supply one.
+        /// tip; Offline mode has no server, so the Library Birthday — a
+        /// release-stamped height no new seed can predate — stands in
+        /// (ADR 0007). No --birthday is demanded.
         #[test]
-        fn new_wallet_without_birthday_is_refused() {
+        fn new_wallet_without_birthday_uses_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-lib-birthday-test");
             let filled = fill(&[
                 examples::BIN_NAME,
                 "--offline",
                 "--data-dir",
-                "/nonexistent-zingo-cli-offline-test",
+                data_dir.to_str().unwrap(),
             ])
             .unwrap();
-            assert!(build_zingo_config(&filled).is_err());
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == zingolib::config::lib_birthday(ChainType::Mainnet)
+            ));
+        }
+
+        /// --birthday remains available for a new Offline-mode wallet as an
+        /// expert override of the Library Birthday floor (ADR 0007).
+        #[test]
+        fn new_wallet_birthday_overrides_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-birthday-override-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--birthday",
+                "3500000",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == 3_500_000
+            ));
         }
     }
 
