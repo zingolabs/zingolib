@@ -67,7 +67,8 @@ pub fn build_clap_app() -> clap::Command {
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
-                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
+                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction. \
+For a NEW wallet created in Offline mode it is instead an optional override of the library's built-in birthday floor."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
@@ -574,16 +575,13 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
                         .map_err(|e| format!("{e:?}"))
                 })
                 .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
-            // Offline mode has no Indexer to ask for the chain tip; the
-            // user-supplied birthday stands in for it.
+            // Offline mode has no Indexer to ask for the chain tip; a
+            // user-supplied birthday stands in for it, and absent that the
+            // Library Birthday is a safe floor: a new seed cannot predate
+            // the library that generated it.
             None => match u32::try_from(filled_template.birthday) {
                 Ok(birthday) if birthday > 0 => birthday,
-                _ => {
-                    return Err(std::io::Error::other(
-                        "Creating a new wallet in Offline mode requires --birthday with a recent \
-                         block height, because there is no Indexer to ask for the chain tip.",
-                    ));
-                }
+                _ => zingolib::config::lib_birthday(filled_template.chaintype),
             },
         };
 

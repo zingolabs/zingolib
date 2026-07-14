@@ -4,14 +4,18 @@ use std::convert::Infallible;
 
 use nonempty::NonEmpty;
 
-use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::data_api::wallet::TargetHeight;
+use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
+use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
+use zcash_protocol::consensus::BranchId;
 
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -27,6 +31,44 @@ const MAX_RETRIES: u8 = 3;
 /// the retry loop's one-second cadence, for the verdict to become
 /// storage-backed (issue #2450).
 const MAX_QUEUED_PROBES: u8 = 30;
+
+/// ZIP 203: `nExpiryHeight` values at or above this threshold are
+/// interpreted as a block time rather than a block height, so a
+/// transaction's expiry height must stay strictly below it.
+/// (`zcash_primitives` does not export the constant.)
+pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
+
+/// Lifts a stored proposal's target height to the last height of the
+/// consensus-branch epoch the wallet believes it is in, for offline signing.
+///
+/// The transaction built from a proposal expires at its target height plus
+/// [`DEFAULT_TX_EXPIRY_DELTA`], so the lift gives it the longest expiry the
+/// epoch permits: it stays transmittable until the next scheduled network
+/// upgrade. That is the outer limit for any pre-signed Zcash transaction —
+/// the signature commits to the epoch's consensus branch ID, so no expiry
+/// height can carry it past the upgrade. When the params schedule no
+/// upgrade above the stored target, the cap is instead the highest target
+/// whose expiry ZIP 203 can encode as a height.
+///
+/// The steps and their anchors are copied untouched, and the stored target
+/// is never lowered.
+fn retarget_for_offline_signing<NoteRef: Clone>(
+    proposal: &Proposal<zip317::FeeRule, NoteRef>,
+    chain_type: &ChainType,
+) -> Result<Proposal<zip317::FeeRule, NoteRef>, ProposalError> {
+    let stored_target = proposal.min_target_height();
+    let epoch = BranchId::for_height(chain_type, stored_target.into());
+    let cap = match epoch.height_bounds(chain_type) {
+        Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
+        _ => ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1 - DEFAULT_TX_EXPIRY_DELTA,
+    };
+    let lifted_target = cap.max(u32::from(stored_target));
+    Proposal::multi_step(
+        proposal.fee_rule().clone(),
+        TargetHeight::from(lifted_target),
+        proposal.steps().clone(),
+    )
+}
 
 impl LightClient {
     /// Calculates transactions from a proposal and transmits them. The gate
@@ -109,30 +151,54 @@ impl LightClient {
     /// them with [`Self::transmit_calculated`] once an Indexer is
     /// configured.
     ///
-    /// The transactions' expiry heights derive from the proposal's target
-    /// height — the wallet's possibly stale chain view — so a transaction
-    /// calculated long offline can be expired by transmission time. The
-    /// ratified no-expiry sentinel for offline signing is blocked on
-    /// upstream expiry control in `zcash_client_backend` (issue #2455).
+    /// When the client is Indexerless, the stored proposal is first
+    /// retargeted: its target height is lifted to the last height of the
+    /// consensus-branch epoch the wallet believes it is in, so the built
+    /// transaction carries the longest expiry that epoch permits. It stays
+    /// transmittable until the next scheduled network upgrade — the outer
+    /// limit for any pre-signed Zcash transaction, whose signature commits
+    /// to the epoch's consensus branch ID — and a stale offline chain view
+    /// cannot expire it before an Indexer is available (issue #2455). An
+    /// Indexer-connected calculation keeps the proposal's ordinary expiry,
+    /// [`DEFAULT_TX_EXPIRY_DELTA`] blocks past the target: connected
+    /// callers are expected to transmit promptly.
     pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
+        let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
         if let Some(proposal) = opt_proposal {
+            let chain_type = wallet.chain_type();
             let txids = match proposal {
                 ZingoProposal::Send {
                     proposal,
                     sending_account,
-                } => wallet
-                    .calculate_transactions(proposal, sending_account)
-                    .await
-                    .map_err(SendError::CalculateSendError)?,
+                } => {
+                    let proposal = if indexerless {
+                        retarget_for_offline_signing(&proposal, &chain_type)
+                            .map_err(SendError::RetargetError)?
+                    } else {
+                        proposal
+                    };
+                    wallet
+                        .calculate_transactions(proposal, sending_account)
+                        .await
+                        .map_err(SendError::CalculateSendError)?
+                }
                 ZingoProposal::Shield {
                     proposal,
                     shielding_account,
-                } => wallet
-                    .calculate_transactions(proposal, shielding_account)
-                    .await
-                    .map_err(SendError::CalculateShieldError)?,
+                } => {
+                    let proposal = if indexerless {
+                        retarget_for_offline_signing(&proposal, &chain_type)
+                            .map_err(SendError::RetargetError)?
+                    } else {
+                        proposal
+                    };
+                    wallet
+                        .calculate_transactions(proposal, shielding_account)
+                        .await
+                        .map_err(SendError::CalculateShieldError)?
+                }
             };
             Ok(txids)
         } else {
