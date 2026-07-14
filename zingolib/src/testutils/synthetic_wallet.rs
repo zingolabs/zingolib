@@ -306,8 +306,16 @@ impl SyntheticWalletBuilder {
             .store_mut()
             .add_checkpoint(tip, checkpoint_covering(self.orchard_note_values.len()))
             .expect("infallible on the memory store");
+        wallet
+            .shard_trees
+            .ironwood
+            .store_mut()
+            .add_checkpoint(tip, checkpoint_covering(self.ironwood_note_values.len()))
+            .expect("infallible on the memory store");
 
-        let shielded_note_count = self.orchard_note_values.len() + self.sapling_note_values.len();
+        let shielded_note_count = self.ironwood_note_values.len()
+            + self.orchard_note_values.len()
+            + self.sapling_note_values.len();
         for (index, value) in self.transparent_coin_values.iter().enumerate() {
             // Txid bytes offset past both shielded ranges.
             let txid = TxId::from_bytes([0xC0 + u8::try_from(index).unwrap(); 32]);

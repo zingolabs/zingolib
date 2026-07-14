@@ -285,7 +285,7 @@ mod test {
     fn proposal_targets_best_pool_per_unified_address() {
         let mut wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(100_000)
+                .ironwood_note(100_000)
                 .build();
         let chain = wallet.chain_type;
 
@@ -317,13 +317,13 @@ mod test {
         let pools = step.payment_pools();
         assert_eq!(
             pools[&0],
-            PoolType::Shielded(ShieldedPool::Orchard),
-            "orchard-only UA must be paid in orchard"
+            PoolType::Shielded(ShieldedPool::Ironwood),
+            "orchard-only UA must be paid in ironwood"
         );
         assert_eq!(
             pools[&1],
-            PoolType::Shielded(ShieldedPool::Orchard),
-            "all-shielded UA must be paid in its best pool, orchard"
+            PoolType::Shielded(ShieldedPool::Ironwood),
+            "all-shielded UA must be paid in its best pool, ironwood"
         );
         assert_eq!(
             pools[&2],
