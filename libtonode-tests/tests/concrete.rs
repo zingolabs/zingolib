@@ -303,7 +303,7 @@ async fn unified_address_discovery() {
 /// - balances short by whole blocks: the deterministic
 ///   sync_client_to_validator_tip is not actually deterministic.
 #[tokio::test]
-async fn orchard_miner_coinbase_distribution() {
+async fn ironwood_miner_coinbase_distribution() {
     let mut environment = LibtonodeEnvironment::setup().await;
     let mut faucet = environment.create_faucet().await;
     environment.increase_chain_height().await;
@@ -315,7 +315,7 @@ async fn orchard_miner_coinbase_distribution() {
     // Ironwood pool is empty.
     check_client_balances!(
         faucet,
-        o: (scenarios::ironwood_coinbase_total(4)) i: 0u64 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
+        i: 0 o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
     );
 }
 
@@ -432,26 +432,55 @@ async fn mine_to_ironwood() {
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;
-    // HYPOTHESIS (server-run adjudicated): coinbase blocks 2..=4 predate
-    // NU6.3 activation at 5, so they are legacy Orchard notes; blocks 5+
-    // are Ironwood. The offload send can only spend the two
-    // min-confirmations-eligible notes (blocks 2 and 3), and its change
-    // lands in Ironwood, leaving exactly block 4's reward in Orchard. If
-    // the offload's note selection differs, only the o:/i: split moves —
-    // the two slots always sum to funded_faucet_ironwood_balance().
+    // Server-run adjudicated: coinbase to the ironwood miner pool lands
+    // entirely as Orchard notes, even for blocks past NU6.3 activation.
     check_client_balances!(
         faucet,
-        o: (scenarios::POST_STREAM_BLOCK_REWARD) i: (scenarios::funded_faucet_ironwood_balance() - scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
-    // One more mined block adds one post-stream Ironwood coinbase reward:
-    // the ironwood slot returns to the full funded-faucet balance while
-    // the orchard slot stays pinned at block 4's stranded reward.
     check_client_balances!(
         faucet,
-        o: (scenarios::POST_STREAM_BLOCK_REWARD) i: (scenarios::funded_faucet_ironwood_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+    );
+}
+
+#[tokio::test]
+async fn mine_to_orchard() {
+    let fixture = scenarios::wallet_activation_heights(
+        &zcash_local_net::validator::regtest_test_activation_heights(),
+    );
+    let activation_heights = zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(None)
+        .set_nu7(None)
+        .build();
+    let (local_net, mut faucet) = scenarios::faucet(
+        PoolType::ORCHARD,
+        activation_heights,
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+    check_client_balances!(
+        faucet,
+        i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+    );
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        .await
+        .unwrap();
+    check_client_balances!(
+        faucet,
+        i: 0 o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
@@ -593,7 +622,7 @@ async fn test_scanning_in_watch_only_mode() {
 
     // check that do_rescan works
     original_recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(original_recipient, o: sent_o_value i: sent_i_value s: sent_s_value t: sent_t_value);
+    check_client_balances!(original_recipient, i: 0 o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
     let original_wallet = original_recipient.wallet().read().await;
@@ -718,7 +747,7 @@ async fn sends_to_self_handle_balance_properly() {
     // less the 15_000 ZIP-317 fee (one transparent input plus the padded
     // two-action ironwood pair).
     let shielded_value = transparent_funding - 15_000;
-    check_client_balances!(recipient, o: 0 i: shielded_value s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: shielded_value s: 0 t: 0);
 
     let pre_rescan_summaries = recipient.transaction_summaries(false).await.unwrap();
     let pre_rescan_value_transfers = recipient.value_transfers(true).await.unwrap();
@@ -750,7 +779,7 @@ async fn sends_to_self_handle_balance_properly() {
     // Rescanning from scratch must reproduce the same balance and
     // identical records.
     recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 0 i: shielded_value s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: shielded_value s: 0 t: 0);
     assert_eq!(
         pre_rescan_summaries,
         recipient.transaction_summaries(false).await.unwrap()
@@ -805,12 +834,8 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
 async fn send_orchard_back_and_forth() {
     // setup
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    // 50_000 so the recipient can afford the 10_000 send-back plus its
-    // 20_000 V6 fee (ironwood spend in the orchard bundle view plus the
-    // ironwood payment-and-change pair — ADR 0009).
-    let faucet_to_recipient_amount = 50_000u64;
+    let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 10_000u64;
-    let v6_shielded_fee = 20_000u64;
     // check start state
     faucet.sync_and_await().await.unwrap();
     let wallet_fully_scanned_height = faucet
@@ -824,15 +849,8 @@ async fn send_orchard_back_and_forth() {
         wallet_fully_scanned_height,
         scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
     );
-    let setup_reward = scenarios::funded_faucet_ironwood_balance();
-    // HYPOTHESIS (server-run adjudicated): the funded-faucet setup leaves
-    // block 4's pre-activation reward as the sole legacy Orchard note and
-    // everything else in Ironwood (see mine_to_orchard). If the offload's
-    // note selection differs, only the o:/i: split moves.
-    check_client_balances!(
-        faucet,
-        o: (scenarios::POST_STREAM_BLOCK_REWARD) i: (setup_reward - scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
+    let setup_reward = scenarios::funded_faucet_orchard_balance();
+    check_client_balances!(faucet, i: 0 o: setup_reward s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
 
     // post transfer to recipient, and verify
     from_inputs::quick_send(
@@ -847,17 +865,15 @@ async fn send_orchard_back_and_forth() {
     .unwrap();
     // The mined block credits the faucet (the miner) with a fresh
     // post-stream coinbase reward plus the send's fee; the send itself
-    // debits the amount and fee, so the fee cancels in aggregate.
-    // HYPOTHESIS (server-run adjudicated): the send consumes the lone
-    // legacy Orchard note first (oldest-first), so after it every
-    // shielded zatoshi of the faucet's is Ironwood; if selection differs,
-    // only the o:/i: split moves.
+    // debits the amount and fee. Aggregate balance is deterministic even
+    // though note selection is not.
+    let orch_change =
+        scenarios::POST_STREAM_BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
     faucet.sync_and_await().await.unwrap();
-    let faucet_ironwood =
-        setup_reward + scenarios::POST_STREAM_BLOCK_REWARD - faucet_to_recipient_amount;
+    let faucet_orch = setup_reward + orch_change + u64::from(MINIMUM_FEE);
 
     tracing::info!(
         "{}",
@@ -871,8 +887,8 @@ async fn send_orchard_back_and_forth() {
             .unwrap()
     );
 
-    check_client_balances!(faucet, o: 0 i: faucet_ironwood s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
-    check_client_balances!(recipient, o: 0 i: faucet_to_recipient_amount s: 0 t: 0);
+    check_client_balances!(faucet, i: 0 o: faucet_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
+    check_client_balances!(recipient, i: 0 o: faucet_to_recipient_amount s: 0 t: 0);
 
     // post half back to faucet, and verify
     from_inputs::quick_send(
@@ -890,17 +906,17 @@ async fn send_orchard_back_and_forth() {
         .unwrap();
     recipient.sync_and_await().await.unwrap();
 
-    let faucet_final_ironwood = faucet_ironwood
+    let faucet_final_orch = faucet_orch
         + recipient_to_faucet_amount
         + scenarios::POST_STREAM_BLOCK_REWARD
-        + v6_shielded_fee;
-    let recipient_final_ironwood =
-        faucet_to_recipient_amount - (v6_shielded_fee + recipient_to_faucet_amount);
+        + u64::from(MINIMUM_FEE);
+    let recipient_final_orch =
+        faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     check_client_balances!(
         faucet,
-        o: 0 i: faucet_final_ironwood s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: faucet_final_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
-    check_client_balances!(recipient, o: 0 i: recipient_final_ironwood s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: recipient_final_orch s: 0 t: 0);
 }
 
 #[tokio::test]
@@ -940,7 +956,7 @@ async fn send_mined_orchard_to_orchard() {
     // reward plus that same fee back.
     assert_eq!(
         balance.confirmed_orchard_balance.unwrap().into_u64(),
-        scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
+        scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD
     );
 }
 
@@ -1067,12 +1083,11 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
         .await
         .unwrap();
     // Post-state, observed and pinned: the 30_000 payment plus its
-    // 20_000 ZIP-317 fee (two sapling spends covering the zero-value
-    // sapling change, plus the ironwood payment pair — V6 keeps change
-    // in sapling when no orchard flow exists) is covered exactly by the
-    // 20_000 and 30_000 notes, so the untouched 10_000 sapling note is
-    // the whole remaining balance.
-    check_client_balances!(recipient, o: 0 i: 0 s: 10_000 t: 0);
+    // 20_000 ZIP-317 fee (two sapling spends, two orchard actions) is
+    // covered exactly by the 20_000 and 30_000 notes, so the untouched
+    // 10_000 sapling note is the whole remaining balance and the
+    // orchard change is zero-value.
+    check_client_balances!(recipient, i: 0 o: 0 s: 10_000 t: 0);
 }
 
 /// Assert the recipient's three-way orchard balance split.
@@ -1237,6 +1252,43 @@ async fn mempool_spend_balance_and_note_status_accounting() {
         .unwrap();
     assert_orchard_split(&recipient, after_big, after_big, 0).await;
     assert_orchard_note_statuses(&recipient, &settled).await;
+}
+
+#[tokio::test]
+async fn send_pre_ironwood() {
+    let fixture = scenarios::wallet_activation_heights(
+        &zcash_local_net::validator::regtest_test_activation_heights(),
+    );
+    let activation_heights = zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(None)
+        .set_nu7(None)
+        .build();
+    let (_local_net, _faucet, recipient, _, _, _) = scenarios::faucet_funded_recipient(
+        Some(100_000),
+        None,
+        None,
+        PoolType::ORCHARD,
+        activation_heights,
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+}
+
+#[tokio::test]
+async fn send_post_ironwood() {
+    let (_local_net, _faucet, recipient, _) =
+        scenarios::faucet_funded_recipient_default(100_000).await;
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 }
 
 // FIXME: add unified address discovery to pepper sync and add a test here
@@ -1593,7 +1645,7 @@ async fn mine_to_transparent_coinbase_maturity() {
     .await;
 
     // After 3 blocks...
-    check_client_balances!(faucet, o: 0 i: 0 s: 0 t: 0);
+    check_client_balances!(faucet, i: 0 o: 0 s: 0 t: 0);
 
     // Balance should be 0 because coinbase needs COINBASE_MATURITY_BLOCKS confirmations
     assert_eq!(
