@@ -621,6 +621,8 @@ impl WalletTransaction {
     /// Updates transaction status if `status` is a valid update for the current transaction status.
     /// For example, if `status` is `Mempool` but the current transaction status is `Confirmed`, the status will remain
     /// unchanged.
+    /// A `Failed` transaction may return to `Mempool` status, as being observed in the mempool is
+    /// proof the transaction was not rejected or expired.
     /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
     /// to `Confirmed` status.
     pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
@@ -634,7 +636,9 @@ impl WalletTransaction {
             ConfirmationStatus::Mempool(_)
                 if matches!(
                     self.status(),
-                    ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_)
+                    ConfirmationStatus::Calculated(_)
+                        | ConfirmationStatus::Transmitted(_)
+                        | ConfirmationStatus::Failed(_)
                 ) =>
             {
                 self.status = status;
@@ -652,9 +656,9 @@ impl WalletTransaction {
                 self.datetime = datetime;
             }
 
-            ConfirmationStatus::Failed(_)
-                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
-            {
+            // only pending transactions can fail. a confirmed transaction is only invalidated by
+            // a reorg, which is handled by truncating the wallet data.
+            ConfirmationStatus::Failed(_) if self.status().is_pending() => {
                 self.status = status;
                 self.datetime = datetime;
             }
@@ -668,7 +672,19 @@ impl WalletTransaction {
     /// Creates a minimal `WalletTransaction` for testing purposes.
     ///
     /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
+    /// The transaction's expiry height is set to 0 (never expires).
     pub fn new_for_test(txid: TxId, status: ConfirmationStatus) -> Self {
+        Self::new_for_test_with_expiry(txid, status, BlockHeight::from_u32(0))
+    }
+
+    /// Creates a minimal `WalletTransaction` for testing purposes, with the given expiry height.
+    ///
+    /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
+    pub fn new_for_test_with_expiry(
+        txid: TxId,
+        status: ConfirmationStatus,
+        expiry_height: BlockHeight,
+    ) -> Self {
         use zcash_primitives::transaction::{TransactionData, TxVersion};
         use zcash_protocol::consensus::BranchId;
 
@@ -676,7 +692,7 @@ impl WalletTransaction {
             TxVersion::V6,
             BranchId::Nu6_3,
             0,
-            BlockHeight::from_u32(0),
+            expiry_height,
             None,
             None,
             None,
@@ -1692,5 +1708,89 @@ impl SyncDomain for Ironwood {
 
     fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
         wallet_transaction.ironwood_notes_mut()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use zcash_protocol::TxId;
+    use zcash_protocol::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use super::WalletTransaction;
+
+    fn transaction_with_status(status: ConfirmationStatus) -> WalletTransaction {
+        WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+    }
+
+    #[test]
+    fn update_status_follows_transaction_lifecycle() {
+        let mut transaction =
+            transaction_with_status(ConfirmationStatus::Calculated(BlockHeight::from_u32(10)));
+
+        transaction.update_status(
+            ConfirmationStatus::Transmitted(BlockHeight::from_u32(10)),
+            1,
+        );
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Transmitted(_)
+        ));
+
+        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 2);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Mempool(_)
+        ));
+
+        transaction.update_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)), 3);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Confirmed(_)
+        ));
+    }
+
+    #[test]
+    fn update_status_failed_returns_to_mempool() {
+        let mut transaction =
+            transaction_with_status(ConfirmationStatus::Failed(BlockHeight::from_u32(10)));
+
+        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 1);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Mempool(_)
+        ));
+    }
+
+    #[test]
+    fn update_status_failed_is_not_directly_confirmable() {
+        // confirming a failed transaction is handled by replacing the whole record during block
+        // scanning, not by a status update.
+        let mut transaction =
+            transaction_with_status(ConfirmationStatus::Failed(BlockHeight::from_u32(10)));
+
+        transaction.update_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)), 1);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn update_status_confirmed_is_terminal() {
+        let mut transaction =
+            transaction_with_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)));
+
+        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 1);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Confirmed(_)
+        ));
+
+        transaction.update_status(ConfirmationStatus::Failed(BlockHeight::from_u32(11)), 2);
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Confirmed(_)
+        ));
     }
 }

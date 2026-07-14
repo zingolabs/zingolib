@@ -12,7 +12,7 @@ use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
 
 use zingo_netutils::Indexer as _;
-use zingo_netutils::lightwallet_protocol::RawTransaction;
+use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
@@ -132,13 +132,13 @@ impl LightClient {
                     proposal,
                     shielding_account,
                 } => self.shield(proposal, shielding_account).await,
-            }?;
+            };
 
             if resume_sync {
                 let _ignore_error = self.resume_sync();
             }
 
-            Ok(txids)
+            txids
         } else {
             Err(SendError::NoStoredProposal.into())
         }
@@ -231,18 +231,21 @@ impl LightClient {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
         let _ignore_error = self.pause_sync();
-        let proposal = self
+        let proposal_result = self
             .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id)
-            .map_err(SendError::ProposeSendError)?;
-        let txids = self.send(proposal, account_id).await?;
+            .map_err(SendError::ProposeSendError);
+        let txids = match proposal_result {
+            Ok(proposal) => self.send(proposal, account_id).await,
+            Err(e) => Err(e.into()),
+        };
         if resume_sync {
             let _ignore_error = self.resume_sync();
         }
 
-        Ok(txids)
+        txids
     }
 
     /// Shields all transparent funds skipping proposal confirmation.
@@ -364,6 +367,27 @@ impl LightClient {
                             }
                         }
                         if retry_count >= MAX_RETRIES {
+                            // a transmission error does not prove the transaction failed to reach
+                            // the network. an earlier attempt may have been accepted with its
+                            // response lost (e.g. a timeout), causing rebroadcasts to be rejected
+                            // as duplicates. only mark the transaction failed if the server does
+                            // not know it.
+                            if indexer
+                                .clone()
+                                .get_transaction(
+                                    TxFilter {
+                                        block: None,
+                                        index: 0,
+                                        hash: txid.as_ref().to_vec(),
+                                    },
+                                    DEFAULT_REQUEST_TIMEOUT,
+                                )
+                                .await
+                                .is_ok()
+                            {
+                                break Ok(txid.to_string());
+                            }
+
                             pepper_sync::set_transactions_failed(
                                 &mut wallet.wallet_transactions,
                                 vec![*txid],
