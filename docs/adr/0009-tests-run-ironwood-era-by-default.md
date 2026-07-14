@@ -39,9 +39,11 @@ Pre-Ironwood behavior appears in exactly two forms: tests that configure a
 chain with NU6.3 unactivated (as `mine_to_orchard` does), on which the
 builder derives a pre-V6 version from the branch id, and Orchard→Ironwood
 migration tests, which inherently straddle both eras. There is no per-wallet
-opt-out: the `allow_v6_transactions` setting was removed (wallet file
-version 43) once the builder began deriving the transaction version from
-the chain's branch id at target height, leaving the setting with no
-behavioral reader. We rejected splitting the pool matrix by era (V5-pinned
+opt-out: the `allow_v6_transactions` setting was removed once the builder
+began deriving the transaction version from the chain's branch id at target
+height, leaving the setting with no behavioral reader. It vanished before
+any release carried it, so the wallet file format is unchanged (version 42
+is defined without the byte a pre-release revision wrote). We rejected
+splitting the pool matrix by era (V5-pinned
 copies of every Orchard-destination row) because the duplication was largely
 redundant with the existing `ironwood_sends_*` rows.

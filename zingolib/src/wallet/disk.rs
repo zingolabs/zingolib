@@ -47,17 +47,16 @@ impl LightWallet {
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
     ///
     /// Changes in version 42:
-    /// `allow_v6_transactions` bool appended after `min_confirmations`.
     /// Optional Orchard→Ironwood migration section appended (see
     /// [`crate::wallet::migration::store`]; the section carries its own inner
-    /// version).
-    ///
-    /// Changes in version 43:
-    /// The `allow_v6_transactions` bool was removed along with the setting
-    /// itself; readers of version-42 files consume and discard the byte.
+    /// version). (A pre-release revision of 42 also wrote an
+    /// `allow_v6_transactions` bool after `min_confirmations`; the setting
+    /// was removed before any release carried it, so version 42 is defined
+    /// without the byte and files from those testing builds are not
+    /// readable.)
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        43
+        42
     }
 
     /// Serialize into `writer`
@@ -146,7 +145,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=43 => Self::read_v32(reader, chain_type, version),
+            32..=42 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -592,11 +591,6 @@ impl LightWallet {
             } else {
                 NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
             };
-            // Version 42 wrote the since-removed `allow_v6_transactions`
-            // bool here; consume and discard it.
-            if version == 42 {
-                let _ = reader.read_u8()?;
-            }
             WalletSettings {
                 sync_config,
                 min_confirmations,
