@@ -24,7 +24,9 @@
 
 **Pool** — A shielding protocol or address type. Four pools exist: `Transparent`, `Sapling`, `Orchard`, and `Ironwood`. The Ironwood pool activates at NU6.3 and succeeds Orchard; the Orchard→Ironwood migration (ZIP 318) moves value between them.
 
-**Ironwood** — The shielded pool introduced by NU6.3. An Ironwood note is addressed through the same receiver as an Orchard note: the Ironwood receiver of a Unified Address *is* its Orchard receiver, and the transaction's era decides which pool a shielded output to that receiver lands in.
+**Ironwood** — The shielded pool introduced by NU6.3. An Ironwood note is addressed through the same receiver as an Orchard note: the Ironwood receiver of a Unified Address *is* its Orchard receiver. Under the ZIP 318 Turnstile, ordinary payments into the old Orchard pool are disabled after NU6.3 activation, so new payments to that receiver travel as Ironwood.
+
+**Turnstile** — The ZIP 318 consensus mechanism that, from NU6.3 activation, constrains old-Orchard-pool spends to spends-plus-change and disables ordinary payments into that pool. It makes the Orchard→Ironwood migration effectively mandatory and bounds circulating supply as value crosses pools.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 
