@@ -67,13 +67,19 @@ pub fn build_clap_app() -> clap::Command {
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
-                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
+                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction. \
+For a NEW wallet created in Offline mode it is instead an optional override of the library's built-in birthday floor."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
                 .default_value(zingolib::config::DEFAULT_INDEXER_URI))
+            .arg(Arg::new("offline")
+                .long("offline")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with_all(["server", "waitsync"])
+                .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -182,19 +188,15 @@ fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> Str
 
 /// Formats the ranked server list for display by the `servers` command.
 fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+    let Some(server) = &cli_config.server else {
+        return "Offline mode: no server is configured this session.".to_string();
+    };
     if cli_config.ranked_servers.is_empty() {
-        return format!(
-            "Server was set explicitly: {}\nNo other servers were probed.",
-            cli_config.server
-        );
+        return format!("Server was set explicitly: {server}\nNo other servers were probed.");
     }
     let mut out = String::from("Servers ranked by get_info() response time:\n");
     for (i, r) in cli_config.ranked_servers.iter().enumerate() {
-        let marker = if r.uri == cli_config.server {
-            " (active)"
-        } else {
-            ""
-        };
+        let marker = if r.uri == *server { " (active)" } else { "" };
         out.push_str(&format!(
             "  {:>2}. {} {:>8.1}ms{}\n",
             i + 1,
@@ -316,12 +318,26 @@ struct CommandChannel {
 /// string response back through the returned [`CommandChannel`].
 ///
 /// The loop exits when it receives a `"quit"` or `"exit"` command.
-pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
+pub(crate) fn command_loop(
+    mut lightclient: LightClient,
+    communication_mode: CommunicationMode,
+) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
         while let Ok((cmd, args)) = command_receiver.recv() {
+            // The Offline-mode pin: this session never configures an Indexer.
+            if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
+                resp_transmitter
+                    .send(
+                        "Error: this session is in Offline mode; no Indexer may be configured. \
+                         Restart without --offline to change servers."
+                            .to_string(),
+                    )
+                    .unwrap();
+                continue;
+            }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
 
             let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
@@ -379,25 +395,25 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
 
 /// Whether the CLI communicates with a remote indexer or operates locally.
 ///
-/// Currently always [`Online`](CommunicationMode::Online). The [`Offline`](CommunicationMode::Offline)
-/// variant exists so that offline wallet support has a clean place to land.
-#[derive(Debug, PartialEq)]
+/// Selected at argument-parse time by the `--offline` flag and pinned for
+/// the life of the session (Offline mode, issue #2286).
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum CommunicationMode {
     /// Connected to a remote indexer for sync, send, etc.
     Online,
-    /// Operating without network access — local-only commands.
-    /// Will be used by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
+    /// The session never configures an Indexer: the client remains
+    /// Indexerless, and only that state's capability set is available.
     Offline,
 }
 
-/// Determines the communication mode from parsed CLI arguments.
-///
-/// Currently always returns [`CommunicationMode::Online`]. When offline mode
-/// is added, this will inspect a CLI flag (e.g. `--offline`).
-fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
-    CommunicationMode::Online
+/// Determines the communication mode from parsed CLI arguments: the
+/// `--offline` flag pins the session to Offline mode.
+fn get_communication_mode(matches: &clap::ArgMatches) -> CommunicationMode {
+    if matches.get_flag("offline") {
+        CommunicationMode::Offline
+    } else {
+        CommunicationMode::Online
+    }
 }
 
 /// All CLI-derived configuration needed to create a [`LightClient`] and
@@ -408,11 +424,10 @@ fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
-    /// Will be read by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
     communication_mode: CommunicationMode,
-    server: http::Uri,
+    /// The Indexer to connect to; `None` exactly when the session is in
+    /// Offline mode.
+    server: Option<http::Uri>,
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
@@ -468,22 +483,33 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let (server, ranked_servers) =
-            server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
+        // Offline mode never resolves a server — resolution probes the
+        // network, and the session's contract is that no Indexer is ever
+        // configured.
+        let (server, ranked_servers) = match communication_mode {
+            CommunicationMode::Offline => (None, vec![]),
+            CommunicationMode::Online => {
+                let (server, ranked_servers) =
+                    server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
+                // Test to make sure the server has all of scheme, host and port
+                if server.scheme_str().is_none()
+                    || server.host().is_none()
+                    || server.port().is_none()
+                {
+                    return Err(format!(
+                        "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
+                    ));
+                }
+                (Some(server), ranked_servers)
+            }
+        };
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
 
-        // Test to make sure the server has all of scheme, host and port
-        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-            ));
-        }
-
-        let sync = !matches.get_flag("nosync");
+        let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             mode,
@@ -538,17 +564,27 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
     } else {
         // Create client from a new wallet
         println!("Creating a new wallet");
-        let chain_height = RT
-            .block_on(async move {
-                zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
-                    .await
-                    .map_err(|e| format!("{e:?}"))?
-                    .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
-                    .await
-                    .map(|block_id| block_id.height as u32)
-                    .map_err(|e| format!("{e:?}"))
-            })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+        let chain_height = match filled_template.server.clone() {
+            Some(server) => RT
+                .block_on(async move {
+                    zingo_netutils::GrpcIndexer::new(server)
+                        .await
+                        .map_err(|e| format!("{e:?}"))?
+                        .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+                        .await
+                        .map(|block_id| block_id.height as u32)
+                        .map_err(|e| format!("{e:?}"))
+                })
+                .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
+            // Offline mode has no Indexer to ask for the chain tip; a
+            // user-supplied birthday stands in for it, and absent that the
+            // Library Birthday is a safe floor: a new seed cannot predate
+            // the library that generated it.
+            None => match u32::try_from(filled_template.birthday) {
+                Ok(birthday) if birthday > 0 => birthday,
+                _ => zingolib::config::lib_birthday(filled_template.chaintype),
+            },
+        };
 
         WalletConfig::NewSeed {
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -557,12 +593,17 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         }
     };
 
-    Ok(ClientConfig::builder()
-        .set_indexer_uri(filled_template.server.clone())
+    let builder = ClientConfig::builder()
         .set_chain_type(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
-        .set_wallet_config(wallet_config)
-        .build())
+        .set_wallet_config(wallet_config);
+    // In Offline mode no Indexer URI is configured: the client starts (and
+    // stays) Indexerless.
+    let builder = match filled_template.server.clone() {
+        Some(server) => builder.set_indexer_uri(server),
+        None => builder,
+    };
+    Ok(builder.build())
 }
 
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
@@ -578,7 +619,10 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Lightclient connecting to {}", filled_template.server);
+        match &filled_template.server {
+            Some(server) => info!("Lightclient connecting to {server}"),
+            None => info!("Offline mode: no Indexer will be configured this session"),
+        }
     }
 
     if filled_template.sync {
@@ -601,7 +645,10 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     });
 
     // Start the command loop
-    Ok(command_loop(lightclient))
+    Ok(command_loop(
+        lightclient,
+        filled_template.communication_mode,
+    ))
 }
 
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {

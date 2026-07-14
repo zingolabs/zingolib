@@ -6,6 +6,7 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
+use orchard::builder::BundleType;
 use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
@@ -551,6 +552,10 @@ impl crate::wallet::LightWallet {
             ironwood_anchor: match outputs {
                 MigrationOutputs::Orchard(_) => None,
                 MigrationOutputs::Ironwood(_) => Some(orchard::Anchor::empty_tree()),
+            },
+            orchard_pool_bundle_type: BundleType::Transactional {
+                bundle_required: false,
+                pad_to_minimum: None,
             },
         };
         let mut builder = Builder::new(self.chain_type, target_height, build_config);

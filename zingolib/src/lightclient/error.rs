@@ -32,6 +32,9 @@ pub enum LightClientError {
     /// gPRC client error.
     #[error("gRPC client error. {0}")]
     ClientError(#[from] GetClientError),
+    /// Indexer request error.
+    #[error("Indexer request error. {0}")]
+    IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
@@ -41,6 +44,9 @@ pub enum LightClientError {
     /// Ironwood migration error.
     #[error("Ironwood migration error. {0}")]
     MigrationError(#[from] MigrationError),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
 }
 
 /// Errors from the Orchard→Ironwood migration entry points
@@ -91,6 +97,9 @@ pub enum SendError {
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
+    /// Failed to retarget the stored proposal for offline signing.
+    #[error("Failed to retarget the stored proposal for offline signing. {0}")]
+    RetargetError(zcash_client_backend::proposal::ProposalError),
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,

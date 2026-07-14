@@ -14,6 +14,7 @@
 //! any pre-Confirmed state → Invalidated  (bound note spent outside the migration)
 //! ```
 
+use orchard::builder::BundleType;
 use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -280,8 +281,7 @@ pub enum PrepareResult {
     Ready {
         /// Proving closure. Takes ownership of all needed data; no wallet
         /// reference is captured. Safe to call on any thread.
-        prove:
-            Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>,
+        prove: Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>,
         /// First block of the part's bucket window (the builder's target).
         target_height: BlockHeight,
         /// Expiry height of the built transaction.
@@ -510,18 +510,14 @@ impl crate::wallet::LightWallet {
         let anchor =
             Option::<orchard::Anchor>::from(orchard::Anchor::from_bytes(boundary_witness.anchor))
                 .ok_or_else(|| {
-                    WalletError::MigrationStateCorrupt(
-                        "cached boundary anchor is invalid".to_string(),
-                    )
-                })?;
+                WalletError::MigrationStateCorrupt("cached boundary anchor is invalid".to_string())
+            })?;
         let auth_path = boundary_witness
             .auth_path
             .iter()
             .map(|node| {
                 Option::from(orchard::tree::MerkleHashOrchard::from_bytes(node)).ok_or_else(|| {
-                    WalletError::MigrationStateCorrupt(
-                        "cached witness node is invalid".to_string(),
-                    )
+                    WalletError::MigrationStateCorrupt("cached witness node is invalid".to_string())
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -559,14 +555,17 @@ impl crate::wallet::LightWallet {
                 let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
                 let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
 
-                let fee_rule =
-                    zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-                        Zatoshis::from_u64(part_fee)?,
-                    );
+                let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
+                    Zatoshis::from_u64(part_fee)?,
+                );
                 let build_config = BuildConfig::Standard {
                     sapling_anchor: None,
                     orchard_anchor: Some(anchor),
                     ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                    orchard_pool_bundle_type: BundleType::Transactional {
+                        bundle_required: false,
+                        pad_to_minimum: None,
+                    },
                 };
                 let mut builder = Builder::new(chain_type, target_height, build_config)
                     .with_expiry_height(expiry_height);
@@ -586,8 +585,9 @@ impl crate::wallet::LightWallet {
                     )
                     .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
 
-                let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-                    .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+                let (sapling_output, sapling_spend) =
+                    crate::wallet::utils::read_sapling_params()
+                        .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
                 let sapling_prover = zcash_proofs::prover::LocalTxProver::from_bytes(
                     &sapling_spend,
                     &sapling_output,
@@ -642,7 +642,10 @@ impl crate::wallet::LightWallet {
         strategy: SigningStrategy,
     ) -> Result<(), WalletError> {
         let recorded = self.record_migration_transaction(raw_tx, target_height)?;
-        debug_assert_eq!(recorded, txid, "txid mismatch between prove and record phases");
+        debug_assert_eq!(
+            recorded, txid,
+            "txid mismatch between prove and record phases"
+        );
         let signed_blob = match strategy {
             SigningStrategy::LazyAtBoundary => None,
             SigningStrategy::PreSigned => Some(raw_tx.to_vec()),

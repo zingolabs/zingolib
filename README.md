@@ -55,26 +55,15 @@ Use `makers container-test` or `cargo make container-test` to run the same defau
 makers container-test
 ```
 
-The task builds the image if needed, symlinks the image-provided `lightwalletd`, `zcashd`, `zcash-cli`, and `zainod` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile, two retries, and the default filter `not test(slow)`. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
+The task builds the image if needed, symlinks the image-provided `lightwalletd`, `zcashd`, `zcash-cli`, and `zainod` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile and zero retries. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
 
-Extra nextest flags can be forwarded after the task name, and the default filter can be changed with `ZINGOLIB_NEXTEST_FILTER`.
+Extra nextest flags are forwarded after the task name, so every nextest idiom works unchanged:
 
 ```
 makers container-test -p zingo-memo
-ZINGOLIB_NEXTEST_FILTER='package(zingolib) & not test(slow)' makers container-test
-makers rerun
-```
-
-To run the containerized test suite with all features enabled, pass `--all-features` through to nextest:
-
-```
+makers container-test -E 'package(zingolib) & not test(slow)'
 makers container-test --all-features
-```
-
-This still applies the default `not test(slow)` filter. To match `cargo nextest run --all-features` more closely, clear the default filter:
-
-```
-ZINGOLIB_NEXTEST_FILTER= makers container-test --all-features
+makers rerun
 ```
 
 Use `makers local-run` to run the same nextest command on the host.

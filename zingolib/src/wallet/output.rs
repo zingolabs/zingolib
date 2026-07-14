@@ -254,6 +254,7 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon(false) else {
             return Err(WalletError::NoSyncData);
         };
+        // FIXME: add checks for ironwood checkpoint
         if self
             .shard_trees
             .orchard
@@ -318,7 +319,9 @@ impl LightWallet {
 
     /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
     ///
-    /// Any coins from a coinbase transaction will not be returned without 100 additional confirmations.
+    /// Any coins from a coinbase transaction will not be returned without
+    /// [`COINBASE_MATURITY_BLOCKS`](zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS)
+    /// additional confirmations.
     pub(crate) fn spendable_transparent_coins(
         &self,
         target_height: BlockHeight,
@@ -341,7 +344,13 @@ impl LightWallet {
                 let additional_confirmations = transaction
                     .transaction()
                     .transparent_bundle()
-                    .map_or(0, |bundle| if bundle.is_coinbase() { 100 } else { 0 });
+                    .map_or(0, |bundle| {
+                        if bundle.is_coinbase() {
+                            zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS
+                        } else {
+                            0
+                        }
+                    });
 
                 if transaction
                     .status()

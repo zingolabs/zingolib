@@ -52,11 +52,13 @@ pub struct WalletSettings {
     pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
-    /// When true, proposals use `None` for the version floor, allowing the
-    /// upstream builder to produce V6 transactions post-NU6.3 activation
-    /// and route Ironwood-pool inputs and change through the ironwood bundle.
-    /// Defaults to false until a V6-accepting node is available in the
-    /// test environment and Ironwood scanning is fully exercised.
+    /// When true (the default), proposal and transaction building pass
+    /// `None` for the version floor, letting the upstream builder produce
+    /// V6 transactions at and after NU6.3 activation and route
+    /// Ironwood-pool inputs and change through the ironwood bundle. When
+    /// false, building is floored at V5, so outputs land in the legacy
+    /// pools even on an NU6.3-configured chain (ADR 0009's Orchard-era
+    /// opt-out). See [`LightWallet::transaction_version_floor`].
     pub allow_v6_transactions: bool,
 }
 
@@ -65,7 +67,7 @@ impl Default for WalletSettings {
         Self {
             sync_config: SyncConfig::default(),
             min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
-            allow_v6_transactions: false,
+            allow_v6_transactions: true,
         }
     }
 }
@@ -112,9 +114,7 @@ pub(crate) struct WalletBase {
 /// `birthday` block height.
 ///
 /// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
-/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
-/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
-/// methods for a save task implementation.
+/// automatically. See [`crate::lightclient::LightClient::save_task`] and related methods to persist the wallet.
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
@@ -156,7 +156,7 @@ pub struct LightWallet {
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    pub save_required: bool,
+    pub(crate) save_required: bool,
 }
 
 impl LightWallet {
@@ -342,6 +342,11 @@ impl LightWallet {
     /// Clears the proposal in the `send_proposal` field.
     pub fn clear_proposal(&mut self) {
         self.send_proposal = None;
+    }
+
+    /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.
+    pub fn mark_dirty(&mut self) {
+        self.save_required = true;
     }
 
     #[must_use]

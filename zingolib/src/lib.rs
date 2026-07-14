@@ -11,12 +11,13 @@ pub mod lightclient;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 pub mod mocks;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 
 pub use zingo_common_components::protocol::ActivationHeights;
+pub use zingo_netutils::ensure_default_crypto_provider;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

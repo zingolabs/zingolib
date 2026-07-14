@@ -114,7 +114,7 @@ impl std::fmt::Display for ValueTransferKind {
                     SelfSendValueTransfer::Basic => write!(f, "send-to-self"),
                     SelfSendValueTransfer::Shield => write!(f, "shield"),
                     SelfSendValueTransfer::MemoToSelf => write!(f, "memo-to-self"),
-                    SelfSendValueTransfer::Refund => write!(f, "rejection"),
+                    SelfSendValueTransfer::Refund => write!(f, "refund"),
                 },
             },
         }

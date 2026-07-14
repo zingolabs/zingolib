@@ -195,18 +195,23 @@ impl LightClient {
     }
 
     /// The broadcast-only client parts are submitted through: the dedicated
-    /// `migration_broadcast_uri` when configured, the synchronization
-    /// endpoint (with a logged correlation warning) otherwise.
-    fn migration_broadcast_client(&self) -> broadcast_grpc::GrpcBroadcastClient {
+    /// `migration_broadcast_uri` when configured (independent of the Indexer
+    /// connection), the synchronization endpoint (with a logged correlation
+    /// warning) otherwise. With neither endpoint configured the client emits
+    /// no network traffic and this returns [`LightClientError::Offline`].
+    fn migration_broadcast_client(
+        &self,
+    ) -> Result<broadcast_grpc::GrpcBroadcastClient, LightClientError> {
         match &self.migration_broadcast_uri {
-            Some(uri) => broadcast_grpc::GrpcBroadcastClient::new(uri.clone()),
+            Some(uri) => Ok(broadcast_grpc::GrpcBroadcastClient::new(uri.clone())),
             None => {
+                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
                 log::warn!(
                     "no dedicated migration broadcast endpoint configured; parts will be \
                      broadcast to the synchronization endpoint, which lets that server \
                      correlate synchronization with migration activity"
                 );
-                broadcast_grpc::GrpcBroadcastClient::new(self.indexer_uri().clone())
+                Ok(broadcast_grpc::GrpcBroadcastClient::new(indexer_uri))
             }
         }
     }
@@ -220,7 +225,7 @@ impl LightClient {
     /// missed buckets are catch-up's business, because sending them needs
     /// the user-facing disclosure.
     pub async fn broadcast_due_parts(&mut self) -> Result<Vec<TxId>, LightClientError> {
-        let client = self.migration_broadcast_client();
+        let client = self.migration_broadcast_client()?;
         self.broadcast_due_parts_with(&client).await
     }
 
@@ -549,7 +554,7 @@ impl LightClient {
         }
         self.wallet().write().await.refresh_part_witnesses()?;
 
-        let client = self.migration_broadcast_client();
+        let client = self.migration_broadcast_client()?;
         let mut sent = Vec::new();
         for part_id in overdue {
             let txids = self
@@ -578,7 +583,7 @@ impl LightClient {
             }
         }
         self.wallet().write().await.refresh_part_witnesses()?;
-        let client = self.migration_broadcast_client();
+        let client = self.migration_broadcast_client()?;
         self.broadcast_due_parts_with(&client).await
     }
 
@@ -842,7 +847,7 @@ impl LightClient {
                     wallet.refresh_part_witnesses()?;
                 }
 
-                let client = self.migration_broadcast_client();
+                let client = self.migration_broadcast_client()?;
                 let sent = self.broadcast_due_parts_with(&client).await?;
                 self.await_migration_confirmations(&sent).await?;
                 part_txids.extend(sent);

@@ -58,7 +58,16 @@ where
     CC: ConductChain,
 {
     timestamped_test_log("started integration-test send.");
-    sender.sync_and_await().await.unwrap();
+    // Mine one block and sync the sender to the real tip before proposing.
+    // This cures zebra's "could not validate orchard proof ... until the
+    // next chain tip block" rejection, but not because tip-block notes are
+    // unspendable — tip_spend_rejection's tip_note_to_orchard proves those
+    // spend fine. The rejection hits orchard-output transactions built
+    // adjacent to the height-5 NU6.1/6.2 co-activation (a wrong consensus
+    // branch id from a stale wallet view); syncing to the true tip keeps
+    // the builder on the post-activation branch.
+    environment.increase_chain_height().await;
+    environment.sync_client_to_tip(sender).await;
     timestamped_test_log("syncked.");
     let proposal = from_inputs::propose(sender, payments.clone())
         .await
@@ -91,7 +100,9 @@ where
     ChainConductor: ConductChain,
 {
     timestamped_test_log("started integration-test shield.");
-    client.sync_and_await().await.unwrap();
+    // The same tip-separation as assure_propose_send_bump_sync_all_recipients.
+    environment.increase_chain_height().await;
+    environment.sync_client_to_tip(client).await;
     timestamped_test_log("syncked.");
     let proposal = client
         .propose_shield(zip32::AccountId::ZERO)
@@ -185,9 +196,30 @@ where
         sender.sync_and_await().await.unwrap();
         timestamped_test_log("cross-checking mempool records.");
 
-        // let the mempool monitor get a chance
-        // to listen
-        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+        // Wait for the mempool monitor to observe every transaction, polling
+        // for the exact condition the assertions below check instead of
+        // sleeping a fixed interval. The 6-second ceiling matches the old
+        // fixed sleep, so the worst case is unchanged while the typical
+        // wait drops to the monitor's actual latency.
+        let poll_start = std::time::Instant::now();
+        loop {
+            let all_observed = {
+                let wallet = sender.wallet();
+                let wallet = wallet.read().await;
+                txids.iter().all(|txid| {
+                    wallet
+                        .wallet_transactions
+                        .get(txid)
+                        .is_some_and(|transaction| {
+                            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+                        })
+                })
+            };
+            if all_observed || poll_start.elapsed() > std::time::Duration::from_secs(6) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
@@ -313,7 +345,15 @@ where
                     panic!("status regression to Calculated")
                 }
                 ConfirmationStatus::Transmitted(_block_height) => {
-                    panic!("status regression to Transmitted")
+                    // Not a regression: status updates are monotonic, so this
+                    // means the wallet has not yet observed the transaction in
+                    // the mempool or a block. With instant regtest mining a tx
+                    // is often mined before the mempool monitor sees it, and
+                    // the confirming block may not be scanned yet (the Indexer
+                    // lags the Validator by up to ~500ms after
+                    // generate_blocks). Keep polling; the patience bound turns
+                    // a persistent Transmitted into a failure.
+                    any_transaction_not_yet_confirmed = true;
                 }
                 ConfirmationStatus::Mempool(_block_height) => {
                     any_transaction_not_yet_confirmed = true;

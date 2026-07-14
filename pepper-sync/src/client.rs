@@ -225,6 +225,7 @@ pub(crate) async fn get_subtree_roots(
     let mut retry_count = 0;
 
     'retry: loop {
+        let roots_before_pass = subtree_roots.len();
         let (reply_sender, reply_receiver) = oneshot::channel();
 
         fetch_request_sender
@@ -257,7 +258,16 @@ pub(crate) async fn get_subtree_roots(
             start_index += 1;
         }
 
-        break 'retry;
+        // For an unbounded request, a clean stream end is only trusted once
+        // a resume pass from the current index comes back empty: a stream
+        // cut mid-flight (proxy, flow control) also ends cleanly, and
+        // accepting it here silently truncates the wallet's shard tree. The
+        // confirmation costs one extra empty round-trip on the happy path.
+        // A bounded request (max_entries != 0) keeps single-pass semantics —
+        // resuming would fetch past the caller's cap.
+        if max_entries != 0 || subtree_roots.len() == roots_before_pass {
+            break 'retry;
+        }
     }
 
     Ok(subtree_roots)

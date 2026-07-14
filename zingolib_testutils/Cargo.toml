@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-test_zainod_zcashd = []
-test_lwd_zebrad = []
-test_lwd_zcashd = []
+# The lightwalletd indexer lives behind the infrastructure repo's opt-in
+# `legacy-stack` feature (scheduled for removal there). This combo survives
+# only until the Legacy stack is removed as a unit; the zcashd validator
+# combos are already gone.
+test_lwd_zebrad = ["zcash_local_net/legacy-stack"]
 
 [dependencies]
 # zingolib
@@ -17,8 +19,19 @@ zingo_common_components.workspace = true
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 
+# validator JSON-RPC probes
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
+# zcash
+nonempty.workspace = true
+zcash_primitives.workspace = true
+zcash_protocol.workspace = true
+
 # utilties
 portpicker.workspace = true
 tempfile.workspace = true
 http.workspace = true
 zip32.workspace = true
+tokio = { workspace = true, features = ["net", "time", "rt", "io-util", "sync", "macros"] }
+zingo-netutils.workspace = true

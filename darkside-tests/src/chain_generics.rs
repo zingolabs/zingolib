@@ -82,10 +82,9 @@ pub(crate) mod conduct_chain {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             };
-            let config = self.client_builder.make_unique_data_dir_and_create_config(
-                self.configured_activation_heights,
-                wallet_config,
-            );
+            let config = self
+                .client_builder
+                .make_unique_data_dir_and_create_config(wallet_config);
             let mut lightclient = LightClient::new(config, true).await.unwrap();
 
             lightclient
@@ -97,14 +96,12 @@ pub(crate) mod conduct_chain {
         }
 
         async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
-            self.client_builder.make_unique_data_dir_and_create_config(
-                self.configured_activation_heights,
-                WalletConfig::NewSeed {
+            self.client_builder
+                .make_unique_data_dir_and_create_config(WalletConfig::NewSeed {
                     no_of_accounts: 1.try_into().unwrap(),
                     chain_height: 1,
                     wallet_settings: default_test_wallet_settings(),
-                },
-            )
+                })
         }
 
         async fn increase_chain_height(&mut self) {
