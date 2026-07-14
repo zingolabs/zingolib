@@ -422,9 +422,9 @@ async fn utxos_are_not_prematurely_confirmed() {
 }
 
 #[tokio::test]
-async fn mine_to_orchard() {
+async fn mine_to_ironwood() {
     let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         scenarios::default_test_activation_heights(),
         scenarios::ChainCachePolicy::PerTest,
     )

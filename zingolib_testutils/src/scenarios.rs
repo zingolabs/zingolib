@@ -172,6 +172,7 @@ pub fn wallet_activation_heights(
 /// NU6.3 makes zebrad reject every wallet transaction ("incorrect consensus
 /// branch id"). Re-enable NU6.3 (drop the `set_nu6_3(None)`) when the
 /// ironwood wallet feature branch lands here.
+// TODO: update comment
 pub fn default_test_activation_heights() -> ActivationHeights {
     let fixture =
         wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());
