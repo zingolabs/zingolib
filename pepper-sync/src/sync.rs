@@ -2128,10 +2128,13 @@ mod test {
             Duration::from_millis(millis)
         }
 
+        /// One row of the drain-policy table:
+        /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
+        type DrainCase = (usize, u8, Option<u64>, u64, DrainVerdict, &'static str);
+
         #[test]
         fn table() {
-            // (workers, unprocessed, connected_for, poll_elapsed) → verdict
-            let cases: &[(usize, u8, Option<u64>, u64, DrainVerdict, &str)] = &[
+            let cases: &[DrainCase] = &[
                 // The reported bug: first-loop shutdown on a fully
                 // synced chain, stream not yet connected — hold the
                 // session open instead of closing it instantly.
