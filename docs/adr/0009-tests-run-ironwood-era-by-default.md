@@ -35,11 +35,13 @@ do (ZIP 318). Mixed-note wallets (legacy Orchard alongside Ironwood) are
 legitimate fixtures, not accidents — behavior *relative to* Ironwood is a
 primary test subject during the migration window.
 
-Pre-Ironwood behavior appears in exactly two forms: tests that pin
-`WalletSettings::allow_v6_transactions: false` (or configure a chain with
-NU6.3 unactivated, as `mine_to_orchard` does), which floors transaction
-building at V5, and Orchard→Ironwood migration tests, which inherently
-straddle both eras. We rejected splitting the pool matrix by era (V5-pinned
+Pre-Ironwood behavior appears in exactly two forms: tests that configure a
+chain with NU6.3 unactivated (as `mine_to_orchard` does), on which the
+builder derives a pre-V6 version from the branch id, and Orchard→Ironwood
+migration tests, which inherently straddle both eras. There is no per-wallet
+opt-out: the `allow_v6_transactions` setting was removed (wallet file
+version 43) once the builder began deriving the transaction version from
+the chain's branch id at target height, leaving the setting with no
+behavioral reader. We rejected splitting the pool matrix by era (V5-pinned
 copies of every Orchard-destination row) because the duplication was largely
-redundant with the existing `ironwood_sends_*` rows; instead dedicated tests
-cover the opt-out paths, keeping zingo-cli's switch honest.
+redundant with the existing `ironwood_sends_*` rows.

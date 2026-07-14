@@ -52,14 +52,6 @@ pub struct WalletSettings {
     pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
-    /// When true (the default), proposal and transaction building pass
-    /// `None` for the version floor, letting the upstream builder produce
-    /// V6 transactions at and after NU6.3 activation and route
-    /// Ironwood-pool inputs and change through the ironwood bundle. When
-    /// false, building is floored at V5, so outputs land in the legacy
-    /// pools even on an NU6.3-configured chain (ADR 0009's Orchard-era
-    /// opt-out). See [`LightWallet::transaction_version_floor`].
-    pub allow_v6_transactions: bool,
 }
 
 impl Default for WalletSettings {
@@ -67,7 +59,6 @@ impl Default for WalletSettings {
         Self {
             sync_config: SyncConfig::default(),
             min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
-            allow_v6_transactions: true,
         }
     }
 }

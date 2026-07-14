@@ -51,9 +51,13 @@ impl LightWallet {
     /// Optional Orchard→Ironwood migration section appended (see
     /// [`crate::wallet::migration::store`]; the section carries its own inner
     /// version).
+    ///
+    /// Changes in version 43:
+    /// The `allow_v6_transactions` bool was removed along with the setting
+    /// itself; readers of version-42 files consume and discard the byte.
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        42
+        43
     }
 
     /// Serialize into `writer`
@@ -129,7 +133,6 @@ impl LightWallet {
         self.sync_state.write(&mut writer)?;
         self.wallet_settings.sync_config.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
-        writer.write_u8(u8::from(self.wallet_settings.allow_v6_transactions))?;
         self.price_list.write(&mut writer)?;
         Optional::write(&mut writer, self.migration.as_ref(), |w, migration| {
             crate::wallet::migration::store::write(w, migration)
@@ -143,7 +146,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=42 => Self::read_v32(reader, chain_type, version),
+            32..=43 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -365,7 +368,6 @@ impl LightWallet {
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
-                allow_v6_transactions: false,
             },
         };
 
@@ -583,19 +585,21 @@ impl LightWallet {
         let sync_state = SyncState::read(&mut reader)?;
 
         let wallet_settings = if version >= 33 {
+            let sync_config = SyncConfig::read(&mut reader)?;
+            let min_confirmations = if version >= 38 {
+                NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
+                    .expect("only valid non-zero u32s stored")
+            } else {
+                NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
+            };
+            // Version 42 wrote the since-removed `allow_v6_transactions`
+            // bool here; consume and discard it.
+            if version == 42 {
+                let _ = reader.read_u8()?;
+            }
             WalletSettings {
-                sync_config: SyncConfig::read(&mut reader)?,
-                min_confirmations: if version >= 38 {
-                    NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
-                        .expect("only valid non-zero u32s stored")
-                } else {
-                    NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
-                },
-                allow_v6_transactions: if version >= 42 {
-                    reader.read_u8()? != 0
-                } else {
-                    false
-                },
+                sync_config,
+                min_confirmations,
             }
         } else {
             WalletSettings {
@@ -604,7 +608,6 @@ impl LightWallet {
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
-                allow_v6_transactions: false,
             }
         };
 

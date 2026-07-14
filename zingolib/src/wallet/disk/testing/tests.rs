@@ -309,9 +309,9 @@ async fn reload_wallet_from_file() {
 
 /// A pre-42 wallet loads with no migration section, and a populated
 /// [`crate::wallet::migration::MigrationState`] survives a full wallet
-/// write/read round trip at version 42.
+/// write/read round trip at the current serialized version.
 #[tokio::test]
-async fn wallet_v42_round_trips_migration_state() {
+async fn wallet_round_trips_migration_state_at_current_version() {
     use crate::wallet::LightWallet;
     use crate::wallet::migration::{
         BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
@@ -356,6 +356,9 @@ async fn wallet_v42_round_trips_migration_state() {
 
     let bytes = wallet.save().unwrap().expect("save required");
     let recovered = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
-    assert_eq!(recovered.current_version(), 42);
+    assert_eq!(
+        recovered.current_version(),
+        LightWallet::serialized_version()
+    );
     assert_eq!(recovered.migration, Some(state));
 }

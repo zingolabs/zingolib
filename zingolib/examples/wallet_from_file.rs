@@ -87,7 +87,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
-                allow_v6_transactions: true,
             },
         })
         .build();
