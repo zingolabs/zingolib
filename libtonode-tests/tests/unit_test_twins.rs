@@ -154,6 +154,7 @@ mod unit_test_twins {
             value: recipient_initial_funds,
             fee: Some(10_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_initial_funds,
                 SpendStatus::Spent(
@@ -164,6 +165,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
@@ -193,6 +195,7 @@ mod unit_test_twins {
             value: first_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_960_000,
                 SpendStatus::TransmittedSpent(
@@ -203,6 +206,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
@@ -229,6 +233,7 @@ mod unit_test_twins {
             value: first_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_925_000,
                 SpendStatus::Unspent,
@@ -237,6 +242,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
@@ -314,6 +320,7 @@ mod unit_test_twins {
             // was two actions (10_000).
             fee: Some(20_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
                 SpendStatus::Spent(
@@ -324,6 +331,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
@@ -355,6 +363,7 @@ mod unit_test_twins {
             value: second_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 965_000,
                 SpendStatus::Spent(
@@ -365,6 +374,7 @@ mod unit_test_twins {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
@@ -393,6 +403,7 @@ TransactionSummary {
             value: second_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_885_000,
                 SpendStatus::Unspent,
@@ -401,6 +412,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
@@ -440,6 +452,7 @@ TransactionSummary {
             value: external_transparent_3,
             fee: Some(15_000),
             zec_price: None,
+            ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 930_000,
                 SpendStatus::Unspent,
@@ -448,6 +461,7 @@ TransactionSummary {
             )],
             sapling_notes: vec![],
             transparent_coins: vec![],
+            outgoing_ironwood_notes: vec![],
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],

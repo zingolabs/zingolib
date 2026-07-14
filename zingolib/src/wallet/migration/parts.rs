@@ -278,8 +278,8 @@ impl PartRecord {
 /// needed data; no wallet reference is captured. Safe to call on any thread.
 pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
-/// Outcome of [`LightWallet::prepare_part`]: either a ready proving closure
-/// or the reason the part must be skipped.
+/// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
+/// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
     /// All wallet data was extracted; the closure does the CPU-intensive
     /// proving on a background thread.
