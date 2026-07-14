@@ -432,8 +432,7 @@ async fn mine_to_ironwood() {
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;
-    // Server-run adjudicated: coinbase to the ironwood miner pool lands
-    // entirely as Orchard notes, even for blocks past NU6.3 activation.
+    // FIXME: update mining rewards consts and assertions for ironwood
     check_client_balances!(
         faucet,
         i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
@@ -1288,7 +1287,7 @@ async fn send_pre_ironwood() {
 async fn send_post_ironwood() {
     let (_local_net, _faucet, recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 }
 
 // FIXME: add unified address discovery to pepper sync and add a test here

@@ -581,6 +581,7 @@ pub mod proposal {
                 .anchor_height(BlockHeight::from_u32(1))
                 .prior_step_inputs(vec![])
                 .balance(TransactionBalance::new(vec![], Zatoshis::const_from_u64(20_000)).unwrap())
+                .ironwood_active(true)
                 .is_shielding(false);
             builder
         }
