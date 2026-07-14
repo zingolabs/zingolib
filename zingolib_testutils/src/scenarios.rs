@@ -218,31 +218,31 @@ pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 /// HYPOTHESIS (server-run adjudicated): with an Orchard miner pool the
 /// coinbase pays the orchard receiver from the NU5 activation block (height
 /// 2 under [`default_test_activation_heights`]) onward. If orchard coinbase
-/// actually starts one block later, every ironwood expectation derived from
+/// actually starts one block later, every orchard expectation derived from
 /// this constant fails high by exactly one [`POST_STREAM_BLOCK_REWARD`] —
 /// flip this to 3 and nothing else.
-pub const IRONWOOD_COINBASE_START_HEIGHT: u32 = 2;
+pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
 
-/// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an ironwood
+/// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
 /// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
-/// SAPLING receiver — observed as `s_balance: 625000000` in ironwood-mined
+/// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
 /// scenarios. If refuted, s-balance expectations fail by exactly this value.
 pub const BLOCK_ONE_SAPLING_COINBASE: u64 = block_rewards::CANOPY;
 
-/// Total ironwood coinbase received by the faucet at `tip` under an ironwood
+/// Total orchard coinbase received by the faucet at `tip` under an Orchard
 /// miner pool: one post-funding-stream reward per block from
-/// [`IRONWOOD_COINBASE_START_HEIGHT`] through `tip`.
-pub const fn ironwood_coinbase_total(tip: u32) -> u64 {
-    (tip - IRONWOOD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
+/// [`ORCHARD_COINBASE_START_HEIGHT`] through `tip`.
+pub const fn orchard_coinbase_total(tip: u32) -> u64 {
+    (tip - ORCHARD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
 }
 
-/// The faucet's ironwood balance right after a `PoolType::IRONWOOD` scenario
-/// finishes setting up: ironwood coinbase through
+/// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
+/// finishes setting up orchard coinbase through
 /// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload amount. The offload's
 /// fee cancels out: the faucet pays it, then collects it right back in the
 /// coinbase of the confirming block it mines.
-pub const fn funded_faucet_ironwood_balance() -> u64 {
-    ironwood_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
+pub const fn funded_faucet_orchard_balance() -> u64 {
+    orchard_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
 }
 
 /// To launch a `LocalNet` with darkside settings.
@@ -660,6 +660,8 @@ pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient
 /// `outputs.json` — a warm run replays the chain and returns the
 /// recorded identifiers, which name transactions that are literally in
 /// the replayed blocks.
+///
+/// If nu6.3 is activated, `orchard_funds` will be sent to the ironwood pool.
 pub async fn faucet_funded_recipient(
     orchard_funds: Option<u64>,
     sapling_funds: Option<u64>,

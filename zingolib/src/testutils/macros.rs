@@ -51,11 +51,18 @@ macro_rules! get_base_address_macro {
 /// sum of the balances.
 #[macro_export]
 macro_rules! check_client_balances {
-    ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
+    ($client:ident, i: $ironwood:tt o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
         let balance = $client
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
+        assert_eq!(
+            balance.total_ironwood_balance.unwrap().into_u64(),
+            $ironwood,
+            "\ni_balance: {} expectation: {} ",
+            balance.total_ironwood_balance.unwrap().into_u64(),
+            $ironwood
+        );
         assert_eq!(
             balance.total_orchard_balance.unwrap().into_u64(),
             $orchard,

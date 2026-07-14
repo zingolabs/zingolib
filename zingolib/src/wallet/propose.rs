@@ -34,13 +34,19 @@ impl LightWallet {
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
+        let chain_height =
+            self.sync_state
+                .last_known_chain_height()
+                .ok_or(ProposeSendError::Proposal(
+                    zcash_client_backend::data_api::error::Error::ScanRequired,
+                ))?;
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             Some(memo),
             if self
                 .chain_type
                 .activation_height(NetworkUpgrade::Nu6_3)
-                .is_some()
+                .is_some_and(|ironwood_height| chain_height >= ironwood_height)
             {
                 ShieldedPool::Ironwood
             } else {

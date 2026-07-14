@@ -107,7 +107,7 @@ mod unit_test_twins {
         // the recipient holds the 100_000 funding note less the 1_000
         // payment and its 10_000 ZIP-317 fee (one orchard spend, two
         // logical actions).
-        check_client_balances!(recipient, o: 89_000 s: 0 t: 0);
+        check_client_balances!(recipient, i: 0 o: 89_000 s: 0 t: 0);
 
         let value_transfers = recipient.value_transfers(true).await.unwrap();
         // The funding receipt.
@@ -569,7 +569,7 @@ TransactionSummary {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
         let recipient_sapling = get_base_address_macro!(recipient, "sapling");
         let recipient_unified = get_base_address_macro!(recipient, "unified");
-        check_client_balances!(recipient, o: 0 s: 0 t: 0);
+        check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 0);
         let fee = u64::from(MINIMUM_FEE);
         let for_orchard = dbg!(fee * 10);
         let for_sapling = dbg!(fee / 10);
@@ -585,7 +585,7 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, o: for_orchard s: 0 t: 0 );
+        check_client_balances!(recipient, i: 0 o: for_orchard s: 0 t: 0 );
 
         from_inputs::quick_send(
             &mut recipient,
@@ -601,7 +601,7 @@ TransactionSummary {
             .await
             .unwrap();
         let remaining_orchard = for_orchard - (6 * fee);
-        check_client_balances!(recipient, o: remaining_orchard s: 0 t: 0);
+        check_client_balances!(recipient, i: 0 o: remaining_orchard s: 0 t: 0);
     }
     #[tokio::test]
     async fn list_value_transfers_check_fees() {
@@ -629,7 +629,7 @@ TransactionSummary {
         macro_rules! bump_and_check_pmc {
             (o: $o:tt s: $s:tt t: $t:tt) => {
                 increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
-                check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+                check_client_balances!(pool_migration_client, i: 0 o:$o s:$s t:$t);
             };
         }
 
@@ -679,7 +679,7 @@ TransactionSummary {
         macro_rules! bump_and_check {
             (o: $o:tt s: $s:tt t: $t:tt) => {
                 increase_height_and_wait_for_client(&local_net, &mut client, 1).await.unwrap();
-                check_client_balances!(client, o:$o s:$s t:$t);
+                check_client_balances!(client, i: 0 o:$o s:$s t:$t);
             };
         }
 
@@ -1001,7 +1001,7 @@ TransactionSummary {
             // The 50_000 payment plus its 10_000 ZIP-317 fee exceeds either
             // 40_000 note alone, so the send consumed both and returned
             // 20_000 as change: the arithmetic survived the multi-input spend.
-            check_client_balances!(recipient, o: 20_000 s: 0 t: 0);
+            check_client_balances!(recipient, i: 0 o: 20_000 s: 0 t: 0);
         }
     }
 }

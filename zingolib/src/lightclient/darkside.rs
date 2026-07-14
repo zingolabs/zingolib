@@ -61,7 +61,7 @@ async fn reorg_removes_receipt() {
     fund_at_height_three(&net, &address).await;
 
     wallet.sync_and_await().await.unwrap();
-    check_client_balances!(wallet, o: FUNDING s: 0 t: 0);
+    check_client_balances!(wallet, i: 0 o: FUNDING s: 0 t: 0);
 
     // The new branch is longer and funding-free.
     {
@@ -71,7 +71,7 @@ async fn reorg_removes_receipt() {
         chain.mine_empty_blocks(5);
     }
     wallet.sync_and_await().await.unwrap();
-    check_client_balances!(wallet, o: 0 s: 0 t: 0);
+    check_client_balances!(wallet, i: 0 o: 0 s: 0 t: 0);
 }
 
 /// A reorg that re-mines the funding transaction at a different
@@ -111,7 +111,7 @@ async fn reorg_moves_receipt_to_new_height() {
         chain.mine_empty_blocks(2);
     }
     wallet.sync_and_await().await.unwrap();
-    check_client_balances!(wallet, o: FUNDING s: 0 t: 0);
+    check_client_balances!(wallet, i: 0 o: FUNDING s: 0 t: 0);
     let summaries = wallet.transaction_summaries(false).await.unwrap();
     assert_eq!(
         confirmed_at(&summaries),
@@ -140,7 +140,7 @@ async fn reorg_expires_outgoing_transaction() {
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &sender_address).await;
     sender.sync_and_await().await.unwrap();
-    check_client_balances!(sender, o: FUNDING s: 0 t: 0);
+    check_client_balances!(sender, i: 0 o: FUNDING s: 0 t: 0);
 
     // The send lands in the mock mempool; mine it at height 6.
     from_inputs::quick_send(&mut sender, vec![(&recipient_address, 10_000, None)])
@@ -154,8 +154,8 @@ async fn reorg_expires_outgoing_transaction() {
     sender.sync_and_await().await.unwrap();
     recipient.sync_and_await().await.unwrap();
     let spent_less_fee = FUNDING - 10_000 - 10_000;
-    check_client_balances!(sender, o: spent_less_fee s: 0 t: 0);
-    check_client_balances!(recipient, o: 10_000 s: 0 t: 0);
+    check_client_balances!(sender, i: 0 o: spent_less_fee s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 10_000 s: 0 t: 0);
 
     // Reorg the send's block away and never re-mine it; the branch
     // grows far past the transaction's expiry height.
@@ -167,6 +167,6 @@ async fn reorg_expires_outgoing_transaction() {
     }
     sender.sync_and_await().await.unwrap();
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(sender, o: FUNDING s: 0 t: 0);
-    check_client_balances!(recipient, o: 0 s: 0 t: 0);
+    check_client_balances!(sender, i: 0 o: FUNDING s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 0);
 }

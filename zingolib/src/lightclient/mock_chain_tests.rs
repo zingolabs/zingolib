@@ -60,7 +60,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
 
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -73,7 +73,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
 
     // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
     // spend, two-logical-action ZIP-317 fee.
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
 }
 
 /// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
@@ -109,7 +109,7 @@ async fn zero_value_receipts() {
 
     // Identical to the live pin: the recipient holds the 100_000 funding
     // note less the 1_000 payment and its 10_000 ZIP-317 fee.
-    check_client_balances!(recipient, o: 89_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 89_000 s: 0 t: 0);
 
     let value_transfers = recipient.value_transfers(true).await.unwrap();
     assert!(
@@ -155,7 +155,7 @@ async fn list_value_transfers_check_fees() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -170,7 +170,7 @@ async fn list_value_transfers_check_fees() {
     recipient.sync_and_await().await.unwrap();
 
     // 100_000 − 30_000 − 30_000 − 25_000 fee = 15_000 orchard change.
-    check_client_balances!(recipient, o: 15_000 s: 30_000 t: 30_000);
+    check_client_balances!(recipient, i: 0 o: 15_000 s: 30_000 t: 30_000);
 }
 
 /// Mock-chain twin of libtonode
@@ -666,7 +666,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         (o: $o:tt s: $s:tt t: $t:tt) => {
             net.chain.write().await.mine_mempool();
             client.sync_and_await().await.unwrap();
-            check_client_balances!(client, o:$o s:$s t:$t);
+            check_client_balances!(client, i: 0 o:$o s:$s t:$t);
         };
     }
 
@@ -686,7 +686,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         let wallet = wallet.read().await;
         eprintln!("wallet transactions: {}", wallet.wallet_transactions.len());
     }
-    check_client_balances!(client, o: 0 s: 0 t: 50_000);
+    check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 2 shield 50_000 transparent to orchard: 15_000 (1 t-in, 2 orchard)
@@ -855,7 +855,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 
     net.chain.write().await.lose_next_send_response = Some(LostSendDestination::Mempool);
 
@@ -886,7 +886,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     // Identical arithmetic to `funded_send_confirms_on_the_mock_chain`:
     // the lost response and duplicate rejection must not perturb it.
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
 }
 
 /// Twin of [`send_survives_lost_response_and_duplicate_rejection`] for
@@ -917,7 +917,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 
     {
         let mut chain = net.chain.write().await;
@@ -953,5 +953,5 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     // the transaction, with no verification-delay allowance.
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
 }
