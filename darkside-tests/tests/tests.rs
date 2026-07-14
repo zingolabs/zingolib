@@ -30,7 +30,7 @@ async fn simple_sync() {
         .unwrap();
     let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id, wallet_dir)
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir, activation_heights)
         .build_client(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
@@ -39,7 +39,6 @@ async fn simple_sync() {
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            activation_heights,
         )
         .await;
 
@@ -58,6 +57,9 @@ async fn simple_sync() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100_000_000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -80,7 +82,7 @@ async fn reorg_receipt_sync_generic() {
 
     let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir, activation_heights)
         .build_client(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
@@ -89,7 +91,6 @@ async fn reorg_receipt_sync_generic() {
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            activation_heights,
         )
         .await;
     light_client.sync_and_await().await.unwrap();
@@ -103,6 +104,9 @@ async fn reorg_receipt_sync_generic() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100_000_000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -124,6 +128,9 @@ async fn reorg_receipt_sync_generic() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(0.try_into().unwrap()),
             confirmed_orchard_balance: Some(0.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -145,8 +152,8 @@ async fn sent_transaction_reorged_into_mempool() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
     let activation_heights = ActivationHeights::default();
+    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir, activation_heights);
     let mut light_client = client_manager
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -156,7 +163,6 @@ async fn sent_transaction_reorged_into_mempool() {
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            activation_heights,
         )
         .await;
     let mut recipient = client_manager
@@ -168,7 +174,6 @@ async fn sent_transaction_reorged_into_mempool() {
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
-            activation_heights,
         )
         .await;
 
@@ -182,6 +187,9 @@ async fn sent_transaction_reorged_into_mempool() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100_000_000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),

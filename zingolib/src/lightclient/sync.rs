@@ -31,7 +31,7 @@ impl LightClient {
             ));
         }
 
-        let client = self.indexer.clone();
+        let client = self.require_indexer()?.clone();
         let chain_type = self.chain_type();
         let sync_config = self
             .wallet()
@@ -171,14 +171,27 @@ impl LightClient {
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        // Completion-detection quantum: at 500ms this added up to half a
+        // second of pure quantization to every sync_and_await; the sync
+        // engine's own session on a regtest chain runs ~1.4s, so the poll
+        // interval was a visible fraction of every test's sync cost.
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
             match self.poll_sync() {
                 PollReport::NoHandle => return Err(LightClientError::SyncNotRunning),
                 PollReport::NotReady => (),
-                PollReport::Ready(result) => return result.map_err(LightClientError::SyncError),
+                PollReport::Ready(result) => {
+                    let result = result.map_err(LightClientError::SyncError);
+                    if result.is_ok() {
+                        // Boundary checkpoints are only retained for a finite
+                        // window; capture migration part witnesses while they
+                        // are available.
+                        self.wallet().write().await.refresh_part_witnesses()?;
+                    }
+                    return result;
+                }
             }
         }
     }
@@ -226,10 +239,7 @@ pub mod test {
     pub(crate) async fn sync_example_wallet(
         wallet_case: examples::NetworkSeedVersion,
     ) -> LightClient {
-        // install default crypto provider (ring)
-        if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-            log::error!("Error installing crypto provider: {e:?}");
-        }
+        zingo_netutils::ensure_default_crypto_provider();
 
         let mut lc = wallet_case.load_example_wallet().await;
 

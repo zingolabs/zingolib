@@ -450,6 +450,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
             orchard::value::NoteValue::from_raw(value),
             rho_nullifier,
             random_seed,
+            orchard::note::NoteVersion::V2,
         ))
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
     }
@@ -992,8 +993,10 @@ impl OutgoingTxData {
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
-/// TODO: Add Doc Comment Here!
-pub const MAX_REORG: usize = 100;
+/// Witness-tree checkpoint retention depth, derived from the
+/// repository's single max-reorg truth (which in turn mirrors zebra's
+/// finalization boundary — see the source constant's docs).
+pub const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]

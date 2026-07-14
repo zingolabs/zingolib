@@ -343,7 +343,7 @@ pub mod scenarios {
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
     use zingo_common_components::protocol::ActivationHeights;
     use zingolib::config::WalletConfig;
     use zingolib::testutils::default_test_wallet_settings;
@@ -377,11 +377,14 @@ pub mod scenarios {
             set_port: Option<zingolib::testutils::portpicker::Port>,
         ) -> DarksideEnvironment {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
+            let configured_activation_heights = ActivationHeights::default();
+            // Darkside is an unmanaged stack (no validator to query), so the
+            // caller asserts the schedule here, once (infras ADR 0003).
             let client_builder = ClientBuilder::new(
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
+                configured_activation_heights,
             );
-            let configured_activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
@@ -421,16 +424,16 @@ pub mod scenarios {
                             wallet_settings: default_test_wallet_settings(),
                         },
                         true,
-                        self.configured_activation_heights,
                     )
                     .await,
             );
 
             let faucet_funding_transaction = match funded_pool {
-                PoolType::Shielded(ShieldedProtocol::Orchard) => {
+                PoolType::IRONWOOD => todo!(), // FIXME: implement ironwood
+                PoolType::Shielded(ShieldedPool::Orchard) => {
                     constants::ABANDON_TO_DARKSIDE_ORCH_10_000_000_ZAT
                 }
-                PoolType::Shielded(ShieldedProtocol::Sapling) => {
+                PoolType::Shielded(ShieldedPool::Sapling) => {
                     constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT
                 }
                 PoolType::Transparent => {
@@ -458,7 +461,6 @@ pub mod scenarios {
                         wallet_settings: default_test_wallet_settings(),
                     },
                     true,
-                    self.configured_activation_heights,
                 )
                 .await;
             self.lightclients.push(lightclient);

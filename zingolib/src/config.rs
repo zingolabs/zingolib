@@ -27,6 +27,43 @@ pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks";
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
+/// The mainnet Library Birthday: a block height that had already been mined
+/// when this zingolib release was cut.
+///
+/// Any wallet created by this release necessarily post-dates the release, so
+/// this height is a safe [`WalletConfig::NewSeed`] `chain_height` for a
+/// wallet created while Indexerless, where no Indexer can report the chain
+/// tip. The invariant is that the block has been mined, not merely named — a
+/// scheduled-but-future network-upgrade activation height does not qualify.
+/// Bumping this constant to a recently observed height is a release-checklist
+/// step. See `docs/adr/0007-library-birthday.md`.
+pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
+
+/// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
+///
+/// NU6.3's testnet activation height. An activation height qualifies only
+/// once it has actually been mined — this one has: NU6.3 is already live on
+/// testnet (unlike mainnet, where its activation is still scheduled).
+pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
+
+/// Returns the Library Birthday for the given chain: a block height known to
+/// have been mined before this zingolib release was cut, safe as the
+/// [`WalletConfig::NewSeed`] `chain_height` for a wallet created while
+/// Indexerless.
+///
+/// Restores must not use this — a restored seed or viewing key may predate
+/// the library and always requires a caller-supplied birthday. See
+/// `docs/adr/0007-library-birthday.md`.
+pub fn lib_birthday(chain: ChainType) -> u32 {
+    match chain {
+        ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
+        ChainType::Testnet => LIB_BIRTHDAY_TESTNET,
+        // A regtest chain is born alongside its wallets; scanning from
+        // genesis is both correct and cheap.
+        ChainType::Regtest(_) => 1,
+    }
+}
+
 /// The network types a lightclient can connect to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChainType {
@@ -102,6 +139,7 @@ pub(crate) mod consealed {
                     NetworkUpgrade::Nu6 => activation_heights.nu6().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_1 => activation_heights.nu6_1().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_2 => activation_heights.nu6_2().map(BlockHeight::from_u32),
+                    NetworkUpgrade::Nu6_3 => activation_heights.nu6_3().map(BlockHeight::from_u32),
                 },
             }
         }
@@ -266,8 +304,16 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> Result<http::Uri, I
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
-    /// URI of the indexer the lightclient is connected to.
-    indexer_uri: http::Uri,
+    /// URI of the indexer the lightclient is connected to. `None` means the
+    /// client is Indexerless (no Indexer connection).
+    indexer_uri: Option<http::Uri>,
+    /// URI the Ironwood migration parts are broadcast to. Broadcasting to a
+    /// different server than the one used for synchronization reduces the
+    /// correlation between the two (ZIP 318). Falls back to `indexer_uri`
+    /// with a logged warning when unset; when both are `None` the client
+    /// emits no network traffic and broadcasting fails with
+    /// [`crate::lightclient::error::LightClientError::Offline`].
+    migration_broadcast_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -285,10 +331,16 @@ impl ClientConfig {
         ClientConfigBuilder::default()
     }
 
-    /// Returns indexer URI.
+    /// Returns indexer URI, or `None` if the client is configured for offline use.
     #[must_use]
-    pub fn indexer_uri(&self) -> http::Uri {
+    pub fn indexer_uri(&self) -> Option<http::Uri> {
         self.indexer_uri.clone()
+    }
+
+    /// Returns the migration broadcast URI, if one is configured.
+    #[must_use]
+    pub fn migration_broadcast_uri(&self) -> Option<http::Uri> {
+        self.migration_broadcast_uri.clone()
     }
 
     /// Returns wallet directory.
@@ -329,6 +381,7 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
+    migration_broadcast_uri: Option<http::Uri>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -341,12 +394,21 @@ impl ClientConfigBuilder {
         Self::default()
     }
 
-    /// Set indexer URI.
+    /// Connect to an indexer at the given URI.
+    ///
+    /// Without this call the client starts offline. See [`Self::build`].
     ///
     /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
     /// `zingo-netutils` instead of `http::Uri`.
     pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
         self.indexer_uri = Some(indexer_uri);
+        self
+    }
+
+    /// Set a dedicated URI for broadcasting Ironwood migration parts,
+    /// distinct from the synchronization endpoint.
+    pub fn set_migration_broadcast_uri(mut self, migration_broadcast_uri: http::Uri) -> Self {
+        self.migration_broadcast_uri = Some(migration_broadcast_uri);
         self
     }
 
@@ -375,14 +437,19 @@ impl ClientConfigBuilder {
     }
 
     /// Build a [`ClientConfig`] from the builder.
+    ///
+    /// The default indexer is `None` — the resulting [`crate::lightclient::LightClient`] starts
+    /// in offline mode. All local operations (balance, addresses, proposals) work immediately.
+    /// Call [`crate::lightclient::LightClient::set_indexer_uri`] to connect when the network
+    /// is available, then [`crate::lightclient::LightClient::sync`] to fetch blocks.
+    ///
+    /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
     pub fn build(self) -> ClientConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
         let wallet_name = wallet_name_or_default(self.wallet_name);
         ClientConfig {
-            indexer_uri: self
-                .indexer_uri
-                .clone()
-                .unwrap_or_else(|| DEFAULT_INDEXER_URI.parse().expect("valid constant URI")),
+            indexer_uri: self.indexer_uri,
+            migration_broadcast_uri: self.migration_broadcast_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -395,6 +462,7 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_uri: None,
+            migration_broadcast_uri: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -487,7 +555,25 @@ mod tests {
             .set_wallet_dir(temp_path)
             .build();
 
-        assert_eq!(valid_config.indexer_uri(), valid_uri);
+        assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
+    }
+
+    /// The Library Birthday must land at or above Sapling activation on the
+    /// public chains, so a NewSeed wallet built from it starts scanning at
+    /// the library floor rather than the bottom of the chain.
+    #[test]
+    fn lib_birthday_exceeds_sapling_activation() {
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+
+        for chain in [ChainType::Mainnet, ChainType::Testnet] {
+            let sapling_activation = chain
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("public chains have a sapling activation height");
+            assert!(
+                crate::config::lib_birthday(chain) > u32::from(sapling_activation),
+                "lib_birthday({chain}) must exceed sapling activation"
+            );
+        }
     }
 }

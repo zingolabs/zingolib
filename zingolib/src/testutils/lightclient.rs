@@ -2,14 +2,15 @@
 //! (obviously) in a test environment.
 
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::lightclient::LightClient;
 
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+        // The ironwood receiver of a unified address is its orchard receiver.
+        PoolType::Shielded(ShieldedPool::Ironwood) | PoolType::Shielded(ShieldedPool::Orchard) => {
             assert!(
                 client.unified_addresses_json().await[0]["has_orchard"]
                     .as_bool()
@@ -19,7 +20,7 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
                 .clone()
                 .to_string()
         }
-        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+        PoolType::Shielded(ShieldedPool::Sapling) => {
             assert!(
                 !client.unified_addresses_json().await[1]["has_orchard"]
                     .as_bool()

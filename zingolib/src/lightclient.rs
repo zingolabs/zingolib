@@ -28,7 +28,7 @@ use crate::{
     config::{ChainType, ClientConfig, WalletConfig},
     utils::now,
     wallet::{
-        LightWallet,
+        LightWallet, RecoveryInfo, WalletSettings,
         balance::AccountBalance,
         error::{BalanceError, KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
@@ -41,10 +41,17 @@ use crate::{
 use error::LightClientError;
 
 pub mod error;
+pub mod migrate;
+pub mod offline;
 pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
+
+#[cfg(test)]
+mod darkside;
+#[cfg(test)]
+mod mock_chain_tests;
 
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -92,8 +99,13 @@ impl WalletMeta {
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
+///
+/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
+/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
+/// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
-    indexer: zingo_netutils::GrpcIndexer,
+    indexer: Option<zingo_netutils::GrpcIndexer>,
+    migration_broadcast_uri: Option<http::Uri>,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -109,9 +121,8 @@ impl LightClient {
     /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
     pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
-        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
@@ -140,21 +151,48 @@ impl LightClient {
             }
         };
 
-        // Install the ring crypto provider for rustls. Required because both
-        // `ring` and `aws-lc-rs` features are unified in via transitive deps,
-        // preventing rustls from auto-selecting a provider.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        zingo_netutils::ensure_default_crypto_provider();
 
-        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
+        // No configured URI means the client starts offline; set_indexer_uri() connects later.
+        let indexer = match config.indexer_uri() {
+            Some(uri) => Some(zingo_netutils::GrpcIndexer::new(uri).await?),
+            None => None,
+        };
 
         Ok(LightClient {
             indexer,
+            migration_broadcast_uri: config.migration_broadcast_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
         })
+    }
+
+    /// Wraps an already-constructed wallet — typically from
+    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`] — so
+    /// client-level APIs that only read wallet state (proposing, balances,
+    /// summaries) can be exercised offline. No indexer is configured — the
+    /// client is genuinely offline rather than pointed at a never-contacted
+    /// placeholder; the wallet path lives under the OS temp directory and is
+    /// never written unless a test saves explicitly.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
+        zingo_netutils::ensure_default_crypto_provider();
+        LightClient {
+            indexer: None,
+            migration_broadcast_uri: None,
+            wallet: WalletMeta::new(
+                std::env::temp_dir().join("zingolib-synthetic-wallet"),
+                wallet,
+            ),
+            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_handle: None,
+            save_active: Arc::new(AtomicBool::new(false)),
+            save_handle: None,
+        }
     }
 
     /// Creates a [`LightClient`] by deserializing wallet bytes directly, without reading from
@@ -176,17 +214,21 @@ impl LightClient {
         bytes: Vec<u8>,
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
-        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        zingo_netutils::ensure_default_crypto_provider();
 
         let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
             .map_err(LightClientError::FileError)?;
 
-        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri()).await?;
+        let indexer = if let Some(uri) = config.indexer_uri() {
+            Some(zingo_netutils::GrpcIndexer::new(uri).await?)
+        } else {
+            None
+        };
 
         Ok(LightClient {
             indexer,
+            migration_broadcast_uri: config.migration_broadcast_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -235,42 +277,49 @@ impl LightClient {
         &self.wallet.wallet_data
     }
 
-    /// Returns URI of the indexer the lightclient is connected to.
-    pub fn indexer_uri(&self) -> &http::Uri {
-        self.indexer.uri()
+    /// Returns URI of the connected indexer, or `None` when in offline mode.
+    pub fn indexer_uri(&self) -> Option<http::Uri> {
+        self.indexer.as_ref().map(|i| i.uri().clone())
     }
 
-    /// Set indexer URI.
+    /// Connect to an indexer (or switch to a different one).
     ///
-    /// Replaces the current gRPC client(s) with new ones that point at the provided URI.
+    /// Creates a new gRPC connection to the given URI. After this call the client is online and
+    /// network operations such as [`Self::sync`] become available.
     pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
-        self.indexer = zingo_netutils::GrpcIndexer::new(server).await?;
+        self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
         Ok(())
     }
 
-    /// Returns server information.
+    /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
+    fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
+        self.indexer.as_ref().ok_or(LightClientError::Offline)
+    }
+
+    /// Returns server information as a JSON string.
+    ///
+    /// The data channel carries only JSON; failure travels on the error
+    /// channel. Callers never inspect the returned value's content to
+    /// learn whether the call succeeded (zingolabs/zingolib#2446).
     // TODO: return concrete struct with from json impl
-    pub async fn do_info(&mut self) -> String {
-        match self.indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await {
-            Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer.uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
-            }
-            Err(e) => format!("{e:?}"),
-        }
+    pub async fn do_info(&mut self) -> Result<String, LightClientError> {
+        let mut indexer = self.require_indexer()?.clone();
+        let i = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
+        let o = json::object! {
+            "version" => i.version,
+            "git_commit" => i.git_commit,
+            "server_uri" => indexer.uri().to_string(),
+            "vendor" => i.vendor,
+            "taddr_support" => i.taddr_support,
+            "chain_name" => i.chain_name,
+            "sapling_activation_height" => i.sapling_activation_height,
+            "consensus_branch_id" => i.consensus_branch_id,
+            "latest_block_height" => i.block_height
+        };
+        Ok(o.pretty(2))
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
@@ -370,6 +419,38 @@ impl LightClient {
     /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
     pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
         self.wallet().read().await.do_total_value_to_address().await
+    }
+
+    /// Creates an additional ZIP-32 account derived from the wallet seed.
+    ///
+    /// Returns an error if the wallet has no mnemonic (view-only wallets cannot create accounts
+    /// this way) or if the maximum account count is reached.
+    pub async fn create_account(&mut self) -> Result<(), WalletError> {
+        self.wallet().write().await.create_new_account()
+    }
+
+    /// Returns seed phrase, birthday, and account count for wallet backup and recovery.
+    ///
+    /// Returns `None` for view-only wallets (those created from a UFVK or USK without a mnemonic).
+    pub async fn recovery_info(&self) -> Option<RecoveryInfo> {
+        self.wallet().read().await.recovery_info()
+    }
+
+    /// Clears any stored send proposal.
+    pub async fn clear_proposal(&mut self) {
+        self.wallet().write().await.clear_proposal();
+    }
+
+    /// Returns `true` if the wallet has unsaved changes.
+    pub async fn is_save_required(&self) -> bool {
+        self.wallet().read().await.save_required
+    }
+
+    /// Replaces the wallet's runtime settings and marks the wallet dirty.
+    pub async fn update_wallet_settings(&mut self, settings: WalletSettings) {
+        let mut wallet = self.wallet().write().await;
+        wallet.wallet_settings = settings;
+        wallet.mark_dirty();
     }
 
     /// Creates a backup file of the current wallet file in the wallet directory.
@@ -501,5 +582,44 @@ mod tests {
             source.unified_addresses_json().await[0]["encoded_address"],
             restored.unified_addresses_json().await[0]["encoded_address"],
         );
+    }
+
+    /// The `do_info` data/error channel contract (zingolabs/zingolib#2446).
+    ///
+    /// Failure must travel on the error channel; the data channel carries
+    /// only JSON. Downstream FFIs must never have to inspect a returned
+    /// value's content to learn whether the call succeeded.
+    mod info_contract {
+        use crate::lightclient::LightClient;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        /// The test client is Indexerless, so the info request must fail —
+        /// and that failure must not surface as prose in the data channel.
+        ///
+        /// This began as the red TDD test for the migration: `do_info`
+        /// returned `String`, and the connection failure arrived as a
+        /// `Status {..}` Debug string indistinguishable by type from
+        /// data. It originally pinned a typed `IndexerError` from a
+        /// never-listening lazy endpoint; the offline-mode work replaced
+        /// that placeholder with a genuinely Indexerless client, whose
+        /// typed failure is `Offline`. The contract is unchanged: failure
+        /// travels on the error channel, and the only remaining `Ok`
+        /// construction site builds JSON.
+        #[tokio::test]
+        async fn do_info_failure_stays_out_of_the_data_channel() {
+            let wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .build();
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let error = client
+                .do_info()
+                .await
+                .expect_err("an Indexerless client cannot serve do_info");
+            assert!(
+                matches!(error, crate::lightclient::error::LightClientError::Offline),
+                "the failure must be typed, not prose: {error}"
+            );
+        }
     }
 }

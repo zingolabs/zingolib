@@ -13,7 +13,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_netutils::{Indexer, TransparentIndexer};
@@ -50,7 +50,15 @@ pub(crate) mod transparent;
 pub(crate) mod spend;
 pub(crate) mod state;
 
-pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
+/// The deepest chain reorganization the wallet tolerates, and the
+/// repository's single source of truth for that depth. It mirrors the
+/// validator's finalization boundary — zebra's
+/// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
+/// final and no deeper reorg can occur. Zebra crates are not
+/// dependencies of this workspace, so the value is pinned to its
+/// upstream by documentation rather than import; if zebra ever moves
+/// its boundary, this constant is the one place that follows it.
+pub const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -348,11 +356,14 @@ where
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
+    let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
+    let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
             client,
             mempool_transaction_sender,
             unprocessed_mempool_transactions_count_clone,
+            mempool_stream_connected_at_clone,
             shutdown_mempool_clone,
         )
         .await
@@ -417,7 +428,6 @@ where
     .await?;
 
     drop(wallet_guard);
-
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -521,10 +531,33 @@ where
                 scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
-                    // wait for mempool monitor to receive mempool transactions
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
-                    {
+                    // Drain check on a 25ms cadence instead of the old
+                    // unconditional one-second sleep. The policy lives in
+                    // [`drain_verdict`]: shutdown requires a drained
+                    // scanner AND a mempool stream that has been connected
+                    // long enough to have served pre-existing content, so
+                    // a first-loop shutdown on a fully synced chain waits
+                    // for the subscription instead of closing the session
+                    // before the monitor ever connects. The old one-second
+                    // ceiling remains the worst case.
+                    let shutdown_poll_started = std::time::Instant::now();
+                    let mempool_drained = loop {
+                        let verdict = drain_verdict(
+                            scanner.worker_poolsize(),
+                            unprocessed_mempool_transactions_count
+                                .load(atomic::Ordering::Acquire),
+                            mempool_stream_connected_at.get().map(|at| at.elapsed()),
+                            shutdown_poll_started.elapsed(),
+                        );
+                        match verdict {
+                            DrainVerdict::Shutdown => break true,
+                            DrainVerdict::Reenter => break false,
+                            DrainVerdict::KeepPolling => {
+                                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                            }
+                        }
+                    };
+                    if mempool_drained {
                         tracing::info!("Sync successfully shutdown.");
                         break;
                     }
@@ -532,7 +565,6 @@ where
             }
         }
     }
-
     let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
@@ -556,6 +588,9 @@ where
             note.refetch_nullifier_ranges = Vec::new();
         }
         for note in transaction.orchard_notes.as_mut_slice() {
+            note.refetch_nullifier_ranges = Vec::new();
+        }
+        for note in transaction.ironwood_notes.as_mut_slice() {
             note.refetch_nullifier_ranges = Vec::new();
         }
     }
@@ -840,23 +875,28 @@ where
         &mut pending_transaction_outpoints,
         transparent_output_ids,
     );
-    let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
+    let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions);
-    let (sapling_spend_scan_targets, orchard_spend_scan_targets) = spend::detect_shielded_spends(
-        &mut pending_transaction_nullifiers,
-        sapling_derived_nullifiers,
-        orchard_derived_nullifiers,
-    );
+    let (sapling_spend_scan_targets, orchard_spend_scan_targets, ironwood_spend_scan_targets) =
+        spend::detect_shielded_spends(
+            &mut pending_transaction_nullifiers,
+            sapling_derived_nullifiers,
+            orchard_derived_nullifiers,
+            ironwood_derived_nullifiers,
+        );
 
     // return if transaction is not relevant to the wallet
     if pending_transaction.transparent_coins().is_empty()
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
+        && pending_transaction.ironwood_notes().is_empty()
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
+        && pending_transaction.outgoing_ironwood_notes().is_empty()
         && transparent_spend_scan_targets.is_empty()
         && sapling_spend_scan_targets.is_empty()
         && orchard_spend_scan_targets.is_empty()
+        && ironwood_spend_scan_targets.is_empty()
     {
         return Ok(());
     }
@@ -874,6 +914,7 @@ where
         wallet,
         sapling_spend_scan_targets,
         orchard_spend_scan_targets,
+        ironwood_spend_scan_targets,
         false,
     )
     .map_err(SyncError::WalletError)?;
@@ -944,7 +985,40 @@ pub fn reset_spends(
 /// Sets transactions associated with list of `failed_txids` in `wallet_transactions` to `Failed` status.
 ///
 /// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
+///
+/// Transactions with `Confirmed` status are skipped with a warning. A mined transaction
+/// cannot fail — only a reorg can un-mine it, and reorgs are handled by truncation, which
+/// reopens the affected scan ranges. For a confirmed transaction the note's
+/// `spending_transaction` field is the wallet's only durable record of the on-chain spend
+/// (detection consumed the nullifier-map entry when the spending block was scanned), so
+/// resetting it here would create a permanent phantom unspent note that no forward sync
+/// can correct.
 pub fn set_transactions_failed(
+    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    failed_txids: Vec<TxId>,
+) {
+    let (confirmed_txids, failable_txids): (Vec<TxId>, Vec<TxId>) =
+        failed_txids.into_iter().partition(|txid| {
+            wallet_transactions
+                .get(txid)
+                .is_some_and(|transaction| transaction.status().is_confirmed())
+        });
+    for confirmed_txid in confirmed_txids {
+        tracing::warn!(
+            "refusing to fail transaction {confirmed_txid} with `Confirmed` status! \
+             a mined transaction can only be invalidated by truncation."
+        );
+    }
+    set_transactions_failed_unchecked(wallet_transactions, failable_txids);
+}
+
+/// As [`set_transactions_failed`], without the guard against failing `Confirmed`
+/// transactions.
+///
+/// Only truncation may take this path: it fails transactions in reorged-away blocks and
+/// simultaneously reopens the affected scan ranges, so re-scanning is guaranteed to
+/// re-detect any spends that are still on the best chain.
+pub(crate) fn set_transactions_failed_unchecked(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     failed_txids: Vec<TxId>,
 ) {
@@ -964,15 +1038,55 @@ pub fn set_transactions_failed(
 }
 
 /// Returns true if the scanner and mempool are shutdown.
-fn is_shutdown<P>(
-    scanner: &Scanner<P>,
-    mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-) -> bool
-where
-    P: consensus::Parameters + Sync + Send + 'static,
-{
-    scanner.worker_poolsize() == 0
-        && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
+/// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
+/// snapshot — the caller loads the atomics and clocks; this only
+/// decides, so the whole policy is table-testable without a runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DrainVerdict {
+    /// Drained and the mempool stream has settled: end the session.
+    Shutdown,
+    /// Work appeared, or the ceiling expired with workers running:
+    /// re-enter the processing loop.
+    Reenter,
+    /// Undecided: sleep one cadence and poll again.
+    KeepPolling,
+}
+
+/// The drain policy for scanner shutdown.
+///
+/// `connected_for` is the age of the mempool stream subscription
+/// (`None` until it is established). Connection — not first delivery —
+/// is deliberately the grace trigger: an empty mempool never delivers,
+/// and a delivery-based grace would hold every such session for the
+/// full ceiling, restoring the fixed second c90f8d309 removed. The
+/// settle window covers the gap between subscribing and receiving
+/// pre-existing mempool content (served within ~100ms of connect).
+fn drain_verdict(
+    scan_workers: usize,
+    unprocessed_mempool_transactions: u8,
+    connected_for: Option<Duration>,
+    poll_elapsed: Duration,
+) -> DrainVerdict {
+    /// The pre-c90f8d309 unconditional sleep, demoted to worst case: a
+    /// stream that never connects must not hold the session open.
+    const CEILING: Duration = Duration::from_secs(1);
+    /// One settle window after subscription.
+    const SETTLE: Duration = Duration::from_millis(200);
+
+    if unprocessed_mempool_transactions > 0 {
+        return DrainVerdict::Reenter;
+    }
+    if poll_elapsed >= CEILING {
+        return if scan_workers == 0 {
+            DrainVerdict::Shutdown
+        } else {
+            DrainVerdict::Reenter
+        };
+    }
+    match connected_for {
+        Some(age) if age >= SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        _ => DrainVerdict::KeepPolling,
+    }
 }
 
 /// Scan post-processing
@@ -1006,6 +1120,7 @@ where
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
+                ironwood_located_trees,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1119,8 +1234,10 @@ where
                     if max_nullifier_map_size(performance_level).is_some_and(|max| {
                         nullifier_map.orchard.len()
                             + nullifier_map.sapling.len()
+                            + nullifier_map.ironwood.len()
                             + nullifiers.orchard.len()
                             + nullifiers.sapling.len()
+                            + nullifiers.ironwood.len()
                             > max
                     }) {
                         *nullifier_map_limit_exceeded = true;
@@ -1183,6 +1300,7 @@ where
                     wallet_transactions,
                     sapling_located_trees,
                     orchard_located_trees,
+                    ironwood_located_trees,
                 )
                 .await?;
                 spend::update_transparent_spends(
@@ -1462,6 +1580,7 @@ async fn update_wallet_data<W>(
     mut transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
@@ -1476,13 +1595,19 @@ where
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
-            ShieldedProtocol::Sapling,
+            ShieldedPool::Sapling,
             transaction,
         );
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
-            ShieldedProtocol::Orchard,
+            ShieldedPool::Orchard,
+            transaction,
+        );
+        state::update_found_note_shard_priority(
+            consensus_parameters,
+            sync_state,
+            ShieldedPool::Ironwood,
             transaction,
         );
     }
@@ -1515,6 +1640,9 @@ where
         for note in transaction.orchard_notes.as_mut_slice() {
             note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
         }
+        for note in transaction.ironwood_notes.as_mut_slice() {
+            note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
+        }
     }
     for transaction in transactions.values() {
         discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
@@ -1540,6 +1668,7 @@ where
             highest_scanned_height,
             sapling_located_trees,
             orchard_located_trees,
+            ironwood_located_trees,
         )
         .await?;
 
@@ -1556,6 +1685,26 @@ where
 {
     for note in transaction
         .orchard_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .orchard()
+            .expect("fvk must exist to decrypt this note")
+            .to_ivk(zip32::Scope::External);
+
+        wallet.add_orchard_address(
+            note.key_id().account_id(),
+            note.note().recipient(),
+            ivk.diversifier_index(&note.note().recipient())
+                .expect("must be key used to create this address"),
+        )?;
+    }
+    // Ironwood recipients are orchard receivers, discovered the same way.
+    for note in transaction
+        .ironwood_notes()
         .iter()
         .filter(|&note| note.key_id().scope == zip32::Scope::External)
     {
@@ -1615,6 +1764,10 @@ where
     wallet
         .get_nullifiers_mut()?
         .orchard
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
+    wallet
+        .get_nullifiers_mut()?
+        .ironwood
         .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_sync_state_mut()?
@@ -1719,29 +1872,60 @@ where
         .get_shard_roots()
         .expect("infallible")
         .len() as u32;
-    let (sapling_subtree_roots, orchard_subtree_roots) = futures::join!(
+    let ironwood_start_index = wallet
+        .get_shard_trees()
+        .map_err(SyncError::WalletError)?
+        .ironwood
+        .store()
+        .get_shard_roots()
+        .expect("infallible")
+        .len() as u32;
+    let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
         client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
-        client::get_subtree_roots(fetch_request_sender, orchard_start_index, 1, 0)
+        client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),
+        client::get_subtree_roots(fetch_request_sender, ironwood_start_index, 2, 0)
     );
 
     let sapling_subtree_roots = sapling_subtree_roots?;
     let orchard_subtree_roots = orchard_subtree_roots?;
+    // Ironwood subtree roots are requested only where NU6.3 exists, and a
+    // server that cannot serve them is tolerated: the shard ranges remain
+    // empty and scan prioritisation falls back to the whole-pool range.
+    let ironwood_subtree_roots = if consensus_parameters
+        .activation_height(consensus::NetworkUpgrade::Nu6_3)
+        .is_some()
+    {
+        ironwood_subtree_roots.unwrap_or_else(|e| {
+            tracing::debug!("server does not serve ironwood subtree roots: {e}");
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
 
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
     state::add_shard_ranges(
         consensus_parameters,
-        ShieldedProtocol::Sapling,
+        ShieldedPool::Sapling,
         sync_state,
         &sapling_subtree_roots,
     );
     state::add_shard_ranges(
         consensus_parameters,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         sync_state,
         &orchard_subtree_roots,
     );
+    if !ironwood_subtree_roots.is_empty() {
+        state::add_shard_ranges(
+            consensus_parameters,
+            ShieldedPool::Ironwood,
+            sync_state,
+            &ironwood_subtree_roots,
+        );
+    }
 
     let shard_trees = wallet
         .get_shard_trees_mut()
@@ -1755,6 +1939,11 @@ where
         orchard_start_index as usize,
         orchard_subtree_roots,
         &mut shard_trees.orchard,
+    )?;
+    witness::add_subtree_roots(
+        ironwood_start_index as usize,
+        ironwood_subtree_roots,
+        &mut shard_trees.ironwood,
     )?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
@@ -1811,6 +2000,16 @@ where
                 },
             )
             .expect("infallible");
+        shard_trees
+            .ironwood
+            .insert_frontier(
+                frontiers.final_ironwood_tree().clone(),
+                Retention::Checkpoint {
+                    id: birthday,
+                    marking: Marking::None,
+                },
+            )
+            .expect("infallible");
         wallet.set_save_flag().map_err(SyncError::WalletError)?;
     }
 
@@ -1825,12 +2024,16 @@ async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
+    stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    // The tick only bounds how quickly the monitor notices the shutdown
+    // flag; sync() joins this task at session end, so the tick interval
+    // is paid on the critical path of every sync session.
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
         let response =
@@ -1838,6 +2041,11 @@ where
 
         match response {
             Ok(mut mempool_stream) => {
+                // First successful subscription: the drain policy's
+                // grace window keys on this instant. Deliberately not
+                // reset on reconnect — any successful connect proves
+                // the indexer serves the stream.
+                let _already_set = stream_connected_at.set(std::time::Instant::now());
                 interval.reset();
                 loop {
                     tokio::select! {
@@ -1921,6 +2129,298 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
+    /// The drain policy for scanner shutdown, exercised as a table:
+    /// pure inputs, no runtime, no clocks.
+    mod drain_verdict {
+        use std::time::Duration;
+
+        use crate::sync::DrainVerdict::{self, KeepPolling, Reenter, Shutdown};
+        use crate::sync::drain_verdict;
+
+        fn ms(millis: u64) -> Duration {
+            Duration::from_millis(millis)
+        }
+
+        /// One row of the drain-policy table:
+        /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
+        type DrainCase = (usize, u8, Option<u64>, u64, DrainVerdict, &'static str);
+
+        #[test]
+        fn table() {
+            let cases: &[DrainCase] = &[
+                // The reported bug: first-loop shutdown on a fully
+                // synced chain, stream not yet connected — hold the
+                // session open instead of closing it instantly.
+                (0, 0, None, 0, KeepPolling, "no stream yet"),
+                // Connected but inside the settle window: still hold.
+                (0, 0, Some(50), 100, KeepPolling, "settling"),
+                // The typical session: stream connected long ago,
+                // scanner drained — immediate shutdown, no added cost.
+                (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
+                // Exactly the settle boundary counts as settled.
+                (0, 0, Some(200), 0, Shutdown, "settle boundary"),
+                // Unprocessed work always re-enters the processing
+                // loop, whatever the stream state — no deadline caps
+                // the processing itself.
+                (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
+                (5, 1, None, 999, Reenter, "work trumps missing stream"),
+                // Workers still draining: keep polling inside the
+                // ceiling, re-enter the loop once it expires.
+                (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
+                (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
+                // Ceiling with a stream that never connected: the
+                // pre-c90f8d309 semantics — a dead stream must not
+                // hold the session open.
+                (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
+            ];
+            for (workers, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
+                assert_eq!(
+                    drain_verdict(
+                        *workers,
+                        *unprocessed,
+                        connected_ms.map(ms),
+                        ms(*elapsed_ms)
+                    ),
+                    *expected,
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    /// The lifecycle of a note's spend mark across spend detection and `reset_spends`.
+    ///
+    /// The wallet remembers an on-chain spend observation in exactly one durable place: the
+    /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
+    /// buffer — entries are consumed on detection (`detect_shielded_spends`) and pruned
+    /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
+    /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
+    /// one durable place.
+    mod spend_reset_lifecycle {
+        use std::collections::HashMap;
+
+        use sapling_crypto::value::NoteValue;
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::{consensus::BlockHeight, memo::Memo};
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use crate::{
+            mocks::{MockWallet, MockWalletBuilder},
+            sync::{set_transactions_failed, spend},
+            wallet::{
+                NullifierMap, OutputId, ScanTarget, WalletNote, WalletTransaction,
+                traits::{SyncNullifiers, SyncTransactions},
+            },
+        };
+
+        const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
+        const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+        const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+        const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
+        const NOTE_NULLIFIER: sapling_crypto::Nullifier = sapling_crypto::Nullifier([42; 32]);
+
+        /// The spending transaction's wallet record in the given lifecycle state.
+        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
+            WalletTransaction::new_for_test(SPENDING_TXID, status)
+        }
+
+        /// A confirmed funding transaction holding one sapling note with a derived
+        /// nullifier, optionally already marked spent.
+        ///
+        /// The crypto-note construction duplicates `zingolib::mocks::SaplingCryptoNoteBuilder`,
+        /// which cannot be used here (zingolib depends on this crate). Relocating the note
+        /// builders down into this crate is a deferred follow-up.
+        fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
+            let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
+            let (_, recipient) = extsk.default_address();
+            let crypto_note = sapling_crypto::Note::from_parts(
+                recipient,
+                NoteValue::from_raw(100_000),
+                sapling_crypto::Rseed::AfterZip212([0; 32]),
+            );
+            let mut note = WalletNote::new_for_test(
+                OutputId::new(FUNDING_TXID, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                crypto_note,
+                Memo::Empty,
+                None,
+            )
+            .with_nullifier_for_test(NOTE_NULLIFIER);
+            note.spending_transaction = spending_transaction;
+
+            WalletTransaction::new_for_test(
+                FUNDING_TXID,
+                ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
+            )
+            .with_sapling_notes_for_test(vec![note])
+        }
+
+        fn get_spending_txid(wallet: &MockWallet) -> Option<TxId> {
+            wallet
+                .get_wallet_transactions()
+                .unwrap()
+                .get(&FUNDING_TXID)
+                .unwrap()
+                .sapling_notes()
+                .first()
+                .unwrap()
+                .spending_transaction
+        }
+
+        /// The detection pass `update_shielded_spends` performs, minus the network round
+        /// trips: match derived note nullifiers against the wallet's nullifier map and
+        /// mark the matches spent.
+        fn run_spend_detection(wallet: &mut MockWallet) {
+            let (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers) =
+                spend::collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
+            let (sapling_targets, orchard_targets, ironwood_targets) =
+                spend::detect_shielded_spends(
+                    wallet.get_nullifiers_mut().unwrap(),
+                    sapling_nullifiers,
+                    orchard_nullifiers,
+                    ironwood_nullifiers,
+                );
+            spend::update_spent_notes(
+                wallet,
+                sapling_targets,
+                orchard_targets,
+                ironwood_targets,
+                true,
+            )
+            .unwrap();
+        }
+
+        /// A spend reset *before* the spending transaction's block is scanned heals.
+        /// When the scanner later reaches the block, `collect_nullifiers` maps the spend
+        /// and detection re-marks the note.
+        #[test]
+        fn reset_before_scan_heals_on_spend_detection() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(FUNDING_TXID, funding_transaction(None));
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Failed(SPEND_HEIGHT)),
+            );
+            let mut nullifier_map = NullifierMap::new();
+            nullifier_map.sapling.insert(
+                NOTE_NULLIFIER,
+                ScanTarget {
+                    block_height: SPEND_HEIGHT,
+                    txid: SPENDING_TXID,
+                    narrow_scan_area: false,
+                },
+            );
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .nullifier_map(nullifier_map)
+                .create_mock_wallet();
+
+            run_spend_detection(&mut wallet);
+
+            assert_eq!(get_spending_txid(&wallet), Some(SPENDING_TXID));
+            // Detection is one-shot: the observation moved out of the map into the note.
+            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+        }
+
+        /// Failure-marking a transaction that is `Confirmed` on chain must not
+        /// destroy the wallet's knowledge of the spend.
+        ///
+        /// Once detection has consumed the nullifier-map entry (and cleanup has pruned the
+        /// range behind the fully-scanned frontier), the note's `spending_transaction`
+        /// field is the wallet's only durable record of the on-chain spend. If
+        /// `set_transactions_failed` erased it, the note would become a permanent phantom
+        /// unspent note: every future proposal selects it and is rejected as a
+        /// double-spend, and no forward sync can correct it.
+        ///
+        /// The damage is permanent IFF the spending block has already been scanned:
+        /// detection consumes the nullifier-map entry at scan time, and scan time is
+        /// exactly when the record becomes `Confirmed` (scan ranges complete out of
+        /// order, so this can precede the fully-scanned frontier reaching that height).
+        /// If the reset lands before that block is scanned, the future scan re-observes
+        /// the nullifier and heals the wallet
+        /// (see [`reset_before_scan_heals_on_spend_detection`]). This equivalence is why
+        /// guarding the failure path on `Confirmed` status is coextensive with the harm.
+        ///
+        /// `set_transactions_failed` therefore refuses to fail a `Confirmed` transaction:
+        /// the record keeps its status and the spend mark survives. Only truncation may
+        /// invalidate mined transactions (via `set_transactions_failed_unchecked`),
+        /// because it simultaneously reopens the affected scan ranges.
+        #[test]
+        fn failing_a_confirmed_transaction_must_not_destroy_the_spend_observation() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(FUNDING_TXID, funding_transaction(Some(SPENDING_TXID)));
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT)),
+            );
+            // The map entry was consumed by detection and pruned by cleanup: empty map.
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .create_mock_wallet();
+
+            // A late failure marking (e.g. an expiry decision racing the scanner) targets
+            // a transaction that is confirmed on chain.
+            set_transactions_failed(
+                wallet.get_wallet_transactions_mut().unwrap(),
+                vec![SPENDING_TXID],
+            );
+
+            // A mined transaction cannot fail: the record keeps its `Confirmed` status.
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&SPENDING_TXID)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+
+            // The spend must remain detectable: after a detection pass the note is still
+            // marked spent.
+            run_spend_detection(&mut wallet);
+            assert_eq!(
+                get_spending_txid(&wallet),
+                Some(SPENDING_TXID),
+                "the on-chain spend observation was destroyed: \
+                 the note is now a permanent phantom unspent note"
+            );
+        }
+
+        /// A scanned transaction record replaces an existing `Failed` record
+        /// wholesale, because `extend_wallet_transactions` merges via `HashMap::extend`.
+        /// This is why the reset-before-scan sequence heals completely.
+        #[test]
+        fn scanned_transaction_overwrites_failed_record() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Failed(SPEND_HEIGHT)),
+            );
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .create_mock_wallet();
+
+            wallet
+                .extend_wallet_transactions(HashMap::from([(
+                    SPENDING_TXID,
+                    spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT)),
+                )]))
+                .unwrap();
+
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&SPENDING_TXID)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+        }
+    }
+
     mod checked_height_validation {
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::local_consensus::LocalNetwork;
@@ -1934,6 +2434,7 @@ mod test {
             nu6: Some(BlockHeight::from_u32(3)),
             nu6_1: Some(BlockHeight::from_u32(3)),
             nu6_2: Some(BlockHeight::from_u32(3)),
+            nu6_3: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height

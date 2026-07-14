@@ -13,10 +13,14 @@ env:
   NEXTEST_VERSION: "0.9.132"
 
 jobs:
+  compute-image-tag:
+    uses: ./.github/workflows/compute-image-tag.yaml
+
   build-test-artifacts:
     name: Build test artifacts
+    needs: compute-image-tag
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     env:
@@ -71,11 +75,11 @@ jobs:
     name: Run normal tests
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
-    needs: build-test-artifacts
+    needs: [build-test-artifacts, compute-image-tag]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     strategy:
       fail-fast: false
@@ -89,7 +93,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -103,7 +107,7 @@ jobs:
 
       - name: Run normal tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-normal.tar.zst \
             --workspace-remap ./ \
             --partition count:${{ matrix.partition }}/8 \
@@ -113,11 +117,11 @@ jobs:
     name: Run darkside tests
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
-    needs: build-test-artifacts
+    needs: [build-test-artifacts, compute-image-tag]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
@@ -127,7 +131,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Download darkside archive
         uses: actions/download-artifact@v8
@@ -136,7 +140,7 @@ jobs:
 
       - name: Run darkside tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 \
+          cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-darkside.tar.zst \
             --workspace-remap ./ \
             ${{ env.NEXTEST-FLAGS }}

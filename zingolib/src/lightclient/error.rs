@@ -32,12 +32,55 @@ pub enum LightClientError {
     /// gPRC client error.
     #[error("gRPC client error. {0}")]
     ClientError(#[from] GetClientError),
+    /// Indexer request error.
+    #[error("Indexer request error. {0}")]
+    IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// Ironwood migration error.
+    #[error("Ironwood migration error. {0}")]
+    MigrationError(#[from] MigrationError),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
+}
+
+/// Errors from the Orchard→Ironwood migration entry points
+/// ([`crate::lightclient::LightClient`] methods backed by
+/// [`crate::wallet::migration`]). Plain-data payloads so an FFI layer can
+/// map each variant mechanically.
+#[derive(Debug, thiserror::Error)]
+pub enum MigrationError {
+    /// An operation needed a migration and none is in progress.
+    #[error("No migration in progress.")]
+    NoMigration,
+    /// A second migration was started while one is in progress.
+    #[error("A migration is already in progress.")]
+    AlreadyInProgress,
+    /// ZIP 244 folds the anchor into the signature hash, so a transaction
+    /// signed ahead of its boundary commits to the wrong anchor.
+    #[error(
+        "The pre-signed strategy is unavailable until the Ironwood transaction digest excludes the anchor from the signature hash."
+    )]
+    PreSignedUnavailable,
+    /// The wallet's notes changed between planning and consent, so the
+    /// consented plan no longer describes what would be sent.
+    #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
+    ConsentStale,
+    /// Note splitting kept producing new rounds past the round bound.
+    #[error("Migration did not converge within {0} rounds.")]
+    SplitDidNotConverge(usize),
+    /// A note-splitting transaction failed or disappeared from the wallet.
+    #[error("Note-splitting transaction {0} failed or disappeared.")]
+    SplitTransactionFailed(TxId),
+    /// Note-splitting transactions were not confirmed within the polling
+    /// window.
+    #[error("Timed out waiting for note-splitting transactions to confirm.")]
+    SplitConfirmationTimeout,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,6 +97,9 @@ pub enum SendError {
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
+    /// Failed to retarget the stored proposal for offline signing.
+    #[error("Failed to retarget the stored proposal for offline signing. {0}")]
+    RetargetError(zcash_client_backend::proposal::ProposalError),
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,

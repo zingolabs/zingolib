@@ -1,6 +1,5 @@
-//! libtonode tests use zcashd regtest mode to mock a chain
+//! libtonode tests use a regtest-mode Validator (zebrad) to mock a chain
 
-use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 
@@ -13,12 +12,12 @@ use zingolib::testutils::timestamped_test_log;
 
 use zingolib_testutils::scenarios::ClientBuilder;
 use zingolib_testutils::scenarios::custom_clients_default;
-use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
+use zingolib_testutils::setup_metrics::MeteredNet;
 
-/// includes utilities for connecting to zcashd regtest
+/// includes utilities for connecting to the regtest Validator
 pub struct LibtonodeEnvironment {
     /// Local network
-    pub local_net: LocalNet<DefaultValidator, DefaultIndexer>,
+    pub local_net: MeteredNet,
     /// Client builder
     pub client_builder: ClientBuilder,
 }
@@ -37,23 +36,16 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder
-            .build_faucet(
-                false,
-                self.local_net.validator().get_activation_heights().await,
-            )
-            .await
+        self.client_builder.build_faucet(false).await
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
-        self.client_builder.make_unique_data_dir_and_create_config(
-            self.local_net.validator().get_activation_heights().await,
-            WalletConfig::NewSeed {
+        self.client_builder
+            .make_unique_data_dir_and_create_config(WalletConfig::NewSeed {
                 no_of_accounts: 1.try_into().unwrap(),
                 chain_height: 1,
                 wallet_settings: default_test_wallet_settings(),
-            },
-        )
+            })
     }
 
     async fn increase_chain_height(&mut self) {
@@ -67,6 +59,10 @@ impl ConductChain for LibtonodeEnvironment {
             self.local_net.validator().get_chain_height().await,
             start_height + 1
         );
+    }
+
+    async fn sync_client_to_tip(&self, client: &mut LightClient) {
+        zingolib_testutils::scenarios::sync_client_to_validator_tip(&self.local_net, client).await;
     }
 
     fn lightserver_uri(&self) -> Option<http::Uri> {

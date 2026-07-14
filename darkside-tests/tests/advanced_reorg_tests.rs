@@ -38,18 +38,18 @@ async fn reorg_changes_incoming_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -61,6 +61,9 @@ async fn reorg_changes_incoming_tx_height() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -99,6 +102,9 @@ async fn reorg_changes_incoming_tx_height() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -218,18 +224,18 @@ async fn reorg_changes_incoming_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -241,6 +247,9 @@ async fn reorg_changes_incoming_tx_index() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -279,6 +288,9 @@ async fn reorg_changes_incoming_tx_index() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -399,18 +411,18 @@ async fn reorg_expires_incoming_tx() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -422,6 +434,9 @@ async fn reorg_expires_incoming_tx() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -460,6 +475,9 @@ async fn reorg_expires_incoming_tx() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(0.try_into().unwrap()),
             confirmed_orchard_balance: Some(0.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -585,18 +603,18 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -608,6 +626,9 @@ async fn reorg_changes_outgoing_tx_height() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100000000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -656,6 +677,9 @@ async fn reorg_changes_outgoing_tx_height() {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(99890000.try_into().unwrap()),
         confirmed_orchard_balance: Some(0.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(99890000.try_into().unwrap()),
@@ -729,6 +753,9 @@ async fn reorg_changes_outgoing_tx_height() {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(99890000.try_into().unwrap()),
         confirmed_orchard_balance: Some(99890000.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -846,23 +873,26 @@ async fn reorg_expires_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     let expected_initial_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(100000000.try_into().unwrap()),
         confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -912,6 +942,9 @@ async fn reorg_expires_outgoing_tx_height() {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(99890000.try_into().unwrap()),
         confirmed_orchard_balance: Some(0.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(99890000.try_into().unwrap()),
@@ -1052,18 +1085,18 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            true,
-            ActivationHeights::default(),
-        )
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), wallet_dir, ActivationHeights::default())
+            .build_client(
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                    birthday: 202,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+                true,
+            )
+            .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -1075,6 +1108,9 @@ async fn reorg_changes_outgoing_tx_index() {
             total_sapling_balance: Some(0.try_into().unwrap()),
             confirmed_sapling_balance: Some(0.try_into().unwrap()),
             unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+            total_ironwood_balance: Some(0.try_into().unwrap()),
             total_orchard_balance: Some(100_000_000.try_into().unwrap()),
             confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
             unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
@@ -1123,6 +1159,9 @@ async fn reorg_changes_outgoing_tx_index() {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(99_890_000.try_into().unwrap()),
         confirmed_orchard_balance: Some(0.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(99_890_000.try_into().unwrap()),
@@ -1203,6 +1242,9 @@ async fn reorg_changes_outgoing_tx_index() {
         total_sapling_balance: Some(0.try_into().unwrap()),
         confirmed_sapling_balance: Some(0.try_into().unwrap()),
         unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        unconfirmed_ironwood_balance: Some(0.try_into().unwrap()),
+        total_ironwood_balance: Some(0.try_into().unwrap()),
         total_orchard_balance: Some(99_890_000.try_into().unwrap()),
         confirmed_orchard_balance: Some(99_890_000.try_into().unwrap()),
         unconfirmed_orchard_balance: Some(0.try_into().unwrap()),

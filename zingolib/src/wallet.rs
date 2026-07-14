@@ -32,6 +32,7 @@ pub mod utils;
 pub mod balance;
 pub mod disk;
 pub mod keys;
+pub mod migration;
 pub mod output;
 pub mod propose;
 pub mod send;
@@ -104,9 +105,7 @@ pub(crate) struct WalletBase {
 /// `birthday` block height.
 ///
 /// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
-/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
-/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
-/// methods for a save task implementation.
+/// automatically. See [`crate::lightclient::LightClient::save_task`] and related methods to persist the wallet.
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
@@ -141,10 +140,14 @@ pub struct LightWallet {
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
+    /// Orchard→Ironwood migration state, present while a migration is
+    /// planned or in flight. Wallet-file-local by design: restore-from-seed
+    /// starts fresh.
+    pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    pub save_required: bool,
+    pub(crate) save_required: bool,
 }
 
 impl LightWallet {
@@ -235,6 +238,7 @@ impl LightWallet {
             sync_state: SyncState::new(),
             wallet_settings,
             price_list: PriceList::new(),
+            migration: None,
             save_required: true,
             send_proposal: None,
         })
@@ -329,6 +333,11 @@ impl LightWallet {
     /// Clears the proposal in the `send_proposal` field.
     pub fn clear_proposal(&mut self) {
         self.send_proposal = None;
+    }
+
+    /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.
+    pub fn mark_dirty(&mut self) {
+        self.save_required = true;
     }
 
     #[must_use]

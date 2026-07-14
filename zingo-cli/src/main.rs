@@ -82,10 +82,7 @@ fn handle_error(e: std::io::Error) {
 }
 
 pub fn main() {
-    // install default crypto provider (ring)
-    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-        eprintln!("Error installing crypto provider: {e:?}");
-    }
+    zingo_netutils::ensure_default_crypto_provider();
     let matches = parse_args_or_exit_for_help();
     init_tracing(&matches);
     if let Err(e) = zingo_cli::run_cli(matches) {

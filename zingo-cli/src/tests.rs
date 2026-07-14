@@ -193,6 +193,25 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn calculate() {
+            assert_no_arg_command("calculate");
+        }
+
+        #[test]
+        fn transmit() {
+            assert_no_arg_command("transmit");
+        }
+
+        #[test]
+        fn transmit_with_txids() {
+            assert_command(
+                &[examples::BIN_NAME, "transmit", examples::TXID],
+                "transmit",
+                &[examples::TXID],
+            );
+        }
+
+        #[test]
         fn shield() {
             assert_no_arg_command("shield");
         }
@@ -287,6 +306,35 @@ mod communication_mode {
     fn default_is_online() {
         let matches = parse(&[examples::BIN_NAME]);
         assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
+    }
+
+    #[test]
+    fn offline_flag_pins_offline() {
+        let matches = parse(&[examples::BIN_NAME, "--offline"]);
+        assert_eq!(get_communication_mode(&matches), CommunicationMode::Offline);
+    }
+
+    #[test]
+    fn offline_conflicts_with_server() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([
+                    examples::BIN_NAME,
+                    "--offline",
+                    "--server",
+                    examples::SERVER_URI
+                ])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn offline_conflicts_with_waitsync() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--waitsync"])
+                .is_err()
+        );
     }
 }
 
@@ -436,6 +484,82 @@ mod config_template {
         build_zingo_config(&fill(args).unwrap()).unwrap()
     }
 
+    mod offline {
+        use super::*;
+        use crate::CommunicationMode;
+
+        #[test]
+        fn fill_resolves_no_server_and_disables_sync() {
+            let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
+            assert_eq!(config.communication_mode, CommunicationMode::Offline);
+            assert!(config.server.is_none());
+            assert!(!config.sync, "an Offline-mode session cannot sync");
+        }
+
+        #[test]
+        fn restored_wallet_builds_an_indexerless_client_config() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-indexerless-test");
+            let config = fill_and_build(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--seed",
+                examples::SEED_PHRASE,
+                "--birthday",
+                "1",
+                "--data-dir",
+                data_dir.to_str().expect("temp dir path is valid unicode"),
+            ]);
+            assert!(
+                config.indexer_uri().is_none(),
+                "an Offline-mode session never configures an Indexer"
+            );
+        }
+
+        /// A new wallet's birthday normally comes from the server's chain
+        /// tip; Offline mode has no server, so the Library Birthday — a
+        /// release-stamped height no new seed can predate — stands in
+        /// (ADR 0007). No --birthday is demanded.
+        #[test]
+        fn new_wallet_without_birthday_uses_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-lib-birthday-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == zingolib::config::lib_birthday(ChainType::Mainnet)
+            ));
+        }
+
+        /// --birthday remains available for a new Offline-mode wallet as an
+        /// expert override of the Library Birthday floor (ADR 0007).
+        #[test]
+        fn new_wallet_birthday_overrides_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-birthday-override-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--birthday",
+                "3500000",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == 3_500_000
+            ));
+        }
+    }
+
     mod happy_paths {
         use super::*;
         use crate::CommunicationMode;
@@ -575,7 +699,7 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
@@ -593,7 +717,7 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(examples::SERVER_URI),
                 "expected URI to start with {}, got: {uri}",

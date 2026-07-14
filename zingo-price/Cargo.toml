@@ -12,12 +12,15 @@ license = "MIT"
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
+# rustls-tls-no-provider: never auto-selects a rustls CryptoProvider; the
+# fetch path installs aws-lc-rs (first-install-wins) before requesting.
 reqwest = { workspace = true, default-features = false, features = [
     "cookies",
-    "rustls-tls",
+    "rustls-tls-no-provider",
     "json",
 ] }
 rust_decimal = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
