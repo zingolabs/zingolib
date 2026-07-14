@@ -12,6 +12,8 @@
 
 **Birthday** — The earliest block height at which a wallet may have received funds. Scanning begins here on first sync.
 
+**Library Birthday** — A per-ChainType block height baked into each zingolib release, chosen so that it had already been mined when the release was cut. Any wallet a given release creates necessarily post-dates the release, so this height is a safe Birthday for a NewSeed wallet created while Indexerless, where no Indexer can report the chain height. It never applies to restores: a restored seed or viewing key may predate the library, so restoring always requires a caller-supplied Birthday. The caller passes it explicitly; the library only publishes the value.
+
 **Chain Tip** — The range of blocks at the top of the blockchain starting from the lowest block containing the last note commitment to the most recent shard, up to the current chain height. Distinct from "chain height" (highest known block).
 
 **Re-org** — A chain reorganisation. The sync engine detects this by checking block hash continuity in a verification window at the top of the locally known chain.
@@ -117,7 +119,7 @@
 
 **ConfirmationStatus** — The lifecycle state of a transaction. Ordered for sorting (confirmed first): `Confirmed(height)` → `Mempool(target_height)` → `Transmitted(target_height)` → `Calculated(target_height)` → `Failed(height)`. For non-confirmed states the embedded height is the chain height at time of creation + 1 (the intended target block), not an actual confirmation height. `Failed` is a permanent terminal state — failed transactions remain in the wallet as a record. Consumers filter them out at the display layer using `ConfirmationStatus`.
 
-**Calculated Transaction** — A fully built and signed but not yet transmitted transaction. Status: `Calculated`.
+**Calculated Transaction** — A fully built and signed but not yet transmitted transaction. Status: `Calculated`. One calculated while Indexerless has its expiry retargeted to the last height of the current consensus epoch: it remains transmittable until the next scheduled network upgrade, the outer limit for any pre-signed Zcash transaction. See `docs/adr/0008-offline-expiry-by-retarget.md`.
 
 **Transmission** — The step in which the client attempts a send: it submits a Calculated Transaction to the Indexer and verifies that the server-reported txid matches the locally calculated txid. *Avoid*: broadcast (reserved for a distinct future concept — a memo that multiple recipients can decrypt).
 

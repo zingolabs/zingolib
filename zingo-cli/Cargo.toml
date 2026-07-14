@@ -19,7 +19,9 @@ http = { workspace = true }
 indoc = { workspace = true }
 json = { workspace = true }
 log = { workspace = true }
+nonempty = { workspace = true }
 rustyline = { workspace = true }
+zingo-status = { workspace = true }
 shellwords = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }

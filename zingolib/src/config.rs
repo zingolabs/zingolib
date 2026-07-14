@@ -27,6 +27,43 @@ pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks";
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
+/// The mainnet Library Birthday: a block height that had already been mined
+/// when this zingolib release was cut.
+///
+/// Any wallet created by this release necessarily post-dates the release, so
+/// this height is a safe [`WalletConfig::NewSeed`] `chain_height` for a
+/// wallet created while Indexerless, where no Indexer can report the chain
+/// tip. The invariant is that the block has been mined, not merely named — a
+/// scheduled-but-future network-upgrade activation height does not qualify.
+/// Bumping this constant to a recently observed height is a release-checklist
+/// step. See `docs/adr/0007-library-birthday.md`.
+pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
+
+/// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
+///
+/// NU6.3's testnet activation height. An activation height qualifies only
+/// once it has actually been mined — this one has: NU6.3 is already live on
+/// testnet (unlike mainnet, where its activation is still scheduled).
+pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
+
+/// Returns the Library Birthday for the given chain: a block height known to
+/// have been mined before this zingolib release was cut, safe as the
+/// [`WalletConfig::NewSeed`] `chain_height` for a wallet created while
+/// Indexerless.
+///
+/// Restores must not use this — a restored seed or viewing key may predate
+/// the library and always requires a caller-supplied birthday. See
+/// `docs/adr/0007-library-birthday.md`.
+pub fn lib_birthday(chain: ChainType) -> u32 {
+    match chain {
+        ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
+        ChainType::Testnet => LIB_BIRTHDAY_TESTNET,
+        // A regtest chain is born alongside its wallets; scanning from
+        // genesis is both correct and cheap.
+        ChainType::Regtest(_) => 1,
+    }
+}
+
 /// The network types a lightclient can connect to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChainType {
@@ -495,5 +532,23 @@ mod tests {
 
         assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
+    }
+
+    /// The Library Birthday must land at or above Sapling activation on the
+    /// public chains, so a NewSeed wallet built from it starts scanning at
+    /// the library floor rather than the bottom of the chain.
+    #[test]
+    fn lib_birthday_exceeds_sapling_activation() {
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+
+        for chain in [ChainType::Mainnet, ChainType::Testnet] {
+            let sapling_activation = chain
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("public chains have a sapling activation height");
+            assert!(
+                crate::config::lib_birthday(chain) > u32::from(sapling_activation),
+                "lib_birthday({chain}) must exceed sapling activation"
+            );
+        }
     }
 }

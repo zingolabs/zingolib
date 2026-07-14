@@ -107,8 +107,11 @@ mod test {
     /// selects witnesses, proves, and signs — a real transaction from the
     /// stored proposal over synthetic wallet state, with no Indexer
     /// anywhere. The signed transaction lands in the wallet with
-    /// `Calculated` status, and only the transmission half demands a
-    /// connection.
+    /// `Calculated` status with its expiry height retargeted to the top
+    /// of the wallet's consensus-branch epoch (the longest expiry the
+    /// epoch permits, so the stale offline chain view cannot invalidate
+    /// it before transmission; issue #2455), and only the transmission
+    /// half demands a connection.
     #[tokio::test]
     async fn offline_calculate_signs_and_transmit_refuses() {
         use crate::testutils::lightclient::from_inputs;
@@ -132,10 +135,22 @@ mod test {
         {
             let wallet = client.wallet().read().await;
             for txid in calculated_txids.iter() {
+                let transaction = wallet.wallet_transactions.get(txid).unwrap();
                 assert!(matches!(
-                    wallet.wallet_transactions.get(txid).unwrap().status(),
+                    transaction.status(),
                     ConfirmationStatus::Calculated(_)
                 ));
+                // The synthetic wallet's regtest chain activates every
+                // upgrade at height 1, so the wallet's epoch is the newest
+                // one and no later activation is scheduled: the retarget
+                // lifts the target to the highest height whose expiry
+                // ZIP 203 can encode, and expiry lands at threshold − 1.
+                assert_eq!(
+                    u32::from(transaction.transaction().expiry_height()),
+                    crate::lightclient::send::ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1,
+                    "an Indexerless calculation must retarget expiry to the \
+                     top of the wallet's consensus-branch epoch"
+                );
             }
         }
 
