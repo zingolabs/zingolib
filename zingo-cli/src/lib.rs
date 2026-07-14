@@ -144,7 +144,7 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// failure, and returns the sync indicator to embed in the interactive
 /// prompt — `" [Syncing X / Y outputs]"` while sync is in progress,
 /// `" [Synced X / X outputs]"` when fully synced, `" [Sync error]"` on
-/// failure, or `" [Not syncing X / Y outputs]"` when no sync task is
+/// failure, or `" [Sync stopped at X / Y outputs]"` when no sync task is
 /// running and the wallet is not fully synced.
 ///
 /// Every outcome is classified from typed values ([`PollReport`],
@@ -209,10 +209,10 @@ fn idle_indicator(progress: Option<ScanProgress>) -> String {
     match progress {
         Some(progress) if progress.complete => synced_indicator(Some(progress)),
         Some(progress) if progress.total_outputs > 0 => format!(
-            " [Not syncing {} / {} outputs]",
+            " [Sync stopped at {} / {} outputs]",
             progress.outputs_scanned, progress.total_outputs
         ),
-        _ => " [Not syncing]".to_string(),
+        _ => " [Sync stopped]".to_string(),
     }
 }
 

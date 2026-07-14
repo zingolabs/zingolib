@@ -412,7 +412,7 @@ mod sync {
     fn not_launched_not_synced() {
         assert_eq!(
             idle_indicator(progress(0, 10_000, false)),
-            " [Not syncing 0 / 10000 outputs]"
+            " [Sync stopped at 0 / 10000 outputs]"
         );
     }
 
@@ -433,13 +433,13 @@ mod sync {
     fn all_outputs_scanned_but_refetch_pending_is_not_synced() {
         assert_eq!(
             idle_indicator(progress(10_000, 10_000, false)),
-            " [Not syncing 10000 / 10000 outputs]"
+            " [Sync stopped at 10000 / 10000 outputs]"
         );
     }
 
     #[test]
     fn not_launched_with_unavailable_status() {
-        assert_eq!(idle_indicator(None), " [Not syncing]");
+        assert_eq!(idle_indicator(None), " [Sync stopped]");
     }
 }
 
