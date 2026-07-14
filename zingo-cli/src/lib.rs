@@ -143,9 +143,9 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// the [`LightClient`] lives: polls the sync task, reports any save-task
 /// failure, and returns the sync indicator to embed in the interactive
 /// prompt — `" [Syncing X / Y outputs]"` while sync is in progress,
-/// `" [Synced]"` when fully synced, `" [Sync error]"` on failure, or
-/// `" [Not syncing X / Y outputs]"` when no sync task is running and the
-/// wallet is not fully synced.
+/// `" [Synced X / X outputs]"` when fully synced, `" [Sync error]"` on
+/// failure, or `" [Not syncing X / Y outputs]"` when no sync task is
+/// running and the wallet is not fully synced.
 ///
 /// Every outcome is classified from typed values ([`PollReport`],
 /// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
@@ -158,7 +158,7 @@ fn prompt_indicator(lightclient: &mut LightClient) -> String {
         }
         PollReport::Ready(Ok(sync_result)) => {
             println!("{sync_result}");
-            " [Synced]".to_string()
+            synced_indicator(scan_progress(lightclient))
         }
         PollReport::NotReady => syncing_indicator(scan_progress(lightclient)),
         PollReport::NoHandle => idle_indicator(scan_progress(lightclient)),
@@ -207,12 +207,23 @@ fn syncing_indicator(progress: Option<ScanProgress>) -> String {
 /// The prompt indicator when no sync task is running.
 fn idle_indicator(progress: Option<ScanProgress>) -> String {
     match progress {
-        Some(progress) if progress.complete => " [Synced]".to_string(),
+        Some(progress) if progress.complete => synced_indicator(Some(progress)),
         Some(progress) if progress.total_outputs > 0 => format!(
             " [Not syncing {} / {} outputs]",
             progress.outputs_scanned, progress.total_outputs
         ),
         _ => " [Not syncing]".to_string(),
+    }
+}
+
+/// The prompt indicator when sync is complete, reporting the full ratio.
+fn synced_indicator(progress: Option<ScanProgress>) -> String {
+    match progress {
+        Some(progress) if progress.total_outputs > 0 => format!(
+            " [Synced {} / {} outputs]",
+            progress.outputs_scanned, progress.total_outputs
+        ),
+        _ => " [Synced]".to_string(),
     }
 }
 
