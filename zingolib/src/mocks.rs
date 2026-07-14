@@ -558,7 +558,10 @@ pub mod proposal {
                 Rseed::AfterZip212([7; 32]),
             );
             let mut payment_pools = BTreeMap::new();
-            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Orchard));
+            // Ironwood is active by default (see `ironwood_active(true)` below), and the
+            // backend routes every shielded payment to the Ironwood pool — directing one to
+            // Orchard trips the turnstile assertion in `Step::from_parts`.
+            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Ironwood));
 
             let mut builder = Self::new();
             builder
