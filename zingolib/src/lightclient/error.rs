@@ -97,6 +97,9 @@ pub enum SendError {
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
+    /// Failed to retarget the stored proposal for offline signing.
+    #[error("Failed to retarget the stored proposal for offline signing. {0}")]
+    RetargetError(zcash_client_backend::proposal::ProposalError),
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,

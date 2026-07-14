@@ -168,7 +168,7 @@ pub fn wallet_activation_heights(
 /// blocks whose subsidy config doesn't match, so e.g. the all-at-1
 /// `ActivationHeights::default()` stalls the chain at genesis), with one
 /// amendment: NU7 stays off. NU6.3 activates at the fixture's height 5,
-/// so wallet activity is Ironwood-era by default (ADR 0007) while
+/// so wallet activity is Ironwood-era by default (ADR 0009) while
 /// coinbase blocks 2..=4 still yield legacy Orchard notes — a mixed
 /// chain by design, since behavior *relative to* Ironwood is a primary
 /// test subject during the migration window.

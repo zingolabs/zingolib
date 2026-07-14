@@ -323,3 +323,138 @@ async fn two_phase_migration_end_to_end() {
     // are the migrated value.
     assert_eq!(status.value_migrated, expected_migrated);
 }
+
+/// The immediate drain: every spendable Orchard note is spent into Ironwood in
+/// one pass, with no note splitting and no schedule. The Orchard pool empties
+/// down to the disclosed dust, and the same value less fees appears in the
+/// Ironwood pool. That second half is what proves the funds actually crossed.
+#[tokio::test]
+async fn drain_all_orchard_to_ironwood() {
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+
+    // Several notes of unequal value: a drain must sweep all of them, and
+    // nothing here is a canonical denomination.
+    for value in [317_000u64, 1_250_000, 88_000] {
+        from_inputs::quick_send(&mut faucet, vec![(&recipient_address, value, None)])
+            .await
+            .unwrap();
+    }
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let orchard_before = recipient
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap()
+        .confirmed_orchard_balance
+        .unwrap()
+        .into_u64();
+    assert_eq!(orchard_before, 317_000 + 1_250_000 + 88_000);
+
+    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    // Three modest notes fit one transaction: no chunking here.
+    assert_eq!(plan.transactions.len(), 1);
+    assert_eq!(
+        plan.migrated + plan.fee + plan.stranded,
+        orchard_before,
+        "the plan must account for every zatoshi"
+    );
+
+    let summary = recipient
+        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .await
+        .unwrap();
+    assert_eq!(summary.txids.len(), plan.transactions.len());
+    assert_eq!(summary.migrated, plan.migrated);
+
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let balance = recipient
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap();
+    assert_eq!(
+        balance
+            .confirmed_orchard_balance
+            .map(|zats| zats.into_u64())
+            .unwrap_or(0),
+        summary.stranded,
+        "the Orchard pool must be empty but for the disclosed dust"
+    );
+    assert_eq!(
+        balance
+            .confirmed_ironwood_balance
+            .map(|zats| zats.into_u64())
+            .unwrap_or(0),
+        summary.migrated,
+        "the drained value must appear in the Ironwood pool"
+    );
+}
+
+/// A drain of a fragmented wallet chunks into several independent transactions,
+/// all built and broadcast in the same pass, and still empties the pool.
+#[tokio::test]
+async fn drain_chunks_a_fragmented_wallet() {
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+
+    // More notes than fit one transaction's action budget.
+    let note_count = {
+        let wallet = recipient.wallet().read().await;
+        MigrationParams::provisional(wallet.chain_type()).max_actions_per_split_tx + 3
+    };
+    for _ in 0..note_count {
+        from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 100_000, None)])
+            .await
+            .unwrap();
+    }
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    assert_eq!(
+        plan.transactions.len(),
+        2,
+        "{note_count} notes must chunk into two transactions"
+    );
+
+    let summary = recipient
+        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .await
+        .unwrap();
+    assert_eq!(summary.txids.len(), 2);
+
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let balance = recipient
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap();
+    assert_eq!(
+        balance
+            .confirmed_orchard_balance
+            .map(|zats| zats.into_u64())
+            .unwrap_or(0),
+        summary.stranded
+    );
+    assert_eq!(
+        balance
+            .confirmed_ironwood_balance
+            .map(|zats| zats.into_u64())
+            .unwrap_or(0),
+        summary.migrated
+    );
+}

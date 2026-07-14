@@ -50,7 +50,7 @@ macro_rules! get_base_address_macro {
 /// summing the amounts listed in `tx_summaries` matches the
 /// sum of the balances.
 ///
-/// The `i:` slot is required (ADR 0007): on the default Ironwood-era
+/// The `i:` slot is required (ADR 0009): on the default Ironwood-era
 /// chains, shielded value received after NU6.3 activation lands in the
 /// Ironwood pool, so every call site states where its funds actually
 /// live rather than silently asserting only the legacy pools.

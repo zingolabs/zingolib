@@ -107,7 +107,7 @@ mod unit_test_twins {
         // the recipient holds the 100_000 funding note less the 1_000
         // payment and its 20_000 ZIP-317 fee (the ironwood spend counted
         // in the orchard bundle view plus the ironwood payment-and-change
-        // pair — ADR 0007).
+        // pair — ADR 0009).
         check_client_balances!(recipient, o: 0 i: 79_000 s: 0 t: 0);
 
         let value_transfers = recipient.value_transfers(true).await.unwrap();
@@ -603,7 +603,7 @@ TransactionSummary {
             .unwrap();
         // The send pays the V6 two-bundle fee (20_000): the ironwood spend
         // in the orchard bundle view plus the ironwood payment-and-change
-        // pair (ADR 0007).
+        // pair (ADR 0009).
         let remaining_ironwood = for_orchard - (5 * fee) - 20_000;
         check_client_balances!(recipient, o: 0 i: remaining_ironwood s: 0 t: 0);
     }
@@ -638,7 +638,7 @@ TransactionSummary {
         }
 
         // pmc receives 100_000 at its unified address; the V6 payment
-        // lands in the ironwood pool (ADR 0007).
+        // lands in the ironwood pool (ADR 0009).
         from_inputs::quick_send(&mut faucet, vec![(&pmc_unified, 100_000, None)])
             .await
             .unwrap();
@@ -705,7 +705,7 @@ TransactionSummary {
         //  # Expected Fees to recipient:
         //    - legacy: 10_000
         //    - 317:    15_000 = 1 transparent in + the padded ironwood pair
-        //      (a V6 shield's change lands in the ironwood bundle, ADR 0007)
+        //      (a V6 shield's change lands in the ironwood bundle, ADR 0009)
         client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
         bump_and_check!(o: 0 i: 35_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;

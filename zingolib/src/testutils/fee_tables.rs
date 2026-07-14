@@ -6,7 +6,7 @@ use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
 use zcash_protocol::{PoolType, ShieldedPool};
 
 /// Estimates the fee the proposer charges for a one-input send on an
-/// NU6.3-active chain (the default test era, ADR 0007), per ZIP 317
+/// NU6.3-active chain (the default test era, ADR 0009), per ZIP 317
 /// (<https://zips.z.cash/zip-0317>) as the pinned zcash_client_backend
 /// implements it for V6 transactions. Adjudicated against real proposals
 /// (probe run, 2026-07-13):

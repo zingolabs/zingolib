@@ -57,7 +57,7 @@ pub struct WalletSettings {
     /// V6 transactions at and after NU6.3 activation and route
     /// Ironwood-pool inputs and change through the ironwood bundle. When
     /// false, building is floored at V5, so outputs land in the legacy
-    /// pools even on an NU6.3-configured chain (ADR 0007's Orchard-era
+    /// pools even on an NU6.3-configured chain (ADR 0009's Orchard-era
     /// opt-out). See [`LightWallet::transaction_version_floor`].
     pub allow_v6_transactions: bool,
 }

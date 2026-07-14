@@ -74,7 +74,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
     // 100_000 funding minus the 20_000 payment and its 20_000 ZIP-317 fee
     // (the ironwood spend is counted in the orchard bundle view and the
     // payment and change land in the ironwood bundle, two padded action
-    // pairs — ADR 0007).
+    // pairs — ADR 0009).
     check_client_balances!(recipient, o: 0 i: 60_000 s: 0 t: 0);
 }
 
@@ -111,7 +111,7 @@ async fn zero_value_receipts() {
 
     // The recipient holds the 100_000 funding note less the 1_000 payment
     // and its 20_000 ZIP-317 fee (ironwood spend counted in the orchard
-    // bundle view, payment and change in the ironwood bundle — ADR 0007).
+    // bundle view, payment and change in the ironwood bundle — ADR 0009).
     check_client_balances!(recipient, o: 0 i: 79_000 s: 0 t: 0);
 
     let value_transfers = recipient.value_transfers(true).await.unwrap();
@@ -649,7 +649,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 #[ignore = "zingolabs/zingolib#2447: pepper-sync's subtractive darkside_test feature, when \
             unified into multi-package builds, compiles out the transparent-address discovery \
             this test's funding depends on. ALSO: the ledger's fees and amounts predate V6 — \
-            re-derive every step per ADR 0007 before un-ignoring (step 10's drain amount goes \
+            re-derive every step per ADR 0009 before un-ignoring (step 10's drain amount goes \
             insufficient under V6 two-bundle fees)"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {

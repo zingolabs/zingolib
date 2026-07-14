@@ -10,7 +10,7 @@ use zcash_client_backend::{
 };
 use zcash_protocol::{
     ShieldedPool,
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -37,7 +37,15 @@ impl LightWallet {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             Some(memo),
-            ShieldedPool::Orchard,
+            if self
+                .chain_type
+                .activation_height(NetworkUpgrade::Nu6_3)
+                .is_some()
+            {
+                ShieldedPool::Ironwood
+            } else {
+                ShieldedPool::Orchard
+            },
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
         let chain_type = self.chain_type;

@@ -425,9 +425,9 @@ async fn utxos_are_not_prematurely_confirmed() {
 }
 
 #[tokio::test]
-async fn mine_to_orchard() {
+async fn mine_to_ironwood() {
     let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         scenarios::default_test_activation_heights(),
         scenarios::ChainCachePolicy::PerTest,
     )
@@ -587,7 +587,7 @@ async fn test_scanning_in_watch_only_mode() {
         .into_u64();
     assert_eq!(sent_t_value, 10_000u64);
     assert_eq!(sent_s_value, 20_000u64);
-    // The unified-address payment lands in the Ironwood pool (ADR 0007).
+    // The unified-address payment lands in the Ironwood pool (ADR 0009).
     assert_eq!(sent_o_value, 0u64);
     assert_eq!(sent_i_value, 30_000u64);
 
@@ -714,7 +714,7 @@ async fn sends_to_self_handle_balance_properly() {
         .unwrap();
 
     // The shield sweeps the whole transparent funding into the Ironwood
-    // pool (a V6 shield's change lands in the ironwood bundle, ADR 0007),
+    // pool (a V6 shield's change lands in the ironwood bundle, ADR 0009),
     // less the 15_000 ZIP-317 fee (one transparent input plus the padded
     // two-action ironwood pair).
     let shielded_value = transparent_funding - 15_000;
@@ -807,7 +807,7 @@ async fn send_orchard_back_and_forth() {
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
     // 50_000 so the recipient can afford the 10_000 send-back plus its
     // 20_000 V6 fee (ironwood spend in the orchard bundle view plus the
-    // ironwood payment-and-change pair — ADR 0007).
+    // ironwood payment-and-change pair — ADR 0009).
     let faucet_to_recipient_amount = 50_000u64;
     let recipient_to_faucet_amount = 10_000u64;
     let v6_shielded_fee = 20_000u64;

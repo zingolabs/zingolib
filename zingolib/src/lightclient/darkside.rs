@@ -155,7 +155,7 @@ async fn reorg_expires_outgoing_transaction() {
     sender.sync_and_await().await.unwrap();
     recipient.sync_and_await().await.unwrap();
     // The 20_000 fee: the ironwood spend counted in the orchard bundle
-    // view plus the ironwood payment-and-change pair (ADR 0007).
+    // view plus the ironwood payment-and-change pair (ADR 0009).
     let spent_less_fee = FUNDING - 10_000 - 20_000;
     check_client_balances!(sender, o: 0 i: spent_less_fee s: 0 t: 0);
     check_client_balances!(recipient, o: 0 i: 10_000 s: 0 t: 0);
