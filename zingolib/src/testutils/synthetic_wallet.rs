@@ -197,7 +197,9 @@ impl SyntheticWalletBuilder {
         }
         let mut note_count = self.ironwood_note_values.len();
         for (index, value) in self.orchard_note_values.iter().enumerate() {
-            let txid = TxId::from_bytes([u8::try_from(index).unwrap() + 1; 32]);
+            // Txid bytes offset past the ironwood range (which starts at 1)
+            // so the two note families never collide in wallet_transactions.
+            let txid = TxId::from_bytes([0x40 + u8::try_from(index).unwrap(); 32]);
             let crypto_note = OrchardCryptoNoteBuilder::default()
                 .recipient(orchard_recipient)
                 .value(NoteValue::from_raw(*value))

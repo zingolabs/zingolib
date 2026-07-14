@@ -309,7 +309,10 @@ async fn ironwood_miner_coinbase_distribution() {
     environment.increase_chain_height().await;
     scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
 
-    // Tip is height 4: launch block + 2 setup blocks + 1 above.
+    // Tip is height 4: launch block + 2 setup blocks + 1 above. Every
+    // coinbase block (2..=4) predates the fixture's NU6.3 activation at 5,
+    // so the orchard-receiver rewards are legacy Orchard notes and the
+    // Ironwood pool is empty.
     check_client_balances!(
         faucet,
         i: 0 o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
@@ -429,6 +432,8 @@ async fn mine_to_ironwood() {
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;
+    // Server-run adjudicated: coinbase to the ironwood miner pool lands
+    // entirely as Orchard notes, even for blocks past NU6.3 activation.
     check_client_balances!(
         faucet,
         i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
@@ -605,9 +610,15 @@ async fn test_scanning_in_watch_only_mode() {
         .total_orchard_balance
         .unwrap()
         .into_u64();
+    let sent_i_value = original_recipient_balance
+        .total_ironwood_balance
+        .unwrap()
+        .into_u64();
     assert_eq!(sent_t_value, 10_000u64);
     assert_eq!(sent_s_value, 20_000u64);
-    assert_eq!(sent_o_value, 30_000u64);
+    // The unified-address payment lands in the Ironwood pool (ADR 0009).
+    assert_eq!(sent_o_value, 0u64);
+    assert_eq!(sent_i_value, 30_000u64);
 
     // check that do_rescan works
     original_recipient.rescan_and_await().await.unwrap();
@@ -731,9 +742,10 @@ async fn sends_to_self_handle_balance_properly() {
         .await
         .unwrap();
 
-    // The shield sweeps the whole transparent funding into orchard,
-    // less the 15_000 ZIP-317 fee (one transparent input plus the
-    // padded two-action orchard bundle).
+    // The shield sweeps the whole transparent funding into the Ironwood
+    // pool (a V6 shield's change lands in the ironwood bundle, ADR 0009),
+    // less the 15_000 ZIP-317 fee (one transparent input plus the padded
+    // two-action ironwood pair).
     let shielded_value = transparent_funding - 15_000;
     check_client_balances!(recipient, i: 0 o: shielded_value s: 0 t: 0);
 
@@ -758,7 +770,7 @@ async fn sends_to_self_handle_balance_properly() {
                     ))
                     && vt.value == shielded_value
                     && vt.transaction_fee == Some(15_000)
-                    && vt.pool_received.as_deref() == Some("Orchard")
+                    && vt.pool_received.as_deref() == Some("Ironwood")
             })
             .count(),
         1

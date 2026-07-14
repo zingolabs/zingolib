@@ -303,11 +303,13 @@ mod send_all {
 
     /// Migrated from libtonode `send_all::ptfm_zero_value`: a send-all
     /// whose only note is entirely consumed by the fee is rejected as a
-    /// zero-value send.
+    /// zero-value send. The 20_000-zat note exactly covers the V6 fee
+    /// (orchard input bundle plus ironwood payment bundle, two padded
+    /// actions each), leaving zero to send.
     #[tokio::test]
     async fn ptfm_zero_value() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(10_000)
+            .orchard_note(20_000)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
@@ -484,12 +486,14 @@ mod send_all {
 
     /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
     /// Zennies for Zingo enabled, the maximum sendable value deducts the
-    /// zenny amount and the fee for one orchard note in, three outputs out.
+    /// zenny amount and the fee for one orchard note in, three outputs
+    /// out: the orchard input bundle pads to two actions, and the payment,
+    /// zenny, and change outputs land in the ironwood bundle as three.
     #[tokio::test]
     async fn toggle_zennies_for_zingo() {
         let initial_funds = 2_000_000;
         let zennies_magnitude = 1_000_000;
-        let expected_fee = 15_000;
+        let expected_fee = 25_000;
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(initial_funds)
@@ -987,7 +991,7 @@ mod proposal_shape {
             .map(|change| u64::from(change.value()))
             .sum();
         assert_eq!(change, 2 * note_value - sent_value - fee);
-        assert_eq!(change, 20_000);
+        assert_eq!(change, 10_000);
     }
 
     /// Offline twin of libtonode `slow::sapling_dust_fee_collection`,
@@ -1036,7 +1040,7 @@ mod proposal_shape {
             .map(|change| u64::from(change.value()))
             .sum();
         assert_eq!(change, orchard_value - sent_value - fee);
-        assert_eq!(change, 40_000);
+        assert_eq!(change, 30_000);
     }
 
     /// Migrated from libtonode `shield_transparent` (long `#[ignore]`d):
@@ -1140,7 +1144,7 @@ mod proposal_shape {
     #[tokio::test]
     async fn zero_value_change_to_orchard_created() {
         let note_value = 100_000;
-        let sent_value = 80_000;
+        let sent_value = 70_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(note_value)
             .build();
@@ -1223,13 +1227,17 @@ mod proposal_shape {
 
     /// Migrated from the chain_generics `ignore_dust_inputs` fixture's
     /// load-bearing half: note selection excludes dust inputs. From a
-    /// wallet holding four 1_000-zat dust notes and one 15_000-zat note
-    /// in each shielded pool, a 10_000-zat send selects exactly the two
-    /// viable notes and none of the dust.
+    /// wallet holding four 1_000-zat dust notes and one 50_000-zat note
+    /// in each shielded pool, a 10_000-zat send selects exactly the one
+    /// viable orchard note and none of the dust. (The viable note covers
+    /// the send alone: the upstream selector's cross-pool gather cannot
+    /// widen a selection when each pool's viable total falls short of the
+    /// running requirement, so a two-pool covering set is not a
+    /// constructible expectation under V6 fees.)
     #[tokio::test]
     async fn dust_inputs_are_ignored() {
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
-        let wallet = [1_000, 1_000, 1_000, 1_000, 15_000]
+        let wallet = [1_000, 1_000, 1_000, 1_000, 50_000]
             .into_iter()
             .fold(builder, |builder, value| {
                 builder.orchard_note(value).sapling_note(value)
@@ -1252,10 +1260,13 @@ mod proposal_shape {
             .iter()
             .map(|note| u64::from(note.note().value()))
             .collect();
-        assert!(
-            selected_values.iter().all(|&value| value == 15_000),
-            "dust notes were selected: {selected_values:?}"
+        assert_eq!(
+            selected_values,
+            [50_000],
+            "exactly the viable orchard note, none of the dust"
         );
+        // The orchard input bundle and the ironwood bundle taking the
+        // payment and change: two padded bundles of two actions.
         assert_eq!(
             u64::from(step.balance().fee_required()),
             4 * u64::from(MARGINAL_FEE)

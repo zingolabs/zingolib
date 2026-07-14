@@ -34,10 +34,11 @@ use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
 
 const FUNDING: u64 = 100_000_000;
 
-/// Fund `net`'s next block-but-two with a 100_000_000-zat orchard note
-/// to `address`: two empty blocks, the funding block at height 3, two
-/// more empties to give it confirmations. Mirrors the darksidewalletd
-/// preparation the originals shared.
+/// Fund `net`'s next block-but-two with a 100_000_000-zat ironwood note
+/// to `address` (the faucet's V6 send routes the payment through the
+/// ironwood bundle): two empty blocks, the funding block at height 3,
+/// two more empties to give it confirmations. Mirrors the
+/// darksidewalletd preparation the originals shared.
 async fn fund_at_height_three(net: &MockNet, address: &str) -> Vec<u8> {
     let funding = faucet_funding_transaction(vec![(address, FUNDING, None)]).await;
     let mut chain = net.chain.write().await;

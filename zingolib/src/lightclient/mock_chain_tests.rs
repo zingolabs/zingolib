@@ -129,7 +129,7 @@ async fn zero_value_receipts() {
     assert!(value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.value == 1_000
-            && vt.transaction_fee == Some(10_000)
+            && vt.transaction_fee == Some(20_000)
     }));
 }
 
@@ -137,9 +137,10 @@ async fn zero_value_receipts() {
 /// (live original kept as the control): a two-output cross-pool send to
 /// the wallet's own transparent and sapling addresses costs the exact
 /// composite ZIP-317 fee — 5_000 for the transparent output, 10_000 for
-/// the orchard side, 10_000 for the sapling output — and every pool
-/// balance lands where the live test pinned it. The self-receipts
-/// arrive through real scanning of the mock blocks.
+/// the orchard bundle view carrying the ironwood spend, 10_000 for the
+/// sapling output pair, 10_000 for the ironwood change pair (ADR
+/// 0007) — and every pool balance lands where the arithmetic says. The
+/// self-receipts arrive through real scanning of the mock blocks.
 #[tokio::test]
 async fn list_value_transfers_check_fees() {
     let mut net = MockNet::launch().await;
@@ -644,7 +645,9 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 /// when the feature becomes runtime configuration.
 #[ignore = "zingolabs/zingolib#2447: pepper-sync's subtractive darkside_test feature, when \
             unified into multi-package builds, compiles out the transparent-address discovery \
-            this test's funding depends on"]
+            this test's funding depends on. ALSO: the ledger's fees and amounts predate V6 — \
+            re-derive every step per ADR 0009 before un-ignoring (step 10's drain amount goes \
+            insufficient under V6 two-bundle fees)"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     use crate::lightclient::error::{LightClientError, SendError};
@@ -663,7 +666,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     net.chain.write().await.mine_empty_blocks(1);
 
     macro_rules! bump_and_check {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
+        (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
             net.chain.write().await.mine_mempool();
             client.sync_and_await().await.unwrap();
             check_client_balances!(client, i: 0 o:$o s:$s t:$t);
@@ -691,20 +694,20 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     // 2 shield 50_000 transparent to orchard: 15_000 (1 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 35_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 35_000 s: 0 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 3 receive 50_000 sapling
     fund(&net, vec![(&pmc_sapling, 50_000, None)], 0).await;
-    bump_and_check!(o: 35_000 s: 50_000 t: 0);
+    bump_and_check!(o: 0 i: 35_000 s: 50_000 t: 0);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 4 migrate sapling to orchard: 20_000 (2 sapling, 2 orchard)
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 65_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 65_000 s: 0 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -712,7 +715,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 55_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 55_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 55_000 s: 0 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -723,18 +726,18 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     )
     .await
     .unwrap();
-    bump_and_check!(o: 10_000 s: 10_000 t: 10_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 10_000);
     total_expected_fee += 25_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 7 receive 500_000 transparent
     fund(&net, vec![(&pmc_taddr, 500_000, None)], 0).await;
-    bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 510_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 8 shield both coins: 20_000 (2 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 500_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 500_000 s: 10_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -742,7 +745,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 490_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 490_000 s: 10_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -750,7 +753,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     total_expected_fee += 30_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -770,7 +773,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 11 transparent-to-sapling likewise refused.
@@ -788,12 +791,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 12 shield: 15_000 (1 t-in, 2 orchard)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 455_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 455_000 s: 0 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -801,7 +804,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 425_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 425_000 s: 10_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -809,7 +812,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 415_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 415_000 s: 10_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -817,7 +820,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 405_000 t: 0);
+    bump_and_check!(o: 0 i: 0 s: 405_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
@@ -825,7 +828,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 395_000 t: 0);
+    bump_and_check!(o: 0 i: 0 s: 395_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 }

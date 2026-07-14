@@ -1402,11 +1402,12 @@ mod tests {
         let value = 100_000;
         let wallet = SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(value)
+            .ironwood_note(value)
             .sapling_note(value)
             .transparent_coin(value)
             .build();
         let client = LightClient::new_for_test(wallet).await;
-        check_client_balances!(client, i: 0 o: value s: value t: value);
+        check_client_balances!(client, i: value o: value s: value t: value);
     }
 
     /// Migrated from libtonode `slow::by_address_finsight`: the

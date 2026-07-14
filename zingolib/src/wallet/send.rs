@@ -73,6 +73,7 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
