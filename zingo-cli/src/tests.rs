@@ -418,6 +418,11 @@ mod sync {
 
     #[test]
     fn not_launched_fully_synced() {
+        assert_eq!(idle_indicator(progress(10_000, 10_000, true)), " [Synced]");
+    }
+
+    #[test]
+    fn all_outputs_scanned_but_refetch_pending_is_not_synced() {
         assert_eq!(
             idle_indicator(progress(10_000, 10_000, true)),
             " [Synced 10000 / 10000 outputs]"
