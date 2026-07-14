@@ -27,6 +27,7 @@ use log::{error, info};
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
+use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::wallet::WalletSettings;
 
@@ -138,51 +139,80 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
     }
 }
 
-/// Polls the sync task and returns a string to embed in the interactive prompt.
+/// Performs the per-prompt housekeeping on the command-loop thread, where
+/// the [`LightClient`] lives: polls the sync task, reports any save-task
+/// failure, and returns the sync indicator to embed in the interactive
+/// prompt — `" [Syncing X / Y outputs]"` while sync is in progress,
+/// `" [Synced]"` when fully synced, `" [Sync error]"` on failure, or
+/// `" [Not syncing X / Y outputs]"` when no sync task is running and the
+/// wallet is not fully synced.
 ///
-/// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Synced]"` when
-/// fully synced, `" [Sync error]"` on failure, or `" [Not syncing X.X%]"` when
-/// no sync task is running and the wallet is not fully synced.
-fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
-    let poll = send_command("sync".to_string(), vec!["poll".to_string()]);
-    if poll.starts_with("Error:") {
-        eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.");
-        " [Sync error]".to_string()
-    } else if poll.starts_with("Sync completed succesfully:") {
-        println!("{poll}");
-        " [Synced]".to_string()
-    } else if poll == "Sync task is not complete." {
-        let status = send_command("sync".to_string(), vec!["status".to_string()]);
-        if let Ok(parsed) = json::parse(&status) {
-            let pct = parsed["percentage_total_outputs_scanned"]
-                .as_f32()
-                .unwrap_or(0.0);
-            format!(" [Syncing {pct:.1}% complete]")
-        } else {
-            " [Syncing]".to_string()
+/// Every outcome is classified from typed values ([`PollReport`],
+/// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
+/// a command's output string.
+fn prompt_indicator(lightclient: &mut LightClient) -> String {
+    let indicator = match lightclient.poll_sync() {
+        PollReport::Ready(Err(e)) => {
+            eprintln!("Sync error: Error: {e}\nPlease restart sync with `sync run`.");
+            " [Sync error]".to_string()
         }
-    } else {
-        sync_indicator_from_status(send_command)
+        PollReport::Ready(Ok(sync_result)) => {
+            println!("{sync_result}");
+            " [Synced]".to_string()
+        }
+        PollReport::NotReady => syncing_indicator(scan_progress(lightclient)),
+        PollReport::NoHandle => idle_indicator(scan_progress(lightclient)),
+    };
+    if let Err(e) = RT.block_on(lightclient.check_save_error()) {
+        eprintln!("Error: save failed. {e}\nRestarting save task...");
+    }
+    indicator
+}
+
+/// The wallet's scan progress: the exact integer ratio of outputs scanned,
+/// and whether sync is complete. No floating-point representation appears
+/// anywhere in the prompt's reporting.
+struct ScanProgress {
+    outputs_scanned: u64,
+    total_outputs: u64,
+    complete: bool,
+}
+
+/// Reads the wallet's scan progress, or `None` if sync status is
+/// unavailable.
+fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
+    RT.block_on(async {
+        pepper_sync::sync_status(&*lightclient.wallet().read().await)
+            .await
+            .ok()
+            .map(|status| ScanProgress {
+                outputs_scanned: status.total_outputs_scanned,
+                total_outputs: status.total_outputs,
+                complete: status.is_complete(),
+            })
+    })
+}
+
+/// The prompt indicator while a sync task is running.
+fn syncing_indicator(progress: Option<ScanProgress>) -> String {
+    match progress {
+        Some(progress) if progress.total_outputs > 0 => format!(
+            " [Syncing {} / {} outputs]",
+            progress.outputs_scanned, progress.total_outputs
+        ),
+        _ => " [Syncing]".to_string(),
     }
 }
 
-/// Checks sync status when no sync task is running.
-///
-/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise
-/// `" [Not syncing X.X%]"` to indicate incomplete sync without an active task.
-fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
-    let status = send_command("sync".to_string(), vec!["status".to_string()]);
-    if let Ok(parsed) = json::parse(&status) {
-        let pct = parsed["percentage_total_outputs_scanned"]
-            .as_f32()
-            .unwrap_or(0.0);
-        if pct >= 100.0 {
-            " [Synced]".to_string()
-        } else {
-            format!(" [Not syncing {pct:.1}% complete]")
-        }
-    } else {
-        " [Not syncing]".to_string()
+/// The prompt indicator when no sync task is running.
+fn idle_indicator(progress: Option<ScanProgress>) -> String {
+    match progress {
+        Some(progress) if progress.complete => " [Synced]".to_string(),
+        Some(progress) if progress.total_outputs > 0 => format!(
+            " [Not syncing {} / {} outputs]",
+            progress.outputs_scanned, progress.total_outputs
+        ),
+        _ => " [Not syncing]".to_string(),
     }
 }
 
@@ -214,17 +244,21 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     log::debug!("Ready!");
 
-    let send_command = |cmd: String, args: Vec<String>| -> String {
-        ch.transmitter.send((cmd.clone(), args)).unwrap();
+    let send_request = |request: Request, description: &str| -> String {
+        ch.transmitter.send(request).unwrap();
         match ch.receiver.recv() {
             Ok(s) => s,
             Err(e) => {
-                let e = format!("Error executing command {cmd}: {e}");
+                let e = format!("Error executing command {description}: {e}");
                 eprintln!("{e}");
                 error!("{e}");
                 String::new()
             }
         }
+    };
+    let send_command = |cmd: String, args: Vec<String>| -> String {
+        let description = cmd.clone();
+        send_request(Request::Command(cmd, args), &description)
     };
 
     let mut chain_name = String::new();
@@ -247,12 +281,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
             .as_i64()
             .unwrap();
 
-        let sync_indicator = poll_sync_for_prompt_indicator(&send_command);
-
-        match send_command("save".to_string(), vec!["check".to_string()]) {
-            check if check.starts_with("Error:") => eprintln!("{check}"),
-            _ => (),
-        }
+        let sync_indicator = send_request(Request::PromptIndicator, "prompt indicator");
 
         let readline = rl.readline(&format!(
             "({chain_name}) Block:{height}{sync_indicator} >> "
@@ -307,9 +336,24 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     }
 }
 
-/// A paired command/response channel for communicating with the background command loop.
+/// A request to the background command loop.
+///
+/// The variant — not the content of the response string — tells the
+/// requester how to interpret the reply, so no consumer ever classifies
+/// a response by sniffing its text (the in-band-error problem of issue
+/// zingolabs/zingolib#2446).
+enum Request {
+    /// Execute a user command; the reply is the command's output.
+    Command(String, Vec<String>),
+    /// Perform the per-prompt housekeeping (sync poll, save check) via
+    /// typed calls on the loop thread; the reply is the sync indicator
+    /// to embed in the interactive prompt.
+    PromptIndicator,
+}
+
+/// A paired request/response channel for communicating with the background command loop.
 struct CommandChannel {
-    transmitter: Sender<(String, Vec<String>)>,
+    transmitter: Sender<Request>,
     receiver: Receiver<String>,
 }
 
@@ -322,11 +366,20 @@ pub(crate) fn command_loop(
     mut lightclient: LightClient,
     communication_mode: CommunicationMode,
 ) -> CommandChannel {
-    let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
+    let (command_transmitter, command_receiver) = channel::<Request>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        while let Ok((cmd, args)) = command_receiver.recv() {
+        while let Ok(request) = command_receiver.recv() {
+            let (cmd, args) = match request {
+                Request::Command(cmd, args) => (cmd, args),
+                Request::PromptIndicator => {
+                    resp_transmitter
+                        .send(prompt_indicator(&mut lightclient))
+                        .unwrap();
+                    continue;
+                }
+            };
             // The Offline-mode pin: this session never configures an Indexer.
             if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
                 resp_transmitter
@@ -655,7 +708,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
     match &cli_config.mode {
         ModeOfOperation::Interactive => start_interactive(cli_config, ch),
         ModeOfOperation::Command { name, args } => {
-            ch.transmitter.send((name.clone(), args.clone())).unwrap();
+            ch.transmitter
+                .send(Request::Command(name.clone(), args.clone()))
+                .unwrap();
 
             match ch.receiver.recv() {
                 Ok(s) => println!("{s}"),
@@ -666,7 +721,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
                 }
             }
 
-            ch.transmitter.send(("quit".to_string(), vec![])).unwrap();
+            ch.transmitter
+                .send(Request::Command("quit".to_string(), vec![]))
+                .unwrap();
             match ch.receiver.recv() {
                 Ok(s) => println!("{s}"),
                 Err(e) => {
