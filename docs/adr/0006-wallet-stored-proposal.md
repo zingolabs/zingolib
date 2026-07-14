@@ -24,8 +24,8 @@ transactions it cannot transmit, and an Indexerless `send_stored_proposal`
 fails before consuming the slot. Typed errors remain a co-requisite
 (issue #2446): an Indexerless client makes network-operation failure the
 routine path, so those failures must be distinguishable by type. The
-no-expiry sentinel for offline-calculated transactions is blocked on
-upstream expiry control and tracked in issue #2455.
+expiry of offline-calculated transactions (issue #2455) is resolved by
+proposal retargeting — see ADR 0008.
 
 ## Considered Options
 
