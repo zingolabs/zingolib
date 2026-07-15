@@ -258,7 +258,7 @@ mod send_all {
         let mut external_wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
         let selection = match pool {
-            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
+            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
             PoolType::SAPLING => ReceiverSelection::sapling_only(),
             _ => unimplemented!("only shielded destinations are needed here"),
         };
@@ -486,24 +486,24 @@ mod send_all {
 
     /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
     /// Zennies for Zingo enabled, the maximum sendable value deducts the
-    /// zenny amount and the fee for one orchard note in, three outputs
-    /// out: the orchard input bundle pads to two actions, and the payment,
+    /// zenny amount and the fee for one ironwood note in, three outputs
+    /// out: the ironwood input bundle pads to two actions, and the payment,
     /// zenny, and change outputs land in the ironwood bundle as three.
     #[tokio::test]
     async fn toggle_zennies_for_zingo() {
         let initial_funds = 2_000_000;
         let zennies_magnitude = 1_000_000;
-        let expected_fee = 25_000;
+        let expected_fee = 15_000;
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(initial_funds)
+            .ironwood_note(initial_funds)
             .build();
         let client = LightClient::new_for_test(wallet).await;
 
         assert_eq!(
             client
                 .max_send_value(
-                    external_address(PoolType::ORCHARD),
+                    external_address(PoolType::IRONWOOD),
                     true,
                     zip32::AccountId::ZERO
                 )
@@ -711,7 +711,11 @@ mod pool_matrix {
     /// a `pool` destination, and the proposal's fee and change land on the
     /// fee table's prediction to the zatoshi.
     async fn matrix_case(source: ShieldedPool, pool: PoolType, receiver_value: u64, change: u64) {
-        let expected_fee = fee_tables::one_to_one(Some(source), pool, true);
+        let expected_fee = fee_tables::one_to_one(
+            Some(source),
+            pool,
+            !(source == ShieldedPool::Orchard && change == 0),
+        );
         let funding = receiver_value + change + expected_fee;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
@@ -901,7 +905,7 @@ mod proposal_shape {
         let mut external_wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
         let selection = match pool {
-            PoolType::ORCHARD => ReceiverSelection::orchard_only(),
+            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
             PoolType::SAPLING => ReceiverSelection::sapling_only(),
             _ => unimplemented!("only shielded destinations are needed here"),
         };
@@ -921,11 +925,11 @@ mod proposal_shape {
         let note_value = 100_000;
         let sent_value = 1_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(note_value)
+            .ironwood_note(note_value)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::ORCHARD);
+        let destination = external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -936,7 +940,7 @@ mod proposal_shape {
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
             .balance()
@@ -958,12 +962,12 @@ mod proposal_shape {
         let note_value = 40_000;
         let sent_value = 50_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(note_value)
-            .orchard_note(note_value)
+            .ironwood_note(note_value)
+            .ironwood_note(note_value)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::ORCHARD);
+        let destination = external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -982,7 +986,7 @@ mod proposal_shape {
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
             .balance()
@@ -991,7 +995,7 @@ mod proposal_shape {
             .map(|change| u64::from(change.value()))
             .sum();
         assert_eq!(change, 2 * note_value - sent_value - fee);
-        assert_eq!(change, 10_000);
+        assert_eq!(change, 20_000);
     }
 
     /// Offline twin of libtonode `slow::sapling_dust_fee_collection`,
@@ -1003,16 +1007,16 @@ mod proposal_shape {
     /// stays behind untouched.
     #[tokio::test]
     async fn sapling_dust_is_not_collected_toward_fees() {
-        let orchard_value = 100_000;
+        let ironwood_value = 100_000;
         let sapling_dust = 1_000;
         let sent_value = 50_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(orchard_value)
+            .ironwood_note(ironwood_value)
             .sapling_note(sapling_dust)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::ORCHARD);
+        let destination = external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1027,11 +1031,11 @@ mod proposal_shape {
             .iter()
             .map(|note| u64::from(note.note().value()))
             .collect();
-        assert_eq!(selected, [orchard_value], "the dust note is not selected");
+        assert_eq!(selected, [ironwood_value], "the dust note is not selected");
         let fee = u64::from(step.balance().fee_required());
         assert_eq!(
             fee,
-            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true)
+            fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
             .balance()
@@ -1039,8 +1043,8 @@ mod proposal_shape {
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
-        assert_eq!(change, orchard_value - sent_value - fee);
-        assert_eq!(change, 30_000);
+        assert_eq!(change, ironwood_value - sent_value - fee);
+        assert_eq!(change, 40_000);
     }
 
     /// Migrated from libtonode `shield_transparent` (long `#[ignore]`d):
@@ -1114,12 +1118,12 @@ mod proposal_shape {
     async fn zero_value_change() {
         let note_value = 100_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(note_value)
+            .ironwood_note(note_value)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let fee = fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true);
-        let destination = external_address(PoolType::ORCHARD);
+        let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true);
+        let destination = external_address(PoolType::IRONWOOD);
         let proposal = from_inputs::propose(
             &mut client,
             vec![(destination.as_str(), note_value - fee, None)],
@@ -1133,20 +1137,20 @@ mod proposal_shape {
         let change = step.balance().proposed_change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 0);
-        assert_eq!(change[0].output_pool(), PoolType::ORCHARD);
+        assert_eq!(change[0].output_pool(), PoolType::IRONWOOD);
     }
 
     /// Migrated from libtonode `slow::zero_value_change_to_orchard_created`:
     /// same zero-value-change arithmetic on a cross-pool send — an 80_000
     /// payment to an external sapling address out of a 100_000 orchard note
-    /// costs exactly the 20_000 cross-pool fee, so the orchard change
+    /// costs exactly the 20_000 cross-pool fee, so the ironwood change
     /// output is proposed at value zero.
     #[tokio::test]
-    async fn zero_value_change_to_orchard_created() {
+    async fn zero_value_change_to_ironwood_created() {
         let note_value = 100_000;
-        let sent_value = 70_000;
+        let sent_value = 80_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(note_value)
+            .ironwood_note(note_value)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
@@ -1158,13 +1162,13 @@ mod proposal_shape {
 
         assert_eq!(proposal.steps().len(), 1);
         let step = proposal.steps().first();
-        let fee = fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::SAPLING, true);
+        let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::SAPLING, true);
         assert_eq!(u64::from(step.balance().fee_required()), fee);
         assert_eq!(note_value - sent_value - fee, 0);
         let change = step.balance().proposed_change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 0);
-        assert_eq!(change[0].output_pool(), PoolType::ORCHARD);
+        assert_eq!(change[0].output_pool(), PoolType::IRONWOOD);
     }
 
     /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
@@ -1183,7 +1187,7 @@ mod proposal_shape {
         use zcash_transparent::address::TransparentAddress;
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(5_000_000)
+            .ironwood_note(5_000_000)
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
@@ -1229,23 +1233,19 @@ mod proposal_shape {
     /// load-bearing half: note selection excludes dust inputs. From a
     /// wallet holding four 1_000-zat dust notes and one 50_000-zat note
     /// in each shielded pool, a 10_000-zat send selects exactly the one
-    /// viable orchard note and none of the dust. (The viable note covers
-    /// the send alone: the upstream selector's cross-pool gather cannot
-    /// widen a selection when each pool's viable total falls short of the
-    /// running requirement, so a two-pool covering set is not a
-    /// constructible expectation under V6 fees.)
+    /// viable ironwood note and none of the dust.
     #[tokio::test]
     async fn dust_inputs_are_ignored() {
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = [1_000, 1_000, 1_000, 1_000, 50_000]
             .into_iter()
             .fold(builder, |builder, value| {
-                builder.orchard_note(value).sapling_note(value)
+                builder.ironwood_note(value).sapling_note(value)
             })
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Orchard));
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 10_000, None)])
                 .await
@@ -1263,13 +1263,11 @@ mod proposal_shape {
         assert_eq!(
             selected_values,
             [50_000],
-            "exactly the viable orchard note, none of the dust"
+            "exactly the viable ironwood note, none of the dust"
         );
-        // The orchard input bundle and the ironwood bundle taking the
-        // payment and change: two padded bundles of two actions.
         assert_eq!(
             u64::from(step.balance().fee_required()),
-            4 * u64::from(MARGINAL_FEE)
+            2 * u64::from(MARGINAL_FEE)
         );
     }
 
@@ -1286,7 +1284,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Orchard));
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 40_000, None)])
                 .await

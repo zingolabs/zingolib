@@ -408,7 +408,11 @@ impl LightClient {
                 .wallet_transactions
                 .get_mut(txid)
                 .ok_or(WalletError::TransactionNotFound(*txid))?
-                .update_status(ConfirmationStatus::Transmitted(height), crate::utils::now());
+                .update_status(
+                    ConfirmationStatus::Transmitted(height),
+                    crate::utils::now(),
+                    false,
+                );
             wallet.save_required = true;
 
             let txid_from_server =

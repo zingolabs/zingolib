@@ -1031,6 +1031,7 @@ pub(crate) fn set_transactions_failed_unchecked(
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .expect("infalliable for such long time periods")
                     .as_secs() as u32,
+                true,
             );
         }
     }
@@ -1456,6 +1457,7 @@ where
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .expect("infalliable for such long time periods")
                     .as_secs() as u32,
+                false,
             );
 
             return Ok(());

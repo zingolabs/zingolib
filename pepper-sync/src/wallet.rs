@@ -627,7 +627,13 @@ impl WalletTransaction {
     /// proof the transaction was not rejected or expired.
     /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
     /// to `Confirmed` status.
-    pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
+    /// If `fail_confirmed` is set, a confirmed transaction can be set to failed (i.e. during re-org truncation).
+    pub fn update_status(
+        &mut self,
+        status: ConfirmationStatus,
+        datetime: u32,
+        fail_confirmed: bool,
+    ) {
         match status {
             ConfirmationStatus::Transmitted(_)
                 if matches!(self.status(), ConfirmationStatus::Calculated(_)) =>
@@ -658,7 +664,8 @@ impl WalletTransaction {
                 self.datetime = datetime;
             }
             ConfirmationStatus::Failed(_)
-                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
+                if (fail_confirmed && !matches!(self.status(), ConfirmationStatus::Failed(_)))
+                    || self.status().is_pending() =>
             {
                 self.status = status;
                 self.datetime = datetime;
@@ -1732,19 +1739,28 @@ mod test {
         transaction.update_status(
             ConfirmationStatus::Transmitted(BlockHeight::from_u32(10)),
             1,
+            false,
         );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Transmitted(_)
         ));
 
-        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 2);
+        transaction.update_status(
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(11)),
+            2,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Mempool(_)
         ));
 
-        transaction.update_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)), 3);
+        transaction.update_status(
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)),
+            3,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Confirmed(_)
@@ -1756,7 +1772,11 @@ mod test {
         let mut transaction =
             transaction_with_status(ConfirmationStatus::Failed(BlockHeight::from_u32(10)));
 
-        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 1);
+        transaction.update_status(
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(11)),
+            1,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Mempool(_)
@@ -1770,7 +1790,11 @@ mod test {
         let mut transaction =
             transaction_with_status(ConfirmationStatus::Failed(BlockHeight::from_u32(10)));
 
-        transaction.update_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)), 1);
+        transaction.update_status(
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(11)),
+            1,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Failed(_)
@@ -1782,16 +1806,40 @@ mod test {
         let mut transaction =
             transaction_with_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)));
 
-        transaction.update_status(ConfirmationStatus::Mempool(BlockHeight::from_u32(11)), 1);
+        transaction.update_status(
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(11)),
+            1,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Confirmed(_)
         ));
 
-        transaction.update_status(ConfirmationStatus::Failed(BlockHeight::from_u32(11)), 2);
+        transaction.update_status(
+            ConfirmationStatus::Failed(BlockHeight::from_u32(11)),
+            2,
+            false,
+        );
         assert!(matches!(
             transaction.status(),
             ConfirmationStatus::Confirmed(_)
+        ));
+    }
+
+    #[test]
+    fn update_status_forces_confirmed_to_fail() {
+        let mut transaction =
+            transaction_with_status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)));
+
+        transaction.update_status(
+            ConfirmationStatus::Failed(BlockHeight::from_u32(11)),
+            2,
+            true,
+        );
+        assert!(matches!(
+            transaction.status(),
+            ConfirmationStatus::Failed(_)
         ));
     }
 }

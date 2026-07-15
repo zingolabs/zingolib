@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
+    set to failed in cases other than re-org truncation.
 
 ### Removed
 

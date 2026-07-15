@@ -82,7 +82,10 @@ pub fn one_to_one(
     };
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = pad(sapling_inputs, sapling_outputs);
-    let contribution_orchard = pad(orchard_inputs, orchard_outputs);
+    let mut contribution_orchard = pad(orchard_inputs, orchard_outputs);
+    if source_protocol == Some(ShieldedPool::Orchard) && target_pool == PoolType::ORCHARD {
+        contribution_orchard *= 2;
+    }
     let contribution_ironwood = pad(ironwood_inputs, ironwood_outputs);
     let total_fee = MARGINAL_FEE
         * max(

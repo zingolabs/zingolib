@@ -1448,7 +1448,11 @@ mod tests {
                 .wallet_transactions
                 .get_mut(&sent_txid)
                 .unwrap()
-                .update_status(ConfirmationStatus::Confirmed(5.into()), crate::utils::now());
+                .update_status(
+                    ConfirmationStatus::Confirmed(5.into()),
+                    crate::utils::now(),
+                    false,
+                );
         }
         {
             let wallet = client.wallet().read().await;
