@@ -36,17 +36,17 @@ pub struct ServerInfo {
     pub latest_block_height: u64,
 }
 
-impl From<&ServerInfo> for json::JsonValue {
-    fn from(info: &ServerInfo) -> Self {
+impl From<ServerInfo> for json::JsonValue {
+    fn from(info: ServerInfo) -> Self {
         json::object! {
-            "version" => info.version.clone(),
-            "git_commit" => info.git_commit.clone(),
+            "version" => info.version,
+            "git_commit" => info.git_commit,
             "server_uri" => info.server_uri.to_string(),
-            "vendor" => info.vendor.clone(),
+            "vendor" => info.vendor,
             "taddr_support" => info.taddr_support,
-            "chain_name" => info.chain_name.clone(),
+            "chain_name" => info.chain_name,
             "sapling_activation_height" => info.sapling_activation_height,
-            "consensus_branch_id" => info.consensus_branch_id.clone(),
+            "consensus_branch_id" => info.consensus_branch_id,
             "latest_block_height" => info.latest_block_height
         }
     }

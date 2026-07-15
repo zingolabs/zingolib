@@ -153,6 +153,10 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 fn prompt_indicator(lightclient: &mut LightClient) -> String {
     let indicator = match lightclient.poll_sync() {
         PollReport::Ready(Err(e)) => {
+            // The doubled "Sync error: Error:" is deliberate: it reproduces
+            // the historical output byte for byte, where the polled command
+            // string (itself prefixed "Error:") was interpolated after
+            // "Sync error: ".
             eprintln!("Sync error: Error: {e}\nPlease restart sync with `sync run`.");
             " [Sync error]".to_string()
         }
@@ -193,38 +197,35 @@ fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
     })
 }
 
-/// The prompt indicator while a sync task is running.
-fn syncing_indicator(progress: Option<ScanProgress>) -> String {
+/// Formats a prompt indicator: `" [{labeled} X / Y outputs]"` when the
+/// output ratio is known, `" [{bare}]"` otherwise (status unavailable, or
+/// an output-free scan range where the ratio is vacuously 0 / 0).
+fn ratio_indicator(labeled: &str, bare: &str, progress: Option<ScanProgress>) -> String {
     match progress {
         Some(progress) if progress.total_outputs > 0 => format!(
-            " [Syncing {} / {} outputs]",
+            " [{labeled} {} / {} outputs]",
             progress.outputs_scanned, progress.total_outputs
         ),
-        _ => " [Syncing]".to_string(),
+        _ => format!(" [{bare}]"),
     }
+}
+
+/// The prompt indicator while a sync task is running.
+fn syncing_indicator(progress: Option<ScanProgress>) -> String {
+    ratio_indicator("Syncing", "Syncing", progress)
 }
 
 /// The prompt indicator when no sync task is running.
 fn idle_indicator(progress: Option<ScanProgress>) -> String {
     match progress {
         Some(progress) if progress.complete => synced_indicator(Some(progress)),
-        Some(progress) if progress.total_outputs > 0 => format!(
-            " [Sync stopped at {} / {} outputs]",
-            progress.outputs_scanned, progress.total_outputs
-        ),
-        _ => " [Sync stopped]".to_string(),
+        _ => ratio_indicator("Sync stopped at", "Sync stopped", progress),
     }
 }
 
 /// The prompt indicator when sync is complete, reporting the full ratio.
 fn synced_indicator(progress: Option<ScanProgress>) -> String {
-    match progress {
-        Some(progress) if progress.total_outputs > 0 => format!(
-            " [Synced {} / {} outputs]",
-            progress.outputs_scanned, progress.total_outputs
-        ),
-        _ => " [Synced]".to_string(),
-    }
+    ratio_indicator("Synced", "Synced", progress)
 }
 
 /// Formats the ranked server list for display by the `servers` command.
@@ -255,7 +256,11 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     log::debug!("Ready!");
 
-    let send_request = |request: Request, description: &str| -> String {
+    let send_request = |request: Request| -> String {
+        let description = match &request {
+            Request::Command(cmd, _) => cmd.clone(),
+            Request::PromptIndicator => "prompt indicator".to_string(),
+        };
         ch.transmitter.send(request).unwrap();
         match ch.receiver.recv() {
             Ok(s) => s,
@@ -267,10 +272,8 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
             }
         }
     };
-    let send_command = |cmd: String, args: Vec<String>| -> String {
-        let description = cmd.clone();
-        send_request(Request::Command(cmd, args), &description)
-    };
+    let send_command =
+        |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
 
     let mut chain_name = String::new();
 
@@ -292,7 +295,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
             .as_i64()
             .unwrap();
 
-        let sync_indicator = send_request(Request::PromptIndicator, "prompt indicator");
+        let sync_indicator = send_request(Request::PromptIndicator);
 
         let readline = rl.readline(&format!(
             "({chain_name}) Block:{height}{sync_indicator} >> "

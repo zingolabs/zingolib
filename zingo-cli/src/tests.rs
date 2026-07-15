@@ -404,7 +404,7 @@ mod sync {
     }
 
     #[test]
-    fn in_progress_with_unknown_total() {
+    fn in_progress_with_output_free_range() {
         assert_eq!(syncing_indicator(progress(0, 0, false)), " [Syncing]");
     }
 

@@ -598,7 +598,7 @@ impl Command for InfoCommand {
         // typed failure becomes display text here, and nowhere earlier.
         RT.block_on(async move {
             match lightclient.info().await {
-                Ok(info) => json::JsonValue::from(&info).pretty(2),
+                Ok(info) => json::JsonValue::from(info).pretty(2),
                 Err(e) => e.to_string(),
             }
         })
@@ -1564,7 +1564,7 @@ impl Command for DeleteCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.do_delete().await {
+            match lightclient.delete_wallet_file().await {
                 Ok(()) => {
                     let r = object! { "result" => "success",
                     "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8") };
