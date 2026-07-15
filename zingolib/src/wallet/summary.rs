@@ -308,18 +308,28 @@ impl LightWallet {
 
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
                     if transaction
-                        .orchard_notes
+                        .ironwood_notes
                         .iter()
                         .any(|note| note.memo.is_some())
+                        || transaction
+                            .orchard_notes
+                            .iter()
+                            .any(|note| note.memo.is_some())
                         || transaction
                             .sapling_notes
                             .iter()
                             .any(|note| note.memo.is_some())
                     {
                         let memos: Vec<String> = transaction
-                            .orchard_notes
+                            .ironwood_notes
                             .iter()
                             .filter_map(|note| note.memo.clone())
+                            .chain(
+                                transaction
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|note| note.memo.clone()),
+                            )
                             .chain(
                                 transaction
                                     .sapling_notes
@@ -346,6 +356,33 @@ impl LightWallet {
                 }
                 TransactionKind::Sent(SendType::Shield) => {
                     // create 1 shielding value transfer for each pool shielded to
+                    if !transaction.ironwood_notes.is_empty() {
+                        let value: u64 = transaction
+                            .ironwood_notes
+                            .iter()
+                            .map(|output| output.value)
+                            .sum();
+                        let memos: Vec<String> = transaction
+                            .ironwood_notes
+                            .iter()
+                            .filter_map(|note| note.memo.clone())
+                            .collect();
+                        value_transfers.push(ValueTransfer {
+                            txid: transaction.txid,
+                            datetime: transaction.datetime,
+                            status: transaction.status,
+                            blockheight: transaction.blockheight,
+                            transaction_fee: transaction.fee,
+                            zec_price: transaction.zec_price,
+                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                SelfSendValueTransfer::Shield,
+                            )),
+                            value,
+                            recipient_address: None,
+                            pool_received: Some(PoolType::IRONWOOD.to_string()),
+                            memos,
+                        });
+                    }
                     if !transaction.orchard_notes.is_empty() {
                         let value: u64 = transaction
                             .orchard_notes
@@ -406,18 +443,28 @@ impl LightWallet {
                     // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
                     // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
                     if transaction
-                        .orchard_notes
+                        .ironwood_notes
                         .iter()
                         .any(|note| note.memo.is_some())
+                        || transaction
+                            .orchard_notes
+                            .iter()
+                            .any(|note| note.memo.is_some())
                         || transaction
                             .sapling_notes
                             .iter()
                             .any(|note| note.memo.is_some())
                     {
                         let memos: Vec<String> = transaction
-                            .orchard_notes
+                            .ironwood_notes
                             .iter()
                             .filter_map(|note| note.memo.clone())
+                            .chain(
+                                transaction
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|note| note.memo.clone()),
+                            )
                             .chain(
                                 transaction
                                     .sapling_notes
@@ -463,6 +510,31 @@ impl LightWallet {
                 }
                 TransactionKind::Received => {
                     // create 1 received value transfer for each pool received to
+                    if !transaction.ironwood_notes.is_empty() {
+                        let value: u64 = transaction
+                            .ironwood_notes
+                            .iter()
+                            .map(|output| output.value)
+                            .sum();
+                        let memos: Vec<String> = transaction
+                            .ironwood_notes
+                            .iter()
+                            .filter_map(|note| note.memo.clone())
+                            .collect();
+                        value_transfers.push(ValueTransfer {
+                            txid: transaction.txid,
+                            datetime: transaction.datetime,
+                            status: transaction.status,
+                            blockheight: transaction.blockheight,
+                            transaction_fee: transaction.fee,
+                            zec_price: transaction.zec_price,
+                            kind: ValueTransferKind::Received,
+                            value,
+                            recipient_address: None,
+                            pool_received: Some(PoolType::IRONWOOD.to_string()),
+                            memos,
+                        });
+                    }
                     if !transaction.orchard_notes.is_empty() {
                         let value: u64 = transaction
                             .orchard_notes
@@ -721,8 +793,9 @@ impl LightWallet {
     ) -> Result<Vec<ValueTransfer>, KeyError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let outgoing_notes = transaction
-            .outgoing_orchard_notes
+            .outgoing_ironwood_notes
             .iter()
+            .chain(transaction.outgoing_orchard_notes.iter())
             .chain(transaction.outgoing_sapling_notes.iter())
             .collect::<Vec<_>>();
         let outgoing_coins = &transaction.outgoing_transparent_coins;
