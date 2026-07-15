@@ -977,9 +977,16 @@ pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
-        // No client holds the mining key here, so the miner pool is
-        // arbitrary — and zebrad cannot mine to Sapling.
-        PoolType::TRANSPARENT,
+        // The funded_* derivatives below build a faucet (ABANDON_ART, the
+        // miner-key holder) that must SPEND this coinbase. Mine to Orchard,
+        // not Transparent: zebrad mines Orchard natively, and shielded
+        // coinbase is exempt from the transparent COINBASE_MATURITY_BLOCKS
+        // rule, so the faucet can spend it immediately. A transparent
+        // coinbase would be unspendable until ~100 maturity blocks — the
+        // faucet would report `available: 0` and every funded scenario
+        // would panic at its first send. (zebrad cannot mine to Sapling,
+        // so Orchard is the only immediately-spendable pool.)
+        PoolType::ORCHARD,
         default_test_activation_heights(),
         None,
     )
@@ -1006,7 +1013,14 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
             true,
         )
         .await;
-    sync_client_to_validator_tip(&local_net, &mut faucet).await;
+    // Fund the faucet with spendable Orchard coinbase, exactly as
+    // faucet()/faucet_recipient() do: normalize_shielded_faucet_balance
+    // mines the NU6.1/NU6.2 ladder-clearing blocks, offloads the excess and
+    // confirms, leaving a spendable orchard balance.
+    normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        .await
+        .unwrap();
     quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
@@ -1040,6 +1054,9 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             true,
         )
         .await;
+    // Fund the faucet with spendable Orchard coinbase (see
+    // funded_orchard_mobileclient / faucet()).
+    normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -1103,6 +1120,9 @@ pub async fn funded_transparent_mobileclient(
             true,
         )
         .await;
+    // Fund the faucet with spendable Orchard coinbase (see
+    // funded_orchard_mobileclient / faucet()).
+    normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -1149,6 +1169,9 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
             true,
         )
         .await;
+    // Fund the faucet with spendable Orchard coinbase (see
+    // funded_orchard_mobileclient / faucet()).
+    normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
