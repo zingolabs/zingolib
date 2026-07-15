@@ -201,7 +201,7 @@ async fn run_matrix_cell(extra_blocks: u32, target_pool: &str) -> (Verdict, Stri
 
 /// The in-suite reproduction of the pool_matrix orchard-row failure.
 #[tokio::test]
-async fn matrix_young_coinbase_to_orchard() {
+async fn matrix_young_coinbase_to_ironwood() {
     let (verdict, observables) = run_matrix_cell(0, "unified").await;
     assert_eq!(verdict, Verdict::TipRejected, "{observables}");
 }

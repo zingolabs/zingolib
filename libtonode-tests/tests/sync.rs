@@ -467,6 +467,19 @@ async fn store_all_checkpoints_in_verification_window() {
                 .is_some(),
             "missing orchard checkpoint at height {height}"
         );
+        assert!(
+            lightclient
+                .wallet()
+                .read()
+                .await
+                .shard_trees
+                .ironwood
+                .store()
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .unwrap()
+                .is_some(),
+            "missing ironwood checkpoint at height {height}"
+        );
     }
 }
 

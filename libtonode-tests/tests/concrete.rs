@@ -4,7 +4,7 @@ use json::JsonValue;
 use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-use pepper_sync::wallet::TransparentCoin;
+use pepper_sync::wallet::{IronwoodNote, TransparentCoin};
 use zcash_protocol::PoolType;
 use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
@@ -65,9 +65,11 @@ fn check_view_capability_bounds(
     orchard_fvk: &Fvk,
     sapling_fvk: &Fvk,
     transparent_fvk: &Fvk,
+    sent_i_value: Option<Zatoshis>,
     sent_o_value: Option<Zatoshis>,
     sent_s_value: Option<Zatoshis>,
     sent_t_value: Option<Zatoshis>,
+    ironwood_notes: &[NoteSummary],
     orchard_notes: &[NoteSummary],
     sapling_notes: &[NoteSummary],
     transparent_coins: &[CoinSummary],
@@ -80,19 +82,25 @@ fn check_view_capability_bounds(
         assert!(ufvk.orchard().is_some());
         assert_eq!(balance.total_orchard_balance, sent_o_value);
         assert_eq!(balance.confirmed_orchard_balance, sent_o_value);
-        assert_eq!(balance.unconfirmed_orchard_balance, Some(Zatoshis::ZERO));
+        assert_eq!(balance.total_ironwood_balance, sent_i_value);
+        assert_eq!(balance.confirmed_ironwood_balance, sent_i_value);
+        assert_eq!(balance.unconfirmed_ironwood_balance, Some(Zatoshis::ZERO));
         // assert 1 Orchard note, or 2 notes if a dummy output is included
-        let orchard_notes_count = orchard_notes
+        let ironwood_notes_count = ironwood_notes
             .iter()
             .filter(|note| note.spend_status.is_unspent())
             .count();
-        assert!((1..=2).contains(&orchard_notes_count));
+        assert!((1..=2).contains(&ironwood_notes_count));
     } else {
         assert!(ufvk.orchard().is_none());
         assert_eq!(balance.total_orchard_balance, None);
         assert_eq!(balance.confirmed_orchard_balance, None);
         assert_eq!(balance.unconfirmed_orchard_balance, None);
         assert_eq!(orchard_notes.len(), 0);
+        assert_eq!(balance.total_ironwood_balance, None);
+        assert_eq!(balance.confirmed_ironwood_balance, None);
+        assert_eq!(balance.unconfirmed_ironwood_balance, None);
+        assert_eq!(ironwood_notes.len(), 0);
     }
     //Sapling
     if fvks.contains(&sapling_fvk) {
@@ -620,7 +628,7 @@ async fn test_scanning_in_watch_only_mode() {
 
     // check that do_rescan works
     original_recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(original_recipient, i: 0 o: sent_o_value s: sent_s_value t: sent_t_value);
+    check_client_balances!(original_recipient, i: sent_i_value o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
     let original_wallet = original_recipient.wallet().read().await;
@@ -679,6 +687,7 @@ async fn test_scanning_in_watch_only_mode() {
             .unwrap();
         {
             let watch_wallet = watch_client.wallet().read().await;
+            let ironwood_notes = watch_wallet.note_summaries::<IronwoodNote>(true);
             let orchard_notes = watch_wallet.note_summaries::<OrchardNote>(true);
             let sapling_notes = watch_wallet.note_summaries::<SaplingNote>(true);
             let transparent_coin = watch_wallet.coin_summaries(true);
@@ -693,9 +702,11 @@ async fn test_scanning_in_watch_only_mode() {
                 &o_fvk,
                 &s_fvk,
                 &t_fvk,
+                Some(sent_i_value.try_into().unwrap()),
                 Some(sent_o_value.try_into().unwrap()),
                 Some(sent_s_value.try_into().unwrap()),
                 Some(sent_t_value.try_into().unwrap()),
+                &ironwood_notes,
                 &orchard_notes,
                 &sapling_notes,
                 &transparent_coin,
@@ -745,7 +756,7 @@ async fn sends_to_self_handle_balance_properly() {
     // less the 15_000 ZIP-317 fee (one transparent input plus the padded
     // two-action ironwood pair).
     let shielded_value = transparent_funding - 15_000;
-    check_client_balances!(recipient, i: 0 o: shielded_value s: 0 t: 0);
+    check_client_balances!(recipient, i: shielded_value o: 0 s: 0 t: 0);
 
     let pre_rescan_summaries = recipient.transaction_summaries(false).await.unwrap();
     let pre_rescan_value_transfers = recipient.value_transfers(true).await.unwrap();
@@ -777,7 +788,7 @@ async fn sends_to_self_handle_balance_properly() {
     // Rescanning from scratch must reproduce the same balance and
     // identical records.
     recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: shielded_value s: 0 t: 0);
+    check_client_balances!(recipient, i: shielded_value o: 0 s: 0 t: 0);
     assert_eq!(
         pre_rescan_summaries,
         recipient.transaction_summaries(false).await.unwrap()
@@ -805,7 +816,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     let transactions = faucet.transaction_summaries(false).await.unwrap().0;
     assert!(transactions.iter().any(|transaction| {
         transaction
-            .outgoing_orchard_notes
+            .outgoing_ironwood_notes
             .iter()
             .chain(transaction.outgoing_sapling_notes.iter())
             .any(|note| note.recipient_unified_address == Some(recipient_unified_address.clone()))
@@ -814,7 +825,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     let rescanned_transactions = faucet.transaction_summaries(false).await.unwrap().0;
     assert!(rescanned_transactions.iter().any(|transaction| {
         transaction
-            .outgoing_orchard_notes
+            .outgoing_ironwood_notes
             .iter()
             .chain(transaction.outgoing_sapling_notes.iter())
             .any(|note| note.recipient_unified_address == Some(recipient_unified_address.clone()))
@@ -848,7 +859,7 @@ async fn send_orchard_back_and_forth() {
         scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
     );
     let setup_reward = scenarios::funded_faucet_ironwood_balance();
-    check_client_balances!(faucet, i: 0 o: setup_reward s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
+    check_client_balances!(faucet, i:setup_reward o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
 
     // post transfer to recipient, and verify
     from_inputs::quick_send(
@@ -865,13 +876,13 @@ async fn send_orchard_back_and_forth() {
     // post-stream coinbase reward plus the send's fee; the send itself
     // debits the amount and fee. Aggregate balance is deterministic even
     // though note selection is not.
-    let orch_change =
+    let ironwood_change =
         scenarios::POST_STREAM_BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
     faucet.sync_and_await().await.unwrap();
-    let faucet_orch = setup_reward + orch_change + u64::from(MINIMUM_FEE);
+    let faucet_ironwood = setup_reward + ironwood_change + u64::from(MINIMUM_FEE);
 
     tracing::info!(
         "{}",
@@ -885,8 +896,8 @@ async fn send_orchard_back_and_forth() {
             .unwrap()
     );
 
-    check_client_balances!(faucet, i: 0 o: faucet_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
-    check_client_balances!(recipient, i: 0 o: faucet_to_recipient_amount s: 0 t: 0);
+    check_client_balances!(faucet, i:faucet_ironwood o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
+    check_client_balances!(recipient, i: faucet_to_recipient_amount o: 0 s: 0 t: 0);
 
     // post half back to faucet, and verify
     from_inputs::quick_send(
@@ -904,27 +915,27 @@ async fn send_orchard_back_and_forth() {
         .unwrap();
     recipient.sync_and_await().await.unwrap();
 
-    let faucet_final_orch = faucet_orch
+    let faucet_final_ironwood = faucet_ironwood
         + recipient_to_faucet_amount
         + scenarios::POST_STREAM_BLOCK_REWARD
         + u64::from(MINIMUM_FEE);
-    let recipient_final_orch =
+    let recipient_final_ironwood =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     check_client_balances!(
         faucet,
-        i: 0 o: faucet_final_orch s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: faucet_final_ironwood o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
-    check_client_balances!(recipient, i: 0 o: recipient_final_orch s: 0 t: 0);
+    check_client_balances!(recipient, i: recipient_final_ironwood o: 0 s: 0 t: 0);
 }
 
 #[tokio::test]
-async fn send_mined_orchard_to_orchard() {
+async fn send_mined_ironwood_to_ironwood() {
     // This test shows a confirmation changing the state of balance by
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     // consistent with all the notes in the relevant block changing state.
     // NOTE that the balance doesn't give insight into the distribution across notes.
     let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         scenarios::default_test_activation_heights(),
         scenarios::ChainCachePolicy::PerTest,
     )
@@ -946,14 +957,14 @@ async fn send_mined_orchard_to_orchard() {
         .await
         .unwrap();
     assert_eq!(
-        balance.unconfirmed_orchard_balance,
+        balance.unconfirmed_ironwood_balance,
         Some(0.try_into().unwrap())
     );
     // The send is to self, so only the fee leaves the wallet — and the
     // faucet mines the confirming block, collecting a fresh coinbase
     // reward plus that same fee back.
     assert_eq!(
-        balance.confirmed_orchard_balance.unwrap().into_u64(),
+        balance.confirmed_ironwood_balance.unwrap().into_u64(),
         scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
     );
 }
@@ -1089,7 +1100,7 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
 }
 
 /// Assert the recipient's three-way orchard balance split.
-async fn assert_orchard_split(
+async fn assert_ironwood_split(
     client: &zingolib::lightclient::LightClient,
     total: u64,
     confirmed: u64,
@@ -1099,33 +1110,33 @@ async fn assert_orchard_split(
         .account_balance(zip32::AccountId::ZERO)
         .await
         .unwrap();
-    assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), total);
+    assert_eq!(balance.total_ironwood_balance.unwrap().into_u64(), total);
     assert_eq!(
-        balance.confirmed_orchard_balance.unwrap().into_u64(),
+        balance.confirmed_ironwood_balance.unwrap().into_u64(),
         confirmed
     );
     assert_eq!(
-        balance.unconfirmed_orchard_balance.unwrap().into_u64(),
+        balance.unconfirmed_ironwood_balance.unwrap().into_u64(),
         unconfirmed
     );
 }
 
 /// Assert the recipient holds no sapling notes and exactly the
-/// expected orchard notes, each with its expected `SpendStatus` and
+/// expected ironwood notes, each with its expected `SpendStatus` and
 /// (where given) its transaction's confirmation state.
-async fn assert_orchard_note_statuses(
+async fn assert_ironwood_note_statuses(
     client: &zingolib::lightclient::LightClient,
     expected: &[(u64, SpendStatus, Option<bool>)],
 ) {
     let wallet = client.wallet().read().await;
     assert_eq!(wallet.wallet_outputs::<SaplingNote>().len(), 0);
-    let orchard_notes = wallet.wallet_outputs::<OrchardNote>();
-    assert_eq!(orchard_notes.len(), expected.len());
+    let ironwood_notes = wallet.wallet_outputs::<IronwoodNote>();
+    assert_eq!(ironwood_notes.len(), expected.len());
     for (value, status, confirmed) in expected {
-        let note = (*orchard_notes
+        let note = (*ironwood_notes
             .iter()
             .find(|&&note| note.value() == *value)
-            .unwrap_or_else(|| panic!("no orchard note of value {value}")))
+            .unwrap_or_else(|| panic!("no ironwood note of value {value}")))
         .clone();
         assert_eq!(wallet.output_spend_status(&note), *status, "note {value}");
         if let Some(want_confirmed) = confirmed {
@@ -1156,11 +1167,11 @@ async fn mempool_spend_balance_and_note_status_accounting() {
         scenarios::faucet_funded_recipient_default(funded).await;
 
     // Steady state, and its stability across an empty ten-block mine.
-    assert_orchard_split(&recipient, funded, funded, 0).await;
+    assert_ironwood_split(&recipient, funded, funded, 0).await;
     increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
         .await
         .unwrap();
-    assert_orchard_split(&recipient, funded, funded, 0).await;
+    assert_ironwood_split(&recipient, funded, funded, 0).await;
 
     // Cycle one: a small send whose change sits near the dust line.
     let small = 2_000;
@@ -1176,8 +1187,8 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     .unwrap();
     recipient.sync_and_await().await.unwrap();
     let after_small = funded - (small + u64::from(MINIMUM_FEE));
-    assert_orchard_split(&recipient, after_small, 0, after_small).await;
-    assert_orchard_note_statuses(
+    assert_ironwood_split(&recipient, after_small, 0, after_small).await;
+    assert_ironwood_note_statuses(
         &recipient,
         &[
             (
@@ -1193,8 +1204,8 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    assert_orchard_split(&recipient, after_small, after_small, 0).await;
-    assert_orchard_note_statuses(
+    assert_ironwood_split(&recipient, after_small, after_small, 0).await;
+    assert_ironwood_note_statuses(
         &recipient,
         &[
             (funded, SpendStatus::Spent(*small_txids.first()), None),
@@ -1217,8 +1228,8 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     // 880_000 post-state.
     let big_fee = 2 * u64::from(MINIMUM_FEE);
     let after_big = after_small - (big + big_fee);
-    assert_orchard_split(&recipient, after_big, 0, after_big).await;
-    assert_orchard_note_statuses(
+    assert_ironwood_split(&recipient, after_big, 0, after_big).await;
+    assert_ironwood_note_statuses(
         &recipient,
         &[
             (funded, SpendStatus::Spent(*small_txids.first()), None),
@@ -1235,21 +1246,21 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    assert_orchard_split(&recipient, after_big, after_big, 0).await;
+    assert_ironwood_split(&recipient, after_big, after_big, 0).await;
     let settled = [
         (funded, SpendStatus::Spent(*small_txids.first()), None),
         (after_small, SpendStatus::Spent(*big_txids.first()), None),
         (after_big, SpendStatus::Unspent, Some(true)),
     ];
-    assert_orchard_note_statuses(&recipient, &settled).await;
+    assert_ironwood_note_statuses(&recipient, &settled).await;
 
     // Stability window: nine further blocks change nothing at
     // either granularity.
     increase_height_and_wait_for_client(&local_net, &mut recipient, 9)
         .await
         .unwrap();
-    assert_orchard_split(&recipient, after_big, after_big, 0).await;
-    assert_orchard_note_statuses(&recipient, &settled).await;
+    assert_ironwood_split(&recipient, after_big, after_big, 0).await;
+    assert_ironwood_note_statuses(&recipient, &settled).await;
 }
 
 #[tokio::test]

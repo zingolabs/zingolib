@@ -279,7 +279,7 @@ pub trait SyncShardTrees: SyncWallet {
                 BlockHeight::from_u32(0)..BlockHeight::from_u32(0)
             };
 
-            // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention
+            // in the case that sapling and/or orchard and/or ironwood note commitments are not in an entire block there will be no retention
             // at that height. Therefore, to prevent anchor and truncate errors, checkpoints are manually added first and
             // copy the tree state from the previous checkpoint where the commitment tree has not changed as of that block.
             for checkpoint_height in
