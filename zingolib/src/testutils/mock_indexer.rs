@@ -916,7 +916,7 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
     let total: u64 = receivers.iter().map(|(_, value, _)| value).sum();
     let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
         // Generous headroom over payments + any fee.
-        .orchard_note(total + 1_000_000)
+        .ironwood_note(total + 1_000_000)
         .build();
     let mut faucet = LightClient::new_for_test(wallet).await;
     let proposal = from_inputs::propose(&mut faucet, receivers)

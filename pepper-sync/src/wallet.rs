@@ -61,6 +61,8 @@ pub mod serialization;
 /// creating spendable notes.
 ///
 /// Scan targets with block heights below sapling activation height are not supported.
+// FIXME: add a bool field which is set when users add scan targets manually so `get_transaction` can ignore the error
+// if the txid does not exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScanTarget {
     /// Block height.
@@ -655,10 +657,9 @@ impl WalletTransaction {
                 self.status = status;
                 self.datetime = datetime;
             }
-
-            // only pending transactions can fail. a confirmed transaction is only invalidated by
-            // a reorg, which is handled by truncating the wallet data.
-            ConfirmationStatus::Failed(_) if self.status().is_pending() => {
+            ConfirmationStatus::Failed(_)
+                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
+            {
                 self.status = status;
                 self.datetime = datetime;
             }

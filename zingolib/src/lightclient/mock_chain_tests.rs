@@ -9,6 +9,7 @@
 //! live versions are never removed; they eventually move to a gated
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
+use pepper_sync::wallet::IronwoodNote;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 
@@ -24,7 +25,7 @@ fn external_address(pool: PoolType) -> String {
     let mut external_wallet =
         SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
     let selection = match pool {
-        PoolType::ORCHARD => ReceiverSelection::orchard_only(),
+        PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
         PoolType::SAPLING => ReceiverSelection::sapling_only(),
         _ => unimplemented!("only shielded external destinations are needed here"),
     };
@@ -60,7 +61,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
 
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -73,7 +74,7 @@ async fn funded_send_confirms_on_the_mock_chain() {
 
     // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
     // spend, two-logical-action ZIP-317 fee.
-    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
 /// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
@@ -88,8 +89,7 @@ async fn zero_value_receipts() {
     let mut recipient = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
 
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
@@ -99,7 +99,7 @@ async fn zero_value_receipts() {
     recipient.sync_and_await().await.unwrap();
     from_inputs::quick_send(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 1_000, None)],
+        vec![(&external_address(PoolType::IRONWOOD), 1_000, None)],
     )
     .await
     .unwrap();
@@ -109,7 +109,7 @@ async fn zero_value_receipts() {
 
     // Identical to the live pin: the recipient holds the 100_000 funding
     // note less the 1_000 payment and its 10_000 ZIP-317 fee.
-    check_client_balances!(recipient, i: 0 o: 89_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 89_000 o: 0 s: 0 t: 0);
 
     let value_transfers = recipient.value_transfers(true).await.unwrap();
     assert!(
@@ -122,14 +122,14 @@ async fn zero_value_receipts() {
             .iter()
             .filter(|vt| vt.kind == ValueTransferKind::Received
                 && vt.value == 0
-                && vt.pool_received.as_deref() == Some("Orchard"))
+                && vt.pool_received.as_deref() == Some("Ironwood"))
             .count(),
         1
     );
     assert!(value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.value == 1_000
-            && vt.transaction_fee == Some(20_000)
+            && vt.transaction_fee == Some(10_000)
     }));
 }
 
@@ -156,7 +156,7 @@ async fn list_value_transfers_check_fees() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
@@ -171,7 +171,7 @@ async fn list_value_transfers_check_fees() {
     recipient.sync_and_await().await.unwrap();
 
     // 100_000 − 30_000 − 30_000 − 25_000 fee = 15_000 orchard change.
-    check_client_balances!(recipient, i: 0 o: 15_000 s: 30_000 t: 30_000);
+    check_client_balances!(recipient, i: 15_000 o: 0 s: 30_000 t: 30_000);
 }
 
 /// Mock-chain twin of libtonode
@@ -267,7 +267,6 @@ async fn self_send_to_t_displays_as_one_transaction() {
 /// says nothing about the recipient behavior this test protects.
 #[tokio::test]
 async fn send_to_transparent_and_sapling_maintain_balance() {
-    use pepper_sync::wallet::OrchardNote;
     use zcash_protocol::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
@@ -287,8 +286,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let mut recipient = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
     // The external destinations: the abandon-art wallet's sapling UA and
     // first taddr — the same derivations the live faucet answers with.
     let external_sapling = external_address(PoolType::SAPLING);
@@ -323,13 +321,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: recipient_initial_funds,
         fee: Some(10_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_initial_funds,
             SpendStatus::Spent(placeholder_txid),
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -357,13 +355,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_960_000,
             SpendStatus::TransmittedSpent(placeholder_txid),
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -392,13 +390,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_925_000,
             SpendStatus::Unspent,
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -437,13 +435,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         let recipient_wallet = recipient_wallet.read().await;
         assert_eq!(
             recipient_wallet
-                .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                .unconfirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
                 .unwrap(),
             expected_funds.try_into().unwrap()
         );
         assert_eq!(
             recipient_wallet
-                .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                .confirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
                 .unwrap(),
             0.try_into().unwrap()
         );
@@ -478,13 +476,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         // fragmented-faucet 20_000.
         fee: Some(10_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_second_funding,
             SpendStatus::Spent(placeholder_txid),
             0,
             Some("Second wave incoming".to_string()),
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -520,13 +518,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             965_000,
             SpendStatus::Spent(placeholder_txid),
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -543,13 +541,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_885_000,
             SpendStatus::Unspent,
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -585,13 +583,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: external_transparent_3,
         fee: Some(15_000),
         zec_price: None,
-        ironwood_notes: vec![], // TODO: move receipt from orchard to ironwood
-        orchard_notes: vec![BasicNoteSummary::from_parts(
+        ironwood_notes: vec![BasicNoteSummary::from_parts(
             930_000,
             SpendStatus::Unspent,
             0,
             None,
         )],
+        orchard_notes: vec![],
         sapling_notes: vec![],
         transparent_coins: vec![],
         outgoing_ironwood_notes: vec![],
@@ -623,7 +621,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             .wallet()
             .read()
             .await
-            .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+            .confirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
             .unwrap(),
         second_wave_expected_funds.try_into().unwrap(),
     );
@@ -858,7 +856,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     net.chain.write().await.lose_next_send_response = Some(LostSendDestination::Mempool);
 
@@ -889,7 +887,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     // Identical arithmetic to `funded_send_confirms_on_the_mock_chain`:
     // the lost response and duplicate rejection must not perturb it.
-    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
 /// Twin of [`send_survives_lost_response_and_duplicate_rejection`] for

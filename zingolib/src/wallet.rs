@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
+use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
@@ -430,24 +431,32 @@ impl LightWallet {
     /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
+        let chain_height_opt = self.sync_state.last_known_chain_height();
         self.sync_state = SyncState::new();
-        pepper_sync::add_scan_targets(
-            &mut self.sync_state,
-            &self
-                .wallet_transactions
-                .values()
-                .filter_map(|transaction| {
-                    transaction
-                        .status()
-                        .get_confirmed_height()
-                        .map(|height| ScanTarget {
-                            block_height: height,
-                            txid: transaction.txid(),
-                            narrow_scan_area: true,
-                        })
-                })
-                .collect::<Vec<_>>(),
-        );
+        if let Some(chain_height) = chain_height_opt {
+            pepper_sync::add_scan_targets(
+                &mut self.sync_state,
+                &self
+                    .wallet_transactions
+                    .values()
+                    .filter(|transaction| {
+                        transaction
+                            .status()
+                            .is_confirmed_before(&(chain_height - MAX_REORG_ALLOWANCE))
+                    })
+                    .filter_map(|transaction| {
+                        transaction
+                            .status()
+                            .get_confirmed_height()
+                            .map(|height| ScanTarget {
+                                block_height: height,
+                                txid: transaction.txid(),
+                                narrow_scan_area: true,
+                            })
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
 
         self.wallet_blocks.clear();
         self.wallet_transactions.clear();
