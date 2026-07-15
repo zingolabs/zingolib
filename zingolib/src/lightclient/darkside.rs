@@ -128,7 +128,6 @@ async fn reorg_moves_receipt_to_new_height() {
 /// exactly this restored balance) and `reorg_expires_outgoing_tx_height`.
 #[tokio::test]
 async fn reorg_expires_outgoing_transaction() {
-    tracing_subscriber::fmt().init();
     let mut net = MockNet::launch().await;
     let mut sender = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
