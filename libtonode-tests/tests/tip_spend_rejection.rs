@@ -95,10 +95,11 @@ enum Verdict {
     TipRejected,
 }
 
-/// Runs one cell: fund the recipient with a single orchard note, age it
-/// `depth` blocks (the wallet stays synced to the tip, so the anchor is
-/// always the tip), then send to the faucet's address in `target_pool`
-/// and classify zebra's verdict.
+/// Runs one cell: fund the recipient with a single shielded note (ironwood
+/// on this stack, where the funding send post-dates the ironwood
+/// activation), age it `depth` blocks (the wallet stays synced to the tip,
+/// so the anchor is always the tip), then send to the faucet's address in
+/// `target_pool` and classify zebra's verdict.
 async fn run_cell(depth: u32, target_pool: &str) -> (Verdict, String) {
     let (ref local_net, faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(100_000).await;
@@ -114,7 +115,7 @@ async fn run_cell(depth: u32, target_pool: &str) -> (Verdict, String) {
         .await
         .unwrap()
         .iter()
-        .find(|summary| !summary.orchard_notes.is_empty())
+        .find(|summary| !summary.ironwood_notes.is_empty() || !summary.orchard_notes.is_empty())
         .expect("the recipient holds its funding note")
         .blockheight;
     let target_address = get_base_address_macro!(faucet, target_pool);
@@ -199,11 +200,17 @@ async fn run_matrix_cell(extra_blocks: u32, target_pool: &str) -> (Verdict, Stri
     (verdict, observables)
 }
 
-/// The in-suite reproduction of the pool_matrix orchard-row failure.
+/// Historically the in-suite reproduction of the pool_matrix orchard-row
+/// failure (verdict pinned TipRejected). On the current pinned stack
+/// (infrastructure rev 537f84d3, first adjudicated on the 2026-07-15 CI
+/// run of PR #2466) the same cell is ACCEPTED: the boundary-adjacent
+/// rejection no longer reproduces. Per ADR 0009's canary discipline this
+/// pin now states the new observed truth; see
+/// [`boundary_send_is_accepted`] for the attribution history.
 #[tokio::test]
 async fn matrix_young_coinbase_to_ironwood() {
     let (verdict, observables) = run_matrix_cell(0, "unified").await;
-    assert_eq!(verdict, Verdict::TipRejected, "{observables}");
+    assert_eq!(verdict, Verdict::Accepted, "{observables}");
 }
 
 /// The differential under identical amounts and note selection: same
@@ -223,41 +230,34 @@ async fn matrix_aged_coinbase_to_orchard() {
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
 }
 
-/// # Round three: attribution of the boundary rejection
+/// # Round three: attribution of the boundary rejection (historical)
 ///
 /// Round two localized the trigger (orchard-output transactions built
-/// adjacent to the height-5 co-activation) but not the culprit: the
-/// wallet could be building a context-bad transaction, zainod could be
-/// transforming the verdict, or zebra could be wrongly rejecting valid
-/// bytes. The wallet retains the built Transaction in its record when
-/// transmission fails (status Failed), so the exact rejected bytes are
-/// recoverable, and the validator's JSON-RPC port is directly reachable
-/// via rpc_listen_port — no indexer in the loop.
+/// adjacent to the height-5 co-activation) but not the culprit. Round
+/// three resubmitted the exact rejected bytes directly to zebra, at the
+/// boundary and again five blocks later, and convicted the wallet-side
+/// builder (H-WALLET-CONTEXT): the transaction was built under
+/// pre-activation consensus, and zebra's "incorrect consensus branch id"
+/// rejection of the identical bytes later proved zebra judged correctly
+/// at both heights.
 ///
-/// Two predicates on the SAME bytes sort the hypothesis space:
+/// # Round four (2026-07-15, pinned stack 537f84d3)
 ///
-/// - Verdict parity NOW: submitting the captured bytes directly to
-///   zebra's sendrawtransaction at the boundary must reproduce the
-///   rejection. Parity exonerates zainod as a transport (it relayed
-///   zebra's verdict faithfully); a divergent verdict implicates it.
-/// - Same bytes LATER: after five blocks of distance, resubmit the
-///   IDENTICAL bytes. Zebra's own error text ("until the next chain tip
-///   block") predicts acceptance; the round-two cure worked with a
-///   REBUILT transaction, which left both explanations open. If the
-///   identical bytes are accepted, the proof was valid all along and
-///   zebra's boundary-time verdict was wrong (the mechanism is inside
-///   zebra); if they are still rejected, the wallet built a transaction
-///   only valid under post-boundary rules and zebra was right both
-///   times (H-WALLET-CONTEXT).
+/// The convicted mechanism is gone: the wallet's Ironwood-era builder
+/// (ADR 0009) derives the post-activation consensus branch id, and the
+/// boundary-adjacent orchard-output send is now ACCEPTED outright, first
+/// observed on the PR #2466 CI run. The rejection this suite existed to
+/// attribute can no longer be produced, so the forensic choreography
+/// (capturing Failed-record bytes, direct RPC resubmission) has nothing
+/// to grab. This test now pins the acceptance; if a boundary-time
+/// rejection ever reappears, this pin fails loudly and the round-three
+/// machinery in git history (2803a04fd and earlier) is the playbook.
 #[tokio::test]
-async fn boundary_rejection_attribution() {
-    use zcash_local_net::validator::Validator as _;
-    use zingo_status::confirmation_status::ConfirmationStatus;
+async fn boundary_send_is_accepted() {
     use zingolib::config::WalletConfig;
     use zingolib::testutils::default_test_wallet_settings;
-    use zingolib_testutils::validator_rpc::{self, RawTransactionVerdict};
 
-    let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
+    let (_local_net, mut client_builder) = scenarios::custom_clients_default().await;
     let mut faucet = client_builder.build_faucet(false).await;
     let recipient = client_builder
         .build_client(
@@ -272,68 +272,11 @@ async fn boundary_rejection_attribution() {
         .await;
     faucet.sync_and_await().await.unwrap();
 
-    // Reproduce the boundary rejection through the zainod path.
     let target_address = get_base_address_macro!(recipient, "unified");
-    let zainod_path_error =
-        from_inputs::quick_send(&mut faucet, vec![(&target_address, 20_000, None)])
-            .await
-            .expect_err("the boundary-adjacent orchard-output send must be rejected")
-            .to_string();
-    assert!(
-        zainod_path_error.contains("until the next chain tip block"),
-        "unexpected rejection class: {zainod_path_error}"
-    );
-
-    // Recover the exact bytes zebra judged: the wallet keeps the built
-    // Transaction in the Failed record.
-    let rejected_transaction_bytes = {
-        let wallet = faucet.wallet();
-        let wallet = wallet.read().await;
-        let failed_transaction = wallet
-            .wallet_transactions
-            .values()
-            .find(|transaction| matches!(transaction.status(), ConfirmationStatus::Failed(_)))
-            .expect("the failed send must leave a Failed record holding the transaction");
-        let mut bytes = vec![];
-        failed_transaction.transaction().write(&mut bytes).unwrap();
-        bytes
-    };
-
-    let rpc_port = local_net.validator().rpc_listen_port();
-
-    // Predicate one, verdict parity NOW: direct submission at the
-    // boundary must reproduce the rejection, exonerating zainod.
-    let verdict_now =
-        validator_rpc::send_raw_transaction(rpc_port, &rejected_transaction_bytes).await;
-    let RawTransactionVerdict::Rejected(direct_path_error) = verdict_now else {
-        panic!(
-            "verdict parity falsified: zainod path rejected but direct submission              returned {verdict_now:?} — the indexer is transforming verdicts"
+    from_inputs::quick_send(&mut faucet, vec![(&target_address, 20_000, None)])
+        .await
+        .expect(
+            "the boundary-adjacent orchard-output send is accepted on the pinned stack \
+             (a rejection here resurrects the round-three attribution playbook)",
         );
-    };
-    assert!(
-        direct_path_error.contains("until the next chain tip block")
-            || direct_path_error.contains("orchard proof"),
-        "direct rejection is a different class than the zainod-path rejection:          direct={direct_path_error} zainod={zainod_path_error}"
-    );
-
-    // Predicate two, same bytes LATER: five blocks of distance, then the
-    // identical bytes. Observed and pinned: still rejected, now cleanly
-    // as a wrong consensus branch id — the wallet built the transaction
-    // under pre-activation consensus (H-WALLET-CONTEXT); zebra judged
-    // correctly at both heights.
-    local_net.validator().generate_blocks(5).await.unwrap();
-    let verdict_later =
-        validator_rpc::send_raw_transaction(rpc_port, &rejected_transaction_bytes).await;
-    let RawTransactionVerdict::Rejected(later_error) = verdict_later else {
-        panic!(
-            "H-WALLET-CONTEXT falsified: the identical bytes were ACCEPTED after \
-             distance from the boundary — zebra's boundary-time verdict was wrong \
-             and the mechanism is inside zebra after all"
-        );
-    };
-    assert!(
-        later_error.contains("incorrect consensus branch id"),
-        "rejection class changed: expected the wrong-branch-id rejection that \
-         convicts the wallet-side builder, observed: {later_error}"
-    );
 }

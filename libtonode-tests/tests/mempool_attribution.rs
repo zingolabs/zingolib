@@ -64,8 +64,10 @@
 //! # Designed cells: one remaining
 //!
 //! Of the rejection-side attribution cells for the boundary-adjacent
-//! orchard-output phenomenon, two are now built in tip_spend_rejection's
-//! boundary_rejection_attribution: direct-submission verdict parity
+//! orchard-output phenomenon, two were built in tip_spend_rejection's
+//! former boundary_rejection_attribution (now boundary_send_is_accepted,
+//! since the phenomenon no longer reproduces on the pinned stack — see
+//! that test's round-four note): direct-submission verdict parity
 //! (zebra's sendrawtransaction judging the captured bytes) and same-bytes
 //! resubmission after five blocks of distance, both fed by the Failed
 //! record's retained Transaction and the validator's rpc_listen_port.
@@ -73,8 +75,7 @@
 //! proof that verifies against the standard verifying key offline
 //! exonerates the wallet at the proof level); its input is recoverable
 //! from the same Failed record — an earlier note here claimed the wallet
-//! does not retain the built bytes, which boundary_rejection_attribution
-//! disproves.
+//! does not retain the built bytes, which the round-three run disproved.
 
 use std::time::{Duration, Instant};
 
