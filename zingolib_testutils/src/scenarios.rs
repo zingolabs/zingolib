@@ -201,6 +201,12 @@ pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREA
 /// spendable balance predictable for test assertions.
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
+/// Amount sent from orchard mining rewards to ironwood after nu6.3 activation.
+pub const IRONWOOD_MIGRATION_AMOUNT: u64 = 1_231_240_000;
+
+/// Additional fee cost of migration
+pub const IRONWOOD_MIGRATION_FEE: u64 = 20_000;
+
 /// Total miner rewards for blocks 1..=`count` under
 /// [`default_test_activation_heights`]: block 1 pays the full subsidy;
 /// every later block pays the post-funding-stream reward.
@@ -222,6 +228,11 @@ pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 /// flip this to 3 and nothing else.
 pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
 
+/// HYPOTHESIS (server-run adjudicated): with an Ironwood miner pool the
+/// coinbase pays the orchard receiver from the NU6_3 activation block (height
+/// 5 under [`default_test_activation_heights`]) onward.
+pub const IRONWOOD_COINBASE_START_HEIGHT: u32 = 5;
+
 /// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
 /// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
 /// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
@@ -235,12 +246,12 @@ pub const fn orchard_coinbase_total(tip: u32) -> u64 {
     (tip - ORCHARD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
 }
 
-/// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
-/// finishes setting up orchard coinbase through
+/// The faucet's ironwood balance right after a `PoolType::IRONWOOD` scenario
+/// finishes setting up ironwood coinbase through
 /// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload amount. The offload's
 /// fee cancels out: the faucet pays it, then collects it right back in the
 /// coinbase of the confirming block it mines.
-pub const fn funded_faucet_orchard_balance() -> u64 {
+pub const fn funded_faucet_ironwood_balance() -> u64 {
     orchard_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
 }
 
@@ -398,11 +409,20 @@ async fn normalize_shielded_faucet_balance<V, I>(
     LocalNet<V, I>: IndexerConvergence,
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
-        local_net.validator().generate_blocks(2).await.unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
         quick_send(
             faucet,
             vec![(FUND_OFFLOAD_ORCHARD_ONLY, FUND_OFFLOAD_AMOUNT, None)],
+        )
+        .await
+        .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        sync_client_to_validator_tip(local_net, faucet).await;
+        let faucet_orchard_address = get_base_address_macro!(faucet, "unified");
+        quick_send(
+            faucet,
+            vec![(&faucet_orchard_address, IRONWOOD_MIGRATION_AMOUNT, None)],
         )
         .await
         .unwrap();
@@ -547,7 +567,7 @@ pub async fn unfunded_client_default() -> (MeteredNet, LightClient) {
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
-/// 3 blocks worth of coinbase to a preregistered spend capability.
+/// 3 blocks worth of coinbase to a preregistered spend capability (5 blocks for zebrad).
 ///
 /// This key is registered to receive block rewards by corresponding to the
 /// address the regtest Validator mines to.

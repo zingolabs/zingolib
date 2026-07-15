@@ -432,17 +432,16 @@ async fn mine_to_ironwood() {
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;
-    // FIXME: update mining rewards consts and assertions for ironwood
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: (scenarios::funded_faucet_ironwood_balance()) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
@@ -472,14 +471,14 @@ async fn mine_to_orchard() {
     .await;
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_orchard_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (scenarios::funded_faucet_ironwood_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
@@ -848,7 +847,7 @@ async fn send_orchard_back_and_forth() {
         wallet_fully_scanned_height,
         scenarios::FUNDED_FAUCET_SETUP_HEIGHT.into()
     );
-    let setup_reward = scenarios::funded_faucet_orchard_balance();
+    let setup_reward = scenarios::funded_faucet_ironwood_balance();
     check_client_balances!(faucet, i: 0 o: setup_reward s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0);
 
     // post transfer to recipient, and verify
@@ -955,7 +954,7 @@ async fn send_mined_orchard_to_orchard() {
     // reward plus that same fee back.
     assert_eq!(
         balance.confirmed_orchard_balance.unwrap().into_u64(),
-        scenarios::funded_faucet_orchard_balance() + scenarios::POST_STREAM_BLOCK_REWARD
+        scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
     );
 }
 
