@@ -28,17 +28,20 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
 }
 
 /// Failure to interpret a memo string.
+///
+/// Carries the offending memo's byte length, never its content, so the
+/// memo cannot leak into logs or error channels.
 #[derive(Debug, thiserror::Error)]
 pub enum MemoError {
     /// The encoded memo exceeds the memo field's capacity.
-    #[error("Error creating output. Memo '{0:?}' is too long")]
-    TooLong(String),
+    #[error("Error creating output. Memo of {0} bytes is too long")]
+    TooLong(usize),
 }
 
 /// Create memo bytes from string.
 pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, MemoError> {
     let s_bytes = Vec::from(memo_str.as_bytes());
-    MemoBytes::from_bytes(&s_bytes).map_err(|_| MemoError::TooLong(memo_str))
+    MemoBytes::from_bytes(&s_bytes).map_err(|_| MemoError::TooLong(s_bytes.len()))
 }
 
 /// TODO: Add Doc Comment Here!

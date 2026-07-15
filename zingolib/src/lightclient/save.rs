@@ -136,7 +136,7 @@ impl LightClient {
 
     /// Only relevant in non-mobile, this function removes the save file.
     // TodO: can we shred it?
-    pub async fn do_delete(&self) -> std::io::Result<()> {
+    pub async fn delete_wallet_file(&self) -> std::io::Result<()> {
         // Check if the file exists before attempting to delete
         if self.wallet_path().exists() {
             match remove_file(self.wallet_path()) {

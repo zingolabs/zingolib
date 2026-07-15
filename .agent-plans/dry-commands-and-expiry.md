@@ -21,7 +21,12 @@ dev's retarget work superseded). Live PR: #2464.
   derived from it); upstream issue filed asking zcash_protocol to
   export a named constant, to be adopted at a normal version bump.
 
-## In progress (2026-07-14)
+## Done (2026-07-14): sniff elimination and integer ratio
+
+Note: this section's description of `is_complete()` ("preserves the
+refetching-nullifiers nuance the old 99% override encoded") records the
+first implementation, which the review follow-up below superseded —
+completion is now defined by scan-range state alone.
 
 - Eliminate the REPL's in-band error sniffing in `zingo-cli/src/lib.rs`
   (the internal instance of issue #2446's problem; same family as the
@@ -43,7 +48,7 @@ dev's retarget work superseded). Live PR: #2464.
   dev's retarget implementation (c007996aa) and ADR 0008; the ADR 0006
   pointer fix and this file were replayed as the rebase remnant.
 
-## In progress (2026-07-14, #2446 close-out; DRY deferred)
+## Done (2026-07-14): #2446 close-out (DRY deferred)
 
 Executing the three ratified steps on PR #2464 (audit evidence in
 issue #2465): (1) `do_delete` error typed in place (`io::Error`);
@@ -55,7 +60,7 @@ pin bump. Additional claims:
 `zingolib/src/lightclient.rs`, `zingolib/src/lightclient/save.rs`,
 `zingolib/src/wallet/utils.rs`, `zingo-cli/src/commands/utils.rs`.
 
-## In progress (2026-07-14, review follow-up on PR #2464)
+## Done (2026-07-14): review follow-up on PR #2464 (51eeacd0b)
 
 The PR review found two defects in the new `SyncStatus::is_complete`:
 a false negative when the birthday-to-chain-height range contains no
@@ -70,6 +75,18 @@ predicates gain named helpers on `ScanPriority` (`is_scanned`,
 `awaits_nullifier_retrieval`) used across `pepper-sync/src/sync.rs` and
 `pepper-sync/src/sync/state.rs` (now also claimed). Unit tests pin the
 completion contract in pepper-sync, where it is defined.
+
+## Done (2026-07-14): /review recommendations applied
+
+`send_request` derives its error label from the request variant;
+the three prompt indicators delegate to one `ratio_indicator` helper;
+`From<ServerInfo> for JsonValue` consumes by value, matching the
+`From<SyncStatus>` convention; `do_delete` renamed `delete_wallet_file`
+(zero external callers per #2465, in the already-breaking PR);
+`MemoError::TooLong` carries the memo's byte length, never its content;
+the `u64` ratio fields are summed in `u64`; the vacuous
+empty-scan-ranges completion is pinned by test; earlier sections here
+re-marked Done with the superseded `is_complete` description flagged.
 
 ## File claims
 

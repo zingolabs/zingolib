@@ -81,7 +81,9 @@ pub struct SyncStatus {
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
     /// Numerator of the exact scan-progress ratio: outputs scanned so far
-    /// across both shielded pools.
+    /// across both shielded pools. May exceed `total_outputs`, whose tree
+    /// bounds are fixed at sync start, when scanning continues past them
+    /// into chain growth.
     pub total_outputs_scanned: u64,
     /// Denominator of the exact scan-progress ratio: outputs in the chain
     /// between the wallet birthday and the last known chain height, across
@@ -877,8 +879,9 @@ where
         total_orchard_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
-        total_outputs_scanned: u64::from(total_outputs_scanned),
-        total_outputs: u64::from(total_outputs),
+        total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
+            + u64::from(total_orchard_outputs_scanned),
+        total_outputs: u64::from(total_sapling_outputs) + u64::from(total_orchard_outputs),
     })
 }
 
@@ -2230,6 +2233,14 @@ mod test {
         #[test]
         fn never_started_is_not_complete() {
             assert!(!status(0, &[]).is_complete());
+        }
+
+        /// A started sync with no scan ranges left in the state is
+        /// vacuously complete: nothing remains tracked, so nothing
+        /// awaits scanning or nullifier work.
+        #[test]
+        fn started_with_no_scan_ranges_is_complete() {
+            assert!(status(1_000, &[]).is_complete());
         }
 
         #[test]
