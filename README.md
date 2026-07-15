@@ -96,6 +96,4 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 Please see `zingo-cli/README.md` for details of running zingo-cli in regtest mode with a local network.
 
 ## Testing
-Darkside tests must be run seprately to the tests in the rest of the workspace to avoid zingolib being built with the "darkside_tests" feature in non-darkside testing.
-
 `run_workspace_tests.sh` script may be used as a helper to run all tests in one invocation.

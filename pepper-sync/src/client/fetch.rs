@@ -20,7 +20,6 @@ use crate::client::FetchRequest;
 const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
 const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
 
-#[cfg(not(feature = "darkside_test"))]
 use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
@@ -123,7 +122,6 @@ where
             let block_stream = get_block_range_nullifiers(client, block_range).await;
             let _ignore_error = sender.send(block_stream);
         }
-        #[cfg(not(feature = "darkside_test"))]
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
             tracing::debug!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
@@ -242,7 +240,6 @@ where
         .await
 }
 
-#[cfg(not(feature = "darkside_test"))]
 async fn get_subtree_roots<C>(
     client: &mut C,
     start_index: u32,

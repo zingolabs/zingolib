@@ -41,10 +41,8 @@ use crate::wallet::{
 };
 use crate::witness::LocatedTreeData;
 
-#[cfg(not(feature = "darkside_test"))]
 use crate::witness;
 
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) mod transparent;
 
 pub(crate) mod spend;
@@ -383,7 +381,6 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    #[cfg(not(feature = "darkside_test"))]
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         &mut *wallet_guard,
@@ -395,7 +392,6 @@ where
     )
     .await?;
 
-    #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -1793,7 +1789,6 @@ where
     Ok(())
 }
 
-#[cfg(not(feature = "darkside_test"))]
 async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,

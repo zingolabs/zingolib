@@ -11,11 +11,6 @@ license = "MIT"
 [features]
 default = []
 ci = []
-# Orphaned as of the darkside-tests deletion (ADR 0005): its sole
-# consumer was that crate. Retained declared-but-unenabled so the lone
-# `cfg(not(feature = "darkside_tests"))` site in send.rs stays
-# recognized; swept with pepper-sync's darkside_test.
-darkside_tests = ["pepper-sync/darkside_test"]
 testutils = [
     "portpicker",
     "zingo_test_vectors",

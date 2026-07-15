@@ -20,8 +20,8 @@
 //! yet expose), `reorg_changes_outgoing_tx_height`'s re-mine leg
 //! (subsumed here by the incoming variant plus the expiry legs), and
 //! the two proptest `any_source_sends_to_any_receiver` fuzzers
-//! (blocked on the pool-matrix twins' pepper-sync `darkside_test`
-//! feature question, zingolabs/zingolib#2447).
+//! (formerly blocked on the pepper-sync `darkside_test` feature
+//! question, zingolabs/zingolib#2447; that feature is now deleted).
 
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;

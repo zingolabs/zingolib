@@ -26,16 +26,13 @@ use crate::{
     witness::Frontiers,
 };
 
-#[cfg(not(feature = "darkside_test"))]
 use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 
-#[cfg(not(feature = "darkside_test"))]
 const MAX_RETRIES: u8 = 3;
 
 const FETCH_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(not(feature = "darkside_test"))]
 const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
 
 async fn recv_fetch_reply<T>(
@@ -53,7 +50,6 @@ async fn recv_fetch_reply<T>(
     }
 }
 
-#[cfg(not(feature = "darkside_test"))]
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,
     what: &'static str,
@@ -107,7 +103,6 @@ pub enum FetchRequest {
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
-    #[cfg(not(feature = "darkside_test"))]
     SubtreeRoots(
         oneshot::Sender<Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>,
         u32,
@@ -214,7 +209,6 @@ pub(crate) async fn get_nullifier_range(
 /// from the server.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) async fn get_subtree_roots(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     mut start_index: u32,
@@ -345,7 +339,6 @@ pub(crate) async fn get_utxo_metadata(
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) async fn get_transparent_address_transactions(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,

@@ -30,7 +30,6 @@ use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
 
 const NARROW_SCAN_AREA: u32 = 10_000;
 
-#[cfg(not(feature = "darkside_test"))]
 use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
@@ -1010,7 +1009,6 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
-#[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedProtocol,
