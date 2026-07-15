@@ -48,28 +48,30 @@ pub fn one_to_one(
     let mut sapling_inputs: usize = 0;
     let mut sapling_outputs: usize = 0;
     let mut orchard_inputs: usize = 0;
+    let mut orchard_outputs: usize = 0;
+    let mut ironwood_inputs: usize = 0;
     let mut ironwood_outputs: usize = 0;
     match source_protocol {
         Some(ShieldedPool::Sapling) => sapling_inputs += 1,
-        Some(ShieldedPool::Orchard) | Some(ShieldedPool::Ironwood) => orchard_inputs += 1,
+        Some(ShieldedPool::Orchard) => orchard_inputs += 1,
+        Some(ShieldedPool::Ironwood) => ironwood_inputs += 1,
         None => {}
     }
     match target_pool {
         PoolType::Transparent => transparent_outputs += 1,
         PoolType::Shielded(ShieldedPool::Sapling) => sapling_outputs += 1,
-        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::Shielded(ShieldedPool::Ironwood) => {
-            ironwood_outputs += 1;
-        }
+        PoolType::Shielded(ShieldedPool::Orchard) => orchard_outputs += 1,
+        PoolType::Shielded(ShieldedPool::Ironwood) => ironwood_outputs += 1,
     }
     if change {
         if orchard_inputs > 0 {
-            // Orchard-pool change, routed into the ironwood bundle.
+            // orchard migrated into ironwood
             ironwood_outputs += 1;
-        } else if sapling_inputs + sapling_outputs > 0 {
+        } else if ironwood_inputs + ironwood_outputs == 0 {
+            // sapling change
             sapling_outputs += 1;
         } else {
-            // Transparent-only flows shield change to the fallback pool
-            // (Orchard), routed into the ironwood bundle.
+            // ironwood change
             ironwood_outputs += 1;
         }
     }
@@ -80,8 +82,8 @@ pub fn one_to_one(
     };
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = pad(sapling_inputs, sapling_outputs);
-    let contribution_orchard = pad(orchard_inputs, 0);
-    let contribution_ironwood = pad(0, ironwood_outputs);
+    let contribution_orchard = pad(orchard_inputs, orchard_outputs);
+    let contribution_ironwood = pad(ironwood_inputs, ironwood_outputs);
     let total_fee = MARGINAL_FEE
         * max(
             contribution_transparent

@@ -556,7 +556,7 @@ mod simpool {
         let secondary_fund = 100_000 + expected_fee - underflow_amount;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
-            ShieldedPool::Ironwood => todo!(),
+            ShieldedPool::Ironwood => builder.ironwood_note(secondary_fund),
             ShieldedPool::Orchard => builder.orchard_note(secondary_fund),
             ShieldedPool::Sapling => builder.sapling_note(secondary_fund),
         }
@@ -604,32 +604,32 @@ mod simpool {
     }
 
     #[tokio::test]
-    async fn insufficient_1_orchard_to_orchard() {
-        insufficient(ShieldedPool::Orchard, 1, PoolType::ORCHARD).await;
+    async fn insufficient_1_ironwood_to_ironwood() {
+        insufficient(ShieldedPool::Ironwood, 1, PoolType::IRONWOOD).await;
     }
     #[tokio::test]
-    async fn insufficient_1_orchard_to_sapling() {
-        insufficient(ShieldedPool::Orchard, 1, PoolType::SAPLING).await;
+    async fn insufficient_1_ironwood_to_sapling() {
+        insufficient(ShieldedPool::Ironwood, 1, PoolType::SAPLING).await;
     }
     #[tokio::test]
-    async fn insufficient_1_orchard_to_transparent() {
-        insufficient(ShieldedPool::Orchard, 1, PoolType::Transparent).await;
+    async fn insufficient_1_ironwood_to_transparent() {
+        insufficient(ShieldedPool::Ironwood, 1, PoolType::Transparent).await;
     }
     #[tokio::test]
-    async fn insufficient_10_000_orchard_to_orchard() {
-        insufficient(ShieldedPool::Orchard, 10_000, PoolType::ORCHARD).await;
+    async fn insufficient_10_000_ironwood_to_ironwood() {
+        insufficient(ShieldedPool::Ironwood, 10_000, PoolType::IRONWOOD).await;
     }
     #[tokio::test]
-    async fn insufficient_10_000_orchard_to_sapling() {
-        insufficient(ShieldedPool::Orchard, 10_000, PoolType::SAPLING).await;
+    async fn insufficient_10_000_ironwood_to_sapling() {
+        insufficient(ShieldedPool::Ironwood, 10_000, PoolType::SAPLING).await;
     }
     #[tokio::test]
-    async fn insufficient_10_000_orchard_to_transparent() {
-        insufficient(ShieldedPool::Orchard, 10_000, PoolType::Transparent).await;
+    async fn insufficient_10_000_ironwood_to_transparent() {
+        insufficient(ShieldedPool::Ironwood, 10_000, PoolType::Transparent).await;
     }
     #[tokio::test]
-    async fn no_fund_1_000_000_to_orchard() {
-        unfunded_to(1_000_000, PoolType::ORCHARD).await;
+    async fn no_fund_1_000_000_to_ironwood() {
+        unfunded_to(1_000_000, PoolType::IRONWOOD).await;
     }
     #[tokio::test]
     async fn no_fund_1_000_000_to_sapling() {
@@ -640,8 +640,8 @@ mod simpool {
         unfunded_to(1_000_000, PoolType::Transparent).await;
     }
     #[tokio::test]
-    async fn insufficient_1_sapling_to_orchard() {
-        insufficient(ShieldedPool::Sapling, 1, PoolType::ORCHARD).await;
+    async fn insufficient_1_sapling_to_ironwood() {
+        insufficient(ShieldedPool::Sapling, 1, PoolType::IRONWOOD).await;
     }
     #[tokio::test]
     async fn insufficient_1_sapling_to_sapling() {
@@ -652,8 +652,8 @@ mod simpool {
         insufficient(ShieldedPool::Sapling, 1, PoolType::Transparent).await;
     }
     #[tokio::test]
-    async fn insufficient_10_000_sapling_to_orchard() {
-        insufficient(ShieldedPool::Sapling, 10_000, PoolType::ORCHARD).await;
+    async fn insufficient_10_000_sapling_to_ironwood() {
+        insufficient(ShieldedPool::Sapling, 10_000, PoolType::IRONWOOD).await;
     }
     #[tokio::test]
     async fn insufficient_10_000_sapling_to_sapling() {
