@@ -55,6 +55,22 @@ pin bump. Additional claims:
 `zingolib/src/lightclient.rs`, `zingolib/src/lightclient/save.rs`,
 `zingolib/src/wallet/utils.rs`, `zingo-cli/src/commands/utils.rs`.
 
+## In progress (2026-07-14, review follow-up on PR #2464)
+
+The PR review found two defects in the new `SyncStatus::is_complete`:
+a false negative when the birthday-to-chain-height range contains no
+shielded outputs (the `total_outputs > 0` guard conflated "never
+started" with "nothing to scan"), and an inherited false positive when
+chain growth pushes `total_outputs_scanned` past a stale
+`total_outputs` while ranges remain unscanned. Both are fixed by
+redefining completion as the sync task's own terminal condition: sync
+has started (`sync_start_height != 0`, the existing sentinel) and every
+scan range has priority `Scanned`. The duplicated scan-priority
+predicates gain named helpers on `ScanPriority` (`is_scanned`,
+`awaits_nullifier_retrieval`) used across `pepper-sync/src/sync.rs` and
+`pepper-sync/src/sync/state.rs` (now also claimed). Unit tests pin the
+completion contract in pepper-sync, where it is defined.
+
 ## File claims
 
 - `zingolib/CONTEXT.md` (glossary updates as terms resolve)
@@ -63,3 +79,5 @@ pin bump. Additional claims:
   `zingo-cli/src/lib.rs`, `zingo-cli/src/tests.rs` (DRY layers, later)
 - `zingolib/src/lightclient/offline.rs`, `zingolib/src/wallet/send.rs`
   (retarget mechanism, later)
+- `pepper-sync/src/sync.rs`, `pepper-sync/src/sync/state.rs`
+  (`is_complete` fix and scan-priority helpers)
