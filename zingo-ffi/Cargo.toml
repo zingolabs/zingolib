@@ -3,9 +3,9 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "7b89d58aab868163f8ade72a0cb6231e26ae5cd7"}
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "7b89d58aab868163f8ade72a0cb6231e26ae5cd7"}
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "7b89d58aab868163f8ade72a0cb6231e26ae5cd7", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return", features = [
     "test_lwd_zebrad",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }

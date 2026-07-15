@@ -41,7 +41,7 @@ use zcash_protocol::value::Zatoshis;
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
     ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
-    construct_lightwalletd_uri,
+    construct_lightwalletd_uri, lib_birthday,
 };
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
@@ -339,8 +339,11 @@ pub fn init_new(
             Err(e) => return Ok(format!("Error: {e}")),
         };
         // Online: ask the Indexer for the chain tip. Offline (Indexerless):
-        // the caller-supplied `birthday` stands in for it, since there is no
-        // server to query. Mirrors zingo-cli's offline new-wallet path.
+        // there is no server to query, so fall back to zingolib's Library
+        // Birthday — a per-chain height already mined when the linked zingolib
+        // release was cut, hence always a safe floor for a newly-generated seed
+        // (see zingolib ADR 0007). A caller-supplied `birthday > 0` still wins
+        // as an explicit override. Mirrors zingo-cli's offline new-wallet path.
         let chain_height = match &params.lightwalletd_uri {
             Some(uri) => {
                 let uri = uri.clone();
@@ -361,10 +364,7 @@ pub fn init_new(
                 if birthday > 0 {
                     birthday
                 } else {
-                    return Ok("Error: Creating a new wallet in Offline mode requires a \
-                               birthday with a recent block height, because there is no \
-                               Indexer to ask for the chain tip."
-                        .to_string());
+                    lib_birthday(params.chain_type)
                 }
             }
         };

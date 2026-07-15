@@ -2288,7 +2288,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7#7b89d58aab868163f8ade72a0cb6231e26ae5cd7"
+source = "git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return#094372e0a4be09b978f65e5d9f476e05e1b73dc5"
 dependencies = [
  "bip32",
  "byteorder",
@@ -2318,7 +2318,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return)",
  "zingo-status",
  "zip32",
 ]
@@ -5074,7 +5074,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7#7b89d58aab868163f8ade72a0cb6231e26ae5cd7"
+source = "git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return#094372e0a4be09b978f65e5d9f476e05e1b73dc5"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -5088,7 +5088,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7#7b89d58aab868163f8ade72a0cb6231e26ae5cd7"
+source = "git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return#094372e0a4be09b978f65e5d9f476e05e1b73dc5"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -5128,7 +5128,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7#7b89d58aab868163f8ade72a0cb6231e26ae5cd7"
+source = "git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return#094372e0a4be09b978f65e5d9f476e05e1b73dc5"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5174,7 +5174,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return)",
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
@@ -5185,7 +5185,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7#7b89d58aab868163f8ade72a0cb6231e26ae5cd7"
+source = "git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return#094372e0a4be09b978f65e5d9f476e05e1b73dc5"
 dependencies = [
  "http",
  "nonempty",
@@ -5197,7 +5197,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=7b89d58aab868163f8ade72a0cb6231e26ae5cd7)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feature%2Fswap-op-return)",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
