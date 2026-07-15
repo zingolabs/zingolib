@@ -27,12 +27,18 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     writer.write_all(s.as_bytes())
 }
 
+/// Failure to interpret a memo string.
+#[derive(Debug, thiserror::Error)]
+pub enum MemoError {
+    /// The encoded memo exceeds the memo field's capacity.
+    #[error("Error creating output. Memo '{0:?}' is too long")]
+    TooLong(String),
+}
+
 /// Create memo bytes from string.
-// TODO: replace string err variant with error enum which maps to MemoBytes errors.
-pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, String> {
+pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, MemoError> {
     let s_bytes = Vec::from(memo_str.as_bytes());
-    MemoBytes::from_bytes(&s_bytes)
-        .map_err(|_| format!("Error creating output. Memo '{memo_str:?}' is too long"))
+    MemoBytes::from_bytes(&s_bytes).map_err(|_| MemoError::TooLong(memo_str))
 }
 
 /// TODO: Add Doc Comment Here!

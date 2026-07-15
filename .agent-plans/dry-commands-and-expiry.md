@@ -43,6 +43,18 @@ dev's retarget work superseded). Live PR: #2464.
   dev's retarget implementation (c007996aa) and ADR 0008; the ADR 0006
   pointer fix and this file were replayed as the rebase remnant.
 
+## In progress (2026-07-14, #2446 close-out; DRY deferred)
+
+Executing the three ratified steps on PR #2464 (audit evidence in
+issue #2465): (1) `do_delete` error typed in place (`io::Error`);
+(2) `memo_bytes_from_string` error typed in place (`MemoError`);
+(3) `info()` returning a typed `ServerInfo` (JsonValue conversion, not
+serde — no new deps). The user then ratified crossing the API boundary:
+`do_info` is DELETED, not wrapped — mobile and pc adapt at their next
+pin bump. Additional claims:
+`zingolib/src/lightclient.rs`, `zingolib/src/lightclient/save.rs`,
+`zingolib/src/wallet/utils.rs`, `zingo-cli/src/commands/utils.rs`.
+
 ## File claims
 
 - `zingolib/CONTEXT.md` (glossary updates as terms resolve)

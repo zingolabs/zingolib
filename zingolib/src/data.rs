@@ -12,6 +12,46 @@ pub enum PollReport<T, E> {
     Ready(Result<T, E>),
 }
 
+/// The connected Indexer's server diagnostics, as reported by its
+/// `get_lightd_info` RPC. Returned by `LightClient::info`.
+#[derive(Debug, Clone)]
+pub struct ServerInfo {
+    /// The server's software version.
+    pub version: String,
+    /// The git commit the server was built from.
+    pub git_commit: String,
+    /// The URI this client is connected to.
+    pub server_uri: http::Uri,
+    /// The server's vendor string.
+    pub vendor: String,
+    /// Whether the server supports transparent addresses.
+    pub taddr_support: bool,
+    /// The chain name ("main", "test", "regtest").
+    pub chain_name: String,
+    /// The Sapling activation height of the chain.
+    pub sapling_activation_height: u64,
+    /// The consensus branch ID the server reports.
+    pub consensus_branch_id: String,
+    /// The server's view of the chain tip height.
+    pub latest_block_height: u64,
+}
+
+impl From<&ServerInfo> for json::JsonValue {
+    fn from(info: &ServerInfo) -> Self {
+        json::object! {
+            "version" => info.version.clone(),
+            "git_commit" => info.git_commit.clone(),
+            "server_uri" => info.server_uri.to_string(),
+            "vendor" => info.vendor.clone(),
+            "taddr_support" => info.taddr_support,
+            "chain_name" => info.chain_name.clone(),
+            "sapling_activation_height" => info.sapling_activation_height,
+            "consensus_branch_id" => info.consensus_branch_id.clone(),
+            "latest_block_height" => info.latest_block_height
+        }
+    }
+}
+
 /// transforming data related to the destination of a send.
 pub mod receivers {
     use zcash_address::ZcashAddress;

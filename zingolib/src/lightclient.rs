@@ -26,6 +26,7 @@ use zingo_netutils::Indexer as _;
 
 use crate::{
     config::{ChainType, ClientConfig, WalletConfig},
+    data::ServerInfo,
     utils::now,
     wallet::{
         LightWallet, RecoveryInfo, WalletSettings,
@@ -299,27 +300,25 @@ impl LightClient {
         self.indexer.as_ref().ok_or(LightClientError::Offline)
     }
 
-    /// Returns server information as a JSON string.
+    /// Returns the connected server's diagnostics as typed data.
     ///
-    /// The data channel carries only JSON; failure travels on the error
-    /// channel. Callers never inspect the returned value's content to
-    /// learn whether the call succeeded (zingolabs/zingolib#2446).
-    // TODO: return concrete struct with from json impl
-    pub async fn do_info(&mut self) -> Result<String, LightClientError> {
+    /// Failure travels on the error channel; the data channel carries a
+    /// [`ServerInfo`]. No caller ever inspects a returned value's content
+    /// to learn whether the call succeeded (zingolabs/zingolib#2446).
+    pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
         let mut indexer = self.require_indexer()?.clone();
         let i = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
-        let o = json::object! {
-            "version" => i.version,
-            "git_commit" => i.git_commit,
-            "server_uri" => indexer.uri().to_string(),
-            "vendor" => i.vendor,
-            "taddr_support" => i.taddr_support,
-            "chain_name" => i.chain_name,
-            "sapling_activation_height" => i.sapling_activation_height,
-            "consensus_branch_id" => i.consensus_branch_id,
-            "latest_block_height" => i.block_height
-        };
-        Ok(o.pretty(2))
+        Ok(ServerInfo {
+            version: i.version,
+            git_commit: i.git_commit,
+            server_uri: indexer.uri().clone(),
+            vendor: i.vendor,
+            taddr_support: i.taddr_support,
+            chain_name: i.chain_name,
+            sapling_activation_height: i.sapling_activation_height,
+            consensus_branch_id: i.consensus_branch_id,
+            latest_block_height: i.block_height,
+        })
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
@@ -584,11 +583,11 @@ mod tests {
         );
     }
 
-    /// The `do_info` data/error channel contract (zingolabs/zingolib#2446).
+    /// The `info` data/error channel contract (zingolabs/zingolib#2446).
     ///
     /// Failure must travel on the error channel; the data channel carries
-    /// only JSON. Downstream FFIs must never have to inspect a returned
-    /// value's content to learn whether the call succeeded.
+    /// only typed data. Downstream FFIs must never have to inspect a
+    /// returned value's content to learn whether the call succeeded.
     mod info_contract {
         use crate::lightclient::LightClient;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -602,20 +601,20 @@ mod tests {
         /// data. It originally pinned a typed `IndexerError` from a
         /// never-listening lazy endpoint; the offline-mode work replaced
         /// that placeholder with a genuinely Indexerless client, whose
-        /// typed failure is `Offline`. The contract is unchanged: failure
-        /// travels on the error channel, and the only remaining `Ok`
-        /// construction site builds JSON.
+        /// typed failure is `Offline`. The migration ended with `do_info`
+        /// deleted outright: `info()` returns a typed `ServerInfo`, and
+        /// rendering happens only at presentation boundaries.
         #[tokio::test]
-        async fn do_info_failure_stays_out_of_the_data_channel() {
+        async fn info_failure_stays_out_of_the_data_channel() {
             let wallet =
                 SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                     .build();
             let mut client = LightClient::new_for_test(wallet).await;
 
             let error = client
-                .do_info()
+                .info()
                 .await
-                .expect_err("an Indexerless client cannot serve do_info");
+                .expect_err("an Indexerless client cannot serve info");
             assert!(
                 matches!(error, crate::lightclient::error::LightClientError::Offline),
                 "the failure must be typed, not prose: {error}"
