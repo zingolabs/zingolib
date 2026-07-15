@@ -52,6 +52,7 @@ impl LightWallet {
                     .calculate_transaction_fee(transaction)
                     .ok()
                     .map(zcash_protocol::value::Zatoshis::into_u64);
+                let pools_sent_from = self.pools_sent_from(transaction)?;
                 let ironwood_notes = transaction
                     .ironwood_notes()
                     .iter()
@@ -261,6 +262,7 @@ impl LightWallet {
                     value,
                     fee,
                     zec_price: None,
+                    pools_sent_from,
                     ironwood_notes,
                     orchard_notes,
                     sapling_notes,
@@ -349,7 +351,8 @@ impl LightWallet {
                             )),
                             value: 0,
                             recipient_address: None,
-                            pool_received: None,
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: transaction.pools_received(),
                             memos,
                         });
                     }
@@ -379,7 +382,8 @@ impl LightWallet {
                             )),
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::IRONWOOD.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::IRONWOOD],
                             memos,
                         });
                     }
@@ -406,7 +410,8 @@ impl LightWallet {
                             )),
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::ORCHARD.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::ORCHARD],
                             memos,
                         });
                     }
@@ -433,7 +438,8 @@ impl LightWallet {
                             )),
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::SAPLING.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::SAPLING],
                             memos,
                         });
                     }
@@ -484,7 +490,8 @@ impl LightWallet {
                             )),
                             value: 0,
                             recipient_address: None,
-                            pool_received: None,
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: transaction.pools_received(),
                             memos,
                         });
                     } else {
@@ -500,7 +507,8 @@ impl LightWallet {
                             )),
                             value: 0,
                             recipient_address: None,
-                            pool_received: None,
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: transaction.pools_received(),
                             memos: Vec::new(),
                         });
                     }
@@ -531,7 +539,8 @@ impl LightWallet {
                             kind: ValueTransferKind::Received,
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::IRONWOOD.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::IRONWOOD],
                             memos,
                         });
                     }
@@ -556,7 +565,8 @@ impl LightWallet {
                             kind: ValueTransferKind::Received,
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::ORCHARD.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::ORCHARD],
                             memos,
                         });
                     }
@@ -581,7 +591,8 @@ impl LightWallet {
                             kind: ValueTransferKind::Received,
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::SAPLING.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::SAPLING],
                             memos,
                         });
                     }
@@ -601,7 +612,8 @@ impl LightWallet {
                             kind: ValueTransferKind::Received,
                             value,
                             recipient_address: None,
-                            pool_received: Some(PoolType::TRANSPARENT.to_string()),
+                            pools_sent_from: transaction.pools_sent_from.clone(),
+                            pools_received: vec![PoolType::TRANSPARENT],
                             memos: Vec::new(),
                         });
                     }
@@ -795,13 +807,24 @@ impl LightWallet {
         let outgoing_notes = transaction
             .outgoing_ironwood_notes
             .iter()
-            .chain(transaction.outgoing_orchard_notes.iter())
-            .chain(transaction.outgoing_sapling_notes.iter())
+            .map(|note| (note, PoolType::IRONWOOD))
+            .chain(
+                transaction
+                    .outgoing_orchard_notes
+                    .iter()
+                    .map(|note| (note, PoolType::ORCHARD)),
+            )
+            .chain(
+                transaction
+                    .outgoing_sapling_notes
+                    .iter()
+                    .map(|note| (note, PoolType::SAPLING)),
+            )
             .collect::<Vec<_>>();
         let outgoing_coins = &transaction.outgoing_transparent_coins;
         let mut addresses = HashSet::new();
 
-        outgoing_notes.iter().try_for_each(|&note| {
+        outgoing_notes.iter().try_for_each(|&(note, _)| {
             if note.scope == Scope::External && self.is_wallet_address(&note.recipient)?.is_none() {
                 let encoded_address = note
                     .recipient_unified_address
@@ -822,9 +845,9 @@ impl LightWallet {
         let mut addresses = addresses.into_iter().collect::<Vec<_>>();
         addresses.sort();
         for address in addresses {
-            let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
+            let outgoing_notes_to_address: Vec<(&OutgoingNoteSummary, PoolType)> = outgoing_notes
                 .iter()
-                .filter(|&&note| {
+                .filter(|&&(note, _)| {
                     let query_address = if let Some(ua) = note.recipient_unified_address.clone() {
                         ua
                     } else {
@@ -840,13 +863,25 @@ impl LightWallet {
                 .collect();
             let value: u64 = outgoing_notes_to_address
                 .iter()
-                .map(|&note| note.value)
+                .map(|&(note, _)| note.value)
                 .chain(outgoing_coins_to_address.iter().map(|&coin| coin.value))
                 .sum();
             let memos: Vec<String> = outgoing_notes_to_address
                 .iter()
-                .filter_map(|&note| note.memo.clone())
+                .filter_map(|&(note, _)| note.memo.clone())
                 .collect();
+            let mut pools_received = Vec::new();
+            if !outgoing_coins_to_address.is_empty() {
+                pools_received.push(PoolType::TRANSPARENT);
+            }
+            for pool in [PoolType::SAPLING, PoolType::ORCHARD, PoolType::IRONWOOD] {
+                if outgoing_notes_to_address
+                    .iter()
+                    .any(|&(_, note_pool)| note_pool == pool)
+                {
+                    pools_received.push(pool);
+                }
+            }
             value_transfers.push(ValueTransfer {
                 txid: transaction.txid,
                 datetime: transaction.datetime,
@@ -857,7 +892,8 @@ impl LightWallet {
                 kind: ValueTransferKind::Sent(SentValueTransfer::Send),
                 value,
                 recipient_address: Some(address),
-                pool_received: None,
+                pools_sent_from: transaction.pools_sent_from.clone(),
+                pools_received,
                 memos,
             });
         }
@@ -1111,6 +1147,68 @@ mod tests {
         assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
+    }
+
+    /// A send-to-self value transfer exposes the pools its value arrived
+    /// into (here: ironwood), letting consumers label pool movements such
+    /// as an orchard -> ironwood migration outside zingolib. The funding
+    /// side (`pools_sent_from`) needs real spend links, so it is pinned by
+    /// the chain-bound shield tests in libtonode instead.
+    #[tokio::test]
+    async fn send_to_self_exposes_pools_received() {
+        use zcash_protocol::PoolType;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let own_orchard_receiver = *wallet
+            .unified_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .orchard()
+            .unwrap();
+
+        let txid = TxId::from_bytes([1; 32]);
+        let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
+            txid,
+            ConfirmationStatus::Confirmed(10.into()),
+            // The self-received output, landing in the ironwood pool.
+            vec![IronwoodNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::Internal,
+                OrchardCryptoNoteBuilder::default().build(),
+                Memo::Empty,
+                None,
+            )],
+            // The outgoing view of the same output: recipient is one of
+            // the wallet's own receivers, making the transaction a
+            // send-to-self.
+            vec![OutgoingIronwoodNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                OrchardCryptoNoteBuilder::default()
+                    .recipient(own_orchard_receiver)
+                    .build(),
+                Memo::Empty,
+                None,
+            )],
+        );
+        wallet.wallet_transactions.insert(txid, transaction);
+
+        let value_transfers = wallet.value_transfers(true).await.unwrap();
+
+        let self_send = value_transfers
+            .iter()
+            .find(|vt| {
+                vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Basic,
+                    ))
+            })
+            .unwrap();
+        assert_eq!(self_send.pools_received, [PoolType::IRONWOOD]);
+        assert!(self_send.pools_sent_from.is_empty());
     }
 
     /// Migrated from libtonode

@@ -3,7 +3,7 @@
 use chrono::DateTime;
 use json::JsonValue;
 
-use zcash_protocol::{TxId, consensus::BlockHeight};
+use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -121,6 +121,20 @@ impl std::fmt::Display for ValueTransferKind {
     }
 }
 
+/// Formats a list of pools for display, e.g. "Orchard, Ironwood".
+fn display_pools(pools: &[PoolType]) -> String {
+    pools
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Converts a list of pools to a JSON array of pool names.
+fn pools_to_json(pools: &[PoolType]) -> JsonValue {
+    JsonValue::from(pools.iter().map(ToString::to_string).collect::<Vec<_>>())
+}
+
 /// Transaction summary.
 #[derive(Clone, PartialEq, Debug)]
 pub struct TransactionSummary {
@@ -132,6 +146,9 @@ pub struct TransactionSummary {
     pub value: u64,
     pub fee: Option<u64>,
     pub zec_price: Option<f32>,
+    /// Pools of this wallet's outputs spent to fund this transaction.
+    /// Empty for received transactions.
+    pub pools_sent_from: Vec<PoolType>,
     pub ironwood_notes: Vec<BasicNoteSummary>,
     pub orchard_notes: Vec<BasicNoteSummary>,
     pub sapling_notes: Vec<BasicNoteSummary>,
@@ -143,6 +160,26 @@ pub struct TransactionSummary {
 }
 
 impl TransactionSummary {
+    /// Pools this transaction's wallet-received outputs arrived into, in protocol order
+    /// (transparent, sapling, orchard, ironwood).
+    #[must_use]
+    pub fn pools_received(&self) -> Vec<PoolType> {
+        let mut pools = Vec::new();
+        if !self.transparent_coins.is_empty() {
+            pools.push(PoolType::TRANSPARENT);
+        }
+        if !self.sapling_notes.is_empty() {
+            pools.push(PoolType::SAPLING);
+        }
+        if !self.orchard_notes.is_empty() {
+            pools.push(PoolType::ORCHARD);
+        }
+        if !self.ironwood_notes.is_empty() {
+            pools.push(PoolType::IRONWOOD);
+        }
+        pools
+    }
+
     #[must_use]
     pub fn balance_delta(&self) -> Option<i64> {
         match self.kind {
@@ -239,6 +276,7 @@ impl std::fmt::Display for TransactionSummary {
     value: {}
     fee: {}
     zec price: {}
+    pools sent from: {}
     ironwood notes: {}
     orchard notes: {}
     sapling notes: {}
@@ -256,6 +294,7 @@ impl std::fmt::Display for TransactionSummary {
             self.value,
             fee,
             zec_price,
+            display_pools(&self.pools_sent_from),
             ironwood_notes,
             orchard_notes,
             sapling_notes,
@@ -279,6 +318,7 @@ impl From<TransactionSummary> for JsonValue {
             "value" => transaction.value,
             "fee" => transaction.fee,
             "zec_price" => transaction.zec_price,
+            "pools_sent_from" => pools_to_json(&transaction.pools_sent_from),
             "ironwood_notes" => JsonValue::from(transaction.ironwood_notes),
             "orchard_notes" => JsonValue::from(transaction.orchard_notes),
             "sapling_notes" => JsonValue::from(transaction.sapling_notes),
@@ -361,7 +401,19 @@ pub struct ValueTransfer {
     pub kind: ValueTransferKind,
     pub value: u64,
     pub recipient_address: Option<String>,
-    pub pool_received: Option<String>,
+    /// Pools of this wallet's outputs spent to fund the transaction this value transfer
+    /// belongs to. Transaction-level: the same for every value transfer of a txid, and
+    /// empty for received transactions.
+    ///
+    /// Together with [`Self::pools_received`] this exposes pool movement, e.g. a
+    /// send-to-self with `pools_sent_from: [Orchard]` and `pools_received: [Ironwood]`
+    /// is an orchard -> ironwood migration. Interpreting such movements is left to
+    /// the consumer.
+    pub pools_sent_from: Vec<PoolType>,
+    /// Pools this value transfer's value arrived into: the pool of the grouped notes for
+    /// received and shielding transfers, the pools of the recipient's outputs for sent
+    /// transfers, and the pools of all self-received outputs for send-to-self transfers.
+    pub pools_received: Vec<PoolType>,
     pub memos: Vec<String>,
 }
 
@@ -377,7 +429,8 @@ impl std::fmt::Debug for ValueTransfer {
             .field("kind", &self.kind)
             .field("value", &self.value)
             .field("recipient_address", &self.recipient_address)
-            .field("pool_received", &self.pool_received)
+            .field("pools_sent_from", &self.pools_sent_from)
+            .field("pools_received", &self.pools_received)
             .field("memos", &self.memos)
             .finish()
     }
@@ -405,11 +458,6 @@ impl std::fmt::Display for ValueTransfer {
         } else {
             "not available".to_string()
         };
-        let pool_received = if let Some(pool) = self.pool_received.as_ref() {
-            pool.clone()
-        } else {
-            "not available".to_string()
-        };
         let mut memos = String::new();
         for (index, memo) in self.memos.iter().enumerate() {
             memos.push_str(&format!("\n\tmemo {}: {}", (index + 1), memo));
@@ -426,7 +474,8 @@ impl std::fmt::Display for ValueTransfer {
     kind: {}
     value: {}
     recipient_address: {}
-    pool_received: {}
+    pools_sent_from: {}
+    pools_received: {}
     memos: {}
 }}",
             self.txid,
@@ -438,7 +487,8 @@ impl std::fmt::Display for ValueTransfer {
             self.kind,
             self.value,
             recipient_address,
-            pool_received,
+            display_pools(&self.pools_sent_from),
+            display_pools(&self.pools_received),
             memos
         )
     }
@@ -456,7 +506,8 @@ impl From<ValueTransfer> for JsonValue {
             "kind" => value_transfer.kind.to_string(),
             "value" => value_transfer.value,
             "recipient_address" => value_transfer.recipient_address,
-            "pool_received" => value_transfer.pool_received,
+            "pools_sent_from" => pools_to_json(&value_transfer.pools_sent_from),
+            "pools_received" => pools_to_json(&value_transfer.pools_received),
             "memos" => value_transfer.memos
         }
     }

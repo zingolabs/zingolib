@@ -767,7 +767,8 @@ async fn sends_to_self_handle_balance_properly() {
     assert!(pre_rescan_value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Received
             && vt.value == transparent_funding
-            && vt.pool_received.as_deref() == Some("Transparent")
+            && vt.pools_received == [PoolType::TRANSPARENT]
+            && vt.pools_sent_from.is_empty()
     }));
     assert_eq!(
         pre_rescan_value_transfers
@@ -779,7 +780,8 @@ async fn sends_to_self_handle_balance_properly() {
                     ))
                     && vt.value == shielded_value
                     && vt.transaction_fee == Some(15_000)
-                    && vt.pool_received.as_deref() == Some("Ironwood")
+                    && vt.pools_sent_from == [PoolType::TRANSPARENT]
+                    && vt.pools_received == [PoolType::IRONWOOD]
             })
             .count(),
         1

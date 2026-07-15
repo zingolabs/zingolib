@@ -122,7 +122,7 @@ async fn zero_value_receipts() {
             .iter()
             .filter(|vt| vt.kind == ValueTransferKind::Received
                 && vt.value == 0
-                && vt.pool_received.as_deref() == Some("Ironwood"))
+                && vt.pools_received == [PoolType::IRONWOOD])
             .count(),
         1
     );
@@ -321,6 +321,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: recipient_initial_funds,
         fee: Some(10_000),
         zec_price: None,
+        pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_initial_funds,
             SpendStatus::Spent(placeholder_txid),
@@ -355,6 +356,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
+        pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_960_000,
             SpendStatus::TransmittedSpent(placeholder_txid),
@@ -390,6 +392,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
+        pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_925_000,
             SpendStatus::Unspent,
@@ -476,6 +479,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         // fragmented-faucet 20_000.
         fee: Some(10_000),
         zec_price: None,
+        pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_second_funding,
             SpendStatus::Spent(placeholder_txid),
@@ -518,6 +522,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
+        pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             965_000,
             SpendStatus::Spent(placeholder_txid),
@@ -541,6 +546,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
+        pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_885_000,
             SpendStatus::Unspent,
@@ -583,6 +589,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: external_transparent_3,
         fee: Some(15_000),
         zec_price: None,
+        pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             930_000,
             SpendStatus::Unspent,

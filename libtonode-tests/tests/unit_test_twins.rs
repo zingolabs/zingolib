@@ -124,7 +124,7 @@ mod unit_test_twins {
                 .iter()
                 .filter(|vt| vt.kind == ValueTransferKind::Received
                     && vt.value == 0
-                    && vt.pool_received.as_deref() == Some("Orchard"))
+                    && vt.pools_received == [PoolType::ORCHARD])
                 .count(),
             1
         );

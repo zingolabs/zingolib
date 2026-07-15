@@ -1,4 +1,5 @@
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{
@@ -62,6 +63,43 @@ impl LightWallet {
         }
 
         Ok(spends)
+    }
+
+    /// Gets the pools of all wallet outputs spent in the given `transaction`, in protocol order
+    /// (transparent, sapling, orchard, ironwood).
+    ///
+    /// Empty for transactions that spend no outputs known to this wallet, i.e. received transactions.
+    pub(super) fn pools_sent_from(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> Result<Vec<PoolType>, SpendError> {
+        let mut pools = Vec::new();
+        if !self
+            .find_spends::<TransparentCoin>(transaction, false)?
+            .is_empty()
+        {
+            pools.push(PoolType::TRANSPARENT);
+        }
+        if !self
+            .find_spends::<SaplingNote>(transaction, false)?
+            .is_empty()
+        {
+            pools.push(PoolType::SAPLING);
+        }
+        if !self
+            .find_spends::<OrchardNote>(transaction, false)?
+            .is_empty()
+        {
+            pools.push(PoolType::ORCHARD);
+        }
+        if !self
+            .find_spends::<IronwoodNote>(transaction, false)?
+            .is_empty()
+        {
+            pools.push(PoolType::IRONWOOD);
+        }
+
+        Ok(pools)
     }
 
     /// Calculate the fee for a transaction in the wallet.
