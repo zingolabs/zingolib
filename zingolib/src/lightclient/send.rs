@@ -609,11 +609,7 @@ mod built_transaction_shape {
         let change = step.balance().proposed_change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 5_000);
-        assert_eq!(
-            change[0].output_pool(),
-            zcash_protocol::PoolType::SAPLING,
-            "V6 change stays in sapling when no orchard flow exists"
-        );
+        assert_eq!(change[0].output_pool(), zcash_protocol::PoolType::IRONWOOD,);
 
         let txids = client
             .wallet()

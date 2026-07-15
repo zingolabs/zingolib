@@ -62,7 +62,7 @@ async fn reorg_removes_receipt() {
     fund_at_height_three(&net, &address).await;
 
     wallet.sync_and_await().await.unwrap();
-    check_client_balances!(wallet, i: 0 o: FUNDING s: 0 t: 0);
+    check_client_balances!(wallet, i: FUNDING o: 0 s: 0 t: 0);
 
     // The new branch is longer and funding-free.
     {

@@ -918,7 +918,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     net.chain.write().await.mine_empty_blocks(1);
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     {
         let mut chain = net.chain.write().await;
@@ -954,5 +954,5 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     // the transaction, with no verification-delay allowance.
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
-    check_client_balances!(recipient, i: 0 o: 70_000 s: 0 t: 0);
+    check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
