@@ -48,7 +48,7 @@ pub(crate) use send_all_memo;
 
 macro_rules! server_uri {
     () => {
-        "https://mainnet.lightwalletd.com:9067"
+        "https://zec.rocks:443"
     };
 }
 pub(crate) use server_uri;

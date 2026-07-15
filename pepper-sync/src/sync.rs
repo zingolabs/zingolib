@@ -623,7 +623,7 @@ where
 /// The input parameter heights are:
 ///
 ///   (1) chain_height:
-///       * the best block-height reported by the proxy (zainod or lwd)
+///       * the best block-height reported by the indexer
 ///   (2) last_known_chain_height
 ///       * the last max height the wallet recorded from earlier scans
 ///
@@ -1403,7 +1403,7 @@ async fn process_mempool_transaction<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    // does not use raw transaction height due to lightwalletd off-by-one bug and potential to be zero
+    // does not use raw transaction height due to a legacy-indexer off-by-one bug and potential to be zero
     let mempool_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?

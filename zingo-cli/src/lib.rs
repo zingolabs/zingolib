@@ -72,7 +72,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Lightwalletd server to connect to.")
+                .help("Indexer server to connect to.")
                 .value_parser(parse_uri)
                 .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("offline")

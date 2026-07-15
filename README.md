@@ -1,6 +1,6 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![coverage](https://img.shields.io/endpoint?url=https://zingolabs.org/zingolib/coverage/badge.json)](https://zingolabs.org/zingolib/coverage/)
-This repo provides both a library for zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
+This repo provides both a library for zingo-mobile, as well as an included cli application to interact with the Zcash blockchain through a chain indexer.
 
 # Security Vulnerability Disclosure
 
@@ -9,7 +9,7 @@ If you believe you have discovered a security issue, please contact us at:
 zingodisclosure@proton.me
 
 ## Zingo CLI
-`zingo-cli` is a command line lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
+`zingo-cli` is a command line indexer client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
 ## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
@@ -55,7 +55,7 @@ Use `makers container-test` or `cargo make container-test` to run the same defau
 makers container-test
 ```
 
-The task builds the image if needed, symlinks the image-provided `lightwalletd`, `zcashd`, `zcash-cli`, and `zainod` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile and zero retries. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
+The task builds the image if needed, symlinks the image-provided `zainod` and `zebrad` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile and zero retries. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
 
 Extra nextest flags are forwarded after the task name, so every nextest idiom works unchanged:
 
@@ -69,7 +69,7 @@ makers rerun
 Use `makers local-run` to run the same nextest command on the host.
 
 ## Notes:
-* If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
+* If you want to run your own server, please see [zaino](https://github.com/zingolabs/zaino), and then run `./zingo-cli --server <your server's URI>`
 * The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
 * If a server is not specified, the default indexer/lightwallet server is "https://zec.rocks:443".
 
@@ -85,7 +85,7 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --data-dir /path/to/data_directory/` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 * `--waitsync`: Wait for sync before running a command in non-interactive mode or entering the command prompt in interactive mode.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --waitsync balance`
-* `--server`: Connect to a custom zcash lightwalletd server.
+* `--server`: Connect to a custom Zcash indexer server.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
 * `--birthday`: Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction.
