@@ -310,8 +310,8 @@ mod unit_test_twins {
             // send on the Core stack: by this point the faucet's note pool
             // is fragmented by the earlier waves (and selection is
             // smallest-first), making this a four-logical-action
-            // transaction. Under the old monolithic zcashd-era funding it
-            // was two actions (10_000).
+            // transaction. Under the old monolithic legacy-validator
+            // funding it was two actions (10_000).
             fee: Some(20_000),
             zec_price: None,
             orchard_notes: vec![BasicNoteSummary::from_parts(

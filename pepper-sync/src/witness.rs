@@ -225,7 +225,7 @@ impl TryFrom<TreeState> for Frontiers {
                 format!("Block hash is not valid hex: {e:?}"),
             )
         })?;
-        // Zcashd hex strings for block hashes are byte-reversed.
+        // Block-hash hex strings are byte-reversed on the wire.
         hash_bytes.reverse();
 
         Ok(Frontiers::new(
