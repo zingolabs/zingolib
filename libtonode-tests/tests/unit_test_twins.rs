@@ -124,7 +124,7 @@ mod unit_test_twins {
                 .iter()
                 .filter(|vt| vt.kind == ValueTransferKind::Received
                     && vt.value == 0
-                    && vt.pool_received.as_deref() == Some("Orchard"))
+                    && vt.pools_received == [PoolType::ORCHARD])
                 .count(),
             1
         );
@@ -154,6 +154,7 @@ mod unit_test_twins {
             value: recipient_initial_funds,
             fee: Some(10_000),
             zec_price: None,
+            pools_sent_from: vec![],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_initial_funds,
@@ -195,6 +196,7 @@ mod unit_test_twins {
             value: first_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
+            pools_sent_from: vec![PoolType::ORCHARD],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_960_000,
@@ -233,6 +235,7 @@ mod unit_test_twins {
             value: first_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
+            pools_sent_from: vec![PoolType::ORCHARD],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_925_000,
@@ -320,6 +323,7 @@ mod unit_test_twins {
             // was two actions (10_000).
             fee: Some(20_000),
             zec_price: None,
+            pools_sent_from: vec![],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
@@ -363,6 +367,7 @@ mod unit_test_twins {
             value: second_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
+            pools_sent_from: vec![PoolType::ORCHARD],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 965_000,
@@ -403,6 +408,7 @@ TransactionSummary {
             value: second_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
+            pools_sent_from: vec![PoolType::ORCHARD],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_885_000,
@@ -452,6 +458,7 @@ TransactionSummary {
             value: external_transparent_3,
             fee: Some(15_000),
             zec_price: None,
+            pools_sent_from: vec![PoolType::ORCHARD],
             ironwood_notes: vec![],
             orchard_notes: vec![BasicNoteSummary::from_parts(
                 930_000,

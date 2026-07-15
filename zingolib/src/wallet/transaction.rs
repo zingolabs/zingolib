@@ -1,4 +1,5 @@
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{
@@ -8,9 +9,38 @@ use pepper_sync::wallet::{
 
 use super::LightWallet;
 use super::error::{FeeError, SpendError};
-use super::summary::data::{SendType, TransactionKind};
+use super::summary::data::{SendType, TransactionKind, pools_present};
 use crate::get_zennies_for_zingo_address;
 use crate::wallet::error::WalletError;
+
+/// The wallet outputs spent in a single transaction, grouped by pool.
+pub(crate) struct SpendsByPool<'wallet> {
+    pub(crate) transparent: Vec<&'wallet TransparentCoin>,
+    pub(crate) sapling: Vec<&'wallet SaplingNote>,
+    pub(crate) orchard: Vec<&'wallet OrchardNote>,
+    pub(crate) ironwood: Vec<&'wallet IronwoodNote>,
+}
+
+impl SpendsByPool<'_> {
+    /// Pools of the wallet's outputs spent in the transaction, in protocol order
+    /// (transparent, sapling, orchard, ironwood).
+    ///
+    /// Empty for transactions that spend no outputs known to the wallet, i.e.
+    /// received transactions.
+    pub(crate) fn pools(&self) -> Vec<PoolType> {
+        pools_present([
+            !self.transparent.is_empty(),
+            !self.sapling.is_empty(),
+            !self.orchard.is_empty(),
+            !self.ironwood.is_empty(),
+        ])
+    }
+
+    /// Whether the transaction spends none of the wallet's shielded notes.
+    fn spends_no_shielded(&self) -> bool {
+        self.sapling.is_empty() && self.orchard.is_empty() && self.ironwood.is_empty()
+    }
+}
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -64,6 +94,19 @@ impl LightWallet {
         Ok(spends)
     }
 
+    /// Gets all wallet outputs spent in the given `transaction`, grouped by pool.
+    pub(super) fn find_spends_by_pool<'wallet>(
+        &'wallet self,
+        transaction: &WalletTransaction,
+    ) -> Result<SpendsByPool<'wallet>, SpendError> {
+        Ok(SpendsByPool {
+            transparent: self.find_spends::<TransparentCoin>(transaction, false)?,
+            sapling: self.find_spends::<SaplingNote>(transaction, false)?,
+            orchard: self.find_spends::<OrchardNote>(transaction, false)?,
+            ironwood: self.find_spends::<IronwoodNote>(transaction, false)?,
+        })
+    }
+
     /// Calculate the fee for a transaction in the wallet.
     ///
     /// Fails if transparent spends are not found in the wallet.
@@ -114,38 +157,30 @@ impl LightWallet {
     }
 
     /// Determine the kind of transaction from the current state of wallet data.
+    ///
+    /// `spends` are the wallet outputs spent in `transaction`, as returned by
+    /// [`Self::find_spends_by_pool`].
     pub(crate) fn transaction_kind(
         &self,
         transaction: &WalletTransaction,
-    ) -> Result<TransactionKind, SpendError> {
+        spends: &SpendsByPool<'_>,
+    ) -> TransactionKind {
         let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
-        let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
-        let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
-        let orchard_spends = self.find_spends::<OrchardNote>(transaction, false)?;
-        let ironwood_spends = self.find_spends::<IronwoodNote>(transaction, false)?;
+        let sends_no_notes = transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
+            && transaction.outgoing_ironwood_notes().is_empty();
 
-        if transparent_spends.is_empty()
-            && sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && ironwood_spends.is_empty()
-            && transaction.outgoing_sapling_notes().is_empty()
-            && transaction.outgoing_orchard_notes().is_empty()
-            && transaction.outgoing_ironwood_notes().is_empty()
-        {
-            Ok(TransactionKind::Received)
-        } else if !transparent_spends.is_empty()
-            && sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && ironwood_spends.is_empty()
-            && transaction.outgoing_sapling_notes().is_empty()
-            && transaction.outgoing_orchard_notes().is_empty()
-            && transaction.outgoing_ironwood_notes().is_empty()
+        if spends.transparent.is_empty() && spends.spends_no_shielded() && sends_no_notes {
+            TransactionKind::Received
+        } else if !spends.transparent.is_empty()
+            && spends.spends_no_shielded()
+            && sends_no_notes
             && (!transaction.orchard_notes().is_empty()
                 || !transaction.sapling_notes().is_empty()
                 || !transaction.ironwood_notes().is_empty())
         {
-            Ok(TransactionKind::Sent(SendType::Shield))
+            TransactionKind::Sent(SendType::Shield)
         } else if transaction
             .transaction()
             .transparent_bundle()
@@ -184,9 +219,9 @@ impl LightWallet {
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
         {
-            Ok(TransactionKind::Sent(SendType::SendToSelf))
+            TransactionKind::Sent(SendType::SendToSelf)
         } else {
-            Ok(TransactionKind::Sent(SendType::Send))
+            TransactionKind::Sent(SendType::Send)
         }
     }
 }
