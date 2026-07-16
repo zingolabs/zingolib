@@ -181,7 +181,15 @@
 
 ## Privacy
 
-**Tor** — Experimental opt-in privacy layer. `LightClient` can hold a `tor::Client` (from `zcash_client_backend`). Currently only wired to price fetching — not to sync or Transmission. Not suitable for production use.
+**Tor** — A former opt-in privacy layer (`zcash_client_backend`'s `tor::Client`), only ever wired to price fetching, never to sync or Transmission. Removed in June 2026 over dependency conflicts. Not the project's privacy direction; IP obfuscation is taken up on the Nym mixnet instead. See `docs/adr/0011-nym-mixnet-transmission.md`.
+
+**Nym mixnet** — The mix network chosen as the privacy transport for IP obfuscation: it hides the client's IP from the services it contacts by routing traffic through a multi-layer network, so a service sees only a mixnet exit, never the client. Carries the send (Transmission) and price-fetch surfaces. Distinct from **NymVPN**, Nym's lower-latency VPN product, which is an acceptable but user-provided (system-level, not embedded) transport for the sync surface. See `docs/adr/0011-nym-mixnet-transmission.md`.
+
+**Mixnet Mode** — The runtime state governing whether Transmission and price-fetch route over the Nym mixnet. Tri-state: off, bootstrapping, or ready, because a client that has enabled the mixnet but not yet reached it is not yet protecting the user. On by default for any connected session and never persisted; a per-session switch to off routes those surfaces over clearnet as informed consent, and while the mode is on a transport failure refuses a send rather than silently dropping to clearnet. An `--offline` session, which never transmits, never bootstraps the mixnet. See `docs/adr/0011-nym-mixnet-transmission.md`.
+
+**Witness Rotation** — The send-privacy property whereby each Transmission's Broadcast Indexer is picked at random, so no single indexer accumulates a record of all the user's sends. Distinct from redundancy: exactly one indexer carries any given send, and a failed submission fails over to a new random indexer rather than fanning out.
+
+**Broadcast Indexer** — An Indexer used only as a Transmission target, drawn at random from a curated broadcast list kept separate from the sync-server list. Distinct from the sync Indexer that serves compact blocks; decoupling them keeps the address-knowing sync indexer from necessarily witnessing the broadcast.
 
 ---
 
