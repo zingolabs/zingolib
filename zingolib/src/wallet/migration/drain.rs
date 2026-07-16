@@ -75,8 +75,9 @@ pub struct DrainPlan {
     pub migrated: u64,
     /// Total fees across every transaction, in zatoshis.
     pub fee: u64,
-    /// Value left behind in the Orchard pool because moving it costs more than
-    /// it carries, in zatoshis.
+    /// Value left behind in the Orchard pool because moving it is not
+    /// worthwhile, in zatoshis: notes worth at most the sweep minimum, plus
+    /// chunks whose output would not exceed it.
     pub stranded: u64,
 }
 
@@ -90,10 +91,13 @@ impl DrainPlan {
 /// Plans a drain of the Orchard notes with the given values (zatoshis).
 /// Deterministic and pure.
 ///
-/// Notes worth at most [`MigrationParams::sweep_min`] are stranded: spending
-/// one contributes less than it costs as a marginal input. The rest are chunked
-/// into groups of at most [`MigrationParams::max_actions_per_split_tx`], one
-/// transaction each.
+/// Notes worth at most [`MigrationParams::sweep_min`] are stranded rather
+/// than selected (see that field's safety-factor policy). The rest are
+/// chunked into groups of at most
+/// [`MigrationParams::max_actions_per_split_tx`], one transaction each. The
+/// same floor applies to what a drain creates: a chunk whose output would
+/// not exceed `sweep_min` is stranded whole, so a drain never manufactures a
+/// note the policy refuses to spend.
 pub fn plan_drain(note_values: &[u64], params: &MigrationParams) -> DrainPlan {
     let mut plan = DrainPlan::default();
 
@@ -106,11 +110,7 @@ pub fn plan_drain(note_values: &[u64], params: &MigrationParams) -> DrainPlan {
         let total: u64 = chunk.iter().sum();
         let fee = drain_fee(chunk.len());
         match total.checked_sub(fee) {
-            // A chunk that cannot cover its own fee is stranded whole. Only
-            // reachable when a chunk is all near-`sweep_min` notes, which the
-            // dust filter cannot rule out for small chunks.
-            None | Some(0) => plan.stranded += total,
-            Some(output) => {
+            Some(output) if output > params.sweep_min => {
                 plan.migrated += output;
                 plan.fee += fee;
                 plan.transactions.push(DrainTx {
@@ -118,6 +118,13 @@ pub fn plan_drain(note_values: &[u64], params: &MigrationParams) -> DrainPlan {
                     output,
                 });
             }
+            // A chunk that cannot fund both its fee and an output worth
+            // spending is stranded whole: an Ironwood note at or below
+            // `sweep_min` is one the stranding policy itself refuses. Only
+            // reachable when a chunk holds at most three near-`sweep_min`
+            // notes, which the entry filter cannot rule out for small
+            // chunks.
+            _ => plan.stranded += total,
         }
     }
 
@@ -286,6 +293,38 @@ mod tests {
         );
     }
 
+    /// The floor applies to what a drain creates, not only what it spends: a
+    /// chunk whose output would land at or below `sweep_min` is stranded
+    /// whole, because the drain would pay its fee to manufacture an Ironwood
+    /// note the stranding policy itself refuses to spend. The boundary is
+    /// strict: an output of exactly `sweep_min` strands its chunk, one
+    /// zatoshi more drains. The window only opens for chunks of at most
+    /// three near-`sweep_min` notes; from four notes up, a chunk's value
+    /// outruns its fee by more than the floor.
+    #[test]
+    fn output_at_or_below_sweep_min_strands_the_chunk() {
+        let params = params();
+
+        // One 25_000-zatoshi note: the fee is 20_000, so the output would be
+        // 5_000, at most the sweep minimum.
+        let plan = plan_drain(&[25_000], &params);
+        assert!(plan.is_empty());
+        assert_eq!(plan.stranded, 25_000);
+        assert_eq!(plan.fee, 0);
+
+        // An output of exactly `sweep_min` still strands its chunk.
+        let boundary = drain_fee(1) + params.sweep_min;
+        let plan = plan_drain(&[boundary], &params);
+        assert!(plan.is_empty());
+        assert_eq!(plan.stranded, boundary);
+
+        // One zatoshi above the boundary drains.
+        let plan = plan_drain(&[boundary + 1], &params);
+        assert_eq!(plan.transactions.len(), 1);
+        assert_eq!(plan.transactions[0].output, params.sweep_min + 1);
+        assert_eq!(plan.stranded, 0);
+    }
+
     proptest::proptest! {
         /// A drain has no intermediates — every planned input is a wallet
         /// note — so the selection invariant is exact: whatever the wallet
@@ -300,6 +339,20 @@ mod tests {
                 for &input in &transaction.inputs {
                     proptest::prop_assert!(input > params.sweep_min);
                 }
+            }
+        }
+
+        /// The creation-side counterpart: whatever the wallet shape, every
+        /// planned Ironwood output exceeds `sweep_min`, so a drain never
+        /// manufactures a note the policy refuses to spend.
+        #[test]
+        fn drain_outputs_always_exceed_sweep_min(
+            note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
+        ) {
+            let params = params();
+            let plan = plan_drain(&note_values, &params);
+            for transaction in &plan.transactions {
+                proptest::prop_assert!(transaction.output > params.sweep_min);
             }
         }
     }

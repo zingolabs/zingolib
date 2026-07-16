@@ -30,7 +30,7 @@
 
 **Sweep Minimum** — The ZIP 318 migration policy threshold (provisionally twice the ZIP-317 marginal fee). Migration never selects a note worth at most the Sweep Minimum: the policy demands a note return strictly more than a safety factor over its true marginal spend cost, not merely break even. Distinct from Dust, which is a smaller, balance-level threshold.
 
-**Stranded** — Value a migration plan leaves behind in the Orchard pool because moving it is not worthwhile: notes worth at most the Sweep Minimum, plus any pooled balance too small to fund the smallest denomination. A plan reports its stranded value explicitly; value is never dropped silently.
+**Stranded** — Value a migration plan leaves behind in the Orchard pool because moving it is not worthwhile. This covers notes worth at most the Sweep Minimum, pooled balance too small to fund the smallest denomination, and balance that would arrive at or below the Sweep Minimum after fees. A plan reports its stranded value explicitly; value is never dropped silently.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 
