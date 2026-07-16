@@ -257,6 +257,53 @@ mod tests {
         assert_eq!(plan.stranded, note_values.iter().sum::<u64>());
     }
 
+    /// The selection boundary is strict: a note worth exactly `sweep_min` is
+    /// stranded, one zatoshi more is drained. Fails whenever the drain's
+    /// stranding filter admits a note at or below the threshold.
+    #[test]
+    fn notes_at_or_below_sweep_min_are_never_drained() {
+        let params = params();
+        let dust = [1, params.sweep_min - 1, params.sweep_min];
+        let mut note_values = dust.to_vec();
+        note_values.extend([params.sweep_min + 1, 1_000_000]);
+
+        let plan = plan_drain(&note_values, &params);
+        assert_eq!(plan.stranded, dust.iter().sum::<u64>());
+        for transaction in &plan.transactions {
+            for &input in &transaction.inputs {
+                assert!(
+                    input > params.sweep_min,
+                    "drain spends a {input}-zatoshi note, at or below sweep_min ({})",
+                    params.sweep_min
+                );
+            }
+        }
+        // The note one zatoshi above the boundary is selected.
+        assert!(
+            plan.transactions
+                .iter()
+                .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
+        );
+    }
+
+    proptest::proptest! {
+        /// A drain has no intermediates — every planned input is a wallet
+        /// note — so the selection invariant is exact: whatever the wallet
+        /// shape, no drained input is worth at most `sweep_min`.
+        #[test]
+        fn drained_inputs_always_exceed_sweep_min(
+            note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
+        ) {
+            let params = params();
+            let plan = plan_drain(&note_values, &params);
+            for transaction in &plan.transactions {
+                for &input in &transaction.inputs {
+                    proptest::prop_assert!(input > params.sweep_min);
+                }
+            }
+        }
+    }
+
     /// A drain re-planned after some of its notes were spent covers exactly
     /// the notes that are still free. This is what makes re-calling the drain
     /// the recovery path after a partial broadcast.

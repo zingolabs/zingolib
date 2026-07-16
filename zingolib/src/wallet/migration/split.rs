@@ -702,6 +702,15 @@ mod tests {
         );
     }
 
+    /// Economic pin for the stranding policy: `sweep_min` may carry any
+    /// safety factor above the ZIP-317 marginal fee, but must never sit
+    /// below it — below that line a selected note could cost more to spend
+    /// than the value it provides.
+    #[test]
+    fn sweep_min_covers_the_marginal_input_cost() {
+        assert!(params().sweep_min >= MARGINAL_FEE);
+    }
+
     /// The action-count rule the fee model rests on: an Orchard bundle from
     /// NU6.3 disables cross-address transfers, so a spend and an output no
     /// longer share an action. The crates own that rule and the split fee
@@ -822,6 +831,79 @@ mod tests {
         assert_eq!(available, expected, "post-splitting notes ≠ part set");
 
         plan
+    }
+
+    /// Asserts the selection invariant: no planned transaction spends a note
+    /// worth at most `sweep_min`, whether it is a wallet note or an
+    /// intermediate created by an earlier round.
+    fn assert_planned_inputs_exceed_sweep_min(plan: &MigrationPlan, params: &MigrationParams) {
+        for (round, transactions) in plan.split_rounds.iter().enumerate() {
+            for tx in transactions {
+                for &input in &tx.inputs {
+                    assert!(
+                        input > params.sweep_min,
+                        "round {round} spends a {input}-zatoshi note, \
+                         at or below sweep_min ({})",
+                        params.sweep_min
+                    );
+                }
+            }
+        }
+    }
+
+    /// The selection boundary is strict: a note worth exactly `sweep_min` is
+    /// stranded, one zatoshi more is selected. Fails whenever the planner's
+    /// stranding filter admits a note at or below the threshold.
+    #[test]
+    fn notes_at_or_below_sweep_min_are_never_selected() {
+        let params = params();
+        let dust = [1, MARGINAL_FEE, params.sweep_min - 1, params.sweep_min];
+        let mut notes = dust.to_vec();
+        notes.extend([params.sweep_min + 1, 200_000, 300_000]);
+        for post_activation in [false, true] {
+            let plan = plan_migration(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+            assert_eq!(plan.stranded, dust.iter().sum::<u64>());
+            // The note one zatoshi above the boundary is selected.
+            assert!(
+                plan.split_rounds[0]
+                    .iter()
+                    .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
+            );
+        }
+    }
+
+    /// Pins the one shape where the planner violates the selection invariant
+    /// today, so this test is red until the planner is fixed.
+    ///
+    /// Post-activation, a trailing reduction group of exactly two notes,
+    /// each at most 12_500 zatoshis, merges to `sum - 15_000`: between
+    /// 5_002 and 10_000 zatoshis, at or below `sweep_min`. The sizing round
+    /// then spends that intermediate, so the plan spends a note the policy
+    /// says to strand. Every other shape is safe: a trailing group of three
+    /// merges to at least 10_003, and before activation a pair merges to at
+    /// least 10_002 because spends and outputs share actions there. The bad
+    /// intermediate still exceeds the raw ZIP-317 marginal fee (its floor
+    /// is 5_002), so no value is destroyed — the failure is against the
+    /// `sweep_min` policy, not against value conservation.
+    ///
+    /// Suggested fix: in the reduction loop, when a trailing group's merged
+    /// value would be at most `sweep_min`, push the group's notes into the
+    /// next pool unmerged instead of merging them. Each carried note
+    /// exceeds `sweep_min` by construction, so the invariant holds
+    /// uniformly, and the change is strictly cheaper for the user: the
+    /// pair-merge pays 15_000 zatoshis in fees to save at most one later
+    /// 5_000-zatoshi marginal input. The reduction loop still terminates,
+    /// because every full group keeps merging and only the final partial
+    /// group can be carried.
+    #[test]
+    fn reduction_never_creates_a_sub_sweep_min_intermediate() {
+        let params = params();
+        // One full reduction group plus a trailing pair small enough to
+        // merge to at most the sweep minimum.
+        let notes = vec![10_500u64; params.max_actions_per_split_tx + 2];
+        let plan = plan_migration(&notes, true, &params);
+        assert_planned_inputs_exceed_sweep_min(&plan, &params);
     }
 
     #[test]
