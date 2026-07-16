@@ -14,7 +14,9 @@
 //! P2 of the plan delivers the owned types below; the plan, build, and
 //! apply layers land in the following phases.
 
+pub(crate) mod fee;
 pub mod op_return;
+pub mod plan;
 pub mod proposal;
 
 pub use op_return::{MAX_OP_RETURN_DATA_BYTES, OpReturnData, OpReturnDataError};

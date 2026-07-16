@@ -163,7 +163,10 @@ impl LightWallet {
         self.send_proposal.take()
     }
 
-    fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
+    pub(crate) fn change_memo_from_transaction_request(
+        &self,
+        request: &TransactionRequest,
+    ) -> MemoBytes {
         let mut recipient_uas = Vec::new();
         let mut refund_address_indexes = Vec::new();
         let mut refund_address_count = self

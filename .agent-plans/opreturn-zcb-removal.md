@@ -1,6 +1,7 @@
 # OP_RETURN via in-tree spend pipeline (zcb removal)
 
 Worktree: `feat/opreturn_on_proposal`, branch `opreturn_on_proposal`.
+Published as draft PR #2469, base `feat/ironwood` (#2419).
 
 Base: `zingolabs/feat/ironwood` (PR #2419, `b5a1b739e`) with PR
 #2464's eight commits (`remove_stringly_typed_errors_from_zingo_cli`)
@@ -103,24 +104,55 @@ base; the branch must not merge ahead of either PR.
   ADR 0008 retarget mechanism. 8 unit tests green; check/clippy/fmt
   clean. `ZingoProposal` folds into the new enum at P5 cutover, when
   the facade rewires.
-- **P3 — plan layer (pure).** Selection (core loop exists in
-  `select_spendable_notes`), single-output Orchard change + dust
-  policy, ZIP-320 TEX splitting, refund-address derivation, fee sizing
-  per decision 7. Equivalence tests against zcb's `propose_transfer` /
-  `propose_shielding` on `SyntheticWalletBuilder` wallets: same
-  request in, same inputs/change/fee out.
+- **P3 — plan layer (pure).** DONE in working tree (uncommitted).
+  `spend/fee.rs`: ZIP-317 counting feeding the upstream `FeeRule` —
+  padded bundle counts (sapling min-2 outputs; legacy-Orchard V5 =
+  spends+outputs, no cross-address; Ironwood V6 = max(spends,outputs);
+  both pad to 2) and the null-data output size (11+len direct push,
+  12+len PUSHDATA1). `spend/plan.rs`: pure `plan_transfer`/`plan_shield`
+  over `&LightWallet` — payment routing (UA best receiver, ironwood
+  turnstile), the greedy loop against the existing selection core,
+  single-output change with `AllowDustChange` and the turnstile
+  change-pool reroute, ZIP-320 two-step with the exposure fee funded
+  through the ephemeral output, shield with the 10k threshold and
+  uneconomic-coin pruning. Wallet queries go through the existing zcb
+  trait impls until the P5 cutover inlines them. 8 equivalence tests
+  green against zcb 0.24 (orchard/sapling/multi-pool/multi-note/
+  ironwood-spends/TEX-two-step/shield/insufficient-funds amounts),
+  fee-for-fee and input-for-input; 23 spend tests total. The ironwood
+  equivalence run exposed and pinned the V5-vs-V6 action-count split.
+  OP_RETURN Data is fee-counted and rides the final step (verified:
+  92-byte output = +3 marginal fees on a shielded send). Refund-address
+  derivation (derive-only, no reserve) moved to P4 where the build
+  layer needs the actual address.
 - **P4 — build layer (wallet-pure).** Witness extraction at the edge;
   `zcash_primitives::Builder` orchestration; TEX step 2 spends step 1's
-  ephemeral output; `add_transparent_null_data_output` on the final
-  step; USK signing, sender-OVK policy. ADR 0008 retarget becomes a
-  pure field update.
+  ephemeral output; refund-address derive-only variant (no reserve);
+  `add_transparent_null_data_output` on the final step; USK signing,
+  sender-OVK policy. ADR 0008 retarget becomes a pure field update.
+  Equivalence against the old build interface
+  (`create_proposed_transactions`) is *structural*, never bitwise —
+  build randomness is ratified — comparing the deterministic skeleton
+  on the same proposal over cloned synthetic wallets: tx version,
+  expiry height, fee actually paid, the transparent output set
+  (scripts and values), shielded output counts (padding), and the TEX
+  step-2 input spending step 1's ephemeral output at the right value.
 - **P5 — apply + cutover.** Facade rewires to plan/build/apply;
   `propose_send`/`propose_send_all` gain the `Option<OpReturnData>`
   parameter; reserve-at-apply; delete `zcb_traits.rs`, prune
   `mocks.rs`, delete the equivalence scaffolding, remove zcb from
   `zingolib/Cargo.toml`; re-home `read_shard` (reimplement or reach it
   through pepper-sync's surface); fix the 3 zcb refs in
-  libtonode-tests.
+  libtonode-tests. Acceptance gate: facade-level equivalence — the
+  same `propose_send` → `calculate_stored_proposal` sequence leaves
+  the same observable wallet state as the old path (Calculated tx fee
+  and outputs, slot consumption, ADR 0008 retarget) — EXCLUDING
+  refund-address reservation timing, where the new derive-at-plan /
+  reserve-at-apply semantics are asserted instead (the old index burn
+  on abandoned proposals is the bug we fixed, not a behavior to
+  preserve). At cutover, comparative tests die with zcb; assertions
+  worth keeping are rewritten as standalone invariant tests (e.g. a
+  TEX exposure step's input value equals its payments plus its fee).
 - **P6 — end-to-end.** Container/libtonode round-trip: a swap-shaped
   send whose final transaction carries OP_RETURN Data, verified on a
   regtest chain. User-run (`makers container-test`); agent proposes
