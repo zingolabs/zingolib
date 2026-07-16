@@ -37,6 +37,7 @@ pub mod migration;
 pub mod output;
 pub mod propose;
 pub mod send;
+pub mod spend;
 pub mod summary;
 pub mod sync;
 pub mod transaction;

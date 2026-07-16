@@ -91,9 +91,18 @@ base; the branch must not merge ahead of either PR.
   `cargo check`/`clippy --all-targets` clean, `cargo fmt` clean.
   Import-path/manifest-only — no behavior change; nextest left to the
   user (ironwood fast suite has 4 known-red, unrelated).
-- **P2 — owned types.** `wallet/spend/` module: proposal enum, `Step`,
-  `OpReturnData`, per-layer error enums. `ZingoProposal` folds into the
-  new enum (account id and Send/Shield split live on the same type).
+- **P2 — owned types.** DONE in working tree (uncommitted).
+  `wallet/spend/` module: `Proposal` enum
+  (`Transfer`/`TexTransfer`/`Shield` variant structs with account id and
+  target height owned), concrete `Step` (request, payment pools,
+  shielded/transparent inputs, change, fee, `Option<OpReturnData>`),
+  `OpReturnData` (validated ≤ 80 bytes, `OpReturnDataError::TooLong`
+  mirroring `MemoError`), and `ProposalShapeError` enforced by the
+  proposal constructors (no OP_RETURN on Shield or on the TEX shielding
+  step; no shielded inputs on Shield). `with_target_height` is the pure
+  ADR 0008 retarget mechanism. 8 unit tests green; check/clippy/fmt
+  clean. `ZingoProposal` folds into the new enum at P5 cutover, when
+  the facade rewires.
 - **P3 — plan layer (pure).** Selection (core loop exists in
   `select_spendable_notes`), single-output Orchard change + dust
   policy, ZIP-320 TEX splitting, refund-address derivation, fee sizing
