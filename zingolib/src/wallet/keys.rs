@@ -125,10 +125,14 @@ impl LightWallet {
         Ok((address_id, external_address))
     }
 
-    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
-    /// The new addresses are added to the wallet and returned.
-    pub fn generate_refund_addresses(
-        &mut self,
+    /// Derives, without reserving, the next `n` refund-scope (ephemeral)
+    /// transparent addresses for the given `account_id`. Pure: the wallet
+    /// is not modified, so an abandoned proposal leaves no trace and its
+    /// indexes are reused. Reservation — insertion into the wallet's
+    /// address book — happens only when a transaction bearing the address
+    /// comes into existence (ADR 0010).
+    pub(crate) fn derive_refund_addresses(
+        &self,
         n: usize,
         account_id: zip32::AccountId,
     ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
@@ -148,7 +152,7 @@ impl LightWallet {
             })?
             .index() as usize;
 
-        let refund_addresses = (first_index..(first_index + n))
+        (first_index..(first_index + n))
             .map(|address_index| {
                 let address_id = TransparentAddressId::new(
                     account_id,
@@ -162,14 +166,25 @@ impl LightWallet {
                     .ok_or(KeyError::NoAccountKeys)?
                     .generate_transparent_address(address_id.address_index(), address_id.scope())?;
 
-                self.transparent_addresses.insert(
-                    address_id,
-                    transparent::encode_address(&self.chain_type, refund_address),
-                );
-
                 Ok((address_id, refund_address))
             })
-            .collect::<Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError>>()?;
+            .collect()
+    }
+
+    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
+    /// The new addresses are added to the wallet and returned.
+    pub fn generate_refund_addresses(
+        &mut self,
+        n: usize,
+        account_id: zip32::AccountId,
+    ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
+        let refund_addresses = self.derive_refund_addresses(n, account_id)?;
+        for (address_id, refund_address) in &refund_addresses {
+            self.transparent_addresses.insert(
+                *address_id,
+                transparent::encode_address(&self.chain_type, *refund_address),
+            );
+        }
         self.save_required = true;
 
         Ok(refund_addresses)

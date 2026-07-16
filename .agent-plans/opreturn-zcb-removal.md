@@ -125,7 +125,25 @@ base; the branch must not merge ahead of either PR.
   92-byte output = +3 marginal fees on a shielded send). Refund-address
   derivation (derive-only, no reserve) moved to P4 where the build
   layer needs the actual address.
-- **P4 — build layer (wallet-pure).** Witness extraction at the edge;
+- **P4 — build layer (wallet-pure).** DONE in working tree
+  (uncommitted). `spend/build.rs`: `LightWallet::spend_materials` is
+  the edge (notes/scopes/witnesses/anchors/coins resolved
+  self-contained; ephemeral Refund Address derived, never reserved —
+  `derive_refund_addresses` split out of `generate_refund_addresses`);
+  `build_transactions` is the wallet-pure core over the upstream
+  `Builder` (V5/V6 by branch, expiry = target+40, per-pool anchors
+  when a step *involves* the pool — output-only bundles need theirs
+  too, found by the structural tests; post-NU6.3 orchard change via
+  `add_orchard_change_output`; `add_transparent_null_data_output` on
+  the final step; TEX exposure spends the shielding tx's last vout,
+  signed by the derived ephemeral key). Fee pinning is upstream's
+  value-balance assertion — a mis-sized plan cannot build. The owned
+  proposal types gained `anchor_height` and
+  `TexTransferProposal::ephemeral_value`. 4 structural equivalence
+  tests green vs `create_proposed_transactions` (single orchard
+  transfer, TEX two-step incl. ephemeral chain and address, OP_RETURN
+  final-tx placement, shield); 27 spend tests total. Original scope
+  (unchanged):
   `zcash_primitives::Builder` orchestration; TEX step 2 spends step 1's
   ephemeral output; refund-address derive-only variant (no reserve);
   `add_transparent_null_data_output` on the final step; USK signing,

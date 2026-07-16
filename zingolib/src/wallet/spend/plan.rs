@@ -407,7 +407,7 @@ pub fn plan_transfer(
 ) -> Result<Proposal, PlanError> {
     let confirmations_policy =
         ConfirmationsPolicy::new_symmetrical(wallet.wallet_settings.min_confirmations, false);
-    let (zcb_target_height, _anchor_height) =
+    let (zcb_target_height, anchor_height) =
         WalletRead::get_target_and_anchor_heights(wallet, confirmations_policy.trusted())?
             .ok_or(PlanError::SyncRequired)?;
     let target_height = BlockHeight::from(zcb_target_height);
@@ -516,6 +516,7 @@ pub fn plan_transfer(
                 return build_transfer_proposal(
                     account_id,
                     target_height,
+                    anchor_height,
                     routed,
                     trimmed,
                     change,
@@ -604,6 +605,7 @@ fn received_notes_by_pool(
 fn build_transfer_proposal(
     account_id: zip32::AccountId,
     target_height: BlockHeight,
+    anchor_height: BlockHeight,
     routed: RoutedRequest,
     inputs: TrimmedInputs,
     change: Option<ChangeValue>,
@@ -650,13 +652,20 @@ fn build_transfer_proposal(
             op_return_data,
         );
         Ok(Proposal::TexTransfer(
-            TexTransferProposal::new(account_id, target_height, shielding_step, exposure_step)
-                .expect("OP_RETURN Data was placed on the exposure step only"),
+            TexTransferProposal::new(
+                account_id,
+                target_height,
+                anchor_height,
+                shielding_step,
+                exposure_step,
+            )
+            .expect("OP_RETURN Data was placed on the exposure step only"),
         ))
     } else {
         Ok(Proposal::Transfer(TransferProposal::new(
             account_id,
             target_height,
+            anchor_height,
             Step::from_parts(
                 step_request(&routed.standard),
                 step_pools(&routed.standard),
@@ -679,7 +688,7 @@ pub fn plan_shield(
 ) -> Result<Proposal, PlanError> {
     let confirmations_policy =
         ConfirmationsPolicy::new_symmetrical(wallet.wallet_settings.min_confirmations, false);
-    let (zcb_target_height, _anchor_height) =
+    let (zcb_target_height, anchor_height) =
         WalletRead::get_target_and_anchor_heights(wallet, confirmations_policy.trusted())?
             .ok_or(PlanError::SyncRequired)?;
     let target_height = BlockHeight::from(zcb_target_height);
@@ -756,7 +765,7 @@ pub fn plan_shield(
     );
 
     Ok(Proposal::Shield(
-        ShieldProposal::new(account_id, target_height, step)
+        ShieldProposal::new(account_id, target_height, anchor_height, step)
             .expect("a shield step built here carries no OP_RETURN Data or shielded inputs"),
     ))
 }

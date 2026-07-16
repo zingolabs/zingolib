@@ -224,6 +224,7 @@ pub enum ProposalShapeError {
 pub struct TransferProposal {
     account_id: zip32::AccountId,
     target_height: BlockHeight,
+    anchor_height: BlockHeight,
     step: Step,
 }
 
@@ -231,10 +232,16 @@ impl TransferProposal {
     /// Constructs a transfer proposal. Every step shape is legal here,
     /// including OP_RETURN Data on the (single, hence final) step.
     #[must_use]
-    pub fn new(account_id: zip32::AccountId, target_height: BlockHeight, step: Step) -> Self {
+    pub fn new(
+        account_id: zip32::AccountId,
+        target_height: BlockHeight,
+        anchor_height: BlockHeight,
+        step: Step,
+    ) -> Self {
         TransferProposal {
             account_id,
             target_height,
+            anchor_height,
             step,
         }
     }
@@ -253,6 +260,7 @@ impl TransferProposal {
 pub struct TexTransferProposal {
     account_id: zip32::AccountId,
     target_height: BlockHeight,
+    anchor_height: BlockHeight,
     shielding: Step,
     exposure: Step,
 }
@@ -268,6 +276,7 @@ impl TexTransferProposal {
     pub fn new(
         account_id: zip32::AccountId,
         target_height: BlockHeight,
+        anchor_height: BlockHeight,
         shielding: Step,
         exposure: Step,
     ) -> Result<Self, ProposalShapeError> {
@@ -278,9 +287,22 @@ impl TexTransferProposal {
         Ok(TexTransferProposal {
             account_id,
             target_height,
+            anchor_height,
             shielding,
             exposure,
         })
+    }
+
+    /// The value of the ephemeral output the shielding step creates: the
+    /// exposure step's payments plus its fee, which the shielding step
+    /// funds in advance so the exposure step balances to exactly zero
+    /// change.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BalanceError`] if the amounts overflow.
+    pub fn ephemeral_value(&self) -> Result<Zatoshis, BalanceError> {
+        (self.exposure.payment_total()? + self.exposure.fee()).ok_or(BalanceError::Overflow)
     }
 
     /// The first step: shielded funds move to an ephemeral Refund Address.
@@ -301,6 +323,7 @@ impl TexTransferProposal {
 pub struct ShieldProposal {
     account_id: zip32::AccountId,
     target_height: BlockHeight,
+    anchor_height: BlockHeight,
     step: Step,
 }
 
@@ -316,6 +339,7 @@ impl ShieldProposal {
     pub fn new(
         account_id: zip32::AccountId,
         target_height: BlockHeight,
+        anchor_height: BlockHeight,
         step: Step,
     ) -> Result<Self, ProposalShapeError> {
         if step.op_return_data().is_some() {
@@ -328,6 +352,7 @@ impl ShieldProposal {
         Ok(ShieldProposal {
             account_id,
             target_height,
+            anchor_height,
             step,
         })
     }
@@ -373,6 +398,18 @@ impl Proposal {
             Proposal::Transfer(p) => p.target_height,
             Proposal::TexTransfer(p) => p.target_height,
             Proposal::Shield(p) => p.target_height,
+        }
+    }
+
+    /// The height whose tree roots anchor the shielded spends: witnesses
+    /// are extracted, and the built anchors computed, at this height's
+    /// checkpoint.
+    #[must_use]
+    pub fn anchor_height(&self) -> BlockHeight {
+        match self {
+            Proposal::Transfer(p) => p.anchor_height,
+            Proposal::TexTransfer(p) => p.anchor_height,
+            Proposal::Shield(p) => p.anchor_height,
         }
     }
 
@@ -478,6 +515,7 @@ mod tests {
             ShieldProposal::new(
                 zip32::AccountId::ZERO,
                 100.into(),
+                97.into(),
                 step(10_000, Some(data()))
             )
             .unwrap_err(),
@@ -491,6 +529,7 @@ mod tests {
             TexTransferProposal::new(
                 zip32::AccountId::ZERO,
                 100.into(),
+                97.into(),
                 step(10_000, Some(data())),
                 step(15_000, None),
             )
@@ -505,6 +544,7 @@ mod tests {
             TexTransferProposal::new(
                 zip32::AccountId::ZERO,
                 100.into(),
+                97.into(),
                 step(10_000, None),
                 step(15_000, Some(data())),
             )
@@ -524,6 +564,7 @@ mod tests {
             TexTransferProposal::new(
                 zip32::AccountId::ZERO,
                 100.into(),
+                97.into(),
                 step(10_000, None),
                 step(15_000, None),
             )
@@ -544,7 +585,13 @@ mod tests {
     #[test]
     fn retarget_changes_only_the_target_height() {
         let proposal = Proposal::Shield(
-            ShieldProposal::new(zip32::AccountId::ZERO, 100.into(), step(10_000, None)).unwrap(),
+            ShieldProposal::new(
+                zip32::AccountId::ZERO,
+                100.into(),
+                97.into(),
+                step(10_000, None),
+            )
+            .unwrap(),
         );
 
         let retargeted = proposal.clone().with_target_height(500.into());
