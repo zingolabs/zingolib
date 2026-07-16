@@ -271,6 +271,19 @@ pub fn plan_migration(
             }
             let merged =
                 group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+            // Post-activation, a trailing pair of near-floor notes can merge
+            // to at most `sweep_min`: a note the stranding policy refuses to
+            // spend, and one a replan after an interruption would strand.
+            // Carry such a group unmerged — each note exceeds `sweep_min` on
+            // its own, and the skipped merge fee outweighs the marginal
+            // inputs it would have saved. Only a partial group may carry:
+            // full groups always merge (at three or more notes their merge
+            // always clears `sweep_min`), so every round still shrinks the
+            // pool and the loop terminates.
+            if group.len() < max_notes && merged <= params.sweep_min {
+                next.extend_from_slice(group);
+                continue;
+            }
             round.push(NoteSplitTx {
                 inputs: group.to_vec(),
                 outputs: vec![merged],
@@ -873,37 +886,41 @@ mod tests {
         }
     }
 
-    /// Pins the one shape where the planner violates the selection invariant
-    /// today, so this test is red until the planner is fixed.
-    ///
-    /// Post-activation, a trailing reduction group of exactly two notes,
-    /// each at most 12_500 zatoshis, merges to `sum - 15_000`: between
+    /// Guards the one shape where reduction could violate the selection
+    /// invariant. Post-activation, a trailing group of exactly two notes,
+    /// each at most 12_500 zatoshis, would merge to `sum - 15_000`: between
     /// 5_002 and 10_000 zatoshis, at or below `sweep_min`. The sizing round
-    /// then spends that intermediate, so the plan spends a note the policy
-    /// says to strand. Every other shape is safe: a trailing group of three
-    /// merges to at least 10_003, and before activation a pair merges to at
-    /// least 10_002 because spends and outputs share actions there. The bad
-    /// intermediate still exceeds the raw ZIP-317 marginal fee (its floor
-    /// is 5_002), so no value is destroyed — the failure is against the
-    /// `sweep_min` policy, not against value conservation.
-    ///
-    /// Suggested fix: in the reduction loop, when a trailing group's merged
-    /// value would be at most `sweep_min`, push the group's notes into the
-    /// next pool unmerged instead of merging them. Each carried note
-    /// exceeds `sweep_min` by construction, so the invariant holds
-    /// uniformly, and the change is strictly cheaper for the user: the
-    /// pair-merge pays 15_000 zatoshis in fees to save at most one later
-    /// 5_000-zatoshi marginal input. The reduction loop still terminates,
-    /// because every full group keeps merging and only the final partial
-    /// group can be carried.
+    /// would then spend a note the stranding policy refuses — and a replan
+    /// after an interruption would strand it, abandoning the pair's value
+    /// after fees were paid to create it. The planner instead carries such
+    /// a group into the next pool unmerged. Every other shape merges clear
+    /// of the threshold: a group of three yields at least 10_003, and a
+    /// pre-activation pair at least 10_002, because spends and outputs
+    /// share actions there.
     #[test]
     fn reduction_never_creates_a_sub_sweep_min_intermediate() {
         let params = params();
-        // One full reduction group plus a trailing pair small enough to
-        // merge to at most the sweep minimum.
+        // One full reduction group plus a trailing pair that would merge to
+        // 6_000 zatoshis, below the sweep minimum.
         let notes = vec![10_500u64; params.max_actions_per_split_tx + 2];
+        for post_activation in [false, true] {
+            let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+        }
+
+        // Post-activation the pair is carried unmerged: the reduction round
+        // merges only the full group, and the sizing round spends the pair
+        // directly.
         let plan = plan_migration(&notes, true, &params);
-        assert_planned_inputs_exceed_sweep_min(&plan, &params);
+        assert_eq!(plan.split_rounds[0].len(), 1);
+        assert_eq!(
+            plan.split_rounds[1][0]
+                .inputs
+                .iter()
+                .filter(|&&value| value == 10_500)
+                .count(),
+            2
+        );
     }
 
     #[test]
