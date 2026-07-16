@@ -7,7 +7,7 @@
 ![integration tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/zancas/56329b760b39044631c42c0b36dcb2e5/raw/integration.json)
 
 A complete `Indexer` abstraction for communicating with Zcash chain indexers
-(`lightwalletd` / `zainod`).
+(`zainod`).
 
 ## Organizing principle
 
@@ -44,19 +44,8 @@ Code that needs a raw `CompactTxStreamerClient<Channel>` (e.g. pepper-sync)
 can still obtain one:
 
 ```rust
-// Using lightwallet-protocol types (preferred)
 let client = indexer.get_client().await?;
-
-// Using zcash_client_backend types (migration aid)
-// Requires: zingo-netutils = { features = ["back_compatible"] }
-let client = indexer.get_zcb_client().await?;
 ```
-
-The `back_compatible` feature brings in `zcash_client_backend` as an
-optional dependency and exposes `get_zcb_client()`, which returns
-`zcash_client_backend`'s `CompactTxStreamerClient<Channel>`. This is a
-bridge for consumers that have not yet migrated to `lightwallet-protocol`
-types.
 
 ## Feature gates
 
@@ -65,8 +54,7 @@ All features are **off by default**.
 | Feature | What it enables |
 |---|---|
 | `globally-public-transparent` | `TransparentIndexer` sub-trait: t-address balance, transaction history, and UTXO queries. Requires `tokio-stream`. |
-| `ping-very-insecure` | `Indexer::ping()` method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag required server-side. Testing only. |
-| `back_compatible` | `GrpcIndexer::get_zcb_client()` returning `zcash_client_backend`'s client type for pepper-sync compatibility. |
+| `ping-very-insecure` | `Indexer::ping()` method. Name mirrors the server-side `--ping-very-insecure` CLI flag. Testing only. |
 
 ## Error handling
 

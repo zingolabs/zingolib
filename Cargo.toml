@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "darkside-tests",
     "libtonode-tests",
     "pepper-sync",
     "zingo-cli",
@@ -25,9 +24,11 @@ zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
+# dev's dependency audit dropped this as unused, which held on dev alone: its
+# only consumer there was the retired darkside-tests crate. zingolib's Ironwood
+# migration proptests consume it, so the merge restores it.
 proptest = "1.6.0"
 tempfile = "3"
-test-log = "0.2"
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
 
@@ -131,13 +132,10 @@ reqwest = { version = "0.12.15", default-features = false }
 # embedders that install their own provider first keep it.
 rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
-tonic-prost = "0.14"
-tonic-prost-build = "0.14"
 prost = "0.14"
 
 ### Async
 futures = "0.3"
-futures-util = "0.3"
 tokio = "1"
 
 ### Error interface
@@ -173,6 +171,3 @@ time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
 # 0.3.0. The generated code on that rev predates the proto change, which is why the
 # workspace dependency enables `rebuild-proto`.
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
-
-[workspace.metadata.cargo-shear]
-ignored = ["tonic-prost"]

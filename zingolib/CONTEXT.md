@@ -78,7 +78,7 @@
 
 **LightClient** — The user-facing entry point. Owns the connection to the Indexer, manages the sync lifecycle, and exposes operations such as send, shield, rescan, and balance.
 
-**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. Two implementations exist: **lightwalletd** (Go, the longstanding public-server deployment, e.g. `zec.rocks:443`) and **zainod** (Rust, part of the zaino project). The ecosystem is migrating from lightwalletd to zainod; this repo's test suites already default to zainod (the Core stack — see the test-infrastructure glossary), while lightwalletd survives in one opt-in legacy combo.
+**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
@@ -195,11 +195,11 @@
 
 ## Testing
 
-**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair; the pair is selected at compile time (the test-infrastructure glossary's "Network combo"). The no-feature default is `zainod+zebrad`; `lightwalletd+zebrad` survives as an opt-in combo; zcashd-backed combos were removed in July 2026.
+**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair; the pair is selected at compile time (the test-infrastructure glossary's "Network combo"). The only combo is `zainod+zebrad`; the legacy validator and indexer combos were removed in July 2026, the latter with the darkside-tests retirement.
 
-**darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving lightwalletd's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
+**darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
 
-**Validator** — The consensus node in a test local net: `zebrad`. (zcashd-backed combos were removed from this repo in July 2026.)
+**Validator** — The consensus node in a test local net: `zebrad`.
 
 **DefaultValidator / DefaultIndexer** — Type aliases in `zingolib_testutils` that resolve to the active backend combo at compile time, allowing test code to remain backend-agnostic.
 

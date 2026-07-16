@@ -788,37 +788,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkside-tests"
-version = "0.1.0"
-dependencies = [
- "bip0039",
- "futures-util",
- "hex",
- "http",
- "incrementalmerkletree",
- "orchard",
- "proptest",
- "prost",
- "sapling-crypto",
- "serde_json",
- "tokio",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tracing",
- "tracing-subscriber",
- "zcash_local_net",
- "zcash_primitives",
- "zcash_protocol",
- "zingo-netutils",
- "zingo_common_components",
- "zingo_test_vectors",
- "zingolib",
- "zingolib_testutils",
- "zip32",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -927,27 +896,6 @@ name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
-
-[[package]]
-name = "env_filter"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e90c2accc4b07a8456ea0debdc2e7587bdd890680d71173a15d4ae604f6eef"
-dependencies = [
- "log",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0621c04f2196ac3f488dd583365b9c09be011a4ab8b9f37248ffcc8f6198b56a"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "log",
-]
 
 [[package]]
 name = "equihash"
@@ -1840,14 +1788,12 @@ dependencies = [
 name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
- "bip0039",
  "http",
  "incrementalmerkletree",
  "itertools",
  "json",
  "pepper-sync",
  "shardtree",
- "test-log",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1856,10 +1802,8 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zcash_transparent",
  "zingo-netutils",
  "zingo-status",
- "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -3547,28 +3491,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "test-log"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37d53ac171c92a39e4769491c4b4dde7022c60042254b5fc044ae409d34a24d4"
-dependencies = [
- "env_logger",
- "test-log-macros",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "test-log-macros"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be35209fd0781c5401458ab66e4f98accf63553e8fae7425503e92fdd319783b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]

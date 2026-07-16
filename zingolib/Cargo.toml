@@ -10,8 +10,6 @@ license = "MIT"
 
 [features]
 default = []
-ci = []
-darkside_tests = ["pepper-sync/darkside_test"]
 testutils = [
     "portpicker",
     "zingo_test_vectors",

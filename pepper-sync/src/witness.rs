@@ -13,7 +13,6 @@ use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
 
-#[cfg(not(feature = "darkside_test"))]
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
     zingo_netutils::lightwallet_protocol::SubtreeRoot,
@@ -95,7 +94,6 @@ where
     located_tree_data
 }
 
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_root_start_index: usize,
     subtree_roots: Vec<SubtreeRoot>,
@@ -131,7 +129,6 @@ where
 }
 
 /// Allows generic construction of a shardtree node from raw byte representation
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) trait FromBytes
 where
     Self: Sized,
@@ -139,14 +136,12 @@ where
     fn from_bytes(array: [u8; 32]) -> CtOption<Self>;
 }
 
-#[cfg(not(feature = "darkside_test"))]
 impl FromBytes for orchard::tree::MerkleHashOrchard {
     fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
         Self::from_bytes(&array)
     }
 }
 
-#[cfg(not(feature = "darkside_test"))]
 impl FromBytes for sapling_crypto::Node {
     fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
         Self::from_bytes(array)
@@ -253,7 +248,7 @@ impl TryFrom<TreeState> for Frontiers {
                 format!("Block hash is not valid hex: {e:?}"),
             )
         })?;
-        // Zcashd hex strings for block hashes are byte-reversed.
+        // Block-hash hex strings are byte-reversed on the wire.
         hash_bytes.reverse();
 
         Ok(Frontiers::new(
