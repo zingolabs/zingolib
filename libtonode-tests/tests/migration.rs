@@ -223,9 +223,11 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // enough to stay inside the bucket.
     const HIDDEN_BLOCKS: u32 = 10;
     // The smallest bucket modulus of the provisional value's power-of-two
-    // family that exceeds shardtree's checkpoint retention — the premise
-    // needs the boundary checkpoint pruned while the tip is still inside
-    // the bucket. Shrinking the modulus shrinks the chain: under the
+    // family that exceeds shardtree's checkpoint retention
+    // (`MAX_REORG_ALLOWANCE`, 100 blocks, mirroring zebra's finalization
+    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`) — the premise needs
+    // the boundary checkpoint pruned while the tip is still inside the
+    // bucket. Shrinking the modulus shrinks the chain: under the
     // provisional 256 this test leapt 450 blocks, and mining that many
     // blocks to a halo2 miner address outran even a 1200-second container
     // budget.
