@@ -58,6 +58,44 @@ jobs:
         with:
           hack-subcommand: check
 
+  # zingo-netutils is excluded from the root workspace and owns its own
+  # Cargo.lock (so a future `nym` build resolves independently of the
+  # zcash crypto-common pin, ADR 0011). The --workspace jobs above and the
+  # nextest archive in test.yaml therefore skip it; this job restores its
+  # coverage against its own manifest.
+  netutils-standalone:
+    name: zingo-netutils (standalone workspace)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zingo-netutils
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Format
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04
