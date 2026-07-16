@@ -103,6 +103,7 @@ impl TryFrom<u8> for TransparentScope {
     }
 }
 
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) fn derive_address(
     consensus_parameters: &impl consensus::Parameters,
     account_pubkey: &AccountPubKey,
@@ -123,6 +124,7 @@ pub(crate) fn derive_address(
     Ok(encode_address(consensus_parameters, address))
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_external_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
@@ -132,6 +134,7 @@ fn derive_external_address(
         .derive_address(address_index)
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_internal_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,
@@ -141,6 +144,7 @@ fn derive_internal_address(
         .derive_address(address_index)
 }
 
+#[cfg(not(feature = "darkside_test"))]
 fn derive_refund_address(
     account_pubkey: &AccountPubKey,
     address_index: NonHardenedChildIndex,

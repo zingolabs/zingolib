@@ -63,8 +63,10 @@ impl LightClient {
         let save_handle = tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                if let Some(wallet_bytes) = wallet.write().await.save()? {
-                    write_to_path(&wallet_path, &wallet_bytes).await?;
+                let mut wallet_guard = wallet.write().await;
+                if let Some(wallet_bytes) = wallet_guard.save()? {
+                    write_to_path(&wallet_path, &wallet_bytes)?;
+                    wallet_guard.save_required = false;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());

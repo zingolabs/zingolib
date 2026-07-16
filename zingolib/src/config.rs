@@ -466,18 +466,21 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     }
 }
 
-fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> PathBuf {
+fn wallet_dir_or_default(
+    opt_wallet_dir: Option<PathBuf>,
+    chain: ChainType,
+) -> Result<PathBuf, ClientConfigError> {
     let wallet_dir: PathBuf;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        // TODO: handle errors
-        wallet_dir = opt_wallet_dir.unwrap();
+        wallet_dir = opt_wallet_dir.ok_or_else(|| ClientConfigError::WalletDirNotSpecified)?;
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        wallet_dir = opt_wallet_dir.clone().unwrap_or_else(|| {
-            let mut dir = dirs::data_dir().expect("Couldn't determine user's data directory!");
+        wallet_dir = opt_wallet_dir.clone().map_or_else(
+            || {
+                let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
 
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
@@ -496,18 +499,30 @@ fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> P
             }
 
             dir
+
+                Ok(dir)
+            },
+            Ok,
+        )?;
         });
 
         // Create directory if it doesn't exist on non-mobile platforms
-        match std::fs::create_dir_all(wallet_dir.clone()) {
-            Ok(()) => {}
-            Err(e) => {
-                panic!("Couldn't create zcash directory!\n {e}");
-            }
-        }
+        std::fs::create_dir_all(wallet_dir.clone())
+            .map_err(|e| ClientConfigError::FileError(e.to_string()))?;
     }
 
-    wallet_dir
+    Ok(wallet_dir)
+}
+
+/// Invalid client config.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum ClientConfigError {
+    #[error("Wallet directory must be specified for iOS and Android platforms.")]
+    WalletDirNotSpecified,
+    #[error("User's default data directory not found.")]
+    UsersDataDirNotFound,
+    #[error("Failed to create wallet directory. {0}")]
+    FileError(String),
 }
 
 #[cfg(test)]

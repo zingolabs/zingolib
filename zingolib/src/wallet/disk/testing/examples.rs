@@ -190,9 +190,8 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
                 let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
-
                 ClientConfig::builder()
-                    .set_indexer_uri(indexer_uri)
+                    .set_indexer_uri(lightwalletd_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name(
                         self.example_wallet_path()
@@ -204,6 +203,7 @@ impl NetworkSeedVersion {
                     .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                     .set_wallet_config(WalletConfig::Read)
                     .build()
+                    .unwrap()
             }
             NetworkSeedVersion::Testnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI_TESTNET.parse::<Uri>().unwrap())
@@ -217,7 +217,8 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                    .unwrap()
             NetworkSeedVersion::Mainnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Mainnet)
@@ -230,7 +231,8 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                    .unwrap()
         };
 
         LightClient::new(config, false).await.unwrap()

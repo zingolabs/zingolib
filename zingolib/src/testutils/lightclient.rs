@@ -3,6 +3,7 @@
 
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
 
@@ -54,6 +55,7 @@ pub mod from_inputs {
     use zcash_primitives::transaction::TxId;
 
     use crate::{
+        data::{proposal::ProportionalFeeProposal, receivers::Receivers},
         lightclient::{LightClient, error::LightClientError},
         wallet::error::ProposeSendError,
     };
@@ -73,7 +75,7 @@ pub mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub(crate) fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> crate::data::receivers::Receivers {
+    ) -> Receivers {
         raw_receivers
             .into_iter()
             .map(|(address, amount, memo)| {
@@ -106,7 +108,7 @@ pub mod from_inputs {
     pub async fn propose(
         proposer: &mut LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request, zip32::AccountId::ZERO).await
@@ -117,7 +119,7 @@ pub mod from_inputs {
 pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
-) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
+) -> nonempty::NonEmpty<Option<ConfirmationStatus>> {
     let wallet = client.wallet().read().await;
 
     txids.map(|txid| {
