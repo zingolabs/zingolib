@@ -48,6 +48,7 @@ struct Summary {
     run: u64,
     passed: u64,
     failed: u64,
+    timed_out: u64,
     skipped: u64,
 }
 
@@ -57,8 +58,18 @@ impl Summary {
             run: self.run + other.run,
             passed: self.passed + other.passed,
             failed: self.failed + other.failed,
+            timed_out: self.timed_out + other.timed_out,
             skipped: self.skipped + other.skipped,
         }
+    }
+
+    /// Tests the summary line counted as run but that none of the parsed
+    /// terminal statuses account for (skipped is outside `run` in nextest's
+    /// arithmetic). Nonzero means nextest reported a status this parser
+    /// does not know, and the table would silently under-report it.
+    fn unaccounted(&self) -> u64 {
+        self.run
+            .saturating_sub(self.passed + self.failed + self.timed_out)
     }
 }
 
@@ -145,6 +156,7 @@ fn count_before(line: &str, marker: &str) -> u64 {
 ///   Summary [ 73.207s] 8 tests run: 8 passed (2 slow), 2 skipped
 ///   Summary [510.718s] 29 tests run: 23 passed (14 slow), 6 failed, 2 skipped
 ///   Summary [  1.795s] 1 test run: 0 passed, 1 failed, 114 skipped
+///   Summary [1200.089s] 40 tests run: 21 passed (18 slow), 4 failed, 15 timed out, 6 skipped
 fn parse_summary(log: &str) -> Summary {
     // Strip ANSI, then take the last "N test(s) run:" line nextest emitted.
     let line = log
@@ -159,14 +171,60 @@ fn parse_summary(log: &str) -> Summary {
         run: count_before(&line, "test"),
         passed: count_before(&line, "passed"),
         failed: count_before(&line, "failed"),
+        timed_out: count_before(&line, "timed out"),
         skipped: count_before(&line, "skipped"),
     }
 }
 
+/// Collect each non-passing test's terminal status from nextest's streamed
+/// output, as (status, "suite test_name") pairs in first-seen order.
+///
+/// nextest prints e.g.:
+///   FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation
+///   TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync
+/// and re-prints the same lines in its end-of-run failure recap, so entries
+/// deduplicate. `TRY n FAIL` retry lines are ignored: only a test's final
+/// status line carries the plain prefix.
+fn parse_failures(log: &str) -> Vec<(String, String)> {
+    let mut failures: Vec<(String, String)> = Vec::new();
+    for line in log.lines().map(strip_ansi) {
+        let trimmed = line.trim_start();
+        let status = if trimmed.starts_with("FAIL [") {
+            "FAIL"
+        } else if trimmed.starts_with("TIMEOUT [") {
+            "TIMEOUT"
+        } else {
+            continue;
+        };
+        let Some(close_bracket) = trimmed.find(']') else {
+            continue;
+        };
+        let rest = trimmed[close_bracket + 1..].trim_start();
+        // Drop the "(31/40)" progress marker when present.
+        let name = if let Some(after_paren) = rest
+            .strip_prefix('(')
+            .and_then(|r| r.split_once(')'))
+            .map(|(_, tail)| tail)
+        {
+            after_paren.trim()
+        } else {
+            rest.trim()
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let entry = (status.to_string(), name.to_string());
+        if !failures.contains(&entry) {
+            failures.push(entry);
+        }
+    }
+    failures
+}
+
 fn print_row(label: &str, s: &Summary) {
     println!(
-        "  {label:<12} {:>4} run, {:>4} passed, {:>4} failed, {:>4} skipped",
-        s.run, s.passed, s.failed, s.skipped
+        "  {label:<12} {:>4} run, {:>4} passed, {:>4} failed, {:>4} timed out, {:>4} skipped",
+        s.run, s.passed, s.failed, s.timed_out, s.skipped
     );
 }
 
@@ -196,7 +254,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         if exit_code != 0 {
             failed = true;
         }
-        results.push((*phase, Some((exit_code, parse_summary(&log)))));
+        results.push((
+            *phase,
+            Some((exit_code, parse_summary(&log), parse_failures(&log))),
+        ));
     }
 
     println!();
@@ -204,7 +265,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut total = Summary::default();
     for (phase, outcome) in &results {
         match outcome {
-            Some((_, summary)) => {
+            Some((_, summary, _)) => {
                 print_row(&format!("{phase}:"), summary);
                 total = total.add(summary);
             }
@@ -217,13 +278,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     print_row("TOTAL:", &total);
     println!("==============================================================");
 
-    // A phase that errored without producing a summary line likely failed to
-    // build; call it out so the zeros above aren't read as "all clear".
+    // Every non-passing test by name, so nobody scrolls a 20-minute log to
+    // learn what actually failed.
     for (phase, outcome) in &results {
-        if let Some((exit_code, summary)) = outcome {
+        if let Some((_, _, failures)) = outcome {
+            if !failures.is_empty() {
+                println!("  {phase} non-passing tests:");
+                for (status, name) in failures {
+                    println!("    {status:<8} {name}");
+                }
+            }
+        }
+    }
+
+    for (phase, outcome) in &results {
+        if let Some((exit_code, summary, _)) = outcome {
+            // A phase that errored without producing a summary line likely
+            // failed to build; call it out so the zeros above aren't read
+            // as "all clear".
             if *exit_code != 0 && summary.run == 0 {
                 println!(
                     "  warning: {phase} produced no nextest summary (build failure?) — see output above."
+                );
+            }
+            // Tests counted as run but carrying a status this parser does
+            // not recognize would otherwise vanish from the table.
+            if summary.unaccounted() > 0 {
+                println!(
+                    "  warning: {phase}: {} of {} run tests carry a status test-summary does not \
+                     recognize — see the nextest summary line above.",
+                    summary.unaccounted(),
+                    summary.run,
                 );
             }
         }
@@ -275,11 +360,11 @@ mod package_selection_guard {
 mod parse_summary {
     use super::*;
 
-    fn check(line: &str, run: u64, passed: u64, failed: u64, skipped: u64) {
+    fn check(line: &str, run: u64, passed: u64, failed: u64, timed_out: u64, skipped: u64) {
         let s = parse_summary(line);
         assert_eq!(
-            (s.run, s.passed, s.failed, s.skipped),
-            (run, passed, failed, skipped)
+            (s.run, s.passed, s.failed, s.timed_out, s.skipped),
+            (run, passed, failed, timed_out, skipped)
         );
     }
 
@@ -289,6 +374,7 @@ mod parse_summary {
             "Summary [ 73.207s] 8 tests run: 8 passed (2 slow), 2 skipped",
             8,
             8,
+            0,
             0,
             2,
         );
@@ -301,6 +387,7 @@ mod parse_summary {
             29,
             23,
             6,
+            0,
             2,
         );
     }
@@ -312,26 +399,94 @@ mod parse_summary {
             1,
             0,
             1,
+            0,
             114,
         );
+    }
+
+    /// The 2026-07-15 container run: fifteen timeouts a passed/failed/skipped
+    /// parse silently dropped from the table.
+    #[test]
+    fn timeouts_are_counted() {
+        let line =
+            "Summary [1200.089s] 40 tests run: 21 passed (18 slow), 4 failed, 15 timed out, 6 skipped";
+        check(line, 40, 21, 4, 15, 6);
+        assert_eq!(parse_summary(line).unaccounted(), 0);
+    }
+
+    #[test]
+    fn unrecognized_statuses_are_unaccounted() {
+        // A hypothetical status keyword this parser does not know.
+        let line = "Summary [10s] 5 tests run: 3 passed, 2 vaporized, 0 skipped";
+        assert_eq!(parse_summary(line).unaccounted(), 2);
     }
 
     #[test]
     fn strips_ansi_color_codes() {
         let colored =
             "\x1b[1m\x1b[32mSummary\x1b[0m [73s] \x1b[1m8\x1b[0m tests run: 8 passed, 2 skipped";
-        check(colored, 8, 8, 0, 2);
+        check(colored, 8, 8, 0, 0, 2);
     }
 
     #[test]
     fn missing_summary_is_all_zero() {
-        check("no summary line here", 0, 0, 0, 0);
+        check("no summary line here", 0, 0, 0, 0, 0);
     }
 
     #[test]
     fn takes_the_last_summary_line() {
         let log = "Summary [1s] 1 test run: 1 passed, 0 skipped\n\
                    Summary [2s] 9 tests run: 7 passed, 1 failed, 1 skipped";
-        check(log, 9, 7, 1, 1);
+        check(log, 9, 7, 1, 0, 1);
+    }
+}
+
+#[cfg(test)]
+mod parse_failures {
+    use super::*;
+
+    /// Real lines from the 2026-07-15 container run: streamed FAIL and
+    /// TIMEOUT statuses, the end-of-run recap re-printing one of them, a
+    /// retry line, and a PASS line — only final non-passing statuses
+    /// survive, once each.
+    #[test]
+    fn collects_and_deduplicates_terminal_statuses() {
+        let log = "        PASS [  50.205s] ( 1/40) libtonode-tests::concrete mine_to_transparent\n\
+             \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n\
+             \x20    TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync\n\
+             \x20   TRY 2 FAIL [  1.002s] ( 2/40) libtonode-tests::concrete retried_test\n\
+             \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n";
+        assert_eq!(
+            parse_failures(log),
+            vec![
+                (
+                    "FAIL".to_string(),
+                    "libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation"
+                        .to_string()
+                ),
+                (
+                    "TIMEOUT".to_string(),
+                    "libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn survives_ansi_and_missing_progress_marker() {
+        let log = "\x1b[1m\x1b[31mFAIL\x1b[0m [ 17.210s] libtonode-tests::sync store_all_checkpoints_in_verification_window\n";
+        assert_eq!(
+            parse_failures(log),
+            vec![(
+                "FAIL".to_string(),
+                "libtonode-tests::sync store_all_checkpoints_in_verification_window".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn clean_run_yields_nothing() {
+        assert!(parse_failures("PASS [ 1s] (1/1) suite test_one\nSummary ...").is_empty());
     }
 }
