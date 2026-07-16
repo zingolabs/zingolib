@@ -48,6 +48,7 @@ pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
+pub(crate) mod transmit;
 
 #[cfg(test)]
 mod darkside;
