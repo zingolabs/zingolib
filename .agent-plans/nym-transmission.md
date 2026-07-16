@@ -254,6 +254,41 @@ reserved seat behind the routing seam and blocks nothing.
 - Queued: ADR (capstone, draft after Q15); numbering must dodge the
   OP_RETURN ADR-0010 claim from a sibling worktree.
 
+## Implementation — increment 1 (COMPLETE 2026-07-15): pure seam-B core
+
+VERIFIED: `cargo check -p zingolib --features nym` green (1m04s); the 8
+new unit tests pass (`cargo test -p zingolib --features nym --lib nym::`);
+the default no-`nym` build is unaffected (`cargo check -p zingolib` green).
+Not yet committed — awaiting user go-ahead.
+
+Built: `MixnetMode` tri-state (`nym/mode.rs`); the `Transmitter` trait +
+witness-rotation `broadcast` with injected RNG, sequential failover on
+`Unreachable`, terminal on `Rejected`, bounded attempts, no-repeat picks
+(`nym/broadcast.rs`, 7 tests incl. a determinism/injectability test); the
+provisional Broadcast Indexer list separate from the sync list
+(`nym/broadcast_indexers.rs`, 1 test). All behind the off-by-default `nym`
+feature, no nym crates pulled.
+
+
+Building the CI-testable core the ADR made binding, behind an off-by-default
+`nym` feature, with NO nym crates yet (the live NymProxy transport slots in
+behind the `Transmitter` trait in a later increment). File claims for this
+increment (mine; others hold only zingo-cli files):
+
+- `zingolib/Cargo.toml` — add `nym = []` feature (minimal, re-read first).
+- `zingolib/src/lib.rs` — add `#[cfg(feature = "nym")] pub mod nym;`.
+- `zingolib/src/nym/mod.rs` — module root (new).
+- `zingolib/src/nym/mode.rs` — `MixnetMode` tri-state (new).
+- `zingolib/src/nym/broadcast.rs` — `Transmitter` trait + witness-rotation
+  `broadcast` with injectable RNG + failover + unit tests (new).
+- `zingolib/src/nym/broadcast_indexers.rs` — provisional curated broadcast
+  list, separate from the sync list (new).
+
+Next increments (not this one): the nym-sdk NymProxy `Transmitter` impl in
+zingo-netutils behind its own `nym` feature; wiring the broadcaster into
+`transmit_transactions`; the tri-state toggle as a LightClient API; the
+reqwest+SOCKS5 price path; CLI `nym on|off|status`.
+
 ## File claims (prospective, gated on ratification)
 
 - `.agent-plans/nym-transmission.md` (this file)
