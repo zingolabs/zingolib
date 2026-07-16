@@ -647,8 +647,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 /// deleted. The test stays ignored for an unrelated reason — its ledger
 /// predates V6 and every step needs re-deriving per ADR 0009.
 #[ignore = "The ledger's fees and amounts predate V6 — re-derive every step per ADR 0009 \
-            before un-ignoring (step 10's drain amount goes insufficient under V6 \
-            two-bundle fees)"]
+            before un-ignoring (step 10 under-drains, stranding 10_000 in sapling, because \
+            V6's two-bundle fees lead the planner to leave the sapling note unspent)"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     use crate::lightclient::error::{LightClientError, SendError};
@@ -670,7 +670,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
             net.chain.write().await.mine_mempool();
             client.sync_and_await().await.unwrap();
-            check_client_balances!(client, i: 0 o:$o s:$s t:$t);
+            check_client_balances!(client, i: $i o:$o s:$s t:$t);
         };
     }
 
