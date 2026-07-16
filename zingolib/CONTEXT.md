@@ -28,6 +28,10 @@
 
 **Turnstile** — The ZIP 318 consensus mechanism that, from NU6.3 activation, constrains old-Orchard-pool spends to spends-plus-change and disables ordinary payments into that pool. It makes the Orchard→Ironwood migration effectively mandatory and bounds circulating supply as value crosses pools.
 
+**Sweep Minimum** — The ZIP 318 migration policy threshold (provisionally twice the ZIP-317 marginal fee). Migration never selects a note worth at most the Sweep Minimum: the policy demands a note return strictly more than a safety factor over its true marginal spend cost, not merely break even. Distinct from Dust, which is a smaller, balance-level threshold.
+
+**Stranded** — Value a migration plan leaves behind in the Orchard pool because moving it is not worthwhile: notes worth at most the Sweep Minimum, plus any pooled balance too small to fund the smallest denomination. A plan reports its stranded value explicitly; value is never dropped silently.
+
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 
 **Coin** — A transparent output (UTXO).
@@ -139,7 +143,7 @@
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
 
-**Dust** — Outputs whose value is below the ZIP-317 marginal fee threshold. Excluded from balances and not eligible as inputs.
+**Dust** — Outputs whose value is strictly below the ZIP-317 marginal fee. Excluded from balances and not eligible as inputs. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration.
 
 ---
 

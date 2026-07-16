@@ -23,8 +23,11 @@ pub struct MigrationParams {
     /// `DUST_FLOOR`: the smallest permitted denomination. Leftover value
     /// strictly below this cannot be migrated as a standard note.
     pub dust_floor: u64,
-    /// Notes worth at most this are stranded: spending one contributes less
-    /// than it costs as a marginal input.
+    /// Notes worth at most this are stranded rather than selected for
+    /// migration. Provisionally twice the ZIP-317 marginal fee: a deliberate
+    /// safety factor, requiring a selected note to return strictly more than
+    /// double the marginal action cost it adds, rather than merely break even
+    /// against `MARGINAL_FEE` itself.
     pub sweep_min: u64,
     /// `M`: bucket boundaries are the block heights ≡ 0 (mod `M`).
     pub bucket_modulus: u32,
