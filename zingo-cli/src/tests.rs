@@ -193,6 +193,25 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn calculate() {
+            assert_no_arg_command("calculate");
+        }
+
+        #[test]
+        fn transmit() {
+            assert_no_arg_command("transmit");
+        }
+
+        #[test]
+        fn transmit_with_txids() {
+            assert_command(
+                &[examples::BIN_NAME, "transmit", examples::TXID],
+                "transmit",
+                &[examples::TXID],
+            );
+        }
+
+        #[test]
         fn shield() {
             assert_no_arg_command("shield");
         }
@@ -361,85 +380,66 @@ mod log_file_path {
 }
 
 mod sync {
-    use crate::poll_sync_for_prompt_indicator;
-    use std::cell::RefCell;
+    use crate::{ScanProgress, idle_indicator, synced_indicator, syncing_indicator};
 
-    /// Simulates a single-response sync poll and returns the prompt indicator.
-    fn poll_with(poll_response: &str) -> String {
-        let response = poll_response.to_string();
-        let send = move |_cmd: String, _args: Vec<String>| response.clone();
-        poll_sync_for_prompt_indicator(&send)
-    }
-
-    /// Simulates a two-step sync poll (poll then status) and returns the prompt indicator.
-    fn poll_then_status(poll_response: &str, status_response: &str) -> String {
-        let call_count = RefCell::new(0);
-        let poll = poll_response.to_string();
-        let status = status_response.to_string();
-        let send = move |_cmd: String, _args: Vec<String>| {
-            let mut c = call_count.borrow_mut();
-            *c += 1;
-            if *c == 1 {
-                poll.clone()
-            } else {
-                status.clone()
-            }
-        };
-        poll_sync_for_prompt_indicator(&send)
+    fn progress(outputs_scanned: u64, total_outputs: u64, complete: bool) -> Option<ScanProgress> {
+        Some(ScanProgress {
+            outputs_scanned,
+            total_outputs,
+            complete,
+        })
     }
 
     #[test]
-    fn poll_error() {
-        assert_eq!(poll_with("Error: connection lost"), " [Sync error]");
-    }
-
-    #[test]
-    fn poll_completed() {
+    fn in_progress_with_available_status() {
         assert_eq!(
-            poll_with("Sync completed succesfully: 1000 blocks"),
-            " [Synced]"
+            syncing_indicator(progress(4_520, 10_000, false)),
+            " [Syncing 4520 / 10000 outputs]"
         );
     }
 
     #[test]
-    fn in_progress_with_valid_status() {
-        assert_eq!(
-            poll_then_status(
-                "Sync task is not complete.",
-                r#"{"percentage_total_outputs_scanned": 45.2}"#,
-            ),
-            " [Syncing 45.2% complete]"
-        );
+    fn in_progress_with_unavailable_status() {
+        assert_eq!(syncing_indicator(None), " [Syncing]");
     }
 
     #[test]
-    fn in_progress_with_unparseable_status() {
-        assert_eq!(
-            poll_then_status("Sync task is not complete.", "not json"),
-            " [Syncing]"
-        );
+    fn in_progress_with_output_free_range() {
+        assert_eq!(syncing_indicator(progress(0, 0, false)), " [Syncing]");
     }
 
     #[test]
     fn not_launched_not_synced() {
         assert_eq!(
-            poll_then_status(
-                "Sync task has not been launched.",
-                r#"{"percentage_total_outputs_scanned": 0.0}"#,
-            ),
-            " [Not syncing 0.0% complete]"
+            idle_indicator(progress(0, 10_000, false)),
+            " [Sync stopped at 0 / 10000 outputs]"
         );
     }
 
     #[test]
     fn not_launched_fully_synced() {
         assert_eq!(
-            poll_then_status(
-                "Sync task has not been launched.",
-                r#"{"percentage_total_outputs_scanned": 100.0}"#,
-            ),
-            " [Synced]"
+            idle_indicator(progress(10_000, 10_000, true)),
+            " [Synced 10000 / 10000 outputs]"
         );
+    }
+
+    #[test]
+    fn synced_with_unavailable_status() {
+        assert_eq!(synced_indicator(None), " [Synced]");
+    }
+
+    #[test]
+    fn all_outputs_scanned_but_refetch_pending_is_not_synced() {
+        assert_eq!(
+            idle_indicator(progress(10_000, 10_000, false)),
+            " [Sync stopped at 10000 / 10000 outputs]"
+        );
+    }
+
+    #[test]
+    fn not_launched_with_unavailable_status() {
+        assert_eq!(idle_indicator(None), " [Sync stopped]");
     }
 }
 
@@ -497,17 +497,47 @@ mod config_template {
         }
 
         /// A new wallet's birthday normally comes from the server's chain
-        /// tip; Offline mode has no server, so the user must supply one.
+        /// tip; Offline mode has no server, so the Library Birthday — a
+        /// release-stamped height no new seed can predate — stands in
+        /// (ADR 0007). No --birthday is demanded.
         #[test]
-        fn new_wallet_without_birthday_is_refused() {
+        fn new_wallet_without_birthday_uses_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-lib-birthday-test");
             let filled = fill(&[
                 examples::BIN_NAME,
                 "--offline",
                 "--data-dir",
-                "/nonexistent-zingo-cli-offline-test",
+                data_dir.to_str().unwrap(),
             ])
             .unwrap();
-            assert!(build_zingo_config(&filled).is_err());
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == zingolib::config::lib_birthday(ChainType::Mainnet)
+            ));
+        }
+
+        /// --birthday remains available for a new Offline-mode wallet as an
+        /// expert override of the Library Birthday floor (ADR 0007).
+        #[test]
+        fn new_wallet_birthday_overrides_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-birthday-override-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--birthday",
+                "3500000",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build_zingo_config(&filled).unwrap();
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == 3_500_000
+            ));
         }
     }
 

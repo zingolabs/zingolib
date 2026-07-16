@@ -136,7 +136,7 @@ impl LightClient {
 
     /// Only relevant in non-mobile, this function removes the save file.
     // TodO: can we shred it?
-    pub async fn do_delete(&self) -> Result<(), String> {
+    pub async fn delete_wallet_file(&self) -> std::io::Result<()> {
         // Check if the file exists before attempting to delete
         if self.wallet_path().exists() {
             match remove_file(self.wallet_path()) {
@@ -145,14 +145,16 @@ impl LightClient {
                     Ok(())
                 }
                 Err(e) => {
-                    let err = format!("ERR: {e}");
-                    error!("{err}");
+                    error!("ERR: {e}");
                     log::debug!("DELETE FAIL ON FILE!");
-                    Err(e.to_string())
+                    Err(e)
                 }
             }
         } else {
-            let err = "Error: File does not exist, nothing to delete.".to_string();
+            let err = std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "File does not exist, nothing to delete.",
+            );
             error!("{err}");
             log::debug!("File does not exist, nothing to delete.");
             Err(err)
