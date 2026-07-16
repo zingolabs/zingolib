@@ -489,7 +489,24 @@ means:
   is a spawned child process, not linked in-process (dep reality: nym-sdk's
   crypto-common ^0.2 cannot share the main lock).
 
-## Implementation — increment 3 (IN PROGRESS 2026-07-16): unify transmit policy
+## Implementation — increment 3 (STEP 1 DONE 2026-07-16): unify transmit policy
+
+DONE + VERIFIED (commit 0da43c3c9): `transmit::resilient_transmit` is the sole
+definition of the retry/duplicate-in-mempool/queued-probe policy — generic
+over `TransmitTarget`, pure (no wallet mutation), injectable sleep. 8
+regression tests green (accept, mempool/in-chain duplicate, queued
+settle/exhaust, retry succeed, delivery-check confirm/deny), clippy -D
+warnings clean, workspace check green. `transmit_transactions` rewired to
+`ClearnetTarget` + `resilient_transmit`, clearnet behavior unchanged.
+STEP 2 remaining: rework the increment-1 witness-rotation broadcaster to run
+resilient_transmit per random pick (retiring the simplistic `Transmitter`/
+`SubmitError` in broadcast.rs), add a `SocksTarget` (needs a socks5
+get_transaction delivery-check, not yet built) with an unreachable-vs-rejected
+classification driving failover, branch `transmit_transactions` on Mixnet Mode
+(needs the toggle + supervisor), and delete GrpcIndexer's `// TODO; add
+nym_client`.
+
+## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration
 so it is UNIQUELY defined, regression-tested, and reused by both the clearnet
