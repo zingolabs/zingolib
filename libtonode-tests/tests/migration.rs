@@ -65,14 +65,20 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
 /// wallet notes, standing in for the completed note-splitting phase so the
 /// Phase 2 machinery can be exercised before Ironwood lands on the node
 /// path. `bucket_index` assigns every part to that bucket; `None` leaves
-/// them bound but unscheduled.
+/// them bound but unscheduled. `bucket_modulus` overrides the provisional
+/// bucket geometry: every consumer of the schedule reads it from the
+/// injected state, so a test can shrink the chain it must mine.
 async fn inject_scheduled_migration(
     client: &LightClient,
     bound: Vec<(u64, OutputId, [u8; 32])>,
     bucket_index: Option<u64>,
+    bucket_modulus: Option<u32>,
 ) {
     let mut wallet = client.wallet().write().await;
-    let params = MigrationParams::provisional(wallet.chain_type());
+    let mut params = MigrationParams::provisional(wallet.chain_type());
+    if let Some(bucket_modulus) = bucket_modulus {
+        params.bucket_modulus = bucket_modulus;
+    }
     let parts = bound
         .into_iter()
         .enumerate()
@@ -129,6 +135,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
     inject_scheduled_migration(
         &recipient,
         vec![(100_000, reserved.output_id, reserved.nullifier)],
+        None,
         None,
     )
     .await;
@@ -209,30 +216,104 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 /// was never captured.
 #[tokio::test]
 async fn unavailable_boundary_tree_state_skips_without_sync() {
-    let (local_net, _faucet, mut recipient) =
-        pre_ironwood_funded_recipient(|_| vec![100_000]).await;
+    use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 
-    // One leap past the first bucket boundary: far enough that the boundary
-    // checkpoint is pruned, short of the second boundary. The leap crosses
-    // the deferred NU6.3 activation on the way.
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 450)
+    // The blocks mined behind the wallet's back before the broadcast
+    // attempt: enough to prove the skip performs no hidden sync, few
+    // enough to stay inside the bucket.
+    const HIDDEN_BLOCKS: u32 = 10;
+    // The smallest bucket modulus of the provisional value's power-of-two
+    // family that exceeds shardtree's checkpoint retention
+    // (`MAX_REORG_ALLOWANCE`, 100 blocks, mirroring zebra's finalization
+    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`) — the premise needs
+    // the boundary checkpoint pruned while the tip is still inside the
+    // bucket. Shrinking the modulus shrinks the chain: under the
+    // provisional 256 this test leapt 450 blocks, and mining that many
+    // blocks to a halo2 miner address outran even a 1200-second container
+    // budget.
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_REORG_ALLOWANCE + 1).next_power_of_two();
+    // The tip to leap to, centered in the window that satisfies both
+    // constraints: past the SECOND bucket boundary by more than the
+    // retention, so that boundary's checkpoint is pruned, and far enough
+    // below the third boundary that the hidden blocks stay inside the
+    // bucket. The second boundary rather than the first, because the
+    // broadcast path refuses a part whose boundary lies below the NU6.3
+    // activation, and the deferred activation below sits past the first.
+    const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
+        + MAX_REORG_ALLOWANCE
+        + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
+
+    use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
+
+    // Transparent coinbase becomes spendable only after
+    // [`COINBASE_MATURITY_BLOCKS`] confirmations (100 blocks, ZIP 213,
+    // enforced by the validator), so shielding and funding can complete no
+    // earlier; the deferred activation leaves margin beyond that, and
+    // still lies below [`TARGET_TIP`] so the leap crosses it.
+    const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
+    // The part is scheduled at the second bucket boundary; the broadcast
+    // path requires that boundary to sit at or above the activation.
+    const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= TRANSPARENT_DEFERRED_NU6_3);
+
+    // A transparent miner keeps this test's long chain cheap: transparent
+    // coinbase carries no halo2 proof, where a shielded miner pool costs
+    // roughly 2.7 seconds of block assembly per block — the cost that
+    // previously pushed this test past even a 1200-second budget.
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
+        PoolType::Transparent,
+        deferred_activation_heights(TRANSPARENT_DEFERRED_NU6_3),
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    // Mature the faucet's coinbase, shield it into pre-Ironwood Orchard,
+    // and fund the recipient with the note the part will bind — all below
+    // the activation height.
+    increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
+        .await
+        .unwrap();
+    faucet.quick_shield(AccountId::ZERO).await.unwrap();
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        .await
+        .unwrap();
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+    from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 100_000, None)])
+        .await
+        .unwrap();
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
 
-    let (known_height, bucket_modulus) = {
-        let wallet = recipient.wallet().read().await;
-        (
-            wallet
-                .sync_state
-                .last_known_chain_height()
-                .expect("the wallet has synced"),
-            MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
-        )
-    };
-    let current_bucket = schedule::bucket_index(known_height, bucket_modulus);
+    // One leap to the target tip, crossing the deferred NU6.3 activation
+    // on the way.
+    let funded_tip = u32::from(
+        recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced"),
+    );
     assert!(
-        current_bucket >= 1,
-        "the chain must have crossed at least one bucket boundary"
+        funded_tip < TRANSPARENT_DEFERRED_NU6_3,
+        "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+    );
+    increase_height_and_wait_for_client(&local_net, &mut recipient, TARGET_TIP - funded_tip)
+        .await
+        .unwrap();
+
+    let known_height = {
+        let wallet = recipient.wallet().read().await;
+        wallet
+            .sync_state
+            .last_known_chain_height()
+            .expect("the wallet has synced")
+    };
+    let current_bucket = schedule::bucket_index(known_height, PRUNED_BUCKET_MODULUS);
+    assert_eq!(
+        current_bucket, 2,
+        "the chain must sit inside the second bucket, past its boundary"
     );
 
     let notes = orchard_note_records(&recipient).await;
@@ -241,12 +322,13 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
         &recipient,
         vec![(100_000, bound.output_id, bound.nullifier)],
         Some(current_bucket),
+        Some(PRUNED_BUCKET_MODULUS),
     )
     .await;
 
     // New blocks the wallet has not seen: a hidden sync inside the
     // broadcast path would advance the wallet's known height.
-    generate_n_blocks_return_new_height(&local_net, 10).await;
+    generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
     let sent = recipient.broadcast_due_parts().await.unwrap();
     assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
@@ -324,6 +406,28 @@ async fn two_phase_migration_end_to_end() {
 /// boundary stays cheap.
 const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 
+/// The regtest activation-height fixture with NU6.3 deferred to `nu6_3`,
+/// so a test can fund pre-Ironwood notes before the boundary and cross it
+/// mid-test.
+fn deferred_activation_heights(nu6_3: u32) -> zingolib::ActivationHeights {
+    let fixture = scenarios::wallet_activation_heights(
+        &zcash_local_net::validator::regtest_test_activation_heights(),
+    );
+    zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(Some(nu6_3))
+        .set_nu7(None)
+        .build()
+}
+
 /// Launches a chain whose NU6.3 activation still lies ahead
 /// ([`DEFERRED_NU6_3_HEIGHT`]) and funds the recipient with one
 /// multi-output send — one pre-Ironwood (V2) Orchard note per value
@@ -341,25 +445,9 @@ const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 async fn pre_ironwood_funded_recipient(
     values: impl FnOnce(&MigrationParams) -> Vec<u64>,
 ) -> (MeteredNet, LightClient, LightClient) {
-    let fixture = scenarios::wallet_activation_heights(
-        &zcash_local_net::validator::regtest_test_activation_heights(),
-    );
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(Some(DEFERRED_NU6_3_HEIGHT))
-        .set_nu7(None)
-        .build();
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
         PoolType::IRONWOOD,
-        activation_heights,
+        deferred_activation_heights(DEFERRED_NU6_3_HEIGHT),
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;

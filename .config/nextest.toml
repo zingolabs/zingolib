@@ -15,10 +15,12 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 filter = 'test(store_all_checkpoints_in_verification_window)'
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
-# unavailable_boundary_tree_state_skips_without_sync generates and scans a
-# ~460-block leap past the first migration bucket boundary (modulus 256,
-# plus pruning depth), which ran past the 600s ceiling in container runs:
-# it gets the same doubled ceiling as the chain-cache build above.
+# unavailable_boundary_tree_state_skips_without_sync mines and scans a
+# ~235-block leap past the first migration bucket boundary (test-injected
+# modulus 128, plus the 100-block checkpoint retention). Every leap block
+# pays a halo2 miner address, so block assembly dominates: measured
+# ~2.7s/block in container runs, which needs the same doubled ceiling as
+# the chain-cache build above.
 [[profile.default.overrides]]
 filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
