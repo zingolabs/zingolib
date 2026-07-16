@@ -233,10 +233,13 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // budget.
     const PRUNED_BUCKET_MODULUS: u32 = (MAX_REORG_ALLOWANCE + 1).next_power_of_two();
     // The tip to leap to, centered in the window that satisfies both
-    // constraints: past the boundary by more than the retention, so the
-    // boundary checkpoint is pruned, and far enough below the second
-    // boundary that the hidden blocks stay inside the bucket.
-    const TARGET_TIP: u32 = PRUNED_BUCKET_MODULUS
+    // constraints: past the SECOND bucket boundary by more than the
+    // retention, so that boundary's checkpoint is pruned, and far enough
+    // below the third boundary that the hidden blocks stay inside the
+    // bucket. The second boundary rather than the first, because the
+    // broadcast path refuses a part whose boundary lies below the NU6.3
+    // activation, and the deferred activation below sits past the first.
+    const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
         + MAX_REORG_ALLOWANCE
         + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
 
@@ -248,6 +251,9 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // earlier; the deferred activation leaves margin beyond that, and
     // still lies below [`TARGET_TIP`] so the leap crosses it.
     const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
+    // The part is scheduled at the second bucket boundary; the broadcast
+    // path requires that boundary to sit at or above the activation.
+    const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= TRANSPARENT_DEFERRED_NU6_3);
 
     // A transparent miner keeps this test's long chain cheap: transparent
     // coinbase carries no halo2 proof, where a shielded miner pool costs
@@ -306,8 +312,8 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     };
     let current_bucket = schedule::bucket_index(known_height, PRUNED_BUCKET_MODULUS);
     assert_eq!(
-        current_bucket, 1,
-        "the chain must sit inside the first bucket past the boundary"
+        current_bucket, 2,
+        "the chain must sit inside the second bucket, past its boundary"
     );
 
     let notes = orchard_note_records(&recipient).await;
