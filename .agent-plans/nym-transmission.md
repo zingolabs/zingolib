@@ -1,0 +1,267 @@
+# Claim: Nym mixnet IP obfuscation (grilling session, 2026-07-15)
+
+**STATUS: DESIGN COMPLETE (2026-07-15).** All 15 questions resolved.
+Capstone `docs/adr/0011-nym-mixnet-transmission.md` written; glossary
+terms (Nym mixnet, NymVPN, Mixnet Mode, Witness Rotation, Broadcast
+Indexer) added to `zingolib/CONTEXT.md` and the stale Tor entry
+corrected. No production code written yet — implementation is the next
+phase, seam-B first (separate mixnet transmit/price component off a
+shared NymProxy, injectable RNG + transport). Base is #2419 ironwood +
+#2464's 8 commits (168ee9bb4), cargo check green.
+
+Session anchored in the `reboot_nym` worktree (moved from `dev`, where
+an earlier copy of this file briefly lived). Goal: a ratified plan to
+route the client's outbound network traffic over the Nym mixnet so
+that no server-side attacker learns the client IP. No code edits until
+the plan is ratified; decisions crystallise into `zingolib/CONTEXT.md`
+and a new ADR as the session proceeds.
+
+**Base:** the Nym work stacks on **#2419 (feat: ironwood support,
+b5a1b739e) with #2464's 8 fix commits replayed on top** — rebased
+2026-07-15 at the user's direction ("Pick up the 2464 fix commits and
+rebase on top of them on top of 2419"). History: reboot_nym was first
+fast-forwarded onto #2464 head (eec0bbdb5), then those 8 commits
+(typed-Result CLI migration incl. do_info deletion, pepper-sync
+scan-range sync completion, ADR-0006 pointer) were `git rebase`d onto
+ironwood — a clean replay, no conflicts, re-hashed 168ee9bb4..34fa8be5b.
+Compile verification: **GREEN** — `cargo check --workspace
+--all-targets` passed (exit 0, 34s) on the rebased tree, so the
+do_info-deletion / typed-Result migration reconciled with ironwood's
+71 commits with no unbuilt caller. Pre-rebase restore point:
+eec0bbdb5.
+
+## Threat model (user-stated, 2026-07-15)
+
+Prevent a server-side attacker from learning the client IP address.
+The attacker sits at any service the client contacts; the mixnet exit
+gateway seeing the *destination* is acceptable, since services see
+only the gateway's IP.
+
+**The indexer is the named adversary.** A send is the transaction
+broadcast *to the indexer* (`send_transaction`), so mixnet exists to
+hide the client IP from the indexer at broadcast time. Corollary
+(resolves the Q8 tension): bare-clearnet sync to that same indexer
+logs the real IP against the wallet's address set, letting the indexer
+re-link a mixnet-broadcast tx to the client regardless — so bare
+clearnet is the explicit "don't care" tier, and **NymVPN-sync +
+mixnet-send is the coherent fully-protected posture.** This is why the
+NymVPN layer earns its place (Q6, now under sub-agent analysis).
+
+## Decisions ratified so far (2026-07-15)
+
+1. **Transport = Nym; Tor rejected** ("Proceed with the Nym based
+   send, forget TOR"), decided against the full Tor-vs-Nym comparison
+   table. This carves a scoped exception out of the 2026-07-13
+   no-new-deps rule: the nym stack (nym-sdk, nym-http-api-client,
+   nym-validator-client, tokio-socks, tower) may enter the
+   in-workspace zingo-netutils behind an off-by-default `nym`
+   feature. No `[patch]` tables or branch pins.
+
+2. **Per-surface transport tiers** (supersedes the earlier
+   all-or-nothing model). Obfuscation is a property of each surface,
+   not the whole client; two transports run at once:
+   - **Send** → Nym mixnet, required, fail-closed.
+   - **Price-fetch** → Nym mixnet, required, fail-closed.
+   - **Sync** (indexer queries + mempool stream) → NOT required to be
+     mixnet; clearnet OR NymVPN acceptable. Sync degrades gracefully;
+     it does not fail closed.
+
+3. **Live user toggle for the Nym mixnet** — the mixnet transport can
+   be turned on and off at runtime, not only at startup. Consequence:
+   the seam holds a *mutable* shared transport-state, not a
+   construction-time-fixed connector; toggling on incurs bootstrap
+   latency (POC ~seconds-to-120s) during which the mixnet-only
+   surfaces are unavailable-but-connecting.
+
+### Glossary split (must not blur)
+
+- **Nym mixnet**: 5-hop Sphinx network via nym-sdk's embedded SOCKS5
+  client. Max anonymity, high latency. Carries send + price-fetch.
+- **NymVPN**: Nym's VPN product. "Fast" = 2-hop AmneziaWG
+  (WireGuard); "Anonymous" = 5-hop mixnet. Lower latency than the raw
+  mixnet SDK. An acceptable sync tier — but **user-provided at the OS
+  level, NOT embedded** (Q6 resolved, see below).
+
+## Network-surface audit (2026-07-15, this worktree)
+
+Production outbound surfaces — the complete list:
+
+1. Indexer gRPC (`zingo-netutils::GrpcIndexer`): all RPCs including
+   send_transaction and pepper-sync's long-lived mempool stream.
+   Default `zec.rocks:443`.
+2. Server-select probe fan-out (`zingo-cli/src/server_select.rs`):
+   concurrent get_lightd_info to all ~14 URIs in
+   `most_up_indexer_uris.rs` when no `--server` is given. Loudest
+   leak under the threat model.
+3. Price fetch (`zingo-price/src/lib.rs:205`): reqwest GET to
+   api.gemini.com, clearnet since the Tor removal.
+
+Everything else socket-touching is test-only. The "valar group
+broadcast service" is **hypothetical as of 2026-07-15** (user
+confirmed) — a not-yet-built future broadcast surface. It gets a
+reserved seat behind the routing seam and blocks nothing.
+
+## Findings already established
+
+- Send has never run over Tor (Tor was price-fetch only; removed in
+  4d7f03b64, PR #1833, 60eda7090/16460e72d, June 2026).
+- `zingo-cli/src/commands.rs` `updatecurrentprice` help text still
+  advertises the removed `--tor` flag (stale; fix rides along).
+- Send over Nym ran in the unmerged May-2026 POC: zls branch
+  `nym_wallet_poc_2_2` + zingo-common branch `nym_wallet_poc_2_1`
+  (netutils `nym` feature, `NymProxy` wrapping nym-sdk's
+  Socks5MixnetClient, per-RPC `nym: bool`; send on in dd840cc09,
+  all-RPCs in 8396e1cad, off in 00c27757a). Merged residue: PR
+  #2341's Indexer-trait generalization. POC costs: 5 new direct
+  deps, 30s get_info timeout, 120s lifecycle cap, gateway-discovery
+  retries.
+- zingo-netutils now lives in-workspace (7468d7da0), so the POC's
+  `nym_proxy.rs` ports directly — no external pin.
+- reqwest (already a workspace dep) supports SOCKS5 proxying, so the
+  price fetch can ride the same NymProxy.
+
+## Open questions (grilled one at a time)
+
+- Q3 RESOLVED: valar is hypothetical; reserved seat, blocks nothing.
+- Fail-closed (ratified): when the mixnet is ON, a transport failure
+  mid-send REFUSES — it never silently drops to clearnet. Clearnet is
+  reachable ONLY by the user's deliberate toggle-off (informed
+  consent). This is the invariant separating consent from footgun.
+- Q4 SUPERSEDED then RESOLVED: price oracle rejected as a DEPENDENCY
+  ("we can't depend on the oracle"); price-fetch is obfuscated over
+  Nym (reqwest speaks SOCKS5, reuses the mixnet NymProxy). The
+  all-or-nothing framing is dead — replaced by Decision 2's per-surface
+  tiers. Oracle survives as a someday-maybe, depended on by nothing.
+- Q5 RESOLVED (Decision 3): live toggle, not startup-fixed.
+- Q6 RESOLVED (2026-07-15, via sub-agent analysis): **NymVPN is
+  user-provided at the OS level, NOT embedded.** Our code builds only
+  the embedded mixnet SOCKS5 (send + price); sync uses the plain
+  connector, which the user may route through a system-installed
+  NymVPN app transparently to us. The in-process embed
+  (`nym-vpn-core`/`nym-vpn-lib`) is rejected on THREE independent
+  grounds: (1) it is **GPL-3.0**, and every zingolib crate is MIT —
+  static-linking relicenses the distributed wallet; (2) those crates
+  are **not on crates.io** (git-pin only — violates the no-pins rule);
+  (3) **OS-impractical** — Android allows one system VPN via a
+  consent-gated `VpnService`, and iOS requires a separate entitled
+  `NEPacketTunnelProvider` target, so a wallet-FFI process cannot host
+  the tunnel. Option 4 (reuse nym-sdk for a 2-hop tier) is impossible:
+  the mixnet is fixed 5-hop; 2-hop is NymVPN-only and GPL. Reserved
+  follow-up (Option 2, desktop-only): a thin control client speaking
+  `nym-vpn-proto` gRPC to a user-installed `nym-vpnd` (no GPL linkage,
+  small proto exception) IF we later want to fail-closed-enforce the
+  tunnel on desktop before sync. NEW FACT: NymVPN's fast (2-hop)
+  gateways require a **paid zk-nym credential**; the plain mixnet SDK
+  is free for now — so mixnet send/price cost nothing, but a
+  NymVPN-protected sync costs the user money.
+- Q7 RESOLVED (2026-07-15): **clearnet send is PERMITTED via the
+  user's deliberate toggle-off; mixnet is the DEFAULT.** (User typed
+  "7a" but the prose "allow clearnet send" is the 7b branch — intent
+  recorded, label disregarded.) Send and price-fetch behave
+  uniformly: mixnet by default, clearnet only under explicit
+  toggle-off. The fail-closed invariant is unchanged: mixnet-on +
+  transport failure = refuse; clearnet iff the user chose it.
+- Q8 (OPEN): does bare-clearnet sync (leaking real IP + address set to
+  the indexer, partially defeating send-over-mixnet against that same
+  indexer) meet the threat model, or is NymVPN sync the intended
+  fully-protected posture? Surfaced to user.
+- Q8 RESOLVED (2026-07-15): **forced-on-at-startup; the off state is
+  NEVER persisted.** Mixnet is on at every launch; toggle-off is
+  per-session only. Fail-safe: the worst case is re-disabling each
+  session, never a forgotten-off clearnet broadcast. Consequence:
+  startup has a "mixnet bootstrapping" window during which send +
+  price are unavailable-but-connecting; sync proceeds on its own tier
+  meanwhile.
+- MOOT (dissolved by the tiered model): the old "mempool-stream
+  reconnection over mixnet" concern. Sync — including the long-lived
+  mempool stream — rides the SYNC tier (clearnet/NymVPN), NOT the
+  mixnet. Only send + price go over mixnet, and both are one-shot. So
+  there is no long-lived-stream-over-mixnet fail-closed problem; the
+  mempool stream degrades gracefully on its own tier.
+- Q9 RESOLVED (2026-07-15): **seam = option B.** GrpcIndexer stays
+  plain-only (sync untouched, byte-for-byte); a SEPARATE mixnet
+  transmit/price component, built from the shared toggleable NymProxy,
+  owns the two mixnet surfaces. Send builds a mixnet-routed client at
+  transmit time; price uses reqwest+SOCKS5; both gated on the NymProxy
+  being up. Routing is by each operation's static TIER, never a
+  per-RPC `nym: bool`.
+- Send broadcast strategy (RATIFIED 2026-07-15, FINAL): **ONE indexer
+  per send, randomly picked from a curated ~10 reliable low-latency
+  list, over the mixnet. The same query is NEVER fired redundantly to
+  multiple indexers.** Purpose is witness rotation for privacy — no
+  single indexer accumulates a picture of all the user's sends,
+  because which one carries any given send is random. The broadcast
+  target is decoupled from the sync indexer. (Three-message user
+  correction: "No.. not redundant"; "a randomized pick per send";
+  "Change the design... don't fire the same query redundantly.")
+- Q10 RESOLVED (user-confirmed 2026-07-15): single-pick => ordinary
+  single-submission success (plus the existing 852537e09
+  duplicate-in-mempool = success rule). No N-way quorum. **On a failed
+  submission the send draws a NEW random indexer and retries**
+  ("Send is submitted against a random indexer. If it fails another
+  random sample picks a new indexer to retry.") — sequential failover,
+  never parallel/redundant. Implementation guards (bake in unless told
+  otherwise): bound the retry count so an invalid tx can't walk all
+  ~10; short-circuit on a substantive rejection (invalid tx will
+  reject everywhere) and surface that reason rather than exhausting
+  the list.
+- Q11 RESOLVED (2026-07-15): **separate curated broadcast list,
+  distinct from the sync list** (`most_up_indexer_uris.rs`). Broadcast
+  wants reliable tx-relay; sync-ranking wants low get_info latency —
+  different criteria, so a change to one must not reshape the other.
+  New file, e.g. `broadcast_indexers.rs`.
+- Q12 RESOLVED (2026-07-15): **ONE persistent mixnet client** (the
+  NymProxy, bootstrapped once at startup) — a fresh client per send is
+  unneeded for the indexer threat (the indexer never sees the Nym
+  client identity over the mixnet) and too costly (per-client gateway
+  registration). BUT **fresh SURBs/circuits per send WITHIN that one
+  client**, as cheap defense-in-depth against a network-level observer
+  correlating sends by reply path. IMPLEMENTATION FLAG: Nym's model is
+  per-Sphinx-packet stratified routing + single-use reply blocks, not
+  Tor circuits — verify against nym-sdk what per-send reply/connection
+  isolation it actually exposes; record the real mechanism, don't
+  overpromise "circuits".
+- Q13 RESOLVED (2026-07-15): **mixnet bootstrap is scoped to
+  CONNECTED sessions; skipped under `--offline`.** Offline sessions
+  never transmit, so they pay no mixnet bootstrap cost; connected
+  sessions bootstrap eagerly at startup (per Q8) so send is ready
+  with no surprise 120s wait. Net rule: mixnet is forced-on whenever
+  the session can transmit at all, absent when it can't.
+- Q14 RESOLVED (2026-07-15): **mocked logic in CI, opt-in live smoke
+  test by hand.** All send/toggle/fail-closed logic is tested in CI
+  against an injected mock transport + a seeded/injectable RNG
+  (assert: random pick from the broadcast list, sequential failover on
+  unreachable, substantive-rejection terminal, duplicate=success,
+  mixnet-down fails closed, toggle flips availability, --offline skips
+  bootstrap). The real NymProxy bootstrap + a real tx over the live
+  mixnet is a single non-default-feature-gated smoke test the user
+  runs by hand, never in CI. **Design consequence (binding): the RNG
+  and the transport MUST be injectable seams at the transmit
+  component's constructor — no global-RNG calls, no internally
+  constructed connector — or the pick/failover logic is untestable.**
+- Q15 RESOLVED (2026-07-15): **toggle is a zingolib LightClient API
+  with TRI-STATE status (off / bootstrapping / ready)**, driven by
+  both zingo-mobile (UniFFI) and zingo-cli (thin `nym on|off|status`
+  wrapper). Not a bare bool: "on but not yet reachable" is a real
+  state the UI must show, because a send during bootstrapping must
+  neither silently wait-then-clearnet nor silently fail. Default on
+  for connected sessions; optional `--no-mixnet` startup opt-out.
+  ALL 15 DESIGN QUESTIONS NOW RESOLVED — grill complete, drafting the
+  capstone ADR.
+- Glossary: STARTED — Nym mixnet, Witness Rotation, Broadcast Indexer
+  added to zingolib/CONTEXT.md; stale Tor entry corrected. More terms
+  graduate on implementation.
+- Queued: ADR (capstone, draft after Q15); numbering must dodge the
+  OP_RETURN ADR-0010 claim from a sibling worktree.
+
+## File claims (prospective, gated on ratification)
+
+- `.agent-plans/nym-transmission.md` (this file)
+- `zingo-netutils/` — `nym` feature, ported `nym_proxy.rs`, connector
+  wiring.
+- `zingolib/src/lightclient*` — routing wiring.
+- `zingo-price/` — proxy-aware fetch.
+- `zingo-cli/` — flag surface, server_select behavior, stale `--tor`
+  help-text fix.
+- `zingolib/CONTEXT.md` — glossary entries as terms resolve.
+- `docs/adr/` — new ADR on the Nym transport decision.
