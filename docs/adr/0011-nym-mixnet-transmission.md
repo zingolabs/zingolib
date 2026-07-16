@@ -132,3 +132,30 @@ which makes the indexer-correlation caveat a live concern to document rather
 than a corner case. The mixnet bootstrap imposes a startup latency on connected
 sessions, and a send attempted during bootstrapping must wait or report
 "connecting," never silently clearnet or silently fail.
+
+## Amendment (2026-07-16): the mixnet proxy is a spawned child process
+
+The description above of "a separate component, built from a single shared
+mixnet proxy" implied the proxy is linked into the wallet process. Dependency
+resolution forbids that. The nym-sdk stack requires `crypto-common ^0.2`,
+which cannot share a `Cargo.lock` with this workspace's `crypto-common
+=0.2.0-rc.1` pin, reached through `zcash_primitives` 0.29; both requirements
+fall in the same `0.2.x` compatibility range, so a single lockfile can hold
+only one and satisfies neither side. `zingo-netutils` was therefore made its
+own workspace with its own lockfile, and the mixnet transport genuinely
+cannot be linked into the wallet.
+
+The ratified model is out-of-process. `zingo-netutils` builds a `nym-proxy`
+binary in its own lockfile that runs the embedded Nym SOCKS5 client and
+prints its local SOCKS5 address. The wallet bundles that binary, spawns it as
+a child process, reads its address, and routes the Transmission and
+price-fetch surfaces through it with a light SOCKS5 client (`tokio-socks`)
+that resolves cleanly in the main lockfile. The tri-state Mixnet Mode maps to
+the child's lifecycle: off is not spawned, bootstrapping is spawned and
+connecting, ready is SOCKS5-reachable. The fail-closed invariant is unchanged
+— if the child never reaches ready, a send refuses rather than falling back
+to clearnet.
+
+Everything else in this record stands: the per-surface tiers, the
+witness-rotation broadcast over the curated Broadcast Indexer list, the toggle
+semantics, and the sync tier's user-provided NymVPN.
