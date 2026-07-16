@@ -411,11 +411,12 @@ impl LightWallet {
         let mut total_selected_note_value: Zatoshis;
 
         loop {
-            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
-            if unselected_notes.is_empty() {
-                break;
-            }
-            // update target value for further note selection
+            // The remaining need must be recomputed before any exit from the
+            // loop: breaking on an emptied note list without updating it
+            // hands the caller a stale positive remainder even when the last
+            // selected note covered the target, and the caller then selects
+            // further notes (from other pools, or from the withheld
+            // migration reserve) against a target already met.
             total_selected_note_value = Zatoshis::from_u64(
                 selected_notes
                     .iter()
@@ -431,6 +432,12 @@ impl LightWallet {
                     break;
                 }
             };
+
+            // if no unselected notes are available, return the currently
+            // selected notes even though the target value has not been reached
+            if unselected_notes.is_empty() {
+                break;
+            }
 
             if let Some(&smallest_unselected) = unselected_notes.get(unselected_note_index) {
                 // select a note to test if it has enough value to complete the transaction without creating dust as change
