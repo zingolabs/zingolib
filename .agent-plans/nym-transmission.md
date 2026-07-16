@@ -367,7 +367,55 @@ git rev AND the time v0.3.47 patch). File claims: Cargo.toml (root, shared —
 careful), zingo-netutils/Cargo.toml, zingo-netutils/Cargo.lock (new).
 Verify: main workspace still resolves/builds; netutils resolves standalone.
 
-Later increments: wire the broadcaster into `transmit_transactions`; the
+## Implementation — increment 2b (IN PROGRESS 2026-07-16): NymProxy port
+
+Ported the POC's NymProxy into standalone netutils behind the `nym` feature:
+netutils/Cargo.toml gains optional nym-sdk/nym-http-api-client/
+nym-validator-client/tokio-socks/tokio(time) + the `nym` feature;
+error.rs gains NymProxyError (gated); nym_proxy.rs is the ported module
+(adapted docs, no GrpcIndexer method refs); lib.rs gates `pub use
+NymProxy`. Verified: main workspace still builds with nym OFF (4.9s green).
+PORT COMPLETE + GREEN (2026-07-16): standalone `cargo check --features nym`
+passes (1m02s) — NO API drift; the POC's fork-era calls
+(MixnetClientBuilder::new_ephemeral/socks5_config/connect_to_mixnet_via_socks5,
+socks5_url, disconnect, get_all_described_nodes_v2,
+node.description.network_requester, nym_http_api_client::Client::builder,
+NymApiClientExt) all match upstream nym-sdk 1.21. clippy --all-features
+-D warnings clean; test --all-features = 11 passed / 3 ignored (live-Nym) /
+0 failed, incl. the 3 new NymProxy unit tests. The CI netutils-standalone
+job's --all-features now compiles+lints+tests the nym transport (adds a
+nym-sdk compile to that job; cached after first run).
+
+ARCHITECTURE CLARIFIED: NymProxy is a SOCKS5 endpoint provider, NOT the
+Transmitter. The Transmitter (submits a tx over a SOCKS5 tunnel via
+tokio-socks + tonic) is LIGHT and lives in the MAIN lock — it can be built
+in-process. The heavy nym-sdk NymProxy lives standalone. So the two never
+share a compile unit; they meet at a runtime SOCKS5 boundary.
+
+## Consumption model — RATIFIED (A) bundle-and-spawn (2026-07-16)
+
+User chose A: the wallet ships a nym-proxy binary (built from standalone
+netutils) and SPAWNS it as a child process, then dials its local SOCKS5
+port. The wallet owns the proxy lifecycle (start, health, shutdown). This
+means:
+- netutils-standalone gains a `[[bin]]` (e.g. `nym-proxy`) that runs a
+  NymProxy and prints/serves its SOCKS5 address, built in netutils's own
+  lockfile with the nym stack.
+- The wallet side (main lock) spawns that binary, reads its SOCKS5 address,
+  and the SOCKS5-dialing Transmitter (tokio-socks + tonic, main lock) routes
+  send_transaction through it. Tri-state Mixnet Mode maps to the child's
+  lifecycle: Off = not spawned, Bootstrapping = spawned+connecting, Ready =
+  SOCKS5 reachable.
+- BUILD/PACKAGING: the wallet build must produce and bundle the nym-proxy
+  binary from the separate workspace. How the binary is located at runtime
+  (bundled path vs PATH vs built-on-demand) is an implementation detail to
+  settle when wiring.
+- ADR 0011's "embedded mixnet SOCKS5" line to be amended: the mixnet proxy
+  is a spawned child process, not linked in-process (dep reality: nym-sdk's
+  crypto-common ^0.2 cannot share the main lock).
+
+Later increments: the SOCKS5-dialing Transmitter in the main lock
+(tokio-socks); wire the broadcaster into `transmit_transactions`; the
 tri-state toggle as a LightClient API; the reqwest+SOCKS5 price path;
 CLI `nym on|off|status`.
 
