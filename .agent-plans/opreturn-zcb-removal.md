@@ -193,10 +193,17 @@ base; the branch must not merge ahead of either PR.
   preserve). At cutover, comparative tests die with zcb; assertions
   worth keeping are rewritten as standalone invariant tests (e.g. a
   TEX exposure step's input value equals its payments plus its fee).
-- **P6 — end-to-end.** Container/libtonode round-trip: a swap-shaped
-  send whose final transaction carries OP_RETURN Data, verified on a
-  regtest chain. User-run (`makers container-test`); agent proposes
-  commands and pass/fail signals.
+- **P6 — end-to-end.** Test WRITTEN and compile-verified
+  (`libtonode-tests/tests/concrete.rs::op_return_data_confirms_on_chain`):
+  a shielded send to a transparent address carries a swap-shaped
+  OP_RETURN payload through the pipeline; asserts Confirmed status and
+  the payload embedded in the mined transaction's zero-value null-data
+  vout. RUN PENDING — user-run per the container protocol
+  (`makers container-test`, watch `op_return_data_confirms_on_chain`).
+  Signals: PASS closes P6 and ADR 0010's runtime question; a
+  Builder/fee failure is a pipeline defect (hand back the output); an
+  opaque zainod Internal on transmit is the known zaino 0.6.0 masking,
+  not a pipeline verdict.
 
 Estimated new pipeline code ~1.5–2.5k lines against the 1,095-line
 trait file deleted (49 of its 69 methods are stubs) plus mock pruning. zingo-mobile FFI exposure of the new parameter

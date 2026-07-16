@@ -1748,3 +1748,73 @@ mod testnet_test {
         }
     }
 }
+
+/// P6 of the ADR 0010 plan: the OP_RETURN round trip. A shielded send to
+/// a transparent address carries OP_RETURN Data (a swap-shaped payload)
+/// through the in-tree pipeline; zebrad accepts the transaction and the
+/// wallet sees it confirmed, proving the null-data output is
+/// relay-valid, consensus-valid, and fee-priced correctly end to end.
+#[tokio::test]
+async fn op_return_data_confirms_on_chain() {
+    let (local_net, mut faucet, recipient, _txid) =
+        scenarios::faucet_funded_recipient_default(1_000_000).await;
+
+    let payload = b"=:ZEC.ZEC:thorchain-swap-memo".to_vec();
+    let request = from_inputs::transaction_request_from_send_inputs(vec![(
+        get_base_address_macro!(&recipient, "transparent").as_str(),
+        50_000,
+        None,
+    )])
+    .unwrap();
+    let txids = faucet
+        .quick_send(
+            request,
+            AccountId::ZERO,
+            Some(
+                zingolib::wallet::spend::op_return::OpReturnData::new(payload.clone())
+                    .expect("the payload is within the relay limit"),
+            ),
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(txids.len(), 1);
+
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        .await
+        .unwrap();
+
+    let wallet = faucet.wallet();
+    let wallet = wallet.read().await;
+    let record = wallet
+        .wallet_transactions
+        .get(txids.first())
+        .expect("the sent transaction is recorded");
+    assert!(
+        matches!(record.status(), ConfirmationStatus::Confirmed(_)),
+        "the chain accepted and mined the OP_RETURN transaction; status: {:?}",
+        record.status(),
+    );
+
+    let vout = &record
+        .transaction()
+        .transparent_bundle()
+        .expect("the send has transparent outputs")
+        .vout;
+    let null_data_output = vout
+        .iter()
+        .find(|out| u64::from(out.value()) == 0)
+        .expect("a zero-value null-data output exists");
+    let mut script = vec![];
+    null_data_output
+        .script_pubkey()
+        .write(&mut script)
+        .expect("scripts serialize");
+    assert_eq!(script[1], 0x6a, "OP_RETURN opcode");
+    assert!(
+        script
+            .windows(payload.len())
+            .any(|window| window == payload.as_slice()),
+        "the payload is embedded in the mined transaction"
+    );
+}
