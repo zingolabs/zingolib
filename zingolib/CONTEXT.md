@@ -131,6 +131,8 @@
 
 **Two-phase Send** — The standard send path: `propose_send` (or `propose_shield`) followed by `send_stored_proposal`. Allows the caller to inspect the Proposal (e.g. fees) before committing. Proposing automatically pauses the sync engine to release the wallet write lock; `send_stored_proposal(resume_sync: true)` resumes it after transmission. `quick_send` / `quick_shield` are single-shot convenience wrappers that handle the pause/resume cycle internally.
 
+**OP_RETURN Data** — Caller-provided opaque bytes, at most eighty, carried in a zero-value, provably unspendable transparent output on the final transaction of a send. World-readable on chain, unlike a Memo. The wallet never interprets the bytes; encoding a swap instruction (THORChain, MAYAChain) is the caller's concern. A Shield never carries OP_RETURN Data. *Avoid*: "memo" — a Memo is the encrypted shielded field; what swap-protocol documentation calls a memo is, in this domain, OP_RETURN Data.
+
 ---
 
 ## Balance
