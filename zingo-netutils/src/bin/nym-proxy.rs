@@ -23,11 +23,7 @@
 
 use std::io::Write as _;
 
-use zingo_netutils::NymProxy;
-
-/// The prefix of the stdout line that carries the local SOCKS5 address. The
-/// parent matches on this to parse the address the proxy bound.
-const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
+use zingo_netutils::{NymProxy, SOCKS5_ADDR_LINE_PREFIX};
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {

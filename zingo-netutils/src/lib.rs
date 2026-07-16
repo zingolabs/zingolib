@@ -43,6 +43,12 @@ pub mod crypto;
 pub mod error;
 
 pub use crypto::ensure_default_crypto_provider;
+
+/// The stdout line prefix the spawnable `nym-proxy` binary uses to announce
+/// its local SOCKS5 address (ADR 0011, consumption model A). Defined here so
+/// the binary that emits it and the wallet supervisor that parses it share one
+/// definition. The full line is `SOCKS5_ADDR=127.0.0.1:<port>`.
+pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
 pub use error::*;
 pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
