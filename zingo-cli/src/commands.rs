@@ -594,13 +594,13 @@ impl Command for InfoCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        // The presentation boundary: typed failure becomes display text
-        // here, and nowhere earlier.
+        // The presentation boundary: typed data becomes rendered JSON and
+        // typed failure becomes display text here, and nowhere earlier.
         RT.block_on(async move {
-            lightclient
-                .do_info()
-                .await
-                .unwrap_or_else(|e| e.to_string())
+            match lightclient.info().await {
+                Ok(info) => json::JsonValue::from(info).pretty(2),
+                Err(e) => e.to_string(),
+            }
         })
     }
 }
@@ -1564,7 +1564,7 @@ impl Command for DeleteCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.do_delete().await {
+            match lightclient.delete_wallet_file().await {
                 Ok(()) => {
                     let r = object! { "result" => "success",
                     "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8") };
@@ -1573,7 +1573,7 @@ impl Command for DeleteCommand {
                 Err(e) => {
                     let r = object! {
                         "result" => "error",
-                        "error" => e
+                        "error" => e.to_string()
                     };
                     r.pretty(2)
                 }
