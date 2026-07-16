@@ -31,7 +31,12 @@ nym-validator-client = { version = "1.21.3", optional = true, default-features =
     "http-client",
 ] }
 tokio-socks = { version = "0.5", optional = true }
-tokio = { workspace = true, optional = true, features = ["time"] }
+tokio = { workspace = true, optional = true, features = [
+    "time",
+    "rt-multi-thread",
+    "macros",
+    "signal",
+] }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
@@ -43,6 +48,13 @@ nym = [
     "dep:tokio-socks",
     "dep:tokio",
 ]
+
+# The spawnable mixnet proxy process (ADR 0011, consumption model A). Built
+# only with the `nym` feature, in this crate's own lockfile; the wallet
+# bundles and spawns it, then dials its local SOCKS5 port.
+[[bin]]
+name = "nym-proxy"
+required-features = ["nym"]
 
 [dev-dependencies]
 tokio-stream.workspace = true

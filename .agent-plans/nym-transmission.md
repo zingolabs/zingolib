@@ -392,6 +392,27 @@ tokio-socks + tonic) is LIGHT and lives in the MAIN lock — it can be built
 in-process. The heavy nym-sdk NymProxy lives standalone. So the two never
 share a compile unit; they meet at a runtime SOCKS5 boundary.
 
+## crypto-common conflict — root-cause analysis (2026-07-16)
+
+The clash is a DELIBERATE exact-pin, not accidental version skew — and it is
+DURABLE. CORRECTION to an earlier overstatement: zcash_primitives 0.29.0 is a
+STABLE release (0.26.0..0.29.0 are all stable, not RCs). What is pre-release is
+the RustCrypto crypto FOUNDATION it pins: every stable zcash_primitives from
+0.26.0 to 0.29.0 declares `crypto-common = "=0.2.0-rc.1"` (exact) and
+`block-buffer = "=0.11.0-rc.3"`, because zcash adopted the new-generation
+RustCrypto traits early (digest 0.11.0-pre.9) while that generation is still
+pre-release — even though crypto-common itself has since shipped stable 0.2.1/
+0.2.2. nym's post-quantum path (jwt-simple → superboring → ml-dsa 0.1.0-rc.11)
+uses stable `crypto-common ^0.2` → 0.2.2. Both sit in the one 0.2.x
+compatibility bucket, so a single lock picks one node; `=0.2.0-rc.1` and stable
+`^0.2` share no solution, and the rc.1→0.2.2 API churn is real (the pre-release
+digest 0.11 stack would not compile against 0.2.2). NOT tied to NU6.3/Ironwood
+stabilization (those crates are already stable-versioned); the pin dissolves
+only when the RustCrypto digest-0.11 line stabilizes and zcash bumps to it —
+carried unchanged across FOUR stable zcash_primitives minors, so not imminent.
+The two-lockfile split (2a) is therefore a durable architecture, not a
+temporary bridge.
+
 ## Consumption model — RATIFIED (A) bundle-and-spawn (2026-07-16)
 
 User chose A: the wallet ships a nym-proxy binary (built from standalone
@@ -401,6 +422,13 @@ means:
 - netutils-standalone gains a `[[bin]]` (e.g. `nym-proxy`) that runs a
   NymProxy and prints/serves its SOCKS5 address, built in netutils's own
   lockfile with the nym stack.
+  DONE (increment 2c, 2026-07-16): `zingo-netutils/src/bin/nym-proxy.rs`
+  — starts a NymProxy, prints `SOCKS5_ADDR=127.0.0.1:PORT` on stdout, serves
+  until ctrl_c, then disconnects. `[[bin]]` with `required-features = ["nym"]`;
+  nym tokio features expanded (rt-multi-thread, macros, signal). Verified:
+  builds standalone `--features nym --bin nym-proxy` (green), clippy
+  --all-targets --all-features -D warnings clean, main workspace unaffected.
+  ADR 0011 amended (2026-07-16) with the out-of-process/spawned-child model.
 - The wallet side (main lock) spawns that binary, reads its SOCKS5 address,
   and the SOCKS5-dialing Transmitter (tokio-socks + tonic, main lock) routes
   send_transaction through it. Tri-state Mixnet Mode maps to the child's
