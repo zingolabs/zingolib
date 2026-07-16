@@ -669,7 +669,10 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         Some(server) => builder.set_indexer_uri(server),
         None => builder,
     };
-    Ok(builder.build())
+
+    builder
+        .build()
+        .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {

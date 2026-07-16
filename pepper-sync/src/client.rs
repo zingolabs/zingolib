@@ -32,23 +32,7 @@ pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
-const FETCH_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
-
-async fn recv_fetch_reply<T>(
-    rx: oneshot::Receiver<Result<T, tonic::Status>>,
-    what: &'static str,
-) -> Result<T, ServerError> {
-    match tokio::time::timeout(FETCH_REPLY_TIMEOUT, rx).await {
-        Ok(res) => {
-            let inner = res.map_err(|_| ServerError::FetcherDropped)?;
-            inner.map_err(Into::into)
-        }
-        Err(_) => {
-            Err(tonic::Status::deadline_exceeded(format!("fetch {what} reply timeout")).into())
-        }
-    }
-}
 
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,
@@ -121,12 +105,11 @@ pub(crate) async fn get_chain_height(
     fetch_request_sender
         .send(FetchRequest::ChainTip(reply_sender))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let chain_tip = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
-        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
-        Err(_) => {
-            return Err(tonic::Status::deadline_exceeded("fetch ChainTip reply timeout").into());
-        }
-    };
+
+    let chain_tip = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
 }
@@ -143,14 +126,10 @@ pub(crate) async fn get_compact_block(
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let block = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
-        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
-        Err(_) => {
-            return Err(
-                tonic::Status::deadline_exceeded("fetch CompactBlock reply timeout").into(),
-            );
-        }
-    };
+    let block = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
 
     Ok(block)
 }
@@ -167,14 +146,10 @@ pub(crate) async fn get_compact_block_range(
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let block_stream = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
-        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
-        Err(_) => {
-            return Err(
-                tonic::Status::deadline_exceeded("fetch CompactBlockRange reply timeout").into(),
-            );
-        }
-    };
+    let block_stream = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
 
     Ok(block_stream)
 }
@@ -193,14 +168,10 @@ pub(crate) async fn get_nullifier_range(
         .send(FetchRequest::NullifierRange(reply_sender, block_range))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let block_stream = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
-        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
-        Err(_) => {
-            return Err(
-                tonic::Status::deadline_exceeded("fetch NullifierRange reply timeout").into(),
-            );
-        }
-    };
+    let block_stream = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
 
     Ok(block_stream)
 }
@@ -231,7 +202,10 @@ pub(crate) async fn get_subtree_roots(
             ))
             .map_err(|_| ServerError::FetcherDropped)?;
 
-        let mut subtree_root_stream = recv_fetch_reply(reply_receiver, "SubtreeRoots").await?;
+        let mut subtree_root_stream = reply_receiver
+            .await
+            .map_err(|_| ServerError::FetcherDropped)?
+            .map_err(ServerError::RequestFailed)?;
 
         while let Some(subtree_root) =
             match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
@@ -279,7 +253,10 @@ pub(crate) async fn get_frontiers(
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let tree_state = recv_fetch_reply(reply_receiver, "TreeState").await?;
+    let tree_state = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
 
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
@@ -297,11 +274,12 @@ pub(crate) async fn get_transaction_and_block_height(
         .send(FetchRequest::Transaction(reply_sender, txid))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let raw_transaction = recv_fetch_reply(reply_receiver, "Transaction").await?;
-
+    let raw_transaction = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)?;
     let block_height =
         BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
-
     let transaction = Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
@@ -333,7 +311,10 @@ pub(crate) async fn get_utxo_metadata(
         ))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    recv_fetch_reply(reply_receiver, "UtxoMetadata").await
+    reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)
 }
 
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
@@ -358,8 +339,10 @@ pub(crate) async fn get_transparent_address_transactions(
             ))
             .map_err(|_| ServerError::FetcherDropped)?;
 
-        let mut raw_transaction_stream =
-            recv_fetch_reply(reply_receiver, "TransparentAddressTxs").await?;
+        let mut raw_transaction_stream = reply_receiver
+            .await
+            .map_err(|_| ServerError::FetcherDropped)?
+            .map_err(ServerError::RequestFailed)?;
 
         while let Some(raw_tx) =
             match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {

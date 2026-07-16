@@ -47,7 +47,6 @@ impl LightWallet {
                 self.create_proposed_transactions(proposal, sending_account)
                     .await?
             }
-
             _ => return Err(CalculateTransactionError::NonTexMultiStep),
         };
         self.save_required = true;
