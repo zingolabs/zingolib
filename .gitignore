@@ -1,4 +1,5 @@
 .helix
+build/
 cobertura.xml
 target
 wallets/*
