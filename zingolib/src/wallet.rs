@@ -138,6 +138,10 @@ pub struct LightWallet {
     /// Sync state
     pub sync_state: SyncState,
     /// Wallet settings
+    ///
+    /// Altering the sync config will not automatically restart sync which is needed for the changes to take effect.
+    /// It is recommended to rescan after altering the transparent address discovery settings as scanned ranges will
+    /// have been scanned with the previous configuration.
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
@@ -313,6 +317,14 @@ impl LightWallet {
         &self.transparent_addresses
     }
 
+    /// Returns transparent addresses as mutable reference.
+    #[must_use]
+    pub(crate) fn transparent_addresses_mut(
+        &mut self,
+    ) -> &mut BTreeMap<TransparentAddressId, String> {
+        &mut self.transparent_addresses
+    }
+
     /// Returns transparent addresses in a JSON array.
     #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {
@@ -366,6 +378,7 @@ impl LightWallet {
                 account_id,
             )?,
         );
+        self.save_required = true;
 
         Ok(())
     }
@@ -376,12 +389,13 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    /// `save_required` field must be manually set back to false after wallet data has been successfully persisted to disk.
     pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &chain_type)?;
-            self.save_required = false;
+
             Ok(Some(wallet_bytes))
         } else {
             Ok(None)

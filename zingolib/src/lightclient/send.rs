@@ -10,7 +10,9 @@ use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
+use zcash_transparent::keys::NonHardenedChildIndex;
 
+use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -19,7 +21,7 @@ use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use crate::wallet::error::{CalculateTransactionError, WalletError};
+use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;
@@ -72,36 +74,53 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 }
 
 impl LightClient {
-    /// Calculates transactions from a proposal and transmits them. The gate
-    /// on a connected Indexer sits here, before calculation, so a doomed
-    /// send fails without storing Calculated transactions it cannot
-    /// transmit. `wrap_calculate_error` names the [`SendError`] variant the
-    /// caller's proposal kind reports calculation failure through.
-    async fn calculate_and_transmit<NoteRef>(
-        &mut self,
-        proposal: Proposal<zip317::FeeRule, NoteRef>,
-        account: zip32::AccountId,
-        wrap_calculate_error: impl FnOnce(CalculateTransactionError<NoteRef>) -> SendError,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
-        let calculated_txids = self
-            .wallet()
-            .write()
-            .await
-            .calculate_transactions(proposal, account)
-            .await
-            .map_err(wrap_calculate_error)?;
-
-        self.transmit_transactions(calculated_txids).await
-    }
-
     async fn send(
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.calculate_and_transmit(proposal, sending_account, SendError::CalculateSendError)
+        self.require_indexer()?;
+        let mut wallet = self.wallet().write().await;
+        let highest_refund_address_index = wallet.highest_refund_address_index();
+        let calculated_txids = wallet
+            .calculate_transactions(proposal, sending_account)
             .await
+            .map_err(|e| {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
+
+                SendError::CalculateSendError(e)
+            })?;
+        drop(wallet);
+
+        let transmission_result = self.transmit_transactions(calculated_txids).await;
+        if transmission_result.is_err() {
+            let mut wallet = self.wallet().write().await;
+            let new_refund_address_index = highest_refund_address_index
+                .map_or(Some(NonHardenedChildIndex::ZERO), |i| i.next());
+            let new_refund_address = new_refund_address_index.and_then(|i| {
+                wallet
+                    .transparent_addresses()
+                    .get(&TransparentAddressId::new(
+                        sending_account,
+                        TransparentScope::Refund,
+                        i,
+                    ))
+                    .cloned()
+            });
+            let truncate = new_refund_address.is_some_and(|addr| {
+                let deshielding_tx = wallet.wallet_transactions.values().find(|tx| {
+                    tx.transparent_coins()
+                        .iter()
+                        .any(|coin| coin.address() == addr)
+                });
+                deshielding_tx.is_some_and(|tx| tx.status().is_failed())
+            });
+            if truncate {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
+            }
+        }
+
+        transmission_result
     }
 
     async fn shield(
@@ -109,8 +128,15 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.calculate_and_transmit(proposal, shielding_account, SendError::CalculateShieldError)
+        let calculated_txids = self
+            .wallet()
+            .write()
             .await
+            .calculate_transactions(proposal, shielding_account)
+            .await
+            .map_err(SendError::CalculateShieldError)?;
+
+        self.transmit_transactions(calculated_txids).await
     }
 
     /// Creates and transmits transactions from a stored proposal.
@@ -830,7 +856,8 @@ mod test {
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 
