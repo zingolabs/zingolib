@@ -1,5 +1,5 @@
 //! A complete [`Indexer`] abstraction for communicating with Zcash chain
-//! indexers (`lightwalletd` / `zainod`).
+//! indexers (`zainod`).
 //!
 //! # Organizing principle
 //!
@@ -21,7 +21,7 @@
 //! | Feature | What it enables |
 //! |---|---|
 //! | `globally-public-transparent` | `TransparentIndexer` sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
-//! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
+//! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the server-side `--ping-very-insecure` CLI flag. Testing only. |
 //!
 
 use std::future::Future;
@@ -71,7 +71,7 @@ fn client_tls_config() -> ClientTlsConfig {
 
 /// Trait for communicating with a Zcash chain indexer.
 ///
-/// Implementors provide access to a lightwalletd-compatible server.
+/// Implementors provide access to a server speaking the lightwallet gRPC protocol.
 /// Callers can depend on the following guarantees:
 ///
 /// - Each method opens a fresh connection (or reuses a pooled one) — no

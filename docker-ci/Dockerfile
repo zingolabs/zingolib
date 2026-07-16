@@ -1,5 +1,4 @@
 ARG RUST_VERSION=1.90
-ARG LIGHTWALLETD_VERSION=0.4.18
 ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
 ARG ZEBRA_VERSION=6.0.0-rc.0
 ARG NEXTEST_VERSION=0.9.128
@@ -7,56 +6,19 @@ ARG NEXTEST_VERSION=0.9.128
 FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG} AS zainod-downloader
 FROM docker.io/zfnd/zebra:${ZEBRA_VERSION} AS zebrad-downloader
 
-FROM debian:trixie-slim AS builder
-
-ARG LIGHTWALLETD_VERSION
-
-WORKDIR /usr/src
-
-# Install dependencies and update ca certificates
-RUN apt update \
-    && apt install -y --no-install-recommends --no-install-suggests \
-    build-essential \
-    pkg-config \
-    libc6-dev \
-    m4 \
-    autoconf \
-    libtool \
-    ncurses-dev \
-    unzip \
-    git \
-    python3 \
-    python3-zmq \
-    zlib1g-dev \
-    curl \
-    bsdmainutils \
-    automake \
-    golang \
-    ca-certificates \
-    && update-ca-certificates
-
-# Build lightwalletd
-RUN git clone https://github.com/zcash/lightwalletd \
-    && cd lightwalletd \
-    && git checkout "v${LIGHTWALLETD_VERSION}" \
-    && make
-
 FROM debian:trixie-slim AS runner
 
 ARG RUST_VERSION
-ARG LIGHTWALLETD_VERSION
 ARG ZAINO_IMAGE_TAG
 ARG ZEBRA_VERSION
 ARG NEXTEST_VERSION
 
 LABEL org.zingolib.test-artifacts.versions.rust="${RUST_VERSION}"
-LABEL org.zingolib.test-artifacts.versions.lightwalletd="${LIGHTWALLETD_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.zaino="${ZAINO_IMAGE_TAG}"
 LABEL org.zingolib.test-artifacts.versions.zebra="${ZEBRA_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.nextest="${NEXTEST_VERSION}"
 
-# Copy regtest binaries and zcash params from builder
-COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
+# Copy regtest binaries
 COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
 COPY --from=zebrad-downloader /usr/local/bin/zebrad /usr/bin/
 

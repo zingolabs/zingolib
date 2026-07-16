@@ -82,7 +82,7 @@ struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Change the lightwalletd server to receive blockchain data from\n",
+            "Change the indexer server to receive blockchain data from\n",
             "\n",
             "Usage:\n",
             "change_server [server_uri]\n",
@@ -95,7 +95,7 @@ impl Command for ChangeServerCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Change lightwalletd server"
+        "Change indexer server"
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -583,7 +583,7 @@ struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Get info about the lightwalletd we're connected to
+            Get info about the indexer we're connected to
             Usage:
             info
 
@@ -591,7 +591,7 @@ impl Command for InfoCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the lightwalletd server's info"
+        "Get the indexer server's info"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
