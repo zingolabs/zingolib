@@ -953,3 +953,117 @@ impl LightClient {
         Err(MigrationError::SplitConfirmationTimeout.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+    use zip32::AccountId;
+
+    use crate::lightclient::LightClient;
+    use crate::mocks::broadcast::MockBroadcastClient;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::migration::{
+        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+        PartRecord, PartState, SigningStrategy, schedule,
+    };
+
+    /// Offline twin of the libtonode
+    /// `unavailable_boundary_tree_state_skips_without_sync` scenario: a due
+    /// part whose bucket-boundary checkpoint is absent from the shard tree
+    /// is skipped with no writes, no attempt recorded, and nothing
+    /// broadcast.
+    ///
+    /// Limitation: the synthetic wallet FABRICATES the pruned-checkpoint
+    /// state — the builder checkpoints the shard trees only at the tip —
+    /// so this twin proves the skip logic alone. It cannot prove that
+    /// pepper-sync's real pruning produces the state, nor that the
+    /// broadcast path performs no hidden synchronization while a reachable
+    /// Indexer exists; both belong to the live libtonode twin. The tip
+    /// still sits more than the checkpoint retention past the boundary, so
+    /// the fabricated state matches one a synced wallet can genuinely
+    /// reach.
+    #[tokio::test]
+    async fn boundary_tree_state_unavailable_skips_the_part() {
+        // Past the provisional first bucket boundary (256) by more than
+        // pepper-sync's 100-block checkpoint retention.
+        const TIP: u32 = 360;
+
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .tip(TIP)
+                .build();
+
+        let (output_id, nullifier) = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == 100_000)
+            .map(|note| {
+                (
+                    note.output_id(),
+                    note.nullifier()
+                        .expect("scanned notes carry nullifiers")
+                        .to_bytes(),
+                )
+            })
+            .expect("the wallet holds the 100_000 note");
+
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let known_height = wallet
+            .sync_state
+            .last_known_chain_height()
+            .expect("the synthetic wallet is fully synced");
+        let current_bucket = schedule::bucket_index(known_height, params.bucket_modulus);
+        assert!(
+            current_bucket >= 1,
+            "the tip must sit past a bucket boundary"
+        );
+
+        let mut part = PartRecord::new(
+            PartId(0),
+            100_000,
+            BoundNote {
+                output_id,
+                nullifier,
+                commitment: [0; 32],
+            },
+        );
+        part.assign(current_bucket).expect("fresh parts are bound");
+        wallet.migration = Some(MigrationState {
+            consent: ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            account: AccountId::ZERO,
+            phase: MigrationPhase::PartsScheduled,
+            parts: vec![part],
+        });
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let broadcast_client = MockBroadcastClient::default();
+        let sent = client
+            .broadcast_due_parts_with(&broadcast_client)
+            .await
+            .unwrap();
+        assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
+        assert!(
+            broadcast_client.submissions.lock().unwrap().is_empty(),
+            "the mock endpoint must receive nothing"
+        );
+
+        let wallet = client.wallet().read().await;
+        let part = &wallet.migration.as_ref().unwrap().parts[0];
+        assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
+        assert_eq!(part.attempts, 0, "a skip records no attempt");
+        assert!(part.anchor_witness.is_none());
+        assert_eq!(
+            wallet.sync_state.last_known_chain_height(),
+            Some(known_height),
+            "the skip must not move the wallet's known height"
+        );
+    }
+}

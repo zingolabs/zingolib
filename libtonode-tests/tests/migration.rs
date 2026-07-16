@@ -240,8 +240,43 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
         + MAX_REORG_ALLOWANCE
         + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
 
-    let (local_net, _faucet, mut recipient) =
-        pre_ironwood_funded_recipient(|_| vec![100_000]).await;
+    use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
+
+    // Transparent coinbase becomes spendable only after
+    // [`COINBASE_MATURITY_BLOCKS`] confirmations (100 blocks, ZIP 213,
+    // enforced by the validator), so shielding and funding can complete no
+    // earlier; the deferred activation leaves margin beyond that, and
+    // still lies below [`TARGET_TIP`] so the leap crosses it.
+    const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
+
+    // A transparent miner keeps this test's long chain cheap: transparent
+    // coinbase carries no halo2 proof, where a shielded miner pool costs
+    // roughly 2.7 seconds of block assembly per block — the cost that
+    // previously pushed this test past even a 1200-second budget.
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
+        PoolType::Transparent,
+        deferred_activation_heights(TRANSPARENT_DEFERRED_NU6_3),
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    // Mature the faucet's coinbase, shield it into pre-Ironwood Orchard,
+    // and fund the recipient with the note the part will bind — all below
+    // the activation height.
+    increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
+        .await
+        .unwrap();
+    faucet.quick_shield(AccountId::ZERO).await.unwrap();
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        .await
+        .unwrap();
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+    from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 100_000, None)])
+        .await
+        .unwrap();
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
 
     // One leap to the target tip, crossing the deferred NU6.3 activation
     // on the way.
@@ -253,6 +288,10 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
             .sync_state
             .last_known_chain_height()
             .expect("the recipient has synced"),
+    );
+    assert!(
+        funded_tip < TRANSPARENT_DEFERRED_NU6_3,
+        "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
     );
     increase_height_and_wait_for_client(&local_net, &mut recipient, TARGET_TIP - funded_tip)
         .await
@@ -361,6 +400,28 @@ async fn two_phase_migration_end_to_end() {
 /// boundary stays cheap.
 const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 
+/// The regtest activation-height fixture with NU6.3 deferred to `nu6_3`,
+/// so a test can fund pre-Ironwood notes before the boundary and cross it
+/// mid-test.
+fn deferred_activation_heights(nu6_3: u32) -> zingolib::ActivationHeights {
+    let fixture = scenarios::wallet_activation_heights(
+        &zcash_local_net::validator::regtest_test_activation_heights(),
+    );
+    zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(Some(nu6_3))
+        .set_nu7(None)
+        .build()
+}
+
 /// Launches a chain whose NU6.3 activation still lies ahead
 /// ([`DEFERRED_NU6_3_HEIGHT`]) and funds the recipient with one
 /// multi-output send — one pre-Ironwood (V2) Orchard note per value
@@ -378,25 +439,9 @@ const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 async fn pre_ironwood_funded_recipient(
     values: impl FnOnce(&MigrationParams) -> Vec<u64>,
 ) -> (MeteredNet, LightClient, LightClient) {
-    let fixture = scenarios::wallet_activation_heights(
-        &zcash_local_net::validator::regtest_test_activation_heights(),
-    );
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(Some(DEFERRED_NU6_3_HEIGHT))
-        .set_nu7(None)
-        .build();
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
         PoolType::IRONWOOD,
-        activation_heights,
+        deferred_activation_heights(DEFERRED_NU6_3_HEIGHT),
         scenarios::ChainCachePolicy::PerTest,
     )
     .await;
