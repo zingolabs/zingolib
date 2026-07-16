@@ -4,43 +4,24 @@ use std::convert::Infallible;
 
 use nonempty::NonEmpty;
 
-<<<<<<< HEAD
 use zcash_client_backend::data_api::wallet::TargetHeight;
 use zcash_client_backend::proposal::{Proposal, ProposalError};
-||||||| 31da83657
-use zcash_client_backend::proposal::Proposal;
-=======
-use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
-use zcash_client_backend::proposal::Proposal;
->>>>>>> stable
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
-
-<<<<<<< HEAD
-use zingo_netutils::Indexer as _;
-use zingo_netutils::lightwallet_protocol::RawTransaction;
-||||||| 31da83657
-=======
 use zcash_transparent::keys::NonHardenedChildIndex;
+
+use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
->>>>>>> stable
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
-<<<<<<< HEAD
-use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use crate::wallet::error::{CalculateTransactionError, WalletError};
-||||||| 31da83657
-use crate::wallet::error::WalletError;
-=======
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
->>>>>>> stable
 use crate::wallet::output::OutputRef;
 
 const MAX_RETRIES: u8 = 3;

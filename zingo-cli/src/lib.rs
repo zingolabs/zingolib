@@ -25,21 +25,11 @@ use clap::{self, Arg};
 use log::{error, info};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-<<<<<<< HEAD
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::wallet::WalletSettings;
-||||||| 31da83657
-use zingolib::config::ChainType;
-use zingolib::lightclient::LightClient;
-=======
-use zingo_netutils::Indexer as _;
-use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
-use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use zingolib::wallet::WalletSettings;
->>>>>>> stable
 
 use crate::commands::{RT, ShortCircuitedCommand};
 
@@ -85,18 +75,12 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .value_name("server")
                 .help("Indexer server to connect to.")
                 .value_parser(parse_uri)
-<<<<<<< HEAD
                 .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("offline")
                 .long("offline")
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with_all(["server", "waitsync"])
                 .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
-||||||| 31da83657
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
-=======
-                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
->>>>>>> stable
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -239,7 +223,6 @@ fn idle_indicator(progress: Option<ScanProgress>) -> String {
     }
 }
 
-<<<<<<< HEAD
 /// The prompt indicator when sync is complete, reporting the full ratio.
 fn synced_indicator(progress: Option<ScanProgress>) -> String {
     ratio_indicator("Synced", "Synced", progress)
@@ -268,49 +251,11 @@ fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
 }
 
 fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
-||||||| 31da83657
-/// TODO: `start_interactive` does not explicitly reference a wallet, do we need
-/// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
-/// the CLI?
-fn start_interactive(
-    command_transmitter: Sender<(String, Vec<String>)>,
-    resp_receiver: Receiver<String>,
-) {
-=======
-/// Formats the ranked server list for display by the `servers` command.
-fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
-    if cli_config.ranked_servers.is_empty() {
-        return format!(
-            "Server was set explicitly: {}\nNo other servers were probed.",
-            cli_config.server
-        );
-    }
-    let mut out = String::from("Servers ranked by get_info() response time:\n");
-    for (i, r) in cli_config.ranked_servers.iter().enumerate() {
-        let marker = if r.uri == cli_config.server {
-            " (active)"
-        } else {
-            ""
-        };
-        out.push_str(&format!(
-            "  {:>2}. {} {:>8.1}ms{}\n",
-            i + 1,
-            r.uri,
-            r.latency.as_secs_f64() * 1000.0,
-            marker,
-        ));
-    }
-    out
-}
-
-fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
->>>>>>> stable
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
     log::debug!("Ready!");
 
-<<<<<<< HEAD
     let send_request = |request: Request| -> String {
         let description = match &request {
             Request::Command(cmd, _) => cmd.clone(),
@@ -318,15 +263,6 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
         };
         ch.transmitter.send(request).unwrap();
         match ch.receiver.recv() {
-||||||| 31da83657
-    let send_command = |cmd: String, args: Vec<String>| -> String {
-        command_transmitter.send((cmd.clone(), args)).unwrap();
-        match resp_receiver.recv() {
-=======
-    let send_command = |cmd: String, args: Vec<String>| -> String {
-        ch.transmitter.send((cmd.clone(), args)).unwrap();
-        match ch.receiver.recv() {
->>>>>>> stable
             Ok(s) => s,
             Err(e) => {
                 let e = format!("Error executing command {description}: {e}");
@@ -414,7 +350,6 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     }
 }
 
-<<<<<<< HEAD
 /// A request to the background command loop.
 ///
 /// The variant — not the content of the response string — tells the
@@ -446,27 +381,6 @@ pub(crate) fn command_loop(
     communication_mode: CommunicationMode,
 ) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<Request>();
-||||||| 31da83657
-/// TODO: Add Doc Comment Here!
-pub fn command_loop(
-    mut lightclient: LightClient,
-) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-    let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
-=======
-/// A paired command/response channel for communicating with the background command loop.
-struct CommandChannel {
-    transmitter: Sender<(String, Vec<String>)>,
-    receiver: Receiver<String>,
-}
-
-/// Spawns a background thread that listens for `(command, args)` messages,
-/// executes each command against the [`LightClient`], and sends the
-/// string response back through the returned [`CommandChannel`].
-///
-/// The loop exits when it receives a `"quit"` or `"exit"` command.
-pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
-    let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
->>>>>>> stable
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
@@ -509,7 +423,6 @@ pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
     }
 }
 
-<<<<<<< HEAD
 /// The CLI operates in one of two mutually exclusive modes,
 /// determined at the earliest possible moment from the parsed CLI arguments.
 #[derive(Debug, PartialEq)]
@@ -587,91 +500,6 @@ pub(crate) struct ConfigTemplate {
     /// Will be used for automatic failover when sync fails.
     #[allow(dead_code)]
     ranked_servers: Vec<server_select::RankedServer>,
-||||||| 31da83657
-/// TODO: Add Doc Comment Here!
-pub struct ConfigTemplate {
-    params: Vec<String>,
-    server: http::Uri,
-=======
-/// The CLI operates in one of two mutually exclusive modes,
-/// determined at the earliest possible moment from the parsed CLI arguments.
-#[derive(Debug, PartialEq)]
-enum ModeOfOperation {
-    /// Start the interactive REPL.
-    Interactive,
-    /// Execute a single command and exit.
-    Command {
-        /// The command name (e.g. "balance", "send").
-        name: String,
-        /// Additional positional arguments for the command.
-        args: Vec<String>,
-    },
-}
-
-/// Determines the mode of operation from parsed CLI arguments.
-///
-/// Returns [`ModeOfOperation::Command`] if a command is given, or
-/// [`ModeOfOperation::Interactive`] when no command is given.
-///
-/// The `help` command is handled separately before this function is called,
-/// so it will never appear as a [`ModeOfOperation::Command`].
-fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
-    if let Some(cmd_name) = matches.get_one::<String>("COMMAND") {
-        let args = matches
-            .get_many::<String>("extra_args")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        ModeOfOperation::Command {
-            name: cmd_name.clone(),
-            args,
-        }
-    } else {
-        ModeOfOperation::Interactive
-    }
-}
-
-/// Whether the CLI communicates with a remote indexer or operates locally.
-///
-/// Currently always [`Online`](CommunicationMode::Online). The [`Offline`](CommunicationMode::Offline)
-/// variant exists so that offline wallet support has a clean place to land.
-#[derive(Debug, PartialEq)]
-enum CommunicationMode {
-    /// Connected to a remote indexer for sync, send, etc.
-    Online,
-    /// Operating without network access — local-only commands.
-    /// Will be used by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
-    Offline,
-}
-
-/// Determines the communication mode from parsed CLI arguments.
-///
-/// Currently always returns [`CommunicationMode::Online`]. When offline mode
-/// is added, this will inspect a CLI flag (e.g. `--offline`).
-fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
-    CommunicationMode::Online
-}
-
-/// All CLI-derived configuration needed to create a [`LightClient`] and
-/// start the command loop.
-///
-/// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
-/// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`].
-#[derive(Debug)]
-pub(crate) struct ConfigTemplate {
-    mode: ModeOfOperation,
-    /// Will be read by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
-    communication_mode: CommunicationMode,
-    server: http::Uri,
-    /// All servers that responded to `get_info()` during dynamic selection,
-    /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
-    /// Will be used for automatic failover when sync fails.
-    #[allow(dead_code)]
-    ranked_servers: Vec<server_select::RankedServer>,
->>>>>>> stable
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -722,7 +550,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-<<<<<<< HEAD
         // Offline mode never resolves a server — resolution probes the
         // network, and the session's contract is that no Indexer is ever
         // configured.
@@ -743,12 +570,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                 (Some(server), ranked_servers)
             }
         };
-||||||| 31da83657
-        let server = zingolib::config::construct_lightwalletd_uri(server);
-=======
-        let (server, ranked_servers) =
-            server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
->>>>>>> stable
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -785,116 +606,9 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             performance_level: PerformanceLevel::High,
         },
-<<<<<<< HEAD
-        min_confirmations: NonZeroU32::try_from(3).unwrap(),
-||||||| 31da83657
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
-
-    let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
-        LightClient::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!("Invalid seed phrase. {e}"),
-                        )
-                    })?,
-                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                },
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings.clone(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
-            config.clone(),
-            false,
-        )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-    } else if let Some(ufvk) = filled_template.ufvk.clone() {
-        // Create client from UFVK
-        LightClient::create_from_wallet(
-            LightWallet::new(
-                config.chain,
-                WalletBase::Ufvk(ufvk),
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings.clone(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
-            config.clone(),
-            false,
-        )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-    } else if config.wallet_path_exists() {
-        // Open existing wallet from path
-        LightClient::create_from_wallet_path(config.clone())
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-    } else {
-        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
-        println!("Creating a new wallet");
-        // Call the lightwalletd server to get the current block-height
-        // Do a getinfo first, before opening the wallet
-        let server_uri = config.get_lightwalletd_uri();
-
-        let chain_height = RT
-            .block_on(async move {
-                zingolib::grpc_connector::get_latest_block(server_uri)
-                    .await
-                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
-            })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
-
-        LightClient::new(config.clone(), chain_height, false)
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-=======
         min_confirmations: NonZeroU32::try_from(3).unwrap(),
     };
 
-    let wallet_config = if let Some(seed_phrase) = filled_template.seed.clone() {
-        // Create client from seed phrase
-        WalletConfig::MnemonicPhrase {
-            mnemonic_phrase: seed_phrase,
-            no_of_accounts,
-            birthday: filled_template.birthday as u32,
-            wallet_settings,
-        }
-    } else if let Some(ufvk) = filled_template.ufvk.clone() {
-        // Create client from UFVK
-        WalletConfig::Ufvk {
-            ufvk,
-            birthday: filled_template.birthday as u32,
-            wallet_settings,
-        }
-    } else if wallet_path.exists() {
-        // Create client from wallet file
-        WalletConfig::Read
-    } else {
-        // Create client from a new wallet
-        println!("Creating a new wallet");
-        let chain_height = RT
-            .block_on(async move {
-                zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
-                    .await
-                    .map_err(|e| format!("{e:?}"))?
-                    .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
-                    .await
-                    .map(|block_id| block_id.height as u32)
-                    .map_err(|e| format!("{e:?}"))
-            })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
-
-        WalletConfig::NewSeed {
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            chain_height,
-            wallet_settings,
-        }
->>>>>>> stable
-    };
-
-<<<<<<< HEAD
     let wallet_config = if let Some(seed_phrase) = filled_template.seed.clone() {
         // Create client from seed phrase
         WalletConfig::MnemonicPhrase {
@@ -955,27 +669,8 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         Some(server) => builder.set_indexer_uri(server),
         None => builder,
     };
-    Ok(builder.build())
-}
 
-pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
-    let config = build_zingo_config(filled_template)?;
-
-    let mut lightclient = RT.block_on(async move {
-        LightClient::new(config, false)
-            .await
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))
-    })?;
-
-    if matches!(filled_template.mode, ModeOfOperation::Interactive) {
-||||||| 31da83657
-    if filled_template.command.is_none() {
-=======
-    ClientConfig::builder()
-        .set_indexer_uri(filled_template.server.clone())
-        .set_chain_type(filled_template.chaintype)
-        .set_wallet_dir(filled_template.data_dir.clone())
-        .set_wallet_config(wallet_config)
+    builder
         .build()
         .map_err(|e| std::io::Error::other(e.to_string()))
 }
@@ -990,25 +685,13 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     })?;
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
->>>>>>> stable
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-<<<<<<< HEAD
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
-||||||| 31da83657
-        info!("Light Client config {config:?}");
-
-        info!(
-            "Lightclient connecting to {}",
-            config.get_lightwalletd_uri()
-        );
-=======
-        info!("Lightclient connecting to {}", filled_template.server);
->>>>>>> stable
     }
 
     if filled_template.sync {
@@ -1031,20 +714,11 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     });
 
     // Start the command loop
-<<<<<<< HEAD
     Ok(command_loop(
         lightclient,
         filled_template.communication_mode,
     ))
-||||||| 31da83657
-    let (command_transmitter, resp_receiver) = command_loop(lightclient);
-
-    Ok((command_transmitter, resp_receiver))
-=======
-    Ok(command_loop(lightclient))
->>>>>>> stable
 }
-<<<<<<< HEAD
 
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
     let ch = startup(cli_config)?;
@@ -1072,45 +746,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
                 Err(e) => {
                     eprintln!("{e}");
                 }
-||||||| 31da83657
-fn start_cli_service(
-    cli_config: &ConfigTemplate,
-) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-    match startup(cli_config) {
-        Ok(c) => c,
-        Err(e) => {
-            let emsg = format!("Error during startup:\n{e}\n");
-            eprintln!("{emsg}");
-            error!("{emsg}");
-            #[cfg(target_os = "linux")]
-            // TODO: Test report_permission_error() for macos and change to target_family = "unix"
-            if let Some(13) = e.raw_os_error() {
-                report_permission_error();
-=======
-
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
-    let ch = startup(cli_config)?;
-    match &cli_config.mode {
-        ModeOfOperation::Interactive => start_interactive(cli_config, ch),
-        ModeOfOperation::Command { name, args } => {
-            ch.transmitter.send((name.clone(), args.clone())).unwrap();
-
-            match ch.receiver.recv() {
-                Ok(s) => println!("{s}"),
-                Err(e) => {
-                    let e = format!("Error executing command {name}: {e}");
-                    eprintln!("{e}");
-                    error!("{e}");
-                }
-            }
-
-            ch.transmitter.send(("quit".to_string(), vec![])).unwrap();
-            match ch.receiver.recv() {
-                Ok(s) => println!("{s}"),
-                Err(e) => {
-                    eprintln!("{e}");
-                }
->>>>>>> stable
             }
         }
     }

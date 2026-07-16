@@ -80,7 +80,6 @@ impl Command for GetVersionCommand {
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
-<<<<<<< HEAD
         concat!(
             "Change the indexer server to receive blockchain data from\n",
             "\n",
@@ -92,29 +91,6 @@ impl Command for ChangeServerCommand {
             crate::examples::server_uri!(),
             "\n",
         )
-||||||| 31da83657
-        indoc! {r"
-            Change the lightwalletd server to receive blockchain data from
-
-            Usage:
-            change_server [server_uri]
-
-            Example:
-            change_server https://mainnet.lightwalletd.com:9067
-        "}
-=======
-        concat!(
-            "Change the lightwalletd server to receive blockchain data from\n",
-            "\n",
-            "Usage:\n",
-            "change_server [server_uri]\n",
-            "\n",
-            "Example:\n",
-            "change_server ",
-            crate::examples::server_uri!(),
-            "\n",
-        )
->>>>>>> stable
     }
 
     fn short_help(&self) -> &'static str {
@@ -2137,7 +2113,6 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("birthday", Box::new(BirthdayCommand {})),
         ("change_server", Box::new(ChangeServerCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
-<<<<<<< HEAD
         ("clear", Box::new(ClearCommand {})),
         ("coins", Box::new(CoinsCommand {})),
         ("calculate", Box::new(CalculateCommand {})),
@@ -2146,15 +2121,6 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("delete", Box::new(DeleteCommand {})),
         ("export_ufvk", Box::new(ExportUfvkCommand {})),
-||||||| 31da83657
-=======
-        ("clear", Box::new(ClearCommand {})),
-        ("coins", Box::new(CoinsCommand {})),
-        ("confirm", Box::new(ConfirmCommand {})),
-        ("current_price", Box::new(CurrentPriceCommand {})),
-        ("delete", Box::new(DeleteCommand {})),
-        ("export_ufvk", Box::new(ExportUfvkCommand {})),
->>>>>>> stable
         ("height", Box::new(HeightCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("max_send_value", Box::new(MaxSendValueCommand {})),

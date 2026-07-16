@@ -65,7 +65,7 @@ impl LightClient {
                 interval.tick().await;
                 let mut wallet_guard = wallet.write().await;
                 if let Some(wallet_bytes) = wallet_guard.save()? {
-                    write_to_path(&wallet_path, &wallet_bytes)?;
+                    write_to_path(&wallet_path, &wallet_bytes).await?;
                     wallet_guard.save_required = false;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {

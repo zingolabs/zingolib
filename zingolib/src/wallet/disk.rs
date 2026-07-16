@@ -51,7 +51,7 @@ impl LightWallet {
     }
 
     /// Serialize into `writer`
-    pub(crate) fn write<W: Write>(
+    pub fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,

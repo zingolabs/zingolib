@@ -438,7 +438,6 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    #[cfg(not(feature = "darkside_test"))]
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         wallet.clone(),
@@ -1124,7 +1123,7 @@ enum DrainVerdict {
 /// pre-existing mempool content (served within ~100ms of connect).
 fn drain_verdict(
     scan_workers: usize,
-    unprocessed_mempool_transactions: u8,
+    unprocessed_mempool_transactions: u32,
     connected_for: Option<Duration>,
     poll_elapsed: Duration,
 ) -> DrainVerdict {
@@ -1989,7 +1988,7 @@ where
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
-    unprocessed_transactions_count: Arc<AtomicU8>,
+    unprocessed_transactions_count: Arc<AtomicU32>,
     stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>

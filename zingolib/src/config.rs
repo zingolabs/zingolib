@@ -421,16 +421,17 @@ impl ClientConfigBuilder {
     /// is available, then [`crate::lightclient::LightClient::sync`] to fetch blocks.
     ///
     /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
-    pub fn build(self) -> ClientConfig {
-        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
+    pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
+        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
-        ClientConfig {
+
+        Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
-        }
+        })
     }
 }
 
@@ -482,29 +483,26 @@ fn wallet_dir_or_default(
             || {
                 let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            {
-                dir.push("Zcash");
-            }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
+                    dir.push("Zcash");
+                }
 
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                dir.push(".zcash");
-            }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    dir.push(".zcash");
+                }
 
-            match chain {
-                ChainType::Mainnet => {}
-                ChainType::Testnet => dir.push("testnet3"),
-                ChainType::Regtest(_) => dir.push("regtest"),
-            }
-
-            dir
+                match chain {
+                    ChainType::Mainnet => {}
+                    ChainType::Testnet => dir.push("testnet3"),
+                    ChainType::Regtest(_) => dir.push("regtest"),
+                }
 
                 Ok(dir)
             },
             Ok,
         )?;
-        });
 
         // Create directory if it doesn't exist on non-mobile platforms
         std::fs::create_dir_all(wallet_dir.clone())
