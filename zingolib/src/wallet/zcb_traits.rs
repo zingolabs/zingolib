@@ -773,54 +773,63 @@ impl InputSource for LightWallet {
                                 .retain(|output_id| !reserved_orchard.contains(output_id));
                         }
                         for include_potentially_spent_notes in [false, true] {
-                            // prioritise note selection for the given `sources`
-                            if sources.contains(&ShieldedPool::Sapling) {
-                                let notes = self
-                                    .select_spendable_notes_by_pool::<SaplingNote>(
-                                        &mut remaining_value_needed,
-                                        anchor_height,
-                                        &exclude_sapling,
-                                        account,
-                                        include_potentially_spent_notes,
-                                    )?
-                                    .into_iter()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                exclude_sapling
-                                    .extend(notes.iter().map(OutputInterface::output_id));
-                                selected_sapling_notes.extend(notes);
-                            }
-                            if sources.contains(&ShieldedPool::Orchard) {
-                                let notes = self
-                                    .select_spendable_notes_by_pool::<OrchardNote>(
-                                        &mut remaining_value_needed,
-                                        anchor_height,
-                                        &exclude_orchard,
-                                        account,
-                                        include_potentially_spent_notes,
-                                    )?
-                                    .into_iter()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                exclude_orchard
-                                    .extend(notes.iter().map(OutputInterface::output_id));
-                                selected_orchard_notes.extend(notes);
-                            }
-                            if sources.contains(&ShieldedPool::Ironwood) {
-                                let notes = self
-                                    .select_spendable_notes_by_pool::<IronwoodNote>(
-                                        &mut remaining_value_needed,
-                                        anchor_height,
-                                        &exclude_ironwood,
-                                        account,
-                                        include_potentially_spent_notes,
-                                    )?
-                                    .into_iter()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                exclude_ironwood
-                                    .extend(notes.iter().map(OutputInterface::output_id));
-                                selected_ironwood_notes.extend(notes);
+                            // Prioritise note selection for the given `sources`,
+                            // honoring their order: the input selector lists the
+                            // caller's preferred pools first (the payment's own
+                            // pool leads), and processing them in a fixed order
+                            // instead would take inputs from a dispreferred
+                            // pool, paying an extra bundle's fee.
+                            for source in sources {
+                                match source {
+                                    ShieldedPool::Sapling => {
+                                        let notes = self
+                                            .select_spendable_notes_by_pool::<SaplingNote>(
+                                                &mut remaining_value_needed,
+                                                anchor_height,
+                                                &exclude_sapling,
+                                                account,
+                                                include_potentially_spent_notes,
+                                            )?
+                                            .into_iter()
+                                            .cloned()
+                                            .collect::<Vec<_>>();
+                                        exclude_sapling
+                                            .extend(notes.iter().map(OutputInterface::output_id));
+                                        selected_sapling_notes.extend(notes);
+                                    }
+                                    ShieldedPool::Orchard => {
+                                        let notes = self
+                                            .select_spendable_notes_by_pool::<OrchardNote>(
+                                                &mut remaining_value_needed,
+                                                anchor_height,
+                                                &exclude_orchard,
+                                                account,
+                                                include_potentially_spent_notes,
+                                            )?
+                                            .into_iter()
+                                            .cloned()
+                                            .collect::<Vec<_>>();
+                                        exclude_orchard
+                                            .extend(notes.iter().map(OutputInterface::output_id));
+                                        selected_orchard_notes.extend(notes);
+                                    }
+                                    ShieldedPool::Ironwood => {
+                                        let notes = self
+                                            .select_spendable_notes_by_pool::<IronwoodNote>(
+                                                &mut remaining_value_needed,
+                                                anchor_height,
+                                                &exclude_ironwood,
+                                                account,
+                                                include_potentially_spent_notes,
+                                            )?
+                                            .into_iter()
+                                            .cloned()
+                                            .collect::<Vec<_>>();
+                                        exclude_ironwood
+                                            .extend(notes.iter().map(OutputInterface::output_id));
+                                        selected_ironwood_notes.extend(notes);
+                                    }
+                                }
                             }
 
                             let notes = self

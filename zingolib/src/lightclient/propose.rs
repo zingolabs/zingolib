@@ -915,6 +915,125 @@ mod proposal_shape {
         unified_address.encode(&external_wallet.chain_type())
     }
 
+    /// A pool whose spendable list is exhausted mid-selection must still
+    /// report the value it covered. The regression this pins: selecting the
+    /// pool's last candidate note broke out of the selection loop before
+    /// the remaining-needed figure was recomputed, so the caller saw a
+    /// stale positive remainder and the next pool selected against a
+    /// target that was already met. The wallet holds the covering note in
+    /// Orchard and a larger note in Sapling — the two trailing pools of
+    /// the selector's preference order for an Ironwood payment — so the
+    /// assertion is independent of that order's head.
+    #[tokio::test]
+    async fn exhausted_pool_does_not_over_select() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(50_000)
+            .sapling_note(100_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
+                .await
+                .unwrap();
+        let selected: Vec<u64> = proposal
+            .steps()
+            .first()
+            .shielded_inputs()
+            .expect("a shielded send selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [50_000],
+            "one note covers the send; an emptied pool must not spill selection into the next"
+        );
+    }
+
+    /// A note bound to a pending migration part is withheld from ordinary
+    /// input selection while a free note can satisfy the request (the
+    /// ZIP 318 soft reservation). This is the unit-level twin of the
+    /// libtonode `bound_note_reservation_and_external_spend_invalidation`
+    /// scenario, and it fails alongside the exhausted-pool regression
+    /// above: a stale remainder made the never-block fallback consume the
+    /// bound note although the free note had already covered the target.
+    #[tokio::test]
+    async fn reservation_withholds_bound_note_while_a_free_note_suffices() {
+        use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+
+        use crate::wallet::migration::{
+            BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+            PartRecord, SigningStrategy,
+        };
+
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build();
+
+        let (output_id, nullifier) = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == 100_000)
+            .map(|note| {
+                (
+                    note.output_id(),
+                    note.nullifier()
+                        .expect("scanned notes carry nullifiers")
+                        .to_bytes(),
+                )
+            })
+            .expect("the wallet holds the 100_000 note");
+
+        let params = MigrationParams::provisional(wallet.chain_type());
+        wallet.migration = Some(MigrationState {
+            consent: ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            account: zip32::AccountId::ZERO,
+            phase: MigrationPhase::PartsScheduled,
+            parts: vec![PartRecord::new(
+                PartId(0),
+                100_000,
+                BoundNote {
+                    output_id,
+                    nullifier,
+                    commitment: [0; 32],
+                },
+            )],
+        });
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
+                .await
+                .unwrap();
+        let selected: Vec<u64> = proposal
+            .steps()
+            .first()
+            .shielded_inputs()
+            .expect("a shielded send selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [50_000],
+            "the free note covers the send; the bound note stays reserved"
+        );
+    }
+
     /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
     /// of less than the fee still proposes — the fee comes out of the
     /// selected note and the remainder returns as change. The original

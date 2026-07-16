@@ -271,6 +271,19 @@ pub fn plan_migration(
             }
             let merged =
                 group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+            // Post-activation, a trailing pair of near-floor notes can merge
+            // to at most `sweep_min`: a note the stranding policy refuses to
+            // spend, and one a replan after an interruption would strand.
+            // Carry such a group unmerged — each note exceeds `sweep_min` on
+            // its own, and the skipped merge fee outweighs the marginal
+            // inputs it would have saved. Only a partial group may carry:
+            // full groups always merge (at three or more notes their merge
+            // always clears `sweep_min`), so every round still shrinks the
+            // pool and the loop terminates.
+            if group.len() < max_notes && merged <= params.sweep_min {
+                next.extend_from_slice(group);
+                continue;
+            }
             round.push(NoteSplitTx {
                 inputs: group.to_vec(),
                 outputs: vec![merged],
@@ -702,6 +715,15 @@ mod tests {
         );
     }
 
+    /// Economic pin for the stranding policy: `sweep_min` may carry any
+    /// safety factor above the ZIP-317 marginal fee, but must never sit
+    /// below it — below that line a selected note could cost more to spend
+    /// than the value it provides.
+    #[test]
+    fn sweep_min_covers_the_marginal_input_cost() {
+        assert!(params().sweep_min >= MARGINAL_FEE);
+    }
+
     /// The action-count rule the fee model rests on: an Orchard bundle from
     /// NU6.3 disables cross-address transfers, so a spend and an output no
     /// longer share an action. The crates own that rule and the split fee
@@ -822,6 +844,83 @@ mod tests {
         assert_eq!(available, expected, "post-splitting notes ≠ part set");
 
         plan
+    }
+
+    /// Asserts the selection invariant: no planned transaction spends a note
+    /// worth at most `sweep_min`, whether it is a wallet note or an
+    /// intermediate created by an earlier round.
+    fn assert_planned_inputs_exceed_sweep_min(plan: &MigrationPlan, params: &MigrationParams) {
+        for (round, transactions) in plan.split_rounds.iter().enumerate() {
+            for tx in transactions {
+                for &input in &tx.inputs {
+                    assert!(
+                        input > params.sweep_min,
+                        "round {round} spends a {input}-zatoshi note, \
+                         at or below sweep_min ({})",
+                        params.sweep_min
+                    );
+                }
+            }
+        }
+    }
+
+    /// The selection boundary is strict: a note worth exactly `sweep_min` is
+    /// stranded, one zatoshi more is selected. Fails whenever the planner's
+    /// stranding filter admits a note at or below the threshold.
+    #[test]
+    fn notes_at_or_below_sweep_min_are_never_selected() {
+        let params = params();
+        let dust = [1, MARGINAL_FEE, params.sweep_min - 1, params.sweep_min];
+        let mut notes = dust.to_vec();
+        notes.extend([params.sweep_min + 1, 200_000, 300_000]);
+        for post_activation in [false, true] {
+            let plan = plan_migration(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+            assert_eq!(plan.stranded, dust.iter().sum::<u64>());
+            // The note one zatoshi above the boundary is selected.
+            assert!(
+                plan.split_rounds[0]
+                    .iter()
+                    .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
+            );
+        }
+    }
+
+    /// Guards the one shape where reduction could violate the selection
+    /// invariant. Post-activation, a trailing group of exactly two notes,
+    /// each at most 12_500 zatoshis, would merge to `sum - 15_000`: between
+    /// 5_002 and 10_000 zatoshis, at or below `sweep_min`. The sizing round
+    /// would then spend a note the stranding policy refuses — and a replan
+    /// after an interruption would strand it, abandoning the pair's value
+    /// after fees were paid to create it. The planner instead carries such
+    /// a group into the next pool unmerged. Every other shape merges clear
+    /// of the threshold: a group of three yields at least 10_003, and a
+    /// pre-activation pair at least 10_002, because spends and outputs
+    /// share actions there.
+    #[test]
+    fn reduction_never_creates_a_sub_sweep_min_intermediate() {
+        let params = params();
+        // One full reduction group plus a trailing pair that would merge to
+        // 6_000 zatoshis, below the sweep minimum.
+        let notes = vec![10_500u64; params.max_actions_per_split_tx + 2];
+        for post_activation in [false, true] {
+            let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+        }
+
+        // Post-activation the pair is carried unmerged: the reduction round
+        // merges only the full group, and the sizing round spends the pair
+        // directly.
+        let plan = plan_migration(&notes, true, &params);
+        assert_eq!(plan.split_rounds[0].len(), 1);
+        assert_eq!(
+            plan.split_rounds[1][0]
+                .inputs
+                .iter()
+                .filter(|&&value| value == 10_500)
+                .count(),
+            2
+        );
     }
 
     #[test]
