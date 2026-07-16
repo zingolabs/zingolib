@@ -15,6 +15,15 @@ on:
   push:
     branches: [stable, dev]
 
+# One CI tree per pull request: a new commit on a PR'd branch cancels the
+# superseded commit's still-running jobs (including the container test
+# matrix called through test.yaml), returning those runners to the pool.
+# Pushes to stable/dev group by ref but never cancel a running tree —
+# GitHub instead collapses any queued runs behind it to the newest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
