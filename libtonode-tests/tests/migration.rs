@@ -65,14 +65,20 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
 /// wallet notes, standing in for the completed note-splitting phase so the
 /// Phase 2 machinery can be exercised before Ironwood lands on the node
 /// path. `bucket_index` assigns every part to that bucket; `None` leaves
-/// them bound but unscheduled.
+/// them bound but unscheduled. `bucket_modulus` overrides the provisional
+/// bucket geometry: every consumer of the schedule reads it from the
+/// injected state, so a test can shrink the chain it must mine.
 async fn inject_scheduled_migration(
     client: &LightClient,
     bound: Vec<(u64, OutputId, [u8; 32])>,
     bucket_index: Option<u64>,
+    bucket_modulus: Option<u32>,
 ) {
     let mut wallet = client.wallet().write().await;
-    let params = MigrationParams::provisional(wallet.chain_type());
+    let mut params = MigrationParams::provisional(wallet.chain_type());
+    if let Some(bucket_modulus) = bucket_modulus {
+        params.bucket_modulus = bucket_modulus;
+    }
     let parts = bound
         .into_iter()
         .enumerate()
@@ -129,6 +135,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
     inject_scheduled_migration(
         &recipient,
         vec![(100_000, reserved.output_id, reserved.nullifier)],
+        None,
         None,
     )
     .await;
@@ -209,30 +216,38 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 /// was never captured.
 #[tokio::test]
 async fn unavailable_boundary_tree_state_skips_without_sync() {
+    // A bucket modulus of the provisional value's power-of-two family,
+    // shrunk to keep the chain short. It must exceed pepper-sync's
+    // checkpoint retention (`MAX_REORG_ALLOWANCE`, 100 blocks) so the
+    // boundary checkpoint is pruned while the tip is still inside the
+    // bucket. Under the provisional 256 this test leapt 450 blocks, and
+    // mining that many blocks to a halo2 miner address outran even a
+    // 1200-second container budget.
+    const PRUNED_BUCKET_MODULUS: u32 = 128;
+
     let (local_net, _faucet, mut recipient) =
         pre_ironwood_funded_recipient(|_| vec![100_000]).await;
 
-    // One leap past the first bucket boundary: far enough that the boundary
-    // checkpoint is pruned, short of the second boundary. The leap crosses
-    // the deferred NU6.3 activation on the way.
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 450)
+    // One leap past the first bucket boundary (128), crossing the deferred
+    // NU6.3 activation on the way: to a tip more than the 100-block
+    // checkpoint retention past the boundary, yet far enough below the
+    // second boundary (256) that the ten hidden blocks below stay inside
+    // the bucket.
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 235)
         .await
         .unwrap();
 
-    let (known_height, bucket_modulus) = {
+    let known_height = {
         let wallet = recipient.wallet().read().await;
-        (
-            wallet
-                .sync_state
-                .last_known_chain_height()
-                .expect("the wallet has synced"),
-            MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
-        )
+        wallet
+            .sync_state
+            .last_known_chain_height()
+            .expect("the wallet has synced")
     };
-    let current_bucket = schedule::bucket_index(known_height, bucket_modulus);
-    assert!(
-        current_bucket >= 1,
-        "the chain must have crossed at least one bucket boundary"
+    let current_bucket = schedule::bucket_index(known_height, PRUNED_BUCKET_MODULUS);
+    assert_eq!(
+        current_bucket, 1,
+        "the chain must sit inside the first bucket past the boundary"
     );
 
     let notes = orchard_note_records(&recipient).await;
@@ -241,6 +256,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
         &recipient,
         vec![(100_000, bound.output_id, bound.nullifier)],
         Some(current_bucket),
+        Some(PRUNED_BUCKET_MODULUS),
     )
     .await;
 
