@@ -10,6 +10,10 @@ license = "MIT"
 
 [features]
 default = []
+# IP-obfuscation transport (ADR 0011). Off by default; the pure seam-B core
+# pulls no extra dependencies, and the live nym-sdk stack arrives behind this
+# same feature in a later increment.
+nym = []
 testutils = [
     "portpicker",
     "zingo_test_vectors",
