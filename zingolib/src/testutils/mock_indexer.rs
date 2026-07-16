@@ -889,7 +889,8 @@ impl MockNet {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         self._wallet_dirs.push(wallet_dir);
         let mut lightclient = LightClient::new(config, true)
             .await
