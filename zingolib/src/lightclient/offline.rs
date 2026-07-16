@@ -19,7 +19,8 @@ mod test {
                 wallet_settings: default_test_wallet_settings(),
             })
             // no .set_indexer_uri() → offline mode
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 
@@ -199,7 +200,8 @@ mod test {
                     birthday: 419200,
                     wallet_settings: default_test_wallet_settings(),
                 })
-                .build();
+                .build()
+                .unwrap();
             let mut lc = LightClient::new(config, true).await.unwrap();
             let addrs = lc.unified_addresses_json().await;
             lc.flush().await.unwrap();
@@ -211,7 +213,8 @@ mod test {
             let config = ClientConfig::builder()
                 .set_wallet_dir(dir.path().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build();
+                .build()
+                .unwrap();
             let lc = LightClient::new(config, false).await.unwrap();
             assert!(lc.indexer_uri().is_none(), "reload should be offline");
             assert_eq!(
@@ -241,7 +244,8 @@ mod test {
         let config = ClientConfig::builder()
             .set_wallet_dir(dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::Read)
-            .build();
+            .build()
+            .unwrap();
         let result = LightClient::new(config, false).await;
         assert!(
             matches!(result, Err(LightClientError::FileError(_))),

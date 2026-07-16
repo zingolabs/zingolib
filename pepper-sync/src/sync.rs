@@ -2203,7 +2203,7 @@ mod test {
         #[test]
         fn table() {
             // (workers, unprocessed, connected_for, poll_elapsed) → verdict
-            let cases: &[(usize, u8, Option<u64>, u64, DrainVerdict, &str)] = &[
+            let cases: &[(usize, u32, Option<u64>, u64, DrainVerdict, &str)] = &[
                 // The reported bug: first-loop shutdown on a fully
                 // synced chain, stream not yet connected — hold the
                 // session open instead of closing it instantly.

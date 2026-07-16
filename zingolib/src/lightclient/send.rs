@@ -822,7 +822,8 @@ mod test {
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 

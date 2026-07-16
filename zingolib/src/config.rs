@@ -541,7 +541,8 @@ mod tests {
             .set_indexer_uri(valid_uri.clone())
             .set_chain_type(ChainType::Mainnet)
             .set_wallet_dir(temp_path)
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
