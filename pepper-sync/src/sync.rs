@@ -80,6 +80,33 @@ pub struct SyncStatus {
     pub total_orchard_outputs_scanned: u32,
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
+    /// Numerator of the exact scan-progress ratio: outputs scanned so far
+    /// across both shielded pools. May exceed `total_outputs`, whose tree
+    /// bounds are fixed at sync start, when scanning continues past them
+    /// into chain growth.
+    pub total_outputs_scanned: u64,
+    /// Denominator of the exact scan-progress ratio: outputs in the chain
+    /// between the wallet birthday and the last known chain height, across
+    /// both shielded pools. Zero when sync has never started, and also when
+    /// the range from birthday to chain height contains no shielded outputs.
+    pub total_outputs: u64,
+}
+
+impl SyncStatus {
+    /// Whether sync is complete: sync has started and every scan range is
+    /// fully processed ([`ScanPriority::Scanned`]), so no range still awaits
+    /// scanning, nullifier mapping, or nullifier refetching.
+    ///
+    /// This is the sync task's own terminal condition, so it holds even when
+    /// the birthday-to-chain-height range contains no shielded outputs and
+    /// the output ratio is vacuously 0 / 0.
+    pub fn is_complete(&self) -> bool {
+        self.sync_start_height != 0.into()
+            && self
+                .scan_ranges
+                .iter()
+                .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+    }
 }
 
 // TODO: complete display, scan ranges in raw form are too verbose
@@ -120,6 +147,8 @@ impl From<SyncStatus> for json::JsonValue {
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
+            "total_outputs_scanned" => value.total_outputs_scanned,
+            "total_outputs" => value.total_outputs,
         }
     }
 }
@@ -197,6 +226,31 @@ pub enum ScanPriority {
     /// A previously scanned range that must be verified to check it is still in the
     /// main chain, has highest priority.
     Verify,
+}
+
+impl ScanPriority {
+    /// Whether this priority marks a range whose blocks have been scanned,
+    /// including ranges whose nullifiers still await retrieval. Contrast with
+    /// equality to [`ScanPriority::Scanned`], which additionally requires the
+    /// nullifier work to be finished.
+    pub fn is_scanned(self) -> bool {
+        matches!(
+            self,
+            ScanPriority::Scanned
+                | ScanPriority::ScannedWithoutMapping
+                | ScanPriority::RefetchingNullifiers
+        )
+    }
+
+    /// Whether this priority marks a range whose blocks have been scanned but
+    /// whose nullifiers still await mapping or refetching for final spend
+    /// detection.
+    pub fn awaits_nullifier_retrieval(self) -> bool {
+        matches!(
+            self,
+            ScanPriority::ScannedWithoutMapping | ScanPriority::RefetchingNullifiers
+        )
+    }
 }
 
 /// A range of blocks to be scanned, along with its associated priority.
@@ -731,6 +785,8 @@ where
             total_orchard_outputs_scanned: 0,
             percentage_session_outputs_scanned: 0.0,
             percentage_total_outputs_scanned: 0.0,
+            total_outputs_scanned: 0,
+            total_outputs: 0,
         });
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
@@ -791,10 +847,11 @@ where
     let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
 
-    if sync_state.scan_ranges().iter().any(|scan_range| {
-        scan_range.priority() == ScanPriority::ScannedWithoutMapping
-            || scan_range.priority() == ScanPriority::RefetchingNullifiers
-    }) {
+    if sync_state
+        .scan_ranges()
+        .iter()
+        .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
+    {
         if percentage_session_blocks_scanned == 100.0 {
             percentage_session_blocks_scanned = 99.0;
         }
@@ -822,6 +879,9 @@ where
         total_orchard_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
+        total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
+            + u64::from(total_orchard_outputs_scanned),
+        total_outputs: u64::from(total_sapling_outputs) + u64::from(total_orchard_outputs),
     })
 }
 
@@ -1791,11 +1851,7 @@ where
     let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
@@ -2131,6 +2187,99 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
+    /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
+    /// completion is the sync task's own terminal condition — sync has
+    /// started and every scan range is `Scanned` — independent of the
+    /// output ratio, so an output-free birthday-to-chain-height range can
+    /// complete and a stale `total_outputs` cannot fake completion.
+    mod sync_status_completion {
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::sync::{ScanPriority, ScanRange, SyncStatus};
+
+        /// Builds a status with the given start height and scan-range
+        /// priorities. Every counter stays zero: completion must be
+        /// decided by the scan ranges alone, never by the output ratio.
+        fn status(sync_start_height: u32, priorities: &[ScanPriority]) -> SyncStatus {
+            let scan_ranges = priorities
+                .iter()
+                .enumerate()
+                .map(|(index, priority)| {
+                    let start = 1_000 + 10 * index as u32;
+                    ScanRange::from_parts(
+                        BlockHeight::from(start)..BlockHeight::from(start + 10),
+                        *priority,
+                    )
+                })
+                .collect();
+            SyncStatus {
+                scan_ranges,
+                sync_start_height: sync_start_height.into(),
+                session_blocks_scanned: 0,
+                total_blocks_scanned: 0,
+                percentage_session_blocks_scanned: 0.0,
+                percentage_total_blocks_scanned: 0.0,
+                session_sapling_outputs_scanned: 0,
+                total_sapling_outputs_scanned: 0,
+                session_orchard_outputs_scanned: 0,
+                total_orchard_outputs_scanned: 0,
+                percentage_session_outputs_scanned: 0.0,
+                percentage_total_outputs_scanned: 0.0,
+                total_outputs_scanned: 0,
+                total_outputs: 0,
+            }
+        }
+
+        #[test]
+        fn never_started_is_not_complete() {
+            assert!(!status(0, &[]).is_complete());
+        }
+
+        /// A started sync with no scan ranges left in the state is
+        /// vacuously complete: nothing remains tracked, so nothing
+        /// awaits scanning or nullifier work.
+        #[test]
+        fn started_with_no_scan_ranges_is_complete() {
+            assert!(status(1_000, &[]).is_complete());
+        }
+
+        #[test]
+        fn all_ranges_scanned_is_complete() {
+            assert!(status(1_000, &[ScanPriority::Scanned, ScanPriority::Scanned]).is_complete());
+        }
+
+        /// The empty-range edge: zero shielded outputs from birthday to
+        /// chain height must not read as incomplete once the sync task
+        /// has run to its terminal state.
+        #[test]
+        fn output_free_range_is_complete() {
+            let status = status(1_000, &[ScanPriority::Scanned]);
+            assert_eq!(status.total_outputs, 0);
+            assert!(status.is_complete());
+        }
+
+        #[test]
+        fn nullifier_retrieval_pending_is_not_complete() {
+            for pending in [
+                ScanPriority::ScannedWithoutMapping,
+                ScanPriority::RefetchingNullifiers,
+            ] {
+                assert!(!status(1_000, &[ScanPriority::Scanned, pending]).is_complete());
+            }
+        }
+
+        /// The stale-denominator edge: an unscanned range keeps the
+        /// status incomplete even if the output counters claim the
+        /// initially-computed target was reached.
+        #[test]
+        fn unscanned_range_is_not_complete() {
+            let mut status = status(1_000, &[ScanPriority::Scanned, ScanPriority::Historic]);
+            status.total_outputs_scanned = 10_000;
+            status.total_outputs = 10_000;
+            assert!(!status.is_complete());
+        }
+    }
+
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {
