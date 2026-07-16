@@ -640,19 +640,15 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 /// per-step balances, and the cumulative confirmed-fee total — driven
 /// through real scanning of the mock chain.
 ///
-/// Ignored, not broken: pepper-sync's SUBTRACTIVE `darkside_test`
-/// feature deletes transparent-address discovery at compile time, and
-/// cargo feature unification enables it for every crate co-built with
-/// darkside-tests (`makers test packages`, `--workspace`), so this
-/// test's purely-transparent step-1 funding is silently never detected
-/// in those invocation shapes while passing in `-p zingolib` ones. Runs
-/// green via `--run-ignored` in a single-package invocation. Un-ignore
-/// when the feature becomes runtime configuration.
-#[ignore = "zingolabs/zingolib#2447: pepper-sync's subtractive darkside_test feature, when \
-            unified into multi-package builds, compiles out the transparent-address discovery \
-            this test's funding depends on. ALSO: the ledger's fees and amounts predate V6 — \
-            re-derive every step per ADR 0009 before un-ignoring (step 10's drain amount goes \
-            insufficient under V6 two-bundle fees)"]
+/// The `darkside_test` hazard of zingolabs/zingolib#2447 is gone: that
+/// subtractive feature compiled out the transparent-address discovery
+/// this test's funding depends on whenever feature unification enabled
+/// it in multi-package builds, and the feature and its gates are now
+/// deleted. The test stays ignored for an unrelated reason — its ledger
+/// predates V6 and every step needs re-deriving per ADR 0009.
+#[ignore = "The ledger's fees and amounts predate V6 — re-derive every step per ADR 0009 \
+            before un-ignoring (step 10 under-drains, stranding 10_000 in sapling, because \
+            V6's two-bundle fees lead the planner to leave the sapling note unspent)"]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     use crate::lightclient::error::{LightClientError, SendError};
@@ -674,7 +670,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
             net.chain.write().await.mine_mempool();
             client.sync_and_await().await.unwrap();
-            check_client_balances!(client, i: 0 o:$o s:$s t:$t);
+            check_client_balances!(client, i: $i o:$o s:$s t:$t);
         };
     }
 

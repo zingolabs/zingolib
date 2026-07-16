@@ -278,7 +278,7 @@ impl WalletConfig {
 /// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
 /// If the provided string is missing the http prefix, a prefix of `http://` will be added.
 /// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_lightwalletd_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
+pub fn construct_indexer_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
     match server {
         Some(s) => {
             if s.is_empty() {
@@ -541,7 +541,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some(
+        let valid_uri = crate::config::construct_indexer_uri(Some(
             crate::config::DEFAULT_INDEXER_URI.to_string(),
         ))
         .unwrap();

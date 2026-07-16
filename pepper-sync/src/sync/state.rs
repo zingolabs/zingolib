@@ -30,7 +30,6 @@ use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
 
 const NARROW_SCAN_AREA: u32 = 10_000;
 
-#[cfg(not(feature = "darkside_test"))]
 use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
@@ -928,11 +927,7 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
     sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
@@ -947,11 +942,7 @@ where
         .get_sync_state()?
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .collect::<Result<Vec<_>, _>>()?
         .iter()
@@ -1037,7 +1028,6 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
-#[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedPool,

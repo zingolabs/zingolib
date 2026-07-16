@@ -60,8 +60,8 @@ between the two revisions.
   mine_to_transparent_coinbase_maturity, send_orchard_back_and_forth,
   send_to_transparent_and_sapling_maintain_balance,
   received_tx_status_pending_to_confirmed_with_mempool_monitor,
-  verify_old_wallet_uses_server_height_in_send) swapped zcashd-era magic
-  balances for const-derived expressions (mined_block_rewards_total,
+  verify_old_wallet_uses_server_height_in_send) swapped legacy-validator-era
+  magic balances for const-derived expressions (mined_block_rewards_total,
   FUNDED_FAUCET_SETUP_HEIGHT, POST_STREAM_BLOCK_REWARD) because the zebrad
   funding-stream economics changed the numbers; each still asserts exact
   equality on the same property. Both chain_generics survivors

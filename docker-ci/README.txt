@@ -2,7 +2,7 @@ The container test image is versioned from `.env.testing-artifacts`,
 `rust-toolchain.toml`, and this `docker-ci` directory.
 
 For local reproducible test runs:
- - update `.env.testing-artifacts` if lightwalletd, zebra, or the Zaino image tag changes
+ - update `.env.testing-artifacts` if zebra or the Zaino image tag changes
  - run `makers build-image` to build the local image
  - run `makers run` to execute tests inside the image
 
