@@ -10,6 +10,7 @@
 use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
 use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::PoolType;
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::lightclient::from_inputs;
@@ -20,6 +21,7 @@ use zingolib::wallet::migration::{
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,
 };
+use zingolib_testutils::setup_metrics::MeteredNet;
 use zip32::AccountId;
 
 /// A snapshot of one of the wallet's Orchard notes.
@@ -324,25 +326,100 @@ async fn two_phase_migration_end_to_end() {
     assert_eq!(status.value_migrated, expected_migrated);
 }
 
+/// The NU6.3 activation height for the drain scenarios: far enough past the
+/// funded-faucet setup tip ([`scenarios::FUNDED_FAUCET_SETUP_HEIGHT`]) that
+/// the recipient is funded before activation, close enough that crossing
+/// the boundary stays cheap.
+const DRAIN_SCENARIO_NU6_3_HEIGHT: u32 = 16;
+
+/// Launches a chain whose NU6.3 activation still lies ahead, funds the
+/// recipient with one multi-output send — one pre-Ironwood (V2) Orchard
+/// note per value produced by `values` — and then mines the chain across
+/// the activation boundary.
+///
+/// The drains need this shape on both sides of the boundary: the Turnstile
+/// forbids ordinary payments into the Orchard pool from activation onward,
+/// so the funding must confirm first, and a drain sends into Ironwood, so
+/// the chain must have crossed before draining. The funding is a single
+/// transaction whatever the note count: a loop of single-output sends
+/// exhausts the faucet's few confirmed notes, because each send's change
+/// stays unconfirmed until a block is mined.
+async fn pre_ironwood_funded_recipient(
+    values: impl FnOnce(&MigrationParams) -> Vec<u64>,
+) -> (MeteredNet, LightClient, LightClient) {
+    let fixture = scenarios::wallet_activation_heights(
+        &zcash_local_net::validator::regtest_test_activation_heights(),
+    );
+    let activation_heights = zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(Some(DRAIN_SCENARIO_NU6_3_HEIGHT))
+        .set_nu7(None)
+        .build();
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
+        PoolType::IRONWOOD,
+        activation_heights,
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    let note_values = {
+        let wallet = recipient.wallet().read().await;
+        values(&MigrationParams::provisional(wallet.chain_type()))
+    };
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+    let payments: Vec<(&str, u64, Option<&str>)> = note_values
+        .iter()
+        .map(|&value| (recipient_address.as_str(), value, None))
+        .collect();
+    from_inputs::quick_send(&mut faucet, payments)
+        .await
+        .unwrap();
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let funded_tip = u32::from(
+        recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced"),
+    );
+    assert!(
+        funded_tip < DRAIN_SCENARIO_NU6_3_HEIGHT,
+        "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+    );
+    increase_height_and_wait_for_client(
+        &local_net,
+        &mut recipient,
+        DRAIN_SCENARIO_NU6_3_HEIGHT - funded_tip + 1,
+    )
+    .await
+    .unwrap();
+
+    (local_net, faucet, recipient)
+}
+
 /// The immediate drain: every spendable Orchard note is spent into Ironwood in
 /// one pass, with no note splitting and no schedule. The Orchard pool empties
 /// down to the disclosed dust, and the same value less fees appears in the
 /// Ironwood pool. That second half is what proves the funds actually crossed.
 #[tokio::test]
 async fn drain_all_orchard_to_ironwood() {
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    let recipient_address = get_base_address_macro!(recipient, "unified");
-
     // Several notes of unequal value: a drain must sweep all of them, and
     // nothing here is a canonical denomination.
-    for value in [317_000u64, 1_250_000, 88_000] {
-        from_inputs::quick_send(&mut faucet, vec![(&recipient_address, value, None)])
-            .await
-            .unwrap();
-    }
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
+    let (local_net, _faucet, mut recipient) =
+        pre_ironwood_funded_recipient(|_| vec![317_000, 1_250_000, 88_000]).await;
 
     let orchard_before = recipient
         .wallet()
@@ -403,28 +480,21 @@ async fn drain_all_orchard_to_ironwood() {
 /// all built and broadcast in the same pass, and still empties the pool.
 #[tokio::test]
 async fn drain_chunks_a_fragmented_wallet() {
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    let recipient_address = get_base_address_macro!(recipient, "unified");
-
-    // More notes than fit one transaction's action budget.
-    let note_count = {
-        let wallet = recipient.wallet().read().await;
-        MigrationParams::provisional(wallet.chain_type()).max_actions_per_split_tx + 3
-    };
-    for _ in 0..note_count {
-        from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 100_000, None)])
-            .await
-            .unwrap();
-    }
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
+    // More notes than fit one transaction's action budget, funded in one
+    // transaction. Distinct values keep every payment in the ZIP-321
+    // request unique.
+    let (local_net, _faucet, mut recipient) = pre_ironwood_funded_recipient(|params| {
+        (0..params.max_actions_per_split_tx as u64 + 3)
+            .map(|index| 100_000 + index)
+            .collect()
+    })
+    .await;
 
     let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
     assert_eq!(
         plan.transactions.len(),
         2,
-        "{note_count} notes must chunk into two transactions"
+        "the notes must chunk into two transactions"
     );
 
     let summary = recipient
