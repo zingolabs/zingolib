@@ -20,9 +20,29 @@ tonic.workspace = true
 lightwallet-protocol.workspace = true
 tokio-stream = { workspace = true, optional = true }
 
+# Nym mixnet transport (ADR 0011), optional. These resolve ONLY in this
+# crate's own lockfile — never the parent workspace's — because nym-sdk's
+# transitive graph needs `crypto-common ^0.2`, irreconcilable with the
+# parent's `crypto-common =0.2.0-rc.1` pin. That is why zingo-netutils is
+# its own workspace (see [workspace] below and the root manifest's exclude).
+nym-sdk = { version = "1.21.2", optional = true }
+nym-http-api-client = { version = "1.21.3", optional = true }
+nym-validator-client = { version = "1.21.3", optional = true, default-features = false, features = [
+    "http-client",
+] }
+tokio-socks = { version = "0.5", optional = true }
+tokio = { workspace = true, optional = true, features = ["time"] }
+
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
+nym = [
+    "dep:nym-sdk",
+    "dep:nym-http-api-client",
+    "dep:nym-validator-client",
+    "dep:tokio-socks",
+    "dep:tokio",
+]
 
 [dev-dependencies]
 tokio-stream.workspace = true

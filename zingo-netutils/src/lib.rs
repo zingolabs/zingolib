@@ -52,6 +52,11 @@ mod globally_public;
 #[cfg(feature = "globally-public-transparent")]
 pub use globally_public::TransparentIndexer;
 
+#[cfg(feature = "nym")]
+mod nym_proxy;
+#[cfg(feature = "nym")]
+pub use nym_proxy::NymProxy;
+
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
     // sure a process-level CryptoProvider exists before that happens.
