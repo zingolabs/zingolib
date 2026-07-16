@@ -15,9 +15,7 @@ zingo-netutils = { workspace = true }
 zingo-testvectors = { workspace = true }
 zingo-status = { workspace = true }
 
-zcash_client_backend = { workspace = true, features = [
-    "lightwalletd-tonic-transport",
-] }
+zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }

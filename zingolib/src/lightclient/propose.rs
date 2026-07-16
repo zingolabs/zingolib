@@ -1,8 +1,8 @@
 //! `LightClient` function `do_propose` generates a proposal to send to specified addresses.
 
 use zcash_address::ZcashAddress;
-use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::value::Zatoshis;
+use zip321::TransactionRequest;
 
 use crate::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::data::proposal::ProportionalFeeProposal;
@@ -1182,9 +1182,9 @@ mod proposal_shape {
     async fn send_to_tex() {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
-        use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
+        use zip321::{Payment, TransactionRequest};
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .ironwood_note(5_000_000)

@@ -294,7 +294,7 @@ pub enum ProposeSendError {
     ),
     /// failed to construct a transaction request
     #[error("{0}")]
-    TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
+    TransactionRequestFailed(#[from] zip321::Zip321Error),
     /// send all is transferring no value
     #[error("send all is transferring no value. only enough funds to pay the fees!")]
     ZeroValueSendAll,

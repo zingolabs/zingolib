@@ -6,10 +6,10 @@ use nonempty::NonEmpty;
 
 use zcash_client_backend::data_api::wallet::TargetHeight;
 use zcash_client_backend::proposal::{Proposal, ProposalError};
-use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
+use zip321::TransactionRequest;
 
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
@@ -588,8 +588,8 @@ mod built_transaction_shape {
     /// satisfied in the unit environment.
     #[tokio::test]
     async fn two_input_sapling_spend_with_sapling_change_builds_offline() {
-        use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
+        use zip321::{Payment, TransactionRequest};
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .sapling_note(20_000)
@@ -667,9 +667,9 @@ mod built_transaction_shape {
     async fn tex_two_step_chains_ephemeral_output_offline() {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
-        use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
+        use zip321::{Payment, TransactionRequest};
 
         let payment_value = 100_000;
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)

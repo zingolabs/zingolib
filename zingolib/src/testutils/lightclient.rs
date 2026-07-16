@@ -92,13 +92,10 @@ pub mod from_inputs {
             .collect()
     }
 
-    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from rust primitives for simplified test writing.
+    /// Creates a [`zip321::TransactionRequest`] from rust primitives for simplified test writing.
     pub fn transaction_request_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<
-        zcash_client_backend::zip321::TransactionRequest,
-        zcash_client_backend::zip321::Zip321Error,
-    > {
+    ) -> Result<zip321::TransactionRequest, zip321::Zip321Error> {
         let receivers = receivers_from_send_inputs(raw_receivers);
         crate::data::receivers::transaction_request_from_receivers(receivers)
     }

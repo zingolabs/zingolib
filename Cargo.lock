@@ -4753,7 +4753,6 @@ dependencies = [
  "getset",
  "group",
  "hex",
- "hyper-util",
  "incrementalmerkletree",
  "memuse",
  "nonempty",
@@ -4769,8 +4768,6 @@ dependencies = [
  "shardtree",
  "subtle",
  "time",
- "tonic",
- "tonic-prost",
  "tonic-prost-build",
  "tracing",
  "which",
@@ -5239,6 +5236,7 @@ dependencies = [
  "zingo_common_components",
  "zingo_test_vectors",
  "zip32",
+ "zip321",
 ]
 
 [[package]]

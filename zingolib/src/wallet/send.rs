@@ -206,9 +206,9 @@ mod tests {
     use std::str::FromStr;
 
     use zcash_address::ZcashAddress;
-    use zcash_client_backend::zip321::TransactionRequest;
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
+    use zip321::TransactionRequest;
 
     use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 

@@ -77,6 +77,7 @@ zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
+zip321 = { workspace = true }
 zaino-proto = { git = "https://github.com/zingolabs/zaino.git", rev = "2e2816cb3755e7ff4d18bed1a96b95dc07c1549c", version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
 tokio-stream = { workspace = true, optional = true }
 

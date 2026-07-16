@@ -6,7 +6,6 @@ use zcash_client_backend::{
         input_selection::{GreedyInputSelector, SpendPolicy},
     },
     fees::{DustAction, DustOutputPolicy},
-    zip321::TransactionRequest,
 };
 use zcash_protocol::{
     ShieldedPool,
@@ -14,6 +13,7 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
+use zip321::TransactionRequest;
 
 use super::{
     LightWallet,

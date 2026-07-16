@@ -55,12 +55,12 @@ impl From<ServerInfo> for json::JsonValue {
 /// transforming data related to the destination of a send.
 pub mod receivers {
     use zcash_address::ZcashAddress;
-    use zcash_client_backend::zip321::Payment;
-    use zcash_client_backend::zip321::PaymentError;
-    use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_client_backend::zip321::Zip321Error;
     use zcash_protocol::memo::MemoBytes;
     use zcash_protocol::value::Zatoshis;
+    use zip321::Payment;
+    use zip321::PaymentError;
+    use zip321::TransactionRequest;
+    use zip321::Zip321Error;
 
     /// A list of Receivers
     pub type Receivers = Vec<Receiver>;
@@ -101,7 +101,7 @@ pub mod receivers {
         }
     }
 
-    /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
+    /// Creates a [`zip321::TransactionRequest`] from receivers.
     /// Note this fn is called to calculate the `spendable_shielded` balance
     /// shielding and TEX should be handled mutually exclusively
     pub fn transaction_request_from_receivers(
