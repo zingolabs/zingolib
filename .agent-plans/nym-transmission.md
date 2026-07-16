@@ -489,9 +489,29 @@ means:
   is a spawned child process, not linked in-process (dep reality: nym-sdk's
   crypto-common ^0.2 cannot share the main lock).
 
-Later increments: the SOCKS5-dialing Transmitter in the main lock
-(tokio-socks); wire the broadcaster into `transmit_transactions`; the
-tri-state toggle as a LightClient API; the reqwest+SOCKS5 price path;
+## Implementation — increment 3 (IN PROGRESS 2026-07-16): unify transmit policy
+
+De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration
+so it is UNIQUELY defined, regression-tested, and reused by both the clearnet
+indexer path and (later) the Nym broadcaster. Design:
+- `zingolib/src/lightclient/transmit.rs`: `TransmitTarget` trait (submit +
+  knows_transaction) + `resilient_transmit()` — the sole definition of the
+  policy, pure (no wallet-state mutation), with an injectable sleep hook so
+  the probe/retry cadence is unit-testable without real time. Constants
+  MAX_RETRIES / MAX_QUEUED_PROBES move here. Full regression tests (accept,
+  duplicate-in-mempool, in-chain, queued-probe settle/exhaust, retry
+  succeed/exhaust, delivery-check confirm/deny).
+- `send.rs`: `ClearnetTarget` wraps GrpcIndexer (send_transaction +
+  get_transaction); `transmit_transactions` rewired to call
+  `resilient_transmit` and do wallet-state effects around it —
+  behavior-preserving.
+- Step 2 (next): rework the increment-1 witness-rotation broadcaster to build
+  a SocksTarget per pick and run the SAME resilient_transmit, retiring the
+  increment-1 simplistic `Transmitter` trait; branch transmit_transactions on
+  Mixnet Mode; delete GrpcIndexer's stale `// TODO; add nym_client`.
+
+Later increments: the proxy supervisor (spawn nym-proxy, parse SOCKS5_ADDR);
+the tri-state toggle as a LightClient API; the reqwest+SOCKS5 price path;
 CLI `nym on|off|status`.
 
 ## File claims (prospective, gated on ratification)

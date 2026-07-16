@@ -1,6 +1,7 @@
 //! TODO: Add Mod Description Here!
 
 use std::convert::Infallible;
+use std::future::Future;
 
 use nonempty::NonEmpty;
 
@@ -20,19 +21,10 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::transmit::{TransmitFailed, TransmitTarget, resilient_transmit};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
-
-const MAX_RETRIES: u8 = 3;
-
-/// A "queued for download" duplicate rejection proves delivery but not
-/// minability: zebra is still verifying the earlier submission
-/// (observed to lag it by seconds under load). Each resubmission is a
-/// free probe of zebra's own state; wait up to this many probes, on
-/// the retry loop's one-second cadence, for the verdict to become
-/// storage-backed (issue #2450).
-const MAX_QUEUED_PROBES: u8 = 30;
 
 /// ZIP 203: `nExpiryHeight` values at or above this threshold are
 /// interpreted as a block time rather than a block height, so a
@@ -71,6 +63,47 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
         proposal.confirmations_policy(),
         proposal.steps().clone(),
     )
+}
+
+/// The configured clearnet indexer as a [`TransmitTarget`]: it submits over the
+/// ordinary gRPC channel and delivery-checks with `get_transaction`. The Nym
+/// path supplies a SOCKS5-backed target to the same [`resilient_transmit`]
+/// policy.
+struct ClearnetTarget(zingo_netutils::GrpcIndexer);
+
+impl TransmitTarget for ClearnetTarget {
+    fn submit(
+        &self,
+        raw_tx: &[u8],
+        height: u64,
+    ) -> impl Future<Output = Result<String, String>> + Send {
+        let mut client = self.0.clone();
+        let data = raw_tx.to_vec();
+        async move {
+            client
+                .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
+                .await
+                .map_err(|e| format!("{e:?}"))
+        }
+    }
+
+    fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
+        let mut client = self.0.clone();
+        let hash = txid.as_ref().to_vec();
+        async move {
+            client
+                .get_transaction(
+                    TxFilter {
+                        block: None,
+                        index: 0,
+                        hash,
+                    },
+                    DEFAULT_REQUEST_TIMEOUT,
+                )
+                .await
+                .is_ok()
+        }
+    }
 }
 
 impl LightClient {
@@ -350,106 +383,33 @@ impl LightClient {
                     WalletError::TransactionWrite(e)
                 })?;
 
-            let mut retry_count = 0;
-            let mut queued_probes = 0;
-            let txid_from_server = loop {
-                let transmission_result = indexer
-                    .clone()
-                    .send_transaction(
-                        RawTransaction {
-                            data: transaction_bytes.clone(),
-                            height: height.into(),
-                        },
-                        DEFAULT_REQUEST_TIMEOUT,
+            // The retry / duplicate-in-mempool / queued-probe policy is defined
+            // once in `transmit::resilient_transmit` and reused here (clearnet)
+            // and by the Nym broadcast path. Wallet-state effects stay here; the
+            // policy is pure.
+            let target = ClearnetTarget(indexer.clone());
+            let txid_from_server = match resilient_transmit(
+                &target,
+                &transaction_bytes,
+                height.into(),
+                txid,
+                |interval| tokio::time::sleep(interval),
+            )
+            .await
+            {
+                Ok(server_txid) => server_txid,
+                Err(TransmitFailed(message)) => {
+                    pepper_sync::set_transactions_failed(
+                        &mut wallet.wallet_transactions,
+                        vec![*txid],
+                    );
+                    wallet.save_required = true;
+                    return Err(SendError::TransmissionError(
+                        TransmissionError::TransmissionFailed(message),
                     )
-                    .await
-                    .map_err(|e| {
-                        SendError::TransmissionError(TransmissionError::TransmissionFailed(
-                            format!("{e:?}"),
-                        ))
-                    });
-
-                match transmission_result {
-                    Ok(txid) => {
-                        break Ok(txid);
-                    }
-                    Err(e) => {
-                        // The node's rejections of resubmitted bytes
-                        // are positive confirmation that an earlier
-                        // submission was received (issue #2450).
-                        // Substring matches because zainod surfaces
-                        // the rejections untyped (zingolabs/zaino#1392);
-                        // upgrade to typed checks when that lands.
-                        if let SendError::TransmissionError(
-                            TransmissionError::TransmissionFailed(message),
-                        ) = &e
-                        {
-                            // Storage-backed duplicates: the earlier
-                            // submission is minable (in the mempool)
-                            // or already mined, so transmission is
-                            // complete.
-                            if message.contains("transaction already exists in mempool")
-                                || message.contains("transaction already in block chain")
-                            {
-                                break Ok(txid.to_string());
-                            }
-                            // "Queued for download" proves delivery,
-                            // not minability: zebra is still verifying
-                            // the earlier submission. Hold success
-                            // until the verdict is storage-backed, so
-                            // send-Ok keeps meaning the transaction is
-                            // minable now.
-                            if message.contains("already queued for download") {
-                                if queued_probes >= MAX_QUEUED_PROBES {
-                                    pepper_sync::set_transactions_failed(
-                                        &mut wallet.wallet_transactions,
-                                        vec![*txid],
-                                    );
-                                    wallet.save_required = true;
-                                    break Err(e);
-                                }
-                                queued_probes += 1;
-                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                continue;
-                            }
-                        }
-                        if retry_count >= MAX_RETRIES {
-                            // a transmission error does not prove the transaction failed to reach
-                            // the network. an earlier attempt may have been accepted with its
-                            // response lost (e.g. a timeout), causing rebroadcasts to be rejected
-                            // as duplicates. only mark the transaction failed if the server does
-                            // not know it.
-                            if indexer
-                                .clone()
-                                .get_transaction(
-                                    TxFilter {
-                                        block: None,
-                                        index: 0,
-                                        hash: txid.as_ref().to_vec(),
-                                    },
-                                    DEFAULT_REQUEST_TIMEOUT,
-                                )
-                                .await
-                                .is_ok()
-                            {
-                                break Ok(txid.to_string());
-                            }
-
-                            pepper_sync::set_transactions_failed(
-                                &mut wallet.wallet_transactions,
-                                vec![*txid],
-                            );
-                            wallet.save_required = true;
-                            break Err(e);
-                        } else {
-                            retry_count += 1;
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-                            continue;
-                        }
-                    }
+                    .into());
                 }
-            }?;
+            };
 
             wallet
                 .wallet_transactions
