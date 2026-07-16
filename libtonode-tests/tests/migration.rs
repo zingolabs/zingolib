@@ -216,24 +216,43 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 /// was never captured.
 #[tokio::test]
 async fn unavailable_boundary_tree_state_skips_without_sync() {
-    // A bucket modulus of the provisional value's power-of-two family,
-    // shrunk to keep the chain short. It must exceed pepper-sync's
-    // checkpoint retention (`MAX_REORG_ALLOWANCE`, 100 blocks) so the
-    // boundary checkpoint is pruned while the tip is still inside the
-    // bucket. Under the provisional 256 this test leapt 450 blocks, and
-    // mining that many blocks to a halo2 miner address outran even a
-    // 1200-second container budget.
-    const PRUNED_BUCKET_MODULUS: u32 = 128;
+    use pepper_sync::sync::MAX_REORG_ALLOWANCE;
+
+    // The blocks mined behind the wallet's back before the broadcast
+    // attempt: enough to prove the skip performs no hidden sync, few
+    // enough to stay inside the bucket.
+    const HIDDEN_BLOCKS: u32 = 10;
+    // The smallest bucket modulus of the provisional value's power-of-two
+    // family that exceeds shardtree's checkpoint retention — the premise
+    // needs the boundary checkpoint pruned while the tip is still inside
+    // the bucket. Shrinking the modulus shrinks the chain: under the
+    // provisional 256 this test leapt 450 blocks, and mining that many
+    // blocks to a halo2 miner address outran even a 1200-second container
+    // budget.
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_REORG_ALLOWANCE + 1).next_power_of_two();
+    // The tip to leap to, centered in the window that satisfies both
+    // constraints: past the boundary by more than the retention, so the
+    // boundary checkpoint is pruned, and far enough below the second
+    // boundary that the hidden blocks stay inside the bucket.
+    const TARGET_TIP: u32 = PRUNED_BUCKET_MODULUS
+        + MAX_REORG_ALLOWANCE
+        + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
 
     let (local_net, _faucet, mut recipient) =
         pre_ironwood_funded_recipient(|_| vec![100_000]).await;
 
-    // One leap past the first bucket boundary (128), crossing the deferred
-    // NU6.3 activation on the way: to a tip more than the 100-block
-    // checkpoint retention past the boundary, yet far enough below the
-    // second boundary (256) that the ten hidden blocks below stay inside
-    // the bucket.
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 235)
+    // One leap to the target tip, crossing the deferred NU6.3 activation
+    // on the way.
+    let funded_tip = u32::from(
+        recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced"),
+    );
+    increase_height_and_wait_for_client(&local_net, &mut recipient, TARGET_TIP - funded_tip)
         .await
         .unwrap();
 
@@ -262,7 +281,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
 
     // New blocks the wallet has not seen: a hidden sync inside the
     // broadcast path would advance the wallet's known height.
-    generate_n_blocks_return_new_height(&local_net, 10).await;
+    generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
     let sent = recipient.broadcast_due_parts().await.unwrap();
     assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
