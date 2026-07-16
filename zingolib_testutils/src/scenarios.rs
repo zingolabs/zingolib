@@ -48,18 +48,8 @@ use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
-/// Regtest network processes for testing and zingo-cli regtest mode: the
-/// legacy lightwalletd indexer in front of the zebrad validator. Survives
-/// only until the infrastructure repo's Legacy stack is removed as a unit.
-#[cfg(feature = "test_lwd_zebrad")]
-#[allow(missing_docs)]
-pub mod network_combo {
-    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
-    pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
-}
 /// Default regtest network processes for testing and zingo-cli regtest mode:
 /// the Core stack, zainod in front of zebrad.
-#[cfg(not(feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
     pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
@@ -70,9 +60,7 @@ pub mod network_combo {
 /// (`await_indexer_convergence`, added in infra commit fa2da0b) is defined
 /// only for zainod, whose "Syncing block" log line is the observation
 /// channel. This trait lets the generic scenario helpers use the barrier
-/// where the indexer has one and fall back to a no-op where it does not —
-/// the callers' wallet-side height polling remains the functional
-/// guarantee on the legacy lightwalletd stack.
+/// where the indexer has one and fall back to a no-op where it does not.
 pub trait IndexerConvergence {
     /// Blocks until the indexer's own chain index reports `target`, where
     /// observable; a no-op otherwise.
@@ -89,15 +77,6 @@ where
             .await
             .expect("indexer convergence barrier failed");
     }
-}
-
-#[cfg(feature = "test_lwd_zebrad")]
-impl<V> IndexerConvergence for LocalNet<V, zcash_local_net::indexer::lightwalletd::Lightwalletd>
-where
-    V: Validator + LogsToStdoutAndStderr + Send,
-    <V as Process>::Config: Send,
-{
-    async fn converge(&self, _target: u32) {}
 }
 
 /// Map the wallet-domain pool selection onto the infrastructure miner pool at
@@ -885,13 +864,7 @@ async fn launch_observed(
 
     let mut indexer_config = <DefaultIndexer as Process>::Config::default();
     indexer_config.set_listen_port(None);
-    // `LightwalletdConfig` carries no observer seam; under the legacy
-    // stack the front stays primed but unconnected and records nothing,
-    // matching the no-op `IndexerConvergence` impl above.
-    #[cfg(not(feature = "test_lwd_zebrad"))]
-    {
-        indexer_config.grpc_front_observer = Some(zainod_front.clone());
-    }
+    indexer_config.grpc_front_observer = Some(zainod_front.clone());
 
     let local_net = LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await

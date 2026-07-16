@@ -3,13 +3,6 @@ name = "zingolib_testutils"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-# The lightwalletd indexer lives behind the infrastructure repo's opt-in
-# `legacy-stack` feature (scheduled for removal there). This combo survives
-# only until the Legacy stack is removed as a unit; the zcashd validator
-# combos are already gone.
-test_lwd_zebrad = ["zcash_local_net/legacy-stack"]
-
 [dependencies]
 # zingolib
 zingolib = { workspace = true, features = ["testutils"] }

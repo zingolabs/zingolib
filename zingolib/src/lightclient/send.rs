@@ -390,14 +390,10 @@ impl LightClient {
                 crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
                     .map_err(WalletError::ConversionFailed)?;
             if txid_from_server != *txid {
-                // during darkside tests, the server may report a different txid to the one calculated.
-                #[cfg(not(feature = "darkside_tests"))]
-                {
-                    return Err(SendError::TransmissionError(
-                        TransmissionError::IncorrectTxidFromServer(*txid, txid_from_server),
-                    )
-                    .into());
-                }
+                return Err(SendError::TransmissionError(
+                    TransmissionError::IncorrectTxidFromServer(*txid, txid_from_server),
+                )
+                .into());
             }
         }
 

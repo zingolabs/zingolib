@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle
-        // data that was generated for testing commitment tree construction inside of zcashd here.
+        // data that was generated for testing commitment tree construction in zcash/zcash here.
         // https://github.com/zcash/zcash/blob/ecec1f9769a5e37eb3f7fd89a4fcfb35bc28eed7/src/test/data/merkle_roots_orchard.h
 
         let commitments = [

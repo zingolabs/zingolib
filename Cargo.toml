@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "darkside-tests",
     "libtonode-tests",
     "pepper-sync",
     "zingo-cli",
@@ -25,9 +24,7 @@ zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
-proptest = "1.6.0"
 tempfile = "3"
-test-log = "0.2"
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
 
@@ -72,7 +69,6 @@ sapling-crypto = "0.7.0"
 shardtree = "0.6.2"
 zcash_address = "0.12.0"
 zcash_client_backend = { version = "0.23.0", features = [
-    "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
 ] }
@@ -124,13 +120,10 @@ reqwest = { version = "0.12.15", default-features = false }
 # embedders that install their own provider first keep it.
 rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
-tonic-prost = "0.14"
-tonic-prost-build = "0.14"
 prost = "0.14"
 
 ### Async
 futures = "0.3"
-futures-util = "0.3"
 tokio = "1"
 
 ### Error interface
@@ -159,6 +152,3 @@ opt-level = 3
 
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
-
-[workspace.metadata.cargo-shear]
-ignored = ["tonic-prost"]

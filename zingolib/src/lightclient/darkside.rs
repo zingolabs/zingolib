@@ -1,13 +1,14 @@
 //! Reorg-semantics protections migrated from darkside-tests onto the
 //! stateful mock indexer (user direction, 2026-07-08).
 //!
-//! The darkside-tests crate froze on two lightwalletd darkside-mode
-//! bugs ("invalid block hash length in tree states", post-reorg
-//! prev-hash continuity), leaving all nine of its tests ignored. The
-//! protections they held — a wallet's behavior when the chain changes
-//! its mind — port here onto [`crate::testutils::mock_indexer`], whose
-//! [`MockChain::reorg_to`] primitive plays the darksidewalletd role
-//! without lightwalletd, the legacy stack, or either of its bugs.
+//! The darkside-tests crate froze on two darkside-mode bugs in the
+//! legacy indexer ("invalid block hash length in tree states",
+//! post-reorg prev-hash continuity), leaving all nine of its tests
+//! ignored. The protections they held — a wallet's behavior when the
+//! chain changes its mind — port here onto
+//! [`crate::testutils::mock_indexer`], whose [`MockChain::reorg_to`]
+//! primitive plays the darksidewalletd role without the legacy stack
+//! or either of its bugs.
 //!
 //! Ported: receipt removed by reorg (`reorg_receipt_sync_generic`),
 //! receipt moved to a new height (`reorg_changes_incoming_tx_height`),
@@ -20,8 +21,8 @@
 //! yet expose), `reorg_changes_outgoing_tx_height`'s re-mine leg
 //! (subsumed here by the incoming variant plus the expiry legs), and
 //! the two proptest `any_source_sends_to_any_receiver` fuzzers
-//! (blocked on the pool-matrix twins' pepper-sync `darkside_test`
-//! feature question, zingolabs/zingolib#2447).
+//! (formerly blocked on the pepper-sync `darkside_test` feature
+//! question, zingolabs/zingolib#2447; that feature is now deleted).
 
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;

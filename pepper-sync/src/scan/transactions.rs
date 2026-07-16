@@ -97,14 +97,6 @@ pub(crate) async fn scan_transactions(
         .await?;
 
         if transaction.txid() != scan_target.txid {
-            #[cfg(feature = "darkside_test")]
-            tracing::error!(
-                "server returned incorrect txid.\ntxid: {}\nserver reported: {}",
-                scan_target.txid,
-                transaction.txid()
-            );
-
-            #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTxid {
                 txid_requested: scan_target.txid,
                 txid_returned: transaction.txid(),
