@@ -498,13 +498,24 @@ regression tests green (accept, mempool/in-chain duplicate, queued
 settle/exhaust, retry succeed, delivery-check confirm/deny), clippy -D
 warnings clean, workspace check green. `transmit_transactions` rewired to
 `ClearnetTarget` + `resilient_transmit`, clearnet behavior unchanged.
-STEP 2 remaining: rework the increment-1 witness-rotation broadcaster to run
-resilient_transmit per random pick (retiring the simplistic `Transmitter`/
-`SubmitError` in broadcast.rs), add a `SocksTarget` (needs a socks5
-get_transaction delivery-check, not yet built) with an unreachable-vs-rejected
-classification driving failover, branch `transmit_transactions` on Mixnet Mode
-(needs the toggle + supervisor), and delete GrpcIndexer's `// TODO; add
-nym_client`.
+STEP 2a DONE (commit e236acd17): SOCKS5 delivery-check
+(transaction_known_via_socks5) + shared connect_via_socks5 helper.
+
+STEP 2b DEFERRED (2026-07-16, user direction "defer this work until later"):
+the broadcaster failover policy. Key insight to preserve — the client CANNOT
+assume zainod vs lightwalletd (or other) on the wire, so failover must be a
+CLIENT-SIDE policy driven by attempt counts, NOT by classifying server error
+strings (this also argues against introducing a message-substring "Rejected"
+classification at all). User floated an ESCALATING FAN-OUT: on a failure,
+attempt 2 more indexers, then 3, then 4 (1+2+3+4...) across the ~10 broadcast
+indexers. TENSION TO RECONCILE when resumed: this fires the same tx to
+multiple indexers in PARALLEL, which contradicts the earlier ratified "single
+random pick per send, never redundant" decision (Q10). Both are defensible;
+resolve the redundancy/privacy vs robustness trade-off first. Then: SocksTarget
+(submit=send_transaction_via_socks5, knows=transaction_known_via_socks5),
+retire the increment-1 simplistic `Transmitter`/`SubmitError`, branch
+transmit_transactions on Mixnet Mode (needs the toggle + supervisor), delete
+GrpcIndexer's `// TODO; add nym_client`.
 
 ## Implementation — increment 3 design notes
 
