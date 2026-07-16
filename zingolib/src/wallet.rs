@@ -5,10 +5,9 @@ use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
-use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::consensus::Parameters;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
@@ -105,9 +104,7 @@ pub(crate) struct WalletBase {
 /// `birthday` block height.
 ///
 /// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
-/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
-/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
-/// methods for a save task implementation.
+/// automatically. See [`crate::lightclient::LightClient::save_task`] and related methods to persist the wallet.
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
@@ -145,7 +142,7 @@ pub struct LightWallet {
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    pub save_required: bool,
+    pub(crate) save_required: bool,
 }
 
 impl LightWallet {
@@ -332,6 +329,11 @@ impl LightWallet {
         self.send_proposal = None;
     }
 
+    /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.
+    pub fn mark_dirty(&mut self) {
+        self.save_required = true;
+    }
+
     #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
@@ -381,17 +383,9 @@ impl LightWallet {
 
     /// Update and return current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
-    pub async fn update_current_price(
-        &mut self,
-        tor_client: Option<&tor::Client>,
-    ) -> Result<f32, PriceError> {
-        let current_price = self
-            .price_list
-            .update_current_price(tor_client)
-            .await?
-            .price_usd;
+    pub async fn update_current_price(&mut self) -> Result<f32, PriceError> {
+        let current_price = self.price_list.update_current_price().await?.price_usd;
         self.save_required = true;
 
         Ok(current_price)
@@ -469,7 +463,7 @@ mod tests {
     #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle
-        // data that was generated for testing commitment tree construction inside of zcashd here.
+        // data that was generated for testing commitment tree construction in zcash/zcash here.
         // https://github.com/zcash/zcash/blob/ecec1f9769a5e37eb3f7fd89a4fcfb35bc28eed7/src/test/data/merkle_roots_orchard.h
 
         let commitments = [

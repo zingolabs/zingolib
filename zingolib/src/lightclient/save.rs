@@ -1,4 +1,4 @@
-//! `LightClient` saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
+//! Wallet persistence for [`crate::lightclient::LightClient`].
 
 use futures::FutureExt as _;
 use log::error;
@@ -8,36 +8,44 @@ use std::{borrow::BorrowMut as _, fs::remove_file, sync::atomic};
 use super::LightClient;
 use crate::data::PollReport;
 
-/// Writes `bytes` to file at `wallet_path`.
-fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    let temp_wallet_path: std::path::PathBuf = wallet_path.with_extension(
-        wallet_path
-            .extension()
-            .map(|e| format!("{}.tmp", e.to_string_lossy()))
-            .unwrap_or_else(|| "tmp".to_string()),
-    );
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&temp_wallet_path)?;
-    let mut writer = std::io::BufWriter::new(file);
-    std::io::Write::write_all(&mut writer, bytes)?;
+/// Writes `bytes` to file at `wallet_path` using a blocking thread.
+///
+/// The write is atomic: bytes go to a `.tmp` sibling file first, then renamed into place.
+async fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let wallet_path = wallet_path.to_path_buf();
+    let bytes = bytes.to_vec();
+    tokio::task::spawn_blocking(move || {
+        let temp_wallet_path: std::path::PathBuf = wallet_path.with_extension(
+            wallet_path
+                .extension()
+                .map(|e| format!("{}.tmp", e.to_string_lossy()))
+                .unwrap_or_else(|| "tmp".to_string()),
+        );
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp_wallet_path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        std::io::Write::write_all(&mut writer, &bytes)?;
 
-    let file = writer.into_inner().map_err(|e| e.into_error())?;
-    file.sync_all()?;
-    std::fs::rename(&temp_wallet_path, wallet_path)?;
+        let file = writer.into_inner().map_err(|e| e.into_error())?;
+        file.sync_all()?;
+        std::fs::rename(&temp_wallet_path, &wallet_path)?;
 
-    // NOTE: in windows no need to sync the folder, only for linux & macOS.
-    #[cfg(unix)]
-    {
-        if let Some(parent) = wallet_path.parent() {
-            let wallet_dir = std::fs::File::open(parent)?;
-            let _ignore_error = wallet_dir.sync_all(); // NOTE: error is ignored as syncing dirs on windows OS may return an error
+        // NOTE: in windows no need to sync the folder, only for linux & macOS.
+        #[cfg(unix)]
+        {
+            if let Some(parent) = wallet_path.parent() {
+                let wallet_dir = std::fs::File::open(parent)?;
+                let _ignore_error = wallet_dir.sync_all(); // NOTE: error is ignored as syncing dirs on windows OS may return an error
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .expect("write_to_path task panicked")
 }
 impl LightClient {
     /// Launches a task for saving the wallet data to persistance when the wallet's `save_required` flag is set.
@@ -56,7 +64,7 @@ impl LightClient {
             loop {
                 interval.tick().await;
                 if let Some(wallet_bytes) = wallet.write().await.save()? {
-                    write_to_path(&wallet_path, &wallet_bytes)?;
+                    write_to_path(&wallet_path, &wallet_bytes).await?;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());
@@ -115,9 +123,20 @@ impl LightClient {
         }
     }
 
+    /// Immediately serialises and writes the wallet to disk if `save_required` is set.
+    ///
+    /// Unlike [`Self::save_task`], this is synchronous and does not start a background loop.
+    /// Use it when an immediate, one-shot persist is needed (e.g. before process exit or in tests).
+    pub async fn flush(&mut self) -> std::io::Result<()> {
+        if let Some(bytes) = self.wallet().write().await.save()? {
+            write_to_path(&self.wallet_path(), &bytes).await?;
+        }
+        Ok(())
+    }
+
     /// Only relevant in non-mobile, this function removes the save file.
     // TodO: can we shred it?
-    pub async fn do_delete(&self) -> Result<(), String> {
+    pub async fn delete_wallet_file(&self) -> std::io::Result<()> {
         // Check if the file exists before attempting to delete
         if self.wallet_path().exists() {
             match remove_file(self.wallet_path()) {
@@ -126,14 +145,16 @@ impl LightClient {
                     Ok(())
                 }
                 Err(e) => {
-                    let err = format!("ERR: {e}");
-                    error!("{err}");
+                    error!("ERR: {e}");
                     log::debug!("DELETE FAIL ON FILE!");
-                    Err(e.to_string())
+                    Err(e)
                 }
             }
         } else {
-            let err = "Error: File does not exist, nothing to delete.".to_string();
+            let err = std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "File does not exist, nothing to delete.",
+            );
             error!("{err}");
             log::debug!("File does not exist, nothing to delete.");
             Err(err)

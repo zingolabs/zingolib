@@ -1,5 +1,13 @@
-//! `ZingoCli`
-//! TODO: Add Crate Description Here!
+//! `ZingoCli` — a command-line interface for the Zingo Zcash light wallet.
+//!
+//! This crate provides the library half of `zingo-cli`. It owns argument
+//! parsing ([`build_clap_app`]), configuration assembly, wallet startup,
+//! the interactive REPL, and single-command dispatch.
+//!
+//! The binary entry point (`main.rs`) is intentionally thin: it handles
+//! process-level concerns (tracing, crypto-provider installation, error
+//! reporting) and delegates to [`run_cli`], which builds a
+//! [`LightClient`] and runs the command loop.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -19,7 +27,8 @@ use log::{error, info};
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
-use zingolib::lightclient::LightClient;
+use zingolib::data::PollReport;
+use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
@@ -59,21 +68,23 @@ pub fn build_clap_app() -> clap::Command {
                 .long("birthday")
                 .value_name("birthday")
                 .value_parser(clap::value_parser!(u32))
-                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
+                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction. \
+For a NEW wallet created in Offline mode it is instead an optional override of the library's built-in birthday floor."))
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Lightwalletd server to connect to.")
+                .help("Indexer server to connect to.")
                 .value_parser(parse_uri)
                 .default_value(zingolib::config::DEFAULT_INDEXER_URI))
+            .arg(Arg::new("offline")
+                .long("offline")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with_all(["server", "waitsync"])
+                .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory"))
-            .arg(Arg::new("tor")
-                .long("tor")
-                .help("Enable tor for price fetching")
-                .action(clap::ArgAction::SetTrue) )
             .arg(Arg::new("log-file")
                 .long("log-file")
                 .value_name("PATH")
@@ -128,69 +139,106 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
     }
 }
 
-/// Polls the sync task and returns a string to embed in the interactive prompt.
+/// Performs the per-prompt housekeeping on the command-loop thread, where
+/// the [`LightClient`] lives: polls the sync task, reports any save-task
+/// failure, and returns the sync indicator to embed in the interactive
+/// prompt — `" [Syncing X / Y outputs]"` while sync is in progress,
+/// `" [Synced X / X outputs]"` when fully synced, `" [Sync error]"` on
+/// failure, or `" [Sync stopped at X / Y outputs]"` when no sync task is
+/// running and the wallet is not fully synced.
 ///
-/// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Synced]"` when
-/// fully synced, `" [Sync error]"` on failure, or `" [Not syncing X.X%]"` when
-/// no sync task is running and the wallet is not fully synced.
-fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
-    let poll = send_command("sync".to_string(), vec!["poll".to_string()]);
-    if poll.starts_with("Error:") {
-        eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.");
-        " [Sync error]".to_string()
-    } else if poll.starts_with("Sync completed succesfully:") {
-        println!("{poll}");
-        " [Synced]".to_string()
-    } else if poll == "Sync task is not complete." {
-        let status = send_command("sync".to_string(), vec!["status".to_string()]);
-        if let Ok(parsed) = json::parse(&status) {
-            let pct = parsed["percentage_total_outputs_scanned"]
-                .as_f32()
-                .unwrap_or(0.0);
-            format!(" [Syncing {pct:.1}% complete]")
-        } else {
-            " [Syncing]".to_string()
+/// Every outcome is classified from typed values ([`PollReport`],
+/// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
+/// a command's output string.
+fn prompt_indicator(lightclient: &mut LightClient) -> String {
+    let indicator = match lightclient.poll_sync() {
+        PollReport::Ready(Err(e)) => {
+            // The doubled "Sync error: Error:" is deliberate: it reproduces
+            // the historical output byte for byte, where the polled command
+            // string (itself prefixed "Error:") was interpolated after
+            // "Sync error: ".
+            eprintln!("Sync error: Error: {e}\nPlease restart sync with `sync run`.");
+            " [Sync error]".to_string()
         }
-    } else {
-        sync_indicator_from_status(send_command)
+        PollReport::Ready(Ok(sync_result)) => {
+            println!("{sync_result}");
+            synced_indicator(scan_progress(lightclient))
+        }
+        PollReport::NotReady => syncing_indicator(scan_progress(lightclient)),
+        PollReport::NoHandle => idle_indicator(scan_progress(lightclient)),
+    };
+    if let Err(e) = RT.block_on(lightclient.check_save_error()) {
+        eprintln!("Error: save failed. {e}\nRestarting save task...");
+    }
+    indicator
+}
+
+/// The wallet's scan progress: the exact integer ratio of outputs scanned,
+/// and whether sync is complete. No floating-point representation appears
+/// anywhere in the prompt's reporting.
+struct ScanProgress {
+    outputs_scanned: u64,
+    total_outputs: u64,
+    complete: bool,
+}
+
+/// Reads the wallet's scan progress, or `None` if sync status is
+/// unavailable.
+fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
+    RT.block_on(async {
+        pepper_sync::sync_status(&*lightclient.wallet().read().await)
+            .await
+            .ok()
+            .map(|status| ScanProgress {
+                outputs_scanned: status.total_outputs_scanned,
+                total_outputs: status.total_outputs,
+                complete: status.is_complete(),
+            })
+    })
+}
+
+/// Formats a prompt indicator: `" [{labeled} X / Y outputs]"` when the
+/// output ratio is known, `" [{bare}]"` otherwise (status unavailable, or
+/// an output-free scan range where the ratio is vacuously 0 / 0).
+fn ratio_indicator(labeled: &str, bare: &str, progress: Option<ScanProgress>) -> String {
+    match progress {
+        Some(progress) if progress.total_outputs > 0 => format!(
+            " [{labeled} {} / {} outputs]",
+            progress.outputs_scanned, progress.total_outputs
+        ),
+        _ => format!(" [{bare}]"),
     }
 }
 
-/// Checks sync status when no sync task is running.
-///
-/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise
-/// `" [Not syncing X.X%]"` to indicate incomplete sync without an active task.
-fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
-    let status = send_command("sync".to_string(), vec!["status".to_string()]);
-    if let Ok(parsed) = json::parse(&status) {
-        let pct = parsed["percentage_total_outputs_scanned"]
-            .as_f32()
-            .unwrap_or(0.0);
-        if pct >= 100.0 {
-            " [Synced]".to_string()
-        } else {
-            format!(" [Not syncing {pct:.1}% complete]")
-        }
-    } else {
-        " [Not syncing]".to_string()
+/// The prompt indicator while a sync task is running.
+fn syncing_indicator(progress: Option<ScanProgress>) -> String {
+    ratio_indicator("Syncing", "Syncing", progress)
+}
+
+/// The prompt indicator when no sync task is running.
+fn idle_indicator(progress: Option<ScanProgress>) -> String {
+    match progress {
+        Some(progress) if progress.complete => synced_indicator(Some(progress)),
+        _ => ratio_indicator("Sync stopped at", "Sync stopped", progress),
     }
+}
+
+/// The prompt indicator when sync is complete, reporting the full ratio.
+fn synced_indicator(progress: Option<ScanProgress>) -> String {
+    ratio_indicator("Synced", "Synced", progress)
 }
 
 /// Formats the ranked server list for display by the `servers` command.
 fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+    let Some(server) = &cli_config.server else {
+        return "Offline mode: no server is configured this session.".to_string();
+    };
     if cli_config.ranked_servers.is_empty() {
-        return format!(
-            "Server was set explicitly: {}\nNo other servers were probed.",
-            cli_config.server
-        );
+        return format!("Server was set explicitly: {server}\nNo other servers were probed.");
     }
     let mut out = String::from("Servers ranked by get_info() response time:\n");
     for (i, r) in cli_config.ranked_servers.iter().enumerate() {
-        let marker = if r.uri == cli_config.server {
-            " (active)"
-        } else {
-            ""
-        };
+        let marker = if r.uri == *server { " (active)" } else { "" };
         out.push_str(&format!(
             "  {:>2}. {} {:>8.1}ms{}\n",
             i + 1,
@@ -208,18 +256,24 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     log::debug!("Ready!");
 
-    let send_command = |cmd: String, args: Vec<String>| -> String {
-        ch.transmitter.send((cmd.clone(), args)).unwrap();
+    let send_request = |request: Request| -> String {
+        let description = match &request {
+            Request::Command(cmd, _) => cmd.clone(),
+            Request::PromptIndicator => "prompt indicator".to_string(),
+        };
+        ch.transmitter.send(request).unwrap();
         match ch.receiver.recv() {
             Ok(s) => s,
             Err(e) => {
-                let e = format!("Error executing command {cmd}: {e}");
+                let e = format!("Error executing command {description}: {e}");
                 eprintln!("{e}");
                 error!("{e}");
                 String::new()
             }
         }
     };
+    let send_command =
+        |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
 
     let mut chain_name = String::new();
 
@@ -241,12 +295,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
             .as_i64()
             .unwrap();
 
-        let sync_indicator = poll_sync_for_prompt_indicator(&send_command);
-
-        match send_command("save".to_string(), vec!["check".to_string()]) {
-            check if check.starts_with("Error:") => eprintln!("{check}"),
-            _ => (),
-        }
+        let sync_indicator = send_request(Request::PromptIndicator);
 
         let readline = rl.readline(&format!(
             "({chain_name}) Block:{height}{sync_indicator} >> "
@@ -301,19 +350,61 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     }
 }
 
-/// A paired command/response channel for communicating with the background command loop.
+/// A request to the background command loop.
+///
+/// The variant — not the content of the response string — tells the
+/// requester how to interpret the reply, so no consumer ever classifies
+/// a response by sniffing its text (the in-band-error problem of issue
+/// zingolabs/zingolib#2446).
+enum Request {
+    /// Execute a user command; the reply is the command's output.
+    Command(String, Vec<String>),
+    /// Perform the per-prompt housekeeping (sync poll, save check) via
+    /// typed calls on the loop thread; the reply is the sync indicator
+    /// to embed in the interactive prompt.
+    PromptIndicator,
+}
+
+/// A paired request/response channel for communicating with the background command loop.
 struct CommandChannel {
-    transmitter: Sender<(String, Vec<String>)>,
+    transmitter: Sender<Request>,
     receiver: Receiver<String>,
 }
 
-/// TODO: Add Doc Comment Here!
-pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
-    let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
+/// Spawns a background thread that listens for `(command, args)` messages,
+/// executes each command against the [`LightClient`], and sends the
+/// string response back through the returned [`CommandChannel`].
+///
+/// The loop exits when it receives a `"quit"` or `"exit"` command.
+pub(crate) fn command_loop(
+    mut lightclient: LightClient,
+    communication_mode: CommunicationMode,
+) -> CommandChannel {
+    let (command_transmitter, command_receiver) = channel::<Request>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        while let Ok((cmd, args)) = command_receiver.recv() {
+        while let Ok(request) = command_receiver.recv() {
+            let (cmd, args) = match request {
+                Request::Command(cmd, args) => (cmd, args),
+                Request::PromptIndicator => {
+                    resp_transmitter
+                        .send(prompt_indicator(&mut lightclient))
+                        .unwrap();
+                    continue;
+                }
+            };
+            // The Offline-mode pin: this session never configures an Indexer.
+            if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
+                resp_transmitter
+                    .send(
+                        "Error: this session is in Offline mode; no Indexer may be configured. \
+                         Restart without --offline to change servers."
+                            .to_string(),
+                    )
+                    .unwrap();
+                continue;
+            }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
 
             let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
@@ -371,36 +462,39 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
 
 /// Whether the CLI communicates with a remote indexer or operates locally.
 ///
-/// Currently always [`Online`](CommunicationMode::Online). The [`Offline`](CommunicationMode::Offline)
-/// variant exists so that offline wallet support has a clean place to land.
-#[derive(Debug, PartialEq)]
+/// Selected at argument-parse time by the `--offline` flag and pinned for
+/// the life of the session (Offline mode, issue #2286).
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum CommunicationMode {
     /// Connected to a remote indexer for sync, send, etc.
     Online,
-    /// Operating without network access — local-only commands.
-    /// Will be used by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
+    /// The session never configures an Indexer: the client remains
+    /// Indexerless, and only that state's capability set is available.
     Offline,
 }
 
-/// Determines the communication mode from parsed CLI arguments.
-///
-/// Currently always returns [`CommunicationMode::Online`]. When offline mode
-/// is added, this will inspect a CLI flag (e.g. `--offline`).
-fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
-    CommunicationMode::Online
+/// Determines the communication mode from parsed CLI arguments: the
+/// `--offline` flag pins the session to Offline mode.
+fn get_communication_mode(matches: &clap::ArgMatches) -> CommunicationMode {
+    if matches.get_flag("offline") {
+        CommunicationMode::Offline
+    } else {
+        CommunicationMode::Online
+    }
 }
 
-/// TODO: Add Doc Comment Here!
+/// All CLI-derived configuration needed to create a [`LightClient`] and
+/// start the command loop.
+///
+/// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
+/// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`].
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
-    /// Will be read by offline wallet support:
-    /// <https://github.com/zingolabs/zingolib/issues/2286>
-    #[allow(dead_code)]
     communication_mode: CommunicationMode,
-    server: http::Uri,
+    /// The Indexer to connect to; `None` exactly when the session is in
+    /// Offline mode.
+    server: Option<http::Uri>,
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
@@ -413,7 +507,6 @@ pub(crate) struct ConfigTemplate {
     sync: bool,
     waitsync: bool,
     chaintype: ChainType,
-    tor_enabled: bool,
 }
 
 impl ConfigTemplate {
@@ -422,7 +515,6 @@ impl ConfigTemplate {
         communication_mode: CommunicationMode,
         matches: clap::ArgMatches,
     ) -> Result<Self, String> {
-        let tor_enabled = matches.get_flag("tor");
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
@@ -458,22 +550,33 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let (server, ranked_servers) =
-            server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
+        // Offline mode never resolves a server — resolution probes the
+        // network, and the session's contract is that no Indexer is ever
+        // configured.
+        let (server, ranked_servers) = match communication_mode {
+            CommunicationMode::Offline => (None, vec![]),
+            CommunicationMode::Online => {
+                let (server, ranked_servers) =
+                    server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
+                // Test to make sure the server has all of scheme, host and port
+                if server.scheme_str().is_none()
+                    || server.host().is_none()
+                    || server.port().is_none()
+                {
+                    return Err(format!(
+                        "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
+                    ));
+                }
+                (Some(server), ranked_servers)
+            }
+        };
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
 
-        // Test to make sure the server has all of scheme, host and port
-        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-            ));
-        }
-
-        let sync = !matches.get_flag("nosync");
+        let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             mode,
@@ -487,7 +590,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             sync,
             waitsync,
             chaintype,
-            tor_enabled,
         })
     }
 }
@@ -528,16 +630,27 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
     } else {
         // Create client from a new wallet
         println!("Creating a new wallet");
-        let chain_height = RT
-            .block_on(async move {
-                zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
-                    .map_err(|e| format!("{e:?}"))?
-                    .get_latest_block()
-                    .await
-                    .map(|block_id| block_id.height as u32)
-                    .map_err(|e| format!("{e:?}"))
-            })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+        let chain_height = match filled_template.server.clone() {
+            Some(server) => RT
+                .block_on(async move {
+                    zingo_netutils::GrpcIndexer::new(server)
+                        .await
+                        .map_err(|e| format!("{e:?}"))?
+                        .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+                        .await
+                        .map(|block_id| block_id.height as u32)
+                        .map_err(|e| format!("{e:?}"))
+                })
+                .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
+            // Offline mode has no Indexer to ask for the chain tip; a
+            // user-supplied birthday stands in for it, and absent that the
+            // Library Birthday is a safe floor: a new seed cannot predate
+            // the library that generated it.
+            None => match u32::try_from(filled_template.birthday) {
+                Ok(birthday) if birthday > 0 => birthday,
+                _ => zingolib::config::lib_birthday(filled_template.chaintype),
+            },
+        };
 
         WalletConfig::NewSeed {
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -546,25 +659,36 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         }
     };
 
-    Ok(ClientConfig::builder()
-        .set_indexer_uri(filled_template.server.clone())
+    let builder = ClientConfig::builder()
         .set_chain_type(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
-        .set_wallet_config(wallet_config)
-        .build())
+        .set_wallet_config(wallet_config);
+    // In Offline mode no Indexer URI is configured: the client starts (and
+    // stays) Indexerless.
+    let builder = match filled_template.server.clone() {
+        Some(server) => builder.set_indexer_uri(server),
+        None => builder,
+    };
+    Ok(builder.build())
 }
 
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
     let config = build_zingo_config(filled_template)?;
 
-    let mut lightclient = LightClient::new(config, false)
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+    let mut lightclient = RT.block_on(async move {
+        LightClient::new(config, false)
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))
+    })?;
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Lightclient connecting to {}", filled_template.server);
+        match &filled_template.server {
+            Some(server) => info!("Lightclient connecting to {server}"),
+            None => info!("Offline mode: no Indexer will be configured this session"),
+        }
     }
 
     if filled_template.sync {
@@ -576,13 +700,6 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     println!("{update}");
 
     lightclient = RT.block_on(async move {
-        if filled_template.tor_enabled {
-            info!("Creating tor client");
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            }
-        }
-
         if filled_template.sync
             && filled_template.waitsync
             && let Err(e) = lightclient.await_sync().await
@@ -594,7 +711,10 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     });
 
     // Start the command loop
-    Ok(command_loop(lightclient))
+    Ok(command_loop(
+        lightclient,
+        filled_template.communication_mode,
+    ))
 }
 
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
@@ -602,7 +722,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
     match &cli_config.mode {
         ModeOfOperation::Interactive => start_interactive(cli_config, ch),
         ModeOfOperation::Command { name, args } => {
-            ch.transmitter.send((name.clone(), args.clone())).unwrap();
+            ch.transmitter
+                .send(Request::Command(name.clone(), args.clone()))
+                .unwrap();
 
             match ch.receiver.recv() {
                 Ok(s) => println!("{s}"),
@@ -613,7 +735,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
                 }
             }
 
-            ch.transmitter.send(("quit".to_string(), vec![])).unwrap();
+            ch.transmitter
+                .send(Request::Command("quit".to_string(), vec![]))
+                .unwrap();
             match ch.receiver.recv() {
                 Ok(s) => println!("{s}"),
                 Err(e) => {

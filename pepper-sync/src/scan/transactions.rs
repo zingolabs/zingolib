@@ -13,21 +13,24 @@ use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{Transaction, TxId},
-    zip32::AccountId,
+use zcash_keys::{
+    address::UnifiedAddress,
+    keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
+use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedProtocol,
     consensus::{self, BlockHeight, NetworkConstants},
+    memo::Memo,
 };
 
-use zcash_transparent::bundle::TxIn;
+use zcash_transparent::bundle::{
+    Authorization as TransparentAuthorization, Bundle as TransparentBundle, TxIn,
+};
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
@@ -94,14 +97,6 @@ pub(crate) async fn scan_transactions(
         .await?;
 
         if transaction.txid() != scan_target.txid {
-            #[cfg(feature = "darkside_test")]
-            tracing::error!(
-                "server returned incorrect txid.\ntxid: {}\nserver reported: {}",
-                scan_target.txid,
-                transaction.txid()
-            );
-
-            #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTxid {
                 txid_requested: scan_target.txid,
                 txid_returned: transaction.txid(),
@@ -187,7 +182,12 @@ pub(crate) fn scan_transaction(
                         &dfvk.to_ivk(scope),
                     ),
                 ));
-                sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    dfvk.to_ovk(scope).into(),
+                );
             }
         }
 
@@ -198,8 +198,28 @@ pub(crate) fn scan_transaction(
                     key_id,
                     orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
                 ));
-                orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    fvk.to_ovk(scope).into(),
+                );
             }
+        }
+
+        if let Some(tkeys) = ufvk.transparent() {
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::External),
+                OutgoingViewingKey::from(tkeys.external_ovk().as_bytes()),
+            );
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::Internal),
+                OutgoingViewingKey::from(tkeys.internal_ovk().as_bytes()),
+            );
         }
     }
 
@@ -329,6 +349,16 @@ pub(crate) fn scan_transaction(
     })
 }
 
+fn add_unified_ovk(
+    sapling_ovks: &mut Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)>,
+    orchard_ovks: &mut Vec<(KeyId, orchard::keys::OutgoingViewingKey)>,
+    key_id: KeyId,
+    ovk: OutgoingViewingKey,
+) {
+    sapling_ovks.push((key_id, ovk.into()));
+    orchard_ovks.push((key_id, ovk.into()));
+}
+
 fn scan_incoming_coins<P: consensus::Parameters>(
     consensus_parameters: &P,
     transparent_coins: &mut Vec<TransparentCoin>,
@@ -340,7 +370,12 @@ fn scan_incoming_coins<P: consensus::Parameters>(
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
             if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::new(txid, output_index as u16);
+                let output_id = OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
 
                 transparent_coins.push(TransparentCoin {
                     output_id,
@@ -375,7 +410,12 @@ where
         .enumerate()
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
-            let output_id = OutputId::new(txid, output_index as u16);
+            let output_id = OutputId::new(
+                txid,
+                output_index
+                    .try_into()
+                    .expect("output indexes should be valid u32"),
+            );
             let (nullifier, position) = nullifiers_and_positions.map_or(Ok((None, None)), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
@@ -419,7 +459,12 @@ where
             &output.out_ciphertext(),
         ) {
             outgoing_notes.push(OutgoingNote {
-                output_id: OutputId::new(txid, output_index as u16),
+                output_id: OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                ),
                 key_id: key_ids[key_index],
                 note,
                 memo: Memo::from_bytes(memo_bytes.as_ref())?,
@@ -555,11 +600,11 @@ fn collect_nullifiers(
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
-fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
+fn collect_outpoints<A: TransparentAuthorization>(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
-    transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
+    transparent_bundle: &TransparentBundle<A>,
 ) {
     transparent_bundle
         .vin

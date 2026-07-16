@@ -3,8 +3,9 @@
 use std::{array::TryFromSliceError, convert::Infallible};
 
 use shardtree::error::ShardTreeError;
-use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::PoolType;
+use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::wallet::OutputId;
 
@@ -199,7 +200,7 @@ pub enum ScanError {
     ContinuityError(#[from] ContinuityError),
     /// Zcash client backend scan error
     #[error("{0}")]
-    ZcbScanError(zcash_client_backend::scanning::ScanError),
+    EncodingError(#[from] EncodingInvalid),
     /// Invalid sapling nullifier
     #[error("invalid sapling nullifier. {0}")]
     InvalidSaplingNullifier(#[from] TryFromSliceError),
@@ -248,6 +249,37 @@ pub enum ScanError {
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address. {0}")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
+}
+
+/// The encoding of a compact Sapling output or compact Orchard action was invalid.
+#[derive(Debug, thiserror::Error)]
+#[error("{pool_type:?} output {index} of transaction {txid} was improperly encoded.")]
+pub struct EncodingInvalid {
+    pub(crate) at_height: BlockHeight,
+    pub(crate) txid: TxId,
+    pub(crate) pool_type: ShieldedProtocol,
+    pub(crate) index: usize,
+    pub(crate) error: CompactFormatError,
+}
+
+/// An error indicating that a field of a compact format structure could not be parsed.
+#[derive(Clone, Debug)]
+pub enum CompactFormatError {
+    /// A byte slice had an invalid length for the expected field.
+    InvalidLength(std::array::TryFromSliceError),
+    /// A field value did not represent a valid protocol element.
+    InvalidValue,
+}
+
+impl std::fmt::Display for CompactFormatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompactFormatError::InvalidLength(e) => write!(f, "Invalid compact format field: {e}"),
+            CompactFormatError::InvalidValue => {
+                write!(f, "Compact format field is not a valid protocol element")
+            }
+        }
+    }
 }
 
 /// Block continuity errors.

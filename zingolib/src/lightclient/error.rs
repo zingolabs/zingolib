@@ -2,8 +2,10 @@
 
 use std::convert::Infallible;
 
-use pepper_sync::error::{SyncError, SyncModeError};
 use zcash_protocol::TxId;
+
+use pepper_sync::error::{SyncError, SyncModeError};
+use zingo_netutils::GetClientError;
 
 use crate::wallet::{
     error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
@@ -12,6 +14,9 @@ use crate::wallet::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum LightClientError {
+    /// Sync failed to launch..
+    #[error("Sync failed to launch.")]
+    SyncLaunchError,
     /// Sync not running.
     #[error("No sync handle. Sync is not running.")]
     SyncNotRunning,
@@ -26,16 +31,19 @@ pub enum LightClientError {
     SendError(#[from] SendError),
     /// gPRC client error.
     #[error("gRPC client error. {0}")]
-    ClientError(#[from] zingo_netutils::GetClientError),
+    ClientError(#[from] GetClientError),
+    /// Indexer request error.
+    #[error("Indexer request error. {0}")]
+    IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
-    /// Tor client error.
-    #[error("Tor client error. {0}")]
-    TorClientError(#[from] zcash_client_backend::tor::Error),
+    /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
+    #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
+    Offline,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +60,9 @@ pub enum SendError {
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
+    /// Failed to retarget the stored proposal for offline signing.
+    #[error("Failed to retarget the stored proposal for offline signing. {0}")]
+    RetargetError(zcash_client_backend::proposal::ProposalError),
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,

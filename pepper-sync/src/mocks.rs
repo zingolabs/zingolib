@@ -231,7 +231,7 @@ impl SyncTransactions for MockWallet {
 }
 impl SyncNullifiers for MockWallet {
     fn get_nullifiers(&self) -> Result<&crate::wallet::NullifierMap, Self::Error> {
-        todo!()
+        Ok(&self.nullifier_map)
     }
 
     fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {

@@ -30,8 +30,7 @@ use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
 
 const NARROW_SCAN_AREA: u32 = 10_000;
 
-#[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::proto::service::SubtreeRoot;
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -63,12 +62,19 @@ fn find_scan_targets(
 
 /// Update scan ranges for scanning.
 /// Returns the block height that reorg detection will start from.
-pub(super) fn update_scan_ranges(
+pub(super) async fn update_scan_ranges<W>(
     consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
-    sync_state: &mut SyncState,
-) -> BlockHeight {
+    wallet: &mut W,
+) -> Result<BlockHeight, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     reset_scan_ranges(sync_state);
     create_scan_range(last_known_chain_height, chain_height, sync_state);
     let scan_targets = sync_state.scan_targets.clone();
@@ -91,9 +97,22 @@ pub(super) fn update_scan_ranges(
             reorg_detection_start_height,
             VerifyEnd::VerifyLowest,
         );
+    } else {
+        let chain_height_server_block =
+            client::get_compact_block(fetch_request_sender, chain_height).await?;
+        let chain_height_wallet_block = wallet
+            .get_wallet_block(chain_height)
+            .map_err(SyncError::WalletError)?;
+        let sync_state = wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?;
+        if chain_height_wallet_block.block_hash().0.to_vec() != chain_height_server_block.hash {
+            set_verify_scan_range(sync_state, chain_height, VerifyEnd::VerifyHighest);
+        }
     }
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
-    reorg_detection_start_height
+    Ok(reorg_detection_start_height)
 }
 
 /// Merges all adjacent ranges of a given `scan_priority`.
@@ -883,11 +902,7 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
     sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
@@ -902,11 +917,7 @@ where
         .get_sync_state()?
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .collect::<Result<Vec<_>, _>>()?
         .iter()
@@ -990,7 +1001,6 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
-#[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedProtocol,

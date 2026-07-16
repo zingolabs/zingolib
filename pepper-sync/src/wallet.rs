@@ -19,20 +19,18 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
-use zcash_primitives::{
-    block::BlockHash,
-    memo::Memo,
-    transaction::{TxId, components::transparent::OutPoint},
-};
+use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight},
+    memo::Memo,
     value::Zatoshis,
 };
 use zcash_transparent::address::Script;
+use zcash_transparent::bundle::OutPoint;
 
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
@@ -41,6 +39,10 @@ use crate::{
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
+    utils::{
+        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
+        get_compact_tx_txid,
+    },
     witness,
 };
 
@@ -290,13 +292,13 @@ pub struct OutputId {
     /// ID of associated transaction.
     txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
-    output_index: u16,
+    output_index: u32,
 }
 
 impl OutputId {
     /// Creates new `OutputId` from parts.
     #[must_use]
-    pub fn new(txid: TxId, output_index: u16) -> Self {
+    pub fn new(txid: TxId, output_index: u32) -> Self {
         OutputId { txid, output_index }
     }
 
@@ -308,7 +310,7 @@ impl OutputId {
 
     /// Index of output within the transactions bundle of the given pool type.
     #[must_use]
-    pub fn output_index(&self) -> u16 {
+    pub fn output_index(&self) -> u32 {
         self.output_index
     }
 }
@@ -328,13 +330,13 @@ impl std::fmt::Display for OutputId {
 
 impl From<&OutPoint> for OutputId {
     fn from(value: &OutPoint) -> Self {
-        OutputId::new(*value.txid(), value.n() as u16)
+        OutputId::new(*value.txid(), value.n())
     }
 }
 
 impl From<OutputId> for OutPoint {
     fn from(value: OutputId) -> Self {
-        OutPoint::new(value.txid.into(), u32::from(value.output_index))
+        OutPoint::new(value.txid.into(), value.output_index)
     }
 }
 
@@ -391,15 +393,11 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: block.height(),
-            block_hash: block.hash(),
-            prev_hash: block.prev_hash(),
+            block_height: get_compact_block_height(block),
+            block_hash: get_compact_block_hash(block),
+            prev_hash: get_compact_block_prev_hash(block),
             time: block.time,
-            txids: block
-                .vtx
-                .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
-                .collect(),
+            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
             tree_bounds,
         })
     }
@@ -611,7 +609,7 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl WalletTransaction {
     /// Creates a minimal `WalletTransaction` for testing purposes.
     ///
@@ -645,6 +643,112 @@ impl WalletTransaction {
             outgoing_orchard_notes: Vec::new(),
         }
     }
+
+    /// As [`Self::new_for_test`], with received sapling notes attached.
+    #[must_use]
+    pub fn with_sapling_notes_for_test(mut self, sapling_notes: Vec<SaplingNote>) -> Self {
+        self.sapling_notes = sapling_notes;
+        self
+    }
+
+    /// As [`Self::new_for_test`], with outgoing sapling notes attached.
+    #[must_use]
+    pub fn with_outgoing_sapling_notes_for_test(
+        mut self,
+        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+    ) -> Self {
+        self.outgoing_sapling_notes = outgoing_sapling_notes;
+        self
+    }
+
+    /// As [`Self::new_for_test`], with received transparent coins attached.
+    #[must_use]
+    pub fn with_transparent_coins_for_test(
+        mut self,
+        transparent_coins: Vec<TransparentCoin>,
+    ) -> Self {
+        self.transparent_coins = transparent_coins;
+        self
+    }
+
+    /// As [`Self::new_for_test`], with received and outgoing orchard notes
+    /// attached, for tests exercising summary/value-transfer derivation
+    /// without a chain.
+    pub fn new_for_test_with_orchard_notes(
+        txid: TxId,
+        status: ConfirmationStatus,
+        orchard_notes: Vec<OrchardNote>,
+        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    ) -> Self {
+        let mut transaction = Self::new_for_test(txid, status);
+        transaction.orchard_notes = orchard_notes;
+        transaction.outgoing_orchard_notes = outgoing_orchard_notes;
+        transaction
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl SyncState {
+    /// Creates sync state with the given scan ranges, for tests exercising
+    /// spendability/witness gating without a chain.
+    pub fn new_for_test(scan_ranges: Vec<ScanRange>) -> Self {
+        let mut sync_state = Self::new();
+        sync_state.scan_ranges = scan_ranges;
+        sync_state
+    }
+}
+
+#[cfg(any(test, feature = "test-features"))]
+impl<N, Nf: Copy> WalletNote<N, Nf> {
+    /// Creates a minimal received note for testing purposes.
+    pub fn new_for_test(
+        output_id: OutputId,
+        account_id: zip32::AccountId,
+        scope: zip32::Scope,
+        note: N,
+        memo: Memo,
+        position: Option<Position>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id: KeyId::from_parts(account_id, scope),
+            note,
+            nullifier: None,
+            position,
+            memo,
+            spending_transaction: None,
+            refetch_nullifier_ranges: Vec::new(),
+        }
+    }
+
+    /// Attaches a nullifier, for tests exercising spend paths — the
+    /// spendable-note filter requires a known nullifier.
+    #[must_use]
+    pub fn with_nullifier_for_test(mut self, nullifier: Nf) -> Self {
+        self.nullifier = Some(nullifier);
+        self
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl<N> OutgoingNote<N> {
+    /// Creates a minimal outgoing note for testing purposes.
+    pub fn new_for_test(
+        output_id: OutputId,
+        account_id: zip32::AccountId,
+        scope: zip32::Scope,
+        note: N,
+        memo: Memo,
+        recipient_full_unified_address: Option<UnifiedAddress>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id: KeyId::from_parts(account_id, scope),
+            note,
+            memo,
+            recipient_full_unified_address,
+        }
+    }
 }
 
 #[cfg(feature = "wallet_essentials")]
@@ -664,14 +768,10 @@ impl WalletTransaction {
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
 
-        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
-        // to this fix to zcash client backend
-        let sapling_value_sent = self
-            .total_outgoing_note_value::<OutgoingSaplingNote>()
-            .saturating_sub(self.total_output_value::<SaplingNote>());
-        let orchard_value_sent = self
-            .total_outgoing_note_value::<OutgoingOrchardNote>()
-            .saturating_sub(self.total_output_value::<OrchardNote>());
+        let sapling_value_sent =
+            self.total_external_outgoing_note_value::<OutgoingSaplingNote, SaplingNote>();
+        let orchard_value_sent =
+            self.total_external_outgoing_note_value::<OutgoingOrchardNote, OrchardNote>();
 
         transparent_value_sent + sapling_value_sent + orchard_value_sent
     }
@@ -698,6 +798,24 @@ impl WalletTransaction {
     pub fn total_outgoing_note_value<Op: OutgoingNoteInterface>(&self) -> u64 {
         Op::transaction_outgoing_notes(self)
             .iter()
+            .map(OutgoingNoteInterface::value)
+            .sum()
+    }
+
+    /// Returns total sum of outgoing note values for outputs that are not wallet-owned.
+    #[must_use]
+    pub fn total_external_outgoing_note_value<Outgoing, Incoming>(&self) -> u64
+    where
+        Outgoing: OutgoingNoteInterface,
+        Incoming: OutputInterface,
+    {
+        Outgoing::transaction_outgoing_notes(self)
+            .iter()
+            .filter(|outgoing_note| {
+                !Incoming::transaction_outputs(self)
+                    .iter()
+                    .any(|wallet_note| wallet_note.output_id() == outgoing_note.output_id())
+            })
             .map(OutgoingNoteInterface::value)
             .sum()
     }
@@ -773,7 +891,7 @@ pub trait NoteInterface: OutputInterface {
     /// Decrypted note type.
     type ZcashNote;
     /// Nullifier type.
-    type Nullifier: Copy;
+    type Nullifier: Copy + Clone + PartialEq + Eq + PartialOrd + Ord;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;
@@ -813,6 +931,30 @@ pub struct TransparentCoin {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+}
+
+#[cfg(feature = "test-features")]
+impl TransparentCoin {
+    /// Creates a minimal received coin for testing purposes. The script
+    /// must be the real locking script for `address`: spendable-output
+    /// selection reconstructs the recipient from it and silently drops
+    /// coins whose script does not parse to an address.
+    pub fn new_for_test(
+        output_id: OutputId,
+        key_id: TransparentAddressId,
+        address: String,
+        script: Script,
+        value: Zatoshis,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id,
+            address,
+            script,
+            value,
+            spending_transaction: None,
+        }
+    }
 }
 
 impl TransparentCoin {

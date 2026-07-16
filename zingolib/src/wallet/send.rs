@@ -81,6 +81,7 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
+            None,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -225,7 +226,7 @@ mod tests {
             transaction_request_from_receivers(rec).expect("rec can requestify");
 
         assert_eq!(
-            request.total().expect("total"),
+            request.total().expect("total").expect("amounts present"),
             (amount_1 + amount_2).expect("add")
         );
     }

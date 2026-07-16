@@ -2,7 +2,7 @@
 name = "pepper-sync"
 description = "Pepper-sync is a crate providing a sync engine for the zcash network."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.3.0"
+version = "0.5.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
@@ -15,8 +15,6 @@ maintenance = { status = "actively-developed" }
 default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
 wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
-# removes failing calls to `GetSubTreeRoots` in darkside testing
-darkside_test = []
 # exposes test constructors for wallet types
 test-features = []
 
@@ -24,6 +22,7 @@ test-features = []
 # Zingo
 zingo-memo.workspace = true
 zingo-status.workspace = true
+zingo-netutils.workspace = true
 
 # Zcash
 incrementalmerkletree.workspace = true
@@ -74,6 +73,7 @@ json.workspace = true
 
 # Serialization
 byteorder = { workspace = true, optional = true }
+hex.workspace = true
 
 # Documentation
 simple-mermaid.workspace = true

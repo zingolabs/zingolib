@@ -7,7 +7,10 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
-use crate::{config::DEFAULT_INDEXER_URI_TESTNET, lightclient::LightClient};
+use crate::{
+    config::DEFAULT_INDEXER_URI_TESTNET,
+    lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient},
+};
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
@@ -18,8 +21,14 @@ pub struct NetworkedTestEnvironment {
 
 impl NetworkedTestEnvironment {
     async fn update_server_height(&mut self) {
-        let indexer = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap()).unwrap();
-        let latest = indexer.get_latest_block().await.unwrap().height as u32;
+        let mut indexer = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
+            .await
+            .unwrap();
+        let latest = indexer
+            .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+            .await
+            .unwrap()
+            .height as u32;
         self.latest_known_server_height = Some(BlockHeight::from(latest));
         crate::testutils::timestamped_test_log(
             format!("Networked Test Chain is now at height {latest}").as_str(),

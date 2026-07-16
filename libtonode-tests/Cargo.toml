@@ -5,40 +5,46 @@ edition = "2024"
 publish = false
 
 [features]
-default = ["chain_generic_tests", "proptests"]
-proptests = ["proptest"]
+default = ["chain_generic_tests"]
 chain_generic_tests = []
-ci = ["zingolib/ci"]
+# Pre-migration originals of tests that gained offline unit twins
+# (docs/testing/live-offline-twins.md). Off by default: the twins carry
+# the default coverage; enable to run the live originals side-by-side.
+unit_test_twins = []
+# Sentinel tests pin environment contracts (zebrad behavior and the
+# zcash_local_net launch contract), not this repository's code. Off by
+# default: run them when the environment moves — infra pin bumps,
+# container-image bumps, activation-height changes.
+sentinels = []
+# Repo-wide policy gate (docs/testing/slow-gate-policy.md): a test whose
+# steady-state solo runtime exceeds 2x the median of this crate's
+# default suite moves behind this non-default feature at the next
+# re-baseline. Currently empty pending the next recorded full-suite run.
+slow = []
+# Everything beyond the default suite, in one switch.
+extra-credit-tests = ["sentinels", "unit_test_twins", "slow"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
-zingo_common_components = { workspace = true }
+zingolib = { workspace = true, features = ["testutils"] }
+zingolib_testutils = { path = "../zingolib_testutils" }
+zcash_local_net = { workspace = true }
+http = { workspace = true }
+
+[dev-dependencies]
+incrementalmerkletree.workspace = true
+itertools = { workspace = true }
+json = { workspace = true }
 pepper-sync = { workspace = true }
-zingo-status = { workspace = true }
-
-zingolib_testutils = { path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
-zcash_local_net.workspace = true
-zingo_test_vectors.workspace = true
-
-zip32 = { workspace = true }
+shardtree.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
-zcash_transparent = { workspace = true }
-shardtree.workspace = true
-bip0039.workspace = true
-
-tokio = { workspace = true, features = ["full"] }
-json = { workspace = true }
-itertools = { workspace = true }
-proptest = { workspace = true, optional = true }
-tracing.workspace = true
-tracing-subscriber.workspace = true
-
-http = { workspace = true }
-
-[dev-dependencies]
-rustls.workspace = true
-test-log.workspace = true
+zingo-netutils = { workspace = true }
+zingo-status = { workspace = true }
+zingo_test_vectors = { workspace = true }
+zip32 = { workspace = true }

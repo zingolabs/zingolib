@@ -7,20 +7,27 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::{CompactAction, OrchardDomain};
-use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
 };
-use zcash_protocol::{ShieldedProtocol, consensus};
+use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
+use zcash_protocol::ShieldedProtocol;
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 
+use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
+use crate::utils::get_compact_action;
+use crate::utils::get_compact_block_hash;
+use crate::utils::get_compact_block_height;
+use crate::utils::get_compact_output_description;
+use crate::utils::get_compact_tx_txid;
 use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<
@@ -85,32 +92,31 @@ where
         &mut self,
         params: &P,
         block: CompactBlock,
-    ) -> Result<(), zcash_client_backend::scanning::ScanError>
+    ) -> Result<(), EncodingInvalid>
     where
         P: consensus::Parameters + Send + 'static,
     {
-        let block_hash = block.hash();
-        let block_height = block.height();
+        let block_hash = get_compact_block_hash(&block);
+        let block_height = get_compact_block_height(&block);
         let zip212_enforcement = zip212_enforcement(params, block_height);
 
         for tx in block.vtx {
-            let txid = tx.txid();
+            let txid = get_compact_tx_txid(&tx);
 
             self.sapling.add_outputs(
                 block_hash,
                 txid,
                 |_| SaplingDomain::new(zip212_enforcement),
                 &tx.outputs
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Sapling,
-                                index: i,
-                            }
+                        get_compact_output_description(&output).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedProtocol::Sapling,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -121,16 +127,15 @@ where
                 txid,
                 OrchardDomain::for_compact_action,
                 &tx.actions
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Orchard,
-                                index: i,
-                            }
+                        get_compact_action(&action).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedProtocol::Orchard,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -598,7 +603,15 @@ where
                              output_index,
                              value,
                          }| {
-                            (OutputId::new(txid, output_index as u16), value)
+                            (
+                                OutputId::new(
+                                    txid,
+                                    output_index
+                                        .try_into()
+                                        .expect("output indexes should be valid u32"),
+                                ),
+                                value,
+                            )
                         },
                     )
                     .collect()

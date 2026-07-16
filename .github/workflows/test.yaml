@@ -9,20 +9,25 @@ on:
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
+  DARKSIDE_PACKAGE: darkside-tests
   NEXTEST_VERSION: "0.9.132"
 
 jobs:
+  compute-image-tag:
+    uses: ./.github/workflows/compute-image-tag.yaml
+
   build-test-artifacts:
     name: Build test artifacts
+    needs: compute-image-tag
     container:
-      image: zingodevops/ci-build:009
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
@@ -33,56 +38,109 @@ jobs:
 
       - name: Install system deps
         run: |
-         apt-get update
-         apt-get install -y libsqlite3-dev pkg-config
+          apt-get update
+          apt-get install -y libsqlite3-dev pkg-config
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build and archive tests
-        run: cargo nextest archive --verbose --workspace --archive-file nextest-archive.tar.zst
+      - name: Build and archive non-darkside tests
+        run: |
+          cargo nextest archive --verbose \
+            --workspace \
+            --exclude "$DARKSIDE_PACKAGE" \
+            --archive-file nextest-archive-normal.tar.zst
 
-      - name: Upload archive
-        uses: actions/upload-artifact@v4
+      - name: Build and archive darkside tests
+        run: |
+          cargo nextest archive --verbose \
+            -p "$DARKSIDE_PACKAGE" \
+            --archive-file nextest-archive-darkside.tar.zst
+
+      - name: Upload normal archive
+        uses: actions/upload-artifact@v7
         with:
-          name: nextest-archive
-          path: nextest-archive.tar.zst
+          name: nextest-archive-normal
+          path: nextest-archive-normal.tar.zst
+          overwrite: true
+
+      - name: Upload darkside archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: nextest-archive-darkside
+          path: nextest-archive-darkside.tar.zst
           overwrite: true
 
   run-tests:
-    name: Run tests
+    name: Run normal tests
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
-    needs: build-test-artifacts
+    needs: [build-test-artifacts, compute-image-tag]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:009
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     strategy:
+      fail-fast: false
       matrix:
         partition: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: create binaries dir
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest@${{ env.NEXTEST_VERSION }}
 
-      - name: Download archive
-        uses: actions/download-artifact@v4
+      - name: Download normal archive
+        uses: actions/download-artifact@v8
         with:
-          name: nextest-archive
+          name: nextest-archive-normal
 
-      - name: Run tests
+      - name: Run normal tests
         run: |
-          cargo nextest run --verbose --profile ci --retries 2 --archive-file nextest-archive.tar.zst \
-            --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
+          cargo nextest run --verbose --profile ci --retries 0 \
+            --archive-file nextest-archive-normal.tar.zst \
+            --workspace-remap ./ \
+            --partition count:${{ matrix.partition }}/8 \
+            ${{ env.NEXTEST-FLAGS }}
+
+  run-darkside-tests:
+    name: Run darkside tests
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.draft == false
+    needs: [build-test-artifacts, compute-image-tag]
+    env:
+      RUSTFLAGS: -D warnings
+    container:
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: create binaries dir
+        run: mkdir -p ./test_binaries/bins
+
+      - name: Symlink lightwalletd and zcash binaries
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
+
+      - name: Download darkside archive
+        uses: actions/download-artifact@v8
+        with:
+          name: nextest-archive-darkside
+
+      - name: Run darkside tests
+        run: |
+          cargo nextest run --verbose --profile ci --retries 0 \
+            --archive-file nextest-archive-darkside.tar.zst \
+            --workspace-remap ./ \
+            ${{ env.NEXTEST-FLAGS }}

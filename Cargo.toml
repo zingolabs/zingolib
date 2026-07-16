@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "darkside-tests",
     "libtonode-tests",
     "pepper-sync",
     "zingo-cli",
     "zingo-memo",
+    "zingo-netutils",
     "zingo-price",
     "zingo-status",
     "zingolib",
@@ -13,25 +13,20 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# groups ordered from most specific to least specific
-
 ### Workspace
-# pepper-sync = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.0"
+zingo-memo = "0.1.1"
 zingo-price = { path = "zingo-price" }
 # zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.0"
+zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
-proptest = "1.6.0"
 tempfile = "3"
-test-log = "0.2"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5bcbf53d680542c247d01585c12085c1be831adc" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
 
 ### Documentation
 indoc = "2"
@@ -40,35 +35,54 @@ simple-mermaid = "0.2.0"
 ### Logging
 log = "0.4"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { git = "https://github.com/zingolabs/zingo-common", branch = "indexer_trait", features = ["back_compatible", "globally-public-transparent"] }
-zingo_common_components = "0.3.0"
+zingo-netutils = { path = "zingo-netutils", features = ["globally-public-transparent"] }
+zingo_common_components = "0.4.0"
+
+### Netutils
+http-body-util = "0.1.3"
+hyper = "1"
+hyper-rustls = { version = "0.27", default-features = false, features = [
+    "aws-lc-rs",
+    "http1",
+    "tls12",
+    "logging",
+    "native-tokio",
+] }
+hyper-util = "0.1.20"
+lightwallet-protocol = "0.3.0"
+rustls-pemfile = "2"
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "aws_lc_rs",
+    "logging",
+    "tls12",
+] }
+tokio-stream = "0.1"
+x509-parser = "0.18"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
-orchard = "0.11.0"
-sapling-crypto = "0.5.0"
-shardtree = "0.6.1"
-zcash_address = "0.10"
-zcash_client_backend = { version = "0.21", features = [
-    "lightwalletd-tonic",
+orchard = "0.14.0"
+sapling-crypto = "0.7.0"
+shardtree = "0.6.2"
+zcash_address = "0.12.0"
+zcash_client_backend = { version = "0.23.0", features = [
     "orchard",
     "transparent-inputs",
-    "tor",
 ] }
-zcash_encoding = "0.3"
-zcash_keys = { version = "0.12", features = [
+zcash_encoding = "0.4.0"
+zcash_keys = { version = "0.14.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4"
-zcash_primitives = "0.26"
-zcash_proofs = "0.26"
-zcash_protocol = "0.7" # public API (TODO: remove from public API)
-zcash_transparent = "0.6"
+zcash_note_encryption = "0.4.1"
+zcash_primitives = "0.28.0"
+zcash_proofs = "0.28.0"
+zcash_protocol = "0.9.0" # public API (TODO: remove from public API)
+zcash_transparent = "0.8.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
@@ -76,37 +90,40 @@ bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
 ### Cryptographic
-jubjub = "0.10"
-ring = "0.17.14"
+hmac = "0.12"
+jubjub = "0.10.0"
 secp256k1 = "0.31.1"
+sha2 = "0.10"
 secrecy = "0.8"
-subtle = "2"
-
-### Encoding
+subtle = "2.6.1"
 bech32 = "0.11.0"
 bs58 = "0.5"
+
+# Parallel processing
+crossbeam-channel = "0.5"
+rayon = "1"
+
+# Encoding
 byteorder = "1"
 hex = "0.4"
 json = "0.12"
-prost = "0.14"
 serde = "1"
 serde_json = "1"
 
 ### Network
 http = "1"
 reqwest = { version = "0.12.15", default-features = false }
-rustls = { version = "0.23.37", features = ["ring"] }
-tonic = { version = "0.14", features = ["tls-webpki-roots"] }
-tonic-prost = "0.14"
-tonic-prost-build = "0.14"
-
-### Parallel processing
-crossbeam-channel = "0.5"
-rayon = "1"
+# aws-lc-rs is the workspace's sole rustls CryptoProvider (ring is excised);
+# prefer-post-quantum leads outbound handshakes with the X25519MLKEM768
+# hybrid group. Runtime installation is first-install-wins via
+# zingo_netutils::crypto::ensure_default_crypto_provider, so downstream
+# embedders that install their own provider first keep it.
+rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
+tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
+prost = "0.14"
 
 ### Async
 futures = "0.3"
-futures-util = "0.3"
 tokio = "1"
 
 ### Error interface
@@ -114,7 +131,6 @@ thiserror = "2"
 
 ### Internal data
 append-only-vec = "0.1.7"
-bytes = "1"
 itertools = "0.14"
 nonempty = "0.11.0"
 rust_decimal = "1.37.2"

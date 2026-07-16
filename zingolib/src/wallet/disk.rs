@@ -10,16 +10,17 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::info;
 
 use bip0039::Mnemonic;
+use zip32::AccountId;
 
-use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
+
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
-use zip32::AccountId;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
 use super::{LightWallet, error::KeyError};
@@ -42,15 +43,15 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 40:
+    /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        40
+        41
     }
 
     /// Serialize into `writer`
-    pub fn write<W: Write>(
+    pub(crate) fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
@@ -114,7 +115,7 @@ impl LightWallet {
             &self.outpoint_map.iter().collect::<Vec<_>>(),
             |w, &(&output_id, &scan_target)| {
                 output_id.txid().write(&mut *w)?;
-                w.write_u16::<LittleEndian>(output_id.output_index())?;
+                w.write_u32::<LittleEndian>(output_id.output_index())?;
                 scan_target.write(w)
             },
         )?;
@@ -127,12 +128,12 @@ impl LightWallet {
 
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=40 => Self::read_v32(reader, chain_type, version),
+            32..=41 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -360,7 +361,7 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
-        if version >= 40 {
+        if version >= 41 {
             let saved_network = match reader.read_u8()? {
                 0 => ChainType::Mainnet,
                 1 => ChainType::Testnet,
@@ -544,7 +545,11 @@ impl LightWallet {
         let nullifier_map = NullifierMap::read(&mut reader)?;
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
-            let output_index = r.read_u16::<LittleEndian>()?;
+            let output_index = if version >= 40 {
+                r.read_u32::<LittleEndian>()?
+            } else {
+                u32::from(r.read_u16::<LittleEndian>()?)
+            };
             let scan_target = if version >= 37 {
                 ScanTarget::read(r)?
             } else {

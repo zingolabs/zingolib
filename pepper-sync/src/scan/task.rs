@@ -14,16 +14,18 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{transaction::TxId, zip32::AccountId};
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
+    scan::get_compact_block_height,
     sync::{self, ScanPriority, ScanRange},
     wallet::{
         ScanTarget, WalletBlock,
@@ -484,7 +486,9 @@ where
                             );
                             first_batch = false;
                         }
-                        if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
+                        if get_compact_block_height(&compact_block)
+                            == scan_task.scan_range.block_range().end - 1
+                        {
                             previous_task_last_block = Some(
                                 WalletBlock::from_compact_block(
                                     &consensus_parameters,
@@ -513,7 +517,7 @@ where
                             .split(
                                 &consensus_parameters,
                                 fetch_request_sender.clone(),
-                                compact_block.height(),
+                                get_compact_block_height(&compact_block),
                             )
                             .await?;
 
@@ -526,7 +530,7 @@ where
                         orchard_nullifier_count = 0;
                     }
 
-                    retry_height = compact_block.height() + 1;
+                    retry_height = get_compact_block_height(&compact_block) + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
@@ -534,6 +538,9 @@ where
 
                 is_batching.store(false, atomic::Ordering::Release);
             }
+
+            is_batching.store(false, atomic::Ordering::Release);
+
             Ok(())
         });
 
@@ -685,6 +692,8 @@ where
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }
+
+            is_scanning.store(false, atomic::Ordering::Release);
         });
 
         self.handle = Some(handle);
@@ -776,7 +785,7 @@ impl ScanTask {
         let mut lower_compact_blocks = self.compact_blocks;
         let upper_compact_blocks = if let Some(index) = lower_compact_blocks
             .iter()
-            .position(|block| block.height() == block_height)
+            .position(|block| get_compact_block_height(block) == block_height)
         {
             lower_compact_blocks.split_off(index)
         } else {

@@ -7,13 +7,11 @@
 use std::{
     collections::HashSet,
     io::{Read, Write},
-    time::SystemTime,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use serde::Deserialize;
-use zcash_client_backend::tor::{self, http::cryptex::Exchanges};
 use zcash_encoding::{Optional, Vector};
 
 /// Errors with price requests and parsing.
@@ -32,9 +30,6 @@ pub enum PriceError {
     /// Price list start time not set. Call `PriceList::set_start_time`.
     #[error("price list start time has not been set.")]
     PriceListNotInitialized,
-    /// Tor price fetch error.
-    #[error("tor price fetch error. {0}")]
-    TorError(#[from] tor::Error),
     /// Decimal conversion error.
     #[error("decimal conversion error. {0}")]
     DecimalError(#[from] rust_decimal::Error),
@@ -115,20 +110,9 @@ impl PriceList {
 
     /// Update and return current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
-    pub async fn update_current_price(
-        &mut self,
-        tor_client: Option<&tor::Client>,
-    ) -> Result<Price, PriceError> {
-        let current_price = if let Some(client) = tor_client {
-            get_current_price_tor(client).await?
-        } else {
-            get_current_price().await?
-        };
-        self.current_price = Some(current_price);
-
-        Ok(current_price)
+    pub async fn update_current_price(&mut self) -> Result<Price, PriceError> {
+        get_current_price().await
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
@@ -204,8 +188,20 @@ impl PriceList {
     }
 }
 
+/// Installs rustls's `aws-lc-rs` provider as the process-level default if
+/// none is installed yet (first-install-wins, so an embedder's choice is
+/// kept). Required because reqwest is built with `rustls-tls-no-provider`.
+/// Mirrors `zingo_netutils::ensure_default_crypto_provider`, which cannot be
+/// used here: zingo-netutils sits above this crate in the dependency graph.
+fn ensure_default_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
 /// Get current price of ZEC in USD
 async fn get_current_price() -> Result<Price, PriceError> {
+    ensure_default_crypto_provider();
     let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
     let mut trades = httpget
         .json::<Vec<CurrentPriceResponse>>()
@@ -231,19 +227,4 @@ async fn get_current_price() -> Result<Price, PriceError> {
     });
 
     Ok(trades[5])
-}
-
-/// Get current price of ZEC in USD over tor.
-async fn get_current_price_tor(tor_client: &tor::Client) -> Result<Price, PriceError> {
-    let exchanges = Exchanges::unauthenticated_known_with_gemini_trusted();
-    let current_price = tor_client.get_latest_zec_to_usd_rate(&exchanges).await?;
-    let current_time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("should never fail when comparing with an instant so far in the past")
-        .as_secs() as u32;
-
-    Ok(Price {
-        time: current_time,
-        price_usd: current_price.try_into()?,
-    })
 }

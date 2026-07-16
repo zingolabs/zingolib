@@ -11,13 +11,12 @@ use tokio::sync::{RwLock, mpsc};
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use tonic::transport::Channel;
-use zcash_client_backend::proto::service::RawTransaction;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::RawTransaction;
+use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -42,15 +41,22 @@ use crate::wallet::{
 };
 use crate::witness::LocatedTreeData;
 
-#[cfg(not(feature = "darkside_test"))]
 use crate::witness;
+
+pub(crate) mod transparent;
 
 pub(crate) mod spend;
 pub(crate) mod state;
-pub(crate) mod transparent;
 
-const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
-pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
+/// The deepest chain reorganization the wallet tolerates, and the
+/// repository's single source of truth for that depth. It mirrors the
+/// validator's finalization boundary — zebra's
+/// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
+/// final and no deeper reorg can occur. Zebra crates are not
+/// dependencies of this workspace, so the value is pinned to its
+/// upstream by documentation rather than import; if zebra ever moves
+/// its boundary, this constant is the one place that follows it.
+pub const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -72,6 +78,33 @@ pub struct SyncStatus {
     pub total_orchard_outputs_scanned: u32,
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
+    /// Numerator of the exact scan-progress ratio: outputs scanned so far
+    /// across both shielded pools. May exceed `total_outputs`, whose tree
+    /// bounds are fixed at sync start, when scanning continues past them
+    /// into chain growth.
+    pub total_outputs_scanned: u64,
+    /// Denominator of the exact scan-progress ratio: outputs in the chain
+    /// between the wallet birthday and the last known chain height, across
+    /// both shielded pools. Zero when sync has never started, and also when
+    /// the range from birthday to chain height contains no shielded outputs.
+    pub total_outputs: u64,
+}
+
+impl SyncStatus {
+    /// Whether sync is complete: sync has started and every scan range is
+    /// fully processed ([`ScanPriority::Scanned`]), so no range still awaits
+    /// scanning, nullifier mapping, or nullifier refetching.
+    ///
+    /// This is the sync task's own terminal condition, so it holds even when
+    /// the birthday-to-chain-height range contains no shielded outputs and
+    /// the output ratio is vacuously 0 / 0.
+    pub fn is_complete(&self) -> bool {
+        self.sync_start_height != 0.into()
+            && self
+                .scan_ranges
+                .iter()
+                .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+    }
 }
 
 // TODO: complete display, scan ranges in raw form are too verbose
@@ -112,6 +145,8 @@ impl From<SyncStatus> for json::JsonValue {
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
+            "total_outputs_scanned" => value.total_outputs_scanned,
+            "total_outputs" => value.total_outputs,
         }
     }
 }
@@ -189,6 +224,31 @@ pub enum ScanPriority {
     /// A previously scanned range that must be verified to check it is still in the
     /// main chain, has highest priority.
     Verify,
+}
+
+impl ScanPriority {
+    /// Whether this priority marks a range whose blocks have been scanned,
+    /// including ranges whose nullifiers still await retrieval. Contrast with
+    /// equality to [`ScanPriority::Scanned`], which additionally requires the
+    /// nullifier work to be finished.
+    pub fn is_scanned(self) -> bool {
+        matches!(
+            self,
+            ScanPriority::Scanned
+                | ScanPriority::ScannedWithoutMapping
+                | ScanPriority::RefetchingNullifiers
+        )
+    }
+
+    /// Whether this priority marks a range whose blocks have been scanned but
+    /// whose nullifiers still await mapping or refetching for final spend
+    /// detection.
+    pub fn awaits_nullifier_retrieval(self) -> bool {
+        matches!(
+            self,
+            ScanPriority::ScannedWithoutMapping | ScanPriority::RefetchingNullifiers
+        )
+    }
 }
 
 /// A range of blocks to be scanned, along with its associated priority.
@@ -305,14 +365,15 @@ impl ScanRange {
 /// times in quick sucession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
-pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<Channel>,
+pub async fn sync<C, P, W>(
+    client: C,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks
@@ -347,11 +408,14 @@ where
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
+    let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
+    let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
             client,
             mempool_transaction_sender,
             unprocessed_mempool_transactions_count_clone,
+            mempool_stream_connected_at_clone,
             shutdown_mempool_clone,
         )
         .await
@@ -382,7 +446,6 @@ where
     )
     .await?;
 
-    #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -399,12 +462,12 @@ where
 
     let initial_reorg_detection_start_height = state::update_scan_ranges(
         consensus_parameters,
+        fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        wallet_guard
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-    );
+        &mut *wallet_guard,
+    )
+    .await?;
 
     state::set_initial_state(
         consensus_parameters,
@@ -417,7 +480,6 @@ where
     expire_transactions(&mut *wallet_guard)?;
 
     drop(wallet_guard);
-
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -463,6 +525,7 @@ where
                 )
                 .await?;
                 unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                 drop(wallet_guard);
             }
 
@@ -492,6 +555,8 @@ where
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
                         drop(wallet_guard);
+                        mempool_handle.abort();
+                        fetcher_handle.abort();
                         tracing::info!("Sync successfully shutdown.");
 
                         return Ok(SyncResult {
@@ -518,10 +583,33 @@ where
                 scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
-                    // wait for mempool monitor to receive mempool transactions
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
-                    {
+                    // Drain check on a 25ms cadence instead of the old
+                    // unconditional one-second sleep. The policy lives in
+                    // [`drain_verdict`]: shutdown requires a drained
+                    // scanner AND a mempool stream that has been connected
+                    // long enough to have served pre-existing content, so
+                    // a first-loop shutdown on a fully synced chain waits
+                    // for the subscription instead of closing the session
+                    // before the monitor ever connects. The old one-second
+                    // ceiling remains the worst case.
+                    let shutdown_poll_started = std::time::Instant::now();
+                    let mempool_drained = loop {
+                        let verdict = drain_verdict(
+                            scanner.worker_poolsize(),
+                            unprocessed_mempool_transactions_count
+                                .load(atomic::Ordering::Acquire),
+                            mempool_stream_connected_at.get().map(|at| at.elapsed()),
+                            shutdown_poll_started.elapsed(),
+                        );
+                        match verdict {
+                            DrainVerdict::Shutdown => break true,
+                            DrainVerdict::Reenter => break false,
+                            DrainVerdict::KeepPolling => {
+                                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                            }
+                        }
+                    };
+                    if mempool_drained {
                         tracing::info!("Sync successfully shutdown.");
                         break;
                     }
@@ -529,7 +617,6 @@ where
             }
         }
     }
-
     let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
@@ -590,7 +677,7 @@ where
 /// The input parameter heights are:
 ///
 ///   (1) chain_height:
-///       * the best block-height reported by the proxy (zainod or lwd)
+///       * the best block-height reported by the indexer
 ///   (2) last_known_chain_height
 ///       * the last max height the wallet recorded from earlier scans
 ///
@@ -624,6 +711,13 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
+            truncate_scan_ranges(
+                chain_height,
+                wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?,
+            );
+            wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
         // The last wallet reported height is equal or below the proxy height.
@@ -683,6 +777,8 @@ where
             total_orchard_outputs_scanned: 0,
             percentage_session_outputs_scanned: 0.0,
             percentage_total_outputs_scanned: 0.0,
+            total_outputs_scanned: 0,
+            total_outputs: 0,
         });
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
@@ -743,10 +839,11 @@ where
     let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
 
-    if sync_state.scan_ranges().iter().any(|scan_range| {
-        scan_range.priority() == ScanPriority::ScannedWithoutMapping
-            || scan_range.priority() == ScanPriority::RefetchingNullifiers
-    }) {
+    if sync_state
+        .scan_ranges()
+        .iter()
+        .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
+    {
         if percentage_session_blocks_scanned == 100.0 {
             percentage_session_blocks_scanned = 99.0;
         }
@@ -774,6 +871,9 @@ where
         total_orchard_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
+        total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
+            + u64::from(total_orchard_outputs_scanned),
+        total_outputs: u64::from(total_sapling_outputs) + u64::from(total_orchard_outputs),
     })
 }
 
@@ -931,7 +1031,40 @@ pub fn reset_spends(
 /// Sets transactions associated with list of `failed_txids` in `wallet_transactions` to `Failed` status.
 ///
 /// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
+///
+/// Transactions with `Confirmed` status are skipped with a warning. A mined transaction
+/// cannot fail — only a reorg can un-mine it, and reorgs are handled by truncation, which
+/// reopens the affected scan ranges. For a confirmed transaction the note's
+/// `spending_transaction` field is the wallet's only durable record of the on-chain spend
+/// (detection consumed the nullifier-map entry when the spending block was scanned), so
+/// resetting it here would create a permanent phantom unspent note that no forward sync
+/// can correct.
 pub fn set_transactions_failed(
+    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    failed_txids: Vec<TxId>,
+) {
+    let (confirmed_txids, failable_txids): (Vec<TxId>, Vec<TxId>) =
+        failed_txids.into_iter().partition(|txid| {
+            wallet_transactions
+                .get(txid)
+                .is_some_and(|transaction| transaction.status().is_confirmed())
+        });
+    for confirmed_txid in confirmed_txids {
+        tracing::warn!(
+            "refusing to fail transaction {confirmed_txid} with `Confirmed` status! \
+             a mined transaction can only be invalidated by truncation."
+        );
+    }
+    set_transactions_failed_unchecked(wallet_transactions, failable_txids);
+}
+
+/// As [`set_transactions_failed`], without the guard against failing `Confirmed`
+/// transactions.
+///
+/// Only truncation may take this path: it fails transactions in reorged-away blocks and
+/// simultaneously reopens the affected scan ranges, so re-scanning is guaranteed to
+/// re-detect any spends that are still on the best chain.
+pub(crate) fn set_transactions_failed_unchecked(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     failed_txids: Vec<TxId>,
 ) {
@@ -951,15 +1084,55 @@ pub fn set_transactions_failed(
 }
 
 /// Returns true if the scanner and mempool are shutdown.
-fn is_shutdown<P>(
-    scanner: &Scanner<P>,
-    mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-) -> bool
-where
-    P: consensus::Parameters + Sync + Send + 'static,
-{
-    scanner.worker_poolsize() == 0
-        && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
+/// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
+/// snapshot — the caller loads the atomics and clocks; this only
+/// decides, so the whole policy is table-testable without a runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DrainVerdict {
+    /// Drained and the mempool stream has settled: end the session.
+    Shutdown,
+    /// Work appeared, or the ceiling expired with workers running:
+    /// re-enter the processing loop.
+    Reenter,
+    /// Undecided: sleep one cadence and poll again.
+    KeepPolling,
+}
+
+/// The drain policy for scanner shutdown.
+///
+/// `connected_for` is the age of the mempool stream subscription
+/// (`None` until it is established). Connection — not first delivery —
+/// is deliberately the grace trigger: an empty mempool never delivers,
+/// and a delivery-based grace would hold every such session for the
+/// full ceiling, restoring the fixed second c90f8d309 removed. The
+/// settle window covers the gap between subscribing and receiving
+/// pre-existing mempool content (served within ~100ms of connect).
+fn drain_verdict(
+    scan_workers: usize,
+    unprocessed_mempool_transactions: u8,
+    connected_for: Option<Duration>,
+    poll_elapsed: Duration,
+) -> DrainVerdict {
+    /// The pre-c90f8d309 unconditional sleep, demoted to worst case: a
+    /// stream that never connects must not hold the session open.
+    const CEILING: Duration = Duration::from_secs(1);
+    /// One settle window after subscription.
+    const SETTLE: Duration = Duration::from_millis(200);
+
+    if unprocessed_mempool_transactions > 0 {
+        return DrainVerdict::Reenter;
+    }
+    if poll_elapsed >= CEILING {
+        return if scan_workers == 0 {
+            DrainVerdict::Shutdown
+        } else {
+            DrainVerdict::Reenter
+        };
+    }
+    match connected_for {
+        Some(age) if age >= SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        _ => DrainVerdict::KeepPolling,
+    }
 }
 
 /// Scan post-processing
@@ -1290,7 +1463,7 @@ async fn process_mempool_transaction<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    // does not use raw transaction height due to lightwalletd off-by-one bug and potential to be zero
+    // does not use raw transaction height due to a legacy-indexer off-by-one bug and potential to be zero
     let mempool_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
@@ -1362,7 +1535,6 @@ where
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
         std::cmp::Ordering::Less => consensus::H0,
     };
-    truncate_scan_ranges(checked_truncate_height, sync_state);
 
     if checked_truncate_height > highest_scanned_height {
         return Ok(());
@@ -1413,6 +1585,12 @@ where
         })
         .collect::<Vec<_>>();
     truncate_wallet_data(wallet, consensus::H0)?;
+    truncate_scan_ranges(
+        consensus::H0,
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+    );
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
@@ -1613,11 +1791,7 @@ where
     let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
@@ -1671,7 +1845,6 @@ where
     Ok(())
 }
 
-#[cfg(not(feature = "darkside_test"))]
 async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -1723,8 +1896,17 @@ where
     let shard_trees = wallet
         .get_shard_trees_mut()
         .map_err(SyncError::WalletError)?;
-    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling)?;
-    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard)?;
+    witness::add_subtree_roots(
+        sapling_start_index as usize,
+        sapling_subtree_roots,
+        &mut shard_trees.sapling,
+    )?;
+    witness::add_subtree_roots(
+        orchard_start_index as usize,
+        orchard_subtree_roots,
+        &mut shard_trees.orchard,
+    )?;
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1779,6 +1961,7 @@ where
                 },
             )
             .expect("infallible");
+        wallet.set_save_flag().map_err(SyncError::WalletError)?;
     }
 
     Ok(())
@@ -1788,13 +1971,20 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
-async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<Channel>,
+async fn mempool_monitor<C>(
+    mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
+    stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<(), MempoolError> {
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+) -> Result<(), MempoolError>
+where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+{
+    // The tick only bounds how quickly the monitor notices the shutdown
+    // flag; sync() joins this task at session end, so the tick interval
+    // is paid on the critical path of every sync session.
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
         let response =
@@ -1802,6 +1992,11 @@ async fn mempool_monitor(
 
         match response {
             Ok(mut mempool_stream) => {
+                // First successful subscription: the drain policy's
+                // grace window keys on this instant. Deliberately not
+                // reset on reconnect — any successful connect proves
+                // the indexer serves the stream.
+                let _already_set = stream_connected_at.set(std::time::Instant::now());
                 interval.reset();
                 loop {
                     tokio::select! {
@@ -1839,10 +2034,7 @@ async fn mempool_monitor(
     Ok(())
 }
 
-/// Spends will be reset to free up funds if transaction has been unconfirmed for
-/// `UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD` confirmed blocks.
-/// Transaction status will then be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
-// TODO: add config to pepper-sync to set UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+/// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
@@ -1865,17 +2057,7 @@ where
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
-
-    let stuck_funds_txids = wallet_transactions
-        .values()
-        .filter(|transaction| {
-            transaction.status().is_pending()
-                && last_known_chain_height
-                    >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
-        })
-        .map(super::wallet::WalletTransaction::txid)
-        .collect::<Vec<_>>();
-    reset_spends(wallet_transactions, stuck_funds_txids);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1891,6 +2073,379 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
+    /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
+    /// completion is the sync task's own terminal condition — sync has
+    /// started and every scan range is `Scanned` — independent of the
+    /// output ratio, so an output-free birthday-to-chain-height range can
+    /// complete and a stale `total_outputs` cannot fake completion.
+    mod sync_status_completion {
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::sync::{ScanPriority, ScanRange, SyncStatus};
+
+        /// Builds a status with the given start height and scan-range
+        /// priorities. Every counter stays zero: completion must be
+        /// decided by the scan ranges alone, never by the output ratio.
+        fn status(sync_start_height: u32, priorities: &[ScanPriority]) -> SyncStatus {
+            let scan_ranges = priorities
+                .iter()
+                .enumerate()
+                .map(|(index, priority)| {
+                    let start = 1_000 + 10 * index as u32;
+                    ScanRange::from_parts(
+                        BlockHeight::from(start)..BlockHeight::from(start + 10),
+                        *priority,
+                    )
+                })
+                .collect();
+            SyncStatus {
+                scan_ranges,
+                sync_start_height: sync_start_height.into(),
+                session_blocks_scanned: 0,
+                total_blocks_scanned: 0,
+                percentage_session_blocks_scanned: 0.0,
+                percentage_total_blocks_scanned: 0.0,
+                session_sapling_outputs_scanned: 0,
+                total_sapling_outputs_scanned: 0,
+                session_orchard_outputs_scanned: 0,
+                total_orchard_outputs_scanned: 0,
+                percentage_session_outputs_scanned: 0.0,
+                percentage_total_outputs_scanned: 0.0,
+                total_outputs_scanned: 0,
+                total_outputs: 0,
+            }
+        }
+
+        #[test]
+        fn never_started_is_not_complete() {
+            assert!(!status(0, &[]).is_complete());
+        }
+
+        /// A started sync with no scan ranges left in the state is
+        /// vacuously complete: nothing remains tracked, so nothing
+        /// awaits scanning or nullifier work.
+        #[test]
+        fn started_with_no_scan_ranges_is_complete() {
+            assert!(status(1_000, &[]).is_complete());
+        }
+
+        #[test]
+        fn all_ranges_scanned_is_complete() {
+            assert!(status(1_000, &[ScanPriority::Scanned, ScanPriority::Scanned]).is_complete());
+        }
+
+        /// The empty-range edge: zero shielded outputs from birthday to
+        /// chain height must not read as incomplete once the sync task
+        /// has run to its terminal state.
+        #[test]
+        fn output_free_range_is_complete() {
+            let status = status(1_000, &[ScanPriority::Scanned]);
+            assert_eq!(status.total_outputs, 0);
+            assert!(status.is_complete());
+        }
+
+        #[test]
+        fn nullifier_retrieval_pending_is_not_complete() {
+            for pending in [
+                ScanPriority::ScannedWithoutMapping,
+                ScanPriority::RefetchingNullifiers,
+            ] {
+                assert!(!status(1_000, &[ScanPriority::Scanned, pending]).is_complete());
+            }
+        }
+
+        /// The stale-denominator edge: an unscanned range keeps the
+        /// status incomplete even if the output counters claim the
+        /// initially-computed target was reached.
+        #[test]
+        fn unscanned_range_is_not_complete() {
+            let mut status = status(1_000, &[ScanPriority::Scanned, ScanPriority::Historic]);
+            status.total_outputs_scanned = 10_000;
+            status.total_outputs = 10_000;
+            assert!(!status.is_complete());
+        }
+    }
+
+    /// The drain policy for scanner shutdown, exercised as a table:
+    /// pure inputs, no runtime, no clocks.
+    mod drain_verdict {
+        use std::time::Duration;
+
+        use crate::sync::DrainVerdict::{self, KeepPolling, Reenter, Shutdown};
+        use crate::sync::drain_verdict;
+
+        fn ms(millis: u64) -> Duration {
+            Duration::from_millis(millis)
+        }
+
+        #[test]
+        fn table() {
+            // (workers, unprocessed, connected_for, poll_elapsed) → verdict
+            let cases: &[(usize, u8, Option<u64>, u64, DrainVerdict, &str)] = &[
+                // The reported bug: first-loop shutdown on a fully
+                // synced chain, stream not yet connected — hold the
+                // session open instead of closing it instantly.
+                (0, 0, None, 0, KeepPolling, "no stream yet"),
+                // Connected but inside the settle window: still hold.
+                (0, 0, Some(50), 100, KeepPolling, "settling"),
+                // The typical session: stream connected long ago,
+                // scanner drained — immediate shutdown, no added cost.
+                (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
+                // Exactly the settle boundary counts as settled.
+                (0, 0, Some(200), 0, Shutdown, "settle boundary"),
+                // Unprocessed work always re-enters the processing
+                // loop, whatever the stream state — no deadline caps
+                // the processing itself.
+                (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
+                (5, 1, None, 999, Reenter, "work trumps missing stream"),
+                // Workers still draining: keep polling inside the
+                // ceiling, re-enter the loop once it expires.
+                (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
+                (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
+                // Ceiling with a stream that never connected: the
+                // pre-c90f8d309 semantics — a dead stream must not
+                // hold the session open.
+                (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
+            ];
+            for (workers, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
+                assert_eq!(
+                    drain_verdict(
+                        *workers,
+                        *unprocessed,
+                        connected_ms.map(ms),
+                        ms(*elapsed_ms)
+                    ),
+                    *expected,
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    /// The lifecycle of a note's spend mark across spend detection and `reset_spends`.
+    ///
+    /// The wallet remembers an on-chain spend observation in exactly one durable place: the
+    /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
+    /// buffer — entries are consumed on detection (`detect_shielded_spends`) and pruned
+    /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
+    /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
+    /// one durable place.
+    mod spend_reset_lifecycle {
+        use std::collections::HashMap;
+
+        use sapling_crypto::value::NoteValue;
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::{consensus::BlockHeight, memo::Memo};
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use crate::{
+            mocks::{MockWallet, MockWalletBuilder},
+            sync::{set_transactions_failed, spend},
+            wallet::{
+                NullifierMap, OutputId, ScanTarget, WalletNote, WalletTransaction,
+                traits::{SyncNullifiers, SyncTransactions},
+            },
+        };
+
+        const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
+        const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+        const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+        const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
+        const NOTE_NULLIFIER: sapling_crypto::Nullifier = sapling_crypto::Nullifier([42; 32]);
+
+        /// The spending transaction's wallet record in the given lifecycle state.
+        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
+            WalletTransaction::new_for_test(SPENDING_TXID, status)
+        }
+
+        /// A confirmed funding transaction holding one sapling note with a derived
+        /// nullifier, optionally already marked spent.
+        ///
+        /// The crypto-note construction duplicates `zingolib::mocks::SaplingCryptoNoteBuilder`,
+        /// which cannot be used here (zingolib depends on this crate). Relocating the note
+        /// builders down into this crate is a deferred follow-up.
+        fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
+            let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
+            let (_, recipient) = extsk.default_address();
+            let crypto_note = sapling_crypto::Note::from_parts(
+                recipient,
+                NoteValue::from_raw(100_000),
+                sapling_crypto::Rseed::AfterZip212([0; 32]),
+            );
+            let mut note = WalletNote::new_for_test(
+                OutputId::new(FUNDING_TXID, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                crypto_note,
+                Memo::Empty,
+                None,
+            )
+            .with_nullifier_for_test(NOTE_NULLIFIER);
+            note.spending_transaction = spending_transaction;
+
+            WalletTransaction::new_for_test(
+                FUNDING_TXID,
+                ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
+            )
+            .with_sapling_notes_for_test(vec![note])
+        }
+
+        fn get_spending_txid(wallet: &MockWallet) -> Option<TxId> {
+            wallet
+                .get_wallet_transactions()
+                .unwrap()
+                .get(&FUNDING_TXID)
+                .unwrap()
+                .sapling_notes()
+                .first()
+                .unwrap()
+                .spending_transaction
+        }
+
+        /// The detection pass `update_shielded_spends` performs, minus the network round
+        /// trips: match derived note nullifiers against the wallet's nullifier map and
+        /// mark the matches spent.
+        fn run_spend_detection(wallet: &mut MockWallet) {
+            let (sapling_nullifiers, orchard_nullifiers) =
+                spend::collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
+            let (sapling_targets, orchard_targets) = spend::detect_shielded_spends(
+                wallet.get_nullifiers_mut().unwrap(),
+                sapling_nullifiers,
+                orchard_nullifiers,
+            );
+            spend::update_spent_notes(wallet, sapling_targets, orchard_targets, true).unwrap();
+        }
+
+        /// A spend reset *before* the spending transaction's block is scanned heals.
+        /// When the scanner later reaches the block, `collect_nullifiers` maps the spend
+        /// and detection re-marks the note.
+        #[test]
+        fn reset_before_scan_heals_on_spend_detection() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(FUNDING_TXID, funding_transaction(None));
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Failed(SPEND_HEIGHT)),
+            );
+            let mut nullifier_map = NullifierMap::new();
+            nullifier_map.sapling.insert(
+                NOTE_NULLIFIER,
+                ScanTarget {
+                    block_height: SPEND_HEIGHT,
+                    txid: SPENDING_TXID,
+                    narrow_scan_area: false,
+                },
+            );
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .nullifier_map(nullifier_map)
+                .create_mock_wallet();
+
+            run_spend_detection(&mut wallet);
+
+            assert_eq!(get_spending_txid(&wallet), Some(SPENDING_TXID));
+            // Detection is one-shot: the observation moved out of the map into the note.
+            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+        }
+
+        /// Failure-marking a transaction that is `Confirmed` on chain must not
+        /// destroy the wallet's knowledge of the spend.
+        ///
+        /// Once detection has consumed the nullifier-map entry (and cleanup has pruned the
+        /// range behind the fully-scanned frontier), the note's `spending_transaction`
+        /// field is the wallet's only durable record of the on-chain spend. If
+        /// `set_transactions_failed` erased it, the note would become a permanent phantom
+        /// unspent note: every future proposal selects it and is rejected as a
+        /// double-spend, and no forward sync can correct it.
+        ///
+        /// The damage is permanent IFF the spending block has already been scanned:
+        /// detection consumes the nullifier-map entry at scan time, and scan time is
+        /// exactly when the record becomes `Confirmed` (scan ranges complete out of
+        /// order, so this can precede the fully-scanned frontier reaching that height).
+        /// If the reset lands before that block is scanned, the future scan re-observes
+        /// the nullifier and heals the wallet
+        /// (see [`reset_before_scan_heals_on_spend_detection`]). This equivalence is why
+        /// guarding the failure path on `Confirmed` status is coextensive with the harm.
+        ///
+        /// `set_transactions_failed` therefore refuses to fail a `Confirmed` transaction:
+        /// the record keeps its status and the spend mark survives. Only truncation may
+        /// invalidate mined transactions (via `set_transactions_failed_unchecked`),
+        /// because it simultaneously reopens the affected scan ranges.
+        #[test]
+        fn failing_a_confirmed_transaction_must_not_destroy_the_spend_observation() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(FUNDING_TXID, funding_transaction(Some(SPENDING_TXID)));
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT)),
+            );
+            // The map entry was consumed by detection and pruned by cleanup: empty map.
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .create_mock_wallet();
+
+            // A late failure marking (e.g. an expiry decision racing the scanner) targets
+            // a transaction that is confirmed on chain.
+            set_transactions_failed(
+                wallet.get_wallet_transactions_mut().unwrap(),
+                vec![SPENDING_TXID],
+            );
+
+            // A mined transaction cannot fail: the record keeps its `Confirmed` status.
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&SPENDING_TXID)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+
+            // The spend must remain detectable: after a detection pass the note is still
+            // marked spent.
+            run_spend_detection(&mut wallet);
+            assert_eq!(
+                get_spending_txid(&wallet),
+                Some(SPENDING_TXID),
+                "the on-chain spend observation was destroyed: \
+                 the note is now a permanent phantom unspent note"
+            );
+        }
+
+        /// A scanned transaction record replaces an existing `Failed` record
+        /// wholesale, because `extend_wallet_transactions` merges via `HashMap::extend`.
+        /// This is why the reset-before-scan sequence heals completely.
+        #[test]
+        fn scanned_transaction_overwrites_failed_record() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(
+                SPENDING_TXID,
+                spending_record(ConfirmationStatus::Failed(SPEND_HEIGHT)),
+            );
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .create_mock_wallet();
+
+            wallet
+                .extend_wallet_transactions(HashMap::from([(
+                    SPENDING_TXID,
+                    spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT)),
+                )]))
+                .unwrap();
+
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&SPENDING_TXID)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+        }
+    }
+
     mod checked_height_validation {
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::local_consensus::LocalNetwork;
@@ -1903,6 +2458,7 @@ mod test {
             nu5: Some(BlockHeight::from_u32(3)),
             nu6: Some(BlockHeight::from_u32(3)),
             nu6_1: Some(BlockHeight::from_u32(3)),
+            nu6_2: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height

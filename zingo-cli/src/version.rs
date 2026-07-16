@@ -1,5 +1,5 @@
-//! Version
-//! TODO: Add Mod Description Here!
+//! Crate version constant for `zingo-cli`.
 
-/// TODO: Add Doc Comment Here!
+/// The current version of the `zingo-cli` crate, used in `--version` output
+/// and the clap `Command` definition.
 pub const VERSION: &str = "0.1.1";

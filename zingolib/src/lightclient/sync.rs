@@ -7,6 +7,9 @@ use std::time::Duration;
 use futures::FutureExt;
 use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
 use pepper_sync::wallet::SyncMode;
+use tokio::time::MissedTickBehavior;
+use tokio::time::interval;
+use tokio::time::timeout;
 
 use crate::data::PollReport;
 use crate::wallet::error::WalletError;
@@ -14,6 +17,8 @@ use crate::wallet::error::WalletError;
 use super::LightClient;
 use super::SyncResult;
 use super::error::LightClientError;
+
+const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);
 
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
@@ -26,7 +31,7 @@ impl LightClient {
             ));
         }
 
-        let client = self.indexer.get_zcb_client().await?;
+        let client = self.require_indexer()?.clone();
         let chain_type = self.chain_type();
         let sync_config = self
             .wallet()
@@ -41,6 +46,42 @@ impl LightClient {
             pepper_sync::sync(client, &chain_type, wallet, sync_mode, sync_config).await
         });
         self.sync_handle = Some(sync_handle);
+
+        if timeout(SYNC_START_TIMEOUT, async {
+            let mut interval = interval(Duration::from_millis(50));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            interval.tick().await;
+            while self.sync_mode() == SyncMode::NotRunning {
+                interval.tick().await;
+            }
+        })
+        .await
+        .is_err()
+        {
+            match self.poll_sync() {
+                PollReport::Ready(sync_result) => {
+                    // sync can only return an error in this context so ignore success and return errror.
+                    let _ignore_sync_success = sync_result?;
+                }
+                PollReport::NotReady => {
+                    // this error should never be reached.
+                    // timeout only occurs when sync has returned an error so handle will always be ready.
+                    // cleans up sync handle and sets sync mode back to 'not running'.
+                    if let Some(sync_handle) = self.sync_handle.take() {
+                        sync_handle.abort();
+                        let _ignore_cancelled = sync_handle.await;
+                    }
+                    self.sync_mode
+                        .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+                    return Err(LightClientError::SyncLaunchError);
+                }
+                PollReport::NoHandle => {
+                    // this error should never be reached.
+                    // sync handle must exist in this scope.
+                    return Err(LightClientError::SyncLaunchError);
+                }
+            }
+        }
 
         Ok(())
     }
@@ -120,6 +161,8 @@ impl LightClient {
                 PollReport::NotReady
             }
         } else {
+            self.sync_mode
+                .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
             PollReport::NoHandle
         }
     }
@@ -128,7 +171,11 @@ impl LightClient {
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        // Completion-detection quantum: at 500ms this added up to half a
+        // second of pure quantization to every sync_and_await; the sync
+        // engine's own session on a regtest chain runs ~1.4s, so the poll
+        // interval was a visible fraction of every test's sync cost.
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
@@ -183,10 +230,7 @@ pub mod test {
     pub(crate) async fn sync_example_wallet(
         wallet_case: examples::NetworkSeedVersion,
     ) -> LightClient {
-        // install default crypto provider (ring)
-        if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-            log::error!("Error installing crypto provider: {e:?}");
-        }
+        zingo_netutils::ensure_default_crypto_provider();
 
         let mut lc = wallet_case.load_example_wallet().await;
 

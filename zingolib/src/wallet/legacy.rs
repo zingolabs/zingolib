@@ -12,16 +12,17 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
-use zcash_client_backend::{
-    proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
-};
+use zcash_client_backend::serialization::shardtree::read_shard;
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::{Memo, MemoBytes},
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
 };
+use zcash_protocol::{
+    consensus::BlockHeight,
+    memo::{Memo, MemoBytes},
+};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
@@ -991,8 +992,10 @@ impl OutgoingTxData {
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
-/// TODO: Add Doc Comment Here!
-pub const MAX_REORG: usize = 100;
+/// Witness-tree checkpoint retention depth, derived from the
+/// repository's single max-reorg truth (which in turn mirrors zebra's
+/// finalization boundary — see the source constant's docs).
+pub const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]

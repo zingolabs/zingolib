@@ -110,9 +110,11 @@ pub mod error;
 pub mod keys;
 pub(crate) mod scan;
 pub mod sync;
+pub(crate) mod utils;
 pub mod wallet;
 pub(crate) mod witness;
 
+use shardtree::store::ShardStore;
 pub use sync::add_scan_targets;
 pub use sync::reset_spends;
 pub use sync::scan_pending_transaction;
@@ -124,19 +126,44 @@ pub use sync::sync_status;
 mod mocks;
 
 use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::consensus::BlockHeight;
+
+use crate::wallet::{
+    NoteInterface, OrchardNote, OrchardShardStore, SaplingNote, SaplingShardStore,
+    WalletTransaction,
+};
 
 pub(crate) trait SyncDomain {
     const SHIELDED_PROTOCOL: ShieldedProtocol;
+
+    type Note: NoteInterface;
+    type ShardStore: ShardStore<CheckpointId = BlockHeight>;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note>;
 }
 
 pub(crate) struct Sapling;
 
 impl SyncDomain for Sapling {
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+
+    type Note = SaplingNote;
+    type ShardStore = SaplingShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.sapling_notes_mut()
+    }
 }
 
 pub(crate) struct Orchard;
 
 impl SyncDomain for Orchard {
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+
+    type Note = OrchardNote;
+    type ShardStore = OrchardShardStore;
+
+    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+        wallet_transaction.orchard_notes_mut()
+    }
 }

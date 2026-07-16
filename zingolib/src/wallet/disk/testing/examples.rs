@@ -189,10 +189,10 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let lightwalletd_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
+                let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
 
                 ClientConfig::builder()
-                    .set_indexer_uri(lightwalletd_uri)
+                    .set_indexer_uri(indexer_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name(
                         self.example_wallet_path()
@@ -233,7 +233,7 @@ impl NetworkSeedVersion {
                 .build(),
         };
 
-        LightClient::new(config, false).unwrap()
+        LightClient::new(config, false).await.unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]
