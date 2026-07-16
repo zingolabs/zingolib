@@ -2,9 +2,7 @@
 
 use nonempty::NonEmpty;
 
-use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
@@ -20,13 +18,13 @@ use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
-use crate::wallet::output::OutputRef;
+use crate::wallet::spend::proposal::Proposal;
 
 /// this function handles inputs and their lifetimes to create a proposal
 pub async fn to_clients_proposal(
     sender: &mut LightClient,
     sends: &[(&LightClient, PoolType, u64, Option<&str>)],
-) -> zcash_client_backend::proposal::Proposal<zip317::FeeRule, OutputRef> {
+) -> Proposal {
     let mut subraw_receivers = vec![];
     for (recipient, pooltype, amount, memo_str) in sends {
         let address = get_base_address(recipient, *pooltype).await;
@@ -120,11 +118,11 @@ where
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
 /// returns `Ok(total_fee`, `total_received`, `total_change`)
-pub async fn follow_proposal<ChainConductor, NoteRef>(
+pub async fn follow_proposal<ChainConductor>(
     environment: &mut ChainConductor,
     sender: &mut LightClient,
     mut recipients: Vec<&mut LightClient>,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+    proposal: &Proposal,
     txids: NonEmpty<TxId>,
     test_mempool: bool,
 ) -> Result<(Zatoshis, Zatoshis, Zatoshis), String>

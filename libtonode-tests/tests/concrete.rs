@@ -135,7 +135,7 @@ fn check_view_capability_bounds(
 
 use libtonode_tests::chain_generics::LibtonodeEnvironment;
 use pepper_sync::wallet::OutputInterface;
-use zcash_client_backend::encoding::encode_payment_address_p;
+use zcash_keys::encoding::encode_payment_address_p;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::WalletConfig;

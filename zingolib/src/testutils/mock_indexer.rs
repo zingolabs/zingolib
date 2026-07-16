@@ -819,7 +819,7 @@ impl CompactTxStreamer for MockIndexerService {
 /// Decodes a transparent address string to its script bytes.
 fn taddr_script_bytes(address: &str, chain_type: &ChainType) -> Result<Vec<u8>, String> {
     use pepper_sync::keys::decode_address;
-    use zcash_client_backend::address::Address as DecodedAddress;
+    use zcash_keys::address::Address as DecodedAddress;
 
     match decode_address(chain_type, address) {
         Ok(DecodedAddress::Transparent(taddr)) => {
@@ -926,7 +926,7 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
         .wallet()
         .write()
         .await
-        .calculate_transactions(proposal, zip32::AccountId::ZERO)
+        .calculate_transactions(proposal)
         .await
         .expect("the faucet's funding transaction builds");
     assert_eq!(txids.len(), 1, "funding sends are single-step");

@@ -761,14 +761,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // 10b transparent-to-transparent is refused: transparent funds are
     // not send-spendable.
     match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
-        Err(LightClientError::SendError(SendError::ProposeSendError(
-            ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available,
-                    required,
-                },
-            ),
-        ))) => {
+        Err(LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Plan(
+            crate::wallet::spend::plan::PlanError::InsufficientFunds {
+                available,
+                required,
+            },
+        )))) => {
             assert_eq!(available, Zatoshis::from_u64(0).unwrap());
             assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
         }
@@ -779,14 +777,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     // 11 transparent-to-sapling likewise refused.
     match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
-        Err(LightClientError::SendError(SendError::ProposeSendError(
-            ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available,
-                    required,
-                },
-            ),
-        ))) => {
+        Err(LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Plan(
+            crate::wallet::spend::plan::PlanError::InsufficientFunds {
+                available,
+                required,
+            },
+        )))) => {
             assert_eq!(available, Zatoshis::from_u64(0).unwrap());
             assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
         }

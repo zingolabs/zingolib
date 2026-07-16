@@ -5,15 +5,15 @@ use zcash_protocol::value::Zatoshis;
 use zip321::TransactionRequest;
 
 use crate::ZENNIES_FOR_ZINGO_AMOUNT;
-use crate::data::proposal::ProportionalFeeProposal;
-use crate::data::proposal::ProportionalFeeShieldProposal;
-use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::Receiver;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::get_zennies_for_zingo_address;
 use crate::lightclient::LightClient;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
+use crate::wallet::spend::op_return::OpReturnData;
+use crate::wallet::spend::plan::PlanError;
+use crate::wallet::spend::proposal::Proposal;
 
 impl LightClient {
     fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
@@ -27,30 +27,31 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal from a transaction request.
+    /// OP_RETURN Data, if given, rides the final transaction of the send.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
-    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        op_return_data: Option<OpReturnData>,
+    ) -> Result<Proposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
+        let proposal = wallet.create_send_proposal(request, account_id, op_return_data)?;
+        wallet.store_proposal(proposal.clone());
 
         Ok(proposal)
     }
 
     /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
+    /// OP_RETURN Data, if given, rides the final transaction of the send.
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
         memo: Option<zcash_protocol::memo::MemoBytes>,
         account_id: zip32::AccountId,
-    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        op_return_data: Option<OpReturnData>,
+    ) -> Result<Proposal, ProposeSendError> {
         let max_send_value = self
             .max_send_value(address.clone(), zennies_for_zingo, account_id)
             .await?;
@@ -65,11 +66,8 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
+        let proposal = wallet.create_send_proposal(request, account_id, op_return_data)?;
+        wallet.store_proposal(proposal.clone());
 
         Ok(proposal)
     }
@@ -78,13 +76,10 @@ impl LightClient {
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
-    ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
+    ) -> Result<Proposal, ProposeShieldError> {
         let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_shield_proposal(account_id)?;
-        wallet.store_proposal(ZingoProposal::Shield {
-            proposal: proposal.clone(),
-            shielding_account: account_id,
-        });
+        wallet.store_proposal(proposal.clone());
 
         Ok(proposal)
     }
@@ -108,7 +103,7 @@ impl LightClient {
         zennies_for_zingo: bool,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
-        let mut wallet = self.wallet().write().await;
+        let wallet = self.wallet().write().await;
         let confirmed_balance = wallet.shielded_spendable_balance(account_id, false)?;
         let mut spendable_balance = confirmed_balance;
 
@@ -118,39 +113,33 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id);
+            let trial_proposal = wallet.create_send_proposal(request, account_id, None);
 
             match trial_proposal {
-                Err(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                        available,
-                        required,
-                    },
-                )) => {
+                Err(ProposeSendError::Plan(PlanError::InsufficientFunds {
+                    available,
+                    required,
+                })) => {
                     if let Some(shortfall) = required - confirmed_balance {
                         match spendable_balance - shortfall {
                             Some(updated_spendable) => {
                                 spendable_balance = updated_spendable;
                             }
                             None => {
-                                return Err(ProposeSendError::Proposal(
-                                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                                return Err(ProposeSendError::Plan(PlanError::InsufficientFunds {
                                     available: confirmed_balance,
                                     required,
-                                },
-                            ));
+                                }));
                             }
                         }
                     } else {
                         // bugged underflow case, required should always be larger than confirmed shielded balance to cause
                         // insufficient funds error.
                         // returns insufficient funds error with same values from original error for debugging
-                        return Err(ProposeSendError::Proposal(
-                            zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                                available,
-                                required,
-                            },
-                        ));
+                        return Err(ProposeSendError::Plan(PlanError::InsufficientFunds {
+                            available,
+                            required,
+                        }));
                     }
                 }
                 Err(e) => {
@@ -199,9 +188,9 @@ mod shielding {
             .await
             .create_shield_proposal(zip32::AccountId::ZERO);
         match propose_shield_result {
-            Err(ProposeShieldError::Component(
-                zcash_client_backend::data_api::error::Error::ScanRequired,
-            )) => true,
+            Err(ProposeShieldError::Plan(crate::wallet::spend::plan::PlanError::SyncRequired)) => {
+                true
+            }
             _ => panic!("Unexpected error state!"),
         };
     }
@@ -284,12 +273,13 @@ mod send_all {
                 false,
                 None,
                 zip32::AccountId::ZERO,
+                None,
             )
             .await;
 
         match proposal_error {
-            Err(ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+            Err(ProposeSendError::Plan(
+                crate::wallet::spend::plan::PlanError::InsufficientFunds {
                     available: a,
                     required: r,
                 },
@@ -319,6 +309,7 @@ mod send_all {
                 false,
                 None,
                 zip32::AccountId::ZERO,
+                None,
             )
             .await;
 
@@ -359,18 +350,17 @@ mod send_all {
                 false,
                 None,
                 zip32::AccountId::ZERO,
+                None,
             )
             .await
             .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let mut selected: Vec<u64> = step
             .shielded_inputs()
-            .expect("a shielded-funds send-all selects shielded inputs")
-            .notes()
             .iter()
-            .map(|note| u64::from(note.note().value()))
+            .map(|input| u64::from(input.value()))
             .collect();
         selected.sort_unstable();
         assert_eq!(
@@ -378,7 +368,7 @@ mod send_all {
             [50_000, 100_000],
             "send-all selects exactly the non-dust notes of both pools"
         );
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         let payment: u64 = step
             .transaction_request()
             .payments()
@@ -387,8 +377,7 @@ mod send_all {
             .sum();
         assert_eq!(payment + fee, viable_values.iter().sum::<u64>());
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -416,13 +405,13 @@ mod send_all {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let proposal = client
-            .propose_send_all(destination, false, None, zip32::AccountId::ZERO)
+            .propose_send_all(destination, false, None, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
-        let fee = u64::from(step.balance().fee_required());
+        let step = proposal.final_step();
+        let fee = u64::from(step.fee());
         let payment: u64 = step
             .transaction_request()
             .payments()
@@ -455,12 +444,13 @@ mod send_all {
                 true,
                 None,
                 zip32::AccountId::ZERO,
+                None,
             )
             .await
             .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let zennies_payments: Vec<u64> = step
             .transaction_request()
             .payments()
@@ -474,7 +464,7 @@ mod send_all {
             "exactly one zenny payment, at the fixed donation amount"
         );
         assert_eq!(step.transaction_request().payments().len(), 2);
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         let payment: u64 = step
             .transaction_request()
             .payments()
@@ -573,7 +563,7 @@ mod simpool {
             .unwrap_err()
             .to_string(),
             format!(
-                "Insufficient balance (have {}, need {} including fee)",
+                "insufficient funds: {} available of {} required",
                 secondary_fund,
                 tertiary_fund + expected_fee
             )
@@ -596,7 +586,7 @@ mod simpool {
             .unwrap_err()
             .to_string(),
             format!(
-                "Insufficient balance (have {}, need {} including fee)",
+                "insufficient funds: {} available of {} required",
                 0,
                 try_amount + expected_fee
             )
@@ -735,11 +725,10 @@ mod pool_matrix {
         .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
-        assert_eq!(u64::from(step.balance().fee_required()), expected_fee);
+        let step = proposal.final_step();
+        assert_eq!(u64::from(step.fee()), expected_fee);
         let proposed_change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -936,15 +925,14 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
-        let fee = u64::from(step.balance().fee_required());
+        let step = proposal.final_step();
+        let fee = u64::from(step.fee());
         assert_eq!(
             fee,
             fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -974,23 +962,20 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let selected: Vec<u64> = step
             .shielded_inputs()
-            .expect("a shielded payment selects shielded inputs")
-            .notes()
             .iter()
-            .map(|note| u64::from(note.note().value()))
+            .map(|input| u64::from(input.value()))
             .collect();
         assert_eq!(selected, [note_value, note_value], "both notes gathered");
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         assert_eq!(
             fee,
             fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -1023,23 +1008,20 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let selected: Vec<u64> = step
             .shielded_inputs()
-            .expect("a shielded payment selects shielded inputs")
-            .notes()
             .iter()
-            .map(|note| u64::from(note.note().value()))
+            .map(|input| u64::from(input.value()))
             .collect();
         assert_eq!(selected, [ironwood_value], "the dust note is not selected");
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         assert_eq!(
             fee,
             fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -1062,12 +1044,11 @@ mod proposal_shape {
 
         let proposal = client.propose_shield(zip32::AccountId::ZERO).await.unwrap();
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         assert_eq!(step.transparent_inputs().len(), 1);
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();
@@ -1097,14 +1078,11 @@ mod proposal_shape {
 
         let proposal = client.propose_shield(zip32::AccountId::ZERO).await.unwrap();
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         assert_eq!(step.transparent_inputs().len(), 4);
-        assert_eq!(u64::from(step.balance().fee_required()), 30_000);
-        assert_eq!(step.balance().proposed_change().len(), 1);
-        assert_eq!(
-            u64::from(step.balance().proposed_change()[0].value()),
-            4 * coin_value - 30_000
-        );
+        assert_eq!(u64::from(step.fee()), 30_000);
+        assert_eq!(step.change().len(), 1);
+        assert_eq!(u64::from(step.change()[0].value()), 4 * coin_value - 30_000);
     }
 
     /// Migrated from libtonode `slow::zero_value_change`: a send that
@@ -1132,12 +1110,12 @@ mod proposal_shape {
         .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
-        assert_eq!(u64::from(step.balance().fee_required()), fee);
-        let change = step.balance().proposed_change();
+        let step = proposal.final_step();
+        assert_eq!(u64::from(step.fee()), fee);
+        let change = step.change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 0);
-        assert_eq!(change[0].output_pool(), PoolType::IRONWOOD);
+        assert_eq!(change[0].pool(), PoolType::IRONWOOD);
     }
 
     /// Migrated from libtonode `slow::zero_value_change_to_orchard_created`:
@@ -1161,14 +1139,14 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::SAPLING, true);
-        assert_eq!(u64::from(step.balance().fee_required()), fee);
+        assert_eq!(u64::from(step.fee()), fee);
         assert_eq!(note_value - sent_value - fee, 0);
-        let change = step.balance().proposed_change();
+        let change = step.change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 0);
-        assert_eq!(change[0].output_pool(), PoolType::IRONWOOD);
+        assert_eq!(change[0].pool(), PoolType::IRONWOOD);
     }
 
     /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
@@ -1181,7 +1159,7 @@ mod proposal_shape {
     #[tokio::test]
     async fn send_to_tex() {
         use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
+        use zcash_keys::address::Address;
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
         use zip321::{Payment, TransactionRequest};
@@ -1217,14 +1195,16 @@ mod proposal_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO)
+            .propose_send(request, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
 
         assert_eq!(proposal.steps().len(), 2);
-        let transparent_leg = proposal.steps().last();
         assert!(
-            !transparent_leg.prior_step_inputs().is_empty(),
+            matches!(
+                proposal,
+                crate::wallet::spend::proposal::Proposal::TexTransfer(_)
+            ),
             "the transparent leg spends step one's ephemeral output"
         );
     }
@@ -1252,23 +1232,18 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let selected_values: Vec<u64> = step
             .shielded_inputs()
-            .expect("a shielded-funds send selects shielded inputs")
-            .notes()
             .iter()
-            .map(|note| u64::from(note.note().value()))
+            .map(|input| u64::from(input.value()))
             .collect();
         assert_eq!(
             selected_values,
             [50_000],
             "exactly the viable ironwood note, none of the dust"
         );
-        assert_eq!(
-            u64::from(step.balance().fee_required()),
-            2 * u64::from(MARGINAL_FEE)
-        );
+        assert_eq!(u64::from(step.fee()), 2 * u64::from(MARGINAL_FEE));
     }
 
     /// Migrated from the chain_generics `note_selection_order` fixture's
@@ -1291,19 +1266,16 @@ mod proposal_shape {
                 .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let selected_values: Vec<u64> = step
             .shielded_inputs()
-            .expect("a shielded-funds send selects shielded inputs")
-            .notes()
             .iter()
-            .map(|note| u64::from(note.note().value()))
+            .map(|input| u64::from(input.value()))
             .collect();
         let selected_total: u64 = selected_values.iter().sum();
-        let fee = u64::from(step.balance().fee_required());
+        let fee = u64::from(step.fee());
         let change: u64 = step
-            .balance()
-            .proposed_change()
+            .change()
             .iter()
             .map(|change| u64::from(change.value()))
             .sum();

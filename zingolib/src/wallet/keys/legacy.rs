@@ -9,7 +9,6 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use zcash_address::unified::Typecode;
-use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::{
     address::UnifiedAddress,
@@ -42,9 +41,6 @@ pub struct WalletCapability {
     /// TODO:  Is there any reason to have this field, apart from the
     /// `unified_addresses` field?
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
-    // TODO: read/write for ephmereral addresses
-    // TODO: Remove this field and exclusively use the TxMap field instead
-    rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     /// Cache of `unified_addresses`
     unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     addresses_write_lock: AtomicBool,
@@ -54,7 +50,6 @@ impl Default for WalletCapability {
         Self {
             unified_key_store: UnifiedKeyStore::Empty,
             transparent_child_addresses: Arc::new(AppendOnlyVec::new()),
-            rejection_addresses: Arc::new(AppendOnlyVec::new()),
             unified_addresses: AppendOnlyVec::new(),
             addresses_write_lock: AtomicBool::new(false),
         }

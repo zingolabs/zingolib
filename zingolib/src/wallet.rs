@@ -20,7 +20,6 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
-use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
@@ -41,7 +40,6 @@ pub mod spend;
 pub mod summary;
 pub mod sync;
 pub mod transaction;
-mod zcb_traits;
 
 pub use pepper_sync::config::{
     PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
@@ -147,7 +145,7 @@ pub struct LightWallet {
     /// starts fresh.
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
-    send_proposal: Option<ZingoProposal>,
+    send_proposal: Option<spend::proposal::Proposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub(crate) save_required: bool,
 }

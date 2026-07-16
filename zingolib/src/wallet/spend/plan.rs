@@ -6,17 +6,14 @@
 //! mutation. Fee arithmetic stays upstream ([`super::fee`]); this module
 //! decides only what the fee rule is fed.
 //!
-//! During the migration the wallet queries go through the same
-//! `zcash_client_backend` trait impls the old path uses, so the
-//! equivalence tests at the bottom compare this planner against
-//! `propose_transfer`/`propose_shielding` input-for-input and
-//! fee-for-fee. The P5 cutover inlines those query bodies and deletes
-//! the trait impls.
+//! The migration's comparative equivalence suite proved this planner
+//! fee-for-fee and input-for-input equal to `zcash_client_backend`
+//! 0.24's `propose_transfer`/`propose_shielding` on every scenario
+//! class before that dependency was removed; the invariant tests at
+//! the bottom are its survivors.
 
 use std::collections::BTreeMap;
 
-use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
-use zcash_client_backend::data_api::{InputSource, TargetValue, WalletRead};
 use zcash_keys::address::Address;
 use zcash_primitives::transaction::fees::transparent::InputSize;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -405,12 +402,9 @@ pub fn plan_transfer(
     account_id: zip32::AccountId,
     op_return_data: Option<OpReturnData>,
 ) -> Result<Proposal, PlanError> {
-    let confirmations_policy =
-        ConfirmationsPolicy::new_symmetrical(wallet.wallet_settings.min_confirmations, false);
-    let (zcb_target_height, anchor_height) =
-        WalletRead::get_target_and_anchor_heights(wallet, confirmations_policy.trusted())?
-            .ok_or(PlanError::SyncRequired)?;
-    let target_height = BlockHeight::from(zcb_target_height);
+    let (target_height, anchor_height) = wallet
+        .target_and_anchor_heights(wallet.wallet_settings.min_confirmations)
+        .ok_or(PlanError::SyncRequired)?;
     let ironwood_active = wallet
         .chain_type
         .activation_height(NetworkUpgrade::Nu6_3)
@@ -530,16 +524,12 @@ pub fn plan_transfer(
             }
         }
 
-        let received = InputSource::select_spendable_notes(
-            wallet,
+        selected = wallet.select_spendable_shielded_inputs(
             account_id,
-            TargetValue::AtLeast(amount_required),
+            amount_required,
             &pool_preference,
-            zcb_target_height,
-            confirmations_policy,
-            &[],
+            anchor_height,
         )?;
-        selected = received_notes_by_pool(&received);
         let new_available = selected
             .values()
             .flatten()
@@ -555,50 +545,175 @@ pub fn plan_transfer(
     }
 }
 
-fn received_notes_by_pool(
-    received: &zcash_client_backend::data_api::ReceivedNotes<crate::wallet::output::OutputRef>,
-) -> BTreeMap<ShieldedPool, Vec<ShieldedInput>> {
-    let mut by_pool: BTreeMap<ShieldedPool, Vec<ShieldedInput>> = BTreeMap::new();
-    by_pool.insert(
-        ShieldedPool::Sapling,
-        received
-            .sapling()
-            .iter()
-            .map(|note| {
-                ShieldedInput::from_parts(
-                    note.internal_note_id().clone(),
-                    Zatoshis::from_u64(note.note().value().inner()).expect("note values are valid"),
-                )
-            })
-            .collect(),
-    );
-    by_pool.insert(
-        ShieldedPool::Orchard,
-        received
-            .orchard()
-            .iter()
-            .map(|note| {
-                ShieldedInput::from_parts(
-                    note.internal_note_id().clone(),
-                    Zatoshis::from_u64(note.note().value().inner()).expect("note values are valid"),
-                )
-            })
-            .collect(),
-    );
-    by_pool.insert(
-        ShieldedPool::Ironwood,
-        received
-            .ironwood()
-            .iter()
-            .map(|note| {
-                ShieldedInput::from_parts(
-                    note.internal_note_id().clone(),
-                    Zatoshis::from_u64(note.note().value().inner()).expect("note values are valid"),
-                )
-            })
-            .collect(),
-    );
-    by_pool
+impl LightWallet {
+    /// The target height (one above the wallet's chain view) and the
+    /// spend anchor at the given minimum confirmations, bounded by the
+    /// highest checkpoint. `None` when the wallet has no synced view.
+    pub(crate) fn target_and_anchor_heights(
+        &self,
+        min_confirmations: std::num::NonZeroU32,
+    ) -> Option<(BlockHeight, BlockHeight)> {
+        use shardtree::store::ShardStore as _;
+
+        let target_height = self.sync_state.last_known_chain_height()? + 1;
+        let max_checkpoint_height = self
+            .shard_trees
+            .sapling
+            .store()
+            .max_checkpoint_id()
+            .expect("infallible")
+            .expect("should be at least 1 checkpoint");
+        let anchor_height = std::cmp::min(
+            max_checkpoint_height,
+            target_height - min_confirmations.get(),
+        );
+        Some((target_height, std::cmp::max(1.into(), anchor_height)))
+    }
+
+    /// Greedily selects spendable shielded notes across the source pools
+    /// until `at_least` is covered, guaranteed-unspent notes first, the
+    /// requested pools first, with notes soft-reserved for pending
+    /// migration parts withheld until nothing else can satisfy the
+    /// request.
+    pub(crate) fn select_spendable_shielded_inputs(
+        &self,
+        account: zip32::AccountId,
+        at_least: Zatoshis,
+        sources: &[ShieldedPool],
+        anchor_height: BlockHeight,
+    ) -> Result<BTreeMap<ShieldedPool, Vec<ShieldedInput>>, WalletError> {
+        use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, SaplingNote};
+
+        use crate::wallet::output::{OutputRef, RemainingNeeded};
+
+        let mut exclude_sapling: Vec<OutputId> = Vec::new();
+        let mut exclude_orchard: Vec<OutputId> = Vec::new();
+        let mut exclude_ironwood: Vec<OutputId> = Vec::new();
+
+        // Soft reservation: notes bound to pending migration parts are
+        // withheld from ordinary selection first, and offered again only
+        // if the request cannot be satisfied without them. The
+        // reservation biases selection and never blocks a spend.
+        let reserved_orchard: Vec<OutputId> = self
+            .migration
+            .as_ref()
+            .map(|migration| migration.reserved_output_ids().into_iter().collect())
+            .unwrap_or_default();
+
+        let mut remaining_value_needed = RemainingNeeded::Positive(at_least);
+
+        // prioritises selecting spendable notes that are guaranteed to be
+        // unspent first
+        let mut selected_sapling: Vec<(OutputId, u64)> = Vec::new();
+        let mut selected_orchard: Vec<(OutputId, u64)> = Vec::new();
+        let mut selected_ironwood: Vec<(OutputId, u64)> = Vec::new();
+        exclude_orchard.extend(reserved_orchard.iter().copied());
+        for withhold_reserved in [true, false] {
+            if !withhold_reserved {
+                let unmet = matches!(
+                    remaining_value_needed,
+                    RemainingNeeded::Positive(value) if value.into_u64() > 0
+                );
+                if reserved_orchard.is_empty() || !unmet {
+                    break;
+                }
+                exclude_orchard.retain(|output_id| !reserved_orchard.contains(output_id));
+            }
+            for include_potentially_spent_notes in [false, true] {
+                let mut select_pool = |pool: ShieldedPool,
+                                       remaining: &mut RemainingNeeded|
+                 -> Result<(), WalletError> {
+                    match pool {
+                        ShieldedPool::Sapling => {
+                            let notes: Vec<(OutputId, u64)> = self
+                                .select_spendable_notes_by_pool::<SaplingNote>(
+                                    remaining,
+                                    anchor_height,
+                                    &exclude_sapling,
+                                    account,
+                                    include_potentially_spent_notes,
+                                )?
+                                .into_iter()
+                                .map(|note| (note.output_id(), note.value()))
+                                .collect();
+                            exclude_sapling.extend(notes.iter().map(|(id, _)| *id));
+                            selected_sapling.extend(notes);
+                        }
+                        ShieldedPool::Orchard => {
+                            let notes: Vec<(OutputId, u64)> = self
+                                .select_spendable_notes_by_pool::<OrchardNote>(
+                                    remaining,
+                                    anchor_height,
+                                    &exclude_orchard,
+                                    account,
+                                    include_potentially_spent_notes,
+                                )?
+                                .into_iter()
+                                .map(|note| (note.output_id(), note.value()))
+                                .collect();
+                            exclude_orchard.extend(notes.iter().map(|(id, _)| *id));
+                            selected_orchard.extend(notes);
+                        }
+                        ShieldedPool::Ironwood => {
+                            let notes: Vec<(OutputId, u64)> = self
+                                .select_spendable_notes_by_pool::<IronwoodNote>(
+                                    remaining,
+                                    anchor_height,
+                                    &exclude_ironwood,
+                                    account,
+                                    include_potentially_spent_notes,
+                                )?
+                                .into_iter()
+                                .map(|note| (note.output_id(), note.value()))
+                                .collect();
+                            exclude_ironwood.extend(notes.iter().map(|(id, _)| *id));
+                            selected_ironwood.extend(notes);
+                        }
+                    }
+                    Ok(())
+                };
+
+                // prioritise note selection for the given `sources`, then
+                // fall through to every pool
+                for pool in sources {
+                    select_pool(*pool, &mut remaining_value_needed)?;
+                }
+                for pool in [
+                    ShieldedPool::Sapling,
+                    ShieldedPool::Orchard,
+                    ShieldedPool::Ironwood,
+                ] {
+                    select_pool(pool, &mut remaining_value_needed)?;
+                }
+            }
+        }
+
+        let to_inputs = |selected: Vec<(OutputId, u64)>, pool: ShieldedPool| {
+            selected
+                .into_iter()
+                .map(|(output_id, value)| {
+                    ShieldedInput::from_parts(
+                        OutputRef::new(output_id, PoolType::Shielded(pool)),
+                        Zatoshis::from_u64(value).expect("note values are valid"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut by_pool = BTreeMap::new();
+        by_pool.insert(
+            ShieldedPool::Sapling,
+            to_inputs(selected_sapling, ShieldedPool::Sapling),
+        );
+        by_pool.insert(
+            ShieldedPool::Orchard,
+            to_inputs(selected_orchard, ShieldedPool::Orchard),
+        );
+        by_pool.insert(
+            ShieldedPool::Ironwood,
+            to_inputs(selected_ironwood, ShieldedPool::Ironwood),
+        );
+        Ok(by_pool)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -686,12 +801,9 @@ pub fn plan_shield(
     wallet: &LightWallet,
     account_id: zip32::AccountId,
 ) -> Result<Proposal, PlanError> {
-    let confirmations_policy =
-        ConfirmationsPolicy::new_symmetrical(wallet.wallet_settings.min_confirmations, false);
-    let (zcb_target_height, anchor_height) =
-        WalletRead::get_target_and_anchor_heights(wallet, confirmations_policy.trusted())?
-            .ok_or(PlanError::SyncRequired)?;
-    let target_height = BlockHeight::from(zcb_target_height);
+    let (target_height, anchor_height) = wallet
+        .target_and_anchor_heights(wallet.wallet_settings.min_confirmations)
+        .ok_or(PlanError::SyncRequired)?;
     let ironwood_active = wallet
         .chain_type
         .activation_height(NetworkUpgrade::Nu6_3)
@@ -771,340 +883,25 @@ pub fn plan_shield(
 }
 
 #[cfg(test)]
-mod equivalence {
-    //! Migration scaffolding (deleted at the P5 cutover): the planner
-    //! must match `zcash_client_backend`'s proposals input-for-input and
-    //! fee-for-fee on the same wallet state.
-
-    use std::collections::BTreeSet;
+mod tests {
+    //! Invariant tests, the survivors of the migration's comparative
+    //! equivalence suite (which died with the old zcb path at the P5
+    //! cutover, having proven the planner fee-for-fee equal to
+    //! `propose_transfer`/`propose_shielding` on every scenario class).
 
     use zcash_protocol::value::Zatoshis;
 
-    use super::{plan_shield, plan_transfer};
-    use crate::data::proposal::ProportionalFeeProposal;
+    use super::plan_transfer;
     use crate::testutils::lightclient::from_inputs::transaction_request_from_send_inputs;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::wallet::LightWallet;
     use crate::wallet::keys::unified::ReceiverSelection;
-    use crate::wallet::spend::proposal::Proposal;
+    use crate::wallet::spend::op_return::OpReturnData;
 
-    /// Asserts our proposal and zcb's agree on step count, per-step fee,
-    /// non-ephemeral change (value and pool), and selected shielded
-    /// inputs.
-    fn assert_equivalent(ours: &Proposal, theirs: &ProportionalFeeProposal) {
-        let our_steps = ours.steps();
-        assert_eq!(our_steps.len(), theirs.steps().len(), "step count");
-
-        for (index, (our_step, their_step)) in
-            our_steps.iter().zip(theirs.steps().iter()).enumerate()
-        {
-            assert_eq!(
-                our_step.fee(),
-                their_step.balance().fee_required(),
-                "fee of step {index}"
-            );
-
-            let their_change: Vec<_> = their_step
-                .balance()
-                .proposed_change()
-                .iter()
-                .filter(|change| !change.is_ephemeral())
-                .collect();
-            assert_eq!(
-                our_step.change().len(),
-                their_change.len(),
-                "change count of step {index}"
-            );
-            for (our_change, their_change) in our_step.change().iter().zip(their_change) {
-                assert_eq!(
-                    our_change.value(),
-                    their_change.value(),
-                    "change value of step {index}"
-                );
-                assert_eq!(
-                    our_change.pool(),
-                    their_change.output_pool(),
-                    "change pool of step {index}"
-                );
-            }
-
-            let our_inputs: BTreeSet<_> = our_step
-                .shielded_inputs()
-                .iter()
-                .map(|input| input.note().output_id())
-                .collect();
-            let their_inputs: BTreeSet<_> = their_step
-                .shielded_inputs()
-                .map(|inputs| {
-                    inputs
-                        .notes()
-                        .iter()
-                        .map(|note| note.internal_note_id().output_id())
-                        .collect()
-                })
-                .unwrap_or_default();
-            assert_eq!(our_inputs, their_inputs, "inputs of step {index}");
-        }
-    }
-
-    fn assert_transfer_equivalent(
-        wallet: &mut LightWallet,
-        receivers: Vec<(&str, u64, Option<&str>)>,
-    ) {
-        let request = transaction_request_from_send_inputs(receivers)
-            .expect("valid send inputs form a request");
-        let ours = plan_transfer(wallet, request.clone(), zip32::AccountId::ZERO, None)
-            .expect("planner plans what zcb proposes");
-        let theirs = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
-            .expect("zcb proposes what the planner plans");
-        assert_equivalent(&ours, &theirs);
-    }
-
+    /// OP_RETURN Data is fee-counted by its real serialized size: a
+    /// 92-byte null-data output on a purely shielded send adds exactly
+    /// ceil(92/34) = 3 marginal fees.
     #[test]
-    fn orchard_to_orchard_only_ua() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(200_000)
-                .build();
-        let (_, address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let address = address.encode(&wallet.chain_type);
-
-        assert_transfer_equivalent(&mut wallet, vec![(address.as_str(), 100_000, None)]);
-    }
-
-    #[test]
-    fn orchard_to_sapling_cross_pool_with_memo() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(100_000)
-                .orchard_note(50_000)
-                .build();
-        let mut external =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let (_, sapling_destination) = external
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let sapling_destination = sapling_destination.encode(&external.chain_type);
-
-        assert_transfer_equivalent(
-            &mut wallet,
-            vec![(sapling_destination.as_str(), 10_000, Some("hello"))],
-        );
-    }
-
-    #[test]
-    fn multi_payment_multi_pool() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(500_000)
-                .sapling_note(300_000)
-                .build();
-        let (_, orchard_address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let (_, sapling_address) = wallet
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let orchard_address = orchard_address.encode(&wallet.chain_type);
-        let sapling_address = sapling_address.encode(&wallet.chain_type);
-
-        assert_transfer_equivalent(
-            &mut wallet,
-            vec![
-                (orchard_address.as_str(), 100_000, None),
-                (sapling_address.as_str(), 100_000, Some("crossing")),
-            ],
-        );
-    }
-
-    #[test]
-    fn multiple_notes_selected_when_one_cannot_cover() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(60_000)
-                .orchard_note(60_000)
-                .orchard_note(60_000)
-                .build();
-        let (_, address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let address = address.encode(&wallet.chain_type);
-
-        assert_transfer_equivalent(&mut wallet, vec![(address.as_str(), 150_000, None)]);
-    }
-
-    /// Ironwood spends pin the V6 bundle's cross-address action count:
-    /// three spends against two outputs (payment and change) must count
-    /// as max(3, 2) actions, not 3 + 2.
-    #[test]
-    fn ironwood_notes_multi_selection() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .ironwood_note(60_000)
-                .ironwood_note(60_000)
-                .ironwood_note(60_000)
-                .build();
-        let (_, address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let address = address.encode(&wallet.chain_type);
-
-        assert_transfer_equivalent(&mut wallet, vec![(address.as_str(), 150_000, None)]);
-    }
-
-    #[test]
-    fn insufficient_funds_reports_matching_amounts() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(50_000)
-                .build();
-        let (_, address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let address = address.encode(&wallet.chain_type);
-        let request = transaction_request_from_send_inputs(vec![(address.as_str(), 100_000, None)])
-            .expect("valid send inputs form a request");
-
-        let ours = plan_transfer(&wallet, request.clone(), zip32::AccountId::ZERO, None)
-            .expect_err("planner reports the shortfall");
-        let theirs = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
-            .expect_err("zcb reports the shortfall");
-
-        let super::PlanError::InsufficientFunds {
-            available,
-            required,
-        } = ours
-        else {
-            panic!("expected InsufficientFunds, got {ours:?}");
-        };
-        let crate::wallet::error::ProposeSendError::Proposal(
-            zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                available: their_available,
-                required: their_required,
-            },
-        ) = theirs
-        else {
-            panic!("expected zcb InsufficientFunds, got {theirs:?}");
-        };
-        assert_eq!(available, their_available);
-        assert_eq!(required, their_required);
-    }
-
-    /// The ZIP 320 two-step flow: step fees, the shielding step's inputs
-    /// and non-ephemeral change, and the ephemeral output's value (TEX
-    /// payments plus the exposure fee, which the shielding step funds in
-    /// advance) must all match zcb's proposal.
-    #[test]
-    fn tex_two_step_equivalence() {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
-        use zcash_transparent::address::TransparentAddress;
-        use zip321::{Payment, TransactionRequest};
-
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(5_000_000)
-                .build();
-
-        let external =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address =
-            crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &external.chain_type());
-        let request = TransactionRequest::new(vec![Payment::without_memo(
-            zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
-            Zatoshis::const_from_u64(100_000),
-        )])
-        .unwrap();
-
-        let ours = plan_transfer(&wallet, request.clone(), zip32::AccountId::ZERO, None)
-            .expect("planner plans the TEX flow");
-        let theirs = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
-            .expect("zcb proposes the TEX flow");
-        assert_equivalent(&ours, &theirs);
-
-        // The ephemeral output the shielding step funds must be worth the
-        // TEX payments plus the exposure step's fee.
-        let their_ephemeral: Vec<_> = theirs
-            .steps()
-            .first()
-            .balance()
-            .proposed_change()
-            .iter()
-            .filter(|change| change.is_ephemeral())
-            .collect();
-        assert_eq!(their_ephemeral.len(), 1, "one ephemeral output");
-        let our_exposure = ours.final_step();
-        assert_eq!(
-            their_ephemeral[0].value(),
-            (our_exposure.payment_total().unwrap() + our_exposure.fee()).unwrap(),
-            "ephemeral output value",
-        );
-    }
-
-    #[test]
-    fn shield_equivalence() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .transparent_coin(80_000)
-                .transparent_coin(30_000)
-                .build();
-
-        let ours =
-            plan_shield(&wallet, zip32::AccountId::ZERO).expect("planner shields what zcb shields");
-        let theirs = wallet
-            .create_shield_proposal(zip32::AccountId::ZERO)
-            .expect("zcb shields what the planner shields");
-
-        let our_step = ours.final_step();
-        let their_step = theirs.steps().first();
-        assert_eq!(our_step.fee(), their_step.balance().fee_required(), "fee");
-        let their_change = their_step.balance().proposed_change();
-        assert_eq!(our_step.change().len(), their_change.len(), "change count");
-        assert_eq!(
-            our_step.change()[0].value(),
-            their_change[0].value(),
-            "shielded amount"
-        );
-        assert_eq!(
-            our_step.change()[0].pool(),
-            their_change[0].output_pool(),
-            "change pool"
-        );
-        let our_coins: BTreeSet<_> = our_step
-            .transparent_inputs()
-            .iter()
-            .map(|coin| coin.coin())
-            .collect();
-        let their_coins: BTreeSet<_> = their_step
-            .transparent_inputs()
-            .iter()
-            .map(|utxo| {
-                pepper_sync::wallet::OutputId::new(*utxo.outpoint().txid(), utxo.outpoint().n())
-            })
-            .collect();
-        assert_eq!(our_coins, their_coins, "coins");
-    }
-
-    #[test]
-    fn op_return_data_raises_the_fee_when_it_crosses_a_size_boundary() {
-        use crate::wallet::spend::op_return::OpReturnData;
-
+    fn op_return_data_is_priced_into_the_fee() {
         let mut wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                 .orchard_note(500_000)
@@ -1126,14 +923,57 @@ mod equivalence {
         )
         .expect("plans with data");
 
-        // A purely shielded send has no transparent outputs; 80 bytes of
-        // OP_RETURN Data adds a 92-byte output = ceil(92/34) = 3 logical
-        // actions over the shielded baseline, so the fee strictly rises
-        // by exactly those three marginal fees.
         assert_eq!(with.op_return_data().unwrap().as_bytes(), &[0xAB; 80]);
         assert_eq!(
             (with.final_step().fee() - without.final_step().fee()).unwrap(),
             Zatoshis::const_from_u64(15_000),
         );
+    }
+
+    /// A TEX flow's ephemeral output funds the exposure step exactly:
+    /// its value is the TEX payments plus the exposure fee, so the
+    /// exposure step balances to zero change.
+    #[test]
+    fn tex_ephemeral_output_funds_the_exposure_step_exactly() {
+        use pepper_sync::keys::decode_address;
+        use zcash_keys::address::Address;
+        use zcash_transparent::address::TransparentAddress;
+        use zip321::{Payment, TransactionRequest};
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(5_000_000)
+            .build();
+        let external =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let taddr = external
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+            decode_address(&external.chain_type(), &taddr).unwrap()
+        else {
+            panic!("a wallet-generated first taddr is p2pkh")
+        };
+        let tex_address =
+            crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &external.chain_type());
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            Zatoshis::const_from_u64(100_000),
+        )])
+        .unwrap();
+
+        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None)
+            .expect("planner plans the TEX flow");
+        let super::Proposal::TexTransfer(tex) = &proposal else {
+            panic!("a TEX payment plans a TexTransfer");
+        };
+
+        assert_eq!(
+            tex.ephemeral_value().unwrap(),
+            (tex.exposure().payment_total().unwrap() + tex.exposure().fee()).unwrap(),
+        );
+        assert!(tex.exposure().change().is_empty(), "no exposure change");
     }
 }

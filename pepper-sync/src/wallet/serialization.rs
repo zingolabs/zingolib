@@ -13,7 +13,11 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
-use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
+// Re-exported for consumers reading legacy wallet files: pepper-sync owns
+// the `zcash_client_backend` serialization dependency, so downstreams read
+// shard data through this surface instead of depending on zcb themselves.
+pub use zcash_client_backend::serialization::shardtree::read_shard;
+use zcash_client_backend::serialization::shardtree::write_shard;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,

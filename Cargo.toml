@@ -81,10 +81,14 @@ zcash_client_backend = { version = "0.24.0-rc.1", features = [
     "transparent-inputs",
 ] }
 zcash_encoding = "0.4.0"
+# unstable: the USK byte codecs (`Era`, `to_bytes`/`from_bytes`) the wallet
+# file format depends on; previously enabled transitively by
+# zcash_client_backend's `unstable` feature before ADR 0010 removed it.
 zcash_keys = { version = "0.15.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
+    "unstable",
 ] }
 zcash_note_encryption = "0.4.2"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee

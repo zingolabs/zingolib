@@ -27,7 +27,7 @@ use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
-use zingolib::data::{PollReport, proposal};
+use zingolib::data::PollReport;
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
@@ -228,10 +228,7 @@ impl Command for ParseAddressCommand {
         }
         fn make_decoded_chain_pair(
             address: &str,
-        ) -> Option<(
-            zcash_client_backend::address::Address,
-            zingolib::config::ChainType,
-        )> {
+        ) -> Option<(zcash_keys::address::Address, zingolib::config::ChainType)> {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
@@ -1116,11 +1113,11 @@ impl Command for SendCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send(request, zip32::AccountId::ZERO)
+                .propose_send(request, zip32::AccountId::ZERO, None)
                 .await
             {
                 Ok(proposal) => {
-                    let fee = match zingolib::data::proposal::total_fee(&proposal) {
+                    let fee = match proposal.total_fee() {
                         Ok(fee) => fee,
                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
                     };
@@ -1174,15 +1171,21 @@ impl Command for SendAllCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
+                .propose_send_all(
+                    address,
+                    zennies_for_zingo,
+                    memo,
+                    zip32::AccountId::ZERO,
+                    None,
+                )
                 .await
             {
                 Ok(proposal) => {
-                    let amount = match proposal::total_payment_amount(&proposal) {
+                    let amount = match proposal.total_payment_amount() {
                         Ok(amount) => amount,
                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
                     };
-                    let fee = match proposal::total_fee(&proposal) {
+                    let fee = match proposal.total_fee() {
                         Ok(fee) => fee,
                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
                     };
@@ -1242,7 +1245,10 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
+            match lightclient
+                .quick_send(request, zip32::AccountId::ZERO, None, true)
+                .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1290,16 +1296,15 @@ impl Command for ShieldCommand {
                     if proposal.steps().len() != 1 {
                         return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
                     }
-                    let step = proposal.steps().first();
+                    let step = proposal.final_step();
                     let Some(value_to_shield) = step
-                        .balance()
-                        .proposed_change()
+                        .change()
                         .iter()
                         .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
                             return object! { "error" => "shield amount outside valid range of zatoshis" }
                                 .pretty(2);
                     };
-                    let fee = step.balance().fee_required();
+                    let fee = step.fee();
                     object! {
                         "value_to_shield" => value_to_shield.into_u64(),
                         "fee" => fee.into_u64(),

@@ -77,18 +77,11 @@ mod test {
 
     #[tokio::test]
     async fn offline_send_stored_proposal_preserves_proposal() {
-        use crate::mocks::proposal::ProposalBuilder;
         let mut lc = create_offline_client().await;
 
         // Manually store a proposal in the wallet.
-        let proposal = ProposalBuilder::default().build();
-        lc.wallet()
-            .write()
-            .await
-            .store_proposal(crate::data::proposal::ZingoProposal::Send {
-                proposal,
-                sending_account: zip32::AccountId::ZERO,
-            });
+        let proposal = crate::mocks::proposal::minimal_transfer_proposal();
+        lc.wallet().write().await.store_proposal(proposal);
 
         // send_stored_proposal while offline must return Offline without consuming the proposal.
         assert!(matches!(

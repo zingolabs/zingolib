@@ -8,11 +8,11 @@ use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
 use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
+use pepper_sync::wallet::serialization::read_shard;
 use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
-use zcash_client_backend::serialization::shardtree::read_shard;
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},

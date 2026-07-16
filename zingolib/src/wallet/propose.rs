@@ -1,83 +1,31 @@
 //! creating proposals from wallet data
 
-use zcash_client_backend::{
-    data_api::wallet::{
-        ConfirmationsPolicy,
-        input_selection::{GreedyInputSelector, SpendPolicy},
-    },
-    fees::{DustAction, DustOutputPolicy},
-};
 use zcash_protocol::{
-    ShieldedPool,
-    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, Parameters},
     memo::{Memo, MemoBytes},
-    value::Zatoshis,
 };
 use zip321::TransactionRequest;
 
 use super::{
     LightWallet,
-    error::{ProposeSendError, ProposeShieldError, WalletError},
-};
-use crate::{
-    config::ChainType,
-    data::proposal::{ProportionalFeeProposal, ZingoProposal},
+    error::{ProposeSendError, ProposeShieldError},
+    spend::op_return::OpReturnData,
+    spend::plan::{PlanError, plan_shield, plan_transfer},
+    spend::proposal::Proposal,
 };
 use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
 
 impl LightWallet {
-    /// Creates a proposal from a transaction request.
+    /// Creates a proposal from a transaction request — the in-tree plan
+    /// layer (ADR 0010), pure over the wallet's current view. OP_RETURN
+    /// Data, if given, rides the final transaction of the send.
     pub(crate) fn create_send_proposal(
-        &mut self,
+        &self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
-    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let memo = self.change_memo_from_transaction_request(&request);
-        let input_selector = GreedyInputSelector::new();
-        let chain_height =
-            self.sync_state
-                .last_known_chain_height()
-                .ok_or(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::ScanRequired,
-                ))?;
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            Some(memo),
-            if self
-                .chain_type
-                .activation_height(NetworkUpgrade::Nu6_3)
-                .is_some_and(|ironwood_height| chain_height >= ironwood_height)
-            {
-                ShieldedPool::Ironwood
-            } else {
-                ShieldedPool::Orchard
-            },
-            DustOutputPolicy::new(DustAction::AllowDustChange, None),
-        );
-        let chain_type = self.chain_type;
-
-        zcash_client_backend::data_api::wallet::propose_transfer::<
-            LightWallet,
-            ChainType,
-            GreedyInputSelector<LightWallet>,
-            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
-                zcash_primitives::transaction::fees::zip317::FeeRule,
-                LightWallet,
-            >,
-            WalletError,
-        >(
-            self,
-            &chain_type,
-            account_id,
-            &input_selector,
-            &change_strategy,
-            request,
-            // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
-            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            &SpendPolicy::default(),
-            None,
-        )
-        .map_err(ProposeSendError::Proposal)
+        op_return_data: Option<OpReturnData>,
+    ) -> Result<Proposal, ProposeSendError> {
+        Ok(plan_transfer(self, request, account_id, op_return_data)?)
     }
 
     /// The shield operation consumes a proposal that transfers value
@@ -89,77 +37,25 @@ impl LightWallet {
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumed without costing more in zip317 fees than is being transferred.
     pub(crate) fn create_shield_proposal(
-        &mut self,
+        &self,
         account_id: zip32::AccountId,
-    ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
-        let input_selector = GreedyInputSelector::new();
-        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            None,
-            ShieldedPool::Orchard,
-            DustOutputPolicy::new(DustAction::AllowDustChange, None),
-        );
-        let chain_type = self.chain_type;
-
-        // TODO: store t addrs as concrete types instead of encoded
-        let transparent_addresses = self
-            .transparent_addresses
-            .values()
-            .map(|address| {
-                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                        self.chain_type.network_type(),
-                    )
-                    .expect("incorrect network should be checked on wallet load"))
-            })
-            .collect::<Result<Vec<_>, zcash_address::ParseError>>()?;
-
-        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            LightWallet,
-            ChainType,
-            GreedyInputSelector<LightWallet>,
-            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
-                zcash_primitives::transaction::fees::zip317::FeeRule,
-                LightWallet,
-            >,
-            WalletError,
-        >(
-            self,
-            &chain_type,
-            &input_selector,
-            &change_strategy,
-            Zatoshis::const_from_u64(10_000),
-            &transparent_addresses,
-            account_id,
-            // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
-            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
-        )
-        .map_err(ProposeShieldError::Component)?;
-
-        for step in proposed_shield.steps().iter() {
-            if step
-                .balance()
-                .proposed_change()
-                .iter()
-                .fold(0, |total_out, output| total_out + output.value().into_u64())
-                == 0
-            {
-                return Err(ProposeShieldError::InsufficientFunds);
-            }
-        }
-
-        Ok(proposed_shield)
+    ) -> Result<Proposal, ProposeShieldError> {
+        plan_shield(self, account_id).map_err(|error| match error {
+            // The threshold shortfall keeps its long-standing typed
+            // identity for shield callers.
+            PlanError::InsufficientFunds { .. } => ProposeShieldError::InsufficientFunds,
+            other => ProposeShieldError::Plan(other),
+        })
     }
 
     /// Stores a proposal in the `send_proposal` field.
     /// This field must be populated in order to then construct and transmit transactions.
-    pub(crate) fn store_proposal(&mut self, proposal: ZingoProposal) {
+    pub(crate) fn store_proposal(&mut self, proposal: Proposal) {
         self.send_proposal = Some(proposal);
     }
 
     /// Takes the proposal from the `send_proposal` field, leaving the field empty.
-    pub(crate) fn take_proposal(&mut self) -> Option<ZingoProposal> {
+    pub(crate) fn take_proposal(&mut self) -> Option<Proposal> {
         self.send_proposal.take()
     }
 
@@ -313,10 +209,10 @@ mod test {
         .expect("valid send inputs form a request");
 
         let proposal = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None)
             .expect("synthetic wallet data supports proposing");
 
-        let step = proposal.steps().first();
+        let step = proposal.final_step();
         let pools = step.payment_pools();
         assert_eq!(
             pools[&0],
@@ -342,11 +238,10 @@ mod test {
     /// over from the original).
     #[test]
     fn propose_orchard_dust_to_sapling() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(100_000)
-                .orchard_note(4_000)
-                .build();
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .orchard_note(4_000)
+            .build();
 
         let mut external_wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
@@ -363,7 +258,7 @@ mod test {
         .expect("valid send inputs form a request");
 
         wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None)
             .expect("orchard funds propose cleanly to a sapling destination");
     }
 
@@ -374,10 +269,9 @@ mod test {
     /// proposing requires. The synthetic builder fabricates that state.
     #[test]
     fn propose_100_000_to_self() {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(200_000)
-                .build();
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(200_000)
+            .build();
 
         let pool = PoolType::Shielded(ShieldedPool::Orchard);
         let self_address = wallet.get_address(pool);
@@ -387,7 +281,7 @@ mod test {
             .expect("actually all of this logic oughta be internal to propose");
 
         wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None)
             .expect("can propose from existing data");
     }
 }

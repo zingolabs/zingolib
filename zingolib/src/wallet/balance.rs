@@ -4,7 +4,6 @@ use pepper_sync::wallet::{
     IronwoodNote, KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote,
     TransparentCoin, WalletTransaction,
 };
-use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::{PoolType, value::Zatoshis};
@@ -543,9 +542,8 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon(false) else {
             return Ok(Zatoshis::ZERO);
         };
-        let Some((_, anchor_height)) = self
-            .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
-            .expect("infallible")
+        let Some((_, anchor_height)) =
+            self.target_and_anchor_heights(self.wallet_settings.min_confirmations)
         else {
             return Ok(Zatoshis::ZERO);
         };

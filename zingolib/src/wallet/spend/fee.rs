@@ -30,14 +30,21 @@ fn sapling_output_count(spends: usize, outputs: usize) -> usize {
     }
 }
 
-/// The padded legacy-Orchard (V5 vanilla) action count under the default
-/// bundle type: the vanilla bundle cannot pair a spend with an unrelated
-/// output (no cross-address actions), so every spend and every output
-/// occupies its own action, padded to the builder's minimum of two
+/// The padded legacy-Orchard action count under the default bundle type.
+/// The rule is branch-dependent: before NU6.3 activation the vanilla V5
+/// bundle pairs spends with unrelated outputs (cross-address actions), so
+/// actions are the larger of the two; from NU6.3 the Orchard bundle
+/// forbids cross-address pairing, so every spend and every output
+/// occupies its own action. Both pad to the builder's minimum of two
 /// whenever the bundle has any activity.
-fn orchard_vanilla_action_count(spends: usize, outputs: usize) -> usize {
+fn orchard_action_count(spends: usize, outputs: usize, ironwood_active: bool) -> usize {
     if spends > 0 || outputs > 0 {
-        (spends + outputs).max(2)
+        let requested = if ironwood_active {
+            spends + outputs
+        } else {
+            spends.max(outputs)
+        };
+        requested.max(2)
     } else {
         0
     }
@@ -105,6 +112,11 @@ impl TransactionShape {
         chain_type: &ChainType,
         target_height: BlockHeight,
     ) -> Result<Zatoshis, zcash_primitives::transaction::fees::zip317::FeeError> {
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
+
+        let ironwood_active = chain_type
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .is_some_and(|activation| target_height >= activation);
         FeeRule::standard().fee_required(
             chain_type,
             target_height,
@@ -112,7 +124,7 @@ impl TransactionShape {
             self.transparent_output_sizes.iter().copied(),
             sapling_spend_count(self.sapling.0),
             sapling_output_count(self.sapling.0, self.sapling.1),
-            orchard_vanilla_action_count(self.orchard.0, self.orchard.1),
+            orchard_action_count(self.orchard.0, self.orchard.1, ironwood_active),
             ironwood_action_count(self.ironwood.0, self.ironwood.1),
         )
     }

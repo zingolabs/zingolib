@@ -14,6 +14,7 @@
 //! P2 of the plan delivers the owned types below; the plan, build, and
 //! apply layers land in the following phases.
 
+pub mod apply;
 pub mod build;
 pub(crate) mod fee;
 pub mod op_return;

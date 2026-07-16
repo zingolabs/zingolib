@@ -7,10 +7,10 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_address::unified::{Encoding as _, Ufvk};
-use zcash_client_backend::address::UnifiedAddress;
-use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::CompactSize;
+use zcash_keys::address::UnifiedAddress;
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::keys::{Era, UnifiedSpendingKey};
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};

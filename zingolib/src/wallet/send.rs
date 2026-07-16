@@ -4,12 +4,8 @@ use std::ops::Range;
 
 use nonempty::NonEmpty;
 
-use zcash_client_backend::data_api::wallet::SpendingKeys;
-use zcash_client_backend::proposal::Proposal;
-
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
-use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use zcash_protocol::{ShieldedPool, TxId};
 
@@ -17,53 +13,16 @@ use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
 
 impl LightWallet {
-    /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
-    pub(crate) async fn calculate_transactions<NoteRef>(
+    /// Calculates a proposal's transactions through the in-tree pipeline
+    /// (ADR 0010) — materials at the edge, wallet-pure build, one apply
+    /// site — and stores them, returning each calculated txid.
+    pub(crate) async fn calculate_transactions(
         &mut self,
-        proposal: Proposal<zip317::FeeRule, NoteRef>,
-        sending_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        let calculated_txids = match proposal.steps().len() {
-            1 => {
-                self.create_proposed_transactions(proposal, sending_account)
-                    .await?
-            }
-            2 if proposal.steps()[1]
-                .transaction_request()
-                .payments()
-                .values()
-                .any(|payment| {
-                    matches!(
-                        payment
-                            .recipient_address()
-                            .clone()
-                            .convert_if_network::<zcash_keys::address::Address>(
-                                self.chain_type.network_type()
-                            ),
-                        Ok(zcash_keys::address::Address::Tex(_))
-                    )
-                }) =>
-            {
-                self.create_proposed_transactions(proposal, sending_account)
-                    .await?
-            }
-
-            _ => return Err(CalculateTransactionError::NonTexMultiStep),
-        };
-        self.save_required = true;
-
-        Ok(calculated_txids)
-    }
-
-    async fn create_proposed_transactions<NoteRef>(
-        &mut self,
-        proposal: Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        sending_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        let chain_type = self.chain_type;
+        proposal: crate::wallet::spend::proposal::Proposal,
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
-            .get(&sending_account)
+            .get(&proposal.account_id())
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
@@ -74,16 +33,17 @@ impl LightWallet {
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-        zcash_client_backend::data_api::wallet::create_proposed_transactions(
-            self,
-            &chain_type,
-            &sapling_prover,
-            &sapling_prover,
-            &SpendingKeys::new(usk),
-            zcash_client_backend::wallet::OvkPolicy::Sender,
+        let materials = self.spend_materials(&proposal)?;
+        let built = crate::wallet::spend::build::build_transactions(
             &proposal,
-        )
-        .map_err(CalculateTransactionError::Calculation)
+            &materials,
+            &usk,
+            &self.chain_type,
+            &sapling_prover,
+            &sapling_prover,
+        )?;
+        self.apply_calculated(&proposal, built)
+            .map_err(CalculateTransactionError::Apply)
     }
 
     pub(crate) fn can_build_witness<N>(

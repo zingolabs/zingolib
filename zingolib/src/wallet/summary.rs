@@ -744,7 +744,7 @@ mod tests {
     fn sent(
         txid_byte: u8,
         height: u32,
-        recipient: &zcash_client_backend::address::UnifiedAddress,
+        recipient: &zcash_keys::address::UnifiedAddress,
         memo: &str,
     ) -> WalletTransaction {
         let txid = TxId::from_bytes([txid_byte; 32]);
@@ -873,12 +873,9 @@ mod tests {
             .unwrap()
             .orchard()
             .unwrap();
-        let zcash_client_backend::address::Address::Unified(zfz_unified_address) =
-            zcash_client_backend::address::Address::decode(
-                &network,
-                ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-            )
-            .unwrap()
+        let zcash_keys::address::Address::Unified(zfz_unified_address) =
+            zcash_keys::address::Address::decode(&network, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)
+                .unwrap()
         else {
             panic!("ZFZ address must be unified");
         };

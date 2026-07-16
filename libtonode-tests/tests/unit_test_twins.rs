@@ -864,26 +864,21 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(LightClientError::SendError(SendError::ProposeSendError(e))) => match e {
-                ProposeSendError::Proposal(insufficient) => {
-                    if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                ProposeSendError::Plan(
+                    zingolib::wallet::spend::plan::PlanError::InsufficientFunds {
                         available,
                         required,
-                    } = insufficient
-                    {
-                        assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                        // HYPOTHESIS (server-run adjudicated): 10_000
-                        // payment + 15_000 fee (one transparent output
-                        // plus the ironwood change pair the V6 change
-                        // policy adds). If the proposer prices change
-                        // differently here, only this constant moves.
-                        assert_eq!(required, Zatoshis::from_u64(25_000).unwrap());
-                    } else {
-                        panic!()
-                    }
+                    },
+                ) => {
+                    assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                    // HYPOTHESIS (server-run adjudicated): 10_000
+                    // payment + 15_000 fee (one transparent output
+                    // plus the ironwood change pair the V6 change
+                    // policy adds). If the proposer prices change
+                    // differently here, only this constant moves.
+                    assert_eq!(required, Zatoshis::from_u64(25_000).unwrap());
                 }
-                ProposeSendError::TransactionRequestFailed(_) => panic!(),
-                ProposeSendError::ZeroValueSendAll => panic!(),
-                ProposeSendError::BalanceError(_) => panic!(),
+                other => panic!("expected InsufficientFunds, got {other:?}"),
             },
             _ => panic!(),
         }
@@ -898,19 +893,15 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
-                if let ProposeSendError::Proposal(insufficient_funds) = e {
-                    match insufficient_funds {
-                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                            available,
-                            required,
-                        } => {
-                            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
-                        }
-                        _ => {
-                            panic!()
-                        }
-                    }
+                if let ProposeSendError::Plan(
+                    zingolib::wallet::spend::plan::PlanError::InsufficientFunds {
+                        available,
+                        required,
+                    },
+                ) = e
+                {
+                    assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                    assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
                 } else {
                     panic!()
                 }

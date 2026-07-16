@@ -377,217 +377,37 @@ pub mod orchard_note {
 }
 
 pub mod proposal {
-    //! Module for mocking structs from [`zcash_client_backend::proposal`]
+    //! Mocks for the owned proposal types of the in-tree spend pipeline
+    //! and for [`zip321`] requests.
 
     use std::collections::BTreeMap;
-    use std::num::NonZero;
 
-    use nonempty::NonEmpty;
-
-    use incrementalmerkletree::Position;
-    use pepper_sync::wallet::OutputId;
-    use sapling_crypto::Rseed;
-    use sapling_crypto::value::NoteValue;
     use zcash_address::ZcashAddress;
-    use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
-    use zcash_client_backend::fees::TransactionBalance;
-    use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
-    use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
-    use zcash_primitives::transaction::fees::zip317::FeeRule;
-    use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
-    use zcash_protocol::{PoolType, ShieldedPool};
     use zip321::{Payment, TransactionRequest};
 
-    use super::{default_txid, default_zaddr};
     use crate::testutils::{build_method, build_method_push};
     use crate::utils::conversion::address_from_str;
-    use crate::wallet::output::OutputRef;
+    use crate::wallet::spend::proposal::{Proposal, Step, TransferProposal};
 
-    /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Proposal`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use zingolib::mocks::proposal::ProposalBuilder;
-    ///
-    /// let proposal = ProposalBuilder::default().build();
-    /// ````
-    pub struct ProposalBuilder {
-        fee_rule: Option<FeeRule>,
-        min_target_height: Option<BlockHeight>,
-        steps: Option<NonEmpty<Step<OutputRef>>>,
-        confirmations_policy: Option<ConfirmationsPolicy>,
-        ironwood_active: Option<bool>,
-    }
-
-    #[allow(dead_code)]
-    impl ProposalBuilder {
-        /// Constructs an empty builder.
-        #[must_use]
-        pub fn new() -> Self {
-            ProposalBuilder {
-                fee_rule: None,
-                min_target_height: None,
-                steps: None,
-                confirmations_policy: None,
-                ironwood_active: None,
-            }
-        }
-
-        build_method!(fee_rule, FeeRule);
-        build_method!(min_target_height, BlockHeight);
-        build_method!(steps, NonEmpty<Step<OutputRef>>);
-        build_method!(confirmations_policy, ConfirmationsPolicy);
-        build_method!(ironwood_active, bool);
-
-        /// Builds after all fields have been set.
-        #[must_use]
-        pub fn build(self) -> Proposal<FeeRule, OutputRef> {
-            let step = self.steps.unwrap().first().clone();
-            Proposal::single_step(
-                step.transaction_request().clone(),
-                step.payment_pools().clone(),
-                step.transparent_inputs().to_vec(),
-                step.shielded_inputs().cloned(),
-                step.anchor_height().unwrap(),
-                step.balance().clone(),
-                self.fee_rule.unwrap(),
-                self.min_target_height.unwrap().into(),
-                self.confirmations_policy.unwrap(),
-                step.is_shielding(),
-                self.ironwood_active.unwrap(),
-            )
-            .unwrap()
-        }
-    }
-
-    impl Default for ProposalBuilder {
-        /// Constructs a default builder.
-        fn default() -> Self {
-            let mut builder = ProposalBuilder::new();
-            builder
-                .fee_rule(FeeRule::standard())
-                .min_target_height(BlockHeight::from_u32(1))
-                .steps(NonEmpty::singleton(StepBuilder::default().build()))
-                .confirmations_policy(ConfirmationsPolicy::new_symmetrical(
-                    NonZero::try_from(1).unwrap(),
-                    false,
-                ))
-                .ironwood_active(true);
-            builder
-        }
-    }
-
-    /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Step`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use zingolib::mocks::proposal::StepBuilder;
-    ///
-    /// let step = StepBuilder::default().build();
-    /// ````
-    pub struct StepBuilder {
-        transaction_request: Option<TransactionRequest>,
-        payment_pools: Option<BTreeMap<usize, PoolType>>,
-        transparent_inputs: Option<Vec<WalletTransparentOutput<()>>>,
-        shielded_inputs: Option<Option<ShieldedInputs<OutputRef>>>,
-        anchor_height: Option<BlockHeight>,
-        prior_step_inputs: Option<Vec<StepOutput>>,
-        balance: Option<TransactionBalance>,
-        is_shielding: Option<bool>,
-        ironwood_active: Option<bool>,
-    }
-
-    impl StepBuilder {
-        /// Constructs an empty builder.
-        #[must_use]
-        pub fn new() -> Self {
-            StepBuilder {
-                transaction_request: None,
-                payment_pools: None,
-                transparent_inputs: None,
-                shielded_inputs: None,
-                anchor_height: None,
-                prior_step_inputs: None,
-                balance: None,
-                is_shielding: None,
-                ironwood_active: None,
-            }
-        }
-
-        build_method!(transaction_request, TransactionRequest);
-        build_method!(payment_pools, BTreeMap<usize, PoolType>
-        );
-        build_method!(transparent_inputs, Vec<WalletTransparentOutput<()>>);
-        build_method!(shielded_inputs, Option<ShieldedInputs<OutputRef>>);
-        build_method!(anchor_height, BlockHeight);
-        build_method!(prior_step_inputs, Vec<StepOutput>);
-        build_method!(balance, TransactionBalance);
-        build_method!(is_shielding, bool);
-        build_method!(ironwood_active, bool);
-
-        /// Builds after all fields have been set.
-        #[must_use]
-        pub fn build(self) -> Step<OutputRef> {
+    /// A minimal owned transfer proposal, for facade tests that need a
+    /// stored proposal but never calculate it (e.g. Offline gating).
+    #[must_use]
+    pub fn minimal_transfer_proposal() -> Proposal {
+        Proposal::Transfer(TransferProposal::new(
+            zip32::AccountId::ZERO,
+            100.into(),
+            97.into(),
             Step::from_parts(
-                &[],
-                self.transaction_request.unwrap(),
-                self.payment_pools.unwrap(),
-                self.transparent_inputs.unwrap(),
-                self.shielded_inputs.unwrap(),
-                self.anchor_height,
-                self.prior_step_inputs.unwrap(),
-                self.balance.unwrap(),
-                self.is_shielding.unwrap(),
-                self.ironwood_active.unwrap(),
-            )
-            .unwrap()
-        }
-    }
-
-    impl Default for StepBuilder {
-        /// Constructs a default builder.
-        fn default() -> Self {
-            let txid = default_txid();
-            let (_, _, address) = default_zaddr();
-            let note = sapling_crypto::Note::from_parts(
-                address,
-                NoteValue::from_raw(120_000),
-                Rseed::AfterZip212([7; 32]),
-            );
-            let mut payment_pools = BTreeMap::new();
-            // Ironwood is active by default (see `ironwood_active(true)` below), and the
-            // backend routes every shielded payment to the Ironwood pool — directing one to
-            // Orchard trips the turnstile assertion in `Step::from_parts`.
-            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Ironwood));
-
-            let mut builder = Self::new();
-            builder
-                .transaction_request(TransactionRequestBuilder::default().build())
-                .payment_pools(payment_pools)
-                .transparent_inputs(vec![])
-                // .shielded_inputs(None)
-                .shielded_inputs(Some(ShieldedInputs::from_parts(NonEmpty::singleton(
-                    ReceivedNote::from_parts(
-                        OutputRef::new(OutputId::new(txid, 0), PoolType::SAPLING),
-                        txid,
-                        0,
-                        zcash_client_backend::wallet::Note::Sapling(note),
-                        zip32::Scope::External,
-                        Position::from(1),
-                        None, // mined_height. TODO: How should we use this here?
-                        None, // max_shielding_input_height. TODO: How should we use this here?
-                    ),
-                ))))
-                .anchor_height(BlockHeight::from_u32(1))
-                .prior_step_inputs(vec![])
-                .balance(TransactionBalance::new(vec![], Zatoshis::const_from_u64(20_000)).unwrap())
-                .ironwood_active(true)
-                .is_shielding(false);
-            builder
-        }
+                TransactionRequestBuilder::default().build(),
+                BTreeMap::new(),
+                vec![],
+                vec![],
+                vec![],
+                Zatoshis::const_from_u64(20_000),
+                None,
+            ),
+        ))
     }
 
     /// Provides a builder for constructing a mock [`zip321::TransactionRequest`].

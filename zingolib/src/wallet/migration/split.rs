@@ -443,11 +443,7 @@ impl crate::wallet::LightWallet {
         )>,
         crate::wallet::error::WalletError,
     > {
-        use zcash_client_backend::data_api::WalletRead as _;
-        Ok(self
-            .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
-            .expect("infallible")
-            .map(|(target, anchor)| (target.into(), anchor)))
+        Ok(self.target_and_anchor_heights(self.wallet_settings.min_confirmations))
     }
 
     #[allow(clippy::result_large_err)]

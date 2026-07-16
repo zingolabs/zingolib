@@ -3,10 +3,10 @@
 use nonempty::NonEmpty;
 
 use pepper_sync::wallet::WalletTransaction;
-use zcash_client_backend::proposal::{Proposal, Step};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::value::Zatoshis;
 
+use crate::wallet::spend::proposal::{Proposal, Step};
 use crate::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(missing_docs)] // error types document themselves
@@ -19,13 +19,13 @@ pub enum ProposalToTransactionRecordComparisonError {
 }
 
 /// compares a proposal with a fulfilled record and returns the agreed fee
-pub fn compare_fee<NoteRef>(
+pub fn compare_fee(
     wallet: &LightWallet,
     transaction: &WalletTransaction,
-    step: &Step<NoteRef>,
+    step: &Step,
 ) -> Result<Zatoshis, ProposalToTransactionRecordComparisonError> {
     let recorded_fee_result = wallet.calculate_transaction_fee(transaction);
-    let proposed_fee = step.balance().fee_required();
+    let proposed_fee = step.fee();
     if let Ok(recorded_fee) = recorded_fee_result
         && recorded_fee == proposed_fee
     {
@@ -43,9 +43,9 @@ pub fn compare_fee<NoteRef>(
 /// 3. if the fee from the `calculate_transaction_fee` matches the sum of the per-step fees
 ///
 /// if any of these checks fail, rather than panic immediately, this function will include an error enum in its output. make sure to expect this.
-pub async fn lookup_fees_with_proposal_check<N>(
+pub async fn lookup_fees_with_proposal_check(
     client: &LightClient,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
+    proposal: &Proposal,
     txids: &NonEmpty<TxId>,
 ) -> Vec<Result<Zatoshis, ProposalToTransactionRecordComparisonError>> {
     for_each_proposed_transaction(client, proposal, txids, |records, record, step| {
@@ -71,11 +71,11 @@ pub enum LookupRecordsPairStepsError {
 }
 
 /// checks the client for record of each of the expected transactions, and does anything to them.
-pub async fn for_each_proposed_transaction<N, Res>(
+pub async fn for_each_proposed_transaction<Res>(
     client: &LightClient,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
+    proposal: &Proposal,
     txids: &NonEmpty<TxId>,
-    f: fn(&LightWallet, &WalletTransaction, &Step<N>) -> Res,
+    f: fn(&LightWallet, &WalletTransaction, &Step) -> Res,
 ) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
     let wallet = client.wallet().read().await;
 

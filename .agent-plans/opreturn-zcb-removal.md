@@ -155,7 +155,29 @@ base; the branch must not merge ahead of either PR.
   expiry height, fee actually paid, the transparent output set
   (scripts and values), shielded output counts (padding), and the TEX
   step-2 input spending step 1's ephemeral output at the right value.
-- **P5 — apply + cutover.** Facade rewires to plan/build/apply;
+- **P5 — apply + cutover.** DONE in working tree (uncommitted).
+  `spend/apply.rs` is the single mutation site (record Calculated txs,
+  reserve-at-apply, save_required). Facade rewired end to end:
+  `propose_send`/`propose_send_all`/`quick_send` carry
+  `Option<OpReturnData>`; `calculate_transactions(proposal)` runs
+  materials→build→apply; ADR 0008 retarget is a pure field update
+  (RetargetError variant deleted); `ZingoProposal` and
+  `data/proposal.rs` folded into the owned enum. `zcb_traits.rs`
+  deleted; wallet queries inlined (`target_and_anchor_heights`,
+  `select_spendable_shielded_inputs` with the migration soft
+  reservation); build reads shard trees directly; `read_shard` reaches
+  legacy files through a new pepper-sync re-export; the comparative
+  P3/P4 scaffolding died with the old path, its ours-only assertions
+  kept as invariant tests plus the reserve-at-apply acceptance test.
+  zcb removed from zingolib/zingo-cli/libtonode manifests
+  (`cargo tree -i`: only pepper-sync remains, as ratified);
+  zcash_keys gains `unstable` directly (USK codecs zcb had enabled
+  transitively). The suite exposed one real fee rule the equivalence
+  era missed: legacy-Orchard action counting is branch-dependent
+  (max(spends,outputs) pre-NU6.3 via cross-address pairing,
+  spends+outputs after) — fixed in `spend/fee.rs`, pinned by the
+  boundary-adjacent branch-id test. 206/206 zingolib tests pass;
+  workspace check/clippy/fmt clean. Original scope (superseded):
   `propose_send`/`propose_send_all` gain the `Option<OpReturnData>`
   parameter; reserve-at-apply; delete `zcb_traits.rs`, prune
   `mocks.rs`, delete the equivalence scaffolding, remove zcb from
@@ -179,3 +201,54 @@ base; the branch must not merge ahead of either PR.
 Estimated new pipeline code ~1.5–2.5k lines against the 1,095-line
 trait file deleted (49 of its 69 methods are stubs) plus mock pruning. zingo-mobile FFI exposure of the new parameter
 is zingo-mobile work, out of scope here.
+
+## Inbound: DRY pass queued behind P5 (review session, 2026-07-15 23:20)
+
+A second session reviewed PR #2469 at the user's request and was asked
+to apply the DRY findings. It is **not editing**, because `plan.rs` and
+`build.rs` are both dirty and actively moving — mtime 23:17:23 on both,
+a `-574/+117` uncommitted delta — which reads as the P5 cutover in
+progress. Two agents editing one file in one worktree with no lock
+would clobber each other, so the DRY pass yields to P5 and waits.
+
+To the session doing P5: nothing here asks you to change course. Please
+finish and commit the cutover; the DRY pass rebases onto whatever you
+land and will re-measure first, since deleting the equivalence
+scaffolding removes some of the duplication counted below.
+
+Two findings are correctness bugs rather than style, and they survive
+the cutover untouched. Fix them in P5 if they are already in your
+hands; otherwise the DRY pass takes them.
+
+- `plan.rs` dust guard: `change_value > Zatoshis::ZERO ||
+  change_memo.is_some()`. The sole call site passes `Some(&change_memo)`
+  from a function returning a non-`Option` `MemoBytes`, so `is_some()`
+  is a tautology, the `||` short-circuits, and a zero-value change
+  output is emitted unconditionally. The comment above it describes
+  behavior the code cannot express.
+- `plan.rs` shield filter: `.filter(|coin| coin.value() > 5_000)` is
+  described as the closed form of upstream's dust-input retry, but it
+  ignores grace actions. ZIP 317 charges `marginal_fee *
+  max(GRACE_ACTIONS, logical_actions)` with `GRACE_ACTIONS = 2`, so
+  below the two-action floor an extra input is free. Shielding
+  `[60_000, 4_000]` costs 10_000 either way; the filter drops the 4_000
+  coin and strands it. `shield_equivalence` uses 80_000/30_000 and is
+  structurally unable to catch this. Wants a boundary test.
+
+DRY findings held for the pass, in leverage order: move
+`op_return_data` off `Step` onto the variant structs (retires all of
+`ProposalShapeError`, a `BuildError` variant, two `expect`s, and makes
+both `new()`s infallible — it deletes code); collapse the three per-pool
+anchor/witness blocks in `build.rs` and the three in
+`received_notes_by_pool`; one `sum_values` helper for the six hand-rolled
+overflow-checked sums; `TransactionShape::add_shielded_output(pool)` for
+the four `ShieldedPool` dispatch matches; `PlanContext::from_wallet` for
+the duplicated plan/shield preamble (also the seam for the read-only
+view the module doc promises); import `MARGINAL_FEE` and
+`InputSize::STANDARD_P2PKH` instead of re-declaring `5_000` and `150`;
+replace the ~15 `BuildError::Builder(format!("{e:?}"))` sites and the six
+hand-written `ShardTree` `map_err`s (a `From` impl already exists and
+`Error = Infallible`) — the stringly errors walk back #2464, which this
+branch builds on.
+
+No files claimed by this pass yet; it claims none until P5 commits.

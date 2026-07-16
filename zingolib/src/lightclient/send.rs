@@ -1,13 +1,9 @@
 //! TODO: Add Mod Description Here!
 
-use std::convert::Infallible;
-
 use nonempty::NonEmpty;
 
-use zcash_client_backend::data_api::wallet::TargetHeight;
-use zcash_client_backend::proposal::{Proposal, ProposalError};
+use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
-use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
 use zip321::TransactionRequest;
 
@@ -16,11 +12,11 @@ use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
-use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::{CalculateTransactionError, WalletError};
-use crate::wallet::output::OutputRef;
+use crate::wallet::spend::op_return::OpReturnData;
+use crate::wallet::spend::proposal::Proposal;
 
 const MAX_RETRIES: u8 = 3;
 
@@ -51,66 +47,48 @@ pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
 /// whose expiry ZIP 203 can encode as a height.
 ///
 /// The steps and their anchors are copied untouched, and the stored target
-/// is never lowered.
-fn retarget_for_offline_signing<NoteRef: Clone>(
-    proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    chain_type: &ChainType,
-) -> Result<Proposal<zip317::FeeRule, NoteRef>, ProposalError> {
-    let stored_target = proposal.min_target_height();
-    let epoch = BranchId::for_height(chain_type, stored_target.into());
+/// is never lowered. Pure and infallible: the retarget is a field update
+/// on a proposal type the wallet owns (ADR 0008, ADR 0010).
+fn retarget_for_offline_signing(proposal: Proposal, chain_type: &ChainType) -> Proposal {
+    let stored_target = proposal.target_height();
+    let epoch = BranchId::for_height(chain_type, stored_target);
     let cap = match epoch.height_bounds(chain_type) {
         Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
         _ => ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1 - DEFAULT_TX_EXPIRY_DELTA,
     };
     let lifted_target = cap.max(u32::from(stored_target));
-    Proposal::multi_step(
-        proposal.fee_rule().clone(),
-        TargetHeight::from(lifted_target),
-        proposal.confirmations_policy(),
-        proposal.steps().clone(),
-    )
+    proposal.with_target_height(lifted_target.into())
+}
+
+/// The [`SendError`] variant that reports a proposal kind's calculation
+/// failure.
+fn wrap_calculate_error(proposal: &Proposal) -> fn(CalculateTransactionError) -> SendError {
+    match proposal {
+        Proposal::Shield(_) => SendError::CalculateShieldError,
+        Proposal::Transfer(_) | Proposal::TexTransfer(_) => SendError::CalculateSendError,
+    }
 }
 
 impl LightClient {
     /// Calculates transactions from a proposal and transmits them. The gate
     /// on a connected Indexer sits here, before calculation, so a doomed
     /// send fails without storing Calculated transactions it cannot
-    /// transmit. `wrap_calculate_error` names the [`SendError`] variant the
-    /// caller's proposal kind reports calculation failure through.
-    async fn calculate_and_transmit<NoteRef>(
+    /// transmit.
+    async fn calculate_and_transmit(
         &mut self,
-        proposal: Proposal<zip317::FeeRule, NoteRef>,
-        account: zip32::AccountId,
-        wrap_calculate_error: impl FnOnce(CalculateTransactionError<NoteRef>) -> SendError,
+        proposal: Proposal,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         self.require_indexer()?;
+        let wrap = wrap_calculate_error(&proposal);
         let calculated_txids = self
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, account)
+            .calculate_transactions(proposal)
             .await
-            .map_err(wrap_calculate_error)?;
+            .map_err(wrap)?;
 
         self.transmit_transactions(calculated_txids).await
-    }
-
-    async fn send(
-        &mut self,
-        proposal: Proposal<zip317::FeeRule, OutputRef>,
-        sending_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.calculate_and_transmit(proposal, sending_account, SendError::CalculateSendError)
-            .await
-    }
-
-    async fn shield(
-        &mut self,
-        proposal: Proposal<zip317::FeeRule, Infallible>,
-        shielding_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.calculate_and_transmit(proposal, shielding_account, SendError::CalculateShieldError)
-            .await
     }
 
     /// Creates and transmits transactions from a stored proposal.
@@ -123,16 +101,7 @@ impl LightClient {
         self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
-            let txids = match proposal {
-                ZingoProposal::Send {
-                    proposal,
-                    sending_account,
-                } => self.send(proposal, sending_account).await,
-                ZingoProposal::Shield {
-                    proposal,
-                    shielding_account,
-                } => self.shield(proposal, shielding_account).await,
-            };
+            let txids = self.calculate_and_transmit(proposal).await;
 
             if resume_sync {
                 let _ignore_error = self.resume_sync();
@@ -169,38 +138,16 @@ impl LightClient {
         let opt_proposal = wallet.take_proposal();
         if let Some(proposal) = opt_proposal {
             let chain_type = wallet.chain_type();
-            let txids = match proposal {
-                ZingoProposal::Send {
-                    proposal,
-                    sending_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
-                        .calculate_transactions(proposal, sending_account)
-                        .await
-                        .map_err(SendError::CalculateSendError)?
-                }
-                ZingoProposal::Shield {
-                    proposal,
-                    shielding_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
-                        .calculate_transactions(proposal, shielding_account)
-                        .await
-                        .map_err(SendError::CalculateShieldError)?
-                }
+            let proposal = if indexerless {
+                retarget_for_offline_signing(proposal, &chain_type)
+            } else {
+                proposal
             };
+            let wrap = wrap_calculate_error(&proposal);
+            let txids = wallet
+                .calculate_transactions(proposal)
+                .await
+                .map_err(wrap)?;
             Ok(txids)
         } else {
             Err(SendError::NoStoredProposal.into())
@@ -226,6 +173,7 @@ impl LightClient {
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
+        op_return_data: Option<OpReturnData>,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
@@ -235,10 +183,10 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .create_send_proposal(request, account_id)
+            .create_send_proposal(request, account_id, op_return_data)
             .map_err(SendError::ProposeSendError);
         let txids = match proposal_result {
-            Ok(proposal) => self.send(proposal, account_id).await,
+            Ok(proposal) => self.calculate_and_transmit(proposal).await,
             Err(e) => Err(e.into()),
         };
         if resume_sync {
@@ -262,7 +210,7 @@ impl LightClient {
             .create_shield_proposal(account_id)
             .map_err(SendError::ProposeShieldError)?;
 
-        self.shield(proposal, account_id).await
+        self.calculate_and_transmit(proposal).await
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -469,6 +417,7 @@ mod built_transaction_shape {
                 false,
                 None,
                 zip32::AccountId::ZERO,
+                None,
             )
             .await
             .unwrap();
@@ -476,7 +425,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -541,7 +490,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -602,20 +551,20 @@ mod built_transaction_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO)
+            .propose_send(request, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
-        let step = proposal.steps().first();
-        let change = step.balance().proposed_change();
+        let step = proposal.final_step();
+        let change = step.change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 5_000);
-        assert_eq!(change[0].output_pool(), zcash_protocol::PoolType::IRONWOOD,);
+        assert_eq!(change[0].pool(), zcash_protocol::PoolType::IRONWOOD,);
 
         let txids = client
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -662,7 +611,7 @@ mod built_transaction_shape {
     #[tokio::test]
     async fn tex_two_step_chains_ephemeral_output_offline() {
         use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
+        use zcash_keys::address::Address;
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
         use zip321::{Payment, TransactionRequest};
@@ -699,14 +648,14 @@ mod built_transaction_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO)
+            .propose_send(request, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         let txids = client
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal)
             .await
             .unwrap();
         assert_eq!(txids.len(), 2, "the ZIP-320 pair builds as two steps");
@@ -811,7 +760,6 @@ mod test {
     use crate::{
         config::{ClientConfig, WalletConfig},
         lightclient::{LightClient, error::LightClientError, sync::test::sync_example_wallet},
-        mocks::proposal::ProposalBuilder,
         testutils::{
             chain_generics::{
                 conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
@@ -837,8 +785,8 @@ mod test {
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let mut lc = create_basic_client().await;
-        let proposal = ProposalBuilder::default().build();
-        let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
+        let proposal = crate::mocks::proposal::minimal_transfer_proposal();
+        let err = lc.calculate_and_transmit(proposal).await.unwrap_err();
         assert!(matches!(err, LightClientError::Offline));
     }
 
@@ -1030,8 +978,8 @@ mod transparent_policy {
         .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
-            LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+            LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Plan(
+                crate::wallet::spend::plan::PlanError::InsufficientFunds {
                     available: _,
                     required: _
                 }

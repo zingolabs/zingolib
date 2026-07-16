@@ -1,15 +1,12 @@
 //! Errors assoicated with [`crate::lightclient::LightClient`].
 
-use std::convert::Infallible;
-
 use zcash_protocol::TxId;
 
 use pepper_sync::error::{SyncError, SyncModeError};
 use zingo_netutils::GetClientError;
 
-use crate::wallet::{
-    error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
-    output::OutputRef,
+use crate::wallet::error::{
+    CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -93,13 +90,10 @@ pub enum SendError {
     ProposeShieldError(#[from] ProposeShieldError),
     /// Failed to construct sending transaction.
     #[error("Failed to construct sending transaction. {0}")]
-    CalculateSendError(CalculateTransactionError<OutputRef>),
+    CalculateSendError(CalculateTransactionError),
     /// Failed to construct shielding transaction.
     #[error("Failed to construct shielding transaction. {0}")]
-    CalculateShieldError(CalculateTransactionError<Infallible>),
-    /// Failed to retarget the stored proposal for offline signing.
-    #[error("Failed to retarget the stored proposal for offline signing. {0}")]
-    RetargetError(zcash_client_backend::proposal::ProposalError),
+    CalculateShieldError(CalculateTransactionError),
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,

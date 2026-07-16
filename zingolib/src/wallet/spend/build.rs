@@ -18,7 +18,6 @@ use nonempty::NonEmpty;
 use rand::rngs::OsRng;
 
 use sapling_crypto::prover::{OutputProver, SpendProver};
-use zcash_client_backend::data_api::WalletCommitmentTrees;
 use zcash_keys::address::Address;
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::transaction::Transaction;
@@ -184,93 +183,83 @@ impl LightWallet {
 
             if !sapling_ids.is_empty() || involves(ShieldedPool::Sapling) {
                 let sapling_notes = self.note_materials::<SaplingNote>(&sapling_ids)?;
-                let (anchor, spends) = self.with_sapling_tree_mut::<_, _, BuildError>(|tree| {
-                    let anchor = tree
-                        .root_at_checkpoint_id(&anchor_height)
-                        .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                        .ok_or(BuildError::AnchorNotFound {
-                            pool: ShieldedPool::Sapling,
-                            height: anchor_height,
-                        })?;
-                    let spends = sapling_notes
-                        .iter()
-                        .map(|(output_id, scope, note, position)| {
-                            let merkle_path = tree
-                                .witness_at_checkpoint_id_caching(*position, &anchor_height)
-                                .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                                .ok_or(BuildError::WitnessNotFound(*output_id))?;
-                            Ok(SaplingSpendMaterial {
-                                scope: *scope,
-                                note: note.clone(),
-                                merkle_path,
-                            })
+                let tree = &mut self.shard_trees.sapling;
+                let anchor = tree
+                    .root_at_checkpoint_id(&anchor_height)
+                    .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                    .ok_or(BuildError::AnchorNotFound {
+                        pool: ShieldedPool::Sapling,
+                        height: anchor_height,
+                    })?;
+                let spends = sapling_notes
+                    .iter()
+                    .map(|(output_id, scope, note, position)| {
+                        let merkle_path = tree
+                            .witness_at_checkpoint_id_caching(*position, &anchor_height)
+                            .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                            .ok_or(BuildError::WitnessNotFound(*output_id))?;
+                        Ok(SaplingSpendMaterial {
+                            scope: *scope,
+                            note: note.clone(),
+                            merkle_path,
                         })
-                        .collect::<Result<Vec<_>, BuildError>>()?;
-                    Ok((anchor.into(), spends))
-                })?;
-                materials.sapling_anchor = Some(anchor);
+                    })
+                    .collect::<Result<Vec<_>, BuildError>>()?;
+                materials.sapling_anchor = Some(anchor.into());
                 materials.sapling_spends = spends;
             }
 
             if !orchard_ids.is_empty() || involves(ShieldedPool::Orchard) {
                 let orchard_notes = self.note_materials::<OrchardNote>(&orchard_ids)?;
-                let (anchor, spends) = self.with_orchard_tree_mut::<_, _, BuildError>(|tree| {
-                    let anchor = tree
-                        .root_at_checkpoint_id(&anchor_height)
-                        .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                        .ok_or(BuildError::AnchorNotFound {
-                            pool: ShieldedPool::Orchard,
-                            height: anchor_height,
-                        })?;
-                    let spends = orchard_notes
-                        .iter()
-                        .map(|(output_id, _, note, position)| {
-                            let merkle_path = tree
-                                .witness_at_checkpoint_id_caching(*position, &anchor_height)
-                                .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                                .ok_or(BuildError::WitnessNotFound(*output_id))?;
-                            Ok(OrchardSpendMaterial {
-                                note: *note,
-                                merkle_path: merkle_path.into(),
-                            })
+                let tree = &mut self.shard_trees.orchard;
+                let anchor = tree
+                    .root_at_checkpoint_id(&anchor_height)
+                    .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                    .ok_or(BuildError::AnchorNotFound {
+                        pool: ShieldedPool::Orchard,
+                        height: anchor_height,
+                    })?;
+                let spends = orchard_notes
+                    .iter()
+                    .map(|(output_id, _, note, position)| {
+                        let merkle_path = tree
+                            .witness_at_checkpoint_id_caching(*position, &anchor_height)
+                            .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                            .ok_or(BuildError::WitnessNotFound(*output_id))?;
+                        Ok(OrchardSpendMaterial {
+                            note: *note,
+                            merkle_path: merkle_path.into(),
                         })
-                        .collect::<Result<Vec<_>, BuildError>>()?;
-                    Ok((orchard::Anchor::from(anchor), spends))
-                })?;
-                materials.orchard_anchor = Some(anchor);
+                    })
+                    .collect::<Result<Vec<_>, BuildError>>()?;
+                materials.orchard_anchor = Some(orchard::Anchor::from(anchor));
                 materials.orchard_spends = spends;
             }
 
             if !ironwood_ids.is_empty() || involves(ShieldedPool::Ironwood) {
                 let ironwood_notes = self.note_materials::<IronwoodNote>(&ironwood_ids)?;
-                let (anchor, spends) = self
-                    .with_ironwood_tree_mut::<_, _, BuildError>(|tree| {
-                        let anchor = tree
-                            .root_at_checkpoint_id(&anchor_height)
-                            .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                            .ok_or(BuildError::AnchorNotFound {
-                                pool: ShieldedPool::Ironwood,
-                                height: anchor_height,
-                            })?;
-                        let spends = ironwood_notes
-                            .iter()
-                            .map(|(output_id, _, note, position)| {
-                                let merkle_path = tree
-                                    .witness_at_checkpoint_id_caching(*position, &anchor_height)
-                                    .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
-                                    .ok_or(BuildError::WitnessNotFound(*output_id))?;
-                                Ok(OrchardSpendMaterial {
-                                    note: *note,
-                                    merkle_path: merkle_path.into(),
-                                })
-                            })
-                            .collect::<Result<Vec<_>, BuildError>>()?;
-                        Ok((orchard::Anchor::from(anchor), spends))
-                    })?
-                    .ok_or_else(|| {
-                        BuildError::ShardTree("the wallet has no ironwood tree".to_string())
+                let tree = &mut self.shard_trees.ironwood;
+                let anchor = tree
+                    .root_at_checkpoint_id(&anchor_height)
+                    .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                    .ok_or(BuildError::AnchorNotFound {
+                        pool: ShieldedPool::Ironwood,
+                        height: anchor_height,
                     })?;
-                materials.ironwood_anchor = Some(anchor);
+                let spends = ironwood_notes
+                    .iter()
+                    .map(|(output_id, _, note, position)| {
+                        let merkle_path = tree
+                            .witness_at_checkpoint_id_caching(*position, &anchor_height)
+                            .map_err(|e| BuildError::ShardTree(format!("{e:?}")))?
+                            .ok_or(BuildError::WitnessNotFound(*output_id))?;
+                        Ok(OrchardSpendMaterial {
+                            note: *note,
+                            merkle_path: merkle_path.into(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, BuildError>>()?;
+                materials.ironwood_anchor = Some(orchard::Anchor::from(anchor));
                 materials.ironwood_spends = spends;
             }
 
@@ -501,7 +490,7 @@ fn build_step(
 ) -> Result<BuiltStep, BuildError> {
     let has_ephemeral_input = ephemeral_input.is_some();
     let mut builder = Builder::new(
-        chain_type.clone(),
+        *chain_type,
         proposal.target_height(),
         BuildConfig::Standard {
             sapling_anchor: materials.sapling_anchor,
@@ -623,7 +612,7 @@ fn build_step(
                 };
                 builder
                     .add_sapling_output::<zip317::FeeError>(
-                        external_ovk.clone().map(Into::into),
+                        external_ovk.map(Into::into),
                         to,
                         amount,
                         memo,
@@ -633,7 +622,7 @@ fn build_step(
             (PoolType::Shielded(ShieldedPool::Orchard), Address::Unified(ua)) => {
                 builder
                     .add_orchard_output::<zip317::FeeError>(
-                        external_ovk.clone().map(Into::into),
+                        external_ovk.map(Into::into),
                         *ua.orchard().ok_or(BuildError::ReceiverMissing(*index))?,
                         amount,
                         memo,
@@ -643,7 +632,7 @@ fn build_step(
             (PoolType::Shielded(ShieldedPool::Ironwood), Address::Unified(ua)) => {
                 builder
                     .add_ironwood_output::<zip317::FeeError>(
-                        external_ovk.clone().map(Into::into),
+                        external_ovk.map(Into::into),
                         *ua.orchard().ok_or(BuildError::ReceiverMissing(*index))?,
                         amount,
                         memo,
@@ -770,32 +759,30 @@ fn build_step(
 }
 
 #[cfg(test)]
-mod structural {
-    //! Migration scaffolding (deleted at the P5 cutover): the build layer
-    //! must produce transactions structurally equivalent to
-    //! `create_proposed_transactions`' on the same proposal — the
-    //! deterministic skeleton only, never bitwise (build randomness is by
-    //! design): version, expiry, fee, transparent output set, shielded
-    //! output counts, and the TEX ephemeral chain.
+mod tests {
+    //! Invariant tests, the survivors of the migration's structural
+    //! equivalence suite (which died with the old zcb path at the P5
+    //! cutover, having proven the build skeleton — version, expiry, fee,
+    //! output sets, bundle shapes — equal to
+    //! `create_proposed_transactions`' on every proposal shape).
 
-    use zcash_primitives::transaction::Transaction;
     use zcash_protocol::value::Zatoshis;
 
     use super::build_transactions;
     use crate::testutils::lightclient::from_inputs::transaction_request_from_send_inputs;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::LightWallet;
-    use crate::wallet::keys::unified::ReceiverSelection;
     use crate::wallet::spend::plan::plan_transfer;
     use crate::wallet::spend::proposal::Proposal;
 
-    fn provers() -> zcash_proofs::prover::LocalTxProver {
+    fn build_ours(
+        wallet: &mut LightWallet,
+        proposal: &Proposal,
+    ) -> Vec<zcash_primitives::transaction::Transaction> {
         let (sapling_output, sapling_spend) =
             crate::wallet::utils::read_sapling_params().expect("params embedded or fetched");
-        zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output)
-    }
-
-    pub(super) fn build_ours(wallet: &mut LightWallet, proposal: &Proposal) -> Vec<Transaction> {
+        let prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let materials = wallet
             .spend_materials(proposal)
             .expect("materials resolve from wallet state");
@@ -805,7 +792,6 @@ mod structural {
             .expect("account zero exists")
             .try_into()
             .expect("spending wallet");
-        let prover = provers();
         build_transactions(
             proposal,
             &materials,
@@ -820,146 +806,72 @@ mod structural {
         .collect()
     }
 
-    async fn build_theirs(
-        wallet: &mut LightWallet,
-        request: zip321::TransactionRequest,
-    ) -> Vec<Transaction> {
-        let proposal = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO)
-            .expect("zcb proposes");
-        let txids = wallet
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
-            .await
-            .expect("zcb builds");
-        txids
-            .into_iter()
-            .map(|txid| {
-                let mut bytes = vec![];
-                wallet
-                    .wallet_transactions
-                    .get(&txid)
-                    .expect("calculated tx is stored")
-                    .transaction()
-                    .write(&mut bytes)
-                    .expect("transactions serialize");
-                Transaction::read(
-                    bytes.as_slice(),
-                    zcash_protocol::consensus::BranchId::for_height(
-                        &wallet.chain_type,
-                        wallet
-                            .wallet_transactions
-                            .get(&txid)
-                            .unwrap()
-                            .transaction()
-                            .expiry_height(),
-                    ),
-                )
-                .expect("transactions round-trip")
-            })
-            .collect()
-    }
-
-    /// The deterministic skeleton two independent builds of the same
-    /// proposal must share.
-    pub(super) fn assert_structurally_equivalent(ours: &Transaction, theirs: &Transaction) {
-        assert_eq!(ours.version(), theirs.version(), "tx version");
-        assert_eq!(ours.expiry_height(), theirs.expiry_height(), "expiry");
-
-        let vout_set = |tx: &Transaction| -> Vec<(u64, Vec<u8>)> {
-            let mut set: Vec<(u64, Vec<u8>)> = tx
-                .transparent_bundle()
-                .map(|bundle| {
-                    bundle
-                        .vout
-                        .iter()
-                        .map(|out| {
-                            let mut script = vec![];
-                            out.script_pubkey()
-                                .write(&mut script)
-                                .expect("scripts serialize");
-                            (out.value().into_u64(), script)
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            set.sort();
-            set
-        };
-        assert_eq!(vout_set(ours), vout_set(theirs), "transparent output set");
-
-        let sapling_shape = |tx: &Transaction| {
-            tx.sapling_bundle().map(|bundle| {
-                (
-                    bundle.shielded_spends().len(),
-                    bundle.shielded_outputs().len(),
-                )
-            })
-        };
-        assert_eq!(sapling_shape(ours), sapling_shape(theirs), "sapling shape");
-
-        let orchard_actions =
-            |tx: &Transaction| tx.orchard_bundle().map(|bundle| bundle.actions().len());
-        assert_eq!(
-            orchard_actions(ours),
-            orchard_actions(theirs),
-            "orchard actions"
-        );
-
-        let ironwood_actions =
-            |tx: &Transaction| tx.ironwood_bundle().map(|bundle| bundle.actions().len());
-        assert_eq!(
-            ironwood_actions(ours),
-            ironwood_actions(theirs),
-            "ironwood actions"
-        );
-    }
-
-    fn wallet_with_orchard() -> LightWallet {
-        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(1_000_000)
-            .build()
-    }
-
+    /// OP_RETURN Data lands on the final transaction as a zero-value
+    /// null-data output carrying the payload — and the build succeeding
+    /// is itself the fee proof, since the upstream builder recomputes
+    /// the ZIP 317 fee (the null-data output included) and refuses any
+    /// mismatch with the planned balance.
     #[tokio::test]
-    async fn single_orchard_transfer() {
-        let mut ours_wallet = wallet_with_orchard();
-        let mut theirs_wallet = wallet_with_orchard();
-        let (_, address) = ours_wallet
+    async fn op_return_data_rides_the_final_transaction() {
+        use crate::wallet::keys::unified::ReceiverSelection;
+        use crate::wallet::spend::op_return::OpReturnData;
+
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(1_000_000)
+                .build();
+        let (_, address) = wallet
             .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
             .unwrap();
-        let address = address.encode(&ours_wallet.chain_type);
+        let address = address.encode(&wallet.chain_type);
         let request = transaction_request_from_send_inputs(vec![(address.as_str(), 250_000, None)])
             .expect("valid send inputs form a request");
-        // The recipient address must exist in both wallets' key stores
-        // identically; both derive from the same seed so it does.
-        theirs_wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
 
-        let proposal = plan_transfer(&ours_wallet, request.clone(), zip32::AccountId::ZERO, None)
-            .expect("planner plans");
-        let ours = build_ours(&mut ours_wallet, &proposal);
-        let theirs = build_theirs(&mut theirs_wallet, request).await;
+        let payload = b"=:ZEC.ZEC:thorchain-swap-memo".to_vec();
+        let proposal = plan_transfer(
+            &wallet,
+            request,
+            zip32::AccountId::ZERO,
+            Some(OpReturnData::new(payload.clone()).unwrap()),
+        )
+        .expect("planner plans with OP_RETURN Data");
+        let built = build_ours(&mut wallet, &proposal);
 
-        assert_eq!(ours.len(), theirs.len(), "step count");
-        assert_structurally_equivalent(&ours[0], &theirs[0]);
+        let vout = &built[0]
+            .transparent_bundle()
+            .expect("the null-data output makes a transparent bundle")
+            .vout;
+        let null_data_output = vout
+            .iter()
+            .find(|out| out.value() == Zatoshis::ZERO)
+            .expect("a zero-value output exists");
+        let mut script = vec![];
+        null_data_output
+            .script_pubkey()
+            .write(&mut script)
+            .expect("scripts serialize");
+        assert_eq!(script[1], 0x6a, "OP_RETURN opcode");
+        assert!(
+            script
+                .windows(payload.len())
+                .any(|window| window == payload.as_slice()),
+            "the payload is embedded in the script"
+        );
     }
 
+    /// The TEX exposure step's sole input spends the shielding step's
+    /// ephemeral output, at exactly the ephemeral value.
     #[tokio::test]
-    async fn tex_two_step_chains_and_matches() {
+    async fn tex_exposure_spends_the_shielding_steps_ephemeral_output() {
         use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
+        use zcash_keys::address::Address;
         use zcash_transparent::address::TransparentAddress;
         use zip321::{Payment, TransactionRequest};
 
-        let make_wallet = || {
+        let mut wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                 .orchard_note(5_000_000)
-                .build()
-        };
-        let mut ours_wallet = make_wallet();
-        let mut theirs_wallet = make_wallet();
-
+                .build();
         let external =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
         let taddr = external
@@ -981,142 +893,30 @@ mod structural {
         )])
         .unwrap();
 
-        let proposal = plan_transfer(&ours_wallet, request.clone(), zip32::AccountId::ZERO, None)
+        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None)
             .expect("planner plans the TEX flow");
-        let ours = build_ours(&mut ours_wallet, &proposal);
-        let theirs = build_theirs(&mut theirs_wallet, request).await;
+        let built = build_ours(&mut wallet, &proposal);
+        assert_eq!(built.len(), 2, "two steps");
 
-        assert_eq!(ours.len(), 2, "two steps");
-        assert_eq!(theirs.len(), 2, "two steps");
-        assert_structurally_equivalent(&ours[0], &theirs[0]);
-        assert_structurally_equivalent(&ours[1], &theirs[1]);
-
-        // The exposure step's sole input spends the shielding step's
-        // ephemeral output.
-        let exposure_vin = &ours[1]
+        let exposure_vin = &built[1]
             .transparent_bundle()
             .expect("exposure step is transparent")
             .vin;
         assert_eq!(exposure_vin.len(), 1, "one input");
         assert_eq!(
             *exposure_vin[0].prevout().txid(),
-            ours[0].txid(),
+            built[0].txid(),
             "spends the shielding step"
         );
 
-        // And its value is the TEX payment plus the exposure fee.
         let Proposal::TexTransfer(tex) = &proposal else {
             panic!("a TEX payment plans a TexTransfer");
         };
-        let ephemeral_vout = &ours[0].transparent_bundle().expect("shielding step").vout;
+        let shielding_vout = &built[0].transparent_bundle().expect("shielding step").vout;
         assert_eq!(
-            ephemeral_vout[ephemeral_vout.len() - 1].value(),
+            shielding_vout[shielding_vout.len() - 1].value(),
             tex.ephemeral_value().unwrap(),
             "ephemeral output value"
-        );
-    }
-
-    #[tokio::test]
-    async fn op_return_data_rides_the_final_transaction() {
-        use crate::wallet::spend::op_return::OpReturnData;
-
-        let mut wallet = wallet_with_orchard();
-        let (_, address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let address = address.encode(&wallet.chain_type);
-        let request = transaction_request_from_send_inputs(vec![(address.as_str(), 250_000, None)])
-            .expect("valid send inputs form a request");
-
-        let payload = b"=:ZEC.ZEC:thorchain-swap-memo".to_vec();
-        let proposal = plan_transfer(
-            &wallet,
-            request,
-            zip32::AccountId::ZERO,
-            Some(OpReturnData::new(payload.clone()).unwrap()),
-        )
-        .expect("planner plans with OP_RETURN Data");
-
-        // The build succeeding is itself the fee proof: the builder
-        // recomputes the ZIP 317 fee including the null-data output and
-        // refuses to build on any mismatch with the planned balance.
-        let built = build_ours(&mut wallet, &proposal);
-
-        let vout = &built[0]
-            .transparent_bundle()
-            .expect("the null-data output makes a transparent bundle")
-            .vout;
-        let null_data_output = vout
-            .iter()
-            .find(|out| out.value() == Zatoshis::ZERO)
-            .expect("a zero-value output exists");
-        let mut script = vec![];
-        null_data_output
-            .script_pubkey()
-            .write(&mut script)
-            .expect("scripts serialize");
-        // Script serialization prefixes a compact-size length; then
-        // OP_RETURN (0x6a), the push length, and the payload.
-        assert_eq!(script[1], 0x6a, "OP_RETURN opcode");
-        assert!(
-            script
-                .windows(payload.len())
-                .any(|window| window == payload.as_slice()),
-            "the payload is embedded in the script"
-        );
-    }
-}
-
-#[cfg(test)]
-mod structural_shield {
-    //! The shape-(c) structural gate: a shield's build must match the old
-    //! path's on the same coins.
-
-    use super::structural::{assert_structurally_equivalent, build_ours};
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::wallet::LightWallet;
-    use crate::wallet::spend::plan::plan_shield;
-
-    fn make_wallet() -> LightWallet {
-        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .transparent_coin(80_000)
-            .transparent_coin(30_000)
-            .build()
-    }
-
-    #[tokio::test]
-    async fn shield_builds_structurally_equivalent() {
-        let mut ours_wallet = make_wallet();
-        let mut theirs_wallet = make_wallet();
-
-        let proposal = plan_shield(&ours_wallet, zip32::AccountId::ZERO).expect("planner shields");
-        let ours = build_ours(&mut ours_wallet, &proposal);
-
-        let their_proposal = theirs_wallet
-            .create_shield_proposal(zip32::AccountId::ZERO)
-            .expect("zcb shields");
-        let txids = theirs_wallet
-            .calculate_transactions(their_proposal, zip32::AccountId::ZERO)
-            .await
-            .expect("zcb builds the shield");
-        let theirs = theirs_wallet
-            .wallet_transactions
-            .get(txids.first())
-            .expect("calculated tx is stored")
-            .transaction();
-
-        assert_structurally_equivalent(&ours[0], theirs);
-
-        // Both consume both coins and pay no transparent output.
-        let vin = ours[0]
-            .transparent_bundle()
-            .expect("a shield spends coins")
-            .vin
-            .len();
-        assert_eq!(vin, 2, "both coins consumed");
-        assert!(
-            ours[0].transparent_bundle().unwrap().vout.is_empty(),
-            "a shield pays no transparent outputs"
         );
     }
 }
