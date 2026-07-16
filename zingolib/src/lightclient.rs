@@ -553,6 +553,52 @@ impl LightClient {
     }
 }
 
+/// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
+/// bundled `nym-proxy` child process; disabling shuts it down. The tri-state
+/// reflects the child's lifecycle, and clearnet is reachable only by a
+/// deliberate disable, never as a silent fallback.
+#[cfg(feature = "nym")]
+impl LightClient {
+    /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
+    /// `binary_path`. Returns immediately; [`Self::mixnet_mode`] reports
+    /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
+    /// `Ready`. Enabling while already enabled replaces the running proxy.
+    pub async fn enable_mixnet(
+        &mut self,
+        binary_path: &std::path::Path,
+    ) -> Result<(), crate::nym::MixnetProxyError> {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+        self.mixnet_proxy = Some(crate::nym::MixnetProxy::spawn(binary_path)?);
+        Ok(())
+    }
+
+    /// Disable Mixnet Mode. This is a deliberate, per-session choice: the
+    /// mixnet-only surfaces then route over clearnet as informed consent, and
+    /// the proxy child is shut down.
+    pub async fn disable_mixnet(&mut self) {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+    }
+
+    /// The current Mixnet Mode: [`MixnetMode::Off`](crate::nym::MixnetMode)
+    /// when disabled, otherwise the proxy's tri-state (bootstrapping or ready).
+    pub fn mixnet_mode(&self) -> crate::nym::MixnetMode {
+        self.mixnet_proxy
+            .as_ref()
+            .map_or(crate::nym::MixnetMode::Off, |proxy| proxy.mode())
+    }
+
+    /// The local SOCKS5 address while Mixnet Mode is ready.
+    pub fn mixnet_socks5_addr(&self) -> Option<String> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.socks5_addr())
+    }
+}
+
 impl std::fmt::Debug for LightClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LightClient")

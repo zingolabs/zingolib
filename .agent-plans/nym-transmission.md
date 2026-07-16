@@ -538,9 +538,33 @@ indexer path and (later) the Nym broadcaster. Design:
   increment-1 simplistic `Transmitter` trait; branch transmit_transactions on
   Mixnet Mode; delete GrpcIndexer's stale `// TODO; add nym_client`.
 
-Later increments: the proxy supervisor (spawn nym-proxy, parse SOCKS5_ADDR);
-the tri-state toggle as a LightClient API; the reqwest+SOCKS5 price path;
-CLI `nym on|off|status`.
+## Implementation — increment 4 (DONE 2026-07-16): Mixnet Mode toggle + supervisor
+
+Proxy supervisor: `zingolib/src/nym/supervisor.rs` — `MixnetProxy::spawn`
+spawns the bundled nym-proxy child (kill_on_drop), a background task reads its
+stdout and drives the tri-state (Bootstrapping → Ready on SOCKS5_ADDR=, → Off
+if stdout closes without one = fail-closed). `mode()`, `socks5_addr()`,
+`stop()`. The stdout state machine (`drive_state`) is generic over the reader,
+unit-tested with byte-slice scripts (6 tests: parse/trim/ignore, ready-on-
+announce, ready-after-preamble, off-on-close). The `SOCKS5_ADDR=` prefix is now
+one shared `zingo_netutils::SOCKS5_ADDR_LINE_PREFIX` const (binary emits,
+supervisor parses).
+
+Toggle: `LightClient::{enable_mixnet(binary_path), disable_mixnet,
+mixnet_mode, mixnet_socks5_addr}` behind the `nym` feature — a `#[cfg]` field
+`mixnet_proxy: Option<MixnetProxy>` (None = Off). enable spawns/replaces,
+disable stops (consent-gated clearnet), mixnet_mode maps None→Off else the
+proxy tri-state. Verified: default build unaffected (field/methods gated out),
+nym build + clippy -D warnings green.
+
+CONSUMER POLICY (not here): the forced-on-at-startup-for-connected-sessions /
+skip-under-`--offline` / never-persist policy is the consumer's to apply
+(zingo-cli calls enable_mixnet at startup with the bundled binary path). The
+binary's runtime location (bundled path) is packaging, TBD.
+
+Later increments: branch transmit_transactions on mixnet_mode (+ the deferred
+broadcaster failover policy); the reqwest+SOCKS5 price path; CLI
+`nym on|off|status`.
 
 ## File claims (prospective, gated on ratification)
 
