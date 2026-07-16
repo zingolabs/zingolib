@@ -621,12 +621,7 @@ where
                     address,
                 ))
             }),
-            ShieldedPool::Orchard => unified_address
-                .orchard()
-                .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
-            // The ironwood receiver of a unified address is its orchard
-            // receiver.
-            ShieldedPool::Ironwood => unified_address
+            ShieldedPool::Orchard | ShieldedPool::Ironwood => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
         }

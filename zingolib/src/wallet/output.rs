@@ -254,7 +254,19 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon(false) else {
             return Err(WalletError::NoSyncData);
         };
-        // FIXME: add checks for ironwood checkpoint
+        if self
+            .shard_trees
+            .ironwood
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(WalletError::CheckpointNotFound {
+                shielded_protocol: ShieldedPool::Ironwood,
+                height: anchor_height,
+            });
+        }
         if self
             .shard_trees
             .orchard

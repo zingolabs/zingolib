@@ -76,6 +76,8 @@ pub struct SyncStatus {
     pub total_sapling_outputs_scanned: u32,
     pub session_orchard_outputs_scanned: u32,
     pub total_orchard_outputs_scanned: u32,
+    pub session_ironwood_outputs_scanned: u32,
+    pub total_ironwood_outputs_scanned: u32,
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
     /// Numerator of the exact scan-progress ratio: outputs scanned so far
@@ -143,6 +145,8 @@ impl From<SyncStatus> for json::JsonValue {
             "total_sapling_outputs_scanned" => value.total_sapling_outputs_scanned,
             "session_orchard_outputs_scanned" => value.session_orchard_outputs_scanned,
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
+            "session_ironwood_outputs_scanned" => value.session_ironwood_outputs_scanned,
+            "total_ironwood_outputs_scanned" => value.total_ironwood_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
             "total_outputs_scanned" => value.total_outputs_scanned,
@@ -160,6 +164,7 @@ pub struct SyncResult {
     pub blocks_scanned: u32,
     pub sapling_outputs_scanned: u32,
     pub orchard_outputs_scanned: u32,
+    pub ironwood_outputs_scanned: u32,
     pub percentage_total_outputs_scanned: f32,
 }
 
@@ -174,6 +179,7 @@ impl std::fmt::Display for SyncResult {
     blocks scanned: {}
     sapling outputs scanned: {}
     orchard outputs scanned: {}
+    ironwood outputs scanned: {}
     percentage total outputs scanned: {}
 }}",
             self.sync_start_height,
@@ -181,6 +187,7 @@ impl std::fmt::Display for SyncResult {
             self.blocks_scanned,
             self.sapling_outputs_scanned,
             self.orchard_outputs_scanned,
+            self.ironwood_outputs_scanned,
             self.percentage_total_outputs_scanned,
         )
     }
@@ -194,6 +201,7 @@ impl From<SyncResult> for json::JsonValue {
             "blocks_scanned" => value.blocks_scanned,
             "sapling_outputs_scanned" => value.sapling_outputs_scanned,
             "orchard_outputs_scanned" => value.orchard_outputs_scanned,
+            "ironwood_outputs_scanned" => value.ironwood_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
@@ -573,6 +581,7 @@ where
                             blocks_scanned: sync_status.session_blocks_scanned,
                             sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
                             orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+                            ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
                             percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
                         });
                     }
@@ -675,6 +684,7 @@ where
         blocks_scanned: sync_status.session_blocks_scanned,
         sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+        ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
         percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
     })
 }
@@ -764,9 +774,14 @@ pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W:
 where
     W: SyncWallet + SyncBlocks,
 {
-    let (total_sapling_outputs_scanned, total_orchard_outputs_scanned) =
-        state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
-    let total_outputs_scanned = total_sapling_outputs_scanned + total_orchard_outputs_scanned;
+    let (
+        total_sapling_outputs_scanned,
+        total_orchard_outputs_scanned,
+        total_ironwood_outputs_scanned,
+    ) = state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
+    let total_outputs_scanned = total_sapling_outputs_scanned
+        + total_orchard_outputs_scanned
+        + total_ironwood_outputs_scanned;
 
     let sync_state = wallet
         .get_sync_state()
@@ -781,8 +796,10 @@ where
             percentage_total_blocks_scanned: 0.0,
             session_sapling_outputs_scanned: 0,
             session_orchard_outputs_scanned: 0,
+            session_ironwood_outputs_scanned: 0,
             total_sapling_outputs_scanned: 0,
             total_orchard_outputs_scanned: 0,
+            total_ironwood_outputs_scanned: 0,
             percentage_session_outputs_scanned: 0.0,
             percentage_total_outputs_scanned: 0.0,
             total_outputs_scanned: 0,
@@ -814,7 +831,15 @@ where
             .initial_sync_state
             .wallet_tree_bounds
             .orchard_initial_tree_size;
-    let total_outputs = total_sapling_outputs + total_orchard_outputs;
+    let total_ironwood_outputs = sync_state
+        .initial_sync_state
+        .wallet_tree_bounds
+        .ironwood_final_tree_size
+        - sync_state
+            .initial_sync_state
+            .wallet_tree_bounds
+            .ironwood_initial_tree_size;
+    let total_outputs = total_sapling_outputs + total_orchard_outputs + total_ironwood_outputs;
 
     let session_blocks_scanned =
         total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
@@ -839,13 +864,22 @@ where
         - sync_state
             .initial_sync_state
             .previously_scanned_orchard_outputs;
-    let session_outputs_scanned = session_sapling_outputs_scanned + session_orchard_outputs_scanned;
+    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned
+        - sync_state
+            .initial_sync_state
+            .previously_scanned_ironwood_outputs;
+    let session_outputs_scanned = session_sapling_outputs_scanned
+        + session_orchard_outputs_scanned
+        + session_ironwood_outputs_scanned;
     let previously_scanned_outputs = sync_state
         .initial_sync_state
         .previously_scanned_sapling_outputs
         + sync_state
             .initial_sync_state
-            .previously_scanned_orchard_outputs;
+            .previously_scanned_orchard_outputs
+        + sync_state
+            .initial_sync_state
+            .previously_scanned_ironwood_outputs;
     let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
         / (total_outputs - previously_scanned_outputs) as f32)
         * 100.0)
@@ -889,6 +923,8 @@ where
         total_sapling_outputs_scanned,
         session_orchard_outputs_scanned,
         total_orchard_outputs_scanned,
+        session_ironwood_outputs_scanned,
+        total_ironwood_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
         total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
@@ -962,8 +998,8 @@ where
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
         && pending_transaction.ironwood_notes().is_empty()
-        && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
+        && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_ironwood_notes().is_empty()
         && transparent_spend_scan_targets.is_empty()
         && sapling_spend_scan_targets.is_empty()
@@ -1019,6 +1055,17 @@ pub fn reset_spends(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     invalid_txids: Vec<TxId>,
 ) {
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.ironwood_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
     wallet_transactions
         .values_mut()
         .flat_map(|transaction| transaction.orchard_notes_mut())
@@ -2242,6 +2289,8 @@ mod test {
                 total_sapling_outputs_scanned: 0,
                 session_orchard_outputs_scanned: 0,
                 total_orchard_outputs_scanned: 0,
+                session_ironwood_outputs_scanned: 0,
+                total_ironwood_outputs_scanned: 0,
                 percentage_session_outputs_scanned: 0.0,
                 percentage_total_outputs_scanned: 0.0,
                 total_outputs_scanned: 0,
