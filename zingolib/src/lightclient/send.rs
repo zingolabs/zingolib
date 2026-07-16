@@ -78,6 +78,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.require_indexer()?;
         let mut wallet = self.wallet().write().await;
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
