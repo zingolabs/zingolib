@@ -284,10 +284,92 @@ increment (mine; others hold only zingo-cli files):
 - `zingolib/src/nym/broadcast_indexers.rs` — provisional curated broadcast
   list, separate from the sync list (new).
 
-Next increments (not this one): the nym-sdk NymProxy `Transmitter` impl in
-zingo-netutils behind its own `nym` feature; wiring the broadcaster into
-`transmit_transactions`; the tri-state toggle as a LightClient API; the
-reqwest+SOCKS5 price path; CLI `nym on|off|status`.
+## Implementation — increment 2 (IN PROGRESS 2026-07-15): nym-sdk transport
+
+Porting the POC's NymProxy into zingo-netutils behind a `nym` feature and
+implementing `Transmitter`. KEY FINDING: the POC pinned a zingolabs FORK of
+nym (github.com/zingolabs/nym branch nym_wallet_poc_2_1) — but ADR 0011
+forbids fork pins, and upstream now PUBLISHES all three on crates.io
+(nym-sdk 1.21.2, nym-http-api-client 1.21.3, nym-validator-client 1.21.3,
+none yanked). So we use upstream, satisfying the ratified constraint. File
+claims: zingo-netutils/Cargo.toml (+ optional nym deps, `nym` feature),
+Cargo.lock (shared — careful), zingo-netutils/src/nym_proxy.rs (new, ported).
+GATE FAILED (2026-07-15): nym-sdk 1.21.2 does NOT resolve against the
+ironwood stack. Two independent hard conflicts, both reverted cleanly:
+- With jwt-simple 0.12.12 (what cargo picks under nym's `^0.12.12`):
+  jwt-simple pins `rand =0.8.5`, but nym-bandwidth-controller needs
+  `rand ^0.8.6`. Unsatisfiable.
+- Steering to jwt-simple 0.12.17 (rand ^0.8.6) moves the conflict to
+  **crypto-common**, and this one is FUNDAMENTAL: jwt-simple 0.12.17 →
+  superboring 0.1.12 → ml-dsa =0.1.0-rc.11 needs `crypto-common ^0.2`
+  (>=0.2.1), but **zcash_primitives 0.29.0 pins `crypto-common
+  =0.2.0-rc.1`**. The ironwood zcash crypto foundation and nym's
+  post-quantum crypto foundation demand incompatible crypto-common.
+The POC only worked because it ran on a pre-ironwood base (different
+crypto-common) AND used a zingolabs FORK of nym (github.com/zingolabs/nym)
+that patched these pins. Neither holds now, and ADR 0011 forbids the fork
+and any [patch]. **BLOCKER — needs a user decision** (see options in the
+turn report). Increment 1 is UNAFFECTED: the `Transmitter` trait is
+transport-agnostic, so the witness-rotation core stands regardless of how
+the mixnet transport is ultimately provided.
+
+"SEPARATE CRATE" DOES NOT HELP (analysed 2026-07-15, corrected): cargo DOES
+keep multiple versions of a crate in one Cargo.lock — but only across
+semver-INCOMPATIBLE ranges (0.1.x alongside 0.2.x). Within ONE compatibility
+range it keeps a single node. Here both crypto-common requirements are in
+the SAME 0.2.x range (`=0.2.0-rc.1` from zcash_primitives 0.29 vs `^0.2`
+from nym's ml-dsa path), so cargo must unify them and no single 0.2.x
+version satisfies both — the resolver failed rather than duplicating. A
+separate workspace MEMBER doesn't change this: zingo-netutils already has
+ZERO zcash_primitives (verified: `cargo tree -p zingo-netutils -i
+zcash_primitives` empty) yet the conflict still fires, because zingo-cli /
+libtonode-tests pull both zingolib (zcash) and netutils (nym) into the one
+lockfile. Coexistence would require the two crypto-common requirements to be
+in DIFFERENT ranges (unachievable — both are pinned deep in 0.2), OR a
+separate RESOLUTION unit (own Cargo.lock) linked at RUNTIME across a process
+boundary — the out-of-process SOCKS5 daemon (option 1).
+
+## Implementation — increment 2a (COMPLETE 2026-07-15): netutils own lockfile
+
+DONE + VALIDATED. netutils is excluded from the parent workspace, made its
+own workspace root (own [workspace.dependencies] + [patch.crates-io] for
+lightwallet-protocol git rev and time v0.3.47), and now owns
+zingo-netutils/Cargo.lock (160 pkgs). Verified: (1) root workspace resolves
+and `cargo check --workspace` is GREEN (15.8s) — main lock shrank 172 lines
+(netutils dev-deps no longer in the main lock, expected); (2) netutils
+compiles standalone `--all-features` (18.4s); (3) PAYOFF PROVEN — `cargo add
+nym-sdk@1.21.2` resolves cleanly in netutils's standalone graph (no
+crypto-common conflict, because that graph has zero zcash_primitives). The
+validation nym-sdk was then reverted; it lands with the transport code in 2b.
+CI (DONE 2026-07-15): added a `netutils-standalone` job to
+`.github/workflows/ci-pr.yaml` — fmt --check, clippy --all-targets
+--all-features -D warnings, and test --all-features against the netutils
+manifest (own workspace, its own cache). Validated locally: YAML valid,
+fmt/clippy/test all green (8 unit + 1 doc test). This restores the PR-gate
+coverage that `--workspace` (checkmate, cargo-hack, doc tests, nextest
+archive) now skips. KNOWN NON-BLOCKING GAPS left as follow-ups: ci-nightly's
+`cargo-hack-build` feature-powerset build and coverage.yaml's `llvm-cov
+--workspace` still exclude netutils (a nightly build-combo check and
+coverage metrics, neither a merge gate).
+
+User directive: "Move zingonetutils the minimum distance to have its own
+lockfile. Still listed in the workspace manifest, but no longer as a member."
+Rationale: as its own resolution unit, netutils can build STANDALONE with the
+`nym` feature (nym-sdk's crypto-common ^0.2 against a graph with ZERO
+zcash_primitives — no conflict), while members keep consuming it as a path
+dep in the main lock with `nym` off. This is the FOUNDATION for a
+standalone/out-of-process nym transport; it does NOT by itself let the main
+workspace link nym in-process (a path-dep with nym-on re-merges into the main
+lock). Mechanism: root `[workspace]` members drop netutils + `exclude` it;
+netutils gets its own `[workspace]`, `[workspace.dependencies]` (mirroring the
+root entries it inherits), and `[patch.crates-io]` (BOTH the lightwallet-protocol
+git rev AND the time v0.3.47 patch). File claims: Cargo.toml (root, shared —
+careful), zingo-netutils/Cargo.toml, zingo-netutils/Cargo.lock (new).
+Verify: main workspace still resolves/builds; netutils resolves standalone.
+
+Later increments: wire the broadcaster into `transmit_transactions`; the
+tri-state toggle as a LightClient API; the reqwest+SOCKS5 price path;
+CLI `nym on|off|status`.
 
 ## File claims (prospective, gated on ratification)
 

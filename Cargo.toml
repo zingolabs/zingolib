@@ -4,12 +4,19 @@ members = [
     "pepper-sync",
     "zingo-cli",
     "zingo-memo",
-    "zingo-netutils",
     "zingo-price",
     "zingo-status",
     "zingolib",
     "zingolib_testutils",
 ]
+# zingo-netutils is intentionally NOT a member: it carries its own [workspace]
+# and Cargo.lock so it can be built standalone with the `nym` feature, whose
+# nym-sdk stack needs `crypto-common ^0.2` — irreconcilable in a shared lock
+# with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
+# 0.29). Members still consume netutils through the `zingo-netutils` path
+# dependency below, resolved in THIS lockfile with `nym` off. See
+# docs/adr/0011-nym-mixnet-transmission.md.
+exclude = ["zingo-netutils"]
 resolver = "2"
 
 [workspace.dependencies]
