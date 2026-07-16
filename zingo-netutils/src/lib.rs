@@ -57,6 +57,11 @@ mod nym_proxy;
 #[cfg(feature = "nym")]
 pub use nym_proxy::NymProxy;
 
+#[cfg(feature = "socks5-transmit")]
+mod socks5_transmit;
+#[cfg(feature = "socks5-transmit")]
+pub use socks5_transmit::{Socks5TransmitError, send_transaction_via_socks5};
+
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
     // sure a process-level CryptoProvider exists before that happens.
