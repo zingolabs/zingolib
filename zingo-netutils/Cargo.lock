@@ -8898,6 +8898,7 @@ dependencies = [
  "tokio-socks",
  "tokio-stream",
  "tonic",
+ "tower",
  "x509-parser",
 ]
 

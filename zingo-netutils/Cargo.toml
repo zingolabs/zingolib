@@ -31,6 +31,8 @@ nym-validator-client = { version = "1.21.3", optional = true, default-features =
     "http-client",
 ] }
 tokio-socks = { version = "0.5", optional = true }
+hyper-util = { version = "0.1.20", optional = true }
+tower = { version = "0.5", optional = true }
 tokio = { workspace = true, optional = true, features = [
     "time",
     "rt-multi-thread",
@@ -41,6 +43,11 @@ tokio = { workspace = true, optional = true, features = [
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
+# Wallet-side SOCKS5-dialing transmit (ADR 0011, consumption model A). Light —
+# no nym-sdk, so it resolves in the main workspace's lockfile. The wallet
+# enables this to route a transaction through the spawned nym-proxy's local
+# SOCKS5 port.
+socks5-transmit = ["dep:tokio-socks", "dep:hyper-util", "dep:tower", "dep:tokio"]
 nym = [
     "dep:nym-sdk",
     "dep:nym-http-api-client",

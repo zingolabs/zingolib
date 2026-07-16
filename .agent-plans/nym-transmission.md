@@ -413,6 +413,53 @@ carried unchanged across FOUR stable zcash_primitives minors, so not imminent.
 The two-lockfile split (2a) is therefore a durable architecture, not a
 temporary bridge.
 
+### Research synthesis (3 sub-agents, 2026-07-16) — why the pin, can zcash unpin
+
+WHY: librustzcash introduced the exact pins on 2025-02-26 (commit 20e1a705f4ae,
+PR #1717, "Avert MSRV breakage in WASM & no-std builds"). Inline comment:
+`# later RCs require edition2024`. crypto-common 0.2.0-rc.1 / block-buffer
+0.11.0-rc.3 are the LAST edition-2021/low-MSRV pre-releases; the next RC jumps
+to edition2024/MSRV-1.85, which then-low-MSRV WASM/no-std builds couldn't take.
+That rationale is now STALE — librustzcash is on edition 2024 / MSRV 1.88. The
+pin persists by inertia + cohort coherence: `bip32 = "=0.6.0-pre.1"` drags in
+the whole -pre RustCrypto cohort (hmac 0.13.0-pre.4 → digest 0.11.0-pre.9 →
+crypto-common), and stable bip32 0.6.0 has NEVER shipped (stable tops at 0.5.3,
+old trait gen). Notably digest 0.11.0-pre.9's OWN req is caret `^0.2.0-rc.0`
+(would accept 0.2.2) — so librustzcash's EXACT `=` pin is the sole thing
+forcing rc.1.
+
+CAN UNPIN: the stable RustCrypto stack now EXISTS and coheres (crypto-common
+0.2.2, digest 0.11.3, block-buffer 0.12.1; digest 0.11.3 → crypto-common ^0.2).
+But it's not a one-liner: crypto-common 0.2.1 removed the BlockSizes trait
+(generic-array→hybrid-array), so a `[patch]` to 0.2.2 RESOLVES but FAILS TO
+COMPILE against the frozen pre-release digest/block-buffer. A real fix migrates
+the whole cohort to stable, gated on upstream shipping stable bip32 0.6.0 /
+sha2 0.11 / pbkdf2 0.13 (all still pre-release). No tracking issue, no
+maintainer timeline; held across 0.26→0.29. Ecosystem precedent: Zebra (PR
+#10522) TOLERATES the RC crates via deny.toml skip-tree, does not unpin. And
+ml-dsa already moved to crypto-common ^0.3 — zcash is two generations behind,
+so even a future move to 0.2.x may not close the gap with newer nym.
+
+VERDICT: do NOT architect around an imminent unpin; a `[patch]` is not viable
+(compile failure). The split-lockfile is correct and DURABLE — it survives
+zcash landing on 0.2.x OR 0.3.
+
+## Implementation — increment 2d (IN PROGRESS 2026-07-16): SOCKS5 transmit
+
+netutils gains a light `socks5-transmit` feature (tokio-socks + hyper-util +
+tower, NO nym-sdk) and `send_transaction_via_socks5(socks5_addr, indexer,
+raw_tx, height, timeout)` — dials the indexer through a local SOCKS5 proxy via
+tonic connect_with_connector, returns the txid, classifies errors as
+Unreachable (failover) vs Rejected. zingolib's `nym` feature now enables
+`zingo-netutils/socks5-transmit`. GATE PASSED: `cargo check -p zingolib
+--features nym` GREEN in the MAIN lock (15.8s; +16 lines Cargo.lock) — the
+wallet-side transport resolves in-process, no crypto-common conflict.
+netutils standalone `--features socks5-transmit` also green. NEXT: a
+SocksTransmitter in zingolib implementing the increment-1 Transmitter trait
+(wraps send_transaction_via_socks5, maps to SubmitError); the proxy supervisor
+that spawns nym-proxy and parses SOCKS5_ADDR=; wire the broadcaster into
+transmit_transactions; the tri-state toggle LightClient API.
+
 ## Consumption model — RATIFIED (A) bundle-and-spawn (2026-07-16)
 
 User chose A: the wallet ships a nym-proxy binary (built from standalone
