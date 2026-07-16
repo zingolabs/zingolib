@@ -3,30 +3,28 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return"}
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return", features = [
-    "test_lwd_zebrad",
-] }
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
-zcash_address = "0.12.0"
-zcash_client_backend = { version = "0.23.0", features = [
+zcash_address = "0.13.0"
+zcash_client_backend = { version = "0.24.0-rc.1", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
 ] }
 zcash_encoding = "0.4.0"
-zcash_keys = { version = "0.14.0", features = [
+zcash_keys = { version = "0.15.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4.1"
-zcash_proofs = "0.28.0"
-zcash_protocol = "0.9.0"
-zcash_transparent = "0.8.0"
+zcash_note_encryption = "0.4.2"
+zcash_proofs = "0.29.0"
+zcash_protocol = "0.10.0"
+zcash_transparent = "0.9.0"
 
 zingo_common_components = "0.4.0"
 zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
@@ -62,14 +60,8 @@ opt-level = 3
 debug = 1
 
 [patch.crates-io]
-# TEMPORARY: point to fork with OP_RETURN support for swap integrations.
-# Must match the patch in zingolib so the dependency graph resolves to a single
-# version of the librustzcash crates. Revert once upstream PR merges.
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_transparent = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", branch = "feature/op-return-zingolib-compat" }
+# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
+# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). Must match
+# the patch in zingolib (feat/ironwood) so the dependency graph resolves to a single
+# ironwood-aware lightwallet-protocol.
+lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }

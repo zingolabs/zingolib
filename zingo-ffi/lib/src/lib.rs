@@ -41,7 +41,7 @@ use zcash_protocol::value::Zatoshis;
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
     ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
-    construct_lightwalletd_uri, lib_birthday,
+    construct_indexer_uri, lib_birthday,
 };
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
@@ -261,7 +261,7 @@ fn build_connection_params(
         None
     } else {
         Some(
-            construct_lightwalletd_uri(Some(uri))
+            construct_indexer_uri(Some(uri))
                 .map_err(|e| format!("Error: Invalid lightwalletd uri: {e}"))?,
         )
     };
@@ -764,8 +764,8 @@ pub fn info_server() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                match lightclient.do_info().await {
-                    Ok(info) => info,
+                match lightclient.info().await {
+                    Ok(info) => json::JsonValue::from(info).pretty(2),
                     Err(e) => format!("Error: {e}"),
                 }
             }))
@@ -871,12 +871,12 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
                     ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
                     ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
                 };
-                match construct_lightwalletd_uri(Some(default.to_string())) {
+                match construct_indexer_uri(Some(default.to_string())) {
                     Ok(u) => u,
                     Err(_) => return Ok("Error: invalid server uri".to_string()),
                 }
             } else {
-                match construct_lightwalletd_uri(Some(server_uri)) {
+                match construct_indexer_uri(Some(server_uri)) {
                     Ok(u) => u,
                     Err(_) => return Ok("Error: invalid server uri".to_string()),
                 }
@@ -1367,41 +1367,6 @@ pub fn create_new_transparent_address() -> Result<String, ZingolibError> {
     })
 }
 
-// Reserve a fresh transparent address on the `refund` (a.k.a. ephemeral, ZIP
-// 320) scope. The address is added to the wallet's tracked set so subsequent
-// sync ticks will scan it and surface any incoming UTXOs as normal wallet
-// transactions. The JS layer requests one of these per swap so providers see a
-// privacy-preserving one-shot address as `sourceAddress` / `destinationAddress`
-// and refunds aren't linked to the user's persistent t-receiver.
-pub fn reserve_ephemeral_address() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let mut wallet = lightclient.wallet().write().await;
-                let network = wallet.chain_type();
-                match wallet.generate_refund_addresses(1, AccountId::ZERO) {
-                    Ok(addrs) => match addrs.into_iter().next() {
-                        Some((id, address)) => json::object! {
-                            "account" => u32::from(id.account_id()),
-                            "address_index" => id.address_index().index(),
-                            "scope" => id.scope().to_string(),
-                            "encoded_address" => transparent::encode_address(&network, address),
-                        }
-                        .pretty(2),
-                        None => "Error: generate_refund_addresses returned an empty vector".to_string(),
-                    },
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
-    })
-}
-
 pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let mut guard = LIGHTCLIENT
@@ -1659,37 +1624,7 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
                     Err(e) => return format!("Error: Request Error: {e}"),
                 };
 
-                // The transparent OP_RETURN payload is a transaction-wide
-                // concern (one OP_RETURN per tx), not a per-receiver field.
-                // To avoid changing the JSON contract from an array to an
-                // envelope, we read it from the first receiver's `op_return`
-                // field when present. Callers (e.g. the swap deposit flow)
-                // build the JSON with a single receiver carrying the field;
-                // ordinary sends omit it and get the default `None`.
-                let op_return = match json_args[0]["op_return"].as_str() {
-                    Some(hex_str) if !hex_str.is_empty() => match hex::decode(hex_str) {
-                        Ok(bytes) => Some(bytes),
-                        Err(e) => return format!("Error: Invalid op_return hex: {e}"),
-                    },
-                    _ => None,
-                };
-
-                // `route_via_ephemeral` flips the proposal to a two-step
-                // ZIP-320 ephemeral indirection (shielded → wallet ephemeral
-                // t-addr → recipient) for transparent recipients. Same
-                // top-level convention as `op_return`: read from the first
-                // receiver; absent or `false` means the regular single-hop
-                // flow. The swap deposit flow sets this to `true` for
-                // Mayachain/THORChain so the vault sees a wallet-controlled
-                // `from_address` (otherwise refunds are unrecoverable).
-                let route_via_ephemeral = json_args[0]["route_via_ephemeral"]
-                    .as_bool()
-                    .unwrap_or(false);
-
-                match lightclient
-                    .propose_send(request, AccountId::ZERO, op_return, route_via_ephemeral)
-                    .await
-                {
+                match lightclient.propose_send(request, AccountId::ZERO).await {
                     Ok(proposal) => {
                         let fee = match total_fee(&proposal) {
                             Ok(fee) => fee,

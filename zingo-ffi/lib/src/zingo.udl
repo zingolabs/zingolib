@@ -171,9 +171,6 @@ namespace zingo {
   string create_new_transparent_address();
 
   [Throws=ZingolibError]
-  string reserve_ephemeral_address();
-
-  [Throws=ZingolibError]
   string check_my_address(
     string address
   );
