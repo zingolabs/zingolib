@@ -89,7 +89,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 min_confirmations: NonZeroU32::new(3).unwrap(),
             },
         })
-        .build();
+        .build()
+        .unwrap();
 
     // `overwrite: true` allows creating a new wallet even if a file already
     // exists at the path (use false in production to avoid accidental overwrites).
@@ -140,7 +141,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_config = ClientConfig::builder()
         .set_wallet_dir(wallet_dir.clone())
         .set_wallet_config(WalletConfig::Read)
-        .build();
+        .build()
+        .unwrap();
 
     let reloaded = LightClient::new(load_config, false).await?;
 

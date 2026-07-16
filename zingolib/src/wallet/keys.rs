@@ -450,6 +450,31 @@ impl LightWallet {
             .find(|(_, unified_address)| unified_address.orchard() == Some(address))
             .map(|(id, address)| (*id, address.clone()))
     }
+
+    pub(crate) fn highest_refund_address_index(&self) -> Option<NonHardenedChildIndex> {
+        self.transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .max_by_key(|id| id.address_index())
+            .map(|id| id.address_index())
+    }
+
+    /// Removes any refund address in the wallet above the given index.
+    ///
+    /// If `index_opt` is `None`, remove all refund addresses.
+    pub(crate) fn truncate_refund_addresses(&mut self, index_opt: Option<NonHardenedChildIndex>) {
+        if let Some(current_highest_index) = self.highest_refund_address_index()
+            && index_opt.is_none_or(|index| current_highest_index > index)
+        {
+            self.transparent_addresses_mut().retain(|id, _| {
+                if let Some(index) = index_opt {
+                    !(id.scope() == TransparentScope::Refund && id.address_index() > index)
+                } else {
+                    id.scope() != TransparentScope::Refund
+                }
+            });
+        }
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]

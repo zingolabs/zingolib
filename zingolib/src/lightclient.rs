@@ -500,7 +500,8 @@ mod tests {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
 
         let mut lc = LightClient::new(config.clone(), false).await.unwrap();
 
@@ -543,7 +544,8 @@ mod tests {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
 
         // Source wallet → serialized bytes via the same in-memory `save()` that mobile
         // consumers use to ship the wallet across the FFI.
@@ -562,7 +564,8 @@ mod tests {
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::Read)
-            .build();
+            .build()
+            .unwrap();
         let restored = LightClient::from_bytes(bytes, restored_config)
             .await
             .unwrap();

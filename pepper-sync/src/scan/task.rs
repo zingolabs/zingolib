@@ -38,10 +38,8 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
 
-const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
-const SCAN_TASK_TIMEOUT: Duration = Duration::from_secs(120);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -355,32 +353,28 @@ where
                     scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
 
                 let mut retry_height = scan_task.scan_range.block_range().start;
-                let mut sapling_output_count = 0;
-                let mut orchard_output_count = 0;
-                let mut sapling_nullifier_count = 0;
-                let mut orchard_nullifier_count = 0;
+                let mut batch_sapling_output_count = 0;
+                let mut batch_orchard_output_count = 0;
+                let mut batch_sapling_nullifier_count = 0;
+                let mut batch_orchard_nullifier_count = 0;
+                let mut current_block_sapling_output_count = 0;
+                let mut current_block_orchard_output_count = 0;
+                let mut current_block_sapling_nullifier_count = 0;
+                let mut current_block_orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
-                let mut block_stream = {
-                    let range = scan_task.scan_range.block_range().clone();
-                    let frs = fetch_request_sender.clone();
-
-                    let open_fut = async move {
-                        if fetch_nullifiers_only {
-                            client::get_nullifier_range(frs, range).await
-                        } else {
-                            client::get_compact_block_range(frs, range).await
-                        }
-                    };
-
-                    match tokio::time::timeout(STREAM_OPEN_TIMEOUT, open_fut).await {
-                        Ok(res) => res?,
-                        Err(_) => {
-                            return Err(
-                                tonic::Status::deadline_exceeded("open stream timeout").into()
-                            );
-                        }
-                    }
+                let mut block_stream = if fetch_nullifiers_only {
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                } else {
+                    client::get_compact_block_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
                 };
 
                 loop {
@@ -403,28 +397,19 @@ where
 
                             let retry_range = retry_height..scan_task.scan_range.block_range().end;
 
-                            let reopen_fut = {
-                                let frs = fetch_request_sender.clone();
-
-                                async move {
-                                    if fetch_nullifiers_only {
-                                        client::get_nullifier_range(frs, retry_range).await
-                                    } else {
-                                        client::get_compact_block_range(frs, retry_range).await
-                                    }
-                                }
+                            block_stream = if fetch_nullifiers_only {
+                                client::get_nullifier_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
+                            } else {
+                                client::get_compact_block_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
                             };
-
-                            block_stream =
-                                match tokio::time::timeout(STREAM_OPEN_TIMEOUT, reopen_fut).await {
-                                    Ok(res) => res?,
-                                    Err(_) => {
-                                        return Err(tonic::Status::deadline_exceeded(
-                                            "open stream timeout (retry)",
-                                        )
-                                        .into());
-                                    }
-                                };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -454,14 +439,16 @@ where
                     };
 
                     if fetch_nullifiers_only {
-                        sapling_nullifier_count += compact_block
+                        current_block_sapling_nullifier_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        orchard_nullifier_count += compact_block
+                        batch_sapling_nullifier_count += current_block_sapling_nullifier_count;
+                        current_block_orchard_nullifier_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        batch_orchard_nullifier_count += current_block_orchard_nullifier_count;
                     } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
@@ -499,18 +486,23 @@ where
                             );
                         }
 
-                        sapling_output_count += compact_block
+                        current_block_sapling_output_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.outputs.len());
-                        orchard_output_count += compact_block
+                        batch_sapling_output_count += current_block_sapling_output_count;
+                        current_block_orchard_output_count = compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        batch_orchard_output_count += current_block_orchard_output_count;
                     }
 
-                    if sapling_output_count + orchard_output_count > max_batch_outputs
-                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS
+                    if (batch_sapling_output_count + batch_orchard_output_count > max_batch_outputs
+                        || batch_sapling_nullifier_count + batch_orchard_nullifier_count
+                            > MAX_BATCH_NULLIFIERS)
+                        && scan_task.scan_range.block_range().start
+                            != get_compact_block_height(&compact_block)
                     {
                         let (full_batch, new_batch) = scan_task
                             .clone()
@@ -524,10 +516,10 @@ where
                         let _ignore_error = batch_sender.send(full_batch).await;
 
                         scan_task = new_batch;
-                        sapling_output_count = 0;
-                        orchard_output_count = 0;
-                        sapling_nullifier_count = 0;
-                        orchard_nullifier_count = 0;
+                        batch_sapling_output_count = current_block_sapling_output_count;
+                        batch_orchard_output_count = current_block_orchard_output_count;
+                        batch_sapling_nullifier_count = current_block_sapling_nullifier_count;
+                        batch_orchard_nullifier_count = current_block_orchard_nullifier_count;
                     }
 
                     retry_height = get_compact_block_height(&compact_block) + 1;
@@ -668,26 +660,14 @@ where
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
                 let scan_range = scan_task.scan_range.clone();
-
-                let scan_fut = scan(
+                let scan_results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
                     max_batch_outputs,
-                );
-
-                let scan_results = match tokio::time::timeout(SCAN_TASK_TIMEOUT, scan_fut).await {
-                    Ok(res) => res,
-                    Err(_) => {
-                        // Best-effort: maps timeout into existing error types.
-                        Err(ServerError::from(tonic::Status::deadline_exceeded(
-                            "scan task timeout",
-                        ))
-                        .into())
-                    }
-                };
-
+                )
+                .await;
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
@@ -777,7 +757,7 @@ impl ScanTask {
         block_height: BlockHeight,
     ) -> Result<(Self, Self), ServerError> {
         if block_height < self.scan_range.block_range().start
-            && block_height > self.scan_range.block_range().end - 1
+            || block_height > self.scan_range.block_range().end - 1
         {
             panic!("block height should be within scan tasks block range!");
         }

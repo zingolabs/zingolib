@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{self, AtomicBool, AtomicU8};
+use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::time::{Duration, SystemTime};
 
 use tokio::sync::{RwLock, mpsc};
@@ -43,10 +43,9 @@ use crate::witness::LocatedTreeData;
 
 use crate::witness;
 
-pub(crate) mod transparent;
-
 pub(crate) mod spend;
 pub(crate) mod state;
+pub(crate) mod transparent;
 
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
@@ -57,6 +56,7 @@ pub(crate) mod state;
 /// upstream by documentation rather than import; if zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
+
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -405,7 +405,7 @@ where
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
     let shutdown_mempool_clone = shutdown_mempool.clone();
-    let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
+    let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
     let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
@@ -422,22 +422,25 @@ where
     });
 
     // pre-scan initialisation
-    let mut wallet_guard = wallet.write().await;
-
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    let last_known_chain_height =
-        checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
+    let last_known_chain_height = checked_wallet_height(
+        &mut *wallet.write().await,
+        chain_height,
+        consensus_parameters,
+    )?;
 
-    let ufvks = wallet_guard
+    let ufvks = wallet
+        .read()
+        .await
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
-        &mut *wallet_guard,
+        wallet.clone(),
         fetch_request_sender.clone(),
         &ufvks,
         last_known_chain_height,
@@ -449,14 +452,14 @@ where
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
     add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
@@ -465,21 +468,20 @@ where
         fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
     state::set_initial_state(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
         chain_height,
     )
     .await?;
 
-    expire_transactions(&mut *wallet_guard)?;
+    expire_transactions(&mut *wallet.write().await)?;
 
-    drop(wallet_guard);
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -814,8 +816,14 @@ where
         / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
+    if percentage_session_blocks_scanned.is_nan() {
+        percentage_session_blocks_scanned = 100.0;
+    }
     let mut percentage_total_blocks_scanned =
         ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
+    if percentage_total_blocks_scanned.is_nan() {
+        percentage_total_blocks_scanned = 100.0;
+    }
 
     let session_sapling_outputs_scanned = total_sapling_outputs_scanned
         - sync_state
@@ -836,8 +844,14 @@ where
         / (total_outputs - previously_scanned_outputs) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
+    if percentage_session_outputs_scanned.is_nan() {
+        percentage_session_outputs_scanned = 100.0;
+    }
     let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
+    if percentage_total_outputs_scanned.is_nan() {
+        percentage_total_outputs_scanned = 100.0;
+    }
 
     if sync_state
         .scan_ranges()
@@ -1109,7 +1123,7 @@ enum DrainVerdict {
 /// pre-existing mempool content (served within ~100ms of connect).
 fn drain_verdict(
     scan_workers: usize,
-    unprocessed_mempool_transactions: u8,
+    unprocessed_mempool_transactions: u32,
     connected_for: Option<Duration>,
     poll_elapsed: Duration,
 ) -> DrainVerdict {
@@ -1974,7 +1988,7 @@ where
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
-    unprocessed_transactions_count: Arc<AtomicU8>,
+    unprocessed_transactions_count: Arc<AtomicU32>,
     stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
@@ -2003,10 +2017,18 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                     let _ignore_error = mempool_transaction_sender
+                                     match mempool_transaction_sender
                                         .send(raw_transaction)
-                                        .await;
-                                    unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                        .await {
+                                            Ok(_) => {
+                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                            }
+                                            Err(_) => {
+                                                unprocessed_transactions_count.store(0, atomic::Ordering::Release);
+                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                break 'main;
+                                            }
+                                        }
                                 }
                                 None => {
                                     continue 'main;
@@ -2181,7 +2203,7 @@ mod test {
         #[test]
         fn table() {
             // (workers, unprocessed, connected_for, poll_elapsed) → verdict
-            let cases: &[(usize, u8, Option<u64>, u64, DrainVerdict, &str)] = &[
+            let cases: &[(usize, u32, Option<u64>, u64, DrainVerdict, &str)] = &[
                 // The reported bug: first-loop shutdown on a fully
                 // synced chain, stream not yet connected — hold the
                 // session open instead of closing it instantly.

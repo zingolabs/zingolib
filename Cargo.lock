@@ -1789,7 +1789,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zingo-netutils",
- "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-status",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -2181,9 +2181,9 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-memo",
  "zingo-netutils",
- "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-status",
  "zip32",
 ]
 
@@ -4993,7 +4993,7 @@ dependencies = [
  "zcash_keys",
  "zcash_protocol",
  "zingo-netutils",
- "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-status",
  "zingo_common_components",
  "zingo_grpc_proxy",
  "zingolib",
@@ -5010,18 +5010,6 @@ name = "zingo-memo"
 version = "0.1.1"
 dependencies = [
  "rand 0.8.5",
- "zcash_address",
- "zcash_encoding",
- "zcash_keys",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-memo"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be89f74c1be1ac061f58921191c005fd2f9d83541e7ef6febfb5c51c0c3f539c"
-dependencies = [
  "zcash_address",
  "zcash_encoding",
  "zcash_keys",
@@ -5067,17 +5055,6 @@ name = "zingo-status"
 version = "0.2.1"
 dependencies = [
  "byteorder",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-status"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa2f3e473a81f4b9fd3fb34d5e22a2c458ce0d8d3a73460e9aa0a2bbf71967f4"
-dependencies = [
- "byteorder",
- "zcash_primitives",
  "zcash_protocol",
 ]
 
@@ -5151,10 +5128,10 @@ dependencies = [
  "zcash_proofs",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-memo",
  "zingo-netutils",
  "zingo-price",
- "zingo-status 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-status",
  "zingo_common_components",
  "zingo_test_vectors",
  "zip32",
