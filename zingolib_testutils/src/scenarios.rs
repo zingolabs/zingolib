@@ -392,7 +392,13 @@ async fn normalize_shielded_faucet_balance<V, I>(
     <V as Process>::Config: Send,
     LocalNet<V, I>: IndexerConvergence,
 {
-    if !matches!(mine_to_pool, PoolType::Transparent) {
+    let chain_height = local_net.validator().get_chain_height().await;
+    let activation_heights = local_net.validator().get_activation_heights().await;
+    if !matches!(mine_to_pool, PoolType::Transparent)
+        && activation_heights
+            .nu6_3()
+            .is_some_and(|ironwood_height| chain_height >= ironwood_height)
+    {
         local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
         quick_send(
@@ -635,13 +641,7 @@ pub async fn faucet_recipient(
 
     // A replayed chain already contains the balance-normalization offload;
     // the freshly built faucet wallet recovers it by sync below.
-    let chain_height = local_net.validator().get_chain_height().await;
-    if !replayed
-        && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad)
-        && configured_activation_heights
-            .nu6_3()
-            .is_some_and(|ironwood_height| chain_height >= ironwood_height)
-    {
+    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
     }
 
