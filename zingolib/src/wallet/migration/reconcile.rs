@@ -329,9 +329,13 @@ impl ChainView for crate::wallet::LightWallet {
     }
 
     fn transaction_failed(&self, txid: &TxId) -> bool {
+        // An absent record is *unknown*, not failed: after a restore from
+        // backup an in-flight split transaction has no wallet record yet may
+        // still confirm. Reporting it failed would retry the split and race
+        // the original.
         self.wallet_transactions
             .get(txid)
-            .is_none_or(|transaction| transaction.status().is_failed())
+            .is_some_and(|transaction| transaction.status().is_failed())
     }
 
     fn orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64 {
@@ -626,6 +630,43 @@ mod tests {
         assert_eq!(
             report.actions,
             vec![RecommendedAction::ContinueNoteSplitting]
+        );
+    }
+
+    /// After a restore from backup the wallet's transaction map no longer
+    /// contains an in-flight split transaction, but the persisted migration
+    /// state still names it in `pending_txids`. An unknown txid is not
+    /// *recorded as failed* (the `ChainView::transaction_failed` contract),
+    /// so reconciliation must keep waiting rather than retry the split and
+    /// race its own in-flight transaction. This exercises the real
+    /// `LightWallet` implementation, not `MockChainView`.
+    #[test]
+    fn unknown_txid_after_restore_is_not_classified_failed() {
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+
+        let in_flight_txid = TxId::from_bytes([42; 32]);
+        assert!(!wallet.wallet_transactions.contains_key(&in_flight_txid));
+
+        // Contract-level assertion: an unknown transaction is not failed.
+        assert!(
+            !wallet.transaction_failed(&in_flight_txid),
+            "an unknown txid must not be reported as failed",
+        );
+
+        // Behavior-level assertion: reconciliation awaits confirmation
+        // instead of recommending a retry that races the in-flight split.
+        let mut state = scheduled_state(Vec::new());
+        state.phase = MigrationPhase::NoteSplitting {
+            round: 0,
+            pending_txids: vec![in_flight_txid],
+        };
+        let report = reconcile(&state, &wallet);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::AwaitSplitConfirmation],
         );
     }
 }
