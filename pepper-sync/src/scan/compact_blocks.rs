@@ -302,40 +302,50 @@ fn check_tree_size(
     compact_block: &CompactBlock,
     wallet_block: &WalletBlock,
 ) -> Result<(), ScanError> {
-    if let Some(chain_metadata) = &compact_block.chain_metadata {
-        if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.tree_bounds().sapling_final_tree_size
-        {
-            return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedPool::Sapling),
-                block_metadata_size: chain_metadata.sapling_commitment_tree_size,
-                calculated_size: wallet_block.tree_bounds().sapling_final_tree_size,
-            });
+    let Some(chain_metadata) = &compact_block.chain_metadata else {
+        return Ok(());
+    };
+    let matched = |pool, block_metadata_size, calculated_size| {
+        if block_metadata_size == calculated_size {
+            Ok(())
+        } else {
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(pool),
+                block_metadata_size,
+                calculated_size,
+            })
         }
-        if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.tree_bounds().orchard_final_tree_size
-        {
-            return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
-                block_metadata_size: chain_metadata.orchard_commitment_tree_size,
-                calculated_size: wallet_block.tree_bounds().orchard_final_tree_size,
-            });
-        }
-        if chain_metadata.ironwood_commitment_tree_size
-            != wallet_block.tree_bounds().ironwood_final_tree_size
-        {
-            // A mismatch is expected while parts of the ecosystem do not
-            // serve ironwood data (wallet blocks synced before ironwood
-            // tracking carry zero sizes, and servers without support send
-            // zero metadata against real actions). Warn instead of failing
-            // sync until ironwood serving is universal.
-            tracing::warn!(
-                "ironwood tree size mismatch at block {}.\nwallet block: {}\ncompact block metadata: {}",
-                wallet_block.block_height(),
-                wallet_block.tree_bounds().ironwood_final_tree_size,
-                chain_metadata.ironwood_commitment_tree_size
-            );
-        }
+    };
+
+    matched(
+        ShieldedPool::Sapling,
+        chain_metadata.sapling_commitment_tree_size,
+        wallet_block.tree_bounds().sapling_final_tree_size,
+    )?;
+    matched(
+        ShieldedPool::Orchard,
+        chain_metadata.orchard_commitment_tree_size,
+        wallet_block.tree_bounds().orchard_final_tree_size,
+    )?;
+    // Ironwood tolerates a zero on either side while parts of the ecosystem
+    // do not serve ironwood data (wallet blocks synced before ironwood
+    // tracking carry zero sizes, and servers without support send zero
+    // metadata against real actions): warn instead of failing sync until
+    // ironwood serving is universal. Two nonzero sizes disagreeing is
+    // neither of those cases: both sides are actively tracking the pool, so
+    // the mismatch is corruption and is rejected exactly as for the other
+    // pools.
+    let metadata_size = chain_metadata.ironwood_commitment_tree_size;
+    let calculated_size = wallet_block.tree_bounds().ironwood_final_tree_size;
+    if metadata_size != 0 && calculated_size != 0 {
+        matched(ShieldedPool::Ironwood, metadata_size, calculated_size)?;
+    } else if metadata_size != calculated_size {
+        tracing::warn!(
+            "ironwood tree size mismatch at block {}.\nwallet block: {}\ncompact block metadata: {}",
+            wallet_block.block_height(),
+            calculated_size,
+            metadata_size
+        );
     }
 
     Ok(())
@@ -548,5 +558,63 @@ fn set_checkpoint_retentions<L>(
             // NOTE: if there are no outputs in the block, this last retention will be a checkpoint and nothing will need to be mutated.
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use zingo_netutils::lightwallet_protocol::ChainMetadata;
+
+    use super::*;
+
+    fn wallet_block_with_ironwood_size(size: u32) -> WalletBlock {
+        WalletBlock {
+            block_height: BlockHeight::from_u32(100),
+            block_hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
+            time: 0,
+            txids: vec![],
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size: 10,
+                sapling_final_tree_size: 10,
+                orchard_initial_tree_size: 10,
+                orchard_final_tree_size: 10,
+                ironwood_initial_tree_size: size,
+                ironwood_final_tree_size: size,
+            },
+        }
+    }
+
+    fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
+        CompactBlock {
+            height: 100,
+            hash: vec![1; 32],
+            prev_hash: vec![0; 32],
+            time: 0,
+            header: vec![],
+            vtx: vec![],
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: 10,
+                orchard_commitment_tree_size: 10,
+                ironwood_commitment_tree_size: size,
+            }),
+        }
+    }
+
+    /// A server actively serving ironwood metadata (nonzero) that disagrees
+    /// with the wallet's own nonzero calculation is corruption, not the
+    /// known "server does not serve ironwood yet" case (metadata zero).
+    /// Validation must reject it exactly as it does for sapling and orchard.
+    #[test]
+    fn nonzero_ironwood_tree_size_mismatch_is_rejected() {
+        let compact_block = compact_block_with_ironwood_size(999);
+        let wallet_block = wallet_block_with_ironwood_size(7);
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                ..
+            })
+        ));
     }
 }
