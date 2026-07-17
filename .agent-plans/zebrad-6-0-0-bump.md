@@ -53,6 +53,55 @@ work is publication-ready: branch `feat/zebrad-6-boundary-fix`, three
 staged commits, PR against feat/ironwood (messages and body drafted
 in-session).
 
+## CI caveat (2026-07-17): the local green was partially cache-masked
+
+Chain-cache manifests key on validator TYPE, not version, so
+rc.0-mined caches replayed in the local runs after the bump. PR
+#2476's CI mines fresh 6.0.0 chains and deterministically (two runs,
+identical values) fails three concrete.rs balance tests —
+mine_to_ironwood, send_mined_ironwood_to_ironwood,
+send_orchard_back_and_forth — each short exactly one post-stream
+block reward (618_780_000 zats). tip_spend_rejection passed in CI, so
+the acceptance re-pin holds on fresh chains. Open: root-cause the
+off-by-one (suspect launch-mine/generate semantics under 6.0.0);
+local repro via ZINGO_REGENERATE_CHAIN_CACHE=1; follow-up: hash the
+zebrad binary into the cache manifest. #2476 must not merge until
+resolved.
+
+## Repro confirmed (2026-07-17)
+
+The user's ZINGO_REGENERATE_CHAIN_CACHE=1 container run reproduced
+all three mining-balance failures locally with values byte-identical
+to CI (observed = expected − 618_780_000 in each), proving the
+cache-masking mechanism and establishing the off-by-one as a property
+of freshly mined zebrad 6.0.0 chains. Observatory logs captured under
+test-logs/observatory/concrete__*.log. Root-cause analysis and a
+patched/rc dependency audit are delegated to background agents this
+session.
+
+## Resolution (2026-07-17): PR #2479
+
+Root cause of the three mining-balance reds: wallet commit 731b2b761
+(pool-preference selection, merged with #2468 after the caches were
+mined) defeated the normalization self-send; zebrad exonerated by a
+fresh-chain rc.0 A/B. Fixed by draining orchard via
+drain_orchard_to_ironwood in normalize_shielded_faucet_balance
+(d7196e8a4); user-confirmed green with regenerated caches. Shipped as
+PR #2479 (chore/drop-time-patch → feat/ironwood) together with the
+audit's two pin cleanups: the time [patch.crates-io] drop (a46f5e632)
+and the zaino-proto git→crates.io 0.2.0 migration (4c36bcd2e; a
+benign duplicate copy remains via zingo_grpc_proxy's own git pin).
+
+## Merge state (2026-07-17)
+
+PR #2475 (with #2477's two commits inside) is MERGED into
+feat/ironwood. PR #2476 remains OPEN — none of its three commits are
+in feat/ironwood, so the branch still pins zebrad 6.0.0-rc.0 and has
+no attribution module or suite re-pin. GitHub reports #2476
+MERGEABLE (no file overlap with #2475) but UNSTABLE (the two red
+mining-balance shards). The off-by-one work continues on
+feat/zebrad-6-boundary-fix.
+
 ## File claims
 
 - `.env.testing-artifacts` (ZEBRA_VERSION pin)

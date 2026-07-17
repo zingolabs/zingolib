@@ -180,9 +180,6 @@ pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREA
 /// spendable balance predictable for test assertions.
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
-/// Amount sent from orchard mining rewards to ironwood after nu6.3 activation.
-pub const IRONWOOD_MIGRATION_AMOUNT: u64 = 1_231_240_000;
-
 /// Total miner rewards for blocks 1..=`count` under
 /// [`default_test_activation_heights`]: block 1 pays the full subsidy;
 /// every later block pays the post-funding-stream reward.
@@ -373,6 +370,17 @@ where
 /// Mining two extra blocks first clears the upgrade ladder (tip 5, so
 /// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
 /// four pre-tip notes so oldest-first selection never reaches the tip note.
+///
+/// The orchard-to-ironwood normalization uses the migration drain rather
+/// than a self-send: 731b2b761 taught note selection to lead with the
+/// payment's own pool, so a send to an ironwood receiver no longer drains
+/// orchard (it left one orchard note un-migrated, observed as balance
+/// assertions failing exactly one block reward short on freshly mined
+/// chains while cached replays of pre-731b2b761 wallet-built blocks kept
+/// passing). The drain spends only orchard by construction, which also
+/// satisfies constraint 2 structurally. Its fee cancels the same way the
+/// offload's does — the faucet collects it back in the confirming block's
+/// coinbase — so [`funded_faucet_ironwood_balance`] is fee-invariant.
 async fn normalize_shielded_faucet_balance<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -384,7 +392,13 @@ async fn normalize_shielded_faucet_balance<V, I>(
     <V as Process>::Config: Send,
     LocalNet<V, I>: IndexerConvergence,
 {
-    if !matches!(mine_to_pool, PoolType::Transparent) {
+    let chain_height = local_net.validator().get_chain_height().await;
+    let activation_heights = local_net.validator().get_activation_heights().await;
+    if !matches!(mine_to_pool, PoolType::Transparent)
+        && activation_heights
+            .nu6_3()
+            .is_some_and(|ironwood_height| chain_height >= ironwood_height)
+    {
         local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
         quick_send(
@@ -395,13 +409,14 @@ async fn normalize_shielded_faucet_balance<V, I>(
         .unwrap();
         local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
-        let faucet_orchard_address = get_base_address_macro!(faucet, "unified");
-        quick_send(
-            faucet,
-            vec![(&faucet_orchard_address, IRONWOOD_MIGRATION_AMOUNT, None)],
-        )
-        .await
-        .unwrap();
+        let drain_summary = faucet
+            .drain_orchard_to_ironwood(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            drain_summary.stranded, 0,
+            "normalization must leave no orchard value behind"
+        );
         local_net.validator().generate_blocks(1).await.unwrap();
     }
 }

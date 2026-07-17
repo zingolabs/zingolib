@@ -88,7 +88,13 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
     let bucket_modulus = reader.read_u32::<LittleEndian>()?;
     let k_max = reader.read_u32::<LittleEndian>()?;
     let target_sessions = reader.read_u32::<LittleEndian>()?;
-    let max_actions_per_split_tx = reader.read_u64::<LittleEndian>()? as usize;
+    let max_actions_per_split_tx =
+        usize::try_from(reader.read_u64::<LittleEndian>()?).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                "max_actions_per_split_tx does not fit in this platform's usize",
+            )
+        })?;
     let expiry_delta = reader.read_u32::<LittleEndian>()?;
     let part_fee = reader.read_u64::<LittleEndian>()?;
     let params = MigrationParams {
@@ -471,9 +477,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn unknown_inner_version_is_rejected() {
-        let state = MigrationState {
+    /// A freshly planned mainnet state, the smallest well-formed fixture.
+    fn planned_state() -> MigrationState {
+        MigrationState {
             params: MigrationParams::provisional(crate::config::ChainType::Mainnet),
             consent: ConsentBinding {
                 params_hash: [0; 32],
@@ -484,10 +490,50 @@ mod tests {
             account: zip32::AccountId::ZERO,
             phase: MigrationPhase::Planned,
             parts: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn unknown_inner_version_is_rejected() {
         let mut bytes = Vec::new();
-        write(&mut bytes, &state).expect("writes");
+        write(&mut bytes, &planned_state()).expect("writes");
         bytes[0] = INNER_VERSION + 1;
         assert!(read(bytes.as_slice()).is_err());
+    }
+
+    /// The `as usize` cast reading `max_actions_per_split_tx` silently
+    /// truncates on 32-bit targets. This test patches a serialized stream so
+    /// the persisted value exceeds `u32::MAX`: the read must either reject
+    /// the stream (the desired `usize::try_from` + `InvalidData` behavior)
+    /// or preserve the value. It passes vacuously on 64-bit hosts; run under
+    /// a 32-bit target (e.g. i686-unknown-linux-gnu) to observe the failure.
+    #[test]
+    fn max_actions_read_never_silently_truncates() {
+        const SENTINEL: u64 = 0x1122_3344;
+        const PATCHED: u64 = 0x1_1122_3344; // does not fit in u32
+
+        let mut state = planned_state();
+        state.params.max_actions_per_split_tx = SENTINEL as usize;
+
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+
+        // Locate the sentinel's unique little-endian encoding and set a high
+        // byte, producing the stream a 64-bit writer (or corruption) would
+        // carry.
+        let needle = SENTINEL.to_le_bytes();
+        let position = bytes
+            .windows(8)
+            .position(|window| window == needle)
+            .expect("sentinel is unique in the fixture");
+        bytes[position..position + 8].copy_from_slice(&PATCHED.to_le_bytes());
+
+        match read(bytes.as_slice()) {
+            Err(error) => assert_eq!(error.kind(), ErrorKind::InvalidData),
+            Ok(read_state) => assert_eq!(
+                read_state.params.max_actions_per_split_tx as u64, PATCHED,
+                "read silently truncated the persisted value"
+            ),
+        }
     }
 }

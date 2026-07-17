@@ -6,7 +6,7 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
-        InputSource, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
+        InputSource, MaxSpendMode, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
         ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest,
         TransparentKeyOrigin, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
         Zip32Derivation,
@@ -19,7 +19,7 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    transaction::{Transaction, TxId},
+    transaction::{Transaction, TxId, fees::zip317::MARGINAL_FEE},
 };
 use zcash_protocol::{
     PoolType, ShieldedPool,
@@ -881,8 +881,51 @@ impl InputSource for LightWallet {
                         selected_ironwood_notes,
                     )
                 }
-                TargetValue::AllFunds(_max_spend_mode) => {
-                    panic!("TargetValue::Allfunds not currently supported!");
+                TargetValue::AllFunds(max_spend_mode) => {
+                    // Effects at the edge: gather the spendable candidates
+                    // per pool (strict, guaranteed-unspent view), then let
+                    // the pure selection decide. All pools participate
+                    // regardless of `sources` order, matching budgeted
+                    // selection's unconditional fallback, and
+                    // migration-reserved notes are included: all funds
+                    // means all (the reservation biases selection, never
+                    // blocks a spend).
+                    let sapling_candidates = self
+                        .spendable_notes::<SaplingNote>(
+                            anchor_height,
+                            &exclude_sapling,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let orchard_candidates = self
+                        .spendable_notes::<OrchardNote>(
+                            anchor_height,
+                            &exclude_orchard,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let ironwood_candidates = self
+                        .spendable_notes::<IronwoodNote>(
+                            anchor_height,
+                            &exclude_ironwood,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    all_funds_selection(
+                        max_spend_mode,
+                        sapling_candidates,
+                        orchard_candidates,
+                        ironwood_candidates,
+                    )?
                 }
             };
 
@@ -968,10 +1011,11 @@ impl InputSource for LightWallet {
                 ReceivedNote::from_parts(
                     OutputRef::new(
                         OutputId::new(note.output_id().txid(), note.output_id().output_index()),
-                        // Label V3 notes as ORCHARD in the OutputRef: upstream detects Ironwood inputs
-                        // by note.version() == V3, not by the pool label. Labeling IRONWOOD here
-                        // confuses the proposal engine's pool-involvement accounting.
-                        // FIXME: is this comment still relevant? should we change to ORCHARD?
+                        // The label must match the ReceivedNotes vector this
+                        // note is returned in. Upstream never reads it, but it
+                        // round-trips through the `exclude` split at the top of
+                        // select_spendable_notes when the input selector prunes
+                        // dust, and that split routes each ref by pool_type().
                         PoolType::IRONWOOD,
                     ),
                     note.output_id().txid(),
@@ -1100,5 +1144,215 @@ impl InputSource for LightWallet {
         _exclude: &[Self::NoteRef],
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         unimplemented!()
+    }
+}
+
+/// The per-pool selection triple `select_spendable_notes` assembles
+/// before mapping into [`ReceivedNotes`].
+type SelectedPoolNotes = (Vec<SaplingNote>, Vec<OrchardNote>, Vec<IronwoodNote>);
+
+/// Pure all-funds selection over already-gathered spendable candidates:
+/// no wallet access, no mutation — the same candidates and mode always
+/// produce the same selection, so the policy is testable without a
+/// wallet.
+///
+/// `MaxSpendable` keeps every candidate worth more than the marginal
+/// fee, the same dust discipline as budgeted selection: a note at or
+/// below [`MARGINAL_FEE`] costs more to spend than it contributes.
+///
+/// `Everything` is refused with a typed error: its contract — fail if
+/// ANY unspendable funds exist — requires a whole-wallet audit this
+/// selector does not yet perform, and a wrong success would silently
+/// strand funds. The typed refusal replaces a panic that aborted the
+/// process.
+fn all_funds_selection(
+    mode: MaxSpendMode,
+    sapling: Vec<SaplingNote>,
+    orchard: Vec<OrchardNote>,
+    ironwood: Vec<IronwoodNote>,
+) -> Result<SelectedPoolNotes, WalletError> {
+    match mode {
+        MaxSpendMode::MaxSpendable => Ok((
+            retain_spend_worthy(sapling),
+            retain_spend_worthy(orchard),
+            retain_spend_worthy(ironwood),
+        )),
+        MaxSpendMode::Everything => Err(WalletError::AllFundsEverythingUnsupported),
+    }
+}
+
+/// Pure dust filter: keeps the notes whose value exceeds the marginal
+/// fee.
+fn retain_spend_worthy<N: OutputInterface>(notes: Vec<N>) -> Vec<N> {
+    notes
+        .into_iter()
+        .filter(|note| note.value() > MARGINAL_FEE.into_u64())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use zcash_client_backend::data_api::MaxSpendMode;
+    use zcash_protocol::value::Zatoshis;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    /// One spendable note per shielded pool, plus an orchard note at the
+    /// dust line (`MARGINAL_FEE`) that budgeted selection would also
+    /// refuse to spend.
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .sapling_note(50_000)
+            .orchard_note(100_000)
+            .ironwood_note(70_000)
+            .orchard_note(5_000)
+            .build()
+    }
+
+    fn select_all_funds(
+        wallet: &LightWallet,
+        mode: MaxSpendMode,
+    ) -> Result<ReceivedNotes<OutputRef>, WalletError> {
+        wallet.select_spendable_notes(
+            zip32::AccountId::ZERO,
+            TargetValue::AllFunds(mode),
+            &[
+                ShieldedPool::Ironwood,
+                ShieldedPool::Orchard,
+                ShieldedPool::Sapling,
+            ],
+            TargetHeight::from(21),
+            ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
+            &[],
+        )
+    }
+
+    #[test]
+    fn all_funds_max_spendable_selects_every_spend_worthy_note() {
+        let notes = select_all_funds(&funded_wallet(), MaxSpendMode::MaxSpendable)
+            .expect("all-funds selection must succeed on a funded, synced wallet");
+        assert_eq!(notes.sapling().len(), 1);
+        assert_eq!(
+            notes.orchard().len(),
+            1,
+            "the dust orchard note must be left behind"
+        );
+        assert_eq!(notes.ironwood().len(), 1);
+        let total: u64 = notes
+            .sapling()
+            .iter()
+            .map(|note| note.note().value().inner())
+            .chain(
+                notes
+                    .orchard()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .chain(
+                notes
+                    .ironwood()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .sum();
+        assert_eq!(total, 220_000);
+    }
+
+    #[test]
+    fn all_funds_everything_is_a_typed_error_not_an_abort() {
+        let error = select_all_funds(&funded_wallet(), MaxSpendMode::Everything)
+            .expect_err("Everything mode is unimplemented and must refuse, not abort");
+        assert!(
+            matches!(error, WalletError::AllFundsEverythingUnsupported),
+            "the refusal must be the dedicated typed error, observed: {error}"
+        );
+    }
+
+    /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
+    /// `InputSource::select_spendable_notes`: the code is right and the comment
+    /// above it is stale.
+    ///
+    /// The `OutputRef` pool label is never read by the upstream proposal
+    /// engine — pool-involvement accounting, bundle attribution, and fee
+    /// calculation all dispatch on the embedded `Note` enum (stamped by
+    /// `ReceivedNotes::into_vec` from the vector the note occupies), not on
+    /// the `NoteRef`. The label's one consumer is this wallet's own `exclude`
+    /// split at the top of `select_spendable_notes`: upstream's
+    /// `GreedyInputSelector` hands previously selected refs back verbatim as
+    /// `exclude` when the change strategy reports `ChangeError::DustInputs`,
+    /// and the split routes each ref to a pool bucket by `pool_type()`. An
+    /// ironwood note labeled `ORCHARD` (as the stale comment mandates) would
+    /// land in the orchard bucket, never be excluded from ironwood selection,
+    /// and be re-selected forever — the selector would then abort with
+    /// `InsufficientFunds` instead of pruning the dust.
+    #[test]
+    fn ironwood_noteref_pool_label_round_trips_through_exclude() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .ironwood_note(100_000)
+            .ironwood_note(100_000)
+            .build();
+
+        let confirmations_policy =
+            ConfirmationsPolicy::new_symmetrical(1.try_into().expect("nonzero"), false);
+        let target_height = TargetHeight::from(BlockHeight::from_u32(21));
+        let sources = [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ];
+
+        // Phase 1: selection over ironwood-only funds labels every selected
+        // ref IRONWOOD, matching the vector (and hence the Note-enum pool)
+        // the note is returned in.
+        let selected = wallet
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
+                &sources,
+                target_height,
+                confirmations_policy,
+                &[],
+            )
+            .expect("selection over synthetic funds succeeds");
+        assert_eq!(
+            selected.ironwood().len(),
+            2,
+            "both fabricated ironwood notes are selected"
+        );
+        let refs: Vec<_> = selected
+            .ironwood()
+            .iter()
+            .map(|note| *note.internal_note_id())
+            .collect();
+        for output_ref in &refs {
+            assert_eq!(
+                output_ref.pool_type(),
+                PoolType::IRONWOOD,
+                "an ironwood note's ref must carry the IRONWOOD label so the \
+                 exclude split routes it back to the ironwood bucket"
+            );
+        }
+
+        // Phase 2: the refs round-trip through `exclude` exactly as the
+        // greedy input selector's dust-pruning path replays them. Correctly
+        // labeled refs suppress re-selection; ORCHARD-labeled refs would fall
+        // into the wrong bucket and the same notes would come back.
+        let reselected = wallet
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
+                &sources,
+                target_height,
+                confirmations_policy,
+                &refs,
+            )
+            .expect("selection with exclusions succeeds");
+        assert!(
+            reselected.ironwood().is_empty(),
+            "excluded ironwood refs must not be re-selected; re-selection \
+             means the exclude split routed them to the wrong pool bucket"
+        );
     }
 }

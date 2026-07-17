@@ -27,6 +27,7 @@ shellwords = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }

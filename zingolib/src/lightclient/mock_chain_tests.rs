@@ -959,3 +959,116 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
+
+/// A failed transmit inside a note-splitting round must not leave any
+/// transaction stranded in `Calculated`. The drain sibling
+/// (`drain_orchard_to_ironwood`) fails every unsent transaction so the
+/// notes it reserved become spendable again; the split round in
+/// `migrate_to_ironwood` must enforce the same invariant, or the
+/// transactions queued behind the failing one keep their notes marked
+/// spent by transactions that never reached the network, and a replan
+/// silently excludes that value until expiry self-heals it (~40 blocks
+/// plus a sync).
+///
+/// Setup: 34 fabricated legacy-Orchard (V2) notes make the provisional
+/// planner (max_actions_per_split_tx = 32) emit a first reduction round of
+/// TWO merge transactions. The mock indexer's lost-response fault plus an
+/// effectively-infinite download-queue rejection budget makes the FIRST
+/// submission fail deterministically after the wallet's probe budget; the
+/// second transaction must not stay stranded.
+#[tokio::test]
+async fn failed_split_round_transmit_strands_calculated_transactions() {
+    use zcash_primitives::transaction::TxId;
+    use zip32::AccountId;
+
+    use pepper_sync::wallet::{OrchardNote, OutputInterface as _};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::testutils::mock_indexer::LostSendDestination;
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+
+    const NOTES: u32 = 34;
+    const NOTE_VALUE: u64 = 60_000;
+    const TIP: u32 = 41;
+
+    // A real mock-net client, synced over an empty chain so the wallet
+    // carries genuine wallet blocks and scan state, then handed 34
+    // spendable legacy-Orchard notes whose nullifiers are really derived,
+    // so pepper-sync's spend detection marks them when the round spends
+    // them.
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(TIP);
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    client
+        .sync_and_await()
+        .await
+        .expect("initial sync succeeds");
+    {
+        let wallet_lock = client.wallet().clone();
+        let mut wallet = wallet_lock.write().await;
+        inject_confirmed_orchard_notes(&mut wallet, NOTES, NOTE_VALUE, TIP);
+    }
+
+    // Arm the deterministic transmit failure: the first send's response is
+    // lost while the bytes sit in the validator's download queue, and the
+    // queue never promotes, so every duplicate probe is rejected until the
+    // wallet's probe budget is exhausted and it marks that transaction
+    // Failed and errors out of transmit_transactions.
+    {
+        let mut chain = net.chain.write().await;
+        chain.lose_next_send_response = Some(LostSendDestination::DownloadQueue);
+        chain.queued_rejections_before_promotion = u8::MAX;
+    }
+
+    let err = client
+        .migrate_to_ironwood(AccountId::ZERO)
+        .await
+        .expect_err("the first split transaction's transmit fails");
+    eprintln!("migrate_to_ironwood returned: {err:?}");
+
+    // Diagnostics and precondition: the round must have reached the
+    // transmit stage (exactly one transaction Failed there).
+    let wallet = client.wallet().read().await;
+    let mut failed = Vec::new();
+    let mut calculated = Vec::new();
+    for tx in wallet.wallet_transactions.values() {
+        match tx.status() {
+            ConfirmationStatus::Calculated(_) => {
+                let spent_inputs: Vec<(TxId, u64)> = wallet
+                    .wallet_transactions
+                    .values()
+                    .flat_map(OrchardNote::transaction_outputs)
+                    .filter(|note| note.spending_transaction() == Some(tx.txid()))
+                    .map(|note| (note.output_id().txid(), note.value()))
+                    .collect();
+                eprintln!(
+                    "stranded Calculated transaction {} spends {} notes still \
+                     marked spent: {spent_inputs:?}",
+                    tx.txid(),
+                    spent_inputs.len(),
+                );
+                calculated.push(tx.txid());
+            }
+            ConfirmationStatus::Failed(_) => failed.push(tx.txid()),
+            _ => (),
+        }
+    }
+    assert!(
+        !failed.is_empty(),
+        "precondition: the transmit stage must have failed the first split \
+         transaction (otherwise this test failed before transmit)"
+    );
+
+    // The invariant the drain path enforces (fail_unsent_transactions) and
+    // the split path must too: after a failed round, nothing may remain
+    // Calculated — its notes would stay spent by transactions that will
+    // never broadcast, and a replan silently excludes them.
+    assert!(
+        calculated.is_empty(),
+        "a failed note-split round stranded {} transaction(s) in Calculated \
+         with their input notes marked spent: {calculated:?}",
+        calculated.len()
+    );
+}
