@@ -110,6 +110,9 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
+    /// All-funds note selection (`TargetValue::AllFunds`) is not implemented.
+    #[error("All-funds note selection is not supported.")]
+    AllFundsSelectionUnsupported,
 }
 
 /// Price error

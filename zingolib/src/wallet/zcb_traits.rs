@@ -882,7 +882,10 @@ impl InputSource for LightWallet {
                     )
                 }
                 TargetValue::AllFunds(_max_spend_mode) => {
-                    panic!("TargetValue::Allfunds not currently supported!");
+                    // Upstream drives this arm through propose_send_max; an
+                    // unsupported mode must surface through the trait's error
+                    // channel, never abort the process.
+                    return Err(WalletError::AllFundsSelectionUnsupported);
                 }
             };
 
@@ -1100,5 +1103,46 @@ impl InputSource for LightWallet {
         _exclude: &[Self::NoteRef],
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use zcash_client_backend::data_api::MaxSpendMode;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    /// `InputSource::select_spendable_notes` is driven by upstream
+    /// `zcash_client_backend` (`propose_send_max`) with
+    /// `TargetValue::AllFunds`. An unsupported request must surface
+    /// through the trait's error channel (`Result<_, WalletError>`),
+    /// never abort the process.
+    #[test]
+    fn select_spendable_notes_all_funds_returns_err_not_panic() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .sapling_note(100_000)
+            .orchard_note(100_000)
+            .ironwood_note(100_000)
+            .build();
+
+        let result = wallet.select_spendable_notes(
+            zip32::AccountId::ZERO,
+            TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+            &[
+                ShieldedPool::Sapling,
+                ShieldedPool::Orchard,
+                ShieldedPool::Ironwood,
+            ],
+            BlockHeight::from_u32(21).into(),
+            ConfirmationsPolicy::MIN,
+            &[],
+        );
+
+        assert!(
+            result.is_err(),
+            "TargetValue::AllFunds is unsupported: that must be reported \
+             through the trait's error channel, not a panic; got {result:?}"
+        );
     }
 }
