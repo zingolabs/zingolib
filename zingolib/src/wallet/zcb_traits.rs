@@ -1102,3 +1102,92 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! The TDD pair for the `TargetValue::AllFunds` contract. These tests
+    //! began red: the `AllFunds` match arm was a `panic!`, so a request
+    //! any upstream sweep proposal can legitimately make took down the
+    //! whole process. They pin the replacement contract: `MaxSpendable`
+    //! selects every spend-worthy note, and `Everything` refuses with the
+    //! wallet's typed error until its unspendable-funds audit exists.
+
+    use zcash_client_backend::data_api::MaxSpendMode;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::error::WalletError;
+
+    /// One spendable note per shielded pool, plus an orchard note at the
+    /// dust line (`MARGINAL_FEE`) that budgeted selection would also
+    /// refuse to spend.
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .sapling_note(50_000)
+            .orchard_note(100_000)
+            .ironwood_note(70_000)
+            .orchard_note(5_000)
+            .build()
+    }
+
+    fn select_all_funds(
+        wallet: &LightWallet,
+        mode: MaxSpendMode,
+    ) -> Result<ReceivedNotes<OutputRef>, WalletError> {
+        wallet.select_spendable_notes(
+            zip32::AccountId::ZERO,
+            TargetValue::AllFunds(mode),
+            &[
+                ShieldedPool::Ironwood,
+                ShieldedPool::Orchard,
+                ShieldedPool::Sapling,
+            ],
+            TargetHeight::from(21),
+            ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
+            &[],
+        )
+    }
+
+    #[test]
+    fn all_funds_max_spendable_selects_every_spend_worthy_note() {
+        let notes = select_all_funds(&funded_wallet(), MaxSpendMode::MaxSpendable)
+            .expect("all-funds selection must succeed on a funded, synced wallet");
+        assert_eq!(notes.sapling().len(), 1);
+        assert_eq!(
+            notes.orchard().len(),
+            1,
+            "the dust orchard note must be left behind"
+        );
+        assert_eq!(notes.ironwood().len(), 1);
+        let total: u64 = notes
+            .sapling()
+            .iter()
+            .map(|note| note.note().value().inner())
+            .chain(
+                notes
+                    .orchard()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .chain(
+                notes
+                    .ironwood()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .sum();
+        assert_eq!(total, 220_000);
+    }
+
+    #[test]
+    fn all_funds_everything_is_a_typed_error_not_an_abort() {
+        let error = select_all_funds(&funded_wallet(), MaxSpendMode::Everything)
+            .expect_err("Everything mode is unimplemented and must refuse, not abort");
+        assert!(
+            matches!(error, WalletError::AllFundsEverythingUnsupported),
+            "the refusal must be the dedicated typed error, observed: {error}"
+        );
+    }
+}
