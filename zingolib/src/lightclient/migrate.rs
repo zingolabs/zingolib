@@ -25,6 +25,8 @@ use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, MigrationError};
 use zcash_protocol::consensus::BlockHeight;
 
+use crate::wallet::LightWallet;
+use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
     BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationParams, MigrationPhase,
     MigrationPlan, MigrationState, PartId, PartState, PrepareResult, RecommendedAction,
@@ -686,8 +688,33 @@ impl LightClient {
             return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
         }
 
+        let txids = self
+            .build_and_transmit(&plan.transactions, |wallet, planned| {
+                wallet.build_drain_transaction(account, planned)
+            })
+            .await?;
+
+        Ok(DrainSummary {
+            txids,
+            migrated: plan.migrated,
+            fee: plan.fee,
+            stranded: plan.stranded,
+        })
+    }
+
+    /// Builds and transmits one batch of planned migration transactions under
+    /// a paused sync, enforcing the shared cleanup contract: a build failure
+    /// fails the transactions already built, and a transmit failure fails
+    /// every transaction still unsent, so no note stays spent by a
+    /// transaction that will never reach the network. Both the drain flow and
+    /// the note-splitting rounds send through here.
+    async fn build_and_transmit<T>(
+        &mut self,
+        planned: &[T],
+        build: impl Fn(&mut LightWallet, &T) -> Result<TxId, WalletError>,
+    ) -> Result<Vec<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
-        let built = self.build_drain_transactions(account, &plan).await;
+        let built = self.build_transactions(planned, build).await;
         let txids = match built {
             Ok(txids) => txids,
             Err(e) => {
@@ -698,7 +725,7 @@ impl LightClient {
 
         let transmitted = self
             .transmit_transactions(
-                NonEmpty::from_vec(txids.clone()).expect("a non-empty plan builds transactions"),
+                NonEmpty::from_vec(txids.clone()).expect("planned batches are never empty"),
             )
             .await;
         let _ignore_error = self.resume_sync();
@@ -707,32 +734,27 @@ impl LightClient {
             // `transmit_transactions` marks the transaction that failed, but
             // the ones queued behind it stay `Calculated`: their notes would
             // remain spent by transactions that will never reach the network.
-            // Fail them so the next call re-plans them.
-            self.fail_unsent_drain_transactions(&txids).await;
+            // Fail them so the next pass re-plans them.
+            self.fail_unsent_transactions(&txids).await;
             return Err(e);
         }
 
-        Ok(DrainSummary {
-            txids,
-            migrated: plan.migrated,
-            fee: plan.fee,
-            stranded: plan.stranded,
-        })
+        Ok(txids)
     }
 
-    /// Builds every transaction of a drain plan under one wallet lock. On
-    /// failure, fails the transactions already built so their notes do not stay
-    /// spent by transactions that will never be sent.
-    async fn build_drain_transactions(
+    /// Builds every planned transaction under one wallet lock. On failure,
+    /// fails the transactions already built so their notes do not stay spent
+    /// by transactions that will never be sent.
+    async fn build_transactions<T>(
         &mut self,
-        account: zip32::AccountId,
-        plan: &DrainPlan,
+        planned: &[T],
+        build: impl Fn(&mut LightWallet, &T) -> Result<TxId, WalletError>,
     ) -> Result<Vec<TxId>, LightClientError> {
         let mut wallet = self.wallet().write().await;
-        let mut txids = Vec::with_capacity(plan.transactions.len());
+        let mut txids = Vec::with_capacity(planned.len());
 
-        for planned in &plan.transactions {
-            match wallet.build_drain_transaction(account, planned) {
+        for item in planned {
+            match build(&mut wallet, item) {
                 Ok(txid) => txids.push(txid),
                 Err(e) => {
                     if !txids.is_empty() {
@@ -750,9 +772,9 @@ impl LightClient {
         Ok(txids)
     }
 
-    /// Marks every drain transaction still sitting in `Calculated` as failed,
+    /// Marks every transaction still sitting in `Calculated` as failed,
     /// releasing the notes it reserved.
-    async fn fail_unsent_drain_transactions(&mut self, txids: &[TxId]) {
+    async fn fail_unsent_transactions(&mut self, txids: &[TxId]) {
         let mut wallet = self.wallet().write().await;
         let unsent: Vec<TxId> = txids
             .iter()
@@ -885,22 +907,11 @@ impl LightClient {
                 .into_iter()
                 .next()
                 .expect("unsplit plan has at least one round");
-            let _ignore_error = self.pause_sync();
-            let mut round_txids = Vec::new();
-            for planned in &round {
-                round_txids.push(
-                    self.wallet()
-                        .write()
-                        .await
-                        .build_note_split_transaction(account, planned)?,
-                );
-            }
-            self.transmit_transactions(
-                NonEmpty::from_vec(round_txids.clone())
-                    .expect("note-splitting round has at least one transaction"),
-            )
-            .await?;
-            let _ignore_error = self.resume_sync();
+            let round_txids = self
+                .build_and_transmit(&round, |wallet, planned| {
+                    wallet.build_note_split_transaction(account, planned)
+                })
+                .await?;
             split_txids.extend(round_txids.iter().copied());
 
             self.await_migration_confirmations(&round_txids).await?;
