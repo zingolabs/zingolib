@@ -32,6 +32,7 @@ use zcash_protocol::consensus::NetworkType;
 use zip32::AccountId;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::error::SyncModeError;
 use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use tokio::runtime::Runtime;
@@ -48,6 +49,7 @@ use zingolib::data::proposal::total_fee;
 use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
+use zingolib::lightclient::error::LightClientError;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::keys::{
@@ -913,6 +915,15 @@ fn run_sync() -> Result<String, ZingolibError> {
             RT.block_on(async {
                 match lightclient.sync().await {
                     Ok(_) => Ok("Launching sync task...".to_string()),
+                    // Launching is idempotent: a concurrent launch means the
+                    // desired state — a running sync — already holds, so it
+                    // reports as status, not failure. Before the typed-error
+                    // migration this crossed as in-band prose every consumer
+                    // ignored; throwing it broke the send integration test's
+                    // (historically benign) second launch.
+                    Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
+                        Ok("Sync task already running.".to_string())
+                    }
                     Err(e) => Err(ZingolibError::sync(e)),
                 }
             })
