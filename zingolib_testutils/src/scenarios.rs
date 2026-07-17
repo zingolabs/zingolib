@@ -635,7 +635,13 @@ pub async fn faucet_recipient(
 
     // A replayed chain already contains the balance-normalization offload;
     // the freshly built faucet wallet recovers it by sync below.
-    if !replayed && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
+    let chain_height = local_net.validator().get_chain_height().await;
+    if !replayed
+        && matches!(DefaultValidator::PROCESS, ProcessId::Zebrad)
+        && configured_activation_heights
+            .nu6_3()
+            .is_some_and(|ironwood_height| chain_height >= ironwood_height)
+    {
         normalize_shielded_faucet_balance(&local_net, mine_to_pool, &mut faucet).await;
     }
 
