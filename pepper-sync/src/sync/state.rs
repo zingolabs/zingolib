@@ -568,9 +568,23 @@ fn determine_block_range(
             let start = if let Some(range) = shard_ranges.last() {
                 range.end - 1
             } else {
+                // With no shard ranges at all (a server that does not serve
+                // this pool, or a pool freshly activated), fall back to the
+                // pool's own history: the wallet birthday clamped to the
+                // pool's activation height. An unclamped birthday would let
+                // the chain-tip punch flood the entire wallet range.
+                let pool_upgrade = match shielded_protocol {
+                    ShieldedPool::Sapling => consensus::NetworkUpgrade::Sapling,
+                    ShieldedPool::Orchard => consensus::NetworkUpgrade::Nu5,
+                    ShieldedPool::Ironwood => consensus::NetworkUpgrade::Nu6_3,
+                };
+                let activation = consensus_parameters
+                    .activation_height(pool_upgrade)
+                    .expect("the pool was selected because its upgrade is active");
                 sync_state
                     .wallet_birthday()
                     .expect("scan range should not be empty")
+                    .max(activation)
             };
             let end = sync_state
                 .last_known_chain_height()
@@ -1209,6 +1223,60 @@ mod tests {
         );
         assert_eq!(range.start, BlockHeight::from_u32(100));
         assert_eq!(range.end, BlockHeight::from_u32(150));
+    }
+
+    /// Mainnet-shaped network: NU6.3 activates recently, near the chain tip.
+    const TIP_ACTIVATION_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(19_000)),
+    };
+
+    #[test]
+    fn chain_tip_priority_confined_to_tip_when_ironwood_shards_are_empty() {
+        // A wallet with a long history: birthday (1_000) far below the chain tip (20_000).
+        let mut sync_state = sync_state_with_ranges(1_000, 20_000);
+
+        // Sapling and orchard have complete shards reaching near the tip, so their
+        // incomplete tip shards start close to the chain tip (17_999 and 18_499).
+        sync_state.sapling_shard_ranges =
+            vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_000)];
+        sync_state.orchard_shard_ranges =
+            vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_500)];
+        // Ironwood shard ranges are empty: a tolerated server condition, and the
+        // universal state on every network immediately after NU6.3 activation.
+        assert!(sync_state.ironwood_shard_ranges.is_empty());
+
+        set_chain_tip_scan_range(
+            &TIP_ACTIVATION_NETWORK,
+            &mut sync_state,
+            BlockHeight::from_u32(20_000),
+        );
+
+        let chain_tip_start = sync_state
+            .scan_ranges()
+            .iter()
+            .filter(|range| range.priority() == ScanPriority::ChainTip)
+            .map(|range| range.block_range().start)
+            .min()
+            .expect("chain tip punch should mark at least one range");
+
+        // The chain-tip region must stay confined near the tip. The lowest
+        // legitimate anchor is the sapling incomplete tip shard start (17_999);
+        // an ironwood fallback may reach no lower than the NU6.3 activation
+        // height (19_000). It must never flood down to the wallet birthday.
+        assert!(
+            chain_tip_start >= BlockHeight::from_u32(17_999),
+            "ChainTip priority flooded down to {chain_tip_start} (wallet birthday is 1_000); \
+             expected the chain-tip region confined to the tip shards (start >= 17_999)"
+        );
     }
 
     #[test]
