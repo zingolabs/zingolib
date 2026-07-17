@@ -774,14 +774,25 @@ pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W:
 where
     W: SyncWallet + SyncBlocks,
 {
+    /// Sums one per-pool trio of output counts into the pool-agnostic
+    /// total. Pure and total: this is the single definition of which
+    /// pools participate in scan-progress accounting, so every
+    /// consumer — the percentages and the exact u64 ratio — agrees by
+    /// construction, and adding a pool touches exactly this function.
+    fn output_pool_total(sapling: u32, orchard: u32, ironwood: u32) -> u64 {
+        u64::from(sapling) + u64::from(orchard) + u64::from(ironwood)
+    }
+
     let (
         total_sapling_outputs_scanned,
         total_orchard_outputs_scanned,
         total_ironwood_outputs_scanned,
     ) = state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
-    let total_outputs_scanned = total_sapling_outputs_scanned
-        + total_orchard_outputs_scanned
-        + total_ironwood_outputs_scanned;
+    let total_outputs_scanned = output_pool_total(
+        total_sapling_outputs_scanned,
+        total_orchard_outputs_scanned,
+        total_ironwood_outputs_scanned,
+    );
 
     let sync_state = wallet
         .get_sync_state()
@@ -839,7 +850,11 @@ where
             .initial_sync_state
             .wallet_tree_bounds
             .ironwood_initial_tree_size;
-    let total_outputs = total_sapling_outputs + total_orchard_outputs + total_ironwood_outputs;
+    let total_outputs = output_pool_total(
+        total_sapling_outputs,
+        total_orchard_outputs,
+        total_ironwood_outputs,
+    );
 
     let session_blocks_scanned =
         total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
@@ -868,18 +883,22 @@ where
         - sync_state
             .initial_sync_state
             .previously_scanned_ironwood_outputs;
-    let session_outputs_scanned = session_sapling_outputs_scanned
-        + session_orchard_outputs_scanned
-        + session_ironwood_outputs_scanned;
-    let previously_scanned_outputs = sync_state
-        .initial_sync_state
-        .previously_scanned_sapling_outputs
-        + sync_state
+    let session_outputs_scanned = output_pool_total(
+        session_sapling_outputs_scanned,
+        session_orchard_outputs_scanned,
+        session_ironwood_outputs_scanned,
+    );
+    let previously_scanned_outputs = output_pool_total(
+        sync_state
             .initial_sync_state
-            .previously_scanned_orchard_outputs
-        + sync_state
+            .previously_scanned_sapling_outputs,
+        sync_state
             .initial_sync_state
-            .previously_scanned_ironwood_outputs;
+            .previously_scanned_orchard_outputs,
+        sync_state
+            .initial_sync_state
+            .previously_scanned_ironwood_outputs,
+    );
     let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
         / (total_outputs - previously_scanned_outputs) as f32)
         * 100.0)
@@ -927,9 +946,8 @@ where
         total_ironwood_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
-        total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
-            + u64::from(total_orchard_outputs_scanned),
-        total_outputs: u64::from(total_sapling_outputs) + u64::from(total_orchard_outputs),
+        total_outputs_scanned,
+        total_outputs,
     })
 }
 

@@ -621,6 +621,11 @@ where
                     address,
                 ))
             }),
+            // A unified address has no distinct ironwood receiver:
+            // receivers (and their incoming viewing keys) are scoped
+            // to the Orchard PROTOCOL, not to a pool, so the orchard
+            // receiver serves both the orchard and ironwood pools.
+            // See ZIP 326, <https://zips.z.cash/zip-0326>.
             ShieldedPool::Orchard | ShieldedPool::Ironwood => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
