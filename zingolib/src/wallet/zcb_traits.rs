@@ -971,10 +971,11 @@ impl InputSource for LightWallet {
                 ReceivedNote::from_parts(
                     OutputRef::new(
                         OutputId::new(note.output_id().txid(), note.output_id().output_index()),
-                        // Label V3 notes as ORCHARD in the OutputRef: upstream detects Ironwood inputs
-                        // by note.version() == V3, not by the pool label. Labeling IRONWOOD here
-                        // confuses the proposal engine's pool-involvement accounting.
-                        // FIXME: is this comment still relevant? should we change to ORCHARD?
+                        // The label must match the ReceivedNotes vector this
+                        // note is returned in. Upstream never reads it, but it
+                        // round-trips through the `exclude` split at the top of
+                        // select_spendable_notes when the input selector prunes
+                        // dust, and that split routes each ref by pool_type().
                         PoolType::IRONWOOD,
                     ),
                     note.output_id().txid(),
@@ -1109,6 +1110,7 @@ impl InputSource for LightWallet {
 #[cfg(test)]
 mod tests {
     use zcash_client_backend::data_api::MaxSpendMode;
+    use zcash_protocol::value::Zatoshis;
 
     use super::*;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -1143,6 +1145,92 @@ mod tests {
             result.is_err(),
             "TargetValue::AllFunds is unsupported: that must be reported \
              through the trait's error channel, not a panic; got {result:?}"
+        );
+    }
+
+    /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
+    /// `InputSource::select_spendable_notes`: the code is right and the comment
+    /// above it is stale.
+    ///
+    /// The `OutputRef` pool label is never read by the upstream proposal
+    /// engine — pool-involvement accounting, bundle attribution, and fee
+    /// calculation all dispatch on the embedded `Note` enum (stamped by
+    /// `ReceivedNotes::into_vec` from the vector the note occupies), not on
+    /// the `NoteRef`. The label's one consumer is this wallet's own `exclude`
+    /// split at the top of `select_spendable_notes`: upstream's
+    /// `GreedyInputSelector` hands previously selected refs back verbatim as
+    /// `exclude` when the change strategy reports `ChangeError::DustInputs`,
+    /// and the split routes each ref to a pool bucket by `pool_type()`. An
+    /// ironwood note labeled `ORCHARD` (as the stale comment mandates) would
+    /// land in the orchard bucket, never be excluded from ironwood selection,
+    /// and be re-selected forever — the selector would then abort with
+    /// `InsufficientFunds` instead of pruning the dust.
+    #[test]
+    fn ironwood_noteref_pool_label_round_trips_through_exclude() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .ironwood_note(100_000)
+            .ironwood_note(100_000)
+            .build();
+
+        let confirmations_policy =
+            ConfirmationsPolicy::new_symmetrical(1.try_into().expect("nonzero"), false);
+        let target_height = TargetHeight::from(BlockHeight::from_u32(21));
+        let sources = [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ];
+
+        // Phase 1: selection over ironwood-only funds labels every selected
+        // ref IRONWOOD, matching the vector (and hence the Note-enum pool)
+        // the note is returned in.
+        let selected = wallet
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
+                &sources,
+                target_height,
+                confirmations_policy,
+                &[],
+            )
+            .expect("selection over synthetic funds succeeds");
+        assert_eq!(
+            selected.ironwood().len(),
+            2,
+            "both fabricated ironwood notes are selected"
+        );
+        let refs: Vec<_> = selected
+            .ironwood()
+            .iter()
+            .map(|note| *note.internal_note_id())
+            .collect();
+        for output_ref in &refs {
+            assert_eq!(
+                output_ref.pool_type(),
+                PoolType::IRONWOOD,
+                "an ironwood note's ref must carry the IRONWOOD label so the \
+                 exclude split routes it back to the ironwood bucket"
+            );
+        }
+
+        // Phase 2: the refs round-trip through `exclude` exactly as the
+        // greedy input selector's dust-pruning path replays them. Correctly
+        // labeled refs suppress re-selection; ORCHARD-labeled refs would fall
+        // into the wrong bucket and the same notes would come back.
+        let reselected = wallet
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
+                &sources,
+                target_height,
+                confirmations_policy,
+                &refs,
+            )
+            .expect("selection with exclusions succeeds");
+        assert!(
+            reselected.ironwood().is_empty(),
+            "excluded ironwood refs must not be re-selected; re-selection \
+             means the exclude split routed them to the wrong pool bucket"
         );
     }
 }
