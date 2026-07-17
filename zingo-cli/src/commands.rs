@@ -1259,7 +1259,7 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Propose a shield of transparent funds to the orchard pool.
+            Propose a shield of transparent funds to the ironwood pool.
             The fee required to send this transaction will be added to the proposal and displayed to the user.
             The 'confirm' command must be called to complete and broadcast the proposed shield.
 
@@ -1273,7 +1273,7 @@ impl Command for ShieldCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Propose a shield of transparent funds to the orchard pool and display a proposal for confirmation.."
+        "Propose a shield of transparent funds to the ironwood pool and display a proposal for confirmation.."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1318,7 +1318,7 @@ struct QuickShieldCommand {}
 impl Command for QuickShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Shield transparent funds to the orchard pool. Combines `shield` and `confirm` into a single command.
+            Shield transparent funds to the ironwood pool. Combines `shield` and `confirm` into a single command.
             The fee required to send this transaction is additionally deducted from your balance.
             Warning:
                 Transaction(s) will be sent without the user being aware of the fee amount.
@@ -1329,7 +1329,7 @@ impl Command for QuickShieldCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Shield transparent funds to the orchard pool. Combines `shield` and `confirm` into a single command."
+        "Shield transparent funds to the ironwood pool. Combines `shield` and `confirm` into a single command."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1925,9 +1925,9 @@ impl Command for NotesCommand {
             let wallet = lightclient.wallet().read().await;
 
             json::object! {
+                "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
                 "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
                 "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
-                "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
             }
             .pretty(2)
         })

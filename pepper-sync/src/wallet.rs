@@ -91,6 +91,8 @@ pub struct InitialSyncState {
     pub(crate) previously_scanned_sapling_outputs: u32,
     /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
+    /// Total number of ironwood outputs scanned in previous sync sessions.
+    pub(crate) previously_scanned_ironwood_outputs: u32,
 }
 
 impl InitialSyncState {
@@ -110,6 +112,7 @@ impl InitialSyncState {
             previously_scanned_blocks: 0,
             previously_scanned_sapling_outputs: 0,
             previously_scanned_orchard_outputs: 0,
+            previously_scanned_ironwood_outputs: 0,
         }
     }
 }
@@ -782,7 +785,7 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl SyncState {
     /// Creates sync state with the given scan ranges, for tests exercising
     /// spendability/witness gating without a chain.

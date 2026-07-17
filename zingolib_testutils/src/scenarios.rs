@@ -183,9 +183,6 @@ pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 /// Amount sent from orchard mining rewards to ironwood after nu6.3 activation.
 pub const IRONWOOD_MIGRATION_AMOUNT: u64 = 1_231_240_000;
 
-/// Additional fee cost of migration
-pub const IRONWOOD_MIGRATION_FEE: u64 = 20_000;
-
 /// Total miner rewards for blocks 1..=`count` under
 /// [`default_test_activation_heights`]: block 1 pays the full subsidy;
 /// every later block pays the post-funding-stream reward.
