@@ -479,14 +479,14 @@ async fn mine_to_orchard() {
     .await;
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_ironwood_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: 1_237_500_000 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (1_237_500_000 + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
