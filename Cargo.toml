@@ -162,8 +162,6 @@ rust-embed = "8"
 opt-level = 3
 
 [patch.crates-io]
-time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
-
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
 # ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
 # upstream main after PR #5 merged the Ironwood protos; the crate version is still
