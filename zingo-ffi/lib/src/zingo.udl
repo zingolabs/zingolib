@@ -3,7 +3,10 @@ enum ZingolibError {
     "LightclientNotInitialized",
     "LightclientLockPoisoned",
     "Panic",
-    "Save"
+    "Save",
+    "Init",
+    "Sync",
+    "Rescan"
 };
 
 namespace zingo {
