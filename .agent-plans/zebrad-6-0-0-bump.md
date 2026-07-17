@@ -79,6 +79,19 @@ test-logs/observatory/concrete__*.log. Root-cause analysis and a
 patched/rc dependency audit are delegated to background agents this
 session.
 
+## Resolution (2026-07-17): PR #2479
+
+Root cause of the three mining-balance reds: wallet commit 731b2b761
+(pool-preference selection, merged with #2468 after the caches were
+mined) defeated the normalization self-send; zebrad exonerated by a
+fresh-chain rc.0 A/B. Fixed by draining orchard via
+drain_orchard_to_ironwood in normalize_shielded_faucet_balance
+(d7196e8a4); user-confirmed green with regenerated caches. Shipped as
+PR #2479 (chore/drop-time-patch → feat/ironwood) together with the
+audit's two pin cleanups: the time [patch.crates-io] drop (a46f5e632)
+and the zaino-proto git→crates.io 0.2.0 migration (4c36bcd2e; a
+benign duplicate copy remains via zingo_grpc_proxy's own git pin).
+
 ## Merge state (2026-07-17)
 
 PR #2475 (with #2477's two commits inside) is MERGED into
