@@ -6,7 +6,7 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
-        InputSource, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
+        InputSource, MaxSpendMode, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
         ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest,
         TransparentKeyOrigin, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
         Zip32Derivation,
@@ -19,7 +19,7 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    transaction::{Transaction, TxId},
+    transaction::{Transaction, TxId, fees::zip317::MARGINAL_FEE},
 };
 use zcash_protocol::{
     PoolType, ShieldedPool,
@@ -881,11 +881,51 @@ impl InputSource for LightWallet {
                         selected_ironwood_notes,
                     )
                 }
-                TargetValue::AllFunds(_max_spend_mode) => {
-                    // Upstream drives this arm through propose_send_max; an
-                    // unsupported mode must surface through the trait's error
-                    // channel, never abort the process.
-                    return Err(WalletError::AllFundsSelectionUnsupported);
+                TargetValue::AllFunds(max_spend_mode) => {
+                    // Effects at the edge: gather the spendable candidates
+                    // per pool (strict, guaranteed-unspent view), then let
+                    // the pure selection decide. All pools participate
+                    // regardless of `sources` order, matching budgeted
+                    // selection's unconditional fallback, and
+                    // migration-reserved notes are included: all funds
+                    // means all (the reservation biases selection, never
+                    // blocks a spend).
+                    let sapling_candidates = self
+                        .spendable_notes::<SaplingNote>(
+                            anchor_height,
+                            &exclude_sapling,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let orchard_candidates = self
+                        .spendable_notes::<OrchardNote>(
+                            anchor_height,
+                            &exclude_orchard,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let ironwood_candidates = self
+                        .spendable_notes::<IronwoodNote>(
+                            anchor_height,
+                            &exclude_ironwood,
+                            account,
+                            false,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    all_funds_selection(
+                        max_spend_mode,
+                        sapling_candidates,
+                        orchard_candidates,
+                        ironwood_candidates,
+                    )?
                 }
             };
 
@@ -1107,6 +1147,49 @@ impl InputSource for LightWallet {
     }
 }
 
+/// The per-pool selection triple `select_spendable_notes` assembles
+/// before mapping into [`ReceivedNotes`].
+type SelectedPoolNotes = (Vec<SaplingNote>, Vec<OrchardNote>, Vec<IronwoodNote>);
+
+/// Pure all-funds selection over already-gathered spendable candidates:
+/// no wallet access, no mutation — the same candidates and mode always
+/// produce the same selection, so the policy is testable without a
+/// wallet.
+///
+/// `MaxSpendable` keeps every candidate worth more than the marginal
+/// fee, the same dust discipline as budgeted selection: a note at or
+/// below [`MARGINAL_FEE`] costs more to spend than it contributes.
+///
+/// `Everything` is refused with a typed error: its contract — fail if
+/// ANY unspendable funds exist — requires a whole-wallet audit this
+/// selector does not yet perform, and a wrong success would silently
+/// strand funds. The typed refusal replaces a panic that aborted the
+/// process.
+fn all_funds_selection(
+    mode: MaxSpendMode,
+    sapling: Vec<SaplingNote>,
+    orchard: Vec<OrchardNote>,
+    ironwood: Vec<IronwoodNote>,
+) -> Result<SelectedPoolNotes, WalletError> {
+    match mode {
+        MaxSpendMode::MaxSpendable => Ok((
+            retain_spend_worthy(sapling),
+            retain_spend_worthy(orchard),
+            retain_spend_worthy(ironwood),
+        )),
+        MaxSpendMode::Everything => Err(WalletError::AllFundsEverythingUnsupported),
+    }
+}
+
+/// Pure dust filter: keeps the notes whose value exceeds the marginal
+/// fee.
+fn retain_spend_worthy<N: OutputInterface>(notes: Vec<N>) -> Vec<N> {
+    notes
+        .into_iter()
+        .filter(|note| note.value() > MARGINAL_FEE.into_u64())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use zcash_client_backend::data_api::MaxSpendMode;
@@ -1115,36 +1198,75 @@ mod tests {
     use super::*;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    /// `InputSource::select_spendable_notes` is driven by upstream
-    /// `zcash_client_backend` (`propose_send_max`) with
-    /// `TargetValue::AllFunds`. An unsupported request must surface
-    /// through the trait's error channel (`Result<_, WalletError>`),
-    /// never abort the process.
-    #[test]
-    fn select_spendable_notes_all_funds_returns_err_not_panic() {
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .sapling_note(100_000)
+    /// One spendable note per shielded pool, plus an orchard note at the
+    /// dust line (`MARGINAL_FEE`) that budgeted selection would also
+    /// refuse to spend.
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .sapling_note(50_000)
             .orchard_note(100_000)
-            .ironwood_note(100_000)
-            .build();
+            .ironwood_note(70_000)
+            .orchard_note(5_000)
+            .build()
+    }
 
-        let result = wallet.select_spendable_notes(
+    fn select_all_funds(
+        wallet: &LightWallet,
+        mode: MaxSpendMode,
+    ) -> Result<ReceivedNotes<OutputRef>, WalletError> {
+        wallet.select_spendable_notes(
             zip32::AccountId::ZERO,
-            TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+            TargetValue::AllFunds(mode),
             &[
-                ShieldedPool::Sapling,
-                ShieldedPool::Orchard,
                 ShieldedPool::Ironwood,
+                ShieldedPool::Orchard,
+                ShieldedPool::Sapling,
             ],
-            BlockHeight::from_u32(21).into(),
-            ConfirmationsPolicy::MIN,
+            TargetHeight::from(21),
+            ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
             &[],
-        );
+        )
+    }
 
+    #[test]
+    fn all_funds_max_spendable_selects_every_spend_worthy_note() {
+        let notes = select_all_funds(&funded_wallet(), MaxSpendMode::MaxSpendable)
+            .expect("all-funds selection must succeed on a funded, synced wallet");
+        assert_eq!(notes.sapling().len(), 1);
+        assert_eq!(
+            notes.orchard().len(),
+            1,
+            "the dust orchard note must be left behind"
+        );
+        assert_eq!(notes.ironwood().len(), 1);
+        let total: u64 = notes
+            .sapling()
+            .iter()
+            .map(|note| note.note().value().inner())
+            .chain(
+                notes
+                    .orchard()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .chain(
+                notes
+                    .ironwood()
+                    .iter()
+                    .map(|note| note.note().value().inner()),
+            )
+            .sum();
+        assert_eq!(total, 220_000);
+    }
+
+    #[test]
+    fn all_funds_everything_is_a_typed_error_not_an_abort() {
+        let error = select_all_funds(&funded_wallet(), MaxSpendMode::Everything)
+            .expect_err("Everything mode is unimplemented and must refuse, not abort");
         assert!(
-            result.is_err(),
-            "TargetValue::AllFunds is unsupported: that must be reported \
-             through the trait's error channel, not a panic; got {result:?}"
+            matches!(error, WalletError::AllFundsEverythingUnsupported),
+            "the refusal must be the dedicated typed error, observed: {error}"
         );
     }
 

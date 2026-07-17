@@ -96,6 +96,13 @@ pub enum WalletError {
     /// worth more than it would cost to spend.
     #[error("No spendable Orchard notes to migrate.")]
     NothingToMigrate,
+    /// `TargetValue::AllFunds(MaxSpendMode::Everything)` was requested. Its
+    /// contract — fail if ANY unspendable funds exist — requires a
+    /// whole-wallet audit this selector does not yet perform, and a wrong
+    /// success would silently strand funds, so the request is refused with
+    /// this typed error instead.
+    #[error("AllFunds(Everything) is not supported: the unspendable-funds audit is unimplemented.")]
+    AllFundsEverythingUnsupported,
     /// Conversion failed
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]
@@ -110,9 +117,6 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
-    /// All-funds note selection (`TargetValue::AllFunds`) is not implemented.
-    #[error("All-funds note selection is not supported.")]
-    AllFundsSelectionUnsupported,
 }
 
 /// Price error
