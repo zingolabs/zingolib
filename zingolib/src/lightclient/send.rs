@@ -106,6 +106,127 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
+/// A single Broadcast Indexer reached through the local SOCKS5 proxy, as a
+/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
+/// running the same [`resilient_transmit`] policy as the clearnet path. The
+/// fan-out builds one of these per pick.
+#[cfg(feature = "nym")]
+struct SocksTarget {
+    socks5_addr: String,
+    indexer: http::Uri,
+}
+
+#[cfg(feature = "nym")]
+impl TransmitTarget for SocksTarget {
+    fn submit(
+        &self,
+        raw_tx: &[u8],
+        height: u64,
+    ) -> impl Future<Output = Result<String, String>> + Send {
+        let socks5_addr = self.socks5_addr.clone();
+        let indexer = self.indexer.clone();
+        let data = raw_tx.to_vec();
+        async move {
+            zingo_netutils::send_transaction_via_socks5(
+                &socks5_addr,
+                &indexer,
+                &data,
+                height,
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        }
+    }
+
+    fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
+        let socks5_addr = self.socks5_addr.clone();
+        let indexer = self.indexer.clone();
+        let hash = txid.as_ref().to_vec();
+        async move {
+            zingo_netutils::transaction_known_via_socks5(
+                &socks5_addr,
+                &indexer,
+                &hash,
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+            .await
+        }
+    }
+}
+
+/// Submit one transaction under the route the Mixnet Mode policy resolved:
+/// clearnet through the configured indexer when `socks5_proxy` is `None`, or
+/// the mixnet fan-out over the Broadcast Indexers reached through the SOCKS5
+/// proxy when it is `Some`. Returns the server-reported txid or the last
+/// failure message.
+async fn transmit_one_transaction(
+    socks5_proxy: Option<&str>,
+    indexer: &zingo_netutils::GrpcIndexer,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+) -> Result<String, String> {
+    match socks5_proxy {
+        None => resilient_transmit(
+            &ClearnetTarget(indexer.clone()),
+            tx_bytes,
+            height,
+            txid,
+            |interval| tokio::time::sleep(interval),
+        )
+        .await
+        .map_err(|TransmitFailed(message)| message),
+        #[cfg(feature = "nym")]
+        Some(socks5_addr) => mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid).await,
+        #[cfg(not(feature = "nym"))]
+        Some(_) => Err("a mixnet route requires the nym feature".to_string()),
+    }
+}
+
+/// Broadcast one transaction over the mixnet as the escalating, serially gated
+/// fan-out (ADR 0011): each arm runs the shared [`resilient_transmit`] policy
+/// against one Broadcast Indexer through the SOCKS5 proxy, and the fan-out
+/// escalates round by round until an indexer confirms delivery or the witness
+/// cap is reached.
+#[cfg(feature = "nym")]
+async fn mixnet_fanout_transmit(
+    socks5_addr: &str,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+) -> Result<String, String> {
+    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
+    use crate::nym::broadcast_indexers::broadcast_indexers;
+
+    let indexers = broadcast_indexers();
+    let run_arm = |indexer: http::Uri| {
+        let socks5_addr = socks5_addr.to_string();
+        let tx_bytes = tx_bytes.to_vec();
+        let txid = *txid;
+        async move {
+            let target = SocksTarget {
+                socks5_addr,
+                indexer,
+            };
+            resilient_transmit(&target, &tx_bytes, height, &txid, |interval| {
+                tokio::time::sleep(interval)
+            })
+            .await
+            .map_err(|TransmitFailed(message)| message)
+        }
+    };
+
+    fanout_broadcast(
+        &indexers,
+        &mut rand::rngs::OsRng,
+        MAX_BROADCAST_WITNESSES,
+        run_arm,
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
 impl LightClient {
     async fn send(
         &mut self,
@@ -352,6 +473,20 @@ impl LightClient {
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let indexer = self.require_indexer()?.clone();
+
+        // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
+        // `Clearnet` submits through the configured indexer; `Mixnet(addr)`
+        // routes the fan-out through the SOCKS5 proxy; `Bootstrapping` fails
+        // closed here, before any submission, rather than leaking to clearnet.
+        // Without the `nym` feature there is no mixnet, so the route is clearnet.
+        #[cfg(feature = "nym")]
+        let socks5_proxy: Option<String> = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Clearnet => None,
+            crate::nym::MixnetRoute::Mixnet(socks5_addr) => Some(socks5_addr),
+        };
+        #[cfg(not(feature = "nym"))]
+        let socks5_proxy: Option<String> = None;
+
         let mut wallet = self.wallet().write().await;
         for (index, txid) in calculated_txids.iter().enumerate() {
             let calculated_transaction = wallet
@@ -384,21 +519,20 @@ impl LightClient {
                 })?;
 
             // The retry / duplicate-in-mempool / queued-probe policy is defined
-            // once in `transmit::resilient_transmit` and reused here (clearnet)
-            // and by the Nym broadcast path. Wallet-state effects stay here; the
-            // policy is pure.
-            let target = ClearnetTarget(indexer.clone());
-            let txid_from_server = match resilient_transmit(
-                &target,
+            // once in `transmit::resilient_transmit`; the clearnet path runs it
+            // directly and the mixnet path runs it per fan-out arm. Wallet-state
+            // effects stay here, around the pure transmission.
+            let txid_from_server = match transmit_one_transaction(
+                socks5_proxy.as_deref(),
+                &indexer,
                 &transaction_bytes,
                 height.into(),
                 txid,
-                |interval| tokio::time::sleep(interval),
             )
             .await
             {
                 Ok(server_txid) => server_txid,
-                Err(TransmitFailed(message)) => {
+                Err(message) => {
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
                         vec![*txid],

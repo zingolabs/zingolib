@@ -558,6 +558,51 @@ Implementation shape (next, on user go-ahead):
   timeout. Not a policy decision; settle when wiring.
 - Delete GrpcIndexer's stale `// TODO; add nym_client`.
 
+## Implementation — increment 6 (DONE 2026-07-17): the fan-out, wired into send
+
+The resolved escalating fan-out is built and branched into the send path.
+
+`nym/broadcast.rs` REWRITTEN: the increment-1 `Transmitter`/`SubmitError`/
+`broadcast` (sequential single-pick, with the retired `Rejected` classification)
+is gone, replaced by `fanout_broadcast(indexers, rng, cap, run_arm) ->
+Result<String, FanoutError>`. It shuffles once (repetition-free random order),
+drives serially-gated rounds (round r = r parallel arms, entered only after all
+of round r-1 fail), races each round with `futures::future::select_ok` (first
+delivery wins, abandon the rest; whole-round failure escalates), and stops at
+`MAX_BROADCAST_WITNESSES = 6` (1+2+3). `run_arm` and the RNG are injected; 6 unit
+tests (empty, round-1-single-witness, escalation contacts 1+2=3, all-fail caps at
+6 distinct, cap bounded by list length, seed reproduces the round-1 witness). No
+error-string classification survives — success is whatever the arm returns Ok.
+
+`send.rs` WIRED: `SocksTarget` (nym-gated) implements `TransmitTarget` over
+`send_transaction_via_socks5` / `transaction_known_via_socks5`, so each fan-out
+arm runs the SAME `resilient_transmit` policy as clearnet — the shared per-
+submission logic is reused, not duplicated. `transmit_one_transaction(Option<&str>
+socks5_proxy, ...)` branches: None -> ClearnetTarget + resilient_transmit (today's
+path, unchanged); Some(addr) -> `mixnet_fanout_transmit` (nym). `transmit_transactions`
+resolves the route ONCE via `mixnet_route()?` before taking the wallet lock, so
+Bootstrapping fails closed before any submission; Clearnet -> None, Mixnet(addr)
+-> Some(addr). Wallet-state effects stay in the loop around the pure transmission.
+Without `nym` the route is always clearnet and the mixnet arms are cfg'd out, so
+the default build and the clearnet send path are byte-for-byte behavior-preserving.
+
+Retired `GrpcIndexer`'s stale `// TODO; add nym_client` (the transport is
+out-of-process SOCKS5, not an in-struct client; sync stays clearnet-only).
+
+VERIFIED: default `cargo check -p zingolib` green; nym `cargo clippy -p zingolib
+--features nym --all-targets -D warnings` green; 18 nym lib tests pass (incl. the
+6 fan-out tests); offline send tests (send::built_transaction_shape) 5/5 green on
+the default build, confirming the clearnet path is unchanged; fmt clean on both
+the root workspace and the netutils workspace.
+
+Still open (not blocking): the CLI `nym on|off|status` surface + the consumer
+forced-on-at-startup wiring (zingo-cli calls enable_mixnet with the bundled
+binary path); the nym-proxy binary's runtime/bundled location (packaging); the
+per-arm same-target retry tuning for the mixnet (resilient_transmit's
+MAX_RETRIES=3 may be high when the fan-out is the "try elsewhere" mechanism); and
+the independent delivery confirmation refinement (a censoring indexer can
+misreport, so cross-check against a different indexer or the sync mempool view).
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

@@ -1,119 +1,114 @@
-//! Witness-rotation broadcast over the Nym mixnet.
+//! Censorship-robust broadcast over the Nym mixnet: an escalating, serially
+//! gated fan-out over the curated Broadcast Indexer list.
 //!
-//! Each Transmission picks a single Broadcast Indexer at random from the
-//! curated list and submits over the mixnet; on an unreachable pick it fails
-//! over to a fresh random indexer, trying at most a bounded number of
-//! distinct indexers. A substantive rejection is terminal, because an invalid
-//! transaction rejects everywhere. The same transaction is never fired to
-//! more than one indexer at once: this is failover, not redundancy.
+//! The adversary is a Broadcast Indexer that suppresses a send — accepting the
+//! connection but declining to relay, or misreporting the outcome — so the
+//! send must be able to route around it to honest indexers. The first round
+//! submits to a single random indexer (witness rotation, and the common
+//! success path); only if that fails to confirm delivery does the send
+//! escalate, submitting to two fresh indexers in parallel, then three, each
+//! round gated on the complete failure of the round before it. The fan-out
+//! stops at [`MAX_BROADCAST_WITNESSES`] distinct indexers, which the one-two-
+//! three schedule reaches at the end of the third round. Within a round the
+//! first indexer to confirm delivery wins and the rest are abandoned. See
+//! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
-//! The transport is abstracted behind [`Transmitter`] and the choice of
-//! indexer behind an injected [`Rng`], so the whole rotation-and-failover
-//! logic is exercised in CI against a mock transmitter and a seeded
-//! generator. The live nym-sdk SOCKS5 transport slots in behind the same
-//! trait in a later increment. See `docs/adr/0011-nym-mixnet-transmission.md`.
+//! This orchestrates the shared per-submission policy — retry,
+//! duplicate-in-mempool, queued-probe, delivery-check — rather than
+//! duplicating it: each arm is a call to
+//! [`resilient_transmit`](crate::lightclient::transmit::resilient_transmit),
+//! the same policy the clearnet path runs. The per-arm runner and the
+//! random-number generator are injected, so the round, escalation, and cap
+//! logic is exercised in CI without a live mixnet or real time.
 #![forbid(unsafe_code)]
 
 use std::future::Future;
 
+use futures::future::select_ok;
 use http::Uri;
 use rand::Rng;
 use rand::seq::SliceRandom;
 
-/// Why an indexer did not accept a submitted transaction.
-#[derive(Clone, Debug)]
-pub enum SubmitError {
-    /// The indexer could not be reached; a candidate for failover to a
-    /// different Broadcast Indexer.
-    Unreachable(String),
-    /// The indexer rejected the transaction on its merits. An invalid
-    /// transaction rejects everywhere, so failover is pointless.
-    Rejected(String),
-}
+/// The maximum number of distinct Broadcast Indexers a single send may contact
+/// before it surfaces failure (ADR 0011). The escalating one-two-three fan-out
+/// reaches this at the end of the third round; it is the circuit breaker for an
+/// unbroadcastable transaction, since the client cannot classify a rejection.
+pub(crate) const MAX_BROADCAST_WITNESSES: usize = 6;
 
-/// Submits a raw transaction to a single indexer. The live nym-sdk mixnet
-/// transport implements this in production; a mock implements it in tests.
-pub trait Transmitter {
-    /// Submits `raw_tx` to `indexer`, returning the server-reported txid on
-    /// acceptance. A duplicate already in the mempool or chain counts as
-    /// acceptance.
-    fn submit(
-        &self,
-        indexer: &Uri,
-        raw_tx: &[u8],
-    ) -> impl Future<Output = Result<String, SubmitError>> + Send;
-}
-
-/// A successful witness-rotation broadcast.
-#[derive(Clone, Debug)]
-pub struct BroadcastOk {
-    /// The Broadcast Indexer that accepted the transaction.
-    pub indexer: Uri,
-    /// The server-reported txid.
-    pub server_txid: String,
-}
-
-/// Why a witness-rotation broadcast failed.
-#[derive(Clone, Debug)]
-pub enum BroadcastError {
-    /// An indexer rejected the transaction on its merits; not retried.
-    Rejected(String),
-    /// Every attempted indexer was unreachable within the attempt bound.
-    AllUnreachable {
-        /// The number of distinct indexers tried.
-        attempts: usize,
-    },
+/// Why a fan-out broadcast failed.
+#[derive(Clone, Debug, thiserror::Error)]
+pub(crate) enum FanoutError {
     /// The Broadcast Indexer list was empty.
+    #[error("the Broadcast Indexer list is empty")]
     NoIndexers,
+    /// The cap was reached without any indexer confirming delivery.
+    #[error("no indexer confirmed delivery after contacting {attempts} of them: {last_message}")]
+    AllFailed {
+        /// The number of distinct indexers contacted.
+        attempts: usize,
+        /// The last failure message, surfaced for the user.
+        last_message: String,
+    },
 }
 
-/// Broadcasts `raw_tx` to one Broadcast Indexer chosen at random from
-/// `indexers` (witness rotation), failing over to a fresh random indexer on
-/// an unreachable pick, trying at most `max_attempts` distinct indexers.
+/// Broadcast to `indexers` as an escalating, serially gated fan-out, returning
+/// the server-reported txid of the first indexer to confirm delivery. `run_arm`
+/// submits to one indexer and resolves to `Ok(server_txid)` on confirmed
+/// delivery or `Err(msg)` otherwise; `rng` chooses the random order (witness
+/// rotation); `cap` bounds the distinct indexers contacted.
 ///
-/// Exactly one submission is ever in flight. A substantive
-/// [`SubmitError::Rejected`] returns immediately, since an invalid
-/// transaction rejects everywhere.
-pub async fn broadcast<T, R>(
-    transmitter: &T,
+/// Round `r` submits to `r` fresh indexers in parallel, and round `r + 1` runs
+/// only after every arm of round `r` fails, so parallelism widens only as
+/// evidence of censorship or failure accumulates. Within a round the first arm
+/// to confirm delivery wins and the rest are abandoned. The one-two-three
+/// schedule stops once `cap` distinct indexers have been contacted.
+pub(crate) async fn fanout_broadcast<A, F, R>(
     indexers: &[Uri],
     rng: &mut R,
-    raw_tx: &[u8],
-    max_attempts: usize,
-) -> Result<BroadcastOk, BroadcastError>
+    cap: usize,
+    run_arm: A,
+) -> Result<String, FanoutError>
 where
-    T: Transmitter + Sync,
+    A: Fn(Uri) -> F,
+    F: Future<Output = Result<String, String>>,
     R: Rng + ?Sized,
 {
     if indexers.is_empty() {
-        return Err(BroadcastError::NoIndexers);
+        return Err(FanoutError::NoIndexers);
     }
 
-    // A random permutation yields both the initial random pick and a
-    // repetition-free random failover order in one shot.
+    // One shuffle yields both the initial random pick and a repetition-free
+    // random escalation order: no indexer is contacted twice.
     let mut order: Vec<usize> = (0..indexers.len()).collect();
     order.shuffle(rng);
 
-    let bound = max_attempts.min(order.len());
-    let mut attempts = 0;
-    for &index in order.iter().take(bound) {
-        let indexer = &indexers[index];
-        attempts += 1;
-        match transmitter.submit(indexer, raw_tx).await {
-            Ok(server_txid) => {
-                return Ok(BroadcastOk {
-                    indexer: indexer.clone(),
-                    server_txid,
-                });
-            }
-            Err(SubmitError::Unreachable(_)) => continue,
-            Err(SubmitError::Rejected(message)) => {
-                return Err(BroadcastError::Rejected(message));
-            }
+    let limit = cap.min(order.len());
+    let mut contacted = 0;
+    let mut round_size = 1;
+    let mut last_message = String::from("no indexer was contacted");
+
+    while contacted < limit {
+        let this_round = round_size.min(limit - contacted);
+        let arms = order[contacted..contacted + this_round]
+            .iter()
+            .map(|&i| Box::pin(run_arm(indexers[i].clone())));
+
+        // `select_ok` returns the first arm to confirm delivery, abandoning the
+        // rest; if every arm in the round fails it yields the last failure, and
+        // the loop escalates to the next, larger round.
+        match select_ok(arms).await {
+            Ok((server_txid, _abandoned)) => return Ok(server_txid),
+            Err(message) => last_message = message,
         }
+
+        contacted += this_round;
+        round_size += 1;
     }
 
-    Err(BroadcastError::AllUnreachable { attempts })
+    Err(FanoutError::AllFailed {
+        attempts: contacted,
+        last_message,
+    })
 }
 
 #[cfg(test)]
@@ -127,215 +122,205 @@ mod tests {
     use super::*;
 
     fn uris(hosts: &[&str]) -> Vec<Uri> {
-        hosts.iter().map(|h| h.parse().unwrap()).collect()
+        hosts
+            .iter()
+            .map(|h| format!("https://{h}:443").parse().unwrap())
+            .collect()
     }
 
-    /// A transmitter returning a scripted result per indexer host, recording
-    /// the order of the hosts it was asked to submit to.
-    struct MockTransmitter {
-        results: HashMap<String, Result<String, SubmitError>>,
-        calls: Mutex<Vec<String>>,
+    fn host_of(indexer: &Uri) -> String {
+        indexer.host().expect("indexer uri has a host").to_string()
     }
 
-    impl MockTransmitter {
-        fn new(scripts: &[(&str, Result<String, SubmitError>)]) -> Self {
-            let results = scripts
+    /// An arm runner returning a scripted result per indexer host and recording
+    /// every indexer it was asked to contact. Recording happens when the arm is
+    /// created (which the orchestrator does for all of a round's arms before it
+    /// awaits any), so a round's full width is counted even when an early arm
+    /// wins the race.
+    struct MockArms {
+        scripts: HashMap<String, Result<String, String>>,
+        contacted: Mutex<Vec<String>>,
+    }
+
+    impl MockArms {
+        fn new(scripts: &[(&str, Result<&str, &str>)]) -> Self {
+            let scripts = scripts
                 .iter()
-                .map(|(host, result)| ((*host).to_string(), result.clone()))
+                .map(|(host, result)| {
+                    let owned = match result {
+                        Ok(txid) => Ok((*txid).to_string()),
+                        Err(message) => Err((*message).to_string()),
+                    };
+                    ((*host).to_string(), owned)
+                })
                 .collect();
-            MockTransmitter {
-                results,
-                calls: Mutex::new(Vec::new()),
+            MockArms {
+                scripts,
+                contacted: Mutex::new(Vec::new()),
             }
         }
 
-        fn calls(&self) -> Vec<String> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl Transmitter for MockTransmitter {
-        fn submit(
-            &self,
-            indexer: &Uri,
-            _raw_tx: &[u8],
-        ) -> impl Future<Output = Result<String, SubmitError>> + Send {
-            let host = indexer.host().unwrap().to_string();
-            self.calls.lock().unwrap().push(host.clone());
-            let result = self
-                .results
+        fn run(&self, indexer: Uri) -> impl Future<Output = Result<String, String>> + '_ {
+            let host = host_of(&indexer);
+            self.contacted.lock().unwrap().push(host.clone());
+            let scripted = self
+                .scripts
                 .get(&host)
                 .cloned()
-                .unwrap_or(Err(SubmitError::Unreachable("no script".into())));
-            async move { result }
+                .unwrap_or_else(|| Err(format!("unscripted host {host}")));
+            async move { scripted }
+        }
+
+        fn contacted(&self) -> Vec<String> {
+            self.contacted.lock().unwrap().clone()
         }
     }
 
-    fn rng() -> StdRng {
-        StdRng::seed_from_u64(0xC0FFEE)
+    /// Reproduce the orchestrator's shuffle so a test can name the indexer a
+    /// given seed contacts first (round one) versus later (escalation).
+    fn shuffled_order(len: usize, seed: u64) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..len).collect();
+        order.shuffle(&mut StdRng::seed_from_u64(seed));
+        order
     }
 
     #[tokio::test]
-    async fn single_indexer_accepts() {
-        let mock = MockTransmitter::new(&[("a.example", Ok("txid-a".into()))]);
-        let indexers = uris(&["https://a.example:443"]);
-
-        let ok = broadcast(&mock, &indexers, &mut rng(), b"tx", 4)
+    async fn empty_list_is_an_error() {
+        let mock = MockArms::new(&[]);
+        let err = fanout_broadcast(&[], &mut StdRng::seed_from_u64(1), 6, |u| mock.run(u))
             .await
-            .expect("the sole indexer accepts");
-
-        assert_eq!(ok.server_txid, "txid-a");
-        assert_eq!(ok.indexer.host(), Some("a.example"));
-        assert_eq!(mock.calls(), vec!["a.example"]);
+            .expect_err("no indexers");
+        assert!(matches!(err, FanoutError::NoIndexers));
+        assert!(mock.contacted().is_empty());
     }
 
     #[tokio::test]
-    async fn substantive_rejection_is_terminal_and_not_retried() {
-        let mock = MockTransmitter::new(&[(
-            "a.example",
-            Err(SubmitError::Rejected("invalid transaction".into())),
-        )]);
-        let indexers = uris(&["https://a.example:443"]);
-
-        let err = broadcast(&mock, &indexers, &mut rng(), b"tx", 4)
+    async fn first_round_success_contacts_exactly_one_witness() {
+        // Every indexer would accept; the single round-one pick must end it, so
+        // the happy path keeps its single-witness discipline.
+        let indexers = uris(&["a", "b", "c", "d"]);
+        let mock = MockArms::new(&[
+            ("a", Ok("txid")),
+            ("b", Ok("txid")),
+            ("c", Ok("txid")),
+            ("d", Ok("txid")),
+        ]);
+        let ok = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(7), 6, |u| mock.run(u))
             .await
-            .expect_err("a substantive rejection fails the broadcast");
-
-        assert!(matches!(err, BroadcastError::Rejected(m) if m == "invalid transaction"));
-        // A single indexer, called once: rejection did not trigger failover.
-        assert_eq!(mock.calls(), vec!["a.example"]);
+            .expect("first pick accepts");
+        assert_eq!(ok, "txid");
+        assert_eq!(mock.contacted().len(), 1, "only round one ran");
     }
 
     #[tokio::test]
-    async fn fails_over_past_unreachable_to_an_acceptor() {
-        // Exactly one indexer accepts; the other two are unreachable. Whatever
-        // the random order, the broadcast must skip the unreachable ones and
-        // land on the acceptor.
-        let mock = MockTransmitter::new(&[
-            (
-                "down1.example",
-                Err(SubmitError::Unreachable("no route".into())),
-            ),
-            ("up.example", Ok("txid-up".into())),
-            (
-                "down2.example",
-                Err(SubmitError::Unreachable("no route".into())),
-            ),
-        ]);
-        let indexers = uris(&[
-            "https://down1.example:443",
-            "https://up.example:443",
-            "https://down2.example:443",
-        ]);
+    async fn escalates_to_the_second_round_when_the_first_fails() {
+        // Fail the seed's round-one pick; accept everywhere else. The send must
+        // escalate to round two (two more indexers) and succeed, contacting
+        // exactly 1 + 2 = 3 distinct indexers.
+        let hosts = ["a", "b", "c", "d", "e"];
+        let indexers = uris(&hosts);
+        let seed = 20;
+        let order = shuffled_order(hosts.len(), seed);
+        let first = hosts[order[0]];
 
-        let ok = broadcast(&mock, &indexers, &mut rng(), b"tx", 4)
-            .await
-            .expect("failover reaches the one reachable indexer");
+        let scripts: Vec<(&str, Result<&str, &str>)> = hosts
+            .iter()
+            .map(|&h| {
+                if h == first {
+                    (h, Err("suppressed"))
+                } else {
+                    (h, Ok("txid"))
+                }
+            })
+            .collect();
+        let mock = MockArms::new(&scripts);
 
-        assert_eq!(ok.server_txid, "txid-up");
-        assert_eq!(ok.indexer.host(), Some("up.example"));
-        assert!(mock.calls().contains(&"up.example".to_string()));
+        let ok = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(seed), 6, |u| {
+            mock.run(u)
+        })
+        .await
+        .expect("round two accepts");
+        assert_eq!(ok, "txid");
+        assert_eq!(
+            mock.contacted().len(),
+            3,
+            "round one plus a full second round"
+        );
+        assert_eq!(mock.contacted()[0], first, "round one is the single pick");
     }
 
     #[tokio::test]
-    async fn all_unreachable_reports_every_distinct_attempt() {
-        let mock = MockTransmitter::new(&[
-            ("a.example", Err(SubmitError::Unreachable("x".into()))),
-            ("b.example", Err(SubmitError::Unreachable("x".into()))),
-            ("c.example", Err(SubmitError::Unreachable("x".into()))),
-        ]);
-        let indexers = uris(&[
-            "https://a.example:443",
-            "https://b.example:443",
-            "https://c.example:443",
-        ]);
+    async fn all_failing_stops_at_the_cap() {
+        // Ten indexers, every one suppressing. The fan-out must stop at the
+        // six-witness cap (1 + 2 + 3), not walk the whole list.
+        let hosts = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> =
+            hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
+        let mock = MockArms::new(&scripts);
 
-        let err = broadcast(&mock, &indexers, &mut rng(), b"tx", 10)
-            .await
-            .expect_err("no indexer is reachable");
-
-        assert!(matches!(
-            err,
-            BroadcastError::AllUnreachable { attempts: 3 }
-        ));
-        // Every indexer tried exactly once — failover never repeats a pick.
-        let mut calls = mock.calls();
-        calls.sort();
-        assert_eq!(calls, vec!["a.example", "b.example", "c.example"]);
-    }
-
-    #[tokio::test]
-    async fn stops_at_max_attempts_without_walking_the_list() {
-        let mock = MockTransmitter::new(&[
-            ("a.example", Err(SubmitError::Unreachable("x".into()))),
-            ("b.example", Err(SubmitError::Unreachable("x".into()))),
-            ("c.example", Err(SubmitError::Unreachable("x".into()))),
-            ("d.example", Err(SubmitError::Unreachable("x".into()))),
-            ("e.example", Err(SubmitError::Unreachable("x".into()))),
-        ]);
-        let indexers = uris(&[
-            "https://a.example:443",
-            "https://b.example:443",
-            "https://c.example:443",
-            "https://d.example:443",
-            "https://e.example:443",
-        ]);
-
-        let err = broadcast(&mock, &indexers, &mut rng(), b"tx", 2)
-            .await
-            .expect_err("bounded attempts exhausted");
-
-        assert!(matches!(
-            err,
-            BroadcastError::AllUnreachable { attempts: 2 }
-        ));
-        assert_eq!(mock.calls().len(), 2, "the attempt bound is respected");
-    }
-
-    #[tokio::test]
-    async fn empty_list_is_no_indexers() {
-        let mock = MockTransmitter::new(&[]);
-        let err = broadcast(&mock, &[], &mut rng(), b"tx", 4)
-            .await
-            .expect_err("an empty broadcast list cannot send");
-        assert!(matches!(err, BroadcastError::NoIndexers));
-        assert!(mock.calls().is_empty());
-    }
-
-    #[tokio::test]
-    async fn injected_rng_makes_the_pick_order_reproducible() {
-        // The same seed must produce the same failover order, proving the
-        // generator is injected rather than drawn from a global source.
-        let script: Vec<(&str, Result<String, SubmitError>)> = vec![
-            ("a.example", Err(SubmitError::Unreachable("x".into()))),
-            ("b.example", Err(SubmitError::Unreachable("x".into()))),
-            ("c.example", Err(SubmitError::Unreachable("x".into()))),
-            ("d.example", Err(SubmitError::Unreachable("x".into()))),
-        ];
-        let indexers = uris(&[
-            "https://a.example:443",
-            "https://b.example:443",
-            "https://c.example:443",
-            "https://d.example:443",
-        ]);
-
-        let first = MockTransmitter::new(&script);
-        let _ = broadcast(&first, &indexers, &mut StdRng::seed_from_u64(42), b"tx", 10).await;
-
-        let second = MockTransmitter::new(&script);
-        let _ = broadcast(
-            &second,
+        let err = fanout_broadcast(
             &indexers,
-            &mut StdRng::seed_from_u64(42),
-            b"tx",
-            10,
+            &mut StdRng::seed_from_u64(3),
+            MAX_BROADCAST_WITNESSES,
+            |u| mock.run(u),
         )
+        .await
+        .expect_err("no indexer confirms");
+        match err {
+            FanoutError::AllFailed { attempts, .. } => assert_eq!(attempts, 6),
+            other => panic!("expected AllFailed, got {other:?}"),
+        }
+        let contacted = mock.contacted();
+        assert_eq!(contacted.len(), 6, "capped at six witnesses");
+        let distinct: std::collections::HashSet<_> = contacted.iter().collect();
+        assert_eq!(distinct.len(), 6, "no indexer is contacted twice");
+    }
+
+    #[tokio::test]
+    async fn cap_is_bounded_by_the_list_length() {
+        // A cap larger than the list contacts every indexer once and no more.
+        let hosts = ["a", "b", "c"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> =
+            hosts.iter().map(|&h| (h, Err("down"))).collect();
+        let mock = MockArms::new(&scripts);
+
+        let err = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(5), 6, |u| mock.run(u))
+            .await
+            .expect_err("all down");
+        match err {
+            FanoutError::AllFailed { attempts, .. } => assert_eq!(attempts, 3),
+            other => panic!("expected AllFailed, got {other:?}"),
+        }
+        assert_eq!(mock.contacted().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_seed_picks_the_same_first_witness_every_time() {
+        // Witness rotation is driven by the injected RNG, so a fixed seed is
+        // reproducible: the same indexer carries round one across runs.
+        let hosts = ["a", "b", "c", "d", "e"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> =
+            hosts.iter().map(|&h| (h, Err("down"))).collect();
+
+        let first_run = MockArms::new(&scripts);
+        let _ = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(99), 6, |u| {
+            first_run.run(u)
+        })
+        .await;
+
+        let second_run = MockArms::new(&scripts);
+        let _ = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(99), 6, |u| {
+            second_run.run(u)
+        })
         .await;
 
         assert_eq!(
-            first.calls(),
-            second.calls(),
-            "one seed, one deterministic pick order"
+            first_run.contacted()[0],
+            second_run.contacted()[0],
+            "the seed fixes the round-one witness"
         );
     }
 }
