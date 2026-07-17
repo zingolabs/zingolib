@@ -355,12 +355,16 @@ where
                 let mut retry_height = scan_task.scan_range.block_range().start;
                 let mut batch_sapling_output_count = 0;
                 let mut batch_orchard_output_count = 0;
+                let mut batch_ironwood_output_count = 0;
                 let mut batch_sapling_nullifier_count = 0;
                 let mut batch_orchard_nullifier_count = 0;
+                let mut batch_ironwood_nullifier_count = 0;
                 let mut current_block_sapling_output_count = 0;
                 let mut current_block_orchard_output_count = 0;
+                let mut current_block_ironwood_output_count = 0;
                 let mut current_block_sapling_nullifier_count = 0;
                 let mut current_block_orchard_nullifier_count = 0;
+                let mut current_block_ironwood_nullifier_count = 0;
                 let mut first_batch = true;
 
                 let mut block_stream = if fetch_nullifiers_only {
@@ -449,6 +453,11 @@ where
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
                         batch_orchard_nullifier_count += current_block_orchard_nullifier_count;
+                        current_block_ironwood_nullifier_count =
+                            compact_block.vtx.iter().fold(0, |acc, transaction| {
+                                acc + transaction.ironwood_actions.len()
+                            });
+                        batch_ironwood_nullifier_count += current_block_ironwood_nullifier_count;
                     } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
@@ -496,10 +505,20 @@ where
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
                         batch_orchard_output_count += current_block_orchard_output_count;
+                        current_block_ironwood_output_count =
+                            compact_block.vtx.iter().fold(0, |acc, transaction| {
+                                acc + transaction.ironwood_actions.len()
+                            });
+                        batch_ironwood_output_count += current_block_ironwood_output_count;
                     }
 
-                    if (batch_sapling_output_count + batch_orchard_output_count > max_batch_outputs
-                        || batch_sapling_nullifier_count + batch_orchard_nullifier_count
+                    if (batch_sapling_output_count
+                        + batch_orchard_output_count
+                        + batch_ironwood_output_count
+                        > max_batch_outputs
+                        || batch_sapling_nullifier_count
+                            + batch_orchard_nullifier_count
+                            + batch_ironwood_nullifier_count
                             > MAX_BATCH_NULLIFIERS)
                         && scan_task.scan_range.block_range().start
                             != get_compact_block_height(&compact_block)
@@ -518,8 +537,10 @@ where
                         scan_task = new_batch;
                         batch_sapling_output_count = current_block_sapling_output_count;
                         batch_orchard_output_count = current_block_orchard_output_count;
+                        batch_ironwood_output_count = current_block_ironwood_output_count;
                         batch_sapling_nullifier_count = current_block_sapling_nullifier_count;
                         batch_orchard_nullifier_count = current_block_orchard_nullifier_count;
+                        batch_ironwood_nullifier_count = current_block_ironwood_nullifier_count;
                     }
 
                     retry_height = get_compact_block_height(&compact_block) + 1;
