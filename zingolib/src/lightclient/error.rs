@@ -8,7 +8,9 @@ use pepper_sync::error::{SyncError, SyncModeError};
 use zingo_netutils::GetClientError;
 
 use crate::wallet::{
-    error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
+    error::{
+        CalculateTransactionError, PriceError, ProposeSendError, ProposeShieldError, WalletError,
+    },
     output::OutputRef,
 };
 
@@ -47,6 +49,13 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
+    /// Price fetch error.
+    #[error("Price fetch error. {0}")]
+    PriceError(#[from] PriceError),
+    /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
+    #[cfg(feature = "nym")]
+    #[error("{0}")]
+    MixnetNotReady(#[from] crate::nym::MixnetNotReady),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

@@ -404,9 +404,19 @@ impl LightWallet {
 
     /// Update and return current price of ZEC.
     ///
-    /// Currently only USD is supported.
-    pub async fn update_current_price(&mut self) -> Result<f32, PriceError> {
-        let current_price = self.price_list.update_current_price().await?.price_usd;
+    /// Currently only USD is supported. `socks5_proxy` selects the route: when
+    /// `Some`, the fetch is proxied through that local SOCKS5 address (the Nym
+    /// mixnet transport); when `None`, it goes over clearnet. The caller
+    /// resolves which route the Mixnet Mode policy requires.
+    pub async fn update_current_price(
+        &mut self,
+        socks5_proxy: Option<&str>,
+    ) -> Result<f32, PriceError> {
+        let current_price = self
+            .price_list
+            .update_current_price(socks5_proxy)
+            .await?
+            .price_usd;
         self.save_required = true;
 
         Ok(current_price)

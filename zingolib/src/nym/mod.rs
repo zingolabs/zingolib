@@ -13,7 +13,9 @@
 pub mod broadcast;
 pub mod broadcast_indexers;
 mod mode;
+pub mod route;
 pub mod supervisor;
 
 pub use mode::MixnetMode;
+pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
 pub use supervisor::{MixnetProxy, MixnetProxyError};

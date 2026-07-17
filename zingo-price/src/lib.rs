@@ -110,9 +110,15 @@ impl PriceList {
 
     /// Update and return current price of ZEC.
     ///
-    /// Currently only USD is supported.
-    pub async fn update_current_price(&mut self) -> Result<Price, PriceError> {
-        get_current_price().await
+    /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
+    /// request is routed through that local SOCKS5 proxy (the Nym mixnet
+    /// transport); `None` fetches over clearnet. This is a pure mechanism: the
+    /// caller decides which route the Mixnet Mode policy requires.
+    pub async fn update_current_price(
+        &mut self,
+        socks5_proxy: Option<&str>,
+    ) -> Result<Price, PriceError> {
+        get_current_price(socks5_proxy).await
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
@@ -199,10 +205,22 @@ fn ensure_default_crypto_provider() {
     }
 }
 
-/// Get current price of ZEC in USD
-async fn get_current_price() -> Result<Price, PriceError> {
+/// Get current price of ZEC in USD, optionally through a local SOCKS5 proxy.
+///
+/// When `socks5_proxy` is `Some(addr)`, the request is proxied through
+/// `socks5h://addr`, so the destination hostname is resolved at the proxy and
+/// never leaked to the local clearnet resolver. `None` fetches over clearnet.
+async fn get_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
     ensure_default_crypto_provider();
-    let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
+    let mut builder = reqwest::Client::builder();
+    if let Some(addr) = socks5_proxy {
+        builder = builder.proxy(reqwest::Proxy::all(format!("socks5h://{addr}"))?);
+    }
+    let httpget = builder
+        .build()?
+        .get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
+        .send()
+        .await?;
     let mut trades = httpget
         .json::<Vec<CurrentPriceResponse>>()
         .await?
