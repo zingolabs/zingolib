@@ -2105,6 +2105,224 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
     }
 }
 
+/// Typed failure of the migration command family — the audit Issue-Q
+/// pattern PR #2464 established: the discriminant lives in the type,
+/// argument parsing happens before any wallet access, and prose is
+/// produced at exactly one rendering site per command. Each Display
+/// message is byte-identical to the in-band string it replaced, so no
+/// frontend observes the change.
+#[derive(Debug, thiserror::Error)]
+enum MigrationCommandError {
+    #[error("migrate command expects no arguments. Type \"help migrate\" for usage.")]
+    UnexpectedArguments,
+    #[error("migration command expects a sub-command. Type \"help migration\" for usage.")]
+    MissingSubCommand,
+    #[error("invalid sub-command. Type \"help migration\" for usage.")]
+    InvalidSubCommand,
+    #[error("migration start expects the plan hash printed by \"migration plan\".")]
+    MissingPlanHash,
+    #[error("the plan hash must be 64 hex characters.")]
+    MalformedPlanHash,
+    #[error("--per-bucket expects a positive integer.")]
+    MalformedPerBucket,
+    #[error("spacing must be a number of seconds.")]
+    MalformedSpacing,
+    #[error("sync failed: {0}")]
+    Sync(zingolib::lightclient::error::LightClientError),
+    #[error("{0}")]
+    Client(#[from] zingolib::lightclient::error::LightClientError),
+}
+
+/// The migration family's typed request: arguments parse completely
+/// into this enum before any wallet access.
+#[derive(Debug, PartialEq, Eq)]
+enum MigrationSubCommand {
+    Plan,
+    Start {
+        plan_hash: [u8; 32],
+        per_bucket: Option<u32>,
+    },
+    Auto,
+    Status,
+    Reconcile,
+    Catchup {
+        spacing: std::time::Duration,
+    },
+    Cancel,
+}
+
+/// Pure parser for the migration command family's arguments.
+fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationCommandError> {
+    let Some(sub_command) = args.first() else {
+        return Err(MigrationCommandError::MissingSubCommand);
+    };
+    match *sub_command {
+        "plan" => Ok(MigrationSubCommand::Plan),
+        "start" => {
+            let hash_hex = args.get(1).ok_or(MigrationCommandError::MissingPlanHash)?;
+            let plan_hash: [u8; 32] = hex::decode(hash_hex)
+                .ok()
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or(MigrationCommandError::MalformedPlanHash)?;
+            let mut per_bucket = None;
+            let mut remaining = args[2..].iter();
+            while let Some(arg) = remaining.next() {
+                if *arg == "--per-bucket" {
+                    per_bucket = Some(
+                        remaining
+                            .next()
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .ok_or(MigrationCommandError::MalformedPerBucket)?,
+                    );
+                }
+            }
+            Ok(MigrationSubCommand::Start {
+                plan_hash,
+                per_bucket,
+            })
+        }
+        "auto" => Ok(MigrationSubCommand::Auto),
+        "status" => Ok(MigrationSubCommand::Status),
+        "reconcile" => Ok(MigrationSubCommand::Reconcile),
+        "catchup" => {
+            let spacing = match args.get(1) {
+                Some(seconds) => std::time::Duration::from_secs(
+                    seconds
+                        .parse::<u64>()
+                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
+                ),
+                None => std::time::Duration::from_secs(30),
+            };
+            Ok(MigrationSubCommand::Catchup { spacing })
+        }
+        "cancel" => Ok(MigrationSubCommand::Cancel),
+        _ => Err(MigrationCommandError::InvalidSubCommand),
+    }
+}
+
+/// Renders displayable ids as a JSON array of strings.
+fn txids_json<T: ToString>(txids: &[T]) -> json::JsonValue {
+    txids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .into()
+}
+
+/// The migrate command's typed core; its `exec` renders errors at the
+/// single boundary site.
+fn run_migrate(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    if !args.is_empty() {
+        return Err(MigrationCommandError::UnexpectedArguments);
+    }
+    let summary = RT.block_on(lightclient.migrate_to_ironwood(zip32::AccountId::ZERO))?;
+    Ok(object! {
+        "split_txids" => txids_json(&summary.split_txids),
+        "part_txids" => txids_json(&summary.part_txids),
+        "stranded" => summary.stranded,
+    }
+    .pretty(2))
+}
+
+/// The migration command's typed core: parse first, then act.
+fn run_migration(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    Ok(match parse_migration_args(args)? {
+        MigrationSubCommand::Plan => {
+            let plan = RT.block_on(lightclient.plan_ironwood_migration(zip32::AccountId::ZERO))?;
+            object! {
+                "split_rounds" => plan.split_rounds.len(),
+                "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
+                "split_fee" => plan.split_fee(),
+                "parts" => plan.parts.clone(),
+                "stranded" => plan.stranded,
+                "plan_hash" => hex::encode(migration::plan_hash(&plan)),
+            }
+            .pretty(2)
+        }
+        MigrationSubCommand::Start {
+            plan_hash,
+            per_bucket,
+        } => {
+            RT.block_on(lightclient.start_ironwood_migration(
+                zip32::AccountId::ZERO,
+                migration::SigningStrategy::LazyAtBoundary,
+                plan_hash,
+                per_bucket,
+            ))?;
+            "Migration started.".to_string()
+        }
+        MigrationSubCommand::Auto => {
+            RT.block_on(lightclient.sync_and_await())
+                .map_err(MigrationCommandError::Sync)?;
+            let txids = RT.block_on(lightclient.auto_broadcast_if_due())?;
+            if txids.is_empty() {
+                "No parts due yet.".to_string()
+            } else {
+                object! { "broadcast" => txids_json(&txids) }.pretty(2)
+            }
+        }
+        MigrationSubCommand::Status => {
+            let status = RT.block_on(lightclient.migration_status())?;
+            object! {
+                "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
+                "phase" => status.phase.as_ref().map(render_migration_phase),
+                "parts_total" => status.parts_total,
+                "parts_confirmed" => status.parts_confirmed,
+                "value_total" => status.value_total,
+                "value_migrated" => status.value_migrated,
+                "next_wakes" => status
+                    .next_wakes
+                    .iter()
+                    .map(|wake| object! {
+                        "bucket_index" => wake.bucket_index,
+                        "boundary" => u32::from(wake.boundary),
+                        "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                        "estimated_unix_time" => wake.estimated_unix_time,
+                    })
+                    .collect::<Vec<_>>(),
+            }
+            .pretty(2)
+        }
+        MigrationSubCommand::Reconcile => {
+            let report = RT.block_on(lightclient.reconcile_migration())?;
+            object! {
+                "assessments" => report
+                    .assessments
+                    .iter()
+                    .map(|assessment| object! {
+                        "part" => assessment.id.0,
+                        "class" => format!("{:?}", assessment.class),
+                    })
+                    .collect::<Vec<_>>(),
+                "actions" => report
+                    .actions
+                    .iter()
+                    .map(|action| format!("{action:?}"))
+                    .collect::<Vec<_>>(),
+            }
+            .pretty(2)
+        }
+        MigrationSubCommand::Catchup { spacing } => {
+            let txids = RT.block_on(lightclient.catch_up_migration(spacing))?;
+            if txids.is_empty() {
+                "No overdue parts.".to_string()
+            } else {
+                object! { "part_txids" => txids_json(&txids) }.pretty(2)
+            }
+        }
+        MigrationSubCommand::Cancel => {
+            RT.block_on(lightclient.cancel_ironwood_migration())?;
+            "Migration canceled.".to_string()
+        }
+    })
+}
+
 struct MigrateCommand {}
 impl Command for MigrateCommand {
     fn help(&self) -> &'static str {
@@ -2130,22 +2348,10 @@ impl Command for MigrateCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if !args.is_empty() {
-            return "Error: migrate command expects no arguments. Type \"help migrate\" for usage."
-                .to_string();
+        match run_migrate(args, lightclient) {
+            Ok(rendered) => rendered,
+            Err(e) => format!("Error: {e}"),
         }
-
-        RT.block_on(async move {
-            match lightclient.migrate_to_ironwood(zip32::AccountId::ZERO).await {
-                Ok(summary) => object! {
-                    "split_txids" => summary.split_txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    "part_txids" => summary.part_txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    "stranded" => summary.stranded,
-                }
-                .pretty(2),
-                Err(e) => format!("Error: {e}"),
-            }
-        })
     }
 }
 
@@ -2192,156 +2398,9 @@ impl Command for MigrationCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        let Some(sub_command) = args.first() else {
-            return "Error: migration command expects a sub-command. Type \"help migration\" for usage."
-                .to_string();
-        };
-
-        match *sub_command {
-            "plan" => RT.block_on(async move {
-                match lightclient
-                    .plan_ironwood_migration(zip32::AccountId::ZERO)
-                    .await
-                {
-                    Ok(plan) => object! {
-                        "split_rounds" => plan.split_rounds.len(),
-                        "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
-                        "split_fee" => plan.split_fee(),
-                        "parts" => plan.parts.clone(),
-                        "stranded" => plan.stranded,
-                        "plan_hash" => hex::encode(migration::plan_hash(&plan)),
-                    }
-                    .pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }),
-            "start" => {
-                let Some(hash_hex) = args.get(1) else {
-                    return "Error: migration start expects the plan hash printed by \"migration plan\"."
-                        .to_string();
-                };
-                let hash: [u8; 32] = match hex::decode(hash_hex)
-                    .ok()
-                    .and_then(|bytes| bytes.try_into().ok())
-                {
-                    Some(hash) => hash,
-                    None => return "Error: the plan hash must be 64 hex characters.".to_string(),
-                };
-                // Parse optional --per-bucket N flag from remaining args.
-                let per_bucket = {
-                    let mut value = None;
-                    let mut iter = args[2..].iter();
-                    while let Some(arg) = iter.next() {
-                        if *arg == "--per-bucket" {
-                            match iter.next().and_then(|v| v.parse::<u32>().ok()) {
-                                Some(n) => { value = Some(n); }
-                                None => return "Error: --per-bucket expects a positive integer.".to_string(),
-                            }
-                        }
-                    }
-                    value
-                };
-                RT.block_on(async move {
-                    match lightclient
-                        .start_ironwood_migration(
-                            zip32::AccountId::ZERO,
-                            migration::SigningStrategy::LazyAtBoundary,
-                            hash,
-                            per_bucket,
-                        )
-                        .await
-                    {
-                        Ok(()) => "Migration started.".to_string(),
-                        Err(e) => format!("Error: {e}"),
-                    }
-                })
-            }
-            "auto" => RT.block_on(async move {
-                if let Err(e) = lightclient.sync_and_await().await {
-                    return format!("Error: sync failed: {e}");
-                }
-                match lightclient.auto_broadcast_if_due().await {
-                    Ok(txids) if txids.is_empty() => "No parts due yet.".to_string(),
-                    Ok(txids) => object! {
-                        "broadcast" => txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    }
-                    .pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }),
-            "status" => RT.block_on(async move {
-                match lightclient.migration_status().await {
-                    Ok(status) => object! {
-                        "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
-                        "phase" => status.phase.as_ref().map(render_migration_phase),
-                        "parts_total" => status.parts_total,
-                        "parts_confirmed" => status.parts_confirmed,
-                        "value_total" => status.value_total,
-                        "value_migrated" => status.value_migrated,
-                        "next_wakes" => status
-                            .next_wakes
-                            .iter()
-                            .map(|wake| object! {
-                                "bucket_index" => wake.bucket_index,
-                                "boundary" => u32::from(wake.boundary),
-                                "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
-                                "estimated_unix_time" => wake.estimated_unix_time,
-                            })
-                            .collect::<Vec<_>>(),
-                    }
-                    .pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }),
-            "reconcile" => RT.block_on(async move {
-                match lightclient.reconcile_migration().await {
-                    Ok(report) => object! {
-                        "assessments" => report
-                            .assessments
-                            .iter()
-                            .map(|assessment| object! {
-                                "part" => assessment.id.0,
-                                "class" => format!("{:?}", assessment.class),
-                            })
-                            .collect::<Vec<_>>(),
-                        "actions" => report
-                            .actions
-                            .iter()
-                            .map(|action| format!("{action:?}"))
-                            .collect::<Vec<_>>(),
-                    }
-                    .pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }),
-            "catchup" => {
-                let spacing = match args.get(1) {
-                    Some(seconds) => match seconds.parse::<u64>() {
-                        Ok(seconds) => std::time::Duration::from_secs(seconds),
-                        Err(_) => {
-                            return "Error: spacing must be a number of seconds.".to_string();
-                        }
-                    },
-                    None => std::time::Duration::from_secs(30),
-                };
-                RT.block_on(async move {
-                    match lightclient.catch_up_migration(spacing).await {
-                        Ok(txids) if txids.is_empty() => "No overdue parts.".to_string(),
-                        Ok(txids) => object! {
-                            "part_txids" => txids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                        }
-                        .pretty(2),
-                        Err(e) => format!("Error: {e}"),
-                    }
-                })
-            }
-            "cancel" => RT.block_on(async move {
-                match lightclient.cancel_ironwood_migration().await {
-                    Ok(()) => "Migration canceled.".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }),
-            _ => "Error: invalid sub-command. Type \"help migration\" for usage.".to_string(),
+        match run_migration(args, lightclient) {
+            Ok(rendered) => rendered,
+            Err(e) => format!("Error: {e}"),
         }
     }
 }
@@ -2433,5 +2492,57 @@ pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) 
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
         None => format!("Unknown command : {cmd}. Type 'help' for a list of commands"),
+    }
+}
+
+#[cfg(test)]
+mod migration_command_parsing {
+    //! Pins the pure argument parser and the byte-identity of the typed
+    //! errors' rendering with the in-band strings they replaced.
+
+    use super::*;
+
+    #[test]
+    fn start_parses_hash_and_per_bucket() {
+        let hash_hex = "11".repeat(32);
+        let parsed = parse_migration_args(&["start", &hash_hex, "--per-bucket", "3"])
+            .expect("well-formed arguments parse");
+        assert_eq!(
+            parsed,
+            MigrationSubCommand::Start {
+                plan_hash: [0x11; 32],
+                per_bucket: Some(3),
+            }
+        );
+    }
+
+    #[test]
+    fn malformed_plan_hash_is_typed() {
+        assert!(matches!(
+            parse_migration_args(&["start", "abc"]),
+            Err(MigrationCommandError::MalformedPlanHash)
+        ));
+    }
+
+    #[test]
+    fn catchup_defaults_spacing_to_thirty_seconds() {
+        assert_eq!(
+            parse_migration_args(&["catchup"]).expect("bare catchup parses"),
+            MigrationSubCommand::Catchup {
+                spacing: std::time::Duration::from_secs(30),
+            }
+        );
+    }
+
+    #[test]
+    fn errors_render_byte_identically_to_the_replaced_strings() {
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::MissingSubCommand),
+            "Error: migration command expects a sub-command. Type \"help migration\" for usage."
+        );
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::MalformedPerBucket),
+            "Error: --per-bucket expects a positive integer."
+        );
     }
 }
