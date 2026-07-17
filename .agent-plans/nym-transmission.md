@@ -603,6 +603,37 @@ MAX_RETRIES=3 may be high when the fan-out is the "try elsewhere" mechanism); an
 the independent delivery confirmation refinement (a censoring indexer can
 misreport, so cross-check against a different indexer or the sync mempool view).
 
+## Implementation — increment 7 (DONE 2026-07-17): the CLI nym command + nym CI
+
+`zingo-cli` gains a `nym = ["zingolib/nym"]` feature (off by default) and a
+`nym` wallet command wrapping the increment-4 LightClient toggle:
+- `nym status` (or bare `nym`) -> maps `mixnet_mode()` to a readable line: off,
+  bootstrapping, or ready with the SOCKS5 address.
+- `nym on [binary_path]` -> `enable_mixnet(path)`; the path is the explicit arg,
+  else `$ZINGO_NYM_PROXY`, else `nym-proxy` (PATH). Reports bootstrapping, or the
+  spawn error.
+- `nym off` -> `disable_mixnet()` (the deliberate per-session clearnet consent).
+The command is registered UNCONDITIONALLY in get_wallet_commands; its body is
+cfg-split, so a no-`nym` build still lists it and returns "rebuild with
+--features nym" instead of "unknown command". Rode along: fixed the stale `--tor`
+line in `current_price` help (price now goes over the mixnet, not Tor).
+
+CI: added a `nym-feature` job to ci-pr.yaml — `cargo clippy -p zingolib -p
+zingo-cli --features nym --all-targets -D warnings` plus `cargo test -p zingolib
+--features nym --lib nym::`. This is the FIRST CI coverage of the main-workspace
+nym build; it protects increments 1-7 (the whole nym-gated surface), which the
+default --workspace jobs never compiled. No draft gate, so it runs on PR #2470.
+
+VERIFIED: default `cargo check -p zingo-cli` green (command lists, reports
+feature-absent); `cargo clippy -p zingo-cli --features nym --all-targets -D
+warnings` green; fmt clean; ci-pr.yaml parses.
+
+Still open (not blocking): the consumer forced-on-at-startup wiring (zingo-cli
+main should call enable_mixnet at startup for connected sessions, skip under
+--offline, never persist off); the nym-proxy binary's bundled runtime location
+(packaging); the per-arm retry tuning and the independent-delivery-confirmation
+refinement noted above.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

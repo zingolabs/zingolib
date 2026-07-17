@@ -637,8 +637,10 @@ impl Command for CurrentPriceCommand {
             Updates and returns current price of ZEC.
             Currently only supports USD.
 
-            To fetch prices via tor, it must be enabled with the `--tor` flag on startup.
-            Tor is used to protect the user's IP address but may be unlawful in some countries. Use at your own discretion.
+            The price is fetched over the Nym mixnet when Mixnet Mode is on, which
+            hides the client IP from the price source; see the `nym` command. While
+            the mixnet is bootstrapping the fetch fails closed rather than leaking
+            over clearnet.
 
             Usage:
             current_price
@@ -664,6 +666,96 @@ impl Command for CurrentPriceCommand {
             }
         }))
     }
+}
+
+struct NymCommand {}
+impl Command for NymCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Control the Nym mixnet transport for send and price-fetch.
+
+            Usage:
+            nym status            Report whether the mixnet is off, bootstrapping, or ready.
+            nym on [binary_path]  Start the bundled nym-proxy child and enable Mixnet Mode.
+                                  With no path, uses $ZINGO_NYM_PROXY, else `nym-proxy` on PATH.
+            nym off               Disable Mixnet Mode; send and price-fetch use clearnet.
+
+            When Mixnet Mode is on, send and price-fetch route over the mixnet and
+            fail closed while it is still bootstrapping, never falling back to
+            clearnet silently. Disabling is a deliberate, per-session choice to
+            transmit over clearnet.
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Control the Nym mixnet transport (on/off/status)."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        nym_command(args, lightclient)
+    }
+}
+
+/// Resolve the `nym-proxy` binary path for `nym on`: an explicit argument wins,
+/// then `$ZINGO_NYM_PROXY`, then the bare name `nym-proxy` (resolved on PATH).
+#[cfg(feature = "nym")]
+fn resolve_proxy_path(explicit: Option<&str>) -> String {
+    if let Some(path) = explicit.filter(|p| !p.is_empty()) {
+        return path.to_string();
+    }
+    match std::env::var("ZINGO_NYM_PROXY") {
+        Ok(path) if !path.is_empty() => path,
+        _ => "nym-proxy".to_string(),
+    }
+}
+
+/// The body of the `nym` command when the mixnet transport is compiled in.
+#[cfg(feature = "nym")]
+fn nym_command(args: &[&str], lightclient: &mut LightClient) -> String {
+    use zingolib::nym::MixnetMode;
+
+    RT.block_on(async move {
+        match args.first().copied() {
+            None | Some("status") => match lightclient.mixnet_mode() {
+                MixnetMode::Off => {
+                    "Mixnet Mode: off (send and price-fetch use clearnet)".to_string()
+                }
+                MixnetMode::Bootstrapping => {
+                    "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
+                        .to_string()
+                }
+                MixnetMode::Ready => match lightclient.mixnet_socks5_addr() {
+                    Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
+                    None => "Mixnet Mode: ready".to_string(),
+                },
+            },
+            Some("on") => {
+                let path = resolve_proxy_path(args.get(1).copied());
+                match lightclient.enable_mixnet(std::path::Path::new(&path)).await {
+                    Ok(()) => format!(
+                        "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
+                         Run `nym status` to check readiness."
+                    ),
+                    Err(e) => format!("failed to start the nym proxy at '{path}': {e}"),
+                }
+            }
+            Some("off") => {
+                lightclient.disable_mixnet().await;
+                "Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string()
+            }
+            Some(other) => {
+                format!(
+                    "unknown nym subcommand '{other}'. Use: nym status | nym on [path] | nym off"
+                )
+            }
+        }
+    })
+}
+
+/// The body of the `nym` command when the mixnet transport is not compiled in.
+#[cfg(not(feature = "nym"))]
+fn nym_command(_args: &[&str], _lightclient: &mut LightClient) -> String {
+    "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.".to_string()
 }
 
 struct BalanceCommand {}
@@ -2491,6 +2583,7 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("migration", Box::new(MigrationCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
+        ("nym", Box::new(NymCommand {})),
         (
             "new_taddress_allow_gap",
             Box::new(NewTransparentAddressAllowGapCommand {}),
