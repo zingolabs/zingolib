@@ -566,6 +566,40 @@ Later increments: branch transmit_transactions on mixnet_mode (+ the deferred
 broadcaster failover policy); the reqwest+SOCKS5 price path; CLI
 `nym on|off|status`.
 
+## Implementation — increment 5 (DONE 2026-07-17): price-fetch over mixnet
+
+The price surface (Decision 2's other required-mixnet surface) now routes
+through the mixnet, chosen over the send branch because price has no failover
+policy — a single Gemini GET, so the DEFERRED broadcaster fan-out debate does
+not block it.
+
+New SHARED abstraction: `nym/route.rs` — `resolve_route(mode, socks5_addr) ->
+Result<MixnetRoute, MixnetNotReady>` names the fail-closed policy ONCE. Ready →
+`Mixnet(addr)`; Off → `Clearnet` (deliberate toggle-off consent);
+Bootstrapping (or Ready-without-address) → `Err(MixnetNotReady)` — refuse, never
+leak. `MixnetRoute::socks5_proxy()` shapes it for a proxy-aware client. Both
+send (later) and price consume this one resolver; 5 unit tests. Exposed on
+LightClient as `mixnet_route()` (nym-gated).
+
+Mechanism (pure, no policy): `zingo_price::get_current_price(Option<&str>)`
+builds the reqwest client with `.proxy(socks5h://addr)` when Some — `socks5h`
+resolves the hostname AT the proxy so DNS never leaks to the clearnet resolver;
+reqwest gains the `socks` feature. Threaded through
+`PriceList::update_current_price(Option<&str>)` and
+`Wallet::update_current_price(Option<&str>)`.
+
+Policy (the caller): `LightClient::update_current_price()` (NON-gated) resolves
+`mixnet_route()?` under `nym`, else clearnet, and delegates. New
+`LightClientError::{PriceError, MixnetNotReady (nym-gated)}`. The CLI
+`updatecurrentprice` now calls the LightClient method instead of reaching into
+the wallet, so it inherits the mixnet policy. Verified: default build green
+(price always clearnet), nym clippy -D warnings green, 5 route tests pass, fmt
+clean.
+
+Remaining: branch transmit_transactions on mixnet_mode (blocked on the DEFERRED
+broadcaster failover policy); CLI `nym on|off|status` + the consumer
+forced-on-at-startup wiring; the nym-proxy binary's runtime/bundled location.
+
 ## File claims (prospective, gated on ratification)
 
 - `.agent-plans/nym-transmission.md` (this file)

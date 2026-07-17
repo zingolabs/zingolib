@@ -430,6 +430,29 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
+    /// Update and return the current ZEC price in USD, obeying the Mixnet Mode
+    /// policy for the price-fetch surface (ADR 0011). When Mixnet Mode is on
+    /// and ready the fetch is proxied through the mixnet; while it is
+    /// bootstrapping the fetch fails closed rather than leaking over clearnet;
+    /// and it goes over clearnet only when Mixnet Mode is off, which is a
+    /// deliberate toggle-off. Builds compiled without the `nym` feature always
+    /// fetch over clearnet.
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        #[cfg(feature = "nym")]
+        let route = self.mixnet_route()?;
+        #[cfg(feature = "nym")]
+        let socks5_proxy = route.socks5_proxy();
+        #[cfg(not(feature = "nym"))]
+        let socks5_proxy: Option<&str> = None;
+
+        Ok(self
+            .wallet()
+            .write()
+            .await
+            .update_current_price(socks5_proxy)
+            .await?)
+    }
+
     /// Creates an additional ZIP-32 account derived from the wallet seed.
     ///
     /// Returns an error if the wallet has no mnemonic (view-only wallets cannot create accounts
@@ -526,6 +549,14 @@ impl LightClient {
         self.mixnet_proxy
             .as_ref()
             .and_then(|proxy| proxy.socks5_addr())
+    }
+
+    /// Resolve the fail-closed route every mixnet-only surface must obey: the
+    /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
+    /// clearnet when off (a deliberate toggle-off), and a refusal while
+    /// bootstrapping. Send and price-fetch share this single resolver.
+    pub fn mixnet_route(&self) -> Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady> {
+        crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
 }
 
