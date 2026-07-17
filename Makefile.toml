@@ -186,6 +186,8 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
+    -e "ZINGO_REGENERATE_CHAIN_CACHE=${ZINGO_REGENERATE_CHAIN_CACHE:-}" \
+    -e "RUST_LOG=${RUST_LOG:-}" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \

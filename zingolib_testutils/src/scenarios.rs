@@ -593,6 +593,29 @@ pub async fn faucet(
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    // Replay-time twin of the fresh-build invariant inside the
+    // normalization: a cache whose chain shape predates the current setup
+    // semantics otherwise replays cleanly and fails blocks later at some
+    // unrelated balance assert (2026-07-17: pre-drain caches did exactly
+    // that for a day). The manifest's setup_semantics key should discard
+    // such caches before this fires; this assert is the backstop that
+    // names the cache instead of the downstream test.
+    if replayed && matches!(mine_to_pool, PoolType::Shielded(ShieldedPool::Ironwood)) {
+        let ironwood_confirmed = faucet
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .expect("the freshly synced faucet reports a balance")
+            .confirmed_ironwood_balance
+            .map(zcash_protocol::value::Zatoshis::into_u64)
+            .unwrap_or(0);
+        assert_eq!(
+            ironwood_confirmed,
+            funded_faucet_ironwood_balance(),
+            "replayed chain does not satisfy current setup semantics — stale chain cache? \
+             (the manifest's schema/setup_semantics should have discarded it)"
+        );
+    }
+
     if let Some((dir, manifest)) = export {
         chain_cache::export(&local_net, &dir, &manifest).await;
     }
