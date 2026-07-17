@@ -67,6 +67,8 @@ pub enum ZingolibError {
     LightclientLockPoisoned,
     #[error("Error: panic: {0}")]
     Panic(String),
+    #[error("Error: saving wallet: {0}")]
+    Save(String),
 }
 
 pub fn with_panic_guard<T, F>(f: F) -> Result<T, ZingolibError>
@@ -553,6 +555,22 @@ pub fn init_from_b64(
     })
 }
 
+/// Maps a wallet-save result onto the FFI channels: wallet bytes become
+/// base64 data, an absent buffer means no save was needed and crosses as
+/// the empty string, and failure travels on the error channel — never as
+/// prose in the data channel (zingolabs/zingo-mobile#1151; audit Issue Q).
+fn encode_wallet_save(
+    save_result: std::io::Result<Option<Vec<u8>>>,
+) -> Result<String, ZingolibError> {
+    match save_result {
+        // we need to use STANDARD because swift is expecting the encoded String with padding
+        // I tried with STANDARD_NO_PAD and the decoding return `nil`.
+        Ok(Some(wallet_bytes)) => Ok(STANDARD.encode(wallet_bytes)),
+        Ok(None) => Ok("".to_string()),
+        Err(e) => Err(ZingolibError::Save(e.to_string())),
+    }
+}
+
 pub fn save_to_b64() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // Return the wallet as a base64 encoded string
@@ -560,21 +578,50 @@ pub fn save_to_b64() -> Result<String, ZingolibError> {
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
-            // we need to use STANDARD because swift is expecting the encoded String with padding
-            // I tried with STANDARD_NO_PAD and the decoding return `nil`.
-            Ok(RT.block_on(async move {
+            RT.block_on(async move {
                 let mut wallet = lightclient.wallet().write().await;
-                match wallet.save() {
-                    Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
-                    // TODO: check this is better than a custom error when save is not required (empty buffer)
-                    Ok(None) => "".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
+                encode_wallet_save(wallet.save())
+            })
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
     })
+}
+
+/// The save-path data/error channel contract (zingolabs/zingo-mobile#1151;
+/// audit Issue Q): whether a save succeeded is knowable from the channel of
+/// its result, never from its content.
+#[cfg(test)]
+mod wallet_export_tests {
+    use super::*;
+
+    #[test]
+    fn save_failure_travels_on_the_error_channel() {
+        let error = encode_wallet_save(Err(std::io::Error::other("disk full")))
+            .expect_err("a failed save must be typed, not prose in the data channel");
+        assert!(
+            matches!(error, ZingolibError::Save(_)),
+            "the failure must be the typed Save variant: {error}"
+        );
+    }
+
+    /// The attack string: wallet bytes whose base64 encoding begins with
+    /// "error". Legitimate data must cross the data channel untouched.
+    #[test]
+    fn wallet_export_resembling_an_error_is_data() {
+        let wallet_bytes = STANDARD
+            .decode("errorAAA")
+            .expect("the attack string is valid base64");
+        let encoded = encode_wallet_save(Ok(Some(wallet_bytes)))
+            .expect("wallet bytes travel on the data channel");
+        assert_eq!(encoded, "errorAAA");
+    }
+
+    #[test]
+    fn no_save_needed_crosses_as_the_empty_marker() {
+        let encoded = encode_wallet_save(Ok(None)).expect("no-save is not a failure");
+        assert_eq!(encoded, "");
+    }
 }
 
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
