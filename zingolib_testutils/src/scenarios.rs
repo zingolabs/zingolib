@@ -395,7 +395,7 @@ async fn normalize_shielded_faucet_balance<V, I>(
     let chain_height = local_net.validator().get_chain_height().await;
     let activation_heights = local_net.validator().get_activation_heights().await;
     if !matches!(mine_to_pool, PoolType::Transparent)
-        || activation_heights
+        && activation_heights
             .nu6_3()
             .is_some_and(|ironwood_height| chain_height >= ironwood_height)
     {
