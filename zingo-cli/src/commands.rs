@@ -677,7 +677,8 @@ impl Command for NymCommand {
             Usage:
             nym status            Report whether the mixnet is off, bootstrapping, or ready.
             nym on [binary_path]  Start the bundled nym-proxy child and enable Mixnet Mode.
-                                  With no path, uses $ZINGO_NYM_PROXY, else `nym-proxy` on PATH.
+                                  With no path: $ZINGO_NYM_PROXY, else a nym-proxy
+                                  bundled beside this binary, else `nym-proxy` on PATH.
             nym off               Disable Mixnet Mode; send and price-fetch use clearnet.
 
             When Mixnet Mode is on, send and price-fetch route over the mixnet and
@@ -696,18 +697,39 @@ impl Command for NymCommand {
     }
 }
 
-/// Resolve the `nym-proxy` binary path: an explicit value wins, then
-/// `$ZINGO_NYM_PROXY`, then the bare name `nym-proxy` (resolved on PATH). Shared
-/// by the `nym on` command and the forced-on-at-startup policy.
+/// Resolve the `nym-proxy` binary path, in precedence order: an explicit value,
+/// then `$ZINGO_NYM_PROXY`, then a `nym-proxy` bundled beside the running
+/// executable (the `bundle-nym-proxy` workbench tool puts it there, so a
+/// packaged wallet needs no configuration), then the bare name `nym-proxy`
+/// resolved on PATH. Shared by the `nym on` command and the forced-on-at-startup
+/// policy.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     if let Some(path) = explicit.filter(|p| !p.is_empty()) {
         return path.to_string();
     }
-    match std::env::var("ZINGO_NYM_PROXY") {
-        Ok(path) if !path.is_empty() => path,
-        _ => "nym-proxy".to_string(),
+    if let Ok(path) = std::env::var("ZINGO_NYM_PROXY")
+        && !path.is_empty()
+    {
+        return path;
     }
+    if let Some(bundled) = bundled_proxy_path() {
+        return bundled;
+    }
+    "nym-proxy".to_string()
+}
+
+/// The `nym-proxy` binary sitting next to the running executable, if present.
+/// This is where the `bundle-nym-proxy` workbench tool places it.
+#[cfg(feature = "nym")]
+fn bundled_proxy_path() -> Option<String> {
+    let executable = std::env::current_exe().ok()?;
+    let candidate = executable
+        .parent()?
+        .join(format!("nym-proxy{}", std::env::consts::EXE_SUFFIX));
+    candidate
+        .is_file()
+        .then(|| candidate.to_string_lossy().into_owned())
 }
 
 /// The body of the `nym` command when the mixnet transport is compiled in.

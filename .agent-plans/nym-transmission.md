@@ -666,6 +666,46 @@ Still open (not blocking): the nym-proxy binary's bundled runtime location
 retry tuning and the independent-delivery-confirmation refinement noted above;
 an optional `--waitmixnet` for one-shot sends.
 
+## Implementation — increment 9 (DONE 2026-07-17): nym-proxy packaging
+
+The nym-proxy binary is built in the SEPARATE zingo-netutils workspace (own
+lockfile, nym-sdk stack), so `cargo build -p zingo-cli` never produces it. This
+increment closes the produce-and-locate gap two ways:
+
+RUNTIME (zero-config discovery): `resolve_proxy_path` (zingo-cli/commands.rs)
+gains a step — after `--nym-proxy` and `$ZINGO_NYM_PROXY`, before the bare-PATH
+fallback, it looks for a `nym-proxy` sitting BESIDE the running executable
+(`current_exe().parent()/nym-proxy` + EXE_SUFFIX). So a packaged wallet with the
+proxy dropped next to it needs no flag or env var. Help text (the `nym on`
+command and the `--nym-proxy` arg) updated to the new precedence.
+
+BUILD TOOLING (produce + place): new workbench binary
+`tools/workbench/src/bin/bundle-nym-proxy.rs` (Rust, std-only, per the
+tooling-in-workbench rule) — runs `cargo build --manifest-path
+zingo-netutils/Cargo.toml --features nym --bin nym-proxy [--release]`, then
+copies `zingo-netutils/target/<profile>/nym-proxy` to the main
+`target/<profile>/` (or `--dest <dir>`), where the runtime discovery finds it.
+`parse_dest` unit-tested (3 tests). cargo-make task `[tasks.bundle-nym-proxy]`
+is the thin glue: `makers bundle-nym-proxy [--release] [--dest <dir>]`.
+
+VERIFIED: workbench binary builds + 3 unit tests pass; workbench clippy -D
+warnings clean; default `cargo check -p zingo-cli` green; `cargo clippy -p
+zingo-cli --features nym --all-targets -D warnings` green; Makefile.toml parses;
+fmt clean (zingo-cli + workbench). The actual end-to-end bundle run (building the
+nym-sdk stack) is user-driven via `makers bundle-nym-proxy`; the underlying
+netutils `--features nym --bin nym-proxy` build was proven green in increment 2c.
+
+The Nym mixnet arc (increments 1-9) is now end-to-end: build zingo-cli with
+`--features nym`, run `makers bundle-nym-proxy` to place the proxy beside it, and
+a connected session transmits + fetches price over the mixnet by default (forced
+on at startup, fail-closed), with `nym on|off|status` for runtime control.
+
+Still open (genuine follow-ups, none blocking): the per-arm mixnet retry tuning;
+the independent-delivery-confirmation refinement against a misreporting indexer;
+an optional `--waitmixnet` for one-shot sends; and release-packaging integration
+(having the release/distribution build invoke bundle-nym-proxy so shipped
+artifacts carry the proxy).
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

@@ -88,7 +88,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("nym-proxy")
                 .long("nym-proxy")
                 .value_name("PATH")
-                .help("Path to the nym-proxy binary spawned for Mixnet Mode. Defaults to $ZINGO_NYM_PROXY, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
+                .help("Path to the nym-proxy binary spawned for Mixnet Mode. Without it: $ZINGO_NYM_PROXY, then a nym-proxy bundled beside this binary, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
