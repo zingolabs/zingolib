@@ -696,10 +696,11 @@ impl Command for NymCommand {
     }
 }
 
-/// Resolve the `nym-proxy` binary path for `nym on`: an explicit argument wins,
-/// then `$ZINGO_NYM_PROXY`, then the bare name `nym-proxy` (resolved on PATH).
+/// Resolve the `nym-proxy` binary path: an explicit value wins, then
+/// `$ZINGO_NYM_PROXY`, then the bare name `nym-proxy` (resolved on PATH). Shared
+/// by the `nym on` command and the forced-on-at-startup policy.
 #[cfg(feature = "nym")]
-fn resolve_proxy_path(explicit: Option<&str>) -> String {
+pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     if let Some(path) = explicit.filter(|p| !p.is_empty()) {
         return path.to_string();
     }

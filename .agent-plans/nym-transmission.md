@@ -628,11 +628,43 @@ VERIFIED: default `cargo check -p zingo-cli` green (command lists, reports
 feature-absent); `cargo clippy -p zingo-cli --features nym --all-targets -D
 warnings` green; fmt clean; ci-pr.yaml parses.
 
-Still open (not blocking): the consumer forced-on-at-startup wiring (zingo-cli
-main should call enable_mixnet at startup for connected sessions, skip under
---offline, never persist off); the nym-proxy binary's bundled runtime location
-(packaging); the per-arm retry tuning and the independent-delivery-confirmation
-refinement noted above.
+## Implementation — increment 8 (DONE 2026-07-17): forced-on-at-startup policy
+
+zingo-cli now forces Mixnet Mode on at startup for connected sessions (ADR 0011,
+Q8/Q13). Two new startup flags (defined unconditionally so the arg surface is
+stable across builds): `--no-mixnet` (the ratified opt-out) and `--nym-proxy
+<path>` (explicit binary path). Threaded through `ConfigTemplate`
+(`no_mixnet`/`nym_proxy_path`, cfg_attr-allowed dead when nym is off).
+
+In `startup`, gated on the `nym` feature: when `communication_mode == Online`
+and `!no_mixnet`, it resolves the proxy path (shared `commands::resolve_proxy_path`:
+--nym-proxy > $ZINGO_NYM_PROXY > `nym-proxy` on PATH) and calls
+`enable_mixnet` right after LightClient creation, BEFORE sync, so the bootstrap
+overlaps sync. The off-state is never persisted (this runs every launch);
+`--offline` sessions never transmit and skip it (communication_mode == Offline).
+
+FAIL-CLOSED at startup: a spawn failure ABORTS the session (returns an
+io::Error) with an actionable message (install the binary / --nym-proxy / set
+$ZINGO_NYM_PROXY / --no-mixnet), rather than quietly proceeding to send over
+clearnet. This is the fund-safety reading of the fail-closed invariant. A
+successful spawn logs "bootstrapping"; the session proceeds while the proxy
+connects.
+
+KNOWN UX caveat (not a safety issue, noted for a later refinement): a one-shot
+command that transmits (e.g. `zingo-cli send ...`) issued immediately at startup
+can hit the bootstrap window and fail closed with MixnetNotReady; the user
+retries once `nym status` shows ready. Interactive sessions overlap the bootstrap
+with sync, so send is typically ready by the time it's invoked. A future
+`--waitmixnet` (await-ready-before-one-shot) could close this.
+
+VERIFIED: default `cargo check -p zingo-cli` green; `cargo clippy -p zingo-cli
+--features nym --all-targets -D warnings` green; 87 cli lib tests pass (arg
+parsing + ConfigTemplate::fill); fmt clean.
+
+Still open (not blocking): the nym-proxy binary's bundled runtime location
+(packaging — how the wallet build produces and locates the binary); the per-arm
+retry tuning and the independent-delivery-confirmation refinement noted above;
+an optional `--waitmixnet` for one-shot sends.
 
 ## Implementation — increment 3 design notes
 
