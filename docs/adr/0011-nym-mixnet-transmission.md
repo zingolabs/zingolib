@@ -79,11 +79,47 @@ broadcast wants reliable relay and sync-ranking wants low query latency — and
 submits over the mixnet. The purpose is witness rotation: because the indexer
 that carries any given send is random, no single indexer accumulates a picture
 of all the user's sends, and the broadcast target is decoupled from the
-address-knowing sync indexer. The same transaction is never fired redundantly
-to several indexers. If a submission fails because its indexer is unreachable,
-the send draws a new random indexer and retries sequentially, so exactly one
-submission is ever in flight; a substantive rejection of an invalid transaction
-is terminal and surfaces its reason rather than walking the list. One persistent
+address-knowing sync indexer.
+
+Delivery is pursued through an escalating, serially gated fan-out whose purpose
+is robustness to censorship. The adversary here is a Broadcast Indexer that
+suppresses a send — accepting the connection but declining to relay the
+transaction, or misreporting the outcome — and the countermeasure is the
+ability to route the same send around it to honest indexers. The first round
+submits to a single random indexer, so the common case — a send that lands on
+its first try — contacts exactly one witness and keeps the rotation property
+intact. Only if that submission fails to confirm delivery does the send
+escalate: the second round submits to two fresh random indexers in parallel,
+and the third round, entered only after both of the second round's submissions
+fail, submits to three more. Each round is gated on the complete failure of the
+round before it, so parallelism widens only as evidence of censorship or
+failure accumulates, and the fan-out stops at a cap of six distinct indexers,
+which the one-two-three schedule reaches at the end of the third round. Within
+a round the first indexer to confirm delivery wins and the rest are abandoned.
+This supersedes the project's earlier "never fired redundantly, exactly one
+submission in flight" rule: redundancy is now accepted on the failure path as
+the price of censorship resistance, while the happy path keeps its
+single-witness discipline.
+
+Because the client cannot assume whether zainod, lightwalletd, or another
+server sits at the far end of the mixnet, failover is driven by attempt counts
+and delivery checks, never by classifying a server's error text. A round
+"fails," and so escalates, on any outcome short of confirmed delivery — a
+transport failure, a refusal, or a silence — since a censoring indexer can
+present any of these. Success is defined by delivery: an accepted submission, a
+duplicate already in the mempool or chain, or a delivery check that finds the
+transaction known. Because a censoring indexer can also misreport delivery, the
+strongest confirmation is one that does not rest solely on the word of the
+indexer being tested — a cross-check against a different indexer or the
+client's own sync view of the public mempool — and the implementation should
+prefer such an independent check where it is available. There is no
+merit-rejection short-circuit; an unbroadcastable transaction is bounded
+instead by the six-indexer cap, after which the send surfaces failure for the
+user to retry, which reshuffles the list. The retry, duplicate-in-mempool, and
+queued-for-download handling for each individual submission is the one
+resilient-transmission policy already shared with the clearnet path; the
+fan-out orchestrates that shared per-indexer policy across rounds rather than
+duplicating it. One persistent
 mixnet client serves every send, since the indexer never sees the Nym client
 identity and a fresh client per send would pay the gateway-registration cost
 needlessly; each send nonetheless takes fresh reply isolation within that one
@@ -159,3 +195,22 @@ to clearnet.
 Everything else in this record stands: the per-surface tiers, the
 witness-rotation broadcast over the curated Broadcast Indexer list, the toggle
 semantics, and the sync tier's user-provided NymVPN.
+
+## Amendment (2026-07-17): the broadcaster is an escalating fan-out
+
+The broadcast policy this record originally described — a single random pick
+with sequential failover and "exactly one submission ever in flight" — is
+superseded. Its stated purpose was witness rotation for privacy; the amended
+purpose adds robustness to censorship, since a Broadcast Indexer can accept a
+send and then suppress the relay. A send now uses an escalating, serially gated
+fan-out: round one submits to a single random indexer, round two submits to two
+fresh indexers in parallel only after round one fails to confirm delivery, and
+round three submits to three more only after both of round two's arms fail. The
+fan-out is capped at six distinct indexers, which the one-two-three schedule
+reaches at the end of round three. Witness rotation is retained on the happy
+path — a first-try success still contacts exactly one witness — and redundancy
+is accepted only once delivery is in doubt. The "The two mixnet surfaces"
+section above has been rewritten to reflect this; the delivery-check and
+no-error-string-classification discipline is unchanged, and each individual
+submission still runs the one resilient-transmission policy shared with the
+clearnet path.
