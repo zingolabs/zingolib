@@ -2366,6 +2366,130 @@ mod test {
         }
     }
 
+    /// The pool-accounting contract of [`crate::sync::sync_status`]:
+    /// every output total on the status — the per-pool u32 fields, the
+    /// u64 exact-ratio pair, and the f32 percentage — describes the
+    /// same per-pool trio, summed once through `output_pool_total`.
+    /// Regression for the skew where the u64 fields re-summed only
+    /// sapling and orchard while the percentages included ironwood.
+    /// Each pool contributes a distinct count, so dropping any pool
+    /// from any consumer changes an asserted value.
+    mod sync_status_pool_accounting {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, sync_status};
+        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+
+        /// A wallet block carrying only what tree-bounds accounting
+        /// reads: its height and tree sizes.
+        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds,
+            }
+        }
+
+        /// Tree bounds whose initial and final sizes coincide, for
+        /// blocks that only mark a boundary of a scanned range.
+        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
+            TreeBounds {
+                sapling_initial_tree_size: sapling,
+                sapling_final_tree_size: sapling,
+                orchard_initial_tree_size: orchard,
+                orchard_final_tree_size: orchard,
+                ironwood_initial_tree_size: ironwood,
+                ironwood_final_tree_size: ironwood,
+            }
+        }
+
+        #[tokio::test]
+        async fn exact_ratio_fields_agree_with_per_pool_totals() {
+            // One fully scanned range whose boundary blocks yield a
+            // distinct scanned count per pool: sapling 3, orchard 5,
+            // ironwood 7.
+            let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1_000)..BlockHeight::from_u32(1_010),
+                ScanPriority::Scanned,
+            )]);
+            sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(1_000);
+            // Session denominators: 10 sapling + 20 orchard + 40
+            // ironwood outputs between the wallet bounds, 70 in all.
+            sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
+                sapling_initial_tree_size: 100,
+                sapling_final_tree_size: 110,
+                orchard_initial_tree_size: 200,
+                orchard_final_tree_size: 220,
+                ironwood_initial_tree_size: 300,
+                ironwood_final_tree_size: 340,
+            };
+            sync_state
+                .initial_sync_state
+                .previously_scanned_sapling_outputs = 1;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_orchard_outputs = 2;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_ironwood_outputs = 3;
+
+            let wallet_blocks = BTreeMap::from([
+                (
+                    BlockHeight::from_u32(1_000),
+                    block(1_000, flat_bounds(100, 200, 300)),
+                ),
+                (
+                    BlockHeight::from_u32(1_009),
+                    block(1_009, flat_bounds(103, 205, 307)),
+                ),
+            ]);
+
+            let wallet = MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            assert_eq!(status.total_sapling_outputs_scanned, 3);
+            assert_eq!(status.total_orchard_outputs_scanned, 5);
+            assert_eq!(status.total_ironwood_outputs_scanned, 7);
+
+            // The regression proper: the u64 exact-ratio fields must
+            // equal the sum of the per-pool fields reported beside
+            // them. Under the skew, total_outputs_scanned was 8 (no
+            // ironwood) and total_outputs was 30.
+            assert_eq!(
+                status.total_outputs_scanned,
+                u64::from(status.total_sapling_outputs_scanned)
+                    + u64::from(status.total_orchard_outputs_scanned)
+                    + u64::from(status.total_ironwood_outputs_scanned),
+            );
+            assert_eq!(status.total_outputs_scanned, 15);
+            assert_eq!(status.total_outputs, 70);
+
+            // The percentage must describe the same ratio as the exact
+            // fields — the skew's observable symptom was these two
+            // disagreeing on ironwood chains.
+            let expected_percentage =
+                (status.total_outputs_scanned as f32 / status.total_outputs as f32) * 100.0;
+            assert!(
+                (status.percentage_total_outputs_scanned - expected_percentage).abs()
+                    < f32::EPSILON,
+                "percentage {} disagrees with the exact ratio {}",
+                status.percentage_total_outputs_scanned,
+                expected_percentage,
+            );
+        }
+    }
+
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {

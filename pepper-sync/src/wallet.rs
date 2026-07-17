@@ -785,7 +785,7 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl SyncState {
     /// Creates sync state with the given scan ranges, for tests exercising
     /// spendability/witness gating without a chain.
