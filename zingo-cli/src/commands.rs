@@ -1329,7 +1329,7 @@ impl Command for QuickShieldCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Shield transparent funds to the ironwoodpool. Combines `shield` and `confirm` into a single command."
+        "Shield transparent funds to the ironwood pool. Combines `shield` and `confirm` into a single command."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
