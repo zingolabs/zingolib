@@ -501,21 +501,62 @@ warnings clean, workspace check green. `transmit_transactions` rewired to
 STEP 2a DONE (commit e236acd17): SOCKS5 delivery-check
 (transaction_known_via_socks5) + shared connect_via_socks5 helper.
 
-STEP 2b DEFERRED (2026-07-16, user direction "defer this work until later"):
-the broadcaster failover policy. Key insight to preserve — the client CANNOT
-assume zainod vs lightwalletd (or other) on the wire, so failover must be a
-CLIENT-SIDE policy driven by attempt counts, NOT by classifying server error
-strings (this also argues against introducing a message-substring "Rejected"
-classification at all). User floated an ESCALATING FAN-OUT: on a failure,
-attempt 2 more indexers, then 3, then 4 (1+2+3+4...) across the ~10 broadcast
-indexers. TENSION TO RECONCILE when resumed: this fires the same tx to
-multiple indexers in PARALLEL, which contradicts the earlier ratified "single
-random pick per send, never redundant" decision (Q10). Both are defensible;
-resolve the redundancy/privacy vs robustness trade-off first. Then: SocksTarget
-(submit=send_transaction_via_socks5, knows=transaction_known_via_socks5),
-retire the increment-1 simplistic `Transmitter`/`SubmitError`, branch
-transmit_transactions on Mixnet Mode (needs the toggle + supervisor), delete
-GrpcIndexer's `// TODO; add nym_client`.
+STEP 2b RESOLVED (2026-07-17): the broadcaster failover policy is the
+ESCALATING, SERIALLY GATED FAN-OUT, capped at SIX distinct indexers. User chose
+the escalating fan-out over sequential single-pick (my recommendation),
+overriding — deliberately — the earlier thrice-stated "single random pick, never
+redundant" absolute (Q10). PURPOSE (user, 2026-07-17): robustness to CENSORSHIP
+— a Broadcast Indexer may accept the connection but suppress the relay or
+misreport, and the fan-out routes the same send around it to honest indexers.
+
+Resolved shape (user-clarified 2026-07-17, "1 in-flight, then 2, then 3 in
+SERIAL"):
+- Rounds are serial GATES; parallelism is only WITHIN a round. Round r launches
+  r fresh random indexers in parallel, and round r+1 launches ONLY after ALL r
+  arms of round r fail to confirm delivery. So: round 1 = 1 arm; round 2 = 2
+  parallel (only after round 1 fails); round 3 = 3 parallel (only after BOTH of
+  round 2 fail).
+- Cap = 6 distinct indexers. The 1+2+3 schedule reaches 6 at the end of round 3,
+  so a fourth round (=4) never runs. Cumulative: 1, 3, 6.
+- Witness rotation is PRESERVED on the happy path: round 1 is a single random
+  pick, so a first-try success contacts exactly one witness. Redundancy is
+  accepted only on the failure path.
+- Within a round, the FIRST arm to confirm delivery wins; the rest are
+  abandoned.
+- A round "fails" (escalates) on ANY outcome short of confirmed delivery — a
+  transport failure, a refusal, or silence — because a censoring indexer can
+  present any of these. NO error-string "Rejected" classification; retire
+  broadcast.rs's `SubmitError::Rejected`.
+- Success = delivery: accepted submission, duplicate-in-mempool/chain, or a
+  delivery check that finds the txid known. Because a censoring indexer can
+  misreport delivery, prefer an INDEPENDENT confirmation (a different indexer,
+  or the client's own sync view of the public mempool) where available —
+  implementation refinement to pursue, not over-specified here.
+- The per-submission retry / duplicate-in-mempool / queued-for-download handling
+  is the SHARED `resilient_transmit` policy (increment 3), reused UNCHANGED per
+  arm; the fan-out orchestrator drives the shared per-indexer policy across
+  rounds rather than duplicating it. Each arm runs
+  `resilient_transmit(SocksTarget(indexer), ...)`.
+
+Implementation shape (next, on user go-ahead):
+- `SocksTarget` in zingolib implementing `TransmitTarget`
+  (submit=send_transaction_via_socks5, knows=transaction_known_via_socks5) over
+  the supervisor's SOCKS5 address.
+- A fan-out orchestrator in the nym broadcast module: shuffle the curated list
+  once (repetition-free random order), drive the serially-gated rounds (1,2,3;
+  cap 6), race each round's arms (first delivery wins, abandon the rest),
+  escalate only on whole-round failure, surface failure at the cap.
+- RETIRE broadcast.rs's `Transmitter`/`SubmitError`/`broadcast` (the sequential
+  single-pick logic) — folded into the orchestrator over `resilient_transmit`.
+- Branch `transmit_transactions` on Mixnet Mode via `mixnet_route()` (increment
+  5): Clearnet -> ClearnetTarget + resilient_transmit (today's path); Mixnet ->
+  the SocksTarget fan-out; Bootstrapping -> fail closed.
+- Tuning note: per-arm same-target retries (resilient_transmit's MAX_RETRIES=3)
+  may want to be lower for the mixnet, since the fan-out's escalation IS the
+  "try elsewhere" mechanism and hammering one dead mixnet indexer three times
+  only delays escalation. Consider a per-arm attempt bound / shorter per-attempt
+  timeout. Not a policy decision; settle when wiring.
+- Delete GrpcIndexer's stale `// TODO; add nym_client`.
 
 ## Implementation — increment 3 design notes
 
