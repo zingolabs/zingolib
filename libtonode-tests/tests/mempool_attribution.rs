@@ -75,6 +75,13 @@
 //! from the same Failed record — an earlier note here claimed the wallet
 //! does not retain the built bytes, which boundary_rejection_attribution
 //! disproves.
+//!
+//! Update (2026-07-16): zebrad 6.0.0 removed the boundary rejection,
+//! so boundary_rejection_attribution is now an acceptance sentinel and
+//! the probe pair above (extracted into
+//! zingolib_testutils::attribution) runs only when a send fails. The
+//! offline proof-verification cell is moot unless the phenomenon
+//! relapses.
 
 use std::time::{Duration, Instant};
 

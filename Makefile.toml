@@ -59,7 +59,7 @@ Common usage:
   cargo make container-test
 
 The container-test task runs tests inside a reproducible container image:
-  cargo nextest run --verbose --workspace --profile ci --retries 0
+  cargo nextest run --workspace --profile ci --retries 0
 
 Build or refresh the local image:
   makers build-image
@@ -68,7 +68,7 @@ Run the same nextest command on the host:
   makers local-run
 
 The local-run task mirrors the PR test defaults:
-  cargo nextest run --verbose --workspace --profile ci --retries 0
+  cargo nextest run --workspace --profile ci --retries 0
 
 Forward extra nextest flags after the task name:
   makers container-test -p zingo-memo
@@ -154,7 +154,6 @@ append_workspace_default() {
 nextest_args() {
   local -a extra_args=("$@")
   local -a args=(
-    --verbose
     --profile "${ZINGOLIB_NEXTEST_PROFILE}"
     --retries "${ZINGOLIB_NEXTEST_RETRIES}"
   )
