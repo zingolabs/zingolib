@@ -212,9 +212,15 @@ mod tests {
         // the random order, the broadcast must skip the unreachable ones and
         // land on the acceptor.
         let mock = MockTransmitter::new(&[
-            ("down1.example", Err(SubmitError::Unreachable("no route".into()))),
+            (
+                "down1.example",
+                Err(SubmitError::Unreachable("no route".into())),
+            ),
             ("up.example", Ok("txid-up".into())),
-            ("down2.example", Err(SubmitError::Unreachable("no route".into()))),
+            (
+                "down2.example",
+                Err(SubmitError::Unreachable("no route".into())),
+            ),
         ]);
         let indexers = uris(&[
             "https://down1.example:443",
@@ -248,7 +254,10 @@ mod tests {
             .await
             .expect_err("no indexer is reachable");
 
-        assert!(matches!(err, BroadcastError::AllUnreachable { attempts: 3 }));
+        assert!(matches!(
+            err,
+            BroadcastError::AllUnreachable { attempts: 3 }
+        ));
         // Every indexer tried exactly once — failover never repeats a pick.
         let mut calls = mock.calls();
         calls.sort();
@@ -276,7 +285,10 @@ mod tests {
             .await
             .expect_err("bounded attempts exhausted");
 
-        assert!(matches!(err, BroadcastError::AllUnreachable { attempts: 2 }));
+        assert!(matches!(
+            err,
+            BroadcastError::AllUnreachable { attempts: 2 }
+        ));
         assert_eq!(mock.calls().len(), 2, "the attempt bound is respected");
     }
 
@@ -311,7 +323,14 @@ mod tests {
         let _ = broadcast(&first, &indexers, &mut StdRng::seed_from_u64(42), b"tx", 10).await;
 
         let second = MockTransmitter::new(&script);
-        let _ = broadcast(&second, &indexers, &mut StdRng::seed_from_u64(42), b"tx", 10).await;
+        let _ = broadcast(
+            &second,
+            &indexers,
+            &mut StdRng::seed_from_u64(42),
+            b"tx",
+            10,
+        )
+        .await;
 
         assert_eq!(
             first.calls(),

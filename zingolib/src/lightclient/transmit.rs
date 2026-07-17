@@ -261,7 +261,11 @@ mod tests {
         assert!(err.0.contains("already queued for download"));
         // One initial submit plus MAX_QUEUED_PROBES probes.
         assert_eq!(target.submit_calls(), (MAX_QUEUED_PROBES as usize) + 1);
-        assert_eq!(target.knows_calls(), 0, "queued exhaustion is not a delivery check");
+        assert_eq!(
+            target.knows_calls(),
+            0,
+            "queued exhaustion is not a delivery check"
+        );
     }
 
     #[tokio::test]

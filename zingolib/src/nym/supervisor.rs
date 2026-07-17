@@ -184,9 +184,17 @@ mod tests {
     #[tokio::test]
     async fn off_when_stdout_closes_without_an_address() {
         let state = bootstrapping();
-        drive_state(b"failed to reach any gateway\n".as_slice(), Arc::clone(&state)).await;
+        drive_state(
+            b"failed to reach any gateway\n".as_slice(),
+            Arc::clone(&state),
+        )
+        .await;
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Off, "no address means the mixnet was not reached");
+        assert_eq!(
+            s.mode,
+            MixnetMode::Off,
+            "no address means the mixnet was not reached"
+        );
         assert!(s.socks5_addr.is_none());
     }
 }
