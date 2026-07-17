@@ -254,7 +254,6 @@ pub trait Indexer {
 pub struct GrpcIndexer {
     uri: http::Uri,
     clear_net_client: CompactTxStreamerClient<Channel>,
-    // TODO; add nym_client
 }
 
 impl GrpcIndexer {
