@@ -88,7 +88,9 @@ async fn connect_via_socks5(
         .host()
         .ok_or_else(|| Socks5TransmitError::Unreachable("indexer uri has no host".to_string()))?
         .to_string();
-    let port = indexer.port_u16().unwrap_or(if is_https { 443 } else { 9067 });
+    let port = indexer
+        .port_u16()
+        .unwrap_or(if is_https { 443 } else { 9067 });
     let socks5_addr = socks5_addr.to_string();
 
     let mut endpoint = Endpoint::from_shared(indexer.to_string())
