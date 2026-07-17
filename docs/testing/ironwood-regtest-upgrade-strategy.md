@@ -9,11 +9,20 @@ pattern this establishes.
 
 | component | we run | latest ironwood-capable | delta |
 |---|---|---|---|
-| zebrad | 6.0.0-rc.0 | 6.0.0-rc.0 (2026-07-02, latest) | none — already current |
-| zainod | 0.4.3-ironwood.1 (fork tag) | 0.6.0-rc.1 (2026-07-05) | two minors; RC changelog is dominated by ironwood work |
+| zebrad | 6.0.0 (bumped 2026-07-16) | 6.0.0 (2026-07-10, final) | none — current again |
+| zainod | 0.6.0-rc.1-no-tls (image tag, updated 2026-07-16) | 0.6.0 (2026-07-13; the zaino workspace's crates.io debut) | one patch level, deliberately held: 0.6.0 masks sendrawtransaction rejections (zaino#1404, open) |
 | zcash_protocol | 0.9.0 | 0.10.0-pre.0 (`NetworkUpgrade::Nu6_3` — "The Ironwood / NU6.3 network upgrade", mainnet height 4_134_000) | pre-release train |
 | zcash_primitives | 0.28.0 | 0.29.0-pre.0 | pre-release train |
 | zcash_client_backend | 0.23.0 | 0.23.0 — **no ironwood release exists yet** | blocked on upstream |
+
+Update (2026-07-16): zebra published the 6.0.0 final on 2026-07-10,
+one day after this survey, so the original "already current" verdict
+went stale immediately. The pin (`.env.testing-artifacts`) now names
+6.0.0. The rc.0 → final delta includes mempool-admission changes
+(the mempool stays active through sync-status fluctuations, and script
+verification moved to a shared thread pool), which is the subsystem
+the `tip_spend_rejection` suite probes, so that suite's verdicts must
+be re-observed under the new pin before its assertions are re-litigated.
 
 Two findings with strategic weight:
 
@@ -51,7 +60,8 @@ the pressure loop's blast radius to the 32-test default tier.
 and the run log as the pre-ironwood baseline. Cheap, already routine.
 
 **Phase 1 — indexer bump, heights unchanged.** New docker-ci image:
-zebrad stays 6.0.0-rc.0; zainod tracks zaino's `dev` lineage via the
+zebrad stays at its pin (6.0.0 since the 2026-07-16 bump); zainod
+tracks zaino's `dev` lineage via the
 per-commit image tags its CI publishes (`ZAINO_IMAGE_TAG` build-arg) —
 `df443c9` today (the RC-cut content), advancing to the dev tip
 (`17df071`, which carries a post-RC ironwood DB-migration fix) when its
