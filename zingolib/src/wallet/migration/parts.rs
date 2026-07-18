@@ -395,10 +395,7 @@ impl crate::wallet::LightWallet {
     /// retention window is finite and a captured witness is good forever.
     #[allow(clippy::result_large_err)]
     pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
-        let Some(mut state) = self.migration.take() else {
-            return Ok(());
-        };
-        let result = (|| {
+        self.with_migration_state(|wallet, state| {
             for part in state
                 .parts
                 .iter_mut()
@@ -408,15 +405,14 @@ impl crate::wallet::LightWallet {
                     continue;
                 };
                 let boundary = super::schedule::boundary_of(bucket, state.params.bucket_modulus);
-                if let Some(witness) = self.capture_boundary_witness(part, boundary)? {
+                if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
                     part.anchor_witness = Some(witness);
-                    self.save_required = true;
+                    wallet.save_required = true;
                 }
             }
             Ok(())
-        })();
-        self.migration = Some(state);
-        result
+        })
+        .unwrap_or(Ok(()))
     }
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
