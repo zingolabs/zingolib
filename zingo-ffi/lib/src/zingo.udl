@@ -2,7 +2,12 @@
 enum ZingolibError {
     "LightclientNotInitialized",
     "LightclientLockPoisoned",
-    "Panic"
+    "Panic",
+    "Save",
+    "Init",
+    "Sync",
+    "Rescan",
+    "Read"
 };
 
 namespace zingo {
@@ -49,7 +54,7 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string save_to_b64();
+  bytes? save_wallet_bytes();
 
   [Throws=ZingolibError]
   string get_latest_block_server(
