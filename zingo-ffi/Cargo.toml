@@ -15,21 +15,15 @@ zcash_client_backend = { version = "0.24.0-rc.1", features = [
     "orchard",
     "transparent-inputs",
 ] }
-zcash_encoding = "0.4.0"
 zcash_keys = { version = "0.15.0", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4.2"
-zcash_proofs = "0.29.0"
 zcash_protocol = "0.10.0"
-zcash_transparent = "0.9.0"
 
 zingo_common_components = "0.4.0"
 zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
-
-bip0039 = { version = "0.14", features = ["rand"] }
 zip32 = "0.2.0"
 uniffi = "0.29"
 tokio = "1"
@@ -37,7 +31,6 @@ rustls = { version = "0.23.37", features = ["ring"] }
 serde_json = "1"
 android_logger = "0.11"
 base64 = "0.22"
-env_logger = "0.10.0"
 http = "1"
 hex = "0.4"
 json = "0.12"
