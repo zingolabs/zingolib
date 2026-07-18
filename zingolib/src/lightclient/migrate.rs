@@ -270,78 +270,74 @@ impl LightClient {
         // parts yield their raw bytes directly. No expensive work happens here.
         let (prove_handles, pre_proven, strategy) = {
             let mut wallet = self.wallet().write().await;
-            let Some(mut state) = wallet.migration.take() else {
-                return Err(MigrationError::NoMigration.into());
-            };
+            wallet
+                .with_migration_state(|wallet, state| {
+                    let now_height = wallet
+                        .sync_state
+                        .last_known_chain_height()
+                        .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                    let current_bucket =
+                        schedule::bucket_index(now_height, state.params.bucket_modulus);
 
-            let now_height = wallet
-                .sync_state
-                .last_known_chain_height()
-                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-            let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
-            let strategy = state.strategy;
+                    let mut prove_handles: Vec<ProveHandle> = Vec::new();
+                    let mut pre_proven: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
 
-            let mut prove_handles: Vec<ProveHandle> = Vec::new();
-            let mut pre_proven: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
-
-            let phase_a: Result<(), crate::wallet::error::WalletError> = (|| {
-                for index in 0..state.parts.len() {
-                    let due = {
-                        let part = &state.parts[index];
-                        matches!(part.state, PartState::Assigned | PartState::Signed)
-                            && part.bucket_index == Some(current_bucket)
-                            && part.target_height.is_none_or(|t| now_height >= t)
-                            && only.is_none_or(|part_id| part.id == part_id)
-                    };
-                    if !due {
-                        continue;
-                    }
-
-                    if state.parts[index].state == PartState::Assigned {
-                        let account = state.account;
-                        let params = state.params.clone();
-                        match wallet.prepare_part(account, &mut state.parts[index], &params)? {
-                            PrepareResult::Ready { prove, .. } => {
-                                prove_handles.push(tokio::task::spawn_blocking(move || {
-                                    prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
-                                }));
-                            }
-                            PrepareResult::Skip(reason) => {
-                                log::info!(
-                                    "skipping part {index}: {reason:?}; it falls to reconciliation"
-                                );
-                            }
-                        }
-                    } else {
-                        // Signed already (an earlier submit failed): recover
-                        // the bytes from the blob or the wallet's tx record.
-                        let part = &state.parts[index];
-                        let txid = part.txid.expect("signed parts have txids");
-                        let expiry = part
-                            .expiry_height
-                            .expect("signed parts have expiry heights");
-                        let bytes = match &part.signed_blob {
-                            Some(blob) => blob.clone(),
-                            None => {
-                                let tx = wallet.wallet_transactions.get(&txid).ok_or(
-                                    crate::wallet::error::WalletError::TransactionNotFound(txid),
-                                )?;
-                                let mut bytes = Vec::new();
-                                tx.transaction()
-                                    .write(&mut bytes)
-                                    .map_err(crate::wallet::error::WalletError::TransactionWrite)?;
-                                bytes
-                            }
+                    for index in 0..state.parts.len() {
+                        let due = {
+                            let part = &state.parts[index];
+                            matches!(part.state, PartState::Assigned | PartState::Signed)
+                                && part.bucket_index == Some(current_bucket)
+                                && part.target_height.is_none_or(|t| now_height >= t)
+                                && only.is_none_or(|part_id| part.id == part_id)
                         };
-                        pre_proven.push((index, txid, bytes, expiry));
-                    }
-                }
-                Ok(())
-            })();
+                        if !due {
+                            continue;
+                        }
 
-            wallet.migration = Some(state);
-            phase_a?;
-            (prove_handles, pre_proven, strategy)
+                        if state.parts[index].state == PartState::Assigned {
+                            let account = state.account;
+                            let params = state.params.clone();
+                            match wallet.prepare_part(account, &mut state.parts[index], &params)? {
+                                PrepareResult::Ready { prove, .. } => {
+                                    prove_handles.push(tokio::task::spawn_blocking(move || {
+                                        prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                    }));
+                                }
+                                PrepareResult::Skip(reason) => {
+                                    log::info!(
+                                        "skipping part {index}: {reason:?}; it falls to reconciliation"
+                                    );
+                                }
+                            }
+                        } else {
+                            // Signed already (an earlier submit failed): recover
+                            // the bytes from the blob or the wallet's tx record.
+                            let part = &state.parts[index];
+                            let txid = part.txid.expect("signed parts have txids");
+                            let expiry = part
+                                .expiry_height
+                                .expect("signed parts have expiry heights");
+                            let bytes = match &part.signed_blob {
+                                Some(blob) => blob.clone(),
+                                None => {
+                                    let tx = wallet.wallet_transactions.get(&txid).ok_or(
+                                        crate::wallet::error::WalletError::TransactionNotFound(
+                                            txid,
+                                        ),
+                                    )?;
+                                    let mut bytes = Vec::new();
+                                    tx.transaction().write(&mut bytes).map_err(
+                                        crate::wallet::error::WalletError::TransactionWrite,
+                                    )?;
+                                    bytes
+                                }
+                            };
+                            pre_proven.push((index, txid, bytes, expiry));
+                        }
+                    }
+                    Ok::<_, LightClientError>((prove_handles, pre_proven, state.strategy))
+                })
+                .ok_or(MigrationError::NoMigration)??
         }; // wallet write lock released — Phase B runs without the lock
 
         // ── Phase B: parallel proving (no wallet lock held) ───────────────
@@ -356,64 +352,72 @@ impl LightClient {
         }
 
         // ── Phase C: record results + submit under the wallet write lock ──
+        // The migration state is inside the wallet at every await point, so
+        // neither an error nor a cancelled future can strand it outside.
         let mut wallet = self.wallet().write().await;
-        let Some(mut state) = wallet.migration.take() else {
-            return Err(MigrationError::NoMigration.into());
-        };
 
-        let result = async {
-            // Record all newly proved parts (mark Signed, store tx in wallet).
-            let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
-            for (index, txid, raw_tx) in newly_proven {
-                let bucket = state.parts[index]
-                    .bucket_index
-                    .expect("assigned parts carry a bucket");
-                let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
-                let target_height = boundary + 1;
-                let expiry_height = boundary + state.params.expiry_delta;
-                wallet.record_part_result(
-                    &mut state.parts[index],
-                    txid,
-                    &raw_tx,
-                    target_height,
-                    expiry_height,
-                    strategy,
-                )?;
-                newly_proven_with_expiry.push((index, txid, raw_tx, expiry_height));
-            }
+        // Record all newly proved parts (mark Signed, store tx in wallet),
+        // then combine proved and pre-proven in original part order.
+        let all_to_submit = wallet
+            .with_migration_state(|wallet, state| {
+                let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
+                    Vec::new();
+                for (index, txid, raw_tx) in newly_proven {
+                    let bucket = state.parts[index]
+                        .bucket_index
+                        .expect("assigned parts carry a bucket");
+                    let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
+                    let target_height = boundary + 1;
+                    let expiry_height = boundary + state.params.expiry_delta;
+                    wallet.record_part_result(
+                        &mut state.parts[index],
+                        txid,
+                        &raw_tx,
+                        target_height,
+                        expiry_height,
+                        strategy,
+                    )?;
+                    newly_proven_with_expiry.push((index, txid, raw_tx, expiry_height));
+                }
 
-            // Combine proved and pre-proven, maintaining original part order.
-            let mut all_to_submit: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
-                newly_proven_with_expiry
-                    .into_iter()
-                    .chain(pre_proven.into_iter())
-                    .collect();
-            all_to_submit.sort_by_key(|(index, ..)| *index);
+                let mut all_to_submit: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
+                    newly_proven_with_expiry
+                        .into_iter()
+                        .chain(pre_proven.into_iter())
+                        .collect();
+                all_to_submit.sort_by_key(|(index, ..)| *index);
+                Ok::<_, LightClientError>(all_to_submit)
+            })
+            .ok_or(MigrationError::NoMigration)??;
 
-            let mut sent = Vec::new();
-            for (index, txid, raw_tx, expiry_height) in all_to_submit {
-                // Record the attempt before submission so a crash between
-                // submit and record is detectable via nullifier on reconcile.
-                state.parts[index].record_attempt();
-                wallet.save_required = true;
-                match client.submit(raw_tx, expiry_height).await {
-                    Ok(_) => {
-                        state.parts[index].mark_broadcast()?;
-                        wallet.save_required = true;
-                        sent.push(txid);
-                    }
-                    Err(e) => {
-                        log::warn!("part submission failed, leaving the part signed: {e}");
-                        break;
-                    }
+        let mut sent = Vec::new();
+        for (index, txid, raw_tx, expiry_height) in all_to_submit {
+            // Record the attempt before submission so a crash between
+            // submit and record is detectable via nullifier on reconcile.
+            wallet
+                .with_migration_state(|wallet, state| {
+                    state.parts[index].record_attempt();
+                    wallet.save_required = true;
+                })
+                .ok_or(MigrationError::NoMigration)?;
+            match client.submit(raw_tx, expiry_height).await {
+                Ok(_) => {
+                    wallet
+                        .with_migration_state(|wallet, state| {
+                            state.parts[index].mark_broadcast()?;
+                            wallet.save_required = true;
+                            Ok::<_, crate::wallet::error::WalletError>(())
+                        })
+                        .ok_or(MigrationError::NoMigration)??;
+                    sent.push(txid);
+                }
+                Err(e) => {
+                    log::warn!("part submission failed, leaving the part signed: {e}");
+                    break;
                 }
             }
-            Ok(sent)
         }
-        .await;
-
-        wallet.migration = Some(state);
-        result
+        Ok(sent)
     }
 
     /// Abandons the migration. Parts already confirmed naturally stand.
@@ -441,68 +445,63 @@ impl LightClient {
     /// on every launch. It never synchronizes.
     pub async fn reconcile_migration(&mut self) -> Result<ReconcileReport, LightClientError> {
         let mut wallet = self.wallet().write().await;
-        let Some(mut state) = wallet.migration.take() else {
-            return Err(MigrationError::NoMigration.into());
-        };
-
-        let result = (|| {
-            let report = reconcile(&state, &*wallet);
-            for action in &report.actions {
-                match action {
-                    RecommendedAction::PromoteConfirmed { part, height } => {
-                        state.parts[part.0 as usize].mark_confirmed(*height)?;
-                    }
-                    RecommendedAction::MarkInvalidated { part } => {
-                        state.parts[part.0 as usize].mark_invalidated()?;
-                    }
-                    RecommendedAction::Rebuild { part } => {
-                        let part = &mut state.parts[part.0 as usize];
-                        if part.state != PartState::Expired {
-                            part.mark_expired()?;
+        wallet
+            .with_migration_state(|wallet, state| {
+                let report = reconcile(state, &*wallet);
+                for action in &report.actions {
+                    match action {
+                        RecommendedAction::PromoteConfirmed { part, height } => {
+                            state.parts[part.0 as usize].mark_confirmed(*height)?;
                         }
-                        let now_height = wallet
-                            .sync_state
-                            .last_known_chain_height()
-                            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                        let next_bucket =
-                            schedule::bucket_index(now_height, state.params.bucket_modulus) + 1;
-                        part.reassign(next_bucket)?;
+                        RecommendedAction::MarkInvalidated { part } => {
+                            state.parts[part.0 as usize].mark_invalidated()?;
+                        }
+                        RecommendedAction::Rebuild { part } => {
+                            let part = &mut state.parts[part.0 as usize];
+                            if part.state != PartState::Expired {
+                                part.mark_expired()?;
+                            }
+                            let now_height = wallet
+                                .sync_state
+                                .last_known_chain_height()
+                                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                            let next_bucket =
+                                schedule::bucket_index(now_height, state.params.bucket_modulus) + 1;
+                            part.reassign(next_bucket)?;
+                        }
+                        RecommendedAction::BindAndSchedule => {
+                            let account = state.account;
+                            wallet.bind_parts_to_notes(state, account)?;
+                            let now_height = wallet
+                                .sync_state
+                                .last_known_chain_height()
+                                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                            plan_schedule(
+                                &mut state.parts,
+                                now_height,
+                                &state.params,
+                                &mut rand::rngs::OsRng,
+                            )?;
+                            state.phase = MigrationPhase::PartsScheduled;
+                        }
+                        RecommendedAction::MarkComplete { residual } => {
+                            state.phase = MigrationPhase::Complete {
+                                residual: *residual,
+                            };
+                        }
+                        // Left to the caller: user-facing disclosure or fresh
+                        // consent required, or nothing to apply.
+                        RecommendedAction::PromptCatchUp { .. }
+                        | RecommendedAction::ReplanRemainder
+                        | RecommendedAction::RetrySplit { .. }
+                        | RecommendedAction::AwaitSplitConfirmation
+                        | RecommendedAction::ContinueNoteSplitting => (),
                     }
-                    RecommendedAction::BindAndSchedule => {
-                        let account = state.account;
-                        wallet.bind_parts_to_notes(&mut state, account)?;
-                        let now_height = wallet
-                            .sync_state
-                            .last_known_chain_height()
-                            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                        plan_schedule(
-                            &mut state.parts,
-                            now_height,
-                            &state.params,
-                            &mut rand::rngs::OsRng,
-                        )?;
-                        state.phase = MigrationPhase::PartsScheduled;
-                    }
-                    RecommendedAction::MarkComplete { residual } => {
-                        state.phase = MigrationPhase::Complete {
-                            residual: *residual,
-                        };
-                    }
-                    // Left to the caller: user-facing disclosure or fresh
-                    // consent required, or nothing to apply.
-                    RecommendedAction::PromptCatchUp { .. }
-                    | RecommendedAction::ReplanRemainder
-                    | RecommendedAction::RetrySplit { .. }
-                    | RecommendedAction::AwaitSplitConfirmation
-                    | RecommendedAction::ContinueNoteSplitting => (),
                 }
-            }
-            wallet.save_required = true;
-            Ok(report)
-        })();
-
-        wallet.migration = Some(state);
-        result
+                wallet.save_required = true;
+                Ok::<_, LightClientError>(report)
+            })
+            .ok_or(MigrationError::NoMigration)?
     }
 
     /// Sends overdue parts now, in sequence with `spacing` between
@@ -532,27 +531,24 @@ impl LightClient {
 
         {
             let mut wallet = self.wallet().write().await;
-            let Some(mut state) = wallet.migration.take() else {
-                return Err(MigrationError::NoMigration.into());
-            };
-            let shift = (|| -> Result<(), crate::wallet::error::WalletError> {
-                let now_height = wallet
-                    .sync_state
-                    .last_known_chain_height()
-                    .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                let current_bucket =
-                    schedule::bucket_index(now_height, state.params.bucket_modulus);
-                for part_id in &overdue {
-                    let part = &mut state.parts[part_id.0 as usize];
-                    if part.state == PartState::Assigned {
-                        part.shift(current_bucket)?;
+            wallet
+                .with_migration_state(|wallet, state| {
+                    wallet.save_required = true;
+                    let now_height = wallet
+                        .sync_state
+                        .last_known_chain_height()
+                        .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                    let current_bucket =
+                        schedule::bucket_index(now_height, state.params.bucket_modulus);
+                    for part_id in &overdue {
+                        let part = &mut state.parts[part_id.0 as usize];
+                        if part.state == PartState::Assigned {
+                            part.shift(current_bucket)?;
+                        }
                     }
-                }
-                Ok(())
-            })();
-            wallet.migration = Some(state);
-            wallet.save_required = true;
-            shift?;
+                    Ok::<_, crate::wallet::error::WalletError>(())
+                })
+                .ok_or(MigrationError::NoMigration)??;
         }
         self.wallet().write().await.refresh_part_witnesses()?;
 
@@ -1021,6 +1017,85 @@ mod tests {
             account: AccountId::ZERO,
             phase: MigrationPhase::PartsScheduled,
             parts,
+        }
+    }
+
+    /// An error raised after the migration state is taken out of the wallet
+    /// must not destroy the state. [`SyncState::last_known_chain_height`] is
+    /// the end of the last scan range, so it is `None` exactly when the scan
+    /// ranges are empty; the two tests here are identical except for the
+    /// route into that state, and the pair triangulates. `via_clear_all`
+    /// pins that a production path — a rescan — really produces the
+    /// dangerous combination of a live migration and no height, and its
+    /// guard assertions fail loudly if [`LightWallet::clear_all`] ever
+    /// cancels migrations or rebuilds scan ranges eagerly.
+    /// `via_empty_sync_state` pins the broadcast path's contract on the
+    /// state itself, however it arises (a never-synced wallet, future
+    /// clearing paths), and survives any evolution of `clear_all`. One test
+    /// red with the other green names the layer that changed.
+    mod no_sync_data_preserves_migration_state {
+        use pepper_sync::wallet::SyncState;
+
+        use super::*;
+        use crate::lightclient::error::LightClientError;
+        use crate::wallet::error::WalletError;
+
+        /// The shared scenario, parameterized only by how the wallet's last
+        /// known chain height becomes `None`. The resulting
+        /// [`WalletError::NoSyncData`] is correct and expected; the
+        /// consented migration schedule surviving it is what the assertions
+        /// pin, because the broadcast path's early `?`-return between take
+        /// and restore silently discarded the state, and any later save
+        /// persisted the loss.
+        async fn broadcast_error_must_preserve_the_state(
+            empty_the_sync_state: impl FnOnce(&mut LightWallet),
+        ) {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(0).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            empty_the_sync_state(&mut wallet);
+            assert!(wallet.sync_state.last_known_chain_height().is_none());
+            assert!(
+                wallet.migration.is_some(),
+                "emptying the sync data must keep the migration"
+            );
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let broadcast_client = MockBroadcastClient::default();
+            let result = client.broadcast_due_parts_with(&broadcast_client).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(LightClientError::WalletError(WalletError::NoSyncData))
+                ),
+                "the broadcast must fail with NoSyncData, got {result:?}"
+            );
+
+            let wallet = client.wallet().read().await;
+            assert!(
+                wallet.migration.is_some(),
+                "an error before the restore must not destroy the migration state"
+            );
+        }
+
+        /// The production route: a rescan empties the scan ranges and keeps
+        /// the migration.
+        #[tokio::test]
+        async fn via_clear_all() {
+            broadcast_error_must_preserve_the_state(LightWallet::clear_all).await;
+        }
+
+        /// The fabricated route: the state contract alone, independent of
+        /// any particular path into it.
+        #[tokio::test]
+        async fn via_empty_sync_state() {
+            broadcast_error_must_preserve_the_state(|wallet| {
+                wallet.sync_state = SyncState::new();
+            })
+            .await;
         }
     }
 

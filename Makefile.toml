@@ -186,6 +186,8 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
+    -e "ZINGO_REGENERATE_CHAIN_CACHE=${ZINGO_REGENERATE_CHAIN_CACHE:-}" \
+    -e "RUST_LOG=${RUST_LOG:-}" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
@@ -239,7 +241,9 @@ echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "ZAINO_IMAGE_DIGEST=${ZAINO_IMAGE_DIGEST}" \
   --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
+  --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
