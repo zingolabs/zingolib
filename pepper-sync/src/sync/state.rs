@@ -170,6 +170,7 @@ fn create_scan_range(
         ScanPriority::Historic,
     );
     sync_state.scan_ranges.push(new_scan_range);
+    sync_state.refresh_last_known_height();
 }
 
 /// Splits the range containing [`truncate_height` + 1] and removes all ranges containing block heights above
@@ -177,7 +178,12 @@ fn create_scan_range(
 /// If `truncate_height` is zero, the sync state will be cleared completely.
 pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
     if truncate_height == zcash_protocol::consensus::H0 {
-        *sync_state = SyncState::new();
+        // A complete wipe is a deliberate clearing: keep the provenance
+        // of the height the wallet is giving up.
+        *sync_state = match sync_state.last_known_chain_height() {
+            Some(previous_tip) => SyncState::new_cleared(previous_tip),
+            None => SyncState::new(),
+        };
     }
     let Some((index, range_to_split)) = sync_state
         .scan_ranges()
@@ -199,6 +205,7 @@ pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mu
         .partition_point(|range| range.block_range().start <= truncate_height)]
         .to_vec();
     sync_state.scan_ranges = truncated_scan_ranges;
+    sync_state.refresh_last_known_height();
 }
 
 /// Resets scan ranges to recover from previous sync interruptions.
@@ -1175,12 +1182,10 @@ mod tests {
     };
 
     fn sync_state_with_ranges(birthday: u32, tip: u32) -> SyncState {
-        let mut s = SyncState::new();
-        s.scan_ranges = vec![ScanRange::from_parts(
+        SyncState::new_for_test(vec![ScanRange::from_parts(
             BlockHeight::from_u32(birthday)..BlockHeight::from_u32(tip + 1),
             ScanPriority::Historic,
-        )];
-        s
+        )])
     }
 
     #[test]
@@ -1281,13 +1286,12 @@ mod tests {
 
     #[test]
     fn truncate_scan_ranges() {
-        let mut sync_state = SyncState::new();
-        sync_state.scan_ranges = vec![
+        let mut sync_state = SyncState::new_for_test(vec![
             ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
             ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
             ScanRange::from_parts(200.into()..299.into(), ScanPriority::Historic),
             ScanRange::from_parts(300.into()..399.into(), ScanPriority::Historic),
-        ];
+        ]);
 
         super::truncate_scan_ranges(250.into(), &mut sync_state);
 

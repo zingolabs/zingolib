@@ -446,7 +446,13 @@ impl LightWallet {
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
         let chain_height_opt = self.sync_state.last_known_chain_height();
-        self.sync_state = SyncState::new();
+        // A rescan is a deliberate clearing: the fresh sync state records
+        // the tip the wallet is giving up, so code running before the
+        // next sync pass can tell "cleared" from "never synced" by type.
+        self.sync_state = match chain_height_opt {
+            Some(previous_tip) => SyncState::new_cleared(previous_tip),
+            None => SyncState::new(),
+        };
         if let Some(chain_height) = chain_height_opt {
             pepper_sync::add_scan_targets(
                 &mut self.sync_state,

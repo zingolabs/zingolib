@@ -2836,10 +2836,7 @@ mod test {
                     DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
+                let state = SyncState::new_for_test(lkch);
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
                 let res =
@@ -2867,10 +2864,7 @@ mod test {
                     BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
+                let state = SyncState::new_for_test(lkch);
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
                 let chain_height = BlockHeight::from_u32(4);
@@ -2888,10 +2882,7 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
+                let state = SyncState::new_for_test(lkch);
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -2904,10 +2895,7 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
+                let state = SyncState::new_for_test(lkch);
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -2918,10 +2906,7 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
+                let state = SyncState::new_for_test(lkch);
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -3034,13 +3019,10 @@ mod test {
 
         /// Creates a mock wallet with all blocks scanned up to `chain_height`.
         fn wallet_at_height(chain_height: u32, transactions: Vec<WalletTransaction>) -> MockWallet {
-            let sync_state = SyncState {
-                scan_ranges: vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
-                    ScanPriority::Scanned,
-                )],
-                ..Default::default()
-            };
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
+                ScanPriority::Scanned,
+            )]);
             let wallet_transactions: HashMap<TxId, WalletTransaction> = transactions
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))

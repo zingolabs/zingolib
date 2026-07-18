@@ -123,6 +123,27 @@ impl Default for InitialSyncState {
     }
 }
 
+/// The wallet's knowledge of the chain height, total over its whole
+/// lifecycle. The height itself is a projection of the scan-range
+/// queue's end; this enum exists because an *empty* queue is ambiguous —
+/// it means both "this wallet has never synchronized" and "a rescan just
+/// cleared the queue" — and the two deserve different reactions (a
+/// cleared wallet knowingly discarded a height it once had). Emptying
+/// the queue is a semantically loud operation; this type makes it loud.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LastKnownHeight {
+    /// No sync pass has ever built scan ranges for this wallet.
+    NeverSynced,
+    /// The scan-range queue was deliberately emptied (rescan); the wallet
+    /// knew the chain tip once and will re-learn it on the next sync pass.
+    Cleared {
+        /// The last known chain height at the moment of clearing.
+        previous_tip: BlockHeight,
+    },
+    /// The queue is populated and ends at this height.
+    Synced(BlockHeight),
+}
+
 /// Encapsulates the current state of sync
 #[derive(Debug, Clone)]
 pub struct SyncState {
@@ -148,6 +169,14 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
+    /// The wallet's chain-height knowledge, total over the lifecycle.
+    /// Invariant: whenever `scan_ranges` is non-empty this is
+    /// `Synced(end of the last range - 1)`, maintained by the two
+    /// queue-end-changing operations (range creation and truncation);
+    /// when the queue is empty it records *why* — [`LastKnownHeight::NeverSynced`]
+    /// or [`LastKnownHeight::Cleared`] — the provenance an empty queue
+    /// alone cannot carry.
+    pub(crate) last_known_height: LastKnownHeight,
 }
 
 impl SyncState {
@@ -161,6 +190,20 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
+            last_known_height: LastKnownHeight::NeverSynced,
+        }
+    }
+
+    /// A fresh `SyncState` for a wallet whose queue was deliberately
+    /// emptied (rescan): identical to [`SyncState::new`] except that the
+    /// chain-height knowledge records [`LastKnownHeight::Cleared`] with
+    /// the tip known at clearing time, so a relaunch before the next
+    /// sync pass can distinguish "cleared" from "never synced" by type.
+    #[must_use]
+    pub fn new_cleared(previous_tip: BlockHeight) -> Self {
+        SyncState {
+            last_known_height: LastKnownHeight::Cleared { previous_tip },
+            ..Self::new()
         }
     }
 
@@ -242,12 +285,52 @@ impl SyncState {
             .map(|range| range.block_range().start)
     }
 
-    /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
+    /// Returns the last known chain height to the wallet, or `None` when
+    /// the wallet holds no height ([`LastKnownHeight::NeverSynced`] and
+    /// [`LastKnownHeight::Cleared`] alike). Callers who must distinguish
+    /// the two use [`Self::last_known_height`].
     #[must_use]
     pub fn last_known_chain_height(&self) -> Option<BlockHeight> {
-        self.scan_ranges
-            .last()
-            .map(|range| range.block_range().end - 1)
+        match self.last_known_height() {
+            LastKnownHeight::Synced(height) => Some(height),
+            LastKnownHeight::NeverSynced | LastKnownHeight::Cleared { .. } => None,
+        }
+    }
+
+    /// The wallet's chain-height knowledge, total over the lifecycle:
+    /// never synced, cleared (with the tip known at clearing time), or
+    /// synced to a height.
+    #[must_use]
+    pub fn last_known_height(&self) -> LastKnownHeight {
+        debug_assert!(
+            match self.scan_ranges.last() {
+                Some(range) =>
+                    self.last_known_height == LastKnownHeight::Synced(range.block_range().end - 1),
+                None => !matches!(self.last_known_height, LastKnownHeight::Synced(_)),
+            },
+            "chain-height knowledge drifted from the scan-range queue: {:?} vs ranges ending {:?}",
+            self.last_known_height,
+            self.scan_ranges.last().map(|range| range.block_range().end),
+        );
+        self.last_known_height
+    }
+
+    /// Re-derives the chain-height knowledge after an operation that
+    /// moved the scan-range queue's end (range creation, truncation).
+    /// A queue that emptied while the wallet held a height becomes
+    /// [`LastKnownHeight::Cleared`] — the wallet knew a tip and gave it
+    /// up; existing `NeverSynced`/`Cleared` provenance is preserved.
+    pub(crate) fn refresh_last_known_height(&mut self) {
+        match self.scan_ranges.last() {
+            Some(range) => {
+                self.last_known_height = LastKnownHeight::Synced(range.block_range().end - 1);
+            }
+            None => {
+                if let LastKnownHeight::Synced(previous_tip) = self.last_known_height {
+                    self.last_known_height = LastKnownHeight::Cleared { previous_tip };
+                }
+            }
+        }
     }
 }
 
@@ -792,6 +875,7 @@ impl SyncState {
     pub fn new_for_test(scan_ranges: Vec<ScanRange>) -> Self {
         let mut sync_state = Self::new();
         sync_state.scan_ranges = scan_ranges;
+        sync_state.refresh_last_known_height();
         sync_state
     }
 }

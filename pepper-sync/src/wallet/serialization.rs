@@ -40,7 +40,7 @@ use crate::{
 };
 
 use super::{
-    InitialSyncState, IronwoodNote, KeyIdInterface, NullifierMap, OrchardNote,
+    InitialSyncState, IronwoodNote, KeyIdInterface, LastKnownHeight, NullifierMap, OrchardNote,
     OutgoingIronwoodNote, OutgoingNote, OutgoingNoteInterface, OutgoingOrchardNote,
     OutgoingSaplingNote, OutputId, OutputInterface, SaplingNote, ShardTrees, SyncState,
     TransparentCoin, TreeBounds, WalletBlock, WalletNote, WalletTransaction,
@@ -90,8 +90,11 @@ impl ScanTarget {
 
 impl SyncState {
     fn serialized_version() -> u8 {
-        // Version 4 inserts the ironwood shard ranges after the orchard ones.
-        4
+        // Version 5 appends the total chain-height knowledge
+        // (LastKnownHeight), so the cleared-vs-never-synced distinction
+        // survives a save. Version 4 inserted the ironwood shard ranges
+        // after the orchard ones.
+        5
     }
 
     /// Deserialize into `reader`
@@ -185,6 +188,31 @@ impl SyncState {
         })?
         .into_iter()
         .collect::<BTreeSet<_>>();
+        let last_known_height = if version >= 5 {
+            match reader.read_u8()? {
+                0 => LastKnownHeight::NeverSynced,
+                1 => LastKnownHeight::Cleared {
+                    previous_tip: BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?),
+                },
+                2 => LastKnownHeight::Synced(BlockHeight::from_u32(
+                    reader.read_u32::<LittleEndian>()?,
+                )),
+                _ => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid last known height discriminant",
+                    ));
+                }
+            }
+        } else {
+            // Pre-v5 files carried no provenance for an empty queue: a
+            // wallet cleared-then-saved under an old format reloads as
+            // NeverSynced, the conservative reading.
+            match scan_ranges.last() {
+                Some(range) => LastKnownHeight::Synced(range.block_range().end - 1),
+                None => LastKnownHeight::NeverSynced,
+            }
+        };
 
         Ok(Self {
             scan_ranges,
@@ -193,6 +221,7 @@ impl SyncState {
             ironwood_shard_ranges,
             scan_targets,
             initial_sync_state: InitialSyncState::new(),
+            last_known_height,
         })
     }
 
@@ -224,7 +253,18 @@ impl SyncState {
             &mut writer,
             &self.scan_targets.iter().collect::<Vec<_>>(),
             |w, &scan_target| scan_target.write(w),
-        )
+        )?;
+        match self.last_known_height {
+            LastKnownHeight::NeverSynced => writer.write_u8(0),
+            LastKnownHeight::Cleared { previous_tip } => {
+                writer.write_u8(1)?;
+                writer.write_u32::<LittleEndian>(previous_tip.into())
+            }
+            LastKnownHeight::Synced(height) => {
+                writer.write_u8(2)?;
+                writer.write_u32::<LittleEndian>(height.into())
+            }
+        }
     }
 }
 
@@ -1392,11 +1432,77 @@ mod tests {
             BlockHeight::from_u32(100)..BlockHeight::from_u32(400),
             ScanPriority::Historic,
         ));
+        state.refresh_last_known_height();
         let mut bytes = Vec::new();
         state.write(&mut bytes).expect("write should succeed");
         let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
         assert_eq!(recovered.ironwood_shard_ranges, state.ironwood_shard_ranges);
         assert_eq!(recovered.scan_ranges, state.scan_ranges);
+        assert_eq!(
+            recovered.last_known_height(),
+            LastKnownHeight::Synced(BlockHeight::from_u32(399))
+        );
+    }
+
+    // Helper: build a minimal v4 SyncState byte blob (no chain-height
+    // knowledge). Format: version(1) | scan_ranges | sapling_shard_ranges |
+    //         orchard_shard_ranges | ironwood_shard_ranges | scan_targets
+    fn v4_sync_state_bytes(scan_range: Option<Range<BlockHeight>>) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.write_u8(4).unwrap();
+        let ranges: Vec<Range<BlockHeight>> = scan_range.into_iter().collect();
+        Vector::write(&mut out, &ranges, |w, range| {
+            w.write_u32::<LittleEndian>(range.start.into()).unwrap();
+            w.write_u32::<LittleEndian>(range.end.into()).unwrap();
+            w.write_u8(ScanPriority::Historic as u8)
+        })
+        .unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        out
+    }
+
+    /// A v4 file with scan ranges reads as `Synced` at the queue's end:
+    /// pre-v5 formats stored no chain-height knowledge, so it is derived.
+    #[test]
+    fn sync_state_v4_reads_synced_from_ranges() {
+        let bytes = v4_sync_state_bytes(Some(BlockHeight::from_u32(1)..BlockHeight::from_u32(101)));
+        let state = SyncState::read(bytes.as_slice()).expect("v4 should read cleanly");
+        assert_eq!(
+            state.last_known_height(),
+            LastKnownHeight::Synced(BlockHeight::from_u32(100))
+        );
+    }
+
+    /// A v4 file with an empty queue reads as `NeverSynced` — the
+    /// conservative reading, since pre-v5 formats cannot say whether the
+    /// wallet was cleared or never synchronized.
+    #[test]
+    fn sync_state_v4_empty_queue_reads_never_synced() {
+        let bytes = v4_sync_state_bytes(None);
+        let state = SyncState::read(bytes.as_slice()).expect("v4 should read cleanly");
+        assert_eq!(state.last_known_height(), LastKnownHeight::NeverSynced);
+        assert_eq!(state.last_known_chain_height(), None);
+    }
+
+    /// The v5 format's reason to exist: `Cleared` provenance survives a
+    /// save and reload, so a rescan-then-relaunch wallet still knows it
+    /// once held a tip.
+    #[test]
+    fn sync_state_v5_roundtrip_preserves_cleared_provenance() {
+        let mut state = SyncState::new_cleared(BlockHeight::from_u32(1234));
+        let mut bytes = Vec::new();
+        state.write(&mut bytes).expect("write should succeed");
+        let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
+        assert_eq!(
+            recovered.last_known_height(),
+            LastKnownHeight::Cleared {
+                previous_tip: BlockHeight::from_u32(1234)
+            }
+        );
+        assert_eq!(recovered.last_known_chain_height(), None);
     }
 
     // Helper: build a minimal v1 NullifierMap byte blob (no ironwood BTreeMap).
