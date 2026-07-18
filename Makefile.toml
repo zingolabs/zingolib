@@ -151,6 +151,58 @@ append_workspace_default() {
   fi
 }
 
+# True when this nextest invocation will run libtonode-tests — the
+# chain-cache-bound package — explicitly, or through the workspace
+# default. An exclusion wins over a workspace selection.
+selects_libtonode_tests() {
+  local expect="" selected_other="" workspace=""
+  for arg in "$@"; do
+    case "${expect}" in
+      package)
+        expect=""
+        if [[ "${arg}" == "libtonode-tests" ]]; then return 0; fi
+        selected_other="yes"
+        continue
+        ;;
+      exclude)
+        expect=""
+        if [[ "${arg}" == "libtonode-tests" ]]; then return 1; fi
+        continue
+        ;;
+    esac
+    case "${arg}" in
+      -p|--package) expect="package" ;;
+      --package=libtonode-tests) return 0 ;;
+      --package=*) selected_other="yes" ;;
+      --exclude) expect="exclude" ;;
+      --exclude=libtonode-tests) return 1 ;;
+      --workspace|--all) workspace="yes" ;;
+    esac
+  done
+  # No exclusion matched: the workspace includes libtonode; an explicit
+  # other-package selection omits it; no selection at all defaults to
+  # the whole workspace (append_workspace_default).
+  [[ -n "${workspace}" || -z "${selected_other}" ]]
+}
+
+has_test_threads_arg() {
+  for arg in "$@"; do
+    case "${arg}" in
+      -j*|--test-threads|--test-threads=*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Host-side probe of the chain-cache fleet (the caches are bind-mounted,
+# so host and container see the same files). Prints the count of caches
+# whose manifest matches the current fleet key; prints nothing when the
+# probe fails, so the caller can fail open.
+fresh_chain_cache_count() {
+  cargo run -q --package zingolib_testutils --bin chain-cache-fleet 2>/dev/null \
+    | sed -n 's/^fresh=\([0-9][0-9]*\) .*/\1/p'
+}
+
 nextest_args() {
   local -a extra_args=("$@")
   local -a args=(
@@ -164,6 +216,22 @@ nextest_args() {
   workspace_arg="$(append_workspace_default "$@")"
   if [[ -n "${workspace_arg}" ]]; then
     args+=("${workspace_arg}")
+  fi
+
+  # Cold-fleet guard: fewer than five fresh caches means more than four
+  # chain-bound tests are about to (re)build their chains, and unbounded
+  # parallelism pushes every build past its per-test timeout ceiling
+  # (the 2026-07-17 stampede). Cap at four threads unless the caller
+  # picked a thread count. Warm fleets run uncapped.
+  if selects_libtonode_tests "$@" && ! has_test_threads_arg "$@"; then
+    local fresh
+    fresh="$(fresh_chain_cache_count)"
+    if [[ -z "${fresh}" ]]; then
+      echo "chain-cache fleet probe failed; running without a thread cap" >&2
+    elif [[ "${fresh}" -lt 5 ]]; then
+      echo "chain-cache fleet: ${fresh} caches current — bulk (re)build ahead, capping at --test-threads 4" >&2
+      args+=(--test-threads 4)
+    fi
   fi
 
   printf '%s\n' "${args[@]}"
@@ -287,6 +355,26 @@ script_runner = "bash"
 extend = "base-script"
 script.main = '''
 container_nextest_run "$@"
+'''
+
+[tasks.regenerate-caches]
+clear = true
+description = "Rebuild stale chain caches: chain-bound tests under the regen profile's build-sized timeout (ADR 0003 cold-fleet pass)"
+dependencies = ["ensure-image-exists"]
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+# A fleet-key bump invalidates every chain cache at once, and the default
+# profiles' timeout ceilings are sized for cache replay, not for dozens
+# of live chain builds; the regen profile (.config/nextest.toml) runs
+# four tests at a time under a ceiling sized for builds. Only the
+# chain-bound package participates. Tests whose caches are already
+# current replay and pass through quickly, so re-running this task
+# converges on a fully cached fleet. Ordinary runs are protected by the
+# automatic cold-fleet guard in nextest_args; this task exists for the
+# operator who wants the rebuild to happen on its own, with a ceiling
+# that can never kill a build mid-export.
+ZINGOLIB_NEXTEST_PROFILE=regen container_nextest_run --package libtonode-tests "$@"
 '''
 
 # ===================================================================

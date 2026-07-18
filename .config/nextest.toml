@@ -25,6 +25,26 @@ slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
+# =====================================================================
+# Cold-fleet cache regeneration (ADR 0003), driven by
+# `makers regenerate-caches`. A fleet-key change (a schema or
+# setup_semantics bump, a validator or indexer pin move) invalidates
+# every chain cache at once, putting all chain-bound tests into build
+# mode in the same run. Builds measure 150-507s SOLO (see the overrides
+# above), so under default parallelism they contend for cores, every
+# build crosses its terminate-after ceiling, and nextest kills it before
+# the atomic export — no caches persist and the next run repeats the
+# stampede. This profile is the dedicated way out: four concurrent tests
+# so each build gets real CPU, and a ceiling sized for builds rather
+# than replays. Tests with warm caches still replay quickly, so the
+# pass is idempotent and converges on a fully cached fleet. Ordinary
+# runs get the same four-thread cap automatically when the fleet is
+# cold — see fresh_chain_cache_count in Makefile.toml's base-script.
+[profile.regen]
+fail-fast = false
+test-threads = 4
+slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
+
 [profile.ci]
 failure-output = "immediate-final"
 fail-fast = false

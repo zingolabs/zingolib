@@ -124,28 +124,82 @@ pub(crate) enum CachedStage {
 /// a chain mined under old rules.
 pub(crate) struct CacheManifest(serde_json::Value);
 
+/// The manifest fields every cache shares — the *fleet key*. A change to
+/// any of them stales every stored cache at once (a cold fleet), unlike
+/// the per-test fields ([`CacheManifest::describe`]), which stale caches
+/// one by one. [`fleet_status`] counts stored caches against this key so
+/// the test harness can detect a coming bulk rebuild before launching.
+fn fleet_fields() -> serde_json::Value {
+    serde_json::json!({
+        // Schema 3 (2026-07-17): the drain rewrite changed cached-chain
+        // SEMANTICS (self-send → orchard drain) without changing any
+        // manifest key, and pre-drain caches replayed as green-shaped
+        // chains against post-drain expectations for a full day of
+        // misdiagnosis. Any change to what setup writes into the chain
+        // must bump `setup_semantics` (or the schema), so stale caches
+        // self-discard instead of impersonating current behavior.
+        "schema": 3,
+        "setup_semantics": "offload+drain-v1",
+        "validator": std::any::type_name::<crate::scenarios::network_combo::DefaultValidator>(),
+        "indexer": std::any::type_name::<crate::scenarios::network_combo::DefaultIndexer>(),
+    })
+}
+
+/// Counts the stored per-test caches by fleet-key freshness, returning
+/// `(fresh, stale)`. Fresh means the stored manifest's fleet fields all
+/// match [`fleet_fields`]; a missing or unreadable manifest counts as
+/// stale (hand-managed [`ChainCachePolicy::LoadRaw`] caches carry no
+/// manifest and are deliberately never fresh — they also never rebuild).
+/// Per-test drift (stage, miner pool, activation heights) is invisible
+/// here by design: it stales caches one at a time, never in bulk.
+pub fn fleet_status() -> (usize, usize) {
+    let current = fleet_fields();
+    let current = current.as_object().expect("fleet fields are an object");
+    let mut fresh = 0;
+    let mut stale = 0;
+    let Ok(binaries) = std::fs::read_dir(setup_metrics::chain_caches_root()) else {
+        return (0, 0);
+    };
+    for binary_dir in binaries.flatten().filter(|e| e.path().is_dir()) {
+        let Ok(tests) = std::fs::read_dir(binary_dir.path()) else {
+            continue;
+        };
+        for test_dir in tests.flatten().filter(|e| e.path().is_dir()) {
+            let stored = std::fs::read_to_string(test_dir.path().join("manifest.json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+            let matches = stored.is_some_and(|stored| {
+                current
+                    .iter()
+                    .all(|(key, value)| stored.get(key) == Some(value))
+            });
+            if matches {
+                fresh += 1;
+            } else {
+                stale += 1;
+            }
+        }
+    }
+    (fresh, stale)
+}
+
 impl CacheManifest {
     pub(crate) fn describe(
         mine_to_pool: PoolType,
         configured_activation_heights: &ActivationHeights,
         stage: CachedStage,
     ) -> Self {
-        CacheManifest(serde_json::json!({
-            // Schema 3 (2026-07-17): the drain rewrite changed cached-chain
-            // SEMANTICS (self-send → orchard drain) without changing any
-            // manifest key, and pre-drain caches replayed as green-shaped
-            // chains against post-drain expectations for a full day of
-            // misdiagnosis. Any change to what setup writes into the chain
-            // must bump `setup_semantics` (or the schema), so stale caches
-            // self-discard instead of impersonating current behavior.
-            "schema": 3,
-            "setup_semantics": "offload+drain-v1",
-            "validator": std::any::type_name::<crate::scenarios::network_combo::DefaultValidator>(),
-            "indexer": std::any::type_name::<crate::scenarios::network_combo::DefaultIndexer>(),
-            "stage": format!("{stage:?}"),
-            "miner_pool": format!("{mine_to_pool:?}"),
-            "activation_heights": format!("{configured_activation_heights:?}"),
-        }))
+        let mut manifest = fleet_fields();
+        let fields = manifest
+            .as_object_mut()
+            .expect("fleet fields are an object");
+        fields.insert("stage".into(), format!("{stage:?}").into());
+        fields.insert("miner_pool".into(), format!("{mine_to_pool:?}").into());
+        fields.insert(
+            "activation_heights".into(),
+            format!("{configured_activation_heights:?}").into(),
+        );
+        CacheManifest(manifest)
     }
 
     fn matches_stored(&self, manifest_path: &Path) -> bool {
