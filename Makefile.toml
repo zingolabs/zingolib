@@ -178,6 +178,20 @@ container_nextest_run() {
   local -a args
   mapfile -t args < <(nextest_args "$@")
 
+  # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
+  # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
+  # a set-but-empty variable in the container — and never forward an
+  # empty value either: an empty (or restrictive) RUST_LOG silences
+  # zainod's "Syncing block" markers, hanging the harness's
+  # log-contract convergence barrier (2026-07-20 stall forensics).
+  local -a forwarded_env=()
+  if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
+    forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
+  fi
+  if [[ -n "${RUST_LOG:-}" ]]; then
+    forwarded_env+=(-e RUST_LOG)
+  fi
+
   "${runtime}" run --rm --init \
     --pids-limit -1 \
     -v "${PWD}:/workspace" \
@@ -186,8 +200,7 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-    -e "ZINGO_REGENERATE_CHAIN_CACHE=${ZINGO_REGENERATE_CHAIN_CACHE:-}" \
-    -e "RUST_LOG=${RUST_LOG:-}" \
+    "${forwarded_env[@]}" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
