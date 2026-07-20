@@ -1435,3 +1435,169 @@ mod proposal_shape {
         assert!(change < 10_000, "change {change} implies oversized inputs");
     }
 }
+
+/// The propose/send family must never read wallet state a running engine
+/// could be mutating, and a pause it takes must serve a pending proposal —
+/// never outlive one. Each test here pins one way the imperative pause
+/// discipline violates that contract; all four run red until the stored
+/// quiescence discipline lands later on this branch.
+#[cfg(test)]
+mod quiescence_contract {
+    use std::sync::atomic;
+
+    use pepper_sync::wallet::SyncMode;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::data::receivers::{Receiver, transaction_request_from_receivers};
+    use crate::lightclient::LightClient;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::keys::unified::ReceiverSelection;
+
+    /// An address belonging to a different wallet, so the send is external.
+    fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
+            PoolType::SAPLING => ReceiverSelection::sapling_only(),
+            _ => unimplemented!("only shielded destinations are needed here"),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        crate::utils::conversion::address_from_str(
+            &unified_address.encode(&external_wallet.chain_type()),
+        )
+        .unwrap()
+    }
+
+    /// A synthetic-wallet client whose sync-mode atomic reads `Running`,
+    /// simulating a consumer whose background sync engine is between
+    /// batches. No engine task exists, so every mode transition observed —
+    /// or leaked — is the code under test's own.
+    async fn client_with_running_engine(wallet: LightWallet) -> LightClient {
+        let client = LightClient::new_for_test(wallet).await;
+        client
+            .sync_mode
+            .store(SyncMode::Running as u8, atomic::Ordering::Release);
+        client
+    }
+
+    /// The pause a proposal takes exists for the proposal it stores. A
+    /// proposing call that fails stores nothing, so it must restore the
+    /// engine on its way out. The imperative discipline pauses first and
+    /// error-returns past every resume, leaving a consumer's background
+    /// sync silently suspended with nothing pending.
+    #[tokio::test]
+    async fn failed_proposal_leaves_no_leaked_pause() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(10_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            external_address(PoolType::ORCHARD),
+            Zatoshis::const_from_u64(50_000),
+            None,
+        )])
+        .unwrap();
+
+        let result = client.propose_send(request, zip32::AccountId::ZERO).await;
+
+        assert!(result.is_err(), "a 50_000 send from 10_000 must fail");
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Running,
+            "a failed proposal must leave the engine as it found it"
+        );
+    }
+
+    /// A shield proposal must not come into existence while the engine is
+    /// running: the proposal reads spendable coins the engine mutates.
+    /// `propose_send` pauses for exactly this reason; the shield path
+    /// never did.
+    #[tokio::test]
+    async fn shield_proposal_is_never_created_under_a_running_engine() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+
+        let result = client.propose_shield(zip32::AccountId::ZERO).await;
+
+        assert!(
+            result.is_err() || client.sync_mode() != SyncMode::Running,
+            "a shield proposal was created while the engine ran"
+        );
+    }
+
+    /// `quick_shield` goes further than proposing: it builds and stores
+    /// signed transactions, so its first wallet read must already run
+    /// under quiescence. Simulate the engine mid-batch by holding the
+    /// wallet write lock: the call blocks on that lock, so if the mode
+    /// still reads `Running` while the call is in flight, the build began
+    /// without quiescing the engine first.
+    #[tokio::test]
+    async fn quick_shield_never_builds_under_a_running_engine() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let sync_mode = client.sync_mode.clone();
+        let wallet_handle = client.wallet().clone();
+        let engine_holds_wallet = wallet_handle.write().await;
+
+        let call = tokio::spawn(async move {
+            let _offline_transmission_failure = client.quick_shield(zip32::AccountId::ZERO).await;
+        });
+        // The current-thread runtime polls the spawned call until it
+        // blocks on the held wallet lock.
+        tokio::task::yield_now().await;
+
+        assert_ne!(
+            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::Running,
+            "quick_shield began its wallet reads while the engine ran"
+        );
+
+        drop(engine_holds_wallet);
+        call.await.unwrap();
+    }
+
+    /// The send-all sizing (the `max_send_value` trial proposals) is
+    /// `propose_send_all`'s first wallet read and must already run under
+    /// quiescence. Simulate the engine mid-batch by holding the wallet
+    /// write lock: the sizing blocks on that lock, so if the engine's mode
+    /// still reads `Running` while the call is in flight, the call began
+    /// its reads without quiescing the engine first.
+    #[tokio::test]
+    async fn send_all_sizing_runs_under_quiescence() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let sync_mode = client.sync_mode.clone();
+        let wallet_handle = client.wallet().clone();
+        let engine_holds_wallet = wallet_handle.write().await;
+
+        let address = external_address(PoolType::ORCHARD);
+        let call = tokio::spawn(async move {
+            client
+                .propose_send_all(address, false, None, zip32::AccountId::ZERO)
+                .await
+        });
+        // The current-thread runtime polls the spawned call until it
+        // blocks on the held wallet lock.
+        tokio::task::yield_now().await;
+
+        assert_ne!(
+            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::Running,
+            "the send-all sizing began while the engine ran"
+        );
+
+        drop(engine_holds_wallet);
+        call.await.unwrap().unwrap();
+    }
+}
