@@ -668,7 +668,35 @@ impl LightClient {
     /// This function is idempotent over wallet state: a call that fails partway leaves the notes
     /// of every unsent transaction spendable. Calling it again re-plans and
     /// sends the remainder.
+    ///
+    /// Syncs the wallet before draining. Consumers that own the sync
+    /// lifecycle and keep a background sync running should call
+    /// [`Self::drain_orchard_to_ironwood_presynced`] instead, which drains
+    /// against current wallet state without launching its own sync.
     pub async fn drain_orchard_to_ironwood(
+        &mut self,
+        account: zip32::AccountId,
+    ) -> Result<DrainSummary, LightClientError> {
+        self.sync_and_await().await?;
+        self.drain_orchard_to_ironwood_presynced(account).await
+    }
+
+    /// Broadcasts the immediate Orchard→Ironwood drain against the wallet's
+    /// *current* state, without syncing first.
+    ///
+    /// This is [`Self::drain_orchard_to_ironwood`] minus the leading
+    /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
+    /// background sync running continuously (e.g. zingo-mobile). Calling the
+    /// syncing variant from such a consumer collides with the running sync
+    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`];
+    /// this entry point lets the caller drive sync itself, matching the
+    /// `send`/`shield` mutation paths.
+    ///
+    /// The caller is responsible for keeping the wallet synced before calling.
+    /// Everything else — the plan, the `pause_sync`/`resume_sync` bracketing
+    /// around build and transmit, the chunked broadcast, and the idempotent
+    /// cleanup on partial failure — is identical to the syncing variant.
+    pub async fn drain_orchard_to_ironwood_presynced(
         &mut self,
         account: zip32::AccountId,
     ) -> Result<DrainSummary, LightClientError> {
@@ -678,7 +706,6 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        self.sync_and_await().await?;
         let plan = self.plan_orchard_drain(account).await?;
         if plan.is_empty() {
             return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
