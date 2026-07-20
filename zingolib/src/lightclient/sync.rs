@@ -248,6 +248,37 @@ impl LightClient {
         }
     }
 
+    /// Quiesces the engine for the lifetime of a stored proposal, keeping
+    /// the witness in the client until the proposal is consumed (sent or
+    /// calculated), cleared, or fails to come into existence. Returns
+    /// whether this call minted the witness, so a proposing call's error
+    /// path can release exactly what it took while an already-held witness
+    /// keeps guarding the proposal it was minted for. A shutting-down
+    /// engine cannot be quiesced; the proposal then proceeds unguarded,
+    /// exactly as the imperative pause discipline did.
+    pub(crate) fn hold_proposal_quiescence(&mut self) -> bool {
+        if self.proposal_quiescence.is_none()
+            && let Ok(witness) = self.quiesce_sync()
+        {
+            self.proposal_quiescence = Some(witness);
+            return true;
+        }
+        false
+    }
+
+    /// Releases the stored proposal's quiescence witness, if one is held.
+    /// `restore: true` drops the witness, returning the engine to the mode
+    /// it held before the proposal was created; `restore: false` disarms
+    /// it, leaving the engine paused for the caller to resume — the
+    /// shipped `resume_sync: false` semantics.
+    pub(crate) fn release_proposal_quiescence(&mut self, restore: bool) {
+        if let Some(witness) = self.proposal_quiescence.take()
+            && !restore
+        {
+            witness.disarm();
+        }
+    }
+
     /// Polls the sync task and, if it failed, returns the recommended
     /// recovery action alongside the error description.
     ///
@@ -283,6 +314,18 @@ impl LightClient {
 pub struct SyncQuiescence {
     sync_mode: Arc<atomic::AtomicU8>,
     resume_on_drop: bool,
+}
+
+impl SyncQuiescence {
+    /// Cancels the restore-on-drop: the engine stays exactly as the witness
+    /// held it, so a pause taken by [`LightClient::quiesce_sync`] persists
+    /// past the witness. Crate-internal on purpose — the public contract
+    /// remains "drop restores the prior mode"; only the shipped
+    /// `resume_sync: false` protocol needs to keep an engine paused for the
+    /// caller to resume later.
+    pub(crate) fn disarm(mut self) {
+        self.resume_on_drop = false;
+    }
 }
 
 impl Drop for SyncQuiescence {

@@ -27,24 +27,62 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal from a transaction request.
+    ///
+    /// Quiesces the sync engine before the first wallet read and holds that
+    /// quiescence beside the stored proposal, so the state the proposal
+    /// selected against cannot shift before the send builds it. A proposal
+    /// that fails to come into existence releases the quiescence on the way
+    /// out, restoring the engine to the mode it was found in.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let _ignore_error = self.pause_sync();
-        let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
-
-        Ok(proposal)
+        let minted = self.hold_proposal_quiescence();
+        let result = {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .create_send_proposal(request, account_id)
+                .inspect(|proposal| {
+                    wallet.store_proposal(ZingoProposal::Send {
+                        proposal: proposal.clone(),
+                        sending_account: account_id,
+                    });
+                })
+        };
+        if result.is_err() && minted {
+            self.release_proposal_quiescence(true);
+        }
+        result
     }
 
     /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
+    ///
+    /// The quiescence a proposal holds (see [`Self::propose_send`]) is
+    /// established before the send-all sizing: the [`Self::max_send_value`]
+    /// trial proposals are wallet reads the sizing must not race a running
+    /// engine for, and the value they compute must still hold when the real
+    /// proposal is created.
     pub async fn propose_send_all(
+        &mut self,
+        address: ZcashAddress,
+        zennies_for_zingo: bool,
+        memo: Option<zcash_protocol::memo::MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        let minted = self.hold_proposal_quiescence();
+        let result = self
+            .propose_send_all_quiesced(address, zennies_for_zingo, memo, account_id)
+            .await;
+        if result.is_err() && minted {
+            self.release_proposal_quiescence(true);
+        }
+        result
+    }
+
+    /// The [`Self::propose_send_all`] body, from sizing through storing,
+    /// which its caller runs under the stored proposal's quiescence.
+    async fn propose_send_all_quiesced(
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
@@ -63,7 +101,6 @@ impl LightClient {
         }
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_send_proposal(request, account_id)?;
         wallet.store_proposal(ZingoProposal::Send {
@@ -74,19 +111,30 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Creates and stores a proposal for shielding all transparent funds..
+    /// Creates and stores a proposal for shielding all transparent funds,
+    /// under the same stored-proposal quiescence as [`Self::propose_send`].
+    /// The shield path previously read spendable coins without quiescing
+    /// the engine at all.
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_shield_proposal(account_id)?;
-        wallet.store_proposal(ZingoProposal::Shield {
-            proposal: proposal.clone(),
-            shielding_account: account_id,
-        });
-
-        Ok(proposal)
+        let minted = self.hold_proposal_quiescence();
+        let result = {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .create_shield_proposal(account_id)
+                .inspect(|proposal| {
+                    wallet.store_proposal(ZingoProposal::Shield {
+                        proposal: proposal.clone(),
+                        shielding_account: account_id,
+                    });
+                })
+        };
+        if result.is_err() && minted {
+            self.release_proposal_quiescence(true);
+        }
+        result
     }
 
     /// Returns the maximum value that can be sent from the given `account_id`.
@@ -1599,5 +1647,73 @@ mod quiescence_contract {
 
         drop(engine_holds_wallet);
         call.await.unwrap().unwrap();
+    }
+
+    /// A request against a running-engine client that a proposal succeeds
+    /// for, shared by the stored-quiescence protocol tests below.
+    async fn client_with_stored_proposal() -> LightClient {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            external_address(PoolType::ORCHARD),
+            Zatoshis::const_from_u64(10_000),
+            None,
+        )])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        client
+    }
+
+    /// A successful proposal holds its quiescence for as long as the
+    /// proposal is stored: the engine stays paused, so the state the
+    /// proposal selected against cannot shift before the send builds it.
+    #[tokio::test]
+    async fn proposing_holds_the_pause_for_the_stored_proposal() {
+        let client = client_with_stored_proposal().await;
+
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Paused,
+            "a stored proposal must hold the engine quiescent"
+        );
+    }
+
+    /// Clearing a stored proposal — the decline path of the two-phase
+    /// send — restores the engine to the mode it held before proposing.
+    /// Previously the pause outlived the declined proposal until some
+    /// later send opted into resuming.
+    #[tokio::test]
+    async fn clearing_the_proposal_restores_the_engine() {
+        let mut client = client_with_stored_proposal().await;
+
+        client.clear_proposal().await;
+
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Running,
+            "declining a proposal must restore the engine"
+        );
+    }
+
+    /// An Indexerless send attempt fails before consuming the stored
+    /// proposal (ADR 0006), so the proposal — and the quiescence guarding
+    /// it — survive for retry once an Indexer is configured.
+    #[tokio::test]
+    async fn offline_send_failure_keeps_the_proposal_guarded() {
+        let mut client = client_with_stored_proposal().await;
+
+        let result = client.send_stored_proposal(true).await;
+
+        assert!(result.is_err(), "an Indexerless send must fail");
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Paused,
+            "a send that consumed nothing must release nothing"
+        );
     }
 }
