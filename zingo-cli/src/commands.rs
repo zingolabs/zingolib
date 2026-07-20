@@ -43,6 +43,8 @@ pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new
 pub enum CommandError {
     #[error(transparent)]
     Migration(#[from] MigrationCommandError),
+    #[error(transparent)]
+    Nym(#[from] NymCommandError),
     /// Transitional quarantine for commands whose failure prose is not
     /// yet typed: the message is stored WITHOUT the "Error: " prefix
     /// (the renderer adds it). Every construction site is a candidate
@@ -732,14 +734,55 @@ fn bundled_proxy_path() -> Option<String> {
         .then(|| candidate.to_string_lossy().into_owned())
 }
 
+/// Typed failure of the `nym` command family. Each variant exists only in
+/// the build that can produce it, so the enum's shape follows the feature.
+#[derive(Debug, thiserror::Error)]
+pub enum NymCommandError {
+    #[cfg(feature = "nym")]
+    #[error("unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off")]
+    UnknownSubCommand(String),
+    #[cfg(not(feature = "nym"))]
+    #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
+    FeatureAbsent,
+    #[cfg(feature = "nym")]
+    #[error("failed to start the nym proxy at '{path}': {source}")]
+    ProxyStart {
+        path: String,
+        source: zingolib::nym::MixnetProxyError,
+    },
+}
+
+/// The nym family's typed request: arguments parse completely into this
+/// enum before any wallet access.
+#[cfg(feature = "nym")]
+#[derive(Debug, PartialEq, Eq)]
+enum NymSubCommand {
+    Status,
+    On { path: Option<String> },
+    Off,
+}
+
+#[cfg(feature = "nym")]
+fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
+    match args.first().copied() {
+        None | Some("status") => Ok(NymSubCommand::Status),
+        Some("on") => Ok(NymSubCommand::On {
+            path: args.get(1).map(|path| path.to_string()),
+        }),
+        Some("off") => Ok(NymSubCommand::Off),
+        Some(other) => Err(NymCommandError::UnknownSubCommand(other.to_string())),
+    }
+}
+
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
-fn nym_command(args: &[&str], lightclient: &mut LightClient) -> String {
+fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
     use zingolib::nym::MixnetMode;
 
+    let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
-        match args.first().copied() {
-            None | Some("status") => match lightclient.mixnet_mode() {
+        match subcommand {
+            NymSubCommand::Status => Ok(match lightclient.mixnet_mode() {
                 MixnetMode::Off => {
                     "Mixnet Mode: off (send and price-fetch use clearnet)".to_string()
                 }
@@ -751,25 +794,24 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> String {
                     Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
                     None => "Mixnet Mode: ready".to_string(),
                 },
-            },
-            Some("on") => {
-                let path = resolve_proxy_path(args.get(1).copied());
-                match lightclient.enable_mixnet(std::path::Path::new(&path)).await {
-                    Ok(()) => format!(
-                        "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
-                         Run `nym status` to check readiness."
-                    ),
-                    Err(e) => format!("failed to start the nym proxy at '{path}': {e}"),
-                }
+            }),
+            NymSubCommand::On { path } => {
+                let path = resolve_proxy_path(path.as_deref());
+                lightclient
+                    .enable_mixnet(std::path::Path::new(&path))
+                    .await
+                    .map_err(|source| NymCommandError::ProxyStart {
+                        path: path.clone(),
+                        source,
+                    })?;
+                Ok(format!(
+                    "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
+                     Run `nym status` to check readiness."
+                ))
             }
-            Some("off") => {
+            NymSubCommand::Off => {
                 lightclient.disable_mixnet().await;
-                "Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string()
-            }
-            Some(other) => {
-                format!(
-                    "unknown nym subcommand '{other}'. Use: nym status | nym on [path] | nym off"
-                )
+                Ok("Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string())
             }
         }
     })
@@ -777,8 +819,8 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> String {
 
 /// The body of the `nym` command when the mixnet transport is not compiled in.
 #[cfg(not(feature = "nym"))]
-fn nym_command(_args: &[&str], _lightclient: &mut LightClient) -> String {
-    "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.".to_string()
+fn nym_command(_args: &[&str], _lightclient: &mut LightClient) -> Result<String, NymCommandError> {
+    Err(NymCommandError::FeatureAbsent)
 }
 
 struct BalanceCommand {}
@@ -2721,6 +2763,62 @@ mod migration_command_parsing {
         assert_eq!(
             format!("Error: {}", MigrationCommandError::MalformedPerBucket),
             "Error: --per-bucket expects a positive integer."
+        );
+    }
+}
+
+#[cfg(test)]
+mod nym_command_parsing {
+    //! Pins the pure argument parser and the byte-identity of the typed
+    //! errors' rendering with the in-band strings they replaced.
+
+    use super::*;
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn bare_and_status_both_parse_to_status() {
+        assert_eq!(
+            parse_nym_args(&[]).expect("a bare nym parses"),
+            NymSubCommand::Status
+        );
+        assert_eq!(
+            parse_nym_args(&["status"]).expect("nym status parses"),
+            NymSubCommand::Status
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn on_captures_the_optional_path() {
+        assert_eq!(
+            parse_nym_args(&["on"]).expect("bare nym on parses"),
+            NymSubCommand::On { path: None }
+        );
+        assert_eq!(
+            parse_nym_args(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
+            NymSubCommand::On {
+                path: Some("/opt/nym-proxy".to_string()),
+            }
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn unknown_subcommand_renders_byte_identically_to_the_replaced_string() {
+        assert_eq!(
+            parse_nym_args(&["bogus"])
+                .expect_err("an unknown subcommand is typed")
+                .to_string(),
+            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off"
+        );
+    }
+
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn feature_absent_renders_byte_identically_to_the_replaced_string() {
+        assert_eq!(
+            NymCommandError::FeatureAbsent.to_string(),
+            "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
         );
     }
 }
