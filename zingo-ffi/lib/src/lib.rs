@@ -1885,3 +1885,89 @@ pub fn confirm() -> Result<String, ZingolibError> {
         }
     })
 }
+
+/// Plans an immediate drain of the account's Orchard pool into Ironwood. Pure
+/// and deterministic: nothing is signed or broadcast, so the plan can be shown
+/// to the user for consent first. Mirror of `send`'s propose phase.
+///
+/// Returns, on success, the drain plan as JSON:
+/// `{ transactions: [{ inputs: [u64], output: u64, fee: u64 }], migrated,
+/// fee, stranded }` (all zatoshis). Each transaction spends its `inputs`
+/// Orchard notes into a single Ironwood `output`; the fee is `sum(inputs) -
+/// output`. An empty `transactions` array means there is nothing worth
+/// migrating.
+pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.plan_orchard_drain(AccountId::ZERO).await {
+                    Ok(plan) => {
+                        let transactions = plan
+                            .transactions
+                            .iter()
+                            .map(|tx| {
+                                object! {
+                                    "inputs" => tx.inputs.clone(),
+                                    "output" => tx.output,
+                                    "fee" => tx.fee(),
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        object! {
+                            "transactions" => transactions,
+                            "migrated" => plan.migrated,
+                            "fee" => plan.fee,
+                            "stranded" => plan.stranded,
+                        }
+                    }
+                    Err(e) => {
+                        object! { "error" => e.to_string() }
+                    }
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Spends every spendable Orchard note in the account into the Ironwood pool in
+/// one round of transactions, broadcasting them all at once. This is the
+/// *migrate immediately* path (`plan_orchard_drain` executed): the amount
+/// crossing the pool boundary is visible on-chain, so the caller must have
+/// disclosed that. Mirror of `confirm`'s broadcast phase.
+///
+/// Returns, on success, `{ txids: [..], migrated, fee, stranded }` (values in
+/// zatoshis). Notes worth at most the sweep minimum are left behind and
+/// reported as `stranded`.
+pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.drain_orchard_to_ironwood(AccountId::ZERO).await {
+                    Ok(summary) => {
+                        object! {
+                            "txids" => summary.txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>(),
+                            "migrated" => summary.migrated,
+                            "fee" => summary.fee,
+                            "stranded" => summary.stranded,
+                        }
+                    }
+                    Err(e) => {
+                        object! { "error" => e.to_string() }
+                    }
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
