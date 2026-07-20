@@ -334,7 +334,10 @@ fn build_connection_params(
     })
 }
 
-fn build_client_config(params: &ConnectionParams, wallet_config: WalletConfig) -> ClientConfig {
+fn build_client_config(
+    params: &ConnectionParams,
+    wallet_config: WalletConfig,
+) -> Result<ClientConfig, ZingolibError> {
     let builder = ClientConfig::builder()
         .set_chain_type(params.chain_type)
         .set_wallet_dir(PathBuf::new())
@@ -345,7 +348,7 @@ fn build_client_config(params: &ConnectionParams, wallet_config: WalletConfig) -
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    builder.build()
+    builder.build().map_err(ZingolibError::init)
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -367,7 +370,7 @@ fn init_lightclient(
         let params =
             build_connection_params(server_uri, chain_hint, performance_level, min_confirmations)?;
         let wallet_config = make_wallet_config(&params)?;
-        let config = build_client_config(&params, wallet_config);
+        let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
             .map_err(ZingolibError::init)?;
@@ -559,7 +562,13 @@ pub fn init_from_b64(
                     continue;
                 }
             };
-            let config = build_client_config(&params, WalletConfig::Read);
+            let config = match build_client_config(&params, WalletConfig::Read) {
+                Ok(c) => c,
+                Err(e) => {
+                    last_error = e;
+                    continue;
+                }
+            };
             match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
                 Ok(l) => {
                     built = Some((l, params));
@@ -817,6 +826,41 @@ mod read_error_channel_tests {
             "the failure must be the typed Read variant: {error}"
         );
     }
+
+    // Reproduces the exact `From<ValueTransfers>` shape (array nested under
+    // "value_transfers") to prove the migrated-amount splice targets the right
+    // field: only send-to-self transfers with a mapped txid are overwritten.
+    #[test]
+    fn splice_migrated_values_overwrites_only_mapped_self_sends() {
+        let mut json_vts = json::object! {
+            "value_transfers" => json::array![
+                json::object!{ "kind" => "send-to-self", "txid" => "aaa", "value" => 0 },
+                json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
+                json::object!{ "kind" => "send-to-self", "txid" => "ccc", "value" => 0 },
+            ]
+        };
+        let mut migrated_by_txid = std::collections::HashMap::new();
+        migrated_by_txid.insert("aaa".to_string(), 500u64); // a migration
+        // "ccc" is a self-send but not a migration (no mapping) -> untouched.
+
+        splice_migrated_values(&mut json_vts, &migrated_by_txid);
+
+        assert_eq!(
+            json_vts["value_transfers"][0]["value"].as_u64(),
+            Some(500),
+            "the mapped send-to-self must carry the migrated amount"
+        );
+        assert_eq!(
+            json_vts["value_transfers"][1]["value"].as_u64(),
+            Some(100),
+            "a plain send must be left alone"
+        );
+        assert_eq!(
+            json_vts["value_transfers"][2]["value"].as_u64(),
+            Some(0),
+            "an unmapped self-send must be left alone"
+        );
+    }
 }
 
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
@@ -873,12 +917,68 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     })
 }
 
+/// Overwrites the `value` of each Orchard->Ironwood migration value transfer
+/// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
+/// object produced by `From<ValueTransfers>`; migrations are the send-to-self
+/// transfers keyed in `migrated_by_txid`. zingolib reports `value == 0` for
+/// self-sends, so without this the migrated amount is invisible.
+///
+/// Note the array is nested under `"value_transfers"` — `members_mut()` on the
+/// outer object yields an empty iterator, so we must index in first.
+fn splice_migrated_values(
+    json_vts: &mut json::JsonValue,
+    migrated_by_txid: &std::collections::HashMap<String, u64>,
+) {
+    for vt in json_vts["value_transfers"].members_mut() {
+        if vt["kind"].as_str() != Some("send-to-self") {
+            continue;
+        }
+        let txid = vt["txid"].as_str().unwrap_or_default().to_string();
+        if let Some(&migrated) = migrated_by_txid.get(&txid) {
+            vt["value"] = json::JsonValue::from(migrated);
+        }
+    }
+}
+
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
+
+            // An Orchard -> Ironwood migration is a send-to-self, which zingolib
+            // reports with `value == 0` because `total_value_sent` excludes
+            // self-addressed value. To surface how much was migrated, recover it
+            // from the transaction's self-received ironwood notes and splice it
+            // into the matching value transfer's `value`. Keyed by txid; only
+            // self-sends funded from Orchard that land ironwood notes qualify.
+            let migrated_by_txid: std::collections::HashMap<String, u64> =
+                match wallet.transaction_summaries(true).await {
+                    Ok(summaries) => summaries
+                        .0
+                        .iter()
+                        .filter(|s| {
+                            s.kind.to_string() == "send-to-self"
+                                && s.pools_sent_from
+                                    .iter()
+                                    .any(|p| p.to_string() == "Orchard")
+                                && !s.ironwood_notes.is_empty()
+                        })
+                        .map(|s| {
+                            (
+                                s.txid.to_string(),
+                                s.ironwood_notes.iter().map(|n| n.value).sum::<u64>(),
+                            )
+                        })
+                        .collect(),
+                    Err(e) => return Err(ZingolibError::read(e)),
+                };
+
             match wallet.value_transfers(true).await {
-                Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
+                Ok(value_transfers) => {
+                    let mut json_vts = json::JsonValue::from(value_transfers);
+                    splice_migrated_values(&mut json_vts, &migrated_by_txid);
+                    Ok(json_vts.pretty(2))
+                }
                 Err(e) => Err(ZingolibError::read(e)),
             }
         })
@@ -1941,6 +2041,12 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
 /// crossing the pool boundary is visible on-chain, so the caller must have
 /// disclosed that. Mirror of `confirm`'s broadcast phase.
 ///
+/// Uses zingolib's `drain_orchard_to_ironwood_presynced`: this app owns the
+/// sync lifecycle (a background sync runs continuously), so the drain must NOT
+/// launch its own sync — the syncing variant `drain_orchard_to_ironwood`
+/// collides with the running sync and fails with `SyncAlreadyRunning`. It
+/// drains against current wallet state instead, matching `send`/`shield`.
+///
 /// Returns, on success, `{ txids: [..], migrated, fee, stranded }` (values in
 /// zatoshis). Notes worth at most the sweep minimum are left behind and
 /// reported as `stranded`.
@@ -1951,7 +2057,10 @@ pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                match lightclient.drain_orchard_to_ironwood(AccountId::ZERO).await {
+                match lightclient
+                    .drain_orchard_to_ironwood_presynced(AccountId::ZERO)
+                    .await
+                {
                     Ok(summary) => {
                         object! {
                             "txids" => summary.txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>(),

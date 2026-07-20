@@ -2314,7 +2314,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4683,12 +4683,11 @@ dependencies = [
 [[package]]
 name = "zaino-proto"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zaino.git?rev=2e2816cb3755e7ff4d18bed1a96b95dc07c1549c#2e2816cb3755e7ff4d18bed1a96b95dc07c1549c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "120e9bb92547921333d63d8dc96ca7489694d5a87dc6e805152468bdd435646b"
 dependencies = [
  "prost",
- "prost-build",
  "tonic",
- "tonic-build",
  "tonic-prost",
  "tonic-prost-build",
 ]
@@ -5081,7 +5080,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -5106,7 +5105,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -5120,7 +5119,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -5135,7 +5134,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -5158,7 +5157,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5216,7 +5215,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#5479a314722e9cd96583b520e3b68cdac12ca463"
+source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fironwood#2624f5e52c8d5c63d4b3bf7b03a5eee2229aa030"
 dependencies = [
  "http",
  "nonempty",
