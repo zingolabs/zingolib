@@ -49,6 +49,13 @@ pub use crypto::ensure_default_crypto_provider;
 /// the binary that emits it and the wallet supervisor that parses it share one
 /// definition. The full line is `SOCKS5_ADDR=127.0.0.1:<port>`.
 pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
+
+/// The stdout line prefix the spawnable `nym-proxy` binary uses for live
+/// bootstrap progress, before the address announcement. Defined here so the
+/// binary that emits it and the wallet supervisor that parses it share one
+/// definition. The full line is e.g.
+/// `NYM_STATUS=attempt 4/10: 2 in flight, 2 failed`.
+pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
 pub use error::*;
 pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
@@ -61,6 +68,10 @@ pub use globally_public::TransparentIndexer;
 // Deliberately ungated: the pure core of the nym proxy lifecycle, whose
 // unit tests run in the default build without the nym-sdk stack.
 mod mixnet_connect;
+
+// Deliberately ungated and public: the pure racing planner shared by the
+// mixnet bootstrap here and zingolib's send fan-out (ADR 0011).
+pub mod arm_race;
 
 #[cfg(feature = "nym")]
 mod nym_proxy;

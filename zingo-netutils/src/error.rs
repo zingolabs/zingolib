@@ -56,6 +56,15 @@ pub enum NymProxyError {
     /// End-to-end connectivity check through the SOCKS5 tunnel failed.
     #[error("connectivity check failed: {0}")]
     ConnectivityCheck(String),
+
+    /// A single provider connect attempt exceeded its per-attempt timeout.
+    #[error("provider connect attempt timed out after {0}s")]
+    AttemptTimeout(u64),
+
+    /// Every raced connect attempt failed; the message accounts for each
+    /// attempted provider and its failure.
+    #[error("no provider connected: {0}")]
+    AttemptsExhausted(String),
 }
 
 #[cfg(test)]

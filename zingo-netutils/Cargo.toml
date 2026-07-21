@@ -69,7 +69,9 @@ hyper-rustls.workspace = true
 hyper-util.workspace = true
 hyper.workspace = true
 rustls-pemfile.workspace = true
-tokio.workspace = true
+# `test-util` enables paused-time tests (`start_paused`) for the per-attempt
+# timeout regression test; dev-only, so the shipped graph is unchanged.
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 http-body-util.workspace = true
 x509-parser.workspace = true
 

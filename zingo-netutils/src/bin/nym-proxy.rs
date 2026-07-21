@@ -23,7 +23,7 @@
 
 use std::io::Write as _;
 
-use zingo_netutils::{NymProxy, SOCKS5_ADDR_LINE_PREFIX};
+use zingo_netutils::{NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX};
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -37,7 +37,13 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let proxy = NymProxy::start().await?;
+    // Narrate the bootstrap on stdout so the parent supervisor can surface
+    // live progress (`nym status`) instead of an opaque wait.
+    let proxy = NymProxy::start_with_progress(|line| {
+        println!("{NYM_STATUS_LINE_PREFIX}{line}");
+        let _ = std::io::stdout().flush();
+    })
+    .await?;
 
     // Announce the address on a single line and flush, so the parent sees it
     // the moment the mixnet is reachable.
