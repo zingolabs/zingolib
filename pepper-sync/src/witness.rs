@@ -94,6 +94,40 @@ where
     located_tree_data
 }
 
+/// The index to resume subtree-root fetching from: the count of stored
+/// roots, minus one when the newest stored shard is still a bare
+/// server-fetched root (a single leaf node, no scanned contents).
+///
+/// Subtree roots are written with no checkpoint, so a bare root is the
+/// one shard-store state a reorg can invalidate without any checkpoint
+/// witnessing it — truncation planning cannot see it (its facts are
+/// checkpoints), and a count-based resume would never refetch it. Each
+/// session therefore refetches the newest bare root and `put_shard`
+/// replaces it if the chain moved, making the resume self-healing. A
+/// shard that scanning has populated is left alone: its heights carry
+/// checkpoints, and truncation judges them.
+pub(crate) fn subtree_fetch_start_index<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> u32
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    let roots = shard_tree.store().get_shard_roots().expect("infallible");
+    let Some(newest) = roots.last() else {
+        return 0;
+    };
+    let bare = shard_tree
+        .store()
+        .get_shard(*newest)
+        .expect("infallible")
+        .is_some_and(|shard| shard.root().is_leaf());
+    (roots.len() - usize::from(bare)) as u32
+}
+
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_root_start_index: usize,
     subtree_roots: Vec<SubtreeRoot>,

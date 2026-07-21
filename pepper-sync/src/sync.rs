@@ -2017,30 +2017,14 @@ async fn update_subtree_roots<W>(
 where
     W: SyncWallet + SyncShardTrees,
 {
-    let sapling_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .sapling
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let orchard_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .orchard
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let ironwood_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .ironwood
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
+    // Resume from the stored-root count, except that a newest root which
+    // is still bare (never scanned into) is refetched every session: no
+    // checkpoint witnesses it, so this refetch is the only mechanism that
+    // heals it after a reorg (see `subtree_fetch_start_index`).
+    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    let sapling_start_index = witness::subtree_fetch_start_index(&shard_trees.sapling);
+    let orchard_start_index = witness::subtree_fetch_start_index(&shard_trees.orchard);
+    let ironwood_start_index = witness::subtree_fetch_start_index(&shard_trees.ironwood);
     let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
         client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
         client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),

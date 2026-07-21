@@ -57,9 +57,15 @@ pub struct WalletTruncationState {
 /// What the planner reads of one shard tree, gathered at the truncation
 /// target.
 ///
-/// A checkpoint records every chain state the tree has absorbed —
-/// frontier and subtree insertion both attach checkpoints — so the
-/// newest checkpoint bounds the chain state the tree knows about.
+/// A checkpoint records every *scanned* chain state the tree has
+/// absorbed — frontier insertion and scanned-subtree insertion attach
+/// checkpoints — so the newest checkpoint bounds the scanned state.
+/// Server-fetched subtree roots are the exception: they enter the store
+/// with no checkpoint, so this planner cannot see them. They are kept
+/// safe by a different mechanism — each sync session refetches the
+/// newest still-bare root and replaces it if the chain moved (see
+/// `crate::witness::subtree_fetch_start_index`) — so a stale bare root
+/// surviving an `Untouched` verdict is healed at the next session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TreeTruncationFacts {
     /// The checkpoint the tree's store holds exactly at the truncation

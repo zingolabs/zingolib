@@ -23,7 +23,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 /// Outcome of adding a checkpoint at the tree's rightmost leaf state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CheckpointOutcome {
+pub enum CheckpointOutcome {
     /// The checkpoint was added.
     Added,
     /// The id is not above the store's newest checkpoint; the tree is
@@ -33,15 +33,17 @@ pub(crate) enum CheckpointOutcome {
 
 /// Outcome of rolling a tree back to a checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RollbackOutcome {
+pub enum RollbackOutcome {
     /// The tree was truncated to the checkpoint's state.
     RolledBack,
     /// No checkpoint exists with the given id; the tree is unchanged.
     NoSuchCheckpoint,
 }
 
-/// The crate-boundary wrapper over shardtree's boolean operations.
-pub(crate) trait ShardTreeExt {
+/// The boundary wrapper over shardtree's boolean operations, exported so
+/// downstream crates route through it too (zingolib's legacy wallet
+/// import does; its own source-walk test enforces its confinement).
+pub trait ShardTreeExt {
     /// As [`ShardTree::checkpoint`], with the boolean classified.
     fn checkpoint_classified(
         &mut self,
