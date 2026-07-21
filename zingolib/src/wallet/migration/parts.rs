@@ -458,7 +458,6 @@ impl crate::wallet::LightWallet {
     ) -> Result<PrepareResult, WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
         use shardtree::store::ShardStore as _;
-        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
 
         if part.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
@@ -471,12 +470,12 @@ impl crate::wallet::LightWallet {
             .expect("assigned parts always carry a bucket");
         let boundary = super::schedule::boundary_of(bucket, params.bucket_modulus);
 
-        let activation = self
-            .chain_type
-            .activation_height(NetworkUpgrade::Nu6_3)
-            .ok_or_else(|| {
-                WalletError::MigrationBuild("NU6.3 has no activation height".to_string())
-            })?;
+        let activation = pepper_sync::wallet::PoolActivation::of(
+            &self.chain_type,
+            zcash_protocol::ShieldedPool::Ironwood,
+        )
+        .ok_or_else(|| WalletError::MigrationBuild("NU6.3 has no activation height".to_string()))?
+        .height();
         if boundary < activation {
             return Ok(PrepareResult::Skip(SkipReason::BoundaryBeforeActivation {
                 boundary,
@@ -867,38 +866,18 @@ mod tests {
         }
     }
 
-    /// Issue #2493, finding 7: `target_height`'s own contract — "Cleared
-    /// whenever the bucket changes so a fresh target is chosen" — must
-    /// hold through `reassign`. A stale target from the old bucket lies
-    /// below the new window, so the rebuilt part fires the moment its new
-    /// window opens: exactly the boundary clustering the randomized
-    /// target exists to prevent, correlated across every wallet that
-    /// rebuilds after an expiry.
+    /// Issue #2493, finding 7 (ratified form): placement goes through the
+    /// schedule module's operations, and the jittered one draws a fresh
+    /// target inside the new window — see
+    /// `schedule::tests::place_draws_a_fresh_target_inside_the_new_window`.
+    /// The raw `reassign` transition deliberately does not manage the
+    /// target; placement does.
     #[test]
-    fn reassign_never_keeps_a_target_below_the_new_window() {
-        let modulus = super::super::MigrationParams::provisional(
-            crate::config::ChainType::Mainnet,
-        )
-        .bucket_modulus;
-
+    fn reassign_is_reachable_only_from_expired() {
         let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
-        part.assign(1).expect("fresh parts are bound");
-        // The schedule's randomized target inside bucket 1's window.
-        let old_target = super::super::schedule::boundary_of(1, modulus) + 17;
-        part.target_height = Some(old_target);
-        part.mark_signed(TxId::from_bytes([9; 32]), old_target + 40, None)
-            .expect("assigned parts sign");
-        part.mark_expired().expect("signed parts expire");
-
-        part.reassign(5).expect("expired parts reassign");
-
-        let new_boundary = super::super::schedule::boundary_of(5, modulus);
         assert!(
-            part.target_height
-                .is_none_or(|target| target >= new_boundary),
-            "the rebuilt part kept its stale target {:?}, below its new \
-             window at {new_boundary}",
-            part.target_height,
+            part.reassign(5).is_err(),
+            "bound parts assign, not reassign"
         );
     }
 

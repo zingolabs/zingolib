@@ -217,25 +217,8 @@ impl LightClient {
         &self,
         account: zip32::AccountId,
     ) -> Result<MigrationPlan, LightClientError> {
-        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
-
         let wallet = self.wallet().read().await;
-        let params = MigrationParams::provisional(wallet.chain_type());
-        // Note-splitting fees depend on whether the transactions confirm at
-        // or after NU6.3 activation (the Orchard bundle's cross-address rules
-        // change the action count).
-        let post_activation = match (
-            wallet.sync_state.last_known_chain_height(),
-            wallet.chain_type().activation_height(NetworkUpgrade::Nu6_3),
-        ) {
-            (Some(chain_height), Some(activation)) => chain_height + 1 >= activation,
-            _ => false,
-        };
-        Ok(plan_migration(
-            &wallet.migration_note_values(account)?,
-            post_activation,
-            &params,
-        ))
+        Ok(wallet.plan_ironwood_migration_now(account)?)
     }
 
     /// Records the user's consent to a proposed migration plan and persists
@@ -266,7 +249,14 @@ impl LightClient {
             return Err(MigrationError::PreSignedUnavailable.into());
         }
 
-        let plan = self.plan_ironwood_migration(account).await?;
+        // One synchronous critical section under a single write guard:
+        // plan, hash check, bind, schedule, persist. Every wallet mutation
+        // — including a sync commit — needs this same lock, so the notes
+        // hashed are the notes bound; no await point sits inside the
+        // bracket, so a cancelled future cannot abandon it midway (issue
+        // #2493, finding 11).
+        let mut wallet = self.wallet().write().await;
+        let plan = wallet.plan_ironwood_migration_now(account)?;
         let hash = plan_hash(&plan);
         if hash != consented_plan_hash {
             return Err(MigrationError::ConsentStale.into());
@@ -274,11 +264,10 @@ impl LightClient {
         if !plan.is_split() {
             return Err(MigrationError::NoteSplittingRequired.into());
         }
-
-        let mut wallet = self.wallet().write().await;
         if wallet.migration.is_some() {
             return Err(MigrationError::AlreadyInProgress.into());
         }
+        let activation = wallet.ironwood_activation()?;
 
         let mut params = MigrationParams::provisional(wallet.chain_type());
         if let Some(k) = per_bucket {
@@ -305,6 +294,7 @@ impl LightClient {
         plan_schedule(
             &mut state.parts,
             now_height,
+            activation,
             &state.params,
             &mut rand::rngs::OsRng,
         )?;
@@ -583,9 +573,17 @@ impl LightClient {
                                 .sync_state
                                 .last_known_chain_height()
                                 .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                            let next_bucket =
-                                schedule::bucket_index(now_height, state.params.bucket_modulus) + 1;
-                            part.reassign(next_bucket)?;
+                            let activation = wallet.ironwood_activation()?;
+                            schedule::place(
+                                part,
+                                schedule::first_permitted_bucket(
+                                    now_height,
+                                    activation,
+                                    &state.params,
+                                ),
+                                &mut rand::rngs::OsRng,
+                                &state.params,
+                            )?;
                         }
                         RecommendedAction::BindAndSchedule => {
                             let account = state.account;
@@ -594,9 +592,11 @@ impl LightClient {
                                 .sync_state
                                 .last_known_chain_height()
                                 .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                            let activation = wallet.ironwood_activation()?;
                             plan_schedule(
                                 &mut state.parts,
                                 now_height,
+                                activation,
                                 &state.params,
                                 &mut rand::rngs::OsRng,
                             )?;
@@ -661,7 +661,12 @@ impl LightClient {
                     for part_id in &overdue {
                         let part = &mut state.parts[part_id.0 as usize];
                         if part.state == PartState::Assigned {
-                            part.shift(current_bucket)?;
+                            // Catch-up fires now by disclosed intent:
+                            // explicitly immediate placement. Overdue
+                            // signed parts never reach here — reconcile
+                            // classifies them AwaitingExpiry, outside the
+                            // catch-up cohort.
+                            schedule::place_immediate(part, current_bucket)?;
                         }
                     }
                     Ok::<_, crate::wallet::error::WalletError>(())
@@ -726,12 +731,12 @@ impl LightClient {
                             &state.params,
                         )
                     });
-                    let value_migrated = wallet
-                        .account_balance(state.account)
-                        .ok()
-                        .and_then(|b| b.confirmed_ironwood_balance)
-                        .map(zcash_protocol::value::Zatoshis::into_u64)
-                        .unwrap_or(0);
+                    // What this migration moved: the confirmed part
+                    // denominations, and nothing else. The account's whole
+                    // Ironwood balance also holds shields and ordinary
+                    // receives, which are not migration progress (issue
+                    // #2493, finding 10).
+                    let value_migrated = confirmed.iter().map(|part| part.denomination).sum();
                     (
                         Some(state.phase.clone()),
                         state.parts.len() as u32,
@@ -996,14 +1001,17 @@ impl LightClient {
 
         for _ in 0..MAX_ROUNDS {
             self.sync_and_await().await?;
-            let plan = self.plan_ironwood_migration(account).await?;
-
-            if plan.is_split() {
-                let stranded = plan.stranded;
-                // Invoking the one-call constitutes consent to the current
-                // plan. Record the binding if this is a fresh migration.
-                {
-                    let mut wallet = self.wallet().write().await;
+            // Plan and (when the plan is split) bind under one write guard,
+            // the same single-borrow bracket as `start_ironwood_migration`:
+            // the notes hashed into the recorded consent are the notes
+            // bound (issue #2493, finding 11).
+            let plan = {
+                let mut wallet = self.wallet().write().await;
+                let plan = wallet.plan_ironwood_migration_now(account)?;
+                if plan.is_split() {
+                    // Invoking the one-call constitutes consent to the
+                    // current plan. Record the binding if this is a fresh
+                    // migration.
                     if wallet.migration.is_none() {
                         let params = MigrationParams::provisional(wallet.chain_type());
                         wallet.migration = Some(MigrationState {
@@ -1035,11 +1043,12 @@ impl LightClient {
                         let current_bucket =
                             schedule::bucket_index(now_height, state.params.bucket_modulus);
                         // Immediate mode: everything sends now, in the
-                        // current bucket.
+                        // current bucket, explicitly immediate.
                         for part in state.parts.iter_mut() {
                             match part.state {
-                                PartState::Bound => part.assign(current_bucket)?,
-                                PartState::Assigned => part.shift(current_bucket)?,
+                                PartState::Bound | PartState::Assigned => {
+                                    schedule::place_immediate(part, current_bucket)?;
+                                }
                                 _ => (),
                             }
                         }
@@ -1051,7 +1060,11 @@ impl LightClient {
                     bind?;
                     wallet.refresh_part_witnesses()?;
                 }
+                plan
+            };
 
+            if plan.is_split() {
+                let stranded = plan.stranded;
                 let client = self.migration_broadcast_client()?;
                 let sent = self.broadcast_due_parts_with(&client).await?;
                 self.await_migration_confirmations(&sent).await?;
@@ -1148,6 +1161,57 @@ impl LightClient {
             tokio::time::sleep(CONFIRMATION_POLL_INTERVAL).await;
         }
         Err(MigrationError::SplitConfirmationTimeout.into())
+    }
+}
+
+impl crate::wallet::LightWallet {
+    /// Plans the migration from the wallet's current state: pure over the
+    /// wallet, no lock management of its own. The read-only public planner
+    /// calls it under a read guard; the consent brackets of
+    /// `start_ironwood_migration` and the immediate path call it under the
+    /// same write guard that binds, so the plan hashed and the notes bound
+    /// come from one uninterrupted wallet view (issue #2493, finding 11).
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn plan_ironwood_migration_now(
+        &self,
+        account: zip32::AccountId,
+    ) -> Result<MigrationPlan, crate::wallet::error::WalletError> {
+        let params = MigrationParams::provisional(self.chain_type());
+        // Note-splitting fees depend on whether the transactions confirm at
+        // or after NU6.3 activation (the Orchard bundle's cross-address rules
+        // change the action count).
+        let post_activation = match (
+            self.sync_state.last_known_chain_height(),
+            pepper_sync::wallet::PoolActivation::of(
+                &self.chain_type(),
+                zcash_protocol::ShieldedPool::Ironwood,
+            ),
+        ) {
+            (Some(chain_height), Some(activation)) => chain_height + 1 >= activation.height(),
+            _ => false,
+        };
+        Ok(plan_migration(
+            &self.migration_note_values(account)?,
+            post_activation,
+            &params,
+        ))
+    }
+
+    /// The Ironwood Pool Activation, or the migration-build error every
+    /// migration path shares when the chain never activates NU6.3.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn ironwood_activation(
+        &self,
+    ) -> Result<pepper_sync::wallet::PoolActivation, crate::wallet::error::WalletError> {
+        pepper_sync::wallet::PoolActivation::of(
+            &self.chain_type(),
+            zcash_protocol::ShieldedPool::Ironwood,
+        )
+        .ok_or_else(|| {
+            crate::wallet::error::WalletError::MigrationBuild(
+                "NU6.3 has no activation height".to_string(),
+            )
+        })
     }
 }
 
@@ -1653,50 +1717,54 @@ mod tests {
         assert_eq!(part.state, PartState::Broadcast);
     }
 
-    /// Issue #2493, finding 9: reconcile classifies an overdue *Signed*
-    /// part into the catch-up cohort, but the catch-up shift loop moves
-    /// only `Assigned` parts and the broadcast due-predicate then rejects
-    /// the Signed part's stale bucket, so a consented catch-up returns
-    /// `Ok` having sent nothing. A still-valid signed transaction (expiry
-    /// not reached) must be submitted by catch-up — observed here through
-    /// the attempt counter, which increments before every submission —
-    /// not silently skipped until expiry forces a rebuild a full bucket
-    /// cycle later.
+    /// Issue #2493, finding 9 (ratified form): an overdue *Signed* part is
+    /// not catch-up material — broadcasting its stale signature would mine
+    /// a permanent lateness fingerprint (cleartext expiry, old anchor)
+    /// into its denomination cohort — and it is never silently skipped
+    /// either: reconcile classifies it awaiting its expiry, visible to
+    /// status, and the privacy-restoring rebuild follows once the
+    /// Spend-Evidence Height passes the expiry.
     #[tokio::test]
-    async fn catch_up_attempts_an_overdue_signed_part() {
+    async fn overdue_signed_part_is_reported_awaiting_expiry_not_skipped() {
         use zcash_protocol::consensus::BlockHeight;
 
-        let (mut wallet, bound_note) = wallet_with_migration_note(600);
+        use crate::wallet::migration::PartClass;
+
+        let (mut wallet, bound_note) = wallet_with_migration_note(700);
         let params = MigrationParams::provisional(wallet.chain_type());
         let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
-        // Bucket 1's window [256, 512) closed at tip 600: overdue. The
-        // expiry lies far ahead, so the signed transaction is still
-        // valid.
+        // Bucket 1's window [256, 512) closed at tip 700, beyond the slip
+        // tolerance: overdue. The expiry lies far ahead, so the signed
+        // transaction is still valid.
         part.assign(1).expect("fresh parts are bound");
+        let expiry = BlockHeight::from_u32(5_000);
         part.mark_signed(
             zcash_primitives::transaction::TxId::from_bytes([7; 32]),
-            BlockHeight::from_u32(5_000),
+            expiry,
             Some(vec![0xAB; 8]),
         )
         .expect("assigned parts sign");
         wallet.migration = Some(scheduled_state(params, vec![part]));
 
         let mut client = LightClient::new_for_test(wallet).await;
-        // A configured (unreachable) broadcast endpoint: submission may
-        // fail, but the attempt must be made and recorded.
-        client.migration_broadcast_uri = Some("http://127.0.0.1:9".parse().unwrap());
-        client
+        let report = client.reconcile_migration().await.expect("reconcile runs");
+        assert_eq!(
+            report.assessments[0].class,
+            PartClass::AwaitingExpiry { expiry },
+            "the overdue signed part must be explicitly awaiting its expiry"
+        );
+
+        // Catch-up has nothing to act on and says so; the part is
+        // untouched, with no broadcast attempted.
+        let sent = client
             .catch_up_migration(std::time::Duration::ZERO)
             .await
             .expect("catch-up runs");
-
+        assert!(sent.is_empty());
         let wallet = client.wallet().read().await;
         let part = &wallet.migration.as_ref().unwrap().parts[0];
-        assert!(
-            part.attempts > 0,
-            "catch-up silently skipped the overdue signed part: no \
-             submission was attempted"
-        );
+        assert_eq!(part.state, PartState::Signed, "the signature is kept");
+        assert_eq!(part.attempts, 0, "no lateness fingerprint is broadcast");
     }
 
     /// Issue #2493, finding 10: `value_migrated` reports the account's
