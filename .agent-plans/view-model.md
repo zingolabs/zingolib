@@ -196,7 +196,19 @@ to the view's to_string(). The ci-pr nym-feature job grows
 -D warnings green across the three crates, 2 mixnet tests pass,
 default build unaffected, fmt clean.
 
-Remaining increments: (5) glossary (zingo-viewmodel/CONTEXT.md,
-CONTEXT-MAP entry, zingolib glossary corrections) + ADR 0013
-(decisions 7-8); then PR with base `view-model` (stacked, decision
-Q11).
+## Implementation — increment 5 (DONE 2026-07-21): the documentation layer
+
+Decisions 7-8 executed: `zingo-viewmodel/CONTEXT.md` created (View-model
+domain glossary: Editorial Reduction, ValueTransfer, Self-Send,
+Memo-to-Self, Text-only Memo Policy, Finsight, Mixnet Status View);
+CONTEXT-MAP.md now lists three contexts; zingolib's "Summary / Display"
+section became "Summary" (Canonical Reduction + the privilege/no-
+reasonable-disagreement test defined; TransactionSummary re-described;
+ValueTransfer moved out); ADR 0013 written
+(docs/adr/0013-editorial-reductions-in-zingo-viewmodel.md).
+
+All five increments are DONE. Remaining: PR with base `view-model`
+(stacked, decision Q11) — the user drives push/PR creation. Note for
+the nym session: zingolib/CONTEXT.md's Witness Rotation entry still
+describes the superseded single-pick failover (the escalating fan-out
+replaced it); that correction belongs to the nym arc, not this branch.

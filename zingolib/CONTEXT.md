@@ -157,13 +157,13 @@
 
 ---
 
-## Summary / Display
+## Summary
 
-**TransactionSummary** — A snapshot of a single wallet transaction for display purposes. Not used for internal wallet logic.
+**Canonical Reduction** — A derivation over wallet data that belongs in this library because both hold: computing it correctly needs privilege (wallet secrets, protocol constants, or chain state the consumer doesn't cheaply have), and no two reasonable consumers could legitimately want a different answer. Everything else is an Editorial Reduction and lives in the view-model domain (`zingo-viewmodel/CONTEXT.md`).
 
-**ValueTransfer** — A single directional movement of funds within a transaction: received, sent, shielded, or self-sent.
+**TransactionSummary** — The Canonical Reduction of a single wallet transaction: classification, values, fees, and per-output detail, with memos carried losslessly typed. A snapshot, never used for internal wallet logic; consumers — including the view-model domain's ValueTransfer derivation — build their own views from it.
 
-**TransactionSummaries / ValueTransfers** — Ordered collections of their respective types.
+**TransactionSummaries** — The ordered collection of TransactionSummary values.
 
 ---
 

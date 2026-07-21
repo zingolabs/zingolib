@@ -1,6 +1,6 @@
 # Context map
 
-This repository holds two bounded contexts, each with its own glossary.
+This repository holds three bounded contexts, each with its own glossary.
 A term's meaning is defined by its context's `CONTEXT.md`; when the same
 word appears in both, each context's definition governs within that
 context.
@@ -11,6 +11,14 @@ The domain of the shipped artifacts: the wallet, its keys, pools,
 sync engine, send flow, and consumers (zingo-mobile, zingo-cli).
 
 - Glossary: [`zingolib/CONTEXT.md`](zingolib/CONTEXT.md)
+
+## View-model domain
+
+The presentation domain: the editorial reductions consumers show to
+users, derived from the wallet-library domain's canonical data. The
+wallet-library domain never depends on it.
+
+- Glossary: [`zingo-viewmodel/CONTEXT.md`](zingo-viewmodel/CONTEXT.md)
 
 ## Test infrastructure
 
