@@ -446,6 +446,39 @@ mod tests {
     /// sits in bucket 39.
     const TIP_BUCKET: u64 = 10_000 / 256;
 
+    /// Issue #2493, finding 8: a migration whose every part is terminal
+    /// and whose replannable balance is zero must reach a terminal
+    /// recommendation. An `Invalidated` part with nothing left to replan
+    /// currently satisfies neither `MarkComplete` (not every part is
+    /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
+    /// reconcile recommends nothing forever and the stuck state blocks
+    /// both the immediate migration and the drain until the user finds
+    /// `cancel`.
+    #[test]
+    fn terminal_parts_with_nothing_replannable_reach_complete() {
+        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
+        confirmed
+            .mark_confirmed(BlockHeight::from_u32(9_000))
+            .unwrap();
+        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
+        invalidated.mark_invalidated().unwrap();
+        let state = scheduled_state(vec![confirmed, invalidated]);
+
+        // The default view's confirmed-spendable Orchard balance is zero:
+        // nothing remains to replan.
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|action| matches!(action, RecommendedAction::MarkComplete { .. })),
+            "every part is terminal and nothing is replannable, yet the \
+             migration cannot conclude: {:?}",
+            report.actions,
+        );
+    }
+
     #[test]
     fn future_and_open_windows_are_on_track() {
         let state = scheduled_state(vec![
