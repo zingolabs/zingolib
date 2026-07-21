@@ -24,13 +24,24 @@ the original records `i: 45_000` where the twin asserts `i: 55_000`,
 `s: 5_000 t: 5_000` against `s: 10_000 t: 10_000`, `i: 485_000`
 against `i: 500_000`, through `s: 340_000` against `s: 395_000`; row
 5's original records `i: 5_000` where the twin asserts `i: 15_000`).
-Either the originals' recorded values are stale or the mock chain's
-fee/ledger model diverges from a live chain, and only a live run can
-adjudicate. Both originals are therefore restored with the
-five-character macro repair (`i: 0` → `i: $i`), their recorded values
-untouched, and rows 5 and 8 stand in dispute until the next
-extra-credit run lets the chain decide. The prior "assertion-identical"
-verdicts for these rows were false and are withdrawn.
+Either the originals' recorded values were stale or the mock chain's
+fee/ledger model diverges from a live chain, and only a live run could
+adjudicate. Both originals were therefore restored with the
+five-character macro repair (`i: 0` → `i: $i`), and three live
+container runs adjudicated the dispute the same day. The chain ruled
+for the twins' fee model — a V6 ironwood spend carries no separate
+orchard-bundle-view charge — so the originals' rewritten ledgers
+(which had assumed that phantom charge and shrunk their send amounts
+to fit it) were corrected to the twins' amounts and arithmetic, and
+both originals now pass live. One genuine live-mock divergence
+surfaced at row 8's step 10: the live proposer selects ironwood alone
+for the transparent-destination drain (sapling stays put) and refuses
+the exact two-pool drain of 470_000 the mock accepts — exact drains
+are pricing-shape-sensitive live — so the live original drains 465_000
+at fee 15_000 and forks from the twin from that step onward, every
+subsequent cell chain-adjudicated through the 190_000 fee total. The
+prior "assertion-identical" verdicts for these rows were false and are
+withdrawn; the fork is now the documented record.
 
 **Census note:** the move takes the eight originals out of the default
 suite, so the default non-ignored census drops by eight relative to the
@@ -76,10 +87,10 @@ outputs decrypt and spend like real ones.
 | 2 | slow::sapling_dust_fee_collection | proposal_shape::sapling_dust_is_not_collected_toward_fees | EQUIVALENT-CORE |
 | 3 | fast::mine_to_transparent_and_shield | built_transaction_shape::four_coin_shield_builds_and_nets_input_minus_fee | NARROWED-BUT-SHARPENED; live stays load-bearing |
 | 4 | slow::zero_value_receipts | mock_chain_tests::zero_value_receipts | EQUIVALENT (assertion-identical) |
-| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | LEDGER DISPUTED (macro repaired 2026-07-21; records disagree — next live run adjudicates) |
+| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical; ledger adjudicated live 2026-07-21) |
 | 6 | slow::self_send_to_t_displays_as_one_transaction | mock_chain_tests::self_send_to_t_displays_as_one_transaction | EQUIVALENT (assertion-identical) |
 | 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT-CORE, one documented literal divergence |
-| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | LEDGER DISPUTED (macro repaired 2026-07-21; records disagree from step 4 on — next live run adjudicates) |
+| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT-CORE; step-10 ledger fork adjudicated live 2026-07-21 (live proposer drains single-pool, refuses the mock's exact drain) |
 
 **1 — multi-note gathering.** The twin asserts strictly more than the
 live original at proposal time: exact selection (both 40_000 notes),
@@ -108,9 +119,9 @@ original additionally proves zebra relays a zero-value output.
 **5 — value-transfer fees.** Identical balance and composite-fee
 (25_000) assertions; the twin's self-receipts (own taddr, own sapling)
 arrive through genuine scanning of mock blocks, exercising the same
-wallet paths. *Ledger disputed since the 2026-07-21 macro repair (see
-the amendment above): the original records `i: 5_000` where the twin
-asserts `i: 15_000`; the next live run adjudicates.*
+wallet paths. *Adjudicated live 2026-07-21 (see the amendment above):
+the chain confirmed the twin's `i: 15_000`, and the repaired original
+passes with the identical ledger.*
 
 **6 — self-send display.** Identical flow (incoming mixed send mined in
 the same block as the wallet's own mixed self-send) and the same
@@ -130,10 +141,15 @@ funding source, both shields (including the two-coin shield), the two
 InsufficientFunds refusals with identical shortfall numbers (20_000 and
 60_000 against available 0), per-step balances, and the cumulative
 205_000 confirmed-fee total. Live-only residue: zebra accepting each of
-the twelve broadcasts. *Ledger disputed since the 2026-07-21 macro
-repair (see the amendment above): the records disagree in every column
-from step 4 onward, and the twin carries one more bump call than the
-original; the next live run adjudicates.*
+the twelve broadcasts. *Adjudicated live 2026-07-21 (see the amendment
+above): steps 1-9 are assertion-identical under the chain-confirmed fee
+model; from step 10 the ledgers fork deliberately — the live proposer
+drains ironwood alone (465_000, fee 15_000) where the mock accepts the
+exact two-pool drain (470_000, fee 30_000) — and every live cell
+through the 190_000 fee total is chain-adjudicated. The fork is a
+documented mock limitation: exact drains are pricing-shape-sensitive
+live, and the mock's funding shapes evidently differ enough to mask
+it.*
 
 **Status (2026-07-08): `#[ignore]`d pending zingolabs/zingolib#2447.**
 This twin's step-1 funding is purely transparent, and pepper-sync's
