@@ -29,30 +29,43 @@
 //!   (`eu2.` and `jp.` were dead).
 //!
 //! Distinct-operator status is inferred from domains and confirmed as far as
-//! observable — the 14 entries resolve to 14 unrelated IPs — but operator
-//! identity is ultimately self-asserted, and a sybil operator running several
-//! entries would weaken rotation. Operational vetting of this list (liveness
-//! over time, relay honesty, operator diversity) is a tracked follow-up; see
+//! observable — the entries resolve to unrelated IPs — but operator identity
+//! is ultimately self-asserted, and a sybil operator running several entries
+//! would weaken rotation. Operational vetting of this list (liveness over
+//! time, relay honesty, operator diversity) is a tracked follow-up; see
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
+//!
+//! # Port-443 restriction
+//!
+//! This list carries only Transmission targets reached over the mixnet, so an
+//! endpoint the mixnet cannot reach is worse than useless — it wastes fan-out
+//! rounds on a certain failure. A 2026-07-21 paired clearnet/mixnet probe (the
+//! `nym probe` diagnostic) found a clean split: every port-443 witness answered
+//! over the mixnet, while all three port-9067 witnesses
+//! (`lwd.zcashexplorer.app`, `zec.alexxiy.top`, `carover0.xyz`) completed the
+//! SOCKS5 tunnel but then failed the TLS handshake with an EOF — the mixnet
+//! exit gateways relay the standard 443 but mishandle the non-standard
+//! lightwalletd port. Their clearnet TLS works, so this is a mixnet-reachability
+//! property, not a dead host; because the list is mixnet-only, they are
+//! excluded. Any future entry MUST be port 443 for the same reason, a rule the
+//! `every_entry_is_port_443` test enforces.
 
 #![forbid(unsafe_code)]
 
 use http::Uri;
 
-/// Curated broadcast targets (mainnet): every publicly reachable indexer
-/// found by the 2026-07-21 discovery sweep, one endpoint per operator. See
-/// the module docs for provenance and the operator-diversity rationale.
+/// Curated broadcast targets (mainnet): the publicly reachable indexers found
+/// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
+/// those the mixnet can actually reach. See the module docs for provenance,
+/// the operator-diversity rationale, and the port-443 restriction.
 pub const BROADCAST_INDEXERS: &[&str] = &[
     "https://zec.rocks:443",
     "https://us.zec.stardust.rest:443",
     "https://zec-node.cakewallet.com:443",
-    "https://lwd.zcashexplorer.app:9067",
     "https://lightwalletd.mainnet.cipherscan.app:443",
     "https://lwd.z0n.jp:443",
     "https://l.ombie.cash:443",
     "https://zec.0xrpc.io:443",
-    "https://zec.alexxiy.top:9067",
-    "https://carover0.xyz:9067",
     "https://myzec.cryptover.site:443",
     "https://zcashlw.devshore.ovh:443",
     "https://znode.roamerx.win:443",
@@ -78,6 +91,21 @@ mod tests {
             BROADCAST_INDEXERS.len(),
             "every broadcast URI must parse"
         );
+    }
+
+    #[test]
+    fn every_entry_is_port_443() {
+        // The mixnet exit gateways relay 443 but mishandle non-standard ports
+        // (2026-07-21 paired probe: every port-9067 witness failed the
+        // TLS handshake over the tunnel). Since this list is mixnet-only, a
+        // non-443 entry is a guaranteed fan-out failure. See the module docs.
+        for entry in broadcast_indexers() {
+            assert_eq!(
+                entry.port_u16(),
+                Some(443),
+                "broadcast entry {entry} must be port 443 to traverse the mixnet"
+            );
+        }
     }
 
     #[test]

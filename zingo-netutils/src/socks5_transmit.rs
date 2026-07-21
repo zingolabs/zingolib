@@ -173,7 +173,15 @@ async fn connect_via_socks5(
             detail: e.to_string(),
         })?
         .tcp_nodelay(true)
-        .timeout(timeout);
+        // `timeout` bounds each RPC; `connect_timeout` bounds the channel
+        // establishment — critically the TLS handshake tonic runs on top of
+        // the SOCKS5 tunnel, which the connector's own per-phase timeouts do
+        // not cover. Without this a witness that completes the tunnel but
+        // stalls the handshake (observed: a lightwalletd on a non-standard
+        // port the mixnet exit mishandles) hangs for minutes instead of
+        // failing over.
+        .timeout(timeout)
+        .connect_timeout(timeout);
     if is_https {
         endpoint = endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())

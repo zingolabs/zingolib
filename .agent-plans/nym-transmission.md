@@ -974,6 +974,35 @@ module housing the socks5 helpers), zingolib/src/nym/* (probe, history),
 zingolib/src/lightclient/send.rs, zingolib/src/lightclient.rs (handle
 wiring), zingo-cli/src/commands.rs (nym probe|history), this file.
 
+## Implementation — increment 15 (DONE 2026-07-21): connect-timeout + port-443 prune
+
+`nym probe` (increment 14) run live against all 14 witnesses delivered a
+clean diagnosis AND exposed a bug: 11/14 succeed over the mixnet
+(including zec.rocks), and the 3 failures are EXACTLY the port-9067 hosts
+(lwd.zcashexplorer.app, zec.alexxiy.top, carover0.xyz), each "tls
+handshake eof" AFTER the tunnel established — the mixnet exit gateways
+relay 443 but mishandle 9067 (clearnet TLS to them works, so it is a
+mixnet-reachability property, not a dead host). This confirms the
+user's original six-way all-fail was the dead proxy child (^C), since
+most witnesses now work.
+
+BUG (fixed): those failures took 303s each, not the intended 20s.
+connect_via_socks5's per-phase timeouts bound only the SOCKS5 socket
+legs; the TLS handshake tonic runs ON TOP of the tunnel was unbounded.
+Added `.connect_timeout(timeout)` to the endpoint — covers BOTH the
+probe and the send path (shared helper), so a bad witness now fails over
+in 20s instead of stalling a send arm for 5 minutes. This is the likely
+real cause of the earlier "confirm feels hung". Also hardened the
+probe's clearnet leg (GrpcIndexer::new connects eagerly with no timeout)
+by wrapping construction+RPC in tokio::time::timeout.
+
+LIST PRUNE: the 3 port-9067 entries removed from BROADCAST_INDEXERS
+(mixnet-only list, so a mixnet-unreachable entry only wastes fan-out
+rounds); 11 port-443 operators remain, ample for cap-6 rotation. New
+`every_entry_is_port_443` regression test + module-doc provenance pin the
+rule. Verified: netutils clippy/fmt, zingolib nym broadcast_indexers 3
+tests + clippy -D warnings green.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

@@ -57,13 +57,23 @@ async fn clearnet_leg(
     host: &str,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = match GrpcIndexer::new(indexer.clone()).await {
-        Ok(mut grpc) => grpc
-            .get_lightd_info(timeout)
+    // `GrpcIndexer::new` connects eagerly with no connect timeout of its own,
+    // so a black-holing clearnet host would stall this leg past `timeout` and
+    // (through `join_all`) hang the whole probe. Bound construction and the
+    // RPC together.
+    let outcome = match tokio::time::timeout(timeout, async {
+        let mut grpc = GrpcIndexer::new(indexer.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        grpc.get_lightd_info(timeout)
             .await
             .map(|info| summarize(&info))
-            .map_err(|status| format!("{status:?}")),
-        Err(e) => Err(e.to_string()),
+            .map_err(|status| format!("{status:?}"))
+    })
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(_) => Err(format!("clearnet connect timed out after {timeout:.0?}")),
     };
     let leg = ProbeLeg {
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
