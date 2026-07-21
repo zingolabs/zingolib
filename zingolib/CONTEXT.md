@@ -187,9 +187,9 @@
 
 **Mixnet Mode** — The runtime state governing whether Transmission and price-fetch route over the Nym mixnet. Tri-state: off, bootstrapping, or ready, because a client that has enabled the mixnet but not yet reached it is not yet protecting the user. On by default for any connected session and never persisted; a per-session switch to off routes those surfaces over clearnet as informed consent, and while the mode is on a transport failure refuses a send rather than silently dropping to clearnet. An `--offline` session, which never transmits, never bootstraps the mixnet. See `docs/adr/0011-nym-mixnet-transmission.md`.
 
-**Witness Rotation** — The send-privacy property whereby each Transmission's Broadcast Indexer is picked at random, so no single indexer accumulates a record of all the user's sends. Distinct from redundancy: exactly one indexer carries any given send, and a failed submission fails over to a new random indexer rather than fanning out.
+**Witness Rotation** — The send-privacy property whereby each Transmission's Broadcast Indexer is picked at random, so no single indexer accumulates a record of all the user's sends. On the happy path exactly one indexer witnesses a given send; when delivery cannot be confirmed, the send escalates through serially gated rounds of fresh random picks, accepting redundancy only on that failure path, up to a fixed cap of distinct witnesses. This escalation guards against a censoring indexer that accepts a submission but suppresses or misreports the relay. See `docs/adr/0011-nym-mixnet-transmission.md`.
 
-**Broadcast Indexer** — An Indexer used only as a Transmission target, drawn at random from a curated broadcast list kept separate from the sync-server list. Distinct from the sync Indexer that serves compact blocks; decoupling them keeps the address-knowing sync indexer from necessarily witnessing the broadcast.
+**Broadcast Indexer** — An Indexer used only as a Transmission target, drawn at random from a curated broadcast list kept separate from the sync-server list. The list holds one endpoint per operator, since the accumulating party Witness Rotation defends against is the operator, not the DNS name. Distinct from the sync Indexer that serves compact blocks; decoupling them keeps the address-knowing sync indexer from necessarily witnessing the broadcast.
 
 ---
 
