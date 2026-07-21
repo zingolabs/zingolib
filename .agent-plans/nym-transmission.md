@@ -706,6 +706,44 @@ an optional `--waitmixnet` for one-shot sends; and release-packaging integration
 (having the release/distribution build invoke bundle-nym-proxy so shipped
 artifacts carry the proxy).
 
+## Increment 12 (DONE 2026-07-21): populate the Broadcast Indexer list
+
+RESULT: three-way discovery sweep (hosh 2026-04-18 archive snapshot — the
+live tracker is down with a Cloudflare 521; wallet-source server lists
+across 12 repos; forum/ZecHub web sweep) produced 130 candidate endpoints;
+a live GetLightdInfo probe (grpcurl, TLS + plaintext fallback) found
+exactly 19 alive on mainnet — all lightwalletd, all at the same tip
+(3420363), every zaino deployment dead, the lightwalletd.com and
+zcash-infra.com fleets dead, and 8 of the 10 provisional placeholder
+entries dead. Deduped per Q2 to 14 operators (zec.rocks and stardust.rest
+each collapse to one entry; the 14 resolve to 14 unrelated IPs — sybil
+caveat recorded in the module docs for the vetting issue). New regression
+test pins one-endpoint-per-operator by registrable domain. Witness
+Rotation + Broadcast Indexer glossary entries updated per Q3 (fan-out
+wording, operator-diversity sentence); the CONTEXT.md hunk is left
+UNCOMMITTED because the sealed-wallet session holds uncommitted edits
+elsewhere in that file. Mainnet fact from the probe: NU6.3 activation
+height 3428143, tip 3420352 at probe time — Ironwood not yet active.
+Verified: fmt clean, clippy --features nym --all-targets -D warnings
+clean, 22 nym lib tests green.
+
+Grilled and ratified (3 questions, 2026-07-21): (Q1=A) the full discovered
+set of currently-live mainnet indexer endpoints REPLACES the provisional
+`BROADCAST_INDEXERS` and becomes the witness-rotation pool — dead
+discoveries are recorded in comments, not the pool; (Q2=A) ONE endpoint
+per OPERATOR (rotation's accumulating party is the operator, not the DNS
+name), with an operator's other regional variants documented in the module
+comment block for the vetting issue; (Q3=A) the stale Witness Rotation
+glossary entry (still claims "never fans out", contradicting the ratified
+1-2-3 escalating fan-out) is fixed surgically in this session.
+
+File claims for this increment (mine):
+- `zingolib/src/nym/broadcast_indexers.rs` — the populated list + provenance.
+- `zingolib/CONTEXT.md` — ONLY the Witness Rotation / Broadcast Indexer
+  entries (the sealed-wallet session holds uncommitted edits in OTHER
+  sections of this file; re-read before edit, stage explicit paths).
+- `.agent-plans/nym-transmission.md` (this file).
+
 ## Merge-readiness phase (grill, 2026-07-21)
 
 RATIFIED: two merge gates for PR #2470 — (1) the three-stage live smoke
