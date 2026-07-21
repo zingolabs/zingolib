@@ -28,7 +28,7 @@ use rustls::crypto::{CryptoProvider, ring::default_provider};
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::NetworkType;
+use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -970,9 +970,7 @@ pub fn get_value_transfers() -> Result<String, ZingolibError> {
                         .iter()
                         .filter(|s| {
                             s.kind.to_string() == "send-to-self"
-                                && s.pools_sent_from
-                                    .iter()
-                                    .any(|p| p.to_string() == "Orchard")
+                                && s.pools_sent_from.iter().any(|p| p.to_string() == "Orchard")
                                 && !s.ironwood_notes.is_empty()
                         })
                         .map(|s| {
@@ -1078,8 +1076,20 @@ pub fn info_server() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                match lightclient.info().await {
-                    Ok(info) => json::JsonValue::from(info).pretty(2),
+                let info = lightclient.info().await;
+                // Read from the WALLET's chain rather than the server's, so it
+                // agrees with `chain_name_short` and stays right when the two
+                // disagree.
+                let ironwood_activation = ironwood_activation_height(lightclient.chain_type());
+                match info {
+                    Ok(info) => {
+                        let mut val = json::JsonValue::from(info);
+                        val["ironwood_activation_height"] = match ironwood_activation {
+                            Some(height) => height.into(),
+                            None => json::JsonValue::Null,
+                        };
+                        val.pretty(2)
+                    }
                     Err(e) => format!("Error: {e}"),
                 }
             }))
@@ -1087,6 +1097,18 @@ pub fn info_server() -> Result<String, ZingolibError> {
             Err(ZingolibError::LightclientNotInitialized)
         }
     })
+}
+
+/// Ironwood (NU6.3) activation height for `chain`, straight from zingolib's
+/// consensus parameters — mainnet and testnet delegate to `zcash_protocol`'s
+/// table, and regtest reports whatever its `ActivationHeights` were built
+/// with. Sourcing it here keeps the app on exactly the schedule the wallet
+/// backend transacts against, instead of a copy that has to be kept in step by
+/// hand.
+fn ironwood_activation_height(chain: ChainType) -> Option<u32> {
+    chain
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .map(u32::from)
 }
 
 /// The loaded wallet's chain as the short token the JS layer uses
