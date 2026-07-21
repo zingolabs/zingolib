@@ -39,6 +39,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
+    shardtree_ext::ShardTreeExt,
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     utils::{
         get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
@@ -1652,26 +1653,20 @@ impl ShardTrees {
         let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
         let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
-        // `checkpoint` returns false — silently adding nothing — when the
-        // id is not above the store's newest checkpoint. These trees are
-        // freshly created, so a skipped checkpoint would break the
+        // These trees are freshly created, so the initial checkpoint must
+        // be `Added`; a `NotAboveNewest` here would break the
         // initialization invariant that `add_initial_frontier` and
-        // truncation planning rely on; assert it rather than assume it.
-        assert!(
-            sapling
-                .checkpoint(BlockHeight::from_u32(0))
-                .expect("should never fail")
-        );
-        assert!(
-            orchard
-                .checkpoint(BlockHeight::from_u32(0))
-                .expect("should never fail")
-        );
-        assert!(
-            ironwood
-                .checkpoint(BlockHeight::from_u32(0))
-                .expect("should never fail")
-        );
+        // truncation planning rely on.
+        for tree_checkpoint in [
+            sapling.checkpoint_classified(BlockHeight::from_u32(0)),
+            orchard.checkpoint_classified(BlockHeight::from_u32(0)),
+            ironwood.checkpoint_classified(BlockHeight::from_u32(0)),
+        ] {
+            assert_eq!(
+                tree_checkpoint.expect("should never fail"),
+                crate::shardtree_ext::CheckpointOutcome::Added
+            );
+        }
 
         Self {
             sapling,

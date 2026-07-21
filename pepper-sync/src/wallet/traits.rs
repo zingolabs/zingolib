@@ -18,6 +18,7 @@ use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
+use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::truncate::{PoolTruncation, ShardTreeTruncationPlan};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
@@ -424,9 +425,24 @@ where
 {
     match outcome {
         PoolTruncation::Untouched => Ok(()),
-        PoolTruncation::ToCheckpoint if tree.truncate_to_checkpoint(&truncate_height)? => Ok(()),
-        PoolTruncation::ToCheckpoint | PoolTruncation::RequiresRescan => {
-            tracing::error!("{pool} shard tree is broken! Beginning rescan.");
+        PoolTruncation::ToCheckpoint { checkpoint } => {
+            match tree.rollback_to_checkpoint(checkpoint)? {
+                RollbackOutcome::RolledBack => Ok(()),
+                RollbackOutcome::NoSuchCheckpoint => {
+                    tracing::error!(
+                        "{pool} shard tree refused the planned rollback to its checkpoint at \
+                         {checkpoint}! Beginning rescan."
+                    );
+                    Err(SyncError::TruncationError(truncate_height, pool))
+                }
+            }
+        }
+        PoolTruncation::RequiresRescan { newest_checkpoint } => {
+            tracing::error!(
+                "{pool} shard tree holds state up to checkpoint {newest_checkpoint}, above the \
+                 truncation target {truncate_height}, with no checkpoint at the target! \
+                 Beginning rescan."
+            );
             Err(SyncError::TruncationError(truncate_height, pool))
         }
     }
