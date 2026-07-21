@@ -1601,6 +1601,152 @@ mod tests {
         }
     }
 
+    /// Issue #2493, finding 8, the false-invalidation race: the recorded
+    /// chain tip runs ahead of scanning, so an expiry judged against the
+    /// tip can condemn a part whose transaction mined near its expiry but
+    /// whose spend evidence has not been scanned yet. The unattended
+    /// rebuild then erases the part's txid, and when the spend finally
+    /// scans, `part.txid != spending_txid` classifies the part
+    /// `Invalidated` although its own transaction confirmed. A part must
+    /// not be rebuilt while its expiry lies in the unscanned gap.
+    #[tokio::test]
+    async fn spend_evidence_lag_must_not_rebuild_a_broadcast_part() {
+        use pepper_sync::sync::{ScanPriority, ScanRange};
+        use pepper_sync::wallet::SyncState;
+        use zcash_protocol::consensus::BlockHeight;
+
+        let (mut wallet, bound_note) = wallet_with_migration_note(360);
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        part.assign(1).expect("fresh parts are bound");
+        let txid = zcash_primitives::transaction::TxId::from_bytes([7; 32]);
+        part.mark_signed(txid, BlockHeight::from_u32(400), None)
+            .expect("assigned parts sign");
+        part.mark_broadcast().expect("signed parts broadcast");
+        wallet.migration = Some(scheduled_state(params, vec![part]));
+
+        // The wallet has scanned through 360, but header knowledge
+        // reaches 600: the expiry (400) sits inside the unscanned gap,
+        // where the part's transaction may have mined.
+        wallet.sync_state = SyncState::new_for_test(vec![
+            ScanRange::from_parts(
+                BlockHeight::from_u32(6)..BlockHeight::from_u32(361),
+                ScanPriority::Scanned,
+            ),
+            ScanRange::from_parts(
+                BlockHeight::from_u32(361)..BlockHeight::from_u32(601),
+                ScanPriority::Historic,
+            ),
+        ]);
+
+        let mut client = LightClient::new_for_test(wallet).await;
+        client.reconcile_migration().await.expect("reconcile runs");
+
+        let wallet = client.wallet().read().await;
+        let part = &wallet.migration.as_ref().unwrap().parts[0];
+        assert_eq!(
+            part.txid,
+            Some(txid),
+            "rebuilding while the expiry lies in the unscanned gap erases \
+             the txid and invites false invalidation once the spend scans"
+        );
+        assert_eq!(part.state, PartState::Broadcast);
+    }
+
+    /// Issue #2493, finding 9: reconcile classifies an overdue *Signed*
+    /// part into the catch-up cohort, but the catch-up shift loop moves
+    /// only `Assigned` parts and the broadcast due-predicate then rejects
+    /// the Signed part's stale bucket, so a consented catch-up returns
+    /// `Ok` having sent nothing. A still-valid signed transaction (expiry
+    /// not reached) must be submitted by catch-up — observed here through
+    /// the attempt counter, which increments before every submission —
+    /// not silently skipped until expiry forces a rebuild a full bucket
+    /// cycle later.
+    #[tokio::test]
+    async fn catch_up_attempts_an_overdue_signed_part() {
+        use zcash_protocol::consensus::BlockHeight;
+
+        let (mut wallet, bound_note) = wallet_with_migration_note(600);
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        // Bucket 1's window [256, 512) closed at tip 600: overdue. The
+        // expiry lies far ahead, so the signed transaction is still
+        // valid.
+        part.assign(1).expect("fresh parts are bound");
+        part.mark_signed(
+            zcash_primitives::transaction::TxId::from_bytes([7; 32]),
+            BlockHeight::from_u32(5_000),
+            Some(vec![0xAB; 8]),
+        )
+        .expect("assigned parts sign");
+        wallet.migration = Some(scheduled_state(params, vec![part]));
+
+        let mut client = LightClient::new_for_test(wallet).await;
+        // A configured (unreachable) broadcast endpoint: submission may
+        // fail, but the attempt must be made and recorded.
+        client.migration_broadcast_uri = Some("http://127.0.0.1:9".parse().unwrap());
+        client
+            .catch_up_migration(std::time::Duration::ZERO)
+            .await
+            .expect("catch-up runs");
+
+        let wallet = client.wallet().read().await;
+        let part = &wallet.migration.as_ref().unwrap().parts[0];
+        assert!(
+            part.attempts > 0,
+            "catch-up silently skipped the overdue signed part: no \
+             submission was attempted"
+        );
+    }
+
+    /// Issue #2493, finding 10: `value_migrated` reports the account's
+    /// whole confirmed ironwood balance, so ironwood funds from any other
+    /// source — shields, ordinary receives — inflate migration progress,
+    /// potentially past 100%. The migrated value is the sum of confirmed
+    /// part denominations, nothing else.
+    #[tokio::test]
+    async fn value_migrated_counts_only_confirmed_parts() {
+        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
+        use zcash_protocol::consensus::BlockHeight;
+
+        // The wallet holds the migration's bound orchard note AND an
+        // ironwood note from an ordinary receive, unrelated to migration.
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(NOTE_VALUE)
+            .ironwood_note(77_777)
+            .tip(360)
+            .build();
+        let bound_note = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == NOTE_VALUE)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the fabricated note");
+        let mut wallet = wallet;
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        part.assign(1).expect("fresh parts are bound");
+        part.mark_confirmed(BlockHeight::from_u32(300))
+            .expect("the part's transaction confirmed");
+        wallet.migration = Some(scheduled_state(params, vec![part]));
+
+        let client = LightClient::new_for_test(wallet).await;
+        let status = client.migration_status().await.expect("status reads");
+        assert_eq!(
+            status.value_migrated, NOTE_VALUE,
+            "value_migrated must count what migration moved (the confirmed \
+             part denominations), not the account's whole ironwood balance"
+        );
+    }
+
     /// The scheduled flow refuses a plan that still needs note splitting
     /// (issue #2493, finding 1): no production code drives the
     /// [`MigrationPhase::NoteSplitting`] phase, so persisting the state

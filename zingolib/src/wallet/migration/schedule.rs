@@ -225,6 +225,35 @@ mod tests {
             .collect()
     }
 
+    /// Issue #2493, finding 6: consent given before the NU6.3 activation
+    /// must not schedule any part into a bucket whose boundary predates
+    /// the activation — no ironwood output can anchor there, so every
+    /// broadcast attempt skips and the whole consented cohort slides into
+    /// the correlation-disclosed catch-up path. The schedule must respect
+    /// an activation floor. Note splitting is explicitly permitted before
+    /// activation (module doc), so a fully split wallet at a
+    /// pre-activation consent height is a supported state.
+    #[test]
+    fn schedule_respects_the_activation_floor() {
+        let params = params();
+        let mut parts = parts_with_denominations(&[1_000_000, 2_000_000]);
+        // Consent at height 10; the activation lies far above it.
+        let now = BlockHeight::from_u32(10);
+        let activation = BlockHeight::from_u32(1_000);
+
+        plan_schedule(&mut parts, now, &params, &mut rand::rngs::OsRng).unwrap();
+
+        for part in &parts {
+            let boundary = boundary_of(part.bucket_index.unwrap(), params.bucket_modulus);
+            assert!(
+                boundary >= activation,
+                "part {:?} scheduled at boundary {boundary:?}, below the \
+                 NU6.3 activation {activation:?}",
+                part.id,
+            );
+        }
+    }
+
     #[test]
     fn schedule_fills_consecutive_buckets_largest_first() {
         let params = params();
