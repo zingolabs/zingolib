@@ -753,6 +753,20 @@ issues to file: broadcast-list operational vetting, fan-out hardening
 (per-arm retry tuning + independent delivery confirmation), distribution
 UX (--waitmixnet + release packaging).
 
+PROGRESS (2026-07-21, after increment 12): the follow-up issues are FILED
+— #2498 (broadcast-list vetting, seeded with the sweep results + sybil
+caveat), #2499 (fan-out hardening), #2500 (distribution UX). PR #2470's
+title/description REFRESHED to describe the full arc ("feat: transmit and
+fetch price over the Nym mixnet (ADR 0011)"). Branch state: local
+reboot_nym (98f644eed) strictly supersedes zingolabs/reboot_nym (verified:
+no remote commit lacks a local patch-equivalent; the remote tip f1147a737
+is the pre-repair line with red CI), so the PR update is a user-run
+`git push --force-with-lease zingolabs reboot_nym`. Remaining gates, all
+user-driven: the push; smoke stage 1 RE-RUN over the live mixnet (the
+2/3 pass predates the increment 10-11 planner rewrite); stage 2 (makers
+bundle-nym-proxy, run the bundled binary); stage 3 (full wallet session
+over the mixnet); then un-draft + review request.
+
 SMOKE STAGE 1 RESULT (user-run, cargo nextest -- --ignored): 2/3 passed —
 the live SOCKS5 tunnel through the mixnet to zec.rocks:443 works (~8s
 bootstraps). nym_proxy_starts_and_reports_address FAILED at the 120s
