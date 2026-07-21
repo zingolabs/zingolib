@@ -119,6 +119,10 @@ pub struct LightClient {
     /// never serialized, minted by the proposing calls, released when the
     /// proposal is consumed, cleared, or fails to come into existence.
     proposal_quiescence: Option<sync::SyncQuiescence>,
+    /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
+    /// `None` means Mixnet Mode is off.
+    #[cfg(feature = "nym")]
+    mixnet_proxy: Option<crate::nym::MixnetProxy>,
 }
 
 impl LightClient {
@@ -177,6 +181,8 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_quiescence: None,
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 
@@ -202,6 +208,8 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_quiescence: None,
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         }
     }
 
@@ -245,6 +253,8 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_quiescence: None,
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 

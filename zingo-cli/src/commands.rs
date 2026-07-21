@@ -656,13 +656,7 @@ impl Command for CurrentPriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
-            match lightclient
-                .wallet()
-                .write()
-                .await
-                .update_current_price()
-                .await
-            {
+            match lightclient.update_current_price().await {
                 Ok(price) => format!("current price: {price}"),
                 Err(e) => format!("error: {e}"),
             }
@@ -694,8 +688,8 @@ impl Command for NymCommand {
         "Control the Nym mixnet transport (on/off/status)."
     }
 
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        nym_command(args, lightclient)
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(nym_command(args, lightclient)?)
     }
 }
 
