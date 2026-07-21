@@ -28,7 +28,7 @@
 //! either side.
 
 mod unit_test_twins {
-    use pepper_sync::wallet::OrchardNote;
+    use pepper_sync::wallet::IronwoodNote;
     use zcash_primitives::transaction::fees::zip317::{MARGINAL_FEE, MINIMUM_FEE};
     use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, COINBASE_MATURITY_BLOCKS};
@@ -77,10 +77,12 @@ mod unit_test_twins {
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
-                .confirmed_orchard_balance
+                .confirmed_ironwood_balance
                 .unwrap()
                 .into_u64(),
-            // 4 mature coinbases shielded in one step, minus the shield fee.
+            // 4 mature coinbases shielded in one step, minus the shield
+            // fee. The shield confirms after NU6.3 activation, so the
+            // output is an Ironwood note (ADR 0009 era default).
             scenarios::mined_block_rewards_total(4) - 30_000
         );
     }
@@ -117,9 +119,10 @@ mod unit_test_twins {
 
         // The zero-value receipt must not perturb spendable arithmetic:
         // the recipient holds the 100_000 funding note less the 1_000
-        // payment and its 10_000 ZIP-317 fee (one orchard spend, two
-        // logical actions).
-        check_client_balances!(recipient, i: 0 o: 89_000 s: 0 t: 0);
+        // payment and its 10_000 ZIP-317 fee (one ironwood spend, two
+        // logical actions; V6 receipts land in the ironwood pool, ADR
+        // 0009).
+        check_client_balances!(recipient, i: 89_000 o: 0 s: 0 t: 0);
 
         let value_transfers = recipient.value_transfers(true).await.unwrap();
         // The funding receipt.
@@ -130,13 +133,13 @@ mod unit_test_twins {
         );
         // Pinned by observation rather than specification: the zero-value
         // receipt surfaces as a single Received transfer of zero value in
-        // the orchard pool, carried without corruption.
+        // the ironwood pool, carried without corruption.
         assert_eq!(
             value_transfers
                 .iter()
                 .filter(|vt| vt.kind == ValueTransferKind::Received
                     && vt.value == 0
-                    && vt.pools_received == [PoolType::ORCHARD])
+                    && vt.pools_received == [PoolType::IRONWOOD])
                 .count(),
             1
         );
@@ -167,8 +170,7 @@ mod unit_test_twins {
             fee: Some(10_000),
             zec_price: None,
             pools_sent_from: vec![],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 recipient_initial_funds,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
@@ -176,6 +178,7 @@ mod unit_test_twins {
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -208,9 +211,8 @@ mod unit_test_twins {
             value: first_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
-            pools_sent_from: vec![PoolType::ORCHARD],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            pools_sent_from: vec![PoolType::IRONWOOD],
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 99_960_000,
                 SpendStatus::TransmittedSpent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
@@ -218,6 +220,7 @@ mod unit_test_twins {
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -247,14 +250,14 @@ mod unit_test_twins {
             value: first_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
-            pools_sent_from: vec![PoolType::ORCHARD],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            pools_sent_from: vec![PoolType::IRONWOOD],
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 99_925_000,
                 SpendStatus::Unspent,
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -300,14 +303,14 @@ mod unit_test_twins {
             let recipient_wallet = recipient.wallet().read().await;
             assert_eq!(
                 recipient_wallet
-                    .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .unconfirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
                     .unwrap(),
                 expected_funds.try_into().unwrap()
             );
             //  (2) The balance is not yet verified
             assert_eq!(
                 recipient_wallet
-                    .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .confirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
                     .unwrap(),
                 0.try_into().unwrap()
             );
@@ -327,17 +330,15 @@ mod unit_test_twins {
             blockheight: BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 5),
             kind: TransactionKind::Received,
             value: recipient_second_funding,
-            // The observed zip317 fee of the faucet's second-wave funding
-            // send on the Core stack: by this point the faucet's note pool
-            // is fragmented by the earlier waves (and selection is
-            // smallest-first), making this a four-logical-action
-            // transaction. Under the old monolithic legacy-validator
-            // funding it was two actions (10_000).
-            fee: Some(20_000),
+            // The faucet's second-wave funding send is two logical actions
+            // (10_000): the ironwood-era normalization drains the faucet
+            // into one consolidated note, so the fragmentation that once
+            // made this a four-action, 20_000-fee transaction is gone
+            // (adjudicated live 2026-07-21; now agrees with the twin).
+            fee: Some(10_000),
             zec_price: None,
             pools_sent_from: vec![],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
@@ -345,6 +346,7 @@ mod unit_test_twins {
                 0,
                 Some("Second wave incoming".to_string()),
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -379,9 +381,8 @@ mod unit_test_twins {
             value: second_send_to_transparent,
             fee: Some(15_000),
             zec_price: None,
-            pools_sent_from: vec![PoolType::ORCHARD],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            pools_sent_from: vec![PoolType::IRONWOOD],
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 965_000,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
@@ -389,6 +390,7 @@ mod unit_test_twins {
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -420,14 +422,14 @@ TransactionSummary {
             value: second_send_to_sapling,
             fee: Some(20_000),
             zec_price: None,
-            pools_sent_from: vec![PoolType::ORCHARD],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            pools_sent_from: vec![PoolType::IRONWOOD],
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 99_885_000,
                 SpendStatus::Unspent,
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -470,14 +472,14 @@ TransactionSummary {
             value: external_transparent_3,
             fee: Some(15_000),
             zec_price: None,
-            pools_sent_from: vec![PoolType::ORCHARD],
-            ironwood_notes: vec![],
-            orchard_notes: vec![BasicNoteSummary::from_parts(
+            pools_sent_from: vec![PoolType::IRONWOOD],
+            ironwood_notes: vec![BasicNoteSummary::from_parts(
                 930_000,
                 SpendStatus::Unspent,
                 0,
                 None,
             )],
+            orchard_notes: vec![],
             sapling_notes: vec![],
             transparent_coins: vec![],
             outgoing_ironwood_notes: vec![],
@@ -520,7 +522,7 @@ TransactionSummary {
                 .wallet()
                 .read()
                 .await
-                .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                .confirmed_balance::<IronwoodNote>(zip32::AccountId::ZERO)
                 .unwrap(),
             second_wave_expected_funds.try_into().unwrap(),
         );
@@ -618,7 +620,7 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        check_client_balances!(recipient, i: 0 o: for_orchard s: 0 t: 0 );
+        check_client_balances!(recipient, i: for_orchard o: 0 s: 0 t: 0 );
 
         from_inputs::quick_send(
             &mut recipient,
@@ -633,8 +635,8 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        let remaining_orchard = for_orchard - (6 * fee);
-        check_client_balances!(recipient, i: 0 o: remaining_orchard s: 0 t: 0);
+        let remaining_ironwood = for_orchard - (6 * fee);
+        check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
     }
     #[tokio::test]
     async fn list_value_transfers_check_fees() {
@@ -1059,8 +1061,9 @@ TransactionSummary {
 
             // The 50_000 payment plus its 10_000 ZIP-317 fee exceeds either
             // 40_000 note alone, so the send consumed both and returned
-            // 20_000 as change: the arithmetic survived the multi-input spend.
-            check_client_balances!(recipient, i: 0 o: 20_000 s: 0 t: 0);
+            // 20_000 as change: the arithmetic survived the multi-input
+            // spend. V6 receipts and change land in the ironwood pool.
+            check_client_balances!(recipient, i: 20_000 o: 0 s: 0 t: 0);
         }
     }
 }

@@ -43,6 +43,20 @@ subsequent cell chain-adjudicated through the 190_000 fee total. The
 prior "assertion-identical" verdicts for these rows were false and are
 withdrawn; the fork is now the documented record.
 
+**Second amendment (2026-07-21):** the first full sweep of the gated
+suite since the ironwood-era default (ADR 0009) exposed that the *other*
+balance-asserting originals had gone stale the same way — their twins
+were updated when the era flipped, the gated originals were not. Rows
+1, 3, 4, and 7's originals (`send_and_sync_with_multiple_notes`,
+`mine_to_transparent_and_shield`, `zero_value_receipts`,
+`send_to_transparent_and_sapling_maintain_balance`, plus
+`sapling_dust_fee_collection`) were corrected to ironwood-pool
+placement — every change a pool flip with fee arithmetic unchanged,
+guided by their continuously-validated twins — and the whole suite now
+passes live, 51 of 51. The lesson stands recorded: a gated suite's
+assertions rot silently across era flips, and only its scheduled run
+adjudicates them.
+
 **Census note:** the move takes the eight originals out of the default
 suite, so the default non-ignored census drops by eight relative to the
 protection audit's 274 (they remain runnable, verbatim, behind the
@@ -89,7 +103,7 @@ outputs decrypt and spend like real ones.
 | 4 | slow::zero_value_receipts | mock_chain_tests::zero_value_receipts | EQUIVALENT (assertion-identical) |
 | 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical; ledger adjudicated live 2026-07-21) |
 | 6 | slow::self_send_to_t_displays_as_one_transaction | mock_chain_tests::self_send_to_t_displays_as_one_transaction | EQUIVALENT (assertion-identical) |
-| 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT-CORE, one documented literal divergence |
+| 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT (assertion-identical since 2026-07-21; the second-wave fee divergence closed with the era flip) |
 | 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT-CORE; step-10 ledger fork adjudicated live 2026-07-21 (live proposer drains single-pool, refuses the mock's exact drain) |
 
 **1 — multi-note gathering.** The twin asserts strictly more than the
@@ -130,10 +144,12 @@ txid-uniqueness contract.
 **7 — maintain balance.** The full TransactionSummary-equality pinning
 survives, including the Transmitted(target)→Confirmed transition of an
 unmined send and the abandon-art recipient encodings, at renumbered
-heights. ONE literal diverges: the second funding wave's recipient-side
-fee is Some(10_000) offline versus Some(20_000) live — that number
-belongs to the live faucet's fragmented note pool, not to recipient
-behavior. Live-only residue: real mempool timing across the
+heights. The one former literal divergence — the second funding wave's
+recipient-side fee, Some(10_000) offline versus Some(20_000) live —
+closed on 2026-07-21: the ironwood-era faucet normalization drains the
+faucet into one consolidated note, so the fragmentation that made the
+live wave a four-action transaction is gone and both records assert
+Some(10_000). Live-only residue: real mempool timing across the
 mid-flight assertions.
 
 **8 — pool-promotion ledger.** All sixteen steps carry over: every
