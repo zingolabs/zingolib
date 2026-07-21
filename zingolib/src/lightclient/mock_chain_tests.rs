@@ -77,62 +77,6 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
-/// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
-/// original kept as the control): a zero-value receipt must surface as
-/// exactly one Received{0, Orchard} value transfer and must not perturb
-/// spendable arithmetic across a subsequent send.
-#[tokio::test]
-async fn zero_value_receipts() {
-    use crate::wallet::summary::data::{SentValueTransfer, ValueTransferKind};
-
-    let mut net = MockNet::launch().await;
-    let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-        .await;
-    let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
-    // The zero-value receipt, in its own block as on the live chain.
-    fund(&net, vec![(&recipient_ua, 0, None)], 1).await;
-
-    recipient.sync_and_await().await.unwrap();
-    from_inputs::quick_send(
-        &mut recipient,
-        vec![(&external_address(PoolType::IRONWOOD), 1_000, None)],
-    )
-    .await
-    .unwrap();
-    net.chain.write().await.mine_mempool();
-    net.chain.write().await.mine_empty_blocks(1);
-    recipient.sync_and_await().await.unwrap();
-
-    // Identical to the live pin: the recipient holds the 100_000 funding
-    // note less the 1_000 payment and its 10_000 ZIP-317 fee.
-    check_client_balances!(recipient, i: 89_000 o: 0 s: 0 t: 0);
-
-    let value_transfers = recipient.value_transfers(true).await.unwrap();
-    assert!(
-        value_transfers
-            .iter()
-            .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000)
-    );
-    assert_eq!(
-        value_transfers
-            .iter()
-            .filter(|vt| vt.kind == ValueTransferKind::Received
-                && vt.value == 0
-                && vt.pools_received == [PoolType::IRONWOOD])
-            .count(),
-        1
-    );
-    assert!(value_transfers.iter().any(|vt| {
-        vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
-            && vt.value == 1_000
-            && vt.transaction_fee == Some(10_000)
-    }));
-}
-
 /// Mock-chain twin of libtonode `slow::list_value_transfers_check_fees`
 /// (live original kept as the control): a two-output cross-pool send to
 /// the wallet's own transparent and sapling addresses costs the exact

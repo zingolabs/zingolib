@@ -1733,6 +1733,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo-status",
+ "zingo-viewmodel",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -4878,6 +4879,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo-status",
+ "zingo-viewmodel",
  "zingo_common_components",
  "zingo_grpc_proxy",
  "zingolib",
@@ -4943,9 +4945,13 @@ dependencies = [
 name = "zingo-viewmodel"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "incrementalmerkletree",
  "json",
+ "orchard",
  "pepper-sync",
  "tokio",
+ "tracing",
  "zcash_client_backend",
  "zcash_primitives",
  "zcash_protocol",

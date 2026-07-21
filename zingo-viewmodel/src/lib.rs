@@ -14,3 +14,14 @@
 //! that preserve the method names, signatures, and JSON shapes they
 //! already use; zingolib itself never depends on this crate. See
 //! `docs/adr/0013-editorial-reductions-in-zingo-viewmodel.md`.
+
+pub mod ext;
+pub mod finsight;
+#[cfg(feature = "testutils")]
+pub mod testutils;
+pub mod value_transfer;
+
+pub use ext::{LightClientViewModelExt, LightWalletViewModelExt};
+pub use value_transfer::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
+};

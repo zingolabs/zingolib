@@ -27,6 +27,7 @@ use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_viewmodel::LightClientViewModelExt as _;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;

@@ -14,6 +14,8 @@
 //! canonicalizes object key order before comparison. Value equality is the
 //! real contract there; consumers see random key order today too.
 
+mod common;
+
 use std::str::FromStr as _;
 
 use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
@@ -22,70 +24,14 @@ use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_test_vectors::seeds;
+use zingo_viewmodel::LightWalletViewModelExt as _;
 use zingolib::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
-use zingolib::config::{ChainType, WalletConfig};
+use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
-use zingolib::testutils::default_test_wallet_settings;
 use zingolib::wallet::LightWallet;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
-fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
-    LightWallet::new(
-        ChainType::Regtest(ActivationHeights::default()),
-        WalletConfig::MnemonicPhrase {
-            mnemonic_phrase: mnemonic_phrase.to_string(),
-            no_of_accounts: 1.try_into().unwrap(),
-            birthday: 1,
-            wallet_settings: default_test_wallet_settings(),
-        },
-    )
-    .unwrap()
-}
-
-fn received(txid_byte: u8, height: u32, memos: &[Memo]) -> WalletTransaction {
-    let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
-        txid,
-        ConfirmationStatus::Confirmed(height.into()),
-        memos
-            .iter()
-            .enumerate()
-            .map(|(index, memo)| {
-                IronwoodNote::new_for_test(
-                    OutputId::new(txid, index as u32),
-                    zip32::AccountId::ZERO,
-                    zip32::Scope::External,
-                    OrchardCryptoNoteBuilder::default().build(),
-                    memo.clone(),
-                    None,
-                )
-            })
-            .collect(),
-        vec![],
-    )
-}
-
-fn sent(
-    txid_byte: u8,
-    height: u32,
-    recipient: &zcash_client_backend::address::UnifiedAddress,
-    memo: &str,
-) -> WalletTransaction {
-    let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
-        txid,
-        ConfirmationStatus::Confirmed(height.into()),
-        vec![],
-        vec![OutgoingIronwoodNote::new_for_test(
-            OutputId::new(txid, 0),
-            zip32::AccountId::ZERO,
-            zip32::Scope::External,
-            OrchardCryptoNoteBuilder::default().build(),
-            Memo::from_str(memo).unwrap(),
-            Some(recipient.clone()),
-        )],
-    )
-}
+use common::{received, regtest_wallet, sent};
 
 /// A wallet exercising every editorial classification the goldens pin:
 /// received text/empty/arbitrary memos, a plain send with a memo, a

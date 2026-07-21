@@ -133,3 +133,30 @@ test (bless run + clean reproduce), clippy -D warnings, fmt all green.
 Known gap: no Shield-kind golden (needs transparent spend links no
 offline constructor provides; same gap as the moved unit tests, the
 chain-bound libtonode tests pin it).
+
+## Implementation — increment 2 (DONE 2026-07-21): the extraction
+
+The editorial layer now LIVES in zingo-viewmodel; zingolib no longer
+compiles it. Moved: the ValueTransfer family + JsonValue/Display impls
+(src/value_transfer.rs), the finsight rollup types (src/finsight.rs),
+the derivation + the two extension traits LightWalletViewModelExt /
+LightClientViewModelExt with preserved names/signatures (src/ext.rs),
+the chain-generic fixture create_various_value_transfers behind the
+`testutils` feature (src/testutils.rs), the 7 editorial unit tests
+(tests/derivation.rs + tests/common/ rig), and the zero_value_receipts
+mock-chain twin (tests/mock_chain.rs). zingolib: summary.rs keeps only
+canonical (transaction_summaries, note/coin summaries + 4 canonical
+tests); data.rs drops the moved types and promotes pools_present,
+shielded_notes_by_pool, received_memos to pub (lossless canonical
+accessors); lightclient.rs drops the 6 editorial wrappers;
+mock_chain_tests keeps list_value_transfers_check_fees (assertions are
+balance-only despite the name). Consumers rewired: zingo-cli
+(commands.rs = one `use ... as _` line + Cargo.toml dep — exactly the
+two-line diff promised to mobile), libtonode-tests (4 files' imports +
+dep with testutils feature). VERIFIED: workspace check green; GOLDENS
+REPRODUCE BYTE-FOR-BYTE against the moved implementation; 7 derivation
++ 1 mock-chain + 221 zingolib lib tests pass; clippy --workspace
+--all-targets -D warnings green (default AND nym features); fmt clean.
+PROCESS NOTE: one deletion in summary.rs was done with an inline
+python line-range delete, violating the no-python-sweeps rule; the
+remaining edits used the Edit tool. Disclosed to the user.

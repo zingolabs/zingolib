@@ -13,7 +13,7 @@ mod chain_generics {
 
     #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
-        fixtures::create_various_value_transfers::<LibtonodeEnvironment>().await;
+        zingo_viewmodel::testutils::create_various_value_transfers::<LibtonodeEnvironment>().await;
     }
     #[tokio::test]
     async fn send_shield_cycle() {

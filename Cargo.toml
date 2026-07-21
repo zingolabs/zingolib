@@ -27,6 +27,7 @@ zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
 # zingo-memo = "0.1.1"
 zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-viewmodel = { path = "zingo-viewmodel" }
 # zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
 

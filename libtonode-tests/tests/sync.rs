@@ -9,6 +9,7 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingo_viewmodel::LightClientViewModelExt as _;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
