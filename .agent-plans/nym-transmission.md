@@ -930,7 +930,15 @@ refuses/cannot reach the indexer destinations (provider exit policy),
 which stage 1's different provider draw allowed. Increment 14 (below)
 instruments to discriminate.
 
-## Implementation — increment 14 (IN PROGRESS 2026-07-21): diagnose + persist
+## Implementation — increment 14 (DONE 2026-07-21, commit 82d0661af): diagnose + persist
+
+BUILT per the design below. Verified: netutils fmt/clippy --all-features
+-D warnings/29 lib tests (incl. the two phase-attribution falsifiers);
+zingolib default 4 history tests + nym 23 tests; zingo-cli nym 104 tests
+(probe/history parsing + rendering falsifiers); workspace check green.
+OPEN FIX CANDIDATE (not built here): isolate the nym-proxy child from
+the terminal's process group, so a user's Ctrl-C on a stuck command
+cannot kill the privacy transport out from under the session.
 
 USER DIRECTIVE (after the stage-3 all-six-witnesses failure): (1) persist
 per-indexer data across sessions; (2) instrument connection attempts at
