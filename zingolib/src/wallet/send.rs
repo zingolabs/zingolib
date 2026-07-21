@@ -10,7 +10,7 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
@@ -119,18 +119,15 @@ impl LightWallet {
 /// Each pool's commitment tree only starts at its activation height. Sapling and
 /// Orchard implicitly rely on `wallet_birthday >= activation` (this applies for all current
 /// wallets). Ironwood makes the invariant explicit because wallets created before NU6.3
-/// can hold Ironwood notes immediately after activation.
+/// can hold Ironwood notes immediately after activation. The activation is the Pool
+/// Activation derivation (ADR 0012), never a local mapping.
 fn effective_pool_birthday(
     birthday: BlockHeight,
     params: &impl Parameters,
     pool: ShieldedPool,
 ) -> BlockHeight {
-    let activation = match pool {
-        ShieldedPool::Ironwood => params.activation_height(NetworkUpgrade::Nu6_3),
-        ShieldedPool::Orchard => params.activation_height(NetworkUpgrade::Nu5),
-        ShieldedPool::Sapling => params.activation_height(NetworkUpgrade::Sapling),
-    };
-    activation.map_or(birthday, |a| a.max(birthday))
+    pepper_sync::wallet::PoolActivation::of(params, pool)
+        .map_or(birthday, |activation| activation.max_with(birthday))
 }
 
 fn check_note_shards_are_scanned(
