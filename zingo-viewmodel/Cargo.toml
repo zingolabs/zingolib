@@ -9,6 +9,9 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [features]
+# Presentation of Mixnet Mode (ADR 0011) for consumers of the nym-gated
+# zingolib surface.
+nym = ["zingolib/nym"]
 # Chain-generic fixtures for the editorial layer, for integration-test
 # crates that drive them against a LocalNet.
 testutils = ["zingolib/testutils", "dep:tracing"]

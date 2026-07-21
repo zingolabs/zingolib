@@ -123,10 +123,13 @@ jobs:
           fi
 
       - name: Clippy
-        run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
+        run: cargo clippy -p zingolib -p zingo-cli -p zingo-viewmodel --features nym --all-targets -- -D warnings
 
       - name: Test the nym module
         run: "cargo test -p zingolib --features nym --lib nym::"
+
+      - name: Test the mixnet status view
+        run: "cargo test -p zingo-viewmodel --features nym --lib mixnet::"
 
   run-doc-tests:
     name: Run doc tests

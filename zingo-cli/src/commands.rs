@@ -772,24 +772,12 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
-    use zingolib::nym::MixnetMode;
+    use zingo_viewmodel::MixnetStatusViewExt as _;
 
     let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
         match subcommand {
-            NymSubCommand::Status => Ok(match lightclient.mixnet_mode() {
-                MixnetMode::Off => {
-                    "Mixnet Mode: off (send and price-fetch use clearnet)".to_string()
-                }
-                MixnetMode::Bootstrapping => {
-                    "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
-                        .to_string()
-                }
-                MixnetMode::Ready => match lightclient.mixnet_socks5_addr() {
-                    Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
-                    None => "Mixnet Mode: ready".to_string(),
-                },
-            }),
+            NymSubCommand::Status => Ok(lightclient.mixnet_status_view().to_string()),
             NymSubCommand::On { path } => {
                 let path = resolve_proxy_path(path.as_deref());
                 lightclient

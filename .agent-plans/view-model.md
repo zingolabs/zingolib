@@ -182,7 +182,21 @@ PRE-EXISTING, fires without these changes, and is outside CI's gates);
 canonical summary tests 4/4, mock-chain 7/7 incl. the re-typed pinning
 test; fmt clean.
 
-Remaining increments: (4) MixnetStatusView + cli `nym status` rewiring
-(decision 6); (5) glossary (zingo-viewmodel/CONTEXT.md, CONTEXT-MAP
-entry, zingolib glossary corrections) + ADR 0013 (decisions 7-8);
-then PR with base `view-model` (stacked, decision Q11).
+## Implementation — increment 4 (DONE 2026-07-21): MixnetStatusView
+
+zingo-viewmodel gains the nym-gated mixnet presentation (decision 6):
+`nym = ["zingolib/nym"]` feature; src/mixnet.rs with
+MixnetStatusView { mode, socks5_addr }, a Display carrying the CLI's
+exact `nym status` wording (pinned byte-identical by a unit test), a
+JsonValue impl ({"mode", "socks5_addr"}) for mobile, and
+MixnetStatusViewExt::mixnet_status_view() on LightClient. zingo-cli's
+nym feature forwards zingo-viewmodel/nym and the Status arm collapsed
+to the view's to_string(). The ci-pr nym-feature job grows
+-p zingo-viewmodel and a mixnet:: test step. VERIFIED: nym clippy
+-D warnings green across the three crates, 2 mixnet tests pass,
+default build unaffected, fmt clean.
+
+Remaining increments: (5) glossary (zingo-viewmodel/CONTEXT.md,
+CONTEXT-MAP entry, zingolib glossary corrections) + ADR 0013
+(decisions 7-8); then PR with base `view-model` (stacked, decision
+Q11).

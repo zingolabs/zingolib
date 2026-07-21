@@ -17,11 +17,15 @@
 
 pub mod ext;
 pub mod finsight;
+#[cfg(feature = "nym")]
+pub mod mixnet;
 #[cfg(feature = "testutils")]
 pub mod testutils;
 pub mod value_transfer;
 
 pub use ext::{LightClientViewModelExt, LightWalletViewModelExt};
+#[cfg(feature = "nym")]
+pub use mixnet::{MixnetStatusView, MixnetStatusViewExt};
 pub use value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
 };
