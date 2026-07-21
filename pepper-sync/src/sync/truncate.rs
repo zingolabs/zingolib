@@ -346,4 +346,117 @@ mod test {
         assert!(matches!(plan, TruncationPlan::Truncate { height, .. }
             if height == BlockHeight::from_u32(6)));
     }
+
+    /// The planner agrees with an independently stated reference model
+    /// over its entire input space (heights bounded at `MAX`), and
+    /// satisfies the class-level safety property that motivated this
+    /// module: a tree recording nothing above the target is never
+    /// condemned to rescan. The planner's inputs are small enough to
+    /// enumerate exhaustively, so no property-testing dependency is
+    /// needed and no case is left to sampling.
+    #[test]
+    fn exhaustive_sweep_matches_the_reference_model() {
+        const MAX: u32 = 6;
+        let heights = || (0..=MAX).map(BlockHeight::from_u32);
+        let newest_choices = || std::iter::once(None).chain(heights().map(Some));
+
+        for birthday in heights() {
+            for highest_scanned_height in heights() {
+                for target in heights() {
+                    for has_checkpoint_at_target in [false, true] {
+                        for newest_checkpoint in newest_choices() {
+                            let each = TreeTruncationFacts {
+                                has_checkpoint_at_target,
+                                newest_checkpoint,
+                            };
+                            let plan = plan_truncation(
+                                WalletTruncationState {
+                                    birthday,
+                                    highest_scanned_height,
+                                },
+                                tree_state(each),
+                                target,
+                            );
+
+                            // The reference model, stated independently
+                            // of the implementation.
+                            if target == consensus::H0 || target < birthday {
+                                assert_eq!(plan, TruncationPlan::ClearAll);
+                                continue;
+                            }
+                            if target > highest_scanned_height {
+                                assert_eq!(plan, TruncationPlan::NoOp);
+                                continue;
+                            }
+                            let TruncationPlan::Truncate { height, trees } = plan else {
+                                panic!("expected Truncate for target {target:?}, got {plan:?}");
+                            };
+                            assert_eq!(height, target);
+
+                            let expected = if has_checkpoint_at_target {
+                                PoolTruncation::ToCheckpoint
+                            } else if newest_checkpoint.is_none_or(|newest| newest <= target) {
+                                PoolTruncation::Untouched
+                            } else {
+                                PoolTruncation::RequiresRescan
+                            };
+                            for outcome in [trees.sapling, trees.orchard, trees.ironwood] {
+                                assert_eq!(outcome, expected);
+                                // The safety property behind the migrated-
+                                // wallet wipe: nothing-above-target is
+                                // never a rescan sentence.
+                                if newest_checkpoint.is_none_or(|newest| newest <= target) {
+                                    assert_ne!(outcome, PoolTruncation::RequiresRescan);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `gather` reports the store's ground truth: the checkpoint facts it
+    /// returns match what the shard-tree stores actually hold, per pool.
+    /// This guards the proxy seam between fact-gathering and planning.
+    #[test]
+    fn gather_reports_store_ground_truth() {
+        // Each tree starts with the height-zero initialization
+        // checkpoint; orchard alone gains checkpoints at 3 and 5.
+        let mut shard_trees = ShardTrees::new();
+        for height in [3u32, 5] {
+            assert!(
+                shard_trees
+                    .orchard
+                    .checkpoint(BlockHeight::from_u32(height))
+                    .unwrap()
+            );
+        }
+
+        let at_five = ShardTreeTruncationState::gather(&shard_trees, BlockHeight::from_u32(5));
+        assert_eq!(
+            at_five.orchard,
+            TreeTruncationFacts {
+                has_checkpoint_at_target: true,
+                newest_checkpoint: Some(BlockHeight::from_u32(5)),
+            }
+        );
+        assert_eq!(
+            at_five.sapling,
+            TreeTruncationFacts {
+                has_checkpoint_at_target: false,
+                newest_checkpoint: Some(BlockHeight::from_u32(0)),
+            }
+        );
+        assert_eq!(at_five.ironwood, at_five.sapling);
+
+        let at_four = ShardTreeTruncationState::gather(&shard_trees, BlockHeight::from_u32(4));
+        assert_eq!(
+            at_four.orchard,
+            TreeTruncationFacts {
+                has_checkpoint_at_target: false,
+                newest_checkpoint: Some(BlockHeight::from_u32(5)),
+            }
+        );
+    }
 }

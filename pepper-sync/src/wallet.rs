@@ -1652,15 +1652,26 @@ impl ShardTrees {
         let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
         let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
-        sapling
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
-        orchard
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
-        ironwood
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
+        // `checkpoint` returns false — silently adding nothing — when the
+        // id is not above the store's newest checkpoint. These trees are
+        // freshly created, so a skipped checkpoint would break the
+        // initialization invariant that `add_initial_frontier` and
+        // truncation planning rely on; assert it rather than assume it.
+        assert!(
+            sapling
+                .checkpoint(BlockHeight::from_u32(0))
+                .expect("should never fail")
+        );
+        assert!(
+            orchard
+                .checkpoint(BlockHeight::from_u32(0))
+                .expect("should never fail")
+        );
+        assert!(
+            ironwood
+                .checkpoint(BlockHeight::from_u32(0))
+                .expect("should never fail")
+        );
 
         Self {
             sapling,

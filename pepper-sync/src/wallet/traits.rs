@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use tokio::sync::mpsc;
 use zip32::DiversifierIndex;
 
+use incrementalmerkletree::Hashable;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
@@ -350,12 +351,9 @@ pub trait SyncShardTrees: SyncWallet {
     fn clear_shard_trees(&mut self) -> Result<(), SyncError<Self::Error>> {
         let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
         tracing::info!("Clearing shard trees.");
-        shard_trees.sapling =
-            ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        shard_trees.orchard =
-            ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        shard_trees.ironwood =
-            ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        shard_trees.sapling = empty_shard_tree();
+        shard_trees.orchard = empty_shard_tree();
+        shard_trees.ironwood = empty_shard_tree();
 
         Ok(())
     }
@@ -373,56 +371,64 @@ pub trait SyncShardTrees: SyncWallet {
         truncate_height: BlockHeight,
         plan: &ShardTreeTruncationPlan,
     ) -> Result<(), SyncError<Self::Error>> {
-        match plan.sapling {
-            PoolTruncation::Untouched => (),
-            PoolTruncation::ToCheckpoint
-                if self
-                    .get_shard_trees_mut()
-                    .map_err(SyncError::WalletError)?
-                    .sapling
-                    .truncate_to_checkpoint(&truncate_height)? => {}
-            PoolTruncation::ToCheckpoint | PoolTruncation::RequiresRescan => {
-                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
-                return Err(SyncError::TruncationError(
-                    truncate_height,
-                    PoolType::SAPLING,
-                ));
-            }
-        }
-        match plan.orchard {
-            PoolTruncation::Untouched => (),
-            PoolTruncation::ToCheckpoint
-                if self
-                    .get_shard_trees_mut()
-                    .map_err(SyncError::WalletError)?
-                    .orchard
-                    .truncate_to_checkpoint(&truncate_height)? => {}
-            PoolTruncation::ToCheckpoint | PoolTruncation::RequiresRescan => {
-                tracing::error!("Orchard shard tree is broken! Beginning rescan.");
-                return Err(SyncError::TruncationError(
-                    truncate_height,
-                    PoolType::ORCHARD,
-                ));
-            }
-        }
-        match plan.ironwood {
-            PoolTruncation::Untouched => (),
-            PoolTruncation::ToCheckpoint
-                if self
-                    .get_shard_trees_mut()
-                    .map_err(SyncError::WalletError)?
-                    .ironwood
-                    .truncate_to_checkpoint(&truncate_height)? => {}
-            PoolTruncation::ToCheckpoint | PoolTruncation::RequiresRescan => {
-                tracing::error!("Ironwood shard tree is broken! Beginning rescan.");
-                return Err(SyncError::TruncationError(
-                    truncate_height,
-                    PoolType::IRONWOOD,
-                ));
-            }
-        }
+        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+        apply_pool_truncation(
+            &mut shard_trees.sapling,
+            plan.sapling,
+            truncate_height,
+            PoolType::SAPLING,
+        )?;
+        apply_pool_truncation(
+            &mut shard_trees.orchard,
+            plan.orchard,
+            truncate_height,
+            PoolType::ORCHARD,
+        )?;
+        apply_pool_truncation(
+            &mut shard_trees.ironwood,
+            plan.ironwood,
+            truncate_height,
+            PoolType::IRONWOOD,
+        )?;
 
         Ok(())
+    }
+}
+
+/// An empty shard tree with the crate's standard checkpoint retention.
+fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+-> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
+where
+    H: Hashable + Clone + PartialEq,
+{
+    ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize)
+}
+
+/// Applies one pool's [`PoolTruncation`] outcome to its shard tree.
+///
+/// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
+/// checkpoint at `truncate_height`; [`PoolTruncation::Untouched`] leaves
+/// the tree alone; [`PoolTruncation::RequiresRescan`] — and a planned
+/// rollback the tree store unexpectedly refuses — becomes
+/// [`SyncError::TruncationError`] naming the pool, so the caller can
+/// fall back to the clear-and-rescan recovery.
+fn apply_pool_truncation<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
+    outcome: PoolTruncation,
+    truncate_height: BlockHeight,
+    pool: PoolType,
+) -> Result<(), SyncError<E>>
+where
+    H: Hashable + Clone + PartialEq,
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    match outcome {
+        PoolTruncation::Untouched => Ok(()),
+        PoolTruncation::ToCheckpoint if tree.truncate_to_checkpoint(&truncate_height)? => Ok(()),
+        PoolTruncation::ToCheckpoint | PoolTruncation::RequiresRescan => {
+            tracing::error!("{pool} shard tree is broken! Beginning rescan.");
+            Err(SyncError::TruncationError(truncate_height, pool))
+        }
     }
 }
 
