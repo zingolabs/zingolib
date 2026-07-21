@@ -112,6 +112,12 @@ pub struct LightClient {
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
+    /// Held while a stored proposal is pending, so the wallet state the
+    /// proposal selected against cannot shift before the send builds it.
+    /// Process-lifetime state beside the stored proposal itself (ADR 0006):
+    /// never serialized, minted by the proposing calls, released when the
+    /// proposal is consumed, cleared, or fails to come into existence.
+    proposal_quiescence: Option<sync::SyncQuiescence>,
 }
 
 impl LightClient {
@@ -169,6 +175,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_quiescence: None,
         })
     }
 
@@ -193,6 +200,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_quiescence: None,
         }
     }
 
@@ -235,6 +243,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_quiescence: None,
         })
     }
 
@@ -435,9 +444,13 @@ impl LightClient {
         self.wallet().read().await.recovery_info()
     }
 
-    /// Clears any stored send proposal.
+    /// Clears any stored send proposal and restores the sync engine to the
+    /// mode it held before the proposal was created — the decline path of
+    /// the two-phase send. Previously the pause a proposal took outlived a
+    /// declined proposal until some later send opted into resuming.
     pub async fn clear_proposal(&mut self) {
         self.wallet().write().await.clear_proposal();
+        self.release_proposal_quiescence(true);
     }
 
     /// Returns `true` if the wallet has unsaved changes.
