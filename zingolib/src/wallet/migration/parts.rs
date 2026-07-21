@@ -330,8 +330,11 @@ pub enum SkipReason {
         boundary: BlockHeight,
     },
     /// The part's boundary predates the NU6.3 activation height, so no
-    /// ironwood output can anchor there. Reconciliation reassigns the part
-    /// once post-activation buckets open.
+    /// ironwood output can anchor there. The schedule's activation floor
+    /// keeps new placements out of this state and the immediate path
+    /// refuses pre-anchorable rounds up front, so it survives only in a
+    /// schedule persisted before the floor existed; such a part heals
+    /// through the overdue classification and the consented catch-up.
     BoundaryBeforeActivation {
         /// The boundary the part anchors to.
         boundary: BlockHeight,
