@@ -222,10 +222,10 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
     // remainder as its residual.
     let report = recipient.reconcile_migration().await.unwrap();
     assert!(
-        report.actions.iter().any(|action| matches!(
-            action,
-            RecommendedAction::MarkComplete { residual: 10_000 }
-        )),
+        report
+            .actions
+            .iter()
+            .any(|action| matches!(action, RecommendedAction::MarkComplete { residual: 10_000 })),
         "an all-terminal migration with a Sweep-Minimum remainder must \
          complete: {:?}",
         report.actions
