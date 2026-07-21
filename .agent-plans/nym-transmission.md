@@ -773,6 +773,15 @@ disconnect_clean 5.4s, starts_and_reports_address 5.8s (the previous
 socks5_tunnel_works 6.8s. The hedged racing planner is validated against
 the live mixnet. Remaining: the push, stages 2-3, un-draft + review.
 
+SMOKE STAGE 2: PASSED (2026-07-21): `makers bundle-nym-proxy` built the
+proxy in the netutils workspace and placed it at target/debug/nym-proxy;
+the bundled binary run live printed the NYM_STATUS bootstrap narration
+(the 5s hedge visibly launched a second arm), announced
+SOCKS5_ADDR=127.0.0.1:43687, and served until SIGINT. Bundling toolchain,
+announce protocol, and progress lines all validated on the shipped
+artifact. Remaining: the push, stage 3 (full wallet session), un-draft +
+review request.
+
 SMOKE STAGE 1 RESULT (user-run, cargo nextest -- --ignored): 2/3 passed —
 the live SOCKS5 tunnel through the mixnet to zec.rocks:443 works (~8s
 bootstraps). nym_proxy_starts_and_reports_address FAILED at the 120s
