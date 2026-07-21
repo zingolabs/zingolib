@@ -123,6 +123,10 @@ pub struct LightClient {
     /// A side channel off the wallet lock, so it stays pollable while build and
     /// transmit hold the wallet write lock across their loops.
     drain_progress: migrate::DrainProgressHandle,
+    /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
+    /// `None` means Mixnet Mode is off.
+    #[cfg(feature = "nym")]
+    mixnet_proxy: Option<crate::nym::MixnetProxy>,
 }
 
 impl LightClient {
@@ -182,6 +186,8 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 
@@ -208,6 +214,8 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         }
     }
 
@@ -252,6 +260,8 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 
