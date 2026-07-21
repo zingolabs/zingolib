@@ -1045,6 +1045,18 @@ coupling. Verified (honest exit codes, set -e): zingolib+cli nym clippy
 gate a verification `&&`-chain on a `| tail`/`| rg` pipe — the pipe's
 exit code masks the real one; use set -e and check ${PIPESTATUS[0]}.
 
+REVIEW FINDINGS APPLIED (2026-07-21, follow-on commit): (1)
+`MixnetNotReady` is now a two-variant enum (Bootstrapping / Died) so the
+refusal names the actual state — the old unit struct told a dead-proxy
+user "the mixnet is bootstrapping" when the remedy is `nym on`; type-level
+call sites (#[from] LightClientError, mixnet_route) unchanged; new
+falsifier the_refusal_message_names_the_actual_state. (2) ADR 0011 gained
+the "fourth mode + lifetime coupling" amendment (the record still said
+tri-state, ratified at Q15). (3) increment-16 plan section: already
+present (this one). (4) the glossary's Mixnet Mode entry keeps the
+lifetime-binding BEHAVIOR but the process-group/stdin-pipe MECHANISM
+moved to the ADR amendment — CONTEXT.md stays implementation-free.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

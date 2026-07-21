@@ -214,3 +214,33 @@ section above has been rewritten to reflect this; the delivery-check and
 no-error-string-classification discipline is unchanged, and each individual
 submission still runs the one resilient-transmission policy shared with the
 clearnet path.
+
+## Amendment (2026-07-21): a fourth mode, and the proxy's lifetime coupling
+
+The tri-state Mixnet Mode this record ratified is superseded by four states:
+off, bootstrapping, ready, and died. A live stage-three smoke run exposed the
+gap. The user interrupted a stuck command with Ctrl-C, the terminal delivered
+the signal to the whole foreground process group, and the nym-proxy child died
+silently — after which every fan-out arm failed against a proxy that the mode
+still reported as ready. Died names that condition: the spawned proxy exited
+unexpectedly, during bootstrap or after reaching ready. It is distinct from
+off because it is unconsented. Off remains the only state that routes the
+mixnet-only surfaces over clearnet, as the user's deliberate choice; died
+refuses, and the refusal tells the user to re-enable the mixnet, which spawns
+a fresh proxy. The supervisor's reader consequently watches the child for its
+whole life rather than detaching once the address arrives, and a death clears
+the stale SOCKS5 address so no surface can dial a dead proxy.
+
+Two mechanisms bind the child's lifetime to the wallet session without letting
+a terminal signal tear the transport out from under it. The child is spawned
+in its own process group, so a Ctrl-C aimed at a wallet command no longer
+reaches the proxy; the interrupt aborts the command while the mixnet keeps
+running. And the supervisor holds the child's stdin pipe open for the child's
+whole life while the child watches that pipe for end-of-file: any parent exit
+— clean, panicked, or killed with SIGKILL, which skips ordinary
+kill-on-drop cleanup — closes the pipe and the child disconnects from the
+mixnet and exits. No orphaned proxy survives its parent, and no parent
+interrupt orphans a session from its transport. On platforms without process
+groups the child shares the terminal's group and an interrupt still reaches
+it; the outcome is the safe one — the mode becomes died and the surfaces
+refuse — rather than a silent clearnet fallback.
