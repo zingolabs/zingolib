@@ -207,8 +207,10 @@ reasonable-disagreement test defined; TransactionSummary re-described;
 ValueTransfer moved out); ADR 0013 written
 (docs/adr/0013-editorial-reductions-in-zingo-viewmodel.md).
 
-All five increments are DONE. Remaining: PR with base `view-model`
-(stacked, decision Q11) — the user drives push/PR creation. Note for
+All five increments are DONE and PUBLISHED: draft PR **#2497**
+(base `view-model`, head `viewmodel-crate`, both pushed to zingolabs
+2026-07-21 at the user's direction). Remaining: rebase onto
+`view-model` as the nym arc advances; un-draft when the user says so. Note for
 the nym session: zingolib/CONTEXT.md's Witness Rotation entry still
 describes the superseded single-pick failover (the escalating fan-out
 replaced it); that correction belongs to the nym arc, not this branch.
