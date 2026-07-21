@@ -209,16 +209,16 @@ impl LightClient {
         self.await_sync().await
     }
 
-    /// Quiesces the sync engine and returns the witness that proves it.
+    /// Pauses the sync engine and returns the guard that proves it.
     ///
-    /// A running engine is paused and resumes when the witness drops. A
-    /// paused or not-running engine is already quiescent, so the witness
+    /// A running engine is paused and resumes when the guard drops. A
+    /// paused or not-running engine needs no pause, so the guard
     /// changes nothing — in particular, dropping it never resumes a pause
     /// somebody else established. A shutting-down engine still scans its
-    /// final batch, so it is *not* quiescent; the call fails with
+    /// final batch, so it is *not* paused; the call fails with
     /// [`SyncModeError::SyncAlreadyRunning`] and the caller should await
     /// shutdown first.
-    pub fn quiesce_sync(&self) -> Result<SyncQuiescence, SyncModeError> {
+    pub fn pause_sync_scoped(&self) -> Result<SyncPauseGuard, SyncModeError> {
         loop {
             let resume_on_drop = match self.sync_mode() {
                 SyncMode::Running => {
@@ -241,41 +241,41 @@ impl LightClient {
                 SyncMode::Paused | SyncMode::NotRunning => false,
                 SyncMode::Shutdown => return Err(SyncModeError::SyncAlreadyRunning),
             };
-            return Ok(SyncQuiescence {
+            return Ok(SyncPauseGuard {
                 sync_mode: self.sync_mode.clone(),
                 resume_on_drop,
             });
         }
     }
 
-    /// Quiesces the engine for the lifetime of a stored proposal, keeping
-    /// the witness in the client until the proposal is consumed (sent or
+    /// Pauses the engine for the lifetime of a stored proposal, keeping
+    /// the guard in the client until the proposal is consumed (sent or
     /// calculated), cleared, or fails to come into existence. Returns
-    /// whether this call minted the witness, so a proposing call's error
-    /// path can release exactly what it took while an already-held witness
+    /// whether this call minted the guard, so a proposing call's error
+    /// path can release exactly what it took while an already-held guard
     /// keeps guarding the proposal it was minted for. A shutting-down
-    /// engine cannot be quiesced; the proposal then proceeds unguarded,
+    /// engine cannot be paused; the proposal then proceeds unguarded,
     /// exactly as the imperative pause discipline did.
-    pub(crate) fn hold_proposal_quiescence(&mut self) -> bool {
-        if self.proposal_quiescence.is_none()
-            && let Ok(witness) = self.quiesce_sync()
+    pub(crate) fn hold_proposal_pause(&mut self) -> bool {
+        if self.proposal_pause_guard.is_none()
+            && let Ok(guard) = self.pause_sync_scoped()
         {
-            self.proposal_quiescence = Some(witness);
+            self.proposal_pause_guard = Some(guard);
             return true;
         }
         false
     }
 
-    /// Releases the stored proposal's quiescence witness, if one is held.
-    /// `restore: true` drops the witness, returning the engine to the mode
+    /// Releases the stored proposal's pause guard, if one is held.
+    /// `restore: true` drops the guard, returning the engine to the mode
     /// it held before the proposal was created; `restore: false` disarms
     /// it, leaving the engine paused for the caller to resume — the
     /// shipped `resume_sync: false` semantics.
-    pub(crate) fn release_proposal_quiescence(&mut self, restore: bool) {
-        if let Some(witness) = self.proposal_quiescence.take()
+    pub(crate) fn release_proposal_pause(&mut self, restore: bool) {
+        if let Some(guard) = self.proposal_pause_guard.take()
             && !restore
         {
-            witness.disarm();
+            guard.disarm();
         }
     }
 
@@ -300,26 +300,26 @@ impl LightClient {
     }
 }
 
-/// Evidence that the sync engine is quiescent — paused or not running — for
-/// as long as this value lives.
+/// A guard proving the sync engine is paused — actively paused or not running
+/// — for as long as this value lives.
 ///
-/// [`LightClient::quiesce_sync`] is the only constructor: it performs the one
-/// side effect (pausing a running engine) up front and undoes it on drop. A
-/// function that takes `&SyncQuiescence` performs no sync-mode transitions of
-/// its own — the parameter is pure evidence that the caller already quiesced
+/// [`LightClient::pause_sync_scoped`] is the only constructor: it performs the
+/// one side effect (pausing a running engine) up front and undoes it on drop. A
+/// function that takes `&SyncPauseGuard` performs no sync-mode transitions of
+/// its own — the parameter is pure proof that the caller already paused
 /// sync, so wallet state cannot shift under the callee between its reads and
 /// its writes. That turns the requirement into a compile-time contract: the
 /// racy call shape — planning against a wallet a running sync is still
 /// mutating — has no well-typed spelling.
-pub struct SyncQuiescence {
+pub struct SyncPauseGuard {
     sync_mode: Arc<atomic::AtomicU8>,
     resume_on_drop: bool,
 }
 
-impl SyncQuiescence {
-    /// Cancels the restore-on-drop: the engine stays exactly as the witness
-    /// held it, so a pause taken by [`LightClient::quiesce_sync`] persists
-    /// past the witness. Crate-internal on purpose — the public contract
+impl SyncPauseGuard {
+    /// Cancels the restore-on-drop: the engine stays exactly as the guard
+    /// held it, so a pause taken by [`LightClient::pause_sync_scoped`] persists
+    /// past the guard. Crate-internal on purpose — the public contract
     /// remains "drop restores the prior mode"; only the shipped
     /// `resume_sync: false` protocol needs to keep an engine paused for the
     /// caller to resume later.
@@ -328,11 +328,11 @@ impl SyncQuiescence {
     }
 }
 
-impl Drop for SyncQuiescence {
+impl Drop for SyncPauseGuard {
     fn drop(&mut self) {
         if self.resume_on_drop {
             // Resume only if the engine is still paused: a stop_sync issued
-            // while the witness was held must win over the resume.
+            // while the guard was held must win over the resume.
             let _ignore_raced_transition = self.sync_mode.compare_exchange(
                 SyncMode::Paused as u8,
                 SyncMode::Running as u8,
@@ -352,7 +352,7 @@ mod tests {
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
     /// An offline client whose sync-mode atomic the tests drive directly;
-    /// no engine runs, so every observed transition is the witness's own.
+    /// no engine runs, so every observed transition is the guard's own.
     async fn offline_client(mode: SyncMode) -> LightClient {
         let wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
@@ -366,26 +366,28 @@ mod tests {
     #[tokio::test]
     async fn running_pauses_and_drop_resumes() {
         let client = offline_client(SyncMode::Running).await;
-        let witness = client.quiesce_sync().expect("a running engine quiesces");
+        let guard = client.pause_sync_scoped().expect("a running engine pauses");
         assert_eq!(client.sync_mode(), SyncMode::Paused);
-        drop(witness);
+        drop(guard);
         assert_eq!(client.sync_mode(), SyncMode::Running);
     }
 
     #[tokio::test]
-    async fn not_running_is_a_no_op_witness() {
+    async fn not_running_is_a_no_op_guard() {
         let client = offline_client(SyncMode::NotRunning).await;
-        let witness = client.quiesce_sync().expect("no engine is quiescent");
+        let guard = client.pause_sync_scoped().expect("no engine needs a pause");
         assert_eq!(client.sync_mode(), SyncMode::NotRunning);
-        drop(witness);
+        drop(guard);
         assert_eq!(client.sync_mode(), SyncMode::NotRunning);
     }
 
     #[tokio::test]
-    async fn paused_witness_does_not_steal_the_resume() {
+    async fn paused_guard_does_not_steal_the_resume() {
         let client = offline_client(SyncMode::Paused).await;
-        let witness = client.quiesce_sync().expect("a paused engine is quiescent");
-        drop(witness);
+        let guard = client
+            .pause_sync_scoped()
+            .expect("a paused engine needs no pause");
+        drop(guard);
         assert_eq!(
             client.sync_mode(),
             SyncMode::Paused,
@@ -394,10 +396,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_is_not_quiescent() {
+    async fn shutdown_cannot_be_paused() {
         let client = offline_client(SyncMode::Shutdown).await;
         assert!(
-            client.quiesce_sync().is_err(),
+            client.pause_sync_scoped().is_err(),
             "a shutting-down engine still scans its final batch"
         );
     }
@@ -405,9 +407,9 @@ mod tests {
     #[tokio::test]
     async fn stop_while_held_wins_over_the_resume() {
         let client = offline_client(SyncMode::Running).await;
-        let witness = client.quiesce_sync().expect("a running engine quiesces");
+        let guard = client.pause_sync_scoped().expect("a running engine pauses");
         client.stop_sync().expect("a paused engine can be stopped");
-        drop(witness);
+        drop(guard);
         assert_eq!(
             client.sync_mode(),
             SyncMode::Shutdown,
