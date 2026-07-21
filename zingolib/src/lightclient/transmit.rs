@@ -10,6 +10,7 @@
 //! real time.
 
 use std::future::Future;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use zcash_primitives::transaction::TxId;
@@ -26,6 +27,45 @@ pub(crate) const MAX_QUEUED_PROBES: u8 = 30;
 
 /// The interval between retries and queued-probes.
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
+/// A shareable snapshot of the in-flight Transmission's latest progress line,
+/// or `None` when no transmission is running. A consumer holding a clone (the
+/// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
+/// holds `&mut LightClient`; the transmit path updates it as submissions,
+/// retries, probes, and fan-out rounds occur. Mirrors the
+/// `DrainProgressHandle` pattern.
+#[derive(Clone, Debug, Default)]
+pub struct TransmitProgressHandle(Arc<Mutex<Option<String>>>);
+
+impl TransmitProgressHandle {
+    /// The latest progress line, or `None` when no transmission is running.
+    pub fn latest(&self) -> Option<String> {
+        self.0
+            .lock()
+            .expect("transmit progress mutex poisoned")
+            .clone()
+    }
+
+    /// Publishes `line` as the latest progress snapshot.
+    pub(crate) fn set(&self, line: String) {
+        *self.0.lock().expect("transmit progress mutex poisoned") = Some(line);
+    }
+
+    /// Clears the snapshot; polling consumers read "no transmission running".
+    pub(crate) fn clear(&self) {
+        *self.0.lock().expect("transmit progress mutex poisoned") = None;
+    }
+}
+
+/// Clears the progress snapshot on every exit — success, `?`-propagated
+/// error, or panic — so a finished transmission never leaves a stale line.
+pub(crate) struct TransmitProgressScope(pub(crate) TransmitProgressHandle);
+
+impl Drop for TransmitProgressScope {
+    fn drop(&mut self) {
+        self.0.clear();
+    }
+}
 
 /// A single transmission endpoint: submits a serialized transaction and can
 /// ask the server whether it already knows a txid. Implemented for the
@@ -95,21 +135,27 @@ pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
 ///
 /// `sleep` supplies the wait between probes/retries; production passes
 /// `tokio::time::sleep`, tests pass a no-op so the policy runs instantly.
-pub(crate) async fn resilient_transmit<T, S, F>(
+/// `report` receives a succinct line at each state change (submitting,
+/// retrying, probing, delivery-checking) for progress display; the caller
+/// prefixes it with the target's identity.
+pub(crate) async fn resilient_transmit<T, S, F, P>(
     target: &T,
     raw_tx: &[u8],
     height: u64,
     txid: &TxId,
     mut sleep: S,
+    report: P,
 ) -> Result<String, TransmitFailed>
 where
     T: TransmitTarget + Sync,
     S: FnMut(Duration) -> F,
     F: Future<Output = ()>,
+    P: Fn(String),
 {
     let mut retry_count: u8 = 0;
     let mut queued_probes: u8 = 0;
 
+    report("submitting".to_string());
     loop {
         let message = match target.submit(raw_tx, height).await {
             Ok(server_txid) => return Ok(server_txid),
@@ -123,6 +169,9 @@ where
                     return Err(TransmitFailed(message));
                 }
                 queued_probes += 1;
+                report(format!(
+                    "delivered, awaiting the server's verdict (probe {queued_probes}/{MAX_QUEUED_PROBES})"
+                ));
                 sleep(RETRY_INTERVAL).await;
             }
             RejectionClass::Transient => {
@@ -132,12 +181,16 @@ where
                     // been accepted with its response lost (e.g. a timeout),
                     // causing rebroadcasts to be rejected as duplicates. Only
                     // fail if the server does not know it.
+                    report("checking whether an earlier attempt was delivered".to_string());
                     if target.knows_transaction(txid).await {
                         return Ok(txid.to_string());
                     }
                     return Err(TransmitFailed(message));
                 }
                 retry_count += 1;
+                report(format!(
+                    "retrying after a transient error (retry {retry_count}/{MAX_RETRIES})"
+                ));
                 sleep(RETRY_INTERVAL).await;
             }
         }
@@ -216,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn accepts_on_first_submit() {
         let target = ScriptedTarget::new(vec![Ok("server-txid".into())], false);
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("accepted");
         assert_eq!(out, "server-txid");
@@ -230,7 +283,7 @@ mod tests {
             vec![Err("error: transaction already exists in mempool".into())],
             false,
         );
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("duplicate counts as delivered");
         assert_eq!(out, a_txid().to_string());
@@ -243,7 +296,7 @@ mod tests {
             vec![Err("transaction already in block chain".into())],
             false,
         );
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("mined duplicate counts as delivered");
         assert_eq!(out, a_txid().to_string());
@@ -259,7 +312,7 @@ mod tests {
             ],
             false,
         );
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("queued then accepted");
         assert_eq!(out, "server-txid");
@@ -274,7 +327,7 @@ mod tests {
         )
         .collect();
         let target = ScriptedTarget::new(submits, false);
-        let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect_err("probes exhausted");
         assert!(err.0.contains("already queued for download"));
@@ -297,7 +350,7 @@ mod tests {
             ],
             false,
         );
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("retried then accepted");
         assert_eq!(out, "server-txid");
@@ -314,7 +367,7 @@ mod tests {
         )
         .collect();
         let target = ScriptedTarget::new(submits, true);
-        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect("delivery check rescues a lost response");
         assert_eq!(out, a_txid().to_string());
@@ -329,7 +382,7 @@ mod tests {
         )
         .collect();
         let target = ScriptedTarget::new(submits, false);
-        let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep)
+        let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect_err("server does not know it, so it failed");
         assert_eq!(err.0, "timeout");
@@ -376,5 +429,50 @@ mod tests {
             ),
             RejectionClass::StorageBackedDuplicate
         );
+    }
+
+    /// Falsifier for the progress narration: a transient failure followed by a
+    /// queued rejection and a final acceptance must narrate each state change
+    /// in order — submit, retry, probe — so a heartbeat consumer always holds
+    /// a line describing what the policy is actually doing.
+    #[tokio::test]
+    async fn narrates_each_state_change_in_order() {
+        let target = ScriptedTarget::new(
+            vec![
+                Err("connection refused".into()),
+                Err("already queued for download".into()),
+                Ok("server-txid".into()),
+            ],
+            false,
+        );
+        let lines = std::sync::Mutex::new(Vec::new());
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |line| {
+            lines.lock().expect("narration mutex poisoned").push(line);
+        })
+        .await
+        .expect("accepted on the third submit");
+        assert_eq!(out, "server-txid");
+        assert_eq!(
+            *lines.lock().expect("narration mutex poisoned"),
+            vec![
+                "submitting".to_string(),
+                format!("retrying after a transient error (retry 1/{MAX_RETRIES})"),
+                format!("delivered, awaiting the server's verdict (probe 1/{MAX_QUEUED_PROBES})"),
+            ]
+        );
+    }
+
+    /// The progress handle round-trips a line and clears through its scope on
+    /// every exit path, so no stale line outlives a transmission.
+    #[test]
+    fn progress_handle_sets_and_scope_clears() {
+        let handle = TransmitProgressHandle::default();
+        assert_eq!(handle.latest(), None);
+        handle.set("submitting".to_string());
+        assert_eq!(handle.latest(), Some("submitting".to_string()));
+        {
+            let _scope = TransmitProgressScope(handle.clone());
+        }
+        assert_eq!(handle.latest(), None, "the scope's drop clears the line");
     }
 }

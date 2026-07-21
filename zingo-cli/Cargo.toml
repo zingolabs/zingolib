@@ -29,14 +29,17 @@ nonempty = { workspace = true }
 rustyline = { workspace = true }
 zingo-status = { workspace = true }
 shellwords = { workspace = true }
-tokio = { workspace = true }
+# macros + time back the transmit heartbeat's select!/interval; rt-multi-thread
+# backs the command runtime (previously inherited via feature unification).
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros"] }
+# test-util powers the paused-clock heartbeat tests.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

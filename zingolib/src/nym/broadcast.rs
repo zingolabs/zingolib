@@ -69,16 +69,22 @@ pub(crate) enum FanoutError {
 /// evidence of censorship or failure accumulates. Within a round the first arm
 /// to confirm delivery wins and the rest are abandoned. The one-two-three
 /// schedule stops once `cap` distinct indexers have been contacted.
-pub(crate) async fn fanout_broadcast<A, F, R>(
+///
+/// `report` receives a succinct progress line whenever the race's shape
+/// changes — a launch or an arm failure — rendering the planner's own
+/// [`RaceProgress`] snapshot for display.
+pub(crate) async fn fanout_broadcast<A, F, R, P>(
     indexers: &[Uri],
     rng: &mut R,
     cap: usize,
     run_arm: A,
+    report: P,
 ) -> Result<String, FanoutError>
 where
     A: Fn(Uri) -> F,
     F: Future<Output = Result<String, String>>,
     R: Rng + ?Sized,
+    P: Fn(String),
 {
     if indexers.is_empty() {
         return Err(FanoutError::NoIndexers);
@@ -116,6 +122,7 @@ where
     };
 
     launch(race.start(), &mut arms, &mut lost);
+    report(race.progress().to_string());
 
     while !lost {
         let Some((candidate, outcome)) = arms.next().await else {
@@ -125,11 +132,14 @@ where
             // The first arm to confirm delivery wins; dropping `arms`
             // abandons the round's remaining arms.
             Ok(server_txid) => return Ok(server_txid),
-            Err(error) => launch(
-                race.on_event(RaceEvent::ArmFailed { candidate, error }),
-                &mut arms,
-                &mut lost,
-            ),
+            Err(error) => {
+                launch(
+                    race.on_event(RaceEvent::ArmFailed { candidate, error }),
+                    &mut arms,
+                    &mut lost,
+                );
+                report(race.progress().to_string());
+            }
         }
     }
 
@@ -215,9 +225,15 @@ mod tests {
     #[tokio::test]
     async fn empty_list_is_an_error() {
         let mock = MockArms::new(&[]);
-        let err = fanout_broadcast(&[], &mut StdRng::seed_from_u64(1), 6, |u| mock.run(u))
-            .await
-            .expect_err("no indexers");
+        let err = fanout_broadcast(
+            &[],
+            &mut StdRng::seed_from_u64(1),
+            6,
+            |u| mock.run(u),
+            |_| (),
+        )
+        .await
+        .expect_err("no indexers");
         assert!(matches!(err, FanoutError::NoIndexers));
         assert!(mock.contacted().is_empty());
     }
@@ -233,9 +249,15 @@ mod tests {
             ("c", Ok("txid")),
             ("d", Ok("txid")),
         ]);
-        let ok = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(7), 6, |u| mock.run(u))
-            .await
-            .expect("first pick accepts");
+        let ok = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(7),
+            6,
+            |u| mock.run(u),
+            |_| (),
+        )
+        .await
+        .expect("first pick accepts");
         assert_eq!(ok, "txid");
         assert_eq!(mock.contacted().len(), 1, "only round one ran");
     }
@@ -263,9 +285,13 @@ mod tests {
             .collect();
         let mock = MockArms::new(&scripts);
 
-        let ok = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(seed), 6, |u| {
-            mock.run(u)
-        })
+        let ok = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(seed),
+            6,
+            |u| mock.run(u),
+            |_| (),
+        )
         .await
         .expect("round two accepts");
         assert_eq!(ok, "txid");
@@ -292,6 +318,7 @@ mod tests {
             &mut StdRng::seed_from_u64(3),
             MAX_BROADCAST_WITNESSES,
             |u| mock.run(u),
+            |_| (),
         )
         .await
         .expect_err("no indexer confirms");
@@ -314,9 +341,15 @@ mod tests {
             hosts.iter().map(|&h| (h, Err("down"))).collect();
         let mock = MockArms::new(&scripts);
 
-        let err = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(5), 6, |u| mock.run(u))
-            .await
-            .expect_err("all down");
+        let err = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(5),
+            6,
+            |u| mock.run(u),
+            |_| (),
+        )
+        .await
+        .expect_err("all down");
         match err {
             FanoutError::AllFailed { attempts, .. } => assert_eq!(attempts, 3),
             other => panic!("expected AllFailed, got {other:?}"),
@@ -335,9 +368,15 @@ mod tests {
             hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
         let mock = MockArms::new(&scripts);
 
-        let err = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(5), 6, |u| mock.run(u))
-            .await
-            .expect_err("all suppressed");
+        let err = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(5),
+            6,
+            |u| mock.run(u),
+            |_| (),
+        )
+        .await
+        .expect_err("all suppressed");
         let FanoutError::AllFailed { summary, .. } = err else {
             panic!("expected AllFailed");
         };
@@ -347,6 +386,42 @@ mod tests {
                 "the summary must name {host}: {summary}"
             );
         }
+    }
+
+    /// HYPOTHESIS: the fan-out narrates its shape at every launch and
+    /// failure, so a heartbeat consumer can render the race live. Falsified
+    /// if a fully failing fan-out never reports the single-arm round one or a
+    /// widened later round.
+    #[tokio::test]
+    async fn a_failing_fanout_narrates_its_escalation() {
+        let hosts = ["a", "b", "c", "d", "e", "f"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> =
+            hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
+        let mock = MockArms::new(&scripts);
+
+        let lines = Mutex::new(Vec::<String>::new());
+        let _ = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(11),
+            MAX_BROADCAST_WITNESSES,
+            |u| mock.run(u),
+            |line| lines.lock().expect("narration mutex poisoned").push(line),
+        )
+        .await
+        .expect_err("all suppressed");
+
+        let lines = lines.into_inner().expect("narration mutex poisoned");
+        assert!(
+            lines
+                .first()
+                .is_some_and(|line| line.contains("1 in flight")),
+            "round one must narrate its single arm: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("2 in flight")),
+            "escalation to a widened round must be narrated: {lines:?}"
+        );
     }
 
     #[tokio::test]
@@ -359,15 +434,23 @@ mod tests {
             hosts.iter().map(|&h| (h, Err("down"))).collect();
 
         let first_run = MockArms::new(&scripts);
-        let _ = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(99), 6, |u| {
-            first_run.run(u)
-        })
+        let _ = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(99),
+            6,
+            |u| first_run.run(u),
+            |_| (),
+        )
         .await;
 
         let second_run = MockArms::new(&scripts);
-        let _ = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(99), 6, |u| {
-            second_run.run(u)
-        })
+        let _ = fanout_broadcast(
+            &indexers,
+            &mut StdRng::seed_from_u64(99),
+            6,
+            |u| second_run.run(u),
+            |_| (),
+        )
         .await;
 
         assert_eq!(

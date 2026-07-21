@@ -21,7 +21,10 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
-use crate::lightclient::transmit::{TransmitFailed, TransmitTarget, resilient_transmit};
+use crate::lightclient::transmit::{
+    TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
+    resilient_transmit,
+};
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
@@ -166,19 +169,29 @@ async fn transmit_one_transaction(
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
+    progress: &TransmitProgressHandle,
 ) -> Result<String, String> {
     match socks5_proxy {
-        None => resilient_transmit(
-            &ClearnetTarget(indexer.clone()),
-            tx_bytes,
-            height,
-            txid,
-            |interval| tokio::time::sleep(interval),
-        )
-        .await
-        .map_err(|TransmitFailed(message)| message),
+        None => {
+            let host = indexer
+                .uri()
+                .host()
+                .map_or_else(|| indexer.uri().to_string(), str::to_string);
+            resilient_transmit(
+                &ClearnetTarget(indexer.clone()),
+                tx_bytes,
+                height,
+                txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("indexer {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(message)| message)
+        }
         #[cfg(feature = "nym")]
-        Some(socks5_addr) => mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid).await,
+        Some(socks5_addr) => {
+            mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid, progress).await
+        }
         #[cfg(not(feature = "nym"))]
         Some(_) => Err("a mixnet route requires the nym feature".to_string()),
     }
@@ -195,6 +208,7 @@ async fn mixnet_fanout_transmit(
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
+    progress: &TransmitProgressHandle,
 ) -> Result<String, String> {
     use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
     use crate::nym::broadcast_indexers::broadcast_indexers;
@@ -204,14 +218,22 @@ async fn mixnet_fanout_transmit(
         let socks5_addr = socks5_addr.to_string();
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
+        let host = indexer
+            .host()
+            .map_or_else(|| indexer.to_string(), str::to_string);
         async move {
             let target = SocksTarget {
                 socks5_addr,
                 indexer,
             };
-            resilient_transmit(&target, &tx_bytes, height, &txid, |interval| {
-                tokio::time::sleep(interval)
-            })
+            resilient_transmit(
+                &target,
+                &tx_bytes,
+                height,
+                &txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("witness {host}: {event}")),
+            )
             .await
             .map_err(|TransmitFailed(message)| message)
         }
@@ -222,6 +244,7 @@ async fn mixnet_fanout_transmit(
         &mut rand::rngs::OsRng,
         MAX_BROADCAST_WITNESSES,
         run_arm,
+        |line| progress.set(format!("mixnet fan-out: {line}")),
     )
     .await
     .map_err(|error| error.to_string())
@@ -487,8 +510,15 @@ impl LightClient {
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<String> = None;
 
+        // Narrate the transmission into the side channel; the scope clears it
+        // on every exit so no stale line outlives this call.
+        let progress = self.transmit_progress.clone();
+        let _progress_scope = TransmitProgressScope(progress.clone());
+        let total = calculated_txids.len();
+
         let mut wallet = self.wallet().write().await;
         for (index, txid) in calculated_txids.iter().enumerate() {
+            progress.set(format!("transaction {} of {total}: preparing", index + 1));
             let calculated_transaction = wallet
                 .wallet_transactions
                 .get(txid)
@@ -528,6 +558,7 @@ impl LightClient {
                 &transaction_bytes,
                 height.into(),
                 txid,
+                &progress,
             )
             .await
             {

@@ -50,6 +50,8 @@ pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
 
+pub use transmit::TransmitProgressHandle;
+
 #[cfg(test)]
 mod darkside;
 #[cfg(test)]
@@ -123,6 +125,11 @@ pub struct LightClient {
     /// A side channel off the wallet lock, so it stays pollable while build and
     /// transmit hold the wallet write lock across their loops.
     drain_progress: migrate::DrainProgressHandle,
+    /// The latest progress line of an in-flight Transmission, or `None` when
+    /// idle. A side channel like `drain_progress`, updated by
+    /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
+    /// and cleared when the transmission ends.
+    transmit_progress: transmit::TransmitProgressHandle,
     /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
     /// `None` means Mixnet Mode is off.
     #[cfg(feature = "nym")]
@@ -186,6 +193,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -214,6 +222,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         }
@@ -260,6 +269,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -273,6 +283,17 @@ impl LightClient {
     /// Returns the wallet birthday height for lock-free access.
     pub fn birthday(&self) -> u32 {
         u32::from(self.wallet.birthday)
+    }
+
+    /// A cloneable handle to the in-flight Transmission's latest progress
+    /// line, or `None` while no transmission runs. Grab it *before* invoking a
+    /// transmitting call (send, shield, transmit, migrate) — those borrow
+    /// `&mut self` — then poll [`transmit::TransmitProgressHandle::latest`]
+    /// concurrently, the same side-channel pattern as
+    /// [`Self::drain_progress_handle`]. The line narrates submissions,
+    /// retries, queued probes, and mixnet fan-out rounds.
+    pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
+        self.transmit_progress.clone()
     }
 
     /// A snapshot of the in-progress immediate drain

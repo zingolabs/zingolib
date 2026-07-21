@@ -884,6 +884,52 @@ clean; zingolib nym:: 21 pass; zingo-cli lib 98 pass; cargo check
 --workspace green; fmt clean. zingolib/CONTEXT.md deliberately untouched
 (the sibling sealed-wallet session holds uncommitted edits there).
 
+## Implementation — increment 13 (DONE 2026-07-21): transmit heartbeat
+
+USER DIRECTIVE (stage-3 smoke, silent `confirm`): emit a succinct update
+every 20-40 seconds after `confirm` is invoked, and wire every command
+that can transmit into the same updates. Design mirrors the
+DrainProgressHandle precedent: a `TransmitProgressHandle`
+(Arc<Mutex<Option<String>>>) on LightClient, set by the transmit path
+(ungated — clearnet retries/probes narrate too), cleared by a Drop scope;
+`resilient_transmit` and `fanout_broadcast` gain injected `report`
+closures (submit/retry/queued-probe/delivery-check events; RaceProgress
+round transitions); the CLI wraps each transmitting command's await in a
+30s-interval heartbeat printing the latest detail + elapsed seconds
+(silent for fast sends; injectable emit for paused-time tests).
+Transmitting commands (all funnel through transmit_transactions):
+confirm, quicksend, quickshield, transmit, migrate, migration start,
+migration catch_up (reconcile does not transmit).
+
+File claims (mine): zingolib/src/lightclient/transmit.rs,
+zingolib/src/lightclient/send.rs, zingolib/src/lightclient.rs (field +
+getter only), zingolib/src/nym/broadcast.rs, zingo-cli/Cargo.toml (tokio
+features), zingo-cli/src/commands.rs, this file.
+
+BUILT: TransmitProgressHandle + Drop-scope (mirrors DrainProgressHandle)
+on LightClient (ungated, pub getter transmit_progress_handle);
+resilient_transmit narrates submit/retry/probe/delivery-check via an
+injected report closure; fanout_broadcast reports RaceProgress on every
+launch/failure; transmit_transactions scopes the channel and prefixes
+per-transaction context; the CLI's with_transmit_heartbeat (30s interval,
+injectable emit) wraps all seven transmitting commands (confirm,
+quicksend, quickshield, transmit, migrate, migration start, migration
+catchup). Falsifiers green: narration-order + handle-scope (transmit),
+escalation-narration (fan-out), fast-send-silent / slow-send-cadence /
+empty-channel-fallback (CLI, paused clock). Verified: workspace check,
+nym clippy -D warnings both crates, fmt, zingolib nym+transmit 35 tests,
+cli 98+3 tests.
+
+STAGE-3 SMOKE FAILURE (user, 2026-07-21, pre-heartbeat): confirm ran the
+fan-out to the cap — all 6 witnesses "indexer unreachable through the
+SOCKS5 proxy: transport error" (accounting worked; tunnel leg failed
+uniformly). Confound: the user's ^C^C may have killed the proxy child
+(same terminal process group — child signal isolation is a fix
+candidate). Alternative hypothesis: the bootstrap-drawn exit provider
+refuses/cannot reach the indexer destinations (provider exit policy),
+which stage 1's different provider draw allowed. Increment 14 (below)
+instruments to discriminate.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

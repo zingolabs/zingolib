@@ -36,6 +36,46 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
+/// The cadence of the transmit heartbeat. A transmission can legitimately run
+/// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
+/// rounds, queued-verdict probes), so every transmitting command prints the
+/// transmission's latest progress line at this interval while it waits. A send
+/// that completes before the first tick stays silent.
+const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Awaits `operation`, emitting a heartbeat every
+/// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` — the
+/// transmit-progress side channel `operation` narrates into — plus the elapsed
+/// seconds. `emit` is injected so tests capture the lines; production prints
+/// them. Grab the progress handle *before* building `operation`, which
+/// borrows the client mutably.
+async fn with_transmit_heartbeat<T>(
+    label: &str,
+    latest: impl Fn() -> Option<String>,
+    mut emit: impl FnMut(String),
+    operation: impl Future<Output = T>,
+) -> T {
+    let started = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval_at(
+        started + TRANSMIT_HEARTBEAT_INTERVAL,
+        TRANSMIT_HEARTBEAT_INTERVAL,
+    );
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut operation = std::pin::pin!(operation);
+    loop {
+        tokio::select! {
+            output = &mut operation => return output,
+            _ = ticker.tick() => {
+                let detail = latest().unwrap_or_else(|| "transmitting".to_string());
+                emit(format!(
+                    "{label}: {detail} ({}s elapsed)",
+                    started.elapsed().as_secs()
+                ));
+            }
+        }
+    }
+}
+
 /// Typed failure of a CLI command. `do_user_command` remains the single
 /// site that renders these to prose for string frontends; typed
 /// frontends consume them directly via `do_user_command_result`.
@@ -1460,7 +1500,15 @@ impl Command for QuickSendCommand {
             }
         };
         Ok(RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "quicksend",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.quick_send(request, zip32::AccountId::ZERO, true),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1559,9 +1607,15 @@ impl Command for QuickShieldCommand {
         }
 
         Ok(RT.block_on(async move {
-            match lightclient
-                .quick_shield(zip32::AccountId::ZERO)
-                .await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "quickshield",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.quick_shield(zip32::AccountId::ZERO),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1609,9 +1663,15 @@ impl Command for ConfirmCommand {
         }
 
         Ok(RT.block_on(async move {
-            match lightclient
-                .send_stored_proposal(true)
-                .await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "confirm",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.send_stored_proposal(true),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1751,7 +1811,15 @@ impl Command for TransmitCommand {
                 );
             };
 
-            Ok(match lightclient.transmit_calculated(txids).await {
+            let progress = lightclient.transmit_progress_handle();
+            Ok(match with_transmit_heartbeat(
+                "transmit",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.transmit_calculated(txids),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -2451,7 +2519,13 @@ fn run_migrate(
     if !args.is_empty() {
         return Err(MigrationCommandError::UnexpectedArguments);
     }
-    let summary = RT.block_on(lightclient.migrate_to_ironwood(zip32::AccountId::ZERO))?;
+    let progress = lightclient.transmit_progress_handle();
+    let summary = RT.block_on(with_transmit_heartbeat(
+        "migrate",
+        move || progress.latest(),
+        |line| println!("{line}"),
+        lightclient.migrate_to_ironwood(zip32::AccountId::ZERO),
+    ))?;
     Ok(object! {
         "split_txids" => txids_json(&summary.split_txids),
         "part_txids" => txids_json(&summary.part_txids),
@@ -2482,11 +2556,17 @@ fn run_migration(
             plan_hash,
             per_bucket,
         } => {
-            RT.block_on(lightclient.start_ironwood_migration(
-                zip32::AccountId::ZERO,
-                migration::SigningStrategy::LazyAtBoundary,
-                plan_hash,
-                per_bucket,
+            let progress = lightclient.transmit_progress_handle();
+            RT.block_on(with_transmit_heartbeat(
+                "migration start",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.start_ironwood_migration(
+                    zip32::AccountId::ZERO,
+                    migration::SigningStrategy::LazyAtBoundary,
+                    plan_hash,
+                    per_bucket,
+                ),
             ))?;
             "Migration started.".to_string()
         }
@@ -2542,7 +2622,13 @@ fn run_migration(
             .pretty(2)
         }
         MigrationSubCommand::Catchup { spacing } => {
-            let txids = RT.block_on(lightclient.catch_up_migration(spacing))?;
+            let progress = lightclient.transmit_progress_handle();
+            let txids = RT.block_on(with_transmit_heartbeat(
+                "migration catchup",
+                move || progress.latest(),
+                |line| println!("{line}"),
+                lightclient.catch_up_migration(spacing),
+            ))?;
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
@@ -2739,6 +2825,83 @@ pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) 
     match do_user_command_result(cmd, args, lightclient) {
         Ok(output) => output,
         Err(e) => format!("Error: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod transmit_heartbeat {
+    //! Paused-clock falsifiers for the transmit heartbeat's contract: silence
+    //! for fast transmissions, a narrated line on the ratified 20-40s cadence
+    //! for slow ones, always carrying the side channel's latest detail.
+
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use super::*;
+
+    /// HYPOTHESIS: a transmission finishing before the first tick emits
+    /// nothing — the heartbeat must not add noise to a normal fast send.
+    #[tokio::test(start_paused = true)]
+    async fn a_fast_transmission_stays_silent() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        let out = with_transmit_heartbeat(
+            "confirm",
+            || Some("submitting".to_string()),
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(5)),
+        )
+        .await;
+        let () = out;
+        assert!(
+            lines.lock().expect("line sink poisoned").is_empty(),
+            "no heartbeat before the first interval"
+        );
+    }
+
+    /// HYPOTHESIS: a slow transmission is narrated on the interval cadence,
+    /// each line carrying the label, the side channel's latest detail, and
+    /// the elapsed seconds. Falsified if the wait stays silent or drops the
+    /// detail.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_transmission_heartbeats_the_latest_detail() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        with_transmit_heartbeat(
+            "confirm",
+            || Some("witness zec.rocks: submitting".to_string()),
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(95)),
+        )
+        .await;
+        let lines = lines.lock().expect("line sink poisoned").clone();
+        assert_eq!(
+            lines,
+            vec![
+                "confirm: witness zec.rocks: submitting (30s elapsed)".to_string(),
+                "confirm: witness zec.rocks: submitting (60s elapsed)".to_string(),
+                "confirm: witness zec.rocks: submitting (90s elapsed)".to_string(),
+            ]
+        );
+    }
+
+    /// An empty side channel still heartbeats, falling back to a generic
+    /// line rather than skipping the tick.
+    #[tokio::test(start_paused = true)]
+    async fn an_empty_side_channel_still_heartbeats() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        with_transmit_heartbeat(
+            "transmit",
+            || None,
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(35)),
+        )
+        .await;
+        assert_eq!(
+            lines.lock().expect("line sink poisoned").clone(),
+            vec!["transmit: transmitting (30s elapsed)".to_string()]
+        );
     }
 }
 
