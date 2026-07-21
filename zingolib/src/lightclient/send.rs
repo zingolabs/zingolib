@@ -141,7 +141,11 @@ impl LightClient {
 
     /// Creates and transmits transactions from a stored proposal.
     ///
-    /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
+    /// If sync was running prior to creating a send proposal, sync will have
+    /// been paused. If `resume_sync` is `true`, the engine is restored to
+    /// the mode it held before the proposal was created — a pause the
+    /// caller established before proposing is preserved, not overridden. If
+    /// `false`, the engine stays paused for the caller to resume.
     pub async fn send_stored_proposal(
         &mut self,
         resume_sync: bool,
@@ -160,9 +164,7 @@ impl LightClient {
                 } => self.shield(proposal, shielding_account).await,
             };
 
-            if resume_sync {
-                let _ignore_error = self.resume_sync();
-            }
+            self.release_proposal_quiescence(resume_sync);
 
             txids
         } else {
@@ -193,44 +195,53 @@ impl LightClient {
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
-        if let Some(proposal) = opt_proposal {
-            let chain_type = wallet.chain_type();
-            let txids = match proposal {
-                ZingoProposal::Send {
-                    proposal,
-                    sending_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
+        let Some(proposal) = opt_proposal else {
+            return Err(SendError::NoStoredProposal.into());
+        };
+        let chain_type = wallet.chain_type();
+        let result = match proposal {
+            ZingoProposal::Send {
+                proposal,
+                sending_account,
+            } => {
+                let retargeted = if indexerless {
+                    retarget_for_offline_signing(&proposal, &chain_type)
+                        .map_err(SendError::RetargetError)
+                } else {
+                    Ok(proposal)
+                };
+                match retargeted {
+                    Ok(proposal) => wallet
                         .calculate_transactions(proposal, sending_account)
                         .await
-                        .map_err(SendError::CalculateSendError)?
+                        .map_err(SendError::CalculateSendError),
+                    Err(e) => Err(e),
                 }
-                ZingoProposal::Shield {
-                    proposal,
-                    shielding_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
+            }
+            ZingoProposal::Shield {
+                proposal,
+                shielding_account,
+            } => {
+                let retargeted = if indexerless {
+                    retarget_for_offline_signing(&proposal, &chain_type)
+                        .map_err(SendError::RetargetError)
+                } else {
+                    Ok(proposal)
+                };
+                match retargeted {
+                    Ok(proposal) => wallet
                         .calculate_transactions(proposal, shielding_account)
                         .await
-                        .map_err(SendError::CalculateShieldError)?
+                        .map_err(SendError::CalculateShieldError),
+                    Err(e) => Err(e),
                 }
-            };
-            Ok(txids)
-        } else {
-            Err(SendError::NoStoredProposal.into())
-        }
+            }
+        };
+        drop(wallet);
+        // The proposal is consumed on every path above, so its quiescence
+        // has nothing left to guard; the engine returns to its prior mode.
+        self.release_proposal_quiescence(true);
+        result.map_err(LightClientError::from)
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
@@ -247,7 +258,10 @@ impl LightClient {
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
-    /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
+    /// If sync is running, it is quiesced before creating the send proposal.
+    /// If `resume_sync` is `true`, the engine is restored to its prior mode
+    /// after the send, on every exit path; if `false`, it stays paused for
+    /// the caller to resume.
     pub async fn quick_send(
         &mut self,
         request: TransactionRequest,
@@ -256,7 +270,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
-        let _ignore_error = self.pause_sync();
+        let witness = self.quiesce_sync().ok();
         let proposal_result = self
             .wallet()
             .write()
@@ -267,20 +281,27 @@ impl LightClient {
             Ok(proposal) => self.send(proposal, account_id).await,
             Err(e) => Err(e.into()),
         };
-        if resume_sync {
-            let _ignore_error = self.resume_sync();
+        if let Some(witness) = witness
+            && !resume_sync
+        {
+            witness.disarm();
         }
 
         txids
     }
 
-    /// Shields all transparent funds skipping proposal confirmation.
+    /// Shields all transparent funds skipping proposal confirmation. The
+    /// sync engine is quiesced before the proposal's wallet reads and
+    /// restored to its prior mode when the call returns; the shield path
+    /// previously proposed, built, and stored transactions under a running
+    /// engine.
     pub async fn quick_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
+        let _witness = self.quiesce_sync().ok();
         let proposal = self
             .wallet()
             .write()

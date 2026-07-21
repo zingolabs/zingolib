@@ -1,6 +1,7 @@
 //! Sync implementations for [`crate::lightclient::LightClient`] and related types.
 
 use std::borrow::BorrowMut;
+use std::sync::Arc;
 use std::sync::atomic;
 use std::time::Duration;
 
@@ -208,6 +209,76 @@ impl LightClient {
         self.await_sync().await
     }
 
+    /// Quiesces the sync engine and returns the witness that proves it.
+    ///
+    /// A running engine is paused and resumes when the witness drops. A
+    /// paused or not-running engine is already quiescent, so the witness
+    /// changes nothing — in particular, dropping it never resumes a pause
+    /// somebody else established. A shutting-down engine still scans its
+    /// final batch, so it is *not* quiescent; the call fails with
+    /// [`SyncModeError::SyncAlreadyRunning`] and the caller should await
+    /// shutdown first.
+    pub fn quiesce_sync(&self) -> Result<SyncQuiescence, SyncModeError> {
+        loop {
+            let resume_on_drop = match self.sync_mode() {
+                SyncMode::Running => {
+                    if self
+                        .sync_mode
+                        .compare_exchange(
+                            SyncMode::Running as u8,
+                            SyncMode::Paused as u8,
+                            atomic::Ordering::AcqRel,
+                            atomic::Ordering::Acquire,
+                        )
+                        .is_err()
+                    {
+                        // The engine changed state between the read and the
+                        // exchange; reclassify from the fresh mode.
+                        continue;
+                    }
+                    true
+                }
+                SyncMode::Paused | SyncMode::NotRunning => false,
+                SyncMode::Shutdown => return Err(SyncModeError::SyncAlreadyRunning),
+            };
+            return Ok(SyncQuiescence {
+                sync_mode: self.sync_mode.clone(),
+                resume_on_drop,
+            });
+        }
+    }
+
+    /// Quiesces the engine for the lifetime of a stored proposal, keeping
+    /// the witness in the client until the proposal is consumed (sent or
+    /// calculated), cleared, or fails to come into existence. Returns
+    /// whether this call minted the witness, so a proposing call's error
+    /// path can release exactly what it took while an already-held witness
+    /// keeps guarding the proposal it was minted for. A shutting-down
+    /// engine cannot be quiesced; the proposal then proceeds unguarded,
+    /// exactly as the imperative pause discipline did.
+    pub(crate) fn hold_proposal_quiescence(&mut self) -> bool {
+        if self.proposal_quiescence.is_none()
+            && let Ok(witness) = self.quiesce_sync()
+        {
+            self.proposal_quiescence = Some(witness);
+            return true;
+        }
+        false
+    }
+
+    /// Releases the stored proposal's quiescence witness, if one is held.
+    /// `restore: true` drops the witness, returning the engine to the mode
+    /// it held before the proposal was created; `restore: false` disarms
+    /// it, leaving the engine paused for the caller to resume — the
+    /// shipped `resume_sync: false` semantics.
+    pub(crate) fn release_proposal_quiescence(&mut self, restore: bool) {
+        if let Some(witness) = self.proposal_quiescence.take()
+            && !restore
+        {
+            witness.disarm();
+        }
+    }
+
     /// Polls the sync task and, if it failed, returns the recommended
     /// recovery action alongside the error description.
     ///
@@ -226,6 +297,122 @@ impl LightClient {
             }
             _ => None,
         }
+    }
+}
+
+/// Evidence that the sync engine is quiescent — paused or not running — for
+/// as long as this value lives.
+///
+/// [`LightClient::quiesce_sync`] is the only constructor: it performs the one
+/// side effect (pausing a running engine) up front and undoes it on drop. A
+/// function that takes `&SyncQuiescence` performs no sync-mode transitions of
+/// its own — the parameter is pure evidence that the caller already quiesced
+/// sync, so wallet state cannot shift under the callee between its reads and
+/// its writes. That turns the requirement into a compile-time contract: the
+/// racy call shape — planning against a wallet a running sync is still
+/// mutating — has no well-typed spelling.
+pub struct SyncQuiescence {
+    sync_mode: Arc<atomic::AtomicU8>,
+    resume_on_drop: bool,
+}
+
+impl SyncQuiescence {
+    /// Cancels the restore-on-drop: the engine stays exactly as the witness
+    /// held it, so a pause taken by [`LightClient::quiesce_sync`] persists
+    /// past the witness. Crate-internal on purpose — the public contract
+    /// remains "drop restores the prior mode"; only the shipped
+    /// `resume_sync: false` protocol needs to keep an engine paused for the
+    /// caller to resume later.
+    pub(crate) fn disarm(mut self) {
+        self.resume_on_drop = false;
+    }
+}
+
+impl Drop for SyncQuiescence {
+    fn drop(&mut self) {
+        if self.resume_on_drop {
+            // Resume only if the engine is still paused: a stop_sync issued
+            // while the witness was held must win over the resume.
+            let _ignore_raced_transition = self.sync_mode.compare_exchange(
+                SyncMode::Paused as u8,
+                SyncMode::Running as u8,
+                atomic::Ordering::AcqRel,
+                atomic::Ordering::Acquire,
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pepper_sync::wallet::SyncMode;
+
+    use super::atomic;
+    use crate::lightclient::LightClient;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    /// An offline client whose sync-mode atomic the tests drive directly;
+    /// no engine runs, so every observed transition is the witness's own.
+    async fn offline_client(mode: SyncMode) -> LightClient {
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let client = LightClient::new_for_test(wallet).await;
+        client
+            .sync_mode
+            .store(mode as u8, atomic::Ordering::Release);
+        client
+    }
+
+    #[tokio::test]
+    async fn running_pauses_and_drop_resumes() {
+        let client = offline_client(SyncMode::Running).await;
+        let witness = client.quiesce_sync().expect("a running engine quiesces");
+        assert_eq!(client.sync_mode(), SyncMode::Paused);
+        drop(witness);
+        assert_eq!(client.sync_mode(), SyncMode::Running);
+    }
+
+    #[tokio::test]
+    async fn not_running_is_a_no_op_witness() {
+        let client = offline_client(SyncMode::NotRunning).await;
+        let witness = client.quiesce_sync().expect("no engine is quiescent");
+        assert_eq!(client.sync_mode(), SyncMode::NotRunning);
+        drop(witness);
+        assert_eq!(client.sync_mode(), SyncMode::NotRunning);
+    }
+
+    #[tokio::test]
+    async fn paused_witness_does_not_steal_the_resume() {
+        let client = offline_client(SyncMode::Paused).await;
+        let witness = client.quiesce_sync().expect("a paused engine is quiescent");
+        drop(witness);
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Paused,
+            "whoever paused the engine owns its resume"
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_not_quiescent() {
+        let client = offline_client(SyncMode::Shutdown).await;
+        assert!(
+            client.quiesce_sync().is_err(),
+            "a shutting-down engine still scans its final batch"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_while_held_wins_over_the_resume() {
+        let client = offline_client(SyncMode::Running).await;
+        let witness = client.quiesce_sync().expect("a running engine quiesces");
+        client.stop_sync().expect("a paused engine can be stopped");
+        drop(witness);
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Shutdown,
+            "the drop must not overwrite a shutdown request"
+        );
     }
 }
 

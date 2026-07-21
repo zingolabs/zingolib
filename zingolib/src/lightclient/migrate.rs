@@ -23,6 +23,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, MigrationError};
+use crate::lightclient::sync::SyncQuiescence;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::LightWallet;
@@ -677,8 +678,17 @@ impl LightClient {
         &mut self,
         account: zip32::AccountId,
     ) -> Result<DrainSummary, LightClientError> {
+        // A scheduled migration rejects the drain regardless of chain state,
+        // so check before paying for a sync. The presynced body re-checks
+        // after the sync lands.
+        if self.wallet().read().await.migration.is_some() {
+            return Err(MigrationError::AlreadyInProgress.into());
+        }
+
         self.sync_and_await().await?;
-        self.drain_orchard_to_ironwood_presynced(account).await
+        let sync = self.quiesce_sync()?;
+        self.drain_orchard_to_ironwood_presynced(account, &sync)
+            .await
     }
 
     /// Broadcasts the immediate Orchard→Ironwood drain against the wallet's
@@ -689,16 +699,33 @@ impl LightClient {
     /// background sync running continuously (e.g. zingo-mobile). Calling the
     /// syncing variant from such a consumer collides with the running sync
     /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`];
-    /// this entry point lets the caller drive sync itself, matching the
-    /// `send`/`shield` mutation paths.
+    /// this entry point lets the caller drive sync itself.
     ///
-    /// The caller is responsible for keeping the wallet synced before calling.
-    /// Everything else — the plan, the `pause_sync`/`resume_sync` bracketing
-    /// around build and transmit, the chunked broadcast, and the idempotent
-    /// cleanup on partial failure — is identical to the syncing variant.
+    /// The caller is responsible for keeping the wallet synced before
+    /// calling, and proves it has quiesced its sync by presenting the
+    /// [`SyncQuiescence`] witness — [`Self::quiesce_sync`] pauses a running
+    /// engine and resumes it when the witness drops. Planning and building
+    /// therefore observe one stable wallet state, the same
+    /// pause-before-proposing invariant the `send`/`shield` mutation paths
+    /// establish. Everything else — the plan, the chunked broadcast, and the
+    /// idempotent cleanup on partial failure — is identical to the syncing
+    /// variant.
+    ///
+    /// Calling without the witness does not compile — a stable wallet state
+    /// across plan and build is a compile-time precondition, not a runtime
+    /// courtesy:
+    ///
+    /// ```compile_fail
+    /// # async fn caller(client: &mut zingolib::lightclient::LightClient) {
+    /// let _ = client
+    ///     .drain_orchard_to_ironwood_presynced(zip32::AccountId::ZERO)
+    ///     .await;
+    /// # }
+    /// ```
     pub async fn drain_orchard_to_ironwood_presynced(
         &mut self,
         account: zip32::AccountId,
+        sync: &SyncQuiescence,
     ) -> Result<DrainSummary, LightClientError> {
         // A scheduled migration soft-reserves the notes its parts are bound to.
         // Draining them would invalidate those parts behind its back.
@@ -712,7 +739,7 @@ impl LightClient {
         }
 
         let txids = self
-            .build_and_transmit(&plan.transactions, |wallet, planned| {
+            .build_and_transmit(&plan.transactions, sync, |wallet, planned| {
                 wallet.build_drain_transaction(account, planned)
             })
             .await?;
@@ -726,32 +753,26 @@ impl LightClient {
     }
 
     /// Builds and transmits one batch of planned migration transactions under
-    /// a paused sync, enforcing the shared cleanup contract: a build failure
-    /// fails the transactions already built, and a transmit failure fails
-    /// every transaction still unsent, so no note stays spent by a
-    /// transaction that will never reach the network. Both the drain flow and
-    /// the note-splitting rounds send through here.
+    /// a caller-held [`SyncQuiescence`], enforcing the shared cleanup
+    /// contract: a build failure fails the transactions already built, and a
+    /// transmit failure fails every transaction still unsent, so no note
+    /// stays spent by a transaction that will never reach the network. Both
+    /// the drain flow and the note-splitting rounds send through here. The
+    /// witness parameter is pure evidence — the caller's witness performs the
+    /// pause and its drop the resume, on every exit path.
     async fn build_and_transmit<T>(
         &mut self,
         planned: &[T],
+        _sync: &SyncQuiescence,
         build: impl Fn(&mut LightWallet, &T) -> Result<TxId, WalletError>,
     ) -> Result<Vec<TxId>, LightClientError> {
-        let _ignore_error = self.pause_sync();
-        let built = self.build_transactions(planned, build).await;
-        let txids = match built {
-            Ok(txids) => txids,
-            Err(e) => {
-                let _ignore_error = self.resume_sync();
-                return Err(e);
-            }
-        };
+        let txids = self.build_transactions(planned, build).await?;
 
         let transmitted = self
             .transmit_transactions(
                 NonEmpty::from_vec(txids.clone()).expect("planned batches are never empty"),
             )
             .await;
-        let _ignore_error = self.resume_sync();
 
         if let Err(e) = transmitted {
             // `transmit_transactions` marks the transaction that failed, but
@@ -930,11 +951,14 @@ impl LightClient {
                 .into_iter()
                 .next()
                 .expect("unsplit plan has at least one round");
+            let sync = self.quiesce_sync()?;
             let round_txids = self
-                .build_and_transmit(&round, |wallet, planned| {
+                .build_and_transmit(&round, &sync, |wallet, planned| {
                     wallet.build_note_split_transaction(account, planned)
                 })
                 .await?;
+            // The confirmation wait syncs; release the quiescence first.
+            drop(sync);
             split_txids.extend(round_txids.iter().copied());
 
             self.await_migration_confirmations(&round_txids).await?;
@@ -1270,5 +1294,33 @@ mod tests {
         let part = &wallet.migration.as_ref().unwrap().parts[0];
         assert_eq!(part.state, PartState::Broadcast);
         assert_eq!(part.attempts, 1, "the attempt was recorded before submit");
+    }
+
+    /// A scheduled migration rejects the syncing drain *before* the drain
+    /// pays for a sync. The client here is offline, so any attempt to sync
+    /// first surfaces as [`LightClientError::Offline`] instead of the
+    /// pre-condition's [`MigrationError::AlreadyInProgress`] — which is
+    /// exactly how this test stays red while the wrapper syncs before
+    /// checking, and green once the check runs first. The presynced body
+    /// keeps its own post-sync check; this pins the wrapper's early one.
+    #[tokio::test]
+    async fn scheduled_migration_rejects_drain_before_syncing() {
+        let (mut wallet, bound_note) = wallet_with_migration_note(360);
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        part.assign(0).expect("fresh parts are bound");
+        wallet.migration = Some(scheduled_state(params, vec![part]));
+
+        let mut client = LightClient::new_for_test(wallet).await;
+        let result = client.drain_orchard_to_ironwood(AccountId::ZERO).await;
+        assert!(
+            matches!(
+                result,
+                Err(crate::lightclient::error::LightClientError::MigrationError(
+                    crate::lightclient::error::MigrationError::AlreadyInProgress
+                ))
+            ),
+            "the drain must reject a scheduled migration without syncing, got {result:?}"
+        );
     }
 }
