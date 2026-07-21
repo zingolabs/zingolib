@@ -41,7 +41,9 @@ pub struct MixnetNotReady;
 
 /// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
 /// SOCKS5 address. `Ready` yields the mixnet route, `Off` yields clearnet, and
-/// `Bootstrapping` (or `Ready` with no address yet) refuses.
+/// `Bootstrapping`, `Died`, or `Ready` with no address yet all refuse.
+/// Crucially, only the deliberate `Off` yields clearnet: a `Died` proxy
+/// refuses rather than leaking the send to clearnet without consent.
 pub fn resolve_route(
     mode: MixnetMode,
     socks5_addr: Option<String>,
@@ -49,7 +51,7 @@ pub fn resolve_route(
     match mode {
         MixnetMode::Off => Ok(MixnetRoute::Clearnet),
         MixnetMode::Ready => socks5_addr.map(MixnetRoute::Mixnet).ok_or(MixnetNotReady),
-        MixnetMode::Bootstrapping => Err(MixnetNotReady),
+        MixnetMode::Bootstrapping | MixnetMode::Died => Err(MixnetNotReady),
     }
 }
 
@@ -77,6 +79,18 @@ mod tests {
         assert_eq!(
             resolve_route(MixnetMode::Bootstrapping, None),
             Err(MixnetNotReady)
+        );
+    }
+
+    #[test]
+    fn a_died_proxy_refuses_and_never_leaks_to_clearnet() {
+        // The critical invariant: an unexpected proxy death is NOT consent to
+        // clearnet. Even with a stale address still on hand, Died refuses.
+        assert_eq!(resolve_route(MixnetMode::Died, None), Err(MixnetNotReady));
+        assert_eq!(
+            resolve_route(MixnetMode::Died, Some("127.0.0.1:9050".to_string())),
+            Err(MixnetNotReady),
+            "a stale address must not resurrect a dead proxy into a route"
         );
     }
 

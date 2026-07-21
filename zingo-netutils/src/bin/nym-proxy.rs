@@ -10,11 +10,14 @@
 //! ```
 //!
 //! The parent reads that line to learn where to dial, then routes send and
-//! price-fetch traffic through it. The process serves until it receives an
-//! interrupt (the parent's shutdown signal), at which point it disconnects
-//! from the mixnet cleanly. Startup failures are reported on stderr with a
-//! non-zero exit so the parent can surface a Mixnet Mode error rather than
-//! silently falling back to clearnet.
+//! price-fetch traffic through it. The process serves until either it is
+//! interrupted (`Ctrl-C` for a standalone run) or its stdin closes — the
+//! signal that the parent wallet has gone, since the supervisor holds that
+//! pipe open for the child's whole life. On either it disconnects from the
+//! mixnet cleanly. The stdin watchdog is what guarantees no orphaned proxy
+//! outlives its parent, even a parent killed with `SIGKILL`. Startup failures
+//! are reported on stderr with a non-zero exit so the parent can surface a
+//! Mixnet Mode error rather than silently falling back to clearnet.
 //!
 //! This binary builds only with the `nym` feature and only in this crate's
 //! own lockfile, where the nym-sdk stack resolves independently of the
@@ -23,6 +26,7 @@
 
 use std::io::Write as _;
 
+use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX};
 
 #[tokio::main]
@@ -50,8 +54,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr());
     std::io::stdout().flush()?;
 
-    // Serve until the parent asks us to stop, then disconnect cleanly.
-    tokio::signal::ctrl_c().await?;
+    // Serve until either the parent goes away (stdin closes — the durable
+    // coupling that survives even a SIGKILL of the parent) or an interrupt
+    // arrives (Ctrl-C for a standalone run). Then disconnect cleanly.
+    tokio::select! {
+        _ = wait_for_parent_exit() => {}
+        result = tokio::signal::ctrl_c() => { result?; }
+    }
     proxy.disconnect().await;
     Ok(())
+}
+
+/// Resolves when stdin reaches EOF, which happens when the parent closes its
+/// end of the pipe — on a clean exit, a panic, or a SIGKILL. Any read error is
+/// also treated as "parent gone". Bytes on stdin are ignored: the pipe's
+/// openness, not its content, is the signal. For a standalone run stdin is the
+/// terminal, which never reaches EOF, so this simply never resolves and
+/// Ctrl-C drives shutdown instead.
+async fn wait_for_parent_exit() {
+    let mut stdin = tokio::io::stdin();
+    let mut scratch = [0u8; 64];
+    loop {
+        match stdin.read(&mut scratch).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => continue,
+        }
+    }
 }

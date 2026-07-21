@@ -975,6 +975,10 @@ fn render_status(
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
+        MixnetMode::Died => "Mixnet Mode: died — the proxy exited unexpectedly. Send and \
+             price-fetch refuse (they will not fall back to clearnet); run `nym on` to \
+             restart the proxy."
+            .to_string(),
     }
 }
 
@@ -3325,6 +3329,12 @@ mod nym_command_parsing {
             "Mixnet Mode: ready",
             "ready with no address yet still renders (the route resolver, \
              not the renderer, refuses that state)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Died, None, None),
+            "Mixnet Mode: died — the proxy exited unexpectedly. Send and price-fetch \
+             refuse (they will not fall back to clearnet); run `nym on` to restart the proxy.",
+            "a died proxy is reported distinctly from off, and tells the user how to recover"
         );
     }
 

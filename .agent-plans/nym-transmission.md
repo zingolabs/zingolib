@@ -1003,6 +1003,48 @@ rounds); 11 port-443 operators remain, ample for cap-6 rotation. New
 rule. Verified: netutils clippy/fmt, zingolib nym broadcast_indexers 3
 tests + clippy -D warnings green.
 
+## Implementation — increment 16 (DONE 2026-07-21): proxy lifetime coupling
+
+The wallet and its nym-proxy child now behave as one unit — NOT by
+insulating the proxy from signals, but by coupling its lifetime to the
+parent's. Three mechanisms + a new state:
+
+- New `MixnetMode::Died` (fourth state): the proxy exited unexpectedly
+  (during bootstrap OR after Ready). Distinct from Off (Off = consented
+  clearnet). resolve_route(Died) REFUSES — closing a latent leak where
+  the old drive_state mapped a bootstrap-time stdout close to Off, which
+  the resolver sent to CLEARNET without consent.
+- Own process group (`command.process_group(0)`, #[cfg(unix)]): a
+  terminal Ctrl-C (foreground-group signal) no longer reaches the proxy,
+  so Ctrl-C aborts the wallet command while the transport survives —
+  exactly the unit behavior the user wanted.
+- Stdin-EOF watchdog: supervisor holds the child's stdin pipe open
+  (`_stdin: ChildStdin`); nym-proxy selects on stdin-EOF alongside its
+  own ctrl_c. ANY parent death — clean, panic, SIGKILL (skips
+  kill_on_drop) — closes the pipe, child reads EOF, disconnects, exits.
+  Strictly stronger anti-zombie guarantee than before. Standalone runs
+  untouched (terminal stdin never EOFs; ctrl_c still stops it).
+- drive_state now watches PAST Ready (was: returned at Ready, so a
+  post-Ready death left the mode stale-Ready — the user's six-witness
+  failure signature); on any close it sets Died and CLEARS the stale
+  address so nothing dials a dead proxy.
+
+Root cause of the user's stage-3 six-way failure CONFIRMED: ^C killed
+the proxy child (shared process group), drive_state had stopped watching
+at Ready, so mode stayed stale-Ready and every fan-out arm dialed a dead
+port. This increment fixes both halves.
+
+Falsifiers: route (Died refuses even with a stale address); supervisor
+(died-after-Ready clears address, died-during-bootstrap, Ready-stays via
+a new OpenAfter open-then-idle reader since a closing slice now correctly
+reads as death); CLI (Died status line renders distinctly + recovery
+hint). Glossary Mixnet Mode entry updated to four states + the unit
+coupling. Verified (honest exit codes, set -e): zingolib+cli nym clippy
+-D warnings, nym/cli/default/workspace tests, netutils clippy+tests
+--features nym,socks5-transmit, all fmt. LESSON (this session): never
+gate a verification `&&`-chain on a `| tail`/`| rg` pipe — the pipe's
+exit code masks the real one; use set -e and check ${PIPESTATUS[0]}.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

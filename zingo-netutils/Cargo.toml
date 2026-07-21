@@ -38,6 +38,9 @@ tokio = { workspace = true, optional = true, features = [
     "rt-multi-thread",
     "macros",
     "signal",
+    # io-std + io-util back the nym-proxy binary's stdin-EOF parent watchdog.
+    "io-std",
+    "io-util",
 ] }
 
 [features]

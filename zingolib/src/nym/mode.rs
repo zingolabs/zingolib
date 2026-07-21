@@ -4,10 +4,12 @@
 /// The runtime state of the Nym mixnet transport that carries the
 /// Transmission and price-fetch surfaces.
 ///
-/// This is tri-state rather than a bare boolean because "enabled but not yet
-/// reachable" is a state a user interface must distinguish: a send attempted
-/// while [`MixnetMode::Bootstrapping`] must wait or report "connecting", and
-/// must never silently fall back to clearnet. See
+/// This has four states rather than a bare boolean because "enabled but not
+/// yet reachable" and "was running, then died" are states a user interface
+/// must distinguish from a deliberate off: a send attempted while
+/// [`MixnetMode::Bootstrapping`] or after [`MixnetMode::Died`] must refuse or
+/// report, and must never silently fall back to clearnet. Only the user's
+/// deliberate [`MixnetMode::Off`] consents to clearnet. See
 /// `docs/adr/0011-nym-mixnet-transmission.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MixnetMode {
@@ -20,6 +22,12 @@ pub enum MixnetMode {
     Bootstrapping,
     /// The mixnet is up. Mixnet-only surfaces route through it.
     Ready,
+    /// The proxy exited unexpectedly after being spawned — during bootstrap or
+    /// after reaching ready. Distinct from [`MixnetMode::Off`]: this is an
+    /// unconsented loss of the transport, so mixnet-only surfaces refuse
+    /// rather than fall back to clearnet. Recover by re-enabling the mixnet
+    /// (`nym on`), which spawns a fresh proxy.
+    Died,
 }
 
 impl MixnetMode {
