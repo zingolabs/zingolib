@@ -59,17 +59,10 @@ pub async fn send_transaction_via_socks5(
         .into_inner();
 
     // lightwalletd convention: error_code 0 means accepted, and error_message
-    // carries the txid (sometimes quote-wrapped). Mirror GrpcIndexer's own
-    // send_transaction handling.
-    if response.error_code == 0 {
-        let mut txid = response.error_message;
-        if txid.starts_with('"') && txid.ends_with('"') && txid.len() >= 2 {
-            txid = txid[1..txid.len() - 1].to_string();
-        }
-        Ok(txid)
-    } else {
-        Err(Socks5TransmitError::Rejected(response.error_message))
-    }
+    // carries the txid (sometimes quote-wrapped). One shared interpretation
+    // with GrpcIndexer's own send_transaction handling.
+    crate::parse_send_response(response.error_code, response.error_message)
+        .map_err(Socks5TransmitError::Rejected)
 }
 
 /// Build a gRPC client to `indexer` dialed through the local SOCKS5 proxy at

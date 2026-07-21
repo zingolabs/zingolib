@@ -58,6 +58,10 @@ mod globally_public;
 #[cfg(feature = "globally-public-transparent")]
 pub use globally_public::TransparentIndexer;
 
+// Deliberately ungated: the pure core of the nym proxy lifecycle, whose
+// unit tests run in the default build without the nym-sdk stack.
+mod mixnet_connect;
+
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]
@@ -327,6 +331,71 @@ impl GrpcIndexer {
     }
 }
 
+/// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
+/// transaction was accepted and `error_message` carries the txid (sometimes
+/// quote-wrapped, which is stripped); any other code is a rejection whose
+/// message is returned as the error. The single definition shared by the
+/// clearnet [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
+pub(crate) fn parse_send_response(
+    error_code: i32,
+    error_message: String,
+) -> Result<String, String> {
+    if error_code == 0 {
+        let mut transaction_id = error_message;
+        // The length guard keeps a lone `"` from satisfying both quote
+        // checks with the same byte and panicking the slice below.
+        if transaction_id.starts_with('\"')
+            && transaction_id.ends_with('\"')
+            && transaction_id.len() >= 2
+        {
+            transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
+        }
+        Ok(transaction_id)
+    } else {
+        Err(error_message)
+    }
+}
+
+#[cfg(test)]
+mod send_response_parsing {
+    use super::*;
+
+    #[test]
+    fn acceptance_unquotes_the_txid() {
+        assert_eq!(
+            parse_send_response(0, "\"deadbeef\"".to_string()),
+            Ok("deadbeef".to_string())
+        );
+    }
+
+    #[test]
+    fn acceptance_passes_a_bare_txid_through() {
+        assert_eq!(
+            parse_send_response(0, "deadbeef".to_string()),
+            Ok("deadbeef".to_string())
+        );
+    }
+
+    #[test]
+    fn rejection_carries_the_server_message() {
+        assert_eq!(
+            parse_send_response(-25, "failed to validate".to_string()),
+            Err("failed to validate".to_string())
+        );
+    }
+
+    /// A one-character `"` message satisfies both `starts_with('"')` and
+    /// `ends_with('"')` (they see the same byte), so unquoting must not
+    /// slice `[1..0]`. Pins the review's finding 4.
+    #[test]
+    fn a_lone_quote_acceptance_does_not_panic() {
+        assert_eq!(
+            parse_send_response(0, "\"".to_string()),
+            Ok("\"".to_string())
+        );
+    }
+}
+
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
@@ -360,18 +429,8 @@ impl Indexer for GrpcIndexer {
             .send_transaction(request)
             .await?
             .into_inner();
-        if sendresponse.error_code == 0 {
-            let mut transaction_id = sendresponse.error_message;
-            if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
-                transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
-            }
-            Ok(transaction_id)
-        } else {
-            Err(tonic::Status::new(
-                tonic::Code::Unknown,
-                sendresponse.error_message,
-            ))
-        }
+        parse_send_response(sendresponse.error_code, sendresponse.error_message)
+            .map_err(|message| tonic::Status::new(tonic::Code::Unknown, message))
     }
 
     async fn get_tree_state(

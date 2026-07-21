@@ -42,6 +42,7 @@ use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
 use tokio::time::sleep;
 
 use crate::error::NymProxyError;
+use crate::mixnet_connect::{connect_with_retries, seeded_shuffle, strip_socks5_scheme};
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
@@ -92,23 +93,25 @@ impl NymProxy {
     async fn start_inner() -> Result<Self, NymProxyError> {
         let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
         let port = Self::find_available_port()?;
+        Self::connect_across_providers(&providers, port).await
+    }
 
-        let mut last_err = None;
-        let attempts = providers.len().min(MAX_PROVIDER_ATTEMPTS);
-
-        for _attempt in 0..MAX_CONNECTION_ATTEMPTS {
-            for provider in providers.iter().take(attempts) {
-                match Self::start_with_config(provider, port).await {
-                    Ok(proxy) => return Ok(proxy),
-                    Err(e) => {
-                        last_err = Some(e);
-                    }
-                }
-            }
-            let _ = sleep(Duration::from_millis(SYSTEM_SLEEP_MILLIS)).await;
-        }
-
-        Err(last_err.unwrap_or(NymProxyError::NoProvider))
+    /// Run the shared retry engine over `providers`, connecting each attempt
+    /// on `port`. Shared by [`Self::start`] and [`Self::reconnect`].
+    async fn connect_across_providers(
+        providers: &[String],
+        port: u16,
+    ) -> Result<Self, NymProxyError> {
+        connect_with_retries(
+            providers,
+            MAX_PROVIDER_ATTEMPTS,
+            MAX_CONNECTION_ATTEMPTS,
+            Duration::from_millis(SYSTEM_SLEEP_MILLIS),
+            move |provider: String| async move { Self::start_with_config(&provider, port).await },
+            sleep,
+        )
+        .await
+        .map_err(|last_err| last_err.unwrap_or(NymProxyError::NoProvider))
     }
 
     /// Start with a specific exit gateway provider address.
@@ -146,11 +149,7 @@ impl NymProxy {
 
     /// The local SOCKS5 proxy address (e.g., `"127.0.0.1:43210"`).
     pub fn socks5_addr(&self) -> String {
-        self.client
-            .socks5_url()
-            .strip_prefix("socks5h://")
-            .unwrap_or(&self.client.socks5_url())
-            .to_string()
+        strip_socks5_scheme(&self.client.socks5_url()).to_string()
     }
 
     /// The local bind port the SOCKS5 proxy listens on.
@@ -199,27 +198,14 @@ impl NymProxy {
         // Use a new port so we don't conflict with the old client's bind.
         let new_port = Self::find_available_port()?;
         let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
-        let attempts = providers.len().min(MAX_PROVIDER_ATTEMPTS);
-        let mut last_err = None;
+        let new_proxy = Self::connect_across_providers(&providers, new_port).await?;
 
-        for _attempt in 0..MAX_CONNECTION_ATTEMPTS {
-            for provider in providers.iter().take(attempts) {
-                match Self::start_with_config(provider, new_port).await {
-                    Ok(new_proxy) => {
-                        let old_client = std::mem::replace(&mut self.client, new_proxy.client);
-                        self.bind_port = new_port;
-                        old_client.disconnect().await;
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        last_err = Some(e);
-                    }
-                }
-            }
-            let _ = sleep(Duration::from_millis(SYSTEM_SLEEP_MILLIS)).await;
-        }
-
-        Err(last_err.unwrap_or(NymProxyError::NoProvider))
+        // Swap only after the new client succeeded, so a failed reconnect
+        // leaves the old client untouched.
+        let old_client = std::mem::replace(&mut self.client, new_proxy.client);
+        self.bind_port = new_port;
+        old_client.disconnect().await;
+        Ok(())
     }
 
     /// Disconnect from the Nym mixnet and stop the local SOCKS5 proxy.
@@ -251,7 +237,9 @@ impl NymProxy {
 
     /// Query the Nym API for active exit gateways running a network requester.
     ///
-    /// Returns addresses shuffled for load distribution. Callers should try
+    /// Returns addresses shuffled for load distribution
+    /// ([`seeded_shuffle`] on [`time_entropy_seed`] — see its docs for why
+    /// this is deliberately not cryptographic randomness). Callers should try
     /// multiple entries since individual gateways may be offline.
     async fn discover_providers(nym_api_url: &str) -> Result<Vec<String>, NymProxyError> {
         use nym_validator_client::nym_api::NymApiClientExt as _;
@@ -278,52 +266,34 @@ impl NymProxy {
             return Err(NymProxyError::NoProvider);
         }
 
-        // Shuffle providers for load distribution using a simple Fisher-Yates
-        // with a time-seeded hash as entropy source.
-        //
-        // NOTE: This is NOT cryptographically secure randomness. Its purpose
-        // is load distribution across exit gateways, not unpredictability —
-        // the mixnet's privacy comes from Sphinx routing, not from which
-        // gateway is chosen. Replace with `rand::seq::SliceRandom` if stronger
-        // randomness is ever needed here.
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        use std::time::SystemTime;
-
-        let mut hasher = DefaultHasher::new();
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .hash(&mut hasher);
-        let mut seed = hasher.finish();
-
-        for i in (1..providers.len()).rev() {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let j = (seed as usize) % (i + 1);
-            providers.swap(i, j);
-        }
-
+        seeded_shuffle(&mut providers, time_entropy_seed());
         Ok(providers)
     }
+}
+
+/// The entropy source for provider shuffling: a hash of the current time.
+/// The one effect feeding the pure [`seeded_shuffle`].
+fn time_entropy_seed() -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::SystemTime;
+
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .hash(&mut hasher);
+    hasher.finish()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn socks5_addr_strips_scheme() {
-        let url = "socks5h://127.0.0.1:1080";
-        let stripped = url.strip_prefix("socks5h://").unwrap_or(url);
-        assert_eq!(stripped, "127.0.0.1:1080");
-    }
-
-    #[test]
-    fn socks5_addr_passthrough_without_scheme() {
-        let url = "127.0.0.1:1080";
-        let stripped = url.strip_prefix("socks5h://").unwrap_or(url);
-        assert_eq!(stripped, "127.0.0.1:1080");
-    }
+    // The scheme-stripping and retry-engine logic is tested in
+    // `mixnet_connect`, where the tests call the REAL functions in the
+    // default build; the earlier copies of that logic here tested a
+    // transcription of the expression, not the code.
 
     #[test]
     fn find_available_port_returns_nonzero() {
