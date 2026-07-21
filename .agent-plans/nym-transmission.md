@@ -706,6 +706,117 @@ an optional `--waitmixnet` for one-shot sends; and release-packaging integration
 (having the release/distribution build invoke bundle-nym-proxy so shipped
 artifacts carry the proxy).
 
+## Merge-readiness phase (grill, 2026-07-21)
+
+RATIFIED: two merge gates for PR #2470 — (1) the three-stage live smoke
+ladder (netutils ignored tests -> bundled binary -> full wallet session),
+(2) the PR title/description refresh + review request. Three follow-up
+issues to file: broadcast-list operational vetting, fan-out hardening
+(per-arm retry tuning + independent delivery confirmation), distribution
+UX (--waitmixnet + release packaging).
+
+SMOKE STAGE 1 RESULT (user-run, cargo nextest -- --ignored): 2/3 passed —
+the live SOCKS5 tunnel through the mixnet to zec.rocks:443 works (~8s
+bootstraps). nym_proxy_starts_and_reports_address FAILED at the 120s
+lifecycle cap: connect_with_retries had NO per-attempt timeout, so one
+unresponsive provider (time-entropy shuffle draw) starved the whole
+budget and the retry engine never reached provider #2. Production impact:
+the forced-on-at-startup path would abort fail-closed after 120s on a
+bad draw.
+
+## Implementation — increment 10 (DONE 2026-07-21): per-attempt timeouts
+
+nym_proxy.rs: PER_ATTEMPT_CONNECT_TIMEOUT = 20s wraps each
+start_with_config call inside the connect_across_providers closure (the
+pure engine is untouched); DISCOVERY_TIMEOUT = 15s bounds
+get_all_described_nodes_v2. Each attempt now binds a FRESH port (a
+timed-out attempt may still hold its port); reconnect_inner inherits
+that, taking bind_port from the connected proxy. New
+NymProxyError::AttemptTimeout variant. New deterministic regression test
+timed_out_attempt_advances_to_next_provider (tokio start_paused; dev-only
+tokio test-util feature added) pins: a hanging provider costs exactly one
+per-attempt timeout, then the engine advances. Verified: netutils clippy
+--all-targets --all-features -D warnings clean; --features nym lib tests
+24 pass / 3 ignored; default-build tests pass; fmt clean.
+
+RODE ALONG — rebase fallout repaired (pre-existing, CI red at f1147a737):
+the reboot_nym copy of the "repair the rebase fallout" commit (22daf298f)
+lost the lightclient.rs hunk that its sibling (view-model's c66553fdd)
+carried, so LightClient was missing the `#[cfg(feature = "nym")]
+mixnet_proxy` field while all its uses survived — `cargo check -p
+zingolib --features nym` was BROKEN at HEAD and the nym-feature CI job
+red. Restored the field + the three constructor initializations (declaration
+recovered verbatim from c66553fdd). Verified: zingolib+zingo-cli nym
+clippy -D warnings green, default check green, 18 nym lib tests pass,
+fmt clean.
+
+RESOLVED (user, 2026-07-21): "Build it now" — plus two directives: (A)
+capture and leverage ALL per-attempt information, (B) capture the
+commonalities with the send fan-out under proper DRY logic. Also:
+identify testable hypotheses and write falsifying tests as work proceeds.
+
+## Implementation — increment 11 (DONE 2026-07-21): shared racing planner
+
+THE DRY SHAPE (B): one pure planner, two thin effectful drivers.
+`zingo-netutils/src/arm_race.rs` (NEW, ungated, pub — netutils is a path
+dep of zingolib, so both crates share it) is a pure state machine:
+`RaceState::{start, on_event} -> Vec<RaceAction>` over
+`RaceEvent::{ArmFailed, HedgeElapsed}` with the escalation style as data —
+`LaunchPolicy::Hedged{max_parallel, hedge_interval}` (bootstrap) vs
+`LaunchPolicy::EscalatingRounds` (the ratified 1-2-3 serially gated send
+fan-out). The planner owns candidate allocation (no repeats), the cap,
+in-flight accounting, failure accumulation, GiveUp detection, progress
+snapshots (`RaceProgress`, Display), and `failure_summary`. The drivers
+stay separate BY DESIGN: netutils' `drive_race` (nym_proxy.rs, nym-gated)
+runs tokio JoinSet tasks ('static arms natural there; aborts losers,
+disconnects a simultaneous second winner); zingolib's `fanout_broadcast`
+drives FuturesUnordered over BORROWED arm futures (spawning would force
+Arc/'static onto wallet state, and unifying drivers would need a futures
+dep in netutils — barred). connect_with_retries + its 5 tests DELETED
+(superseded); mixnet_connect.rs keeps strip_socks5_scheme/seeded_shuffle.
+
+INFORMATION LEVERAGE (A): every arm outcome is retained, not just the
+last error (the old engine's loss). In-race leverage: a failure launches
+a replacement IMMEDIATELY (fail-fast beats the hedge timer); failed
+candidates are never retried; the terminal error names every attempted
+provider and its failure (NymProxyError::AttemptsExhausted; FanoutError::
+AllFailed.last_message -> summary naming every witness). Live progress:
+NymProxy::start_with_progress(FnMut(String)) -> the binary prints
+NYM_STATUS= lines (shared NYM_STATUS_LINE_PREFIX const beside the
+SOCKS5_ADDR one) -> supervisor drive_state captures the latest into
+bootstrap_detail (cleared on Ready) -> LightClient::
+mixnet_bootstrap_detail() -> `nym status` renders "bootstrapping —
+attempt 4/10: 2 in flight, 2 failed". DEFERRED leverage (noted, not
+built): latency-adaptive hedge interval and cross-session provider
+scoring need persistence + live data the vetting issue will produce.
+
+Bootstrap policy: MAX_PARALLEL_CONNECTS=3, HEDGE_INTERVAL=5s;
+PER_ATTEMPT_CONNECT_TIMEOUT=20s and DISCOVERY_TIMEOUT=15s (increment 10)
+stay per arm; NYM_LIFECYCLE_TIMEOUT=120s stays the outer cap. Worst-case
+all-dud walk of 10 providers ~65s virtual, inside the cap. MAX_CONNECTION
+_ATTEMPTS + SYSTEM_SLEEP_MILLIS retired with the round-loop.
+
+HYPOTHESES -> FALSIFYING TESTS (all green): planner (10 ungated tests in
+arm_race.rs: replacement-on-failure, hedge widens to max_parallel then
+stops, round gate holds mid-round, 1-2-3 escalation, caps, GiveUp,
+full-account summary, progress render); driver (5 paused-time nym-gated
+tests: hedge rescues a hanging provider at ~5s not 20s, per-attempt
+timeout frees a wedged slot at max_parallel=1, lost race accounts for
+every attempt, simultaneous second winner handed to abandon/disconnect
+not leaked, progress lines narrate failures) + short_provider_name
+truncation; fan-out (the 6 ratified falsifiers UNCHANGED and green over
+the planner rewrite + new every-witness-named summary test); supervisor
+(2 new: status line updates detail while Bootstrapping, address line
+still wins and clears detail; 6 old green); CLI (render_status pinned
+byte-identically incl. new detail case + stale-detail-never-on-ready).
+
+VERIFIED: netutils standalone fmt/clippy --all-targets --all-features -D
+warnings/test default + --features nym (34 pass / 3 ignored live);
+main workspace clippy -p zingolib -p zingo-cli --features nym -D warnings
+clean; zingolib nym:: 21 pass; zingo-cli lib 98 pass; cargo check
+--workspace green; fmt clean. zingolib/CONTEXT.md deliberately untouched
+(the sibling sealed-wallet session holds uncommitted edits there).
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

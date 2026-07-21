@@ -17,17 +17,23 @@
 //! duplicate-in-mempool, queued-probe, delivery-check — rather than
 //! duplicating it: each arm is a call to
 //! [`resilient_transmit`](crate::lightclient::transmit::resilient_transmit),
-//! the same policy the clearnet path runs. The per-arm runner and the
-//! random-number generator are injected, so the round, escalation, and cap
-//! logic is exercised in CI without a live mixnet or real time.
+//! the same policy the clearnet path runs. The escalation logic itself is
+//! the shared pure racing planner ([`zingo_netutils::arm_race`]) under its
+//! serially gated [`LaunchPolicy::EscalatingRounds`]; this module drives the
+//! planner's actions over borrowed futures and keeps the ratified schedule.
+//! The per-arm runner and the random-number generator are injected, so the
+//! round, escalation, and cap logic is exercised in CI without a live mixnet
+//! or real time.
 #![forbid(unsafe_code)]
 
 use std::future::Future;
 
-use futures::future::select_ok;
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 use http::Uri;
 use rand::Rng;
 use rand::seq::SliceRandom;
+use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
 
 /// The maximum number of distinct Broadcast Indexers a single send may contact
 /// before it surfaces failure (ADR 0011). The escalating one-two-three fan-out
@@ -42,12 +48,13 @@ pub(crate) enum FanoutError {
     #[error("the Broadcast Indexer list is empty")]
     NoIndexers,
     /// The cap was reached without any indexer confirming delivery.
-    #[error("no indexer confirmed delivery after contacting {attempts} of them: {last_message}")]
+    #[error("no indexer confirmed delivery after contacting {attempts} of them: {summary}")]
     AllFailed {
         /// The number of distinct indexers contacted.
         attempts: usize,
-        /// The last failure message, surfaced for the user.
-        last_message: String,
+        /// Every witness's failure, surfaced for the user: which indexers
+        /// were tried and how each one failed.
+        summary: String,
     },
 }
 
@@ -82,32 +89,53 @@ where
     let mut order: Vec<usize> = (0..indexers.len()).collect();
     order.shuffle(rng);
 
-    let limit = cap.min(order.len());
-    let mut contacted = 0;
-    let mut round_size = 1;
-    let mut last_message = String::from("no indexer was contacted");
+    let host_of = |candidate: usize| {
+        let indexer = &indexers[order[candidate]];
+        indexer
+            .host()
+            .map(str::to_string)
+            .unwrap_or_else(|| indexer.to_string())
+    };
 
-    while contacted < limit {
-        let this_round = round_size.min(limit - contacted);
-        let arms = order[contacted..contacted + this_round]
-            .iter()
-            .map(|&i| Box::pin(run_arm(indexers[i].clone())));
+    let mut race = RaceState::new(order.len(), cap, LaunchPolicy::EscalatingRounds);
+    let mut arms = FuturesUnordered::new();
+    let mut lost = false;
 
-        // `select_ok` returns the first arm to confirm delivery, abandoning the
-        // rest; if every arm in the round fails it yields the last failure, and
-        // the loop escalates to the next, larger round.
-        match select_ok(arms).await {
-            Ok((server_txid, _abandoned)) => return Ok(server_txid),
-            Err(message) => last_message = message,
+    let launch = |actions: Vec<RaceAction>, arms: &mut FuturesUnordered<_>, lost: &mut bool| {
+        for action in actions {
+            match action {
+                RaceAction::Launch { candidate } => {
+                    let arm = run_arm(indexers[order[candidate]].clone());
+                    arms.push(async move { (candidate, arm.await) });
+                }
+                // The serially gated rounds policy never hedges on time.
+                RaceAction::ArmHedgeTimer(_) => {}
+                RaceAction::GiveUp => *lost = true,
+            }
         }
+    };
 
-        contacted += this_round;
-        round_size += 1;
+    launch(race.start(), &mut arms, &mut lost);
+
+    while !lost {
+        let Some((candidate, outcome)) = arms.next().await else {
+            break;
+        };
+        match outcome {
+            // The first arm to confirm delivery wins; dropping `arms`
+            // abandons the round's remaining arms.
+            Ok(server_txid) => return Ok(server_txid),
+            Err(error) => launch(
+                race.on_event(RaceEvent::ArmFailed { candidate, error }),
+                &mut arms,
+                &mut lost,
+            ),
+        }
     }
 
     Err(FanoutError::AllFailed {
-        attempts: contacted,
-        last_message,
+        attempts: race.launched(),
+        summary: race.failure_summary(host_of),
     })
 }
 
@@ -294,6 +322,31 @@ mod tests {
             other => panic!("expected AllFailed, got {other:?}"),
         }
         assert_eq!(mock.contacted().len(), 3);
+    }
+
+    /// HYPOTHESIS: a failed fan-out accounts for every witness contacted and
+    /// how each failed, not just the last failure. Falsified if any
+    /// contacted host is missing from the error summary.
+    #[tokio::test]
+    async fn a_failed_fanout_names_every_witness_and_its_failure() {
+        let hosts = ["a", "b", "c"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> =
+            hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
+        let mock = MockArms::new(&scripts);
+
+        let err = fanout_broadcast(&indexers, &mut StdRng::seed_from_u64(5), 6, |u| mock.run(u))
+            .await
+            .expect_err("all suppressed");
+        let FanoutError::AllFailed { summary, .. } = err else {
+            panic!("expected AllFailed");
+        };
+        for host in hosts {
+            assert!(
+                summary.contains(&format!("{host}: suppressed")),
+                "the summary must name {host}: {summary}"
+            );
+        }
     }
 
     #[tokio::test]

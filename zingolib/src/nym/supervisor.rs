@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
-use zingo_netutils::SOCKS5_ADDR_LINE_PREFIX;
+use zingo_netutils::{NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
 
@@ -43,6 +43,10 @@ pub enum MixnetProxyError {
 struct ProxyState {
     mode: MixnetMode,
     socks5_addr: Option<String>,
+    /// The child's latest bootstrap progress line, live only while
+    /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
+    /// connect race instead of showing an opaque wait.
+    bootstrap_detail: Option<String>,
 }
 
 /// Supervises the spawned `nym-proxy` child process and exposes its tri-state.
@@ -69,6 +73,7 @@ impl MixnetProxy {
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
+            bootstrap_detail: None,
         }));
         let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state)));
         Ok(MixnetProxy {
@@ -92,6 +97,17 @@ impl MixnetProxy {
             .clone()
     }
 
+    /// The child's latest bootstrap progress line, while
+    /// [`MixnetMode::Bootstrapping`]. `None` before the first report and
+    /// once the proxy is ready.
+    pub fn bootstrap_detail(&self) -> Option<String> {
+        self.state
+            .lock()
+            .expect("proxy state mutex")
+            .bootstrap_detail
+            .clone()
+    }
+
     /// Shut the child down and stop tracking its state.
     pub async fn stop(mut self) {
         self.reader.abort();
@@ -101,16 +117,21 @@ impl MixnetProxy {
 }
 
 /// Read `stdout` until the child announces its SOCKS5 address (then `Ready`),
-/// or until stdout closes without one (then `Off`). Generic over the reader so
-/// the state machine is unit-tested without spawning a process.
+/// or until stdout closes without one (then `Off`). Progress lines arriving
+/// before the address update the live bootstrap detail. Generic over the
+/// reader so the state machine is unit-tested without spawning a process.
 async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyState>>) {
     let mut lines = BufReader::new(stdout).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(addr) = parse_socks5_addr_line(&line) {
             let mut guarded = state.lock().expect("proxy state mutex");
             guarded.socks5_addr = Some(addr.to_string());
+            guarded.bootstrap_detail = None;
             guarded.mode = MixnetMode::Ready;
             return;
+        }
+        if let Some(detail) = parse_status_line(&line) {
+            state.lock().expect("proxy state mutex").bootstrap_detail = Some(detail.to_string());
         }
     }
     state.lock().expect("proxy state mutex").mode = MixnetMode::Off;
@@ -122,6 +143,12 @@ fn parse_socks5_addr_line(line: &str) -> Option<&str> {
     line.strip_prefix(SOCKS5_ADDR_LINE_PREFIX).map(str::trim)
 }
 
+/// Extract the progress detail from a child stdout line, if it is a
+/// bootstrap status line.
+fn parse_status_line(line: &str) -> Option<&str> {
+    line.strip_prefix(NYM_STATUS_LINE_PREFIX).map(str::trim)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +157,7 @@ mod tests {
         Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
+            bootstrap_detail: None,
         }))
     }
 
@@ -179,6 +207,47 @@ mod tests {
         let s = state.lock().unwrap();
         assert_eq!(s.mode, MixnetMode::Ready);
         assert_eq!(s.socks5_addr.as_deref(), Some("127.0.0.1:5"));
+    }
+
+    /// HYPOTHESIS: a status line updates the live bootstrap detail while the
+    /// mode stays `Bootstrapping`. Falsified if the line is ignored as noise
+    /// or flips the state.
+    #[tokio::test]
+    async fn a_status_line_updates_the_detail_and_keeps_bootstrapping() {
+        let state = bootstrapping();
+        drive_state(
+            b"NYM_STATUS=discovering exit gateways\nNYM_STATUS=attempt 2/10: 2 in flight, 0 failed\n"
+                .as_slice(),
+            Arc::clone(&state),
+        )
+        .await;
+        let s = state.lock().unwrap();
+        assert_eq!(
+            s.bootstrap_detail.as_deref(),
+            Some("attempt 2/10: 2 in flight, 0 failed"),
+            "the LATEST status line is retained"
+        );
+        // Stdout closed without an address, so the terminal mode is Off; the
+        // detail must have been visible while the reader was live, which the
+        // retained value demonstrates.
+        assert_eq!(s.mode, MixnetMode::Off);
+    }
+
+    /// HYPOTHESIS: the address announcement still wins after status lines,
+    /// and readiness clears the now-stale detail. Falsified if a status line
+    /// masks the announcement or the detail lingers past bootstrap.
+    #[tokio::test]
+    async fn the_address_wins_after_status_lines_and_clears_the_detail() {
+        let state = bootstrapping();
+        drive_state(
+            b"NYM_STATUS=attempt 1/10: 1 in flight, 0 failed\nSOCKS5_ADDR=127.0.0.1:7\n".as_slice(),
+            Arc::clone(&state),
+        )
+        .await;
+        let s = state.lock().unwrap();
+        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.socks5_addr.as_deref(), Some("127.0.0.1:7"));
+        assert_eq!(s.bootstrap_detail, None, "ready has no bootstrap detail");
     }
 
     #[tokio::test]

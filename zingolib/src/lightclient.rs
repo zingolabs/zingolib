@@ -631,6 +631,14 @@ impl LightClient {
             .and_then(|proxy| proxy.socks5_addr())
     }
 
+    /// The proxy's latest bootstrap progress line while Mixnet Mode is
+    /// bootstrapping, so a user interface can narrate the connect race.
+    pub fn mixnet_bootstrap_detail(&self) -> Option<String> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.bootstrap_detail())
+    }
+
     /// Resolve the fail-closed route every mixnet-only surface must obey: the
     /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
     /// clearnet when off (a deliberate toggle-off), and a refusal while
