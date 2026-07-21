@@ -701,15 +701,29 @@ impl Command for NymCommand {
 /// policy.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
+    choose_proxy_path(
+        explicit,
+        std::env::var("ZINGO_NYM_PROXY").ok(),
+        bundled_proxy_path(),
+    )
+}
+
+/// The pure precedence core of [`resolve_proxy_path`]: given the three
+/// candidate sources already gathered from the environment, pick the path.
+/// An empty explicit or environment value counts as absent.
+#[cfg(feature = "nym")]
+fn choose_proxy_path(
+    explicit: Option<&str>,
+    env_value: Option<String>,
+    bundled: Option<String>,
+) -> String {
     if let Some(path) = explicit.filter(|p| !p.is_empty()) {
         return path.to_string();
     }
-    if let Ok(path) = std::env::var("ZINGO_NYM_PROXY")
-        && !path.is_empty()
-    {
+    if let Some(path) = env_value.filter(|p| !p.is_empty()) {
         return path;
     }
-    if let Some(bundled) = bundled_proxy_path() {
+    if let Some(bundled) = bundled {
         return bundled;
     }
     "nym-proxy".to_string()
@@ -768,27 +782,36 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
     }
 }
 
+/// Render the `nym status` line for a Mixnet Mode and, when ready, the local
+/// SOCKS5 address. Pure, so the three user-facing tri-state strings are
+/// pinned by unit tests and reusable by any other frontend.
+#[cfg(feature = "nym")]
+fn render_status(mode: zingolib::nym::MixnetMode, socks5_addr: Option<&str>) -> String {
+    use zingolib::nym::MixnetMode;
+
+    match mode {
+        MixnetMode::Off => "Mixnet Mode: off (send and price-fetch use clearnet)".to_string(),
+        MixnetMode::Bootstrapping => {
+            "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
+                .to_string()
+        }
+        MixnetMode::Ready => match socks5_addr {
+            Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
+            None => "Mixnet Mode: ready".to_string(),
+        },
+    }
+}
+
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
-    use zingolib::nym::MixnetMode;
-
     let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
         match subcommand {
-            NymSubCommand::Status => Ok(match lightclient.mixnet_mode() {
-                MixnetMode::Off => {
-                    "Mixnet Mode: off (send and price-fetch use clearnet)".to_string()
-                }
-                MixnetMode::Bootstrapping => {
-                    "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
-                        .to_string()
-                }
-                MixnetMode::Ready => match lightclient.mixnet_socks5_addr() {
-                    Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
-                    None => "Mixnet Mode: ready".to_string(),
-                },
-            }),
+            NymSubCommand::Status => Ok(render_status(
+                lightclient.mixnet_mode(),
+                lightclient.mixnet_socks5_addr().as_deref(),
+            )),
             NymSubCommand::On { path } => {
                 let path = resolve_proxy_path(path.as_deref());
                 lightclient
@@ -2813,6 +2836,78 @@ mod nym_command_parsing {
         assert_eq!(
             NymCommandError::FeatureAbsent.to_string(),
             "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
+        );
+    }
+
+    /// Pins the proxy-path precedence chain: explicit, then environment,
+    /// then bundled, then the bare name on PATH — with empty explicit and
+    /// environment values counting as absent.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn proxy_path_precedence_is_explicit_env_bundled_bare() {
+        let env = || Some("/env/nym-proxy".to_string());
+        let bundled = || Some("/bundled/nym-proxy".to_string());
+
+        assert_eq!(
+            choose_proxy_path(Some("/explicit"), env(), bundled()),
+            "/explicit",
+            "an explicit path wins over everything"
+        );
+        assert_eq!(
+            choose_proxy_path(None, env(), bundled()),
+            "/env/nym-proxy",
+            "the environment wins once there is no explicit path"
+        );
+        assert_eq!(
+            choose_proxy_path(None, None, bundled()),
+            "/bundled/nym-proxy",
+            "the bundled binary wins once explicit and environment are absent"
+        );
+        assert_eq!(
+            choose_proxy_path(None, None, None),
+            "nym-proxy",
+            "with nothing configured, fall back to the bare name on PATH"
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn empty_explicit_and_env_values_count_as_absent() {
+        assert_eq!(
+            choose_proxy_path(Some(""), Some("/env/nym-proxy".to_string()), None),
+            "/env/nym-proxy",
+            "an empty explicit path falls through to the environment"
+        );
+        assert_eq!(
+            choose_proxy_path(None, Some(String::new()), None),
+            "nym-proxy",
+            "an empty environment value falls through"
+        );
+    }
+
+    /// Pins the `nym status` tri-state strings via the pure renderer.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn status_lines_render_byte_identically_to_the_replaced_strings() {
+        use zingolib::nym::MixnetMode;
+
+        assert_eq!(
+            render_status(MixnetMode::Off, None),
+            "Mixnet Mode: off (send and price-fetch use clearnet)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Bootstrapping, None),
+            "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Ready, Some("127.0.0.1:43210")),
+            "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Ready, None),
+            "Mixnet Mode: ready",
+            "ready with no address yet still renders (the route resolver, \
+             not the renderer, refuses that state)"
         );
     }
 }

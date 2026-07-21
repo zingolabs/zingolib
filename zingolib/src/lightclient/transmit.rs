@@ -53,6 +53,36 @@ pub(crate) trait TransmitTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TransmitFailed(pub String);
 
+/// How the resilience policy reads a submission failure message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RejectionClass {
+    /// An earlier submission is minable (in the mempool) or already mined,
+    /// so transmission is complete and the rejection counts as success.
+    StorageBackedDuplicate,
+    /// "Queued for download": the earlier submission was delivered but zebra
+    /// has not yet verified it, so success is held until the verdict is
+    /// storage-backed.
+    QueuedProbe,
+    /// Anything else: possibly transient, worth a bounded retry.
+    Transient,
+}
+
+/// Classify a server/transport failure message for the resilience policy.
+/// Substring matches because zainod surfaces the rejections untyped
+/// (zingolabs/zaino#1392); when that lands, typed checks replace this
+/// classifier and the policy loop is untouched.
+pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
+    if message.contains("transaction already exists in mempool")
+        || message.contains("transaction already in block chain")
+    {
+        return RejectionClass::StorageBackedDuplicate;
+    }
+    if message.contains("already queued for download") {
+        return RejectionClass::QueuedProbe;
+    }
+    RejectionClass::Transient
+}
+
 /// Submit `raw_tx` to `target` under the shared resilience policy — the single
 /// definition of the retry / duplicate-in-mempool / queued-probe behavior.
 ///
@@ -86,42 +116,31 @@ where
             Err(message) => message,
         };
 
-        // Storage-backed duplicates: an earlier submission is minable (in the
-        // mempool) or already mined, so transmission is complete. Substring
-        // matches because zainod surfaces the rejections untyped
-        // (zingolabs/zaino#1392); upgrade to typed checks when that lands.
-        if message.contains("transaction already exists in mempool")
-            || message.contains("transaction already in block chain")
-        {
-            return Ok(txid.to_string());
-        }
-
-        // "Queued for download" proves delivery, not minability: hold success
-        // until the verdict is storage-backed, so a send-Ok keeps meaning the
-        // transaction is minable now.
-        if message.contains("already queued for download") {
-            if queued_probes >= MAX_QUEUED_PROBES {
-                return Err(TransmitFailed(message));
+        match classify_rejection(&message) {
+            RejectionClass::StorageBackedDuplicate => return Ok(txid.to_string()),
+            RejectionClass::QueuedProbe => {
+                if queued_probes >= MAX_QUEUED_PROBES {
+                    return Err(TransmitFailed(message));
+                }
+                queued_probes += 1;
+                sleep(RETRY_INTERVAL).await;
             }
-            queued_probes += 1;
-            sleep(RETRY_INTERVAL).await;
-            continue;
-        }
-
-        if retry_count >= MAX_RETRIES {
-            // A transmission error does not prove the transaction failed to
-            // reach the network; an earlier attempt may have been accepted
-            // with its response lost (e.g. a timeout), causing rebroadcasts to
-            // be rejected as duplicates. Only fail if the server does not know
-            // it.
-            if target.knows_transaction(txid).await {
-                return Ok(txid.to_string());
+            RejectionClass::Transient => {
+                if retry_count >= MAX_RETRIES {
+                    // A transmission error does not prove the transaction
+                    // failed to reach the network; an earlier attempt may have
+                    // been accepted with its response lost (e.g. a timeout),
+                    // causing rebroadcasts to be rejected as duplicates. Only
+                    // fail if the server does not know it.
+                    if target.knows_transaction(txid).await {
+                        return Ok(txid.to_string());
+                    }
+                    return Err(TransmitFailed(message));
+                }
+                retry_count += 1;
+                sleep(RETRY_INTERVAL).await;
             }
-            return Err(TransmitFailed(message));
         }
-
-        retry_count += 1;
-        sleep(RETRY_INTERVAL).await;
     }
 }
 
@@ -315,5 +334,47 @@ mod tests {
             .expect_err("server does not know it, so it failed");
         assert_eq!(err.0, "timeout");
         assert_eq!(target.knows_calls(), 1);
+    }
+
+    /// Pins the classification table directly, so the seam that zaino#1392's
+    /// typed rejections will replace has its own contract tests.
+    #[test]
+    fn rejection_messages_classify_by_the_pinned_table() {
+        let table = [
+            (
+                "error: transaction already exists in mempool",
+                RejectionClass::StorageBackedDuplicate,
+            ),
+            (
+                "transaction already in block chain",
+                RejectionClass::StorageBackedDuplicate,
+            ),
+            (
+                "tx already queued for download",
+                RejectionClass::QueuedProbe,
+            ),
+            ("connection reset", RejectionClass::Transient),
+            ("timeout", RejectionClass::Transient),
+            ("", RejectionClass::Transient),
+        ];
+        for (message, expected) in table {
+            assert_eq!(
+                classify_rejection(message),
+                expected,
+                "message: {message:?}"
+            );
+        }
+    }
+
+    /// A duplicate verdict wins over a queued verdict when both substrings
+    /// appear, mirroring the check order the inline policy always had.
+    #[test]
+    fn duplicate_outranks_queued_when_both_substrings_appear() {
+        assert_eq!(
+            classify_rejection(
+                "transaction already exists in mempool and already queued for download"
+            ),
+            RejectionClass::StorageBackedDuplicate
+        );
     }
 }
