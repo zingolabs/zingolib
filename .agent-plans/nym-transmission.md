@@ -767,6 +767,12 @@ user-driven: the push; smoke stage 1 RE-RUN over the live mixnet (the
 bundle-nym-proxy, run the bundled binary); stage 3 (full wallet session
 over the mixnet); then un-draft + review request.
 
+SMOKE STAGE 1 RE-RUN: PASSED (user-run 2026-07-21, post-planner): 3/3 —
+disconnect_clean 5.4s, starts_and_reports_address 5.8s (the previous
+120s-starvation failure, now bootstrapping in one hedge window),
+socks5_tunnel_works 6.8s. The hedged racing planner is validated against
+the live mixnet. Remaining: the push, stages 2-3, un-draft + review.
+
 SMOKE STAGE 1 RESULT (user-run, cargo nextest -- --ignored): 2/3 passed —
 the live SOCKS5 tunnel through the mixnet to zec.rocks:443 works (~8s
 bootstraps). nym_proxy_starts_and_reports_address FAILED at the 120s
