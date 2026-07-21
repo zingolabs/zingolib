@@ -35,11 +35,18 @@ fn is_package_selection_arg(arg: &str) -> bool {
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
-/// `makers test` argv that selects the phase's scope).
+/// `makers test` invocation that selects the phase's TESTS).
+///
+/// Phases select tests with nextest filtersets, never with cargo package
+/// selections. Every phase then shares the front door's `--workspace`
+/// build scope, cargo unifies features identically across phases, and a
+/// hierarchy run after the first recompiles nothing. A `-p` phase scope
+/// re-unifies features per selection and compiles (then, after any source
+/// change, recompiles) a distinct variant of zingolib per phase.
 const PHASES: &[(&str, &str)] = &[
     ("packages", "packages"),
-    ("zingo-cli", "-p zingo-cli"),
-    ("libtonode", "-p libtonode-tests"),
+    ("zingo-cli", "-E 'package(zingo-cli)'"),
+    ("libtonode", "-E 'package(libtonode-tests)'"),
 ];
 
 /// One nextest run's tallies, zero where the summary line was absent.
@@ -277,6 +284,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     print_row("TOTAL:", &total);
     println!("==============================================================");
+    // Every phase runs the same --workspace build scope filtered to its
+    // own tests (one compiled variant, no per-phase feature re-unification),
+    // so nextest counts the other phases' tests as skipped in each row.
+    println!(
+        "  note: skipped counts include the other phases' tests — phases share one \
+         --workspace build scope, filtered per phase."
+    );
 
     // Every non-passing test by name, so nobody scrolls a 20-minute log to
     // learn what actually failed.
@@ -338,6 +352,23 @@ mod package_selection_guard {
             "--manifest-path=Cargo.toml",
         ] {
             assert!(is_package_selection_arg(arg), "should reject {arg}");
+        }
+    }
+
+    /// Phases must select tests (filtersets), never packages: a package
+    /// selection re-unifies features per phase and compiles a distinct
+    /// zingolib variant per phase, defeating the shared --workspace
+    /// build scope.
+    #[test]
+    fn phase_invocations_select_tests_not_packages() {
+        for (_, invocation) in PHASES {
+            for token in invocation.split_whitespace() {
+                let token = token.trim_matches('\'');
+                assert!(
+                    !is_package_selection_arg(token),
+                    "phase invocation {invocation:?} carries package-selection arg {token:?}"
+                );
+            }
         }
     }
 
