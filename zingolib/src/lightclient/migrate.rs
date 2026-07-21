@@ -993,6 +993,9 @@ impl LightClient {
     ) -> Result<MigrationSummary, LightClientError> {
         {
             let mut wallet = self.wallet().write().await;
+            // Plan before gating: a failed precondition must not erase the
+            // completed-migration history the gate would otherwise clear.
+            let _ = wallet.plan_ironwood_migration_now(account)?;
             immediate_migration_entry_gate(&mut wallet, account)?;
         }
 
@@ -1009,6 +1012,48 @@ impl LightClient {
                 let mut wallet = self.wallet().write().await;
                 let plan = wallet.plan_ironwood_migration_now(account)?;
                 if plan.is_split() {
+                    // The entry gate ran once; the per-round resume
+                    // re-verifies the state it is about to drive, so the
+                    // consent guarantee lives in the state machine rather
+                    // than in receiver discipline at the API surface — a
+                    // future scheduled-flow split driver or a second
+                    // client handle must not reopen the consent collapse
+                    // through this path.
+                    if let Some(state) = &wallet.migration {
+                        if state.mode != MigrationMode::Immediate {
+                            return Err(MigrationError::ScheduledMigrationExists.into());
+                        }
+                        if state.account != account {
+                            return Err(MigrationError::DifferentAccount.into());
+                        }
+                    }
+                    // An immediate part anchors at the current bucket's
+                    // boundary. Until the first post-activation boundary
+                    // opens, no anchor exists and every broadcast pass
+                    // would skip every part — previously a MAX_ROUNDS
+                    // spin ending in a misleading SplitDidNotConverge.
+                    let bucket_modulus = wallet.migration.as_ref().map_or_else(
+                        || MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
+                        |state| state.params.bucket_modulus,
+                    );
+                    let activation = wallet.ironwood_activation()?;
+                    let now_height = wallet
+                        .sync_state
+                        .last_known_chain_height()
+                        .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                    let current_boundary = schedule::boundary_of(
+                        schedule::bucket_index(now_height, bucket_modulus),
+                        bucket_modulus,
+                    );
+                    if current_boundary < activation.height() {
+                        return Err(MigrationError::ActivationBoundaryPending {
+                            retry_after: schedule::first_anchorable_boundary(
+                                activation,
+                                bucket_modulus,
+                            ),
+                        }
+                        .into());
+                    }
                     // Invoking the one-call constitutes consent to the
                     // current plan. Record the binding if this is a fresh
                     // migration.
@@ -1230,12 +1275,15 @@ fn immediate_migration_entry_gate(
 ) -> Result<(), MigrationError> {
     match &wallet.migration {
         None => Ok(()),
-        Some(state) if state.account != account => Err(MigrationError::DifferentAccount),
+        // Completed state clears before the account is compared: it is
+        // terminal history for whichever account finished it, and must not
+        // block another account's migration forever.
         Some(state) if matches!(state.phase, MigrationPhase::Complete { .. }) => {
             wallet.migration = None;
             wallet.save_required = true;
             Ok(())
         }
+        Some(state) if state.account != account => Err(MigrationError::DifferentAccount),
         Some(state) if state.mode == MigrationMode::Scheduled => {
             Err(MigrationError::ScheduledMigrationExists)
         }
@@ -1551,6 +1599,21 @@ mod tests {
                 );
                 assert!(wallet.save_required, "the clearing must persist");
             }
+        }
+
+        /// Completed state is terminal history and clears before the
+        /// account comparison: account A's finished migration must not
+        /// block account B's immediate path forever (review point 6).
+        #[test]
+        fn completed_migration_of_another_account_clears_too() {
+            let mut wallet = wallet_with_state(
+                MigrationMode::Scheduled,
+                MigrationPhase::Complete { residual: 0 },
+            );
+            let other_account = zip32::AccountId::try_from(1).expect("in range");
+            immediate_migration_entry_gate(&mut wallet, other_account)
+                .expect("history must not block another account");
+            assert!(wallet.migration.is_none());
         }
 
         #[test]

@@ -64,9 +64,22 @@ pub fn first_permitted_bucket(
     activation: PoolActivation,
     params: &MigrationParams,
 ) -> u64 {
-    let activation_bucket =
-        u64::from(u32::from(activation.height())).div_ceil(u64::from(params.bucket_modulus.max(1)));
-    (bucket_index(now_height, params.bucket_modulus) + 1).max(activation_bucket)
+    (bucket_index(now_height, params.bucket_modulus) + 1)
+        .max(activation_bucket(activation, params.bucket_modulus))
+}
+
+/// The first bucket boundary at or above the Pool Activation: the
+/// earliest height an Ironwood part can anchor to.
+pub fn first_anchorable_boundary(activation: PoolActivation, bucket_modulus: u32) -> BlockHeight {
+    boundary_of(
+        activation_bucket(activation, bucket_modulus),
+        bucket_modulus,
+    )
+}
+
+/// The first bucket whose boundary sits at or above the Pool Activation.
+fn activation_bucket(activation: PoolActivation, bucket_modulus: u32) -> u64 {
+    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus.max(1)))
 }
 
 /// Places a part in `bucket` with a fresh random target inside the
