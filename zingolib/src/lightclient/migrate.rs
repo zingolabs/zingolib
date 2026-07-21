@@ -16,6 +16,7 @@
 //! schedule, accepting that the transfers are correlated and the amounts are
 //! the wallet's own.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nonempty::NonEmpty;
@@ -23,7 +24,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, MigrationError};
-use crate::lightclient::sync::SyncQuiescence;
+use crate::lightclient::sync::SyncPauseGuard;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::LightWallet;
@@ -61,6 +62,117 @@ pub struct DrainSummary {
     pub fee: u64,
     /// Dust value (zatoshis) left unmigrated in the Orchard pool.
     pub stranded: u64,
+}
+
+/// The coarse stage an in-progress immediate drain is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrainPhase {
+    /// Proving and signing the planned transactions.
+    Building,
+    /// Broadcasting the built transactions.
+    Transmitting,
+}
+
+/// A snapshot of an in-progress immediate Orchard→Ironwood drain, for rendering
+/// "built i/N, sent i/N". The immediate-drain counterpart to [`MigrationStatus`].
+/// `None` from [`LightClient::drain_status`] means no drain is running.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrainStatus {
+    /// Total transactions in the plan (N), fixed when the drain begins.
+    pub total: u32,
+    /// Transactions built (proved + signed) so far, `0..=total`.
+    pub built: u32,
+    /// Transactions broadcast so far, `0..=total`.
+    pub sent: u32,
+    /// Which phase the drain is in.
+    pub phase: DrainPhase,
+}
+
+/// A cloneable handle to an immediate drain's live progress, readable without
+/// touching the wallet lock. A consumer that runs the drain (which borrows the
+/// client `&mut self`) grabs this via [`LightClient::drain_progress_handle`]
+/// *before* starting the drain, then polls [`Self::status`] concurrently.
+///
+/// The drain holds the wallet write lock across its whole build and transmit
+/// loops, so progress lives in this side channel instead of in wallet state:
+/// a poll never contends with the drain for the wallet lock.
+#[derive(Debug, Clone, Default)]
+pub struct DrainProgressHandle(Arc<Mutex<Option<DrainStatus>>>);
+
+impl DrainProgressHandle {
+    /// The current drain snapshot, or `None` when no drain is running.
+    pub fn status(&self) -> Option<DrainStatus> {
+        self.0
+            .lock()
+            .expect("drain progress mutex poisoned")
+            .clone()
+    }
+
+    /// Arms a fresh drain of `total` transactions. Every other mutator is a
+    /// no-op until this has been called, which is what scopes progress to the
+    /// immediate drain and leaves the shared build/transmit primitives
+    /// untouched for every other caller.
+    pub(crate) fn begin(&self, total: u32) {
+        *self.0.lock().expect("drain progress mutex poisoned") = Some(DrainStatus {
+            total,
+            built: 0,
+            sent: 0,
+            phase: DrainPhase::Building,
+        });
+    }
+
+    /// Publishes the number of transactions built so far. No-op when idle.
+    pub(crate) fn set_built(&self, built: u32) {
+        if let Some(status) = self
+            .0
+            .lock()
+            .expect("drain progress mutex poisoned")
+            .as_mut()
+        {
+            status.built = built;
+        }
+    }
+
+    /// Advances the phase to [`DrainPhase::Transmitting`]. No-op when idle.
+    pub(crate) fn enter_transmit(&self) {
+        if let Some(status) = self
+            .0
+            .lock()
+            .expect("drain progress mutex poisoned")
+            .as_mut()
+        {
+            status.phase = DrainPhase::Transmitting;
+        }
+    }
+
+    /// Publishes the number of transactions broadcast so far. No-op when idle.
+    pub(crate) fn set_sent(&self, sent: u32) {
+        if let Some(status) = self
+            .0
+            .lock()
+            .expect("drain progress mutex poisoned")
+            .as_mut()
+        {
+            status.sent = sent;
+        }
+    }
+
+    /// Returns to the idle state, so a poll reports `None` once more.
+    pub(crate) fn clear(&self) {
+        *self.0.lock().expect("drain progress mutex poisoned") = None;
+    }
+}
+
+/// Clears the drain progress on drop, so a failed or early-returning drain never
+/// leaves a stale snapshot behind. Owns an `Arc` clone (not a borrow of the
+/// client) so it can live across the `&mut self` [`LightClient::build_and_transmit`]
+/// call.
+struct DrainProgressScope(DrainProgressHandle);
+
+impl Drop for DrainProgressScope {
+    fn drop(&mut self) {
+        self.0.clear();
+    }
 }
 
 /// The transactions of a completed migration.
@@ -686,7 +798,7 @@ impl LightClient {
         }
 
         self.sync_and_await().await?;
-        let sync = self.quiesce_sync()?;
+        let sync = self.pause_sync_scoped()?;
         self.drain_orchard_to_ironwood_presynced(account, &sync)
             .await
     }
@@ -702,16 +814,16 @@ impl LightClient {
     /// this entry point lets the caller drive sync itself.
     ///
     /// The caller is responsible for keeping the wallet synced before
-    /// calling, and proves it has quiesced its sync by presenting the
-    /// [`SyncQuiescence`] witness — [`Self::quiesce_sync`] pauses a running
-    /// engine and resumes it when the witness drops. Planning and building
+    /// calling, and proves it has paused its sync by presenting the
+    /// [`SyncPauseGuard`] — [`Self::pause_sync_scoped`] pauses a running
+    /// engine and resumes it when the guard drops. Planning and building
     /// therefore observe one stable wallet state, the same
     /// pause-before-proposing invariant the `send`/`shield` mutation paths
     /// establish. Everything else — the plan, the chunked broadcast, and the
     /// idempotent cleanup on partial failure — is identical to the syncing
     /// variant.
     ///
-    /// Calling without the witness does not compile — a stable wallet state
+    /// Calling without the guard does not compile — a stable wallet state
     /// across plan and build is a compile-time precondition, not a runtime
     /// courtesy:
     ///
@@ -725,7 +837,7 @@ impl LightClient {
     pub async fn drain_orchard_to_ironwood_presynced(
         &mut self,
         account: zip32::AccountId,
-        sync: &SyncQuiescence,
+        sync: &SyncPauseGuard,
     ) -> Result<DrainSummary, LightClientError> {
         // A scheduled migration soft-reserves the notes its parts are bound to.
         // Draining them would invalidate those parts behind its back.
@@ -737,6 +849,13 @@ impl LightClient {
         if plan.is_empty() {
             return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
         }
+
+        // Arm per-transaction progress for the poll side channel. The scope
+        // guard owns an `Arc` clone (not a borrow of `self`), so it survives the
+        // `&mut self` `build_and_transmit` call and clears the snapshot on every
+        // exit — success, `?`-propagated error, or panic.
+        self.drain_progress.begin(plan.transactions.len() as u32);
+        let _scope = DrainProgressScope(self.drain_progress.clone());
 
         let txids = self
             .build_and_transmit(&plan.transactions, sync, |wallet, planned| {
@@ -753,20 +872,24 @@ impl LightClient {
     }
 
     /// Builds and transmits one batch of planned migration transactions under
-    /// a caller-held [`SyncQuiescence`], enforcing the shared cleanup
+    /// a caller-held [`SyncPauseGuard`], enforcing the shared cleanup
     /// contract: a build failure fails the transactions already built, and a
     /// transmit failure fails every transaction still unsent, so no note
     /// stays spent by a transaction that will never reach the network. Both
     /// the drain flow and the note-splitting rounds send through here. The
-    /// witness parameter is pure evidence — the caller's witness performs the
+    /// guard parameter is pure proof — the caller's guard performs the
     /// pause and its drop the resume, on every exit path.
     async fn build_and_transmit<T>(
         &mut self,
         planned: &[T],
-        _sync: &SyncQuiescence,
+        _sync: &SyncPauseGuard,
         build: impl Fn(&mut LightWallet, &T) -> Result<TxId, WalletError>,
     ) -> Result<Vec<TxId>, LightClientError> {
         let txids = self.build_transactions(planned, build).await?;
+
+        // Build is done; the transmit loop below publishes "sent i/N". No-op
+        // unless an immediate drain armed the side channel.
+        self.drain_progress.enter_transmit();
 
         let transmitted = self
             .transmit_transactions(
@@ -799,7 +922,12 @@ impl LightClient {
 
         for item in planned {
             match build(&mut wallet, item) {
-                Ok(txid) => txids.push(txid),
+                Ok(txid) => {
+                    txids.push(txid);
+                    // Publish "built i/N". No-op unless a drain armed the side
+                    // channel, so ordinary sends and note-splitting are untouched.
+                    self.drain_progress.set_built(txids.len() as u32);
+                }
                 Err(e) => {
                     if !txids.is_empty() {
                         pepper_sync::set_transactions_failed(
@@ -951,13 +1079,13 @@ impl LightClient {
                 .into_iter()
                 .next()
                 .expect("unsplit plan has at least one round");
-            let sync = self.quiesce_sync()?;
+            let sync = self.pause_sync_scoped()?;
             let round_txids = self
                 .build_and_transmit(&round, &sync, |wallet, planned| {
                     wallet.build_note_split_transaction(account, planned)
                 })
                 .await?;
-            // The confirmation wait syncs; release the quiescence first.
+            // The confirmation wait syncs; release the pause first.
             drop(sync);
             split_txids.extend(round_txids.iter().copied());
 
@@ -1026,9 +1154,55 @@ mod tests {
         PartRecord, PartState, SigningStrategy, schedule,
     };
 
+    use super::{DrainPhase, DrainProgressHandle};
+
     /// The value of the one fabricated note every scenario here binds a
     /// migration part to.
     const NOTE_VALUE: u64 = 100_000;
+
+    /// The drain-progress side channel: a fresh handle is idle, `begin` arms it,
+    /// the per-transaction mutators advance a clone the same way a mobile poll
+    /// thread would observe, and every mutator is a no-op once idle — the
+    /// property that scopes progress to the immediate drain and leaves the
+    /// shared build/transmit primitives untouched for every other caller.
+    #[test]
+    fn drain_progress_handle_tracks_a_drain() {
+        let handle = DrainProgressHandle::default();
+        assert_eq!(handle.status(), None, "idle until a drain arms it");
+
+        // A consumer grabs its own clone before the drain starts and must see
+        // the same updates (mobile polls this clone on another thread).
+        let observer = handle.clone();
+
+        handle.begin(4);
+        let armed = observer.status().expect("armed by begin");
+        assert_eq!(armed.total, 4);
+        assert_eq!(armed.built, 0);
+        assert_eq!(armed.sent, 0);
+        assert_eq!(armed.phase, DrainPhase::Building);
+
+        handle.set_built(2);
+        assert_eq!(observer.status().expect("armed").built, 2);
+
+        handle.enter_transmit();
+        assert_eq!(
+            observer.status().expect("armed").phase,
+            DrainPhase::Transmitting
+        );
+
+        handle.set_sent(3);
+        assert_eq!(observer.status().expect("armed").sent, 3);
+
+        handle.clear();
+        assert_eq!(observer.status(), None, "completion returns to idle");
+
+        // No-op once idle: ordinary sends and note-splitting flow through the
+        // same mutators but never armed the slot, so they must bump nothing.
+        handle.set_built(9);
+        handle.set_sent(9);
+        handle.enter_transmit();
+        assert_eq!(observer.status(), None, "mutators are inert while idle");
+    }
 
     /// A synthetic wallet fully scanned through `tip`, holding one
     /// [`NOTE_VALUE`] legacy-Orchard note, plus that note's binding for a

@@ -164,7 +164,7 @@ impl LightClient {
                 } => self.shield(proposal, shielding_account).await,
             };
 
-            self.release_proposal_quiescence(resume_sync);
+            self.release_proposal_pause(resume_sync);
 
             txids
         } else {
@@ -238,9 +238,9 @@ impl LightClient {
             }
         };
         drop(wallet);
-        // The proposal is consumed on every path above, so its quiescence
+        // The proposal is consumed on every path above, so its pause
         // has nothing left to guard; the engine returns to its prior mode.
-        self.release_proposal_quiescence(true);
+        self.release_proposal_pause(true);
         result.map_err(LightClientError::from)
     }
 
@@ -258,7 +258,7 @@ impl LightClient {
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
-    /// If sync is running, it is quiesced before creating the send proposal.
+    /// If sync is running, it is paused before creating the send proposal.
     /// If `resume_sync` is `true`, the engine is restored to its prior mode
     /// after the send, on every exit path; if `false`, it stays paused for
     /// the caller to resume.
@@ -270,7 +270,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
-        let witness = self.quiesce_sync().ok();
+        let guard = self.pause_sync_scoped().ok();
         let proposal_result = self
             .wallet()
             .write()
@@ -281,17 +281,17 @@ impl LightClient {
             Ok(proposal) => self.send(proposal, account_id).await,
             Err(e) => Err(e.into()),
         };
-        if let Some(witness) = witness
+        if let Some(guard) = guard
             && !resume_sync
         {
-            witness.disarm();
+            guard.disarm();
         }
 
         txids
     }
 
     /// Shields all transparent funds skipping proposal confirmation. The
-    /// sync engine is quiesced before the proposal's wallet reads and
+    /// sync engine is paused before the proposal's wallet reads and
     /// restored to its prior mode when the call returns; the shield path
     /// previously proposed, built, and stored transactions under a running
     /// engine.
@@ -301,7 +301,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
-        let _witness = self.quiesce_sync().ok();
+        let _guard = self.pause_sync_scoped().ok();
         let proposal = self
             .wallet()
             .write()
@@ -320,7 +320,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let indexer = self.require_indexer()?.clone();
         let mut wallet = self.wallet().write().await;
-        for txid in calculated_txids.iter() {
+        for (index, txid) in calculated_txids.iter().enumerate() {
             let calculated_transaction = wallet
                 .wallet_transactions
                 .get(txid)
@@ -471,6 +471,11 @@ impl LightClient {
                 )
                 .into());
             }
+
+            // Published after the transaction is confirmed transmitted and its
+            // server txid verified. No-op unless an immediate drain armed the
+            // side channel.
+            self.drain_progress.set_sent(index as u32 + 1);
         }
 
         Ok(calculated_txids)

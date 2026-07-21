@@ -28,17 +28,17 @@ impl LightClient {
 
     /// Creates and stores a proposal from a transaction request.
     ///
-    /// Quiesces the sync engine before the first wallet read and holds that
-    /// quiescence beside the stored proposal, so the state the proposal
+    /// Pauses the sync engine before the first wallet read and holds that
+    /// pause beside the stored proposal, so the state the proposal
     /// selected against cannot shift before the send builds it. A proposal
-    /// that fails to come into existence releases the quiescence on the way
+    /// that fails to come into existence releases the pause on the way
     /// out, restoring the engine to the mode it was found in.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let minted = self.hold_proposal_quiescence();
+        let minted = self.hold_proposal_pause();
         let result = {
             let mut wallet = self.wallet().write().await;
             wallet
@@ -51,14 +51,14 @@ impl LightClient {
                 })
         };
         if result.is_err() && minted {
-            self.release_proposal_quiescence(true);
+            self.release_proposal_pause(true);
         }
         result
     }
 
     /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
     ///
-    /// The quiescence a proposal holds (see [`Self::propose_send`]) is
+    /// The pause a proposal holds (see [`Self::propose_send`]) is
     /// established before the send-all sizing: the [`Self::max_send_value`]
     /// trial proposals are wallet reads the sizing must not race a running
     /// engine for, and the value they compute must still hold when the real
@@ -70,19 +70,19 @@ impl LightClient {
         memo: Option<zcash_protocol::memo::MemoBytes>,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let minted = self.hold_proposal_quiescence();
+        let minted = self.hold_proposal_pause();
         let result = self
-            .propose_send_all_quiesced(address, zennies_for_zingo, memo, account_id)
+            .propose_send_all_paused(address, zennies_for_zingo, memo, account_id)
             .await;
         if result.is_err() && minted {
-            self.release_proposal_quiescence(true);
+            self.release_proposal_pause(true);
         }
         result
     }
 
     /// The [`Self::propose_send_all`] body, from sizing through storing,
-    /// which its caller runs under the stored proposal's quiescence.
-    async fn propose_send_all_quiesced(
+    /// which its caller runs under the stored proposal's pause.
+    async fn propose_send_all_paused(
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
@@ -112,14 +112,14 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal for shielding all transparent funds,
-    /// under the same stored-proposal quiescence as [`Self::propose_send`].
-    /// The shield path previously read spendable coins without quiescing
+    /// under the same stored-proposal pause as [`Self::propose_send`].
+    /// The shield path previously read spendable coins without pausing
     /// the engine at all.
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let minted = self.hold_proposal_quiescence();
+        let minted = self.hold_proposal_pause();
         let result = {
             let mut wallet = self.wallet().write().await;
             wallet
@@ -132,7 +132,7 @@ impl LightClient {
                 })
         };
         if result.is_err() && minted {
-            self.release_proposal_quiescence(true);
+            self.release_proposal_pause(true);
         }
         result
     }
@@ -1488,9 +1488,9 @@ mod proposal_shape {
 /// could be mutating, and a pause it takes must serve a pending proposal —
 /// never outlive one. Each test here pins one way the imperative pause
 /// discipline violates that contract; all four run red until the stored
-/// quiescence discipline lands later on this branch.
+/// pause discipline lands later on this branch.
 #[cfg(test)]
-mod quiescence_contract {
+mod sync_pause_contract {
     use std::sync::atomic;
 
     use pepper_sync::wallet::SyncMode;
@@ -1582,10 +1582,10 @@ mod quiescence_contract {
 
     /// `quick_shield` goes further than proposing: it builds and stores
     /// signed transactions, so its first wallet read must already run
-    /// under quiescence. Simulate the engine mid-batch by holding the
+    /// under a pause. Simulate the engine mid-batch by holding the
     /// wallet write lock: the call blocks on that lock, so if the mode
     /// still reads `Running` while the call is in flight, the build began
-    /// without quiescing the engine first.
+    /// without pausing the engine first.
     #[tokio::test]
     async fn quick_shield_never_builds_under_a_running_engine() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
@@ -1615,12 +1615,12 @@ mod quiescence_contract {
 
     /// The send-all sizing (the `max_send_value` trial proposals) is
     /// `propose_send_all`'s first wallet read and must already run under
-    /// quiescence. Simulate the engine mid-batch by holding the wallet
+    /// a pause. Simulate the engine mid-batch by holding the wallet
     /// write lock: the sizing blocks on that lock, so if the engine's mode
     /// still reads `Running` while the call is in flight, the call began
-    /// its reads without quiescing the engine first.
+    /// its reads without pausing the engine first.
     #[tokio::test]
-    async fn send_all_sizing_runs_under_quiescence() {
+    async fn send_all_sizing_runs_under_pause() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(100_000)
             .build();
@@ -1650,7 +1650,7 @@ mod quiescence_contract {
     }
 
     /// A request against a running-engine client that a proposal succeeds
-    /// for, shared by the stored-quiescence protocol tests below.
+    /// for, shared by the stored-pause protocol tests below.
     async fn client_with_stored_proposal() -> LightClient {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(100_000)
@@ -1669,7 +1669,7 @@ mod quiescence_contract {
         client
     }
 
-    /// A successful proposal holds its quiescence for as long as the
+    /// A successful proposal holds its pause for as long as the
     /// proposal is stored: the engine stays paused, so the state the
     /// proposal selected against cannot shift before the send builds it.
     #[tokio::test]
@@ -1679,7 +1679,7 @@ mod quiescence_contract {
         assert_eq!(
             client.sync_mode(),
             SyncMode::Paused,
-            "a stored proposal must hold the engine quiescent"
+            "a stored proposal must hold the engine paused"
         );
     }
 
@@ -1701,7 +1701,7 @@ mod quiescence_contract {
     }
 
     /// An Indexerless send attempt fails before consuming the stored
-    /// proposal (ADR 0006), so the proposal — and the quiescence guarding
+    /// proposal (ADR 0006), so the proposal — and the pause guarding
     /// it — survive for retry once an Indexer is configured.
     #[tokio::test]
     async fn offline_send_failure_keeps_the_proposal_guarded() {

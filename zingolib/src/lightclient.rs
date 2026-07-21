@@ -117,7 +117,11 @@ pub struct LightClient {
     /// Process-lifetime state beside the stored proposal itself (ADR 0006):
     /// never serialized, minted by the proposing calls, released when the
     /// proposal is consumed, cleared, or fails to come into existence.
-    proposal_quiescence: Option<sync::SyncQuiescence>,
+    proposal_pause_guard: Option<sync::SyncPauseGuard>,
+    /// Live progress of an in-progress immediate drain, or `None` when idle.
+    /// A side channel off the wallet lock, so it stays pollable while build and
+    /// transmit hold the wallet write lock across their loops.
+    drain_progress: migrate::DrainProgressHandle,
 }
 
 impl LightClient {
@@ -175,7 +179,8 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            proposal_quiescence: None,
+            proposal_pause_guard: None,
+            drain_progress: migrate::DrainProgressHandle::default(),
         })
     }
 
@@ -200,7 +205,8 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            proposal_quiescence: None,
+            proposal_pause_guard: None,
+            drain_progress: migrate::DrainProgressHandle::default(),
         }
     }
 
@@ -243,7 +249,8 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            proposal_quiescence: None,
+            proposal_pause_guard: None,
+            drain_progress: migrate::DrainProgressHandle::default(),
         })
     }
 
@@ -255,6 +262,69 @@ impl LightClient {
     /// Returns the wallet birthday height for lock-free access.
     pub fn birthday(&self) -> u32 {
         u32::from(self.wallet.birthday)
+    }
+
+    /// A snapshot of the in-progress immediate drain
+    /// ([`Self::drain_orchard_to_ironwood`]), or `None` when idle.
+    ///
+    /// Reads a side channel, not the wallet, so it never blocks on the drain's
+    /// wallet write lock. To poll while a drain — which borrows `&mut self` — is
+    /// running, grab a [`Self::drain_progress_handle`] first.
+    pub fn drain_status(&self) -> Option<migrate::DrainStatus> {
+        self.drain_progress.status()
+    }
+
+    /// A cloneable handle to the drain's live progress. Grab it *before*
+    /// starting a drain, then poll [`migrate::DrainProgressHandle::status`]
+    /// concurrently while the drain holds `&mut self`.
+    ///
+    /// [`Self::drain_status`] reads the same channel but needs `&self`, so it
+    /// cannot be called on the client the drain is borrowing. This handle is
+    /// how a concurrent poller — a spawned task, or the consumer's existing
+    /// sync-status loop — observes progress.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(
+    /// #     mut client: zingolib::lightclient::LightClient,
+    /// #     account: zip32::AccountId,
+    /// # ) -> Result<(), zingolib::lightclient::error::LightClientError> {
+    /// // Grab the handle up front; the drain will borrow `client` exclusively.
+    /// let progress = client.drain_progress_handle();
+    ///
+    /// // Report from a second task. `status()` reads a side channel, so it
+    /// // never blocks on the wallet lock the drain holds across its loops. It
+    /// // reads `None` before the drain arms it and once the drain finishes, so
+    /// // the `if let` simply skips those ticks.
+    /// let reporter = tokio::spawn(async move {
+    ///     loop {
+    ///         if let Some(p) = progress.status() {
+    ///             println!("built {}/{}  sent {}/{}", p.built, p.total, p.sent, p.total);
+    ///         }
+    ///         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    ///     }
+    /// });
+    ///
+    /// // The caller owns the sync lifecycle: pause it, then drain against that
+    /// // stable state. Completion is the returned summary — not a progress
+    /// // value — after which the handle reads `None` again.
+    /// let guard = client.pause_sync_scoped()?;
+    /// let summary = client
+    ///     .drain_orchard_to_ironwood_presynced(account, &guard)
+    ///     .await?;
+    /// reporter.abort();
+    ///
+    /// println!(
+    ///     "migrated {} zat across {} transactions",
+    ///     summary.migrated,
+    ///     summary.txids.len(),
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn drain_progress_handle(&self) -> migrate::DrainProgressHandle {
+        self.drain_progress.clone()
     }
 
     /// Returns the wallet's mnemonic phrase as a string.
@@ -450,7 +520,7 @@ impl LightClient {
     /// declined proposal until some later send opted into resuming.
     pub async fn clear_proposal(&mut self) {
         self.wallet().write().await.clear_proposal();
-        self.release_proposal_quiescence(true);
+        self.release_proposal_pause(true);
     }
 
     /// Returns `true` if the wallet has unsaved changes.

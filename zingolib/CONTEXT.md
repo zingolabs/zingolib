@@ -115,7 +115,7 @@
 
 **SyncMode** — The current state of the sync engine: `NotRunning`, `Running`, `Paused`, or `Shutdown`.
 
-**SyncQuiescence** — A held value that witnesses the sync engine is quiescent — paused or not running — and keeps it so for as long as the value lives. `LightClient::quiesce_sync` is the sole constructor: it pauses a running engine, and dropping the witness restores the prior sync mode. The Orchard→Ironwood drain demands the witness as a parameter, so planning under a running sync is unrepresentable for that path; the Two-phase Send holds one internally beside the stored Proposal, giving the shipped propose/send protocol the same guarantee without a signature change.
+**SyncPauseGuard** — A guard that holds the sync engine paused — actively paused or not running — for as long as the value lives. `LightClient::pause_sync_scoped` is the sole constructor: it pauses a running engine, and dropping the guard restores the prior sync mode. The Orchard→Ironwood drain demands the guard as a parameter, so planning under a running sync is unrepresentable for that path; the Two-phase Send holds one internally beside the stored Proposal, giving the shipped propose/send protocol the same guarantee without a signature change.
 
 **SyncConfig** — Configuration for the sync engine: performance level and transparent address discovery settings.
 
@@ -135,7 +135,7 @@
 
 **Transmission** — The step in which the client attempts a send: it submits a Calculated Transaction to the Indexer and verifies that the server-reported txid matches the locally calculated txid. Ironwood migration parts are instead *broadcast* (see **Migration Broadcast Endpoint**); the two words name distinct submission paths.
 
-**Two-phase Send** — The standard send path: `propose_send` (or `propose_shield`) followed by `send_stored_proposal`. Allows the caller to inspect the Proposal (e.g. fees) before committing. Proposing quiesces the sync engine and the client holds that quiescence (a **SyncQuiescence**) while the Proposal is stored, so the state proposed against cannot shift before the send builds it. The quiescence ends with the Proposal: `send_stored_proposal(resume_sync: true)` and `clear_proposal` (the decline path) restore the engine's prior mode, `resume_sync: false` leaves it paused for the caller, and a proposing call that fails restores the engine on its way out. `quick_send` / `quick_shield` are single-shot convenience wrappers that hold the quiescence for the span of one call.
+**Two-phase Send** — The standard send path: `propose_send` (or `propose_shield`) followed by `send_stored_proposal`. Allows the caller to inspect the Proposal (e.g. fees) before committing. Proposing pauses the sync engine and the client holds that pause (a **SyncPauseGuard**) while the Proposal is stored, so the state proposed against cannot shift before the send builds it. The pause ends with the Proposal: `send_stored_proposal(resume_sync: true)` and `clear_proposal` (the decline path) restore the engine's prior mode, `resume_sync: false` leaves it paused for the caller, and a proposing call that fails restores the engine on its way out. `quick_send` / `quick_shield` are single-shot convenience wrappers that hold the pause for the span of one call.
 
 ---
 
