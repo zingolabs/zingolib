@@ -225,6 +225,18 @@ lazy_static! {
     static ref LIGHTCLIENT: RwLock<Option<LightClient>> = RwLock::new(None);
 }
 
+// Live progress of the in-flight immediate Orchard->Ironwood drain, held in a
+// side channel *outside* the LIGHTCLIENT lock. `drain_orchard_to_ironwood`
+// holds LIGHTCLIENT.write() for its whole `block_on`, so a `drain_status` poll
+// that read the lightclient would deadlock behind it. Instead the drain stashes
+// a cloned `DrainProgressHandle` (an independent Arc<Mutex<Option<DrainStatus>>>)
+// here; the poller reads only this global and never contends for the drain's
+// wallet/lightclient lock. `None` between drains.
+lazy_static! {
+    static ref DRAIN_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::DrainProgressHandle>> =
+        RwLock::new(None);
+}
+
 lazy_static! {
     pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
@@ -2056,9 +2068,27 @@ pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
+            // Publish this drain's progress handle to the DRAIN_PROGRESS side
+            // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
+            // whole drain, so a concurrent `drain_status` poll must read this
+            // handle (an independent Arc) rather than the lightclient. The handle
+            // reads idle (`null`) until the drain arms it after planning.
+            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+                *progress = Some(lightclient.drain_progress_handle());
+            }
+            let out = RT.block_on(async move {
+                // Pause our continuous background sync before the drain plans:
+                // the presynced drain requires a SyncPauseGuard so the plan and
+                // the build observe one stable wallet state (dropping `sync` at
+                // the end of this block resumes the engine). Without it, planning
+                // could select notes the running sync then mutates underneath,
+                // between the plan and the build.
+                let sync = match lightclient.pause_sync_scoped() {
+                    Ok(sync) => sync,
+                    Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                };
                 match lightclient
-                    .drain_orchard_to_ironwood_presynced(AccountId::ZERO)
+                    .drain_orchard_to_ironwood_presynced(AccountId::ZERO, &sync)
                     .await
                 {
                     Ok(summary) => {
@@ -2074,9 +2104,56 @@ pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
                     }
                 }
                 .pretty(2)
-            }))
+            });
+            // Drop the stale handle. The drain's own scope guard already reset
+            // the snapshot to idle on the way out, so a late poll reads `null`
+            // whether or not this clear has landed yet.
+            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+                *progress = None;
+            }
+            Ok(out)
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
+    })
+}
+
+/// A snapshot of the in-flight immediate drain's progress, for rendering
+/// "Building i/N" then "Broadcasting i/N" after the user presses Accept. Reads
+/// the DRAIN_PROGRESS side channel only, never LIGHTCLIENT, so it stays
+/// responsive while `drain_orchard_to_ironwood` holds the lightclient lock
+/// across its whole build-and-broadcast loop.
+///
+/// Returns, while a drain runs:
+/// `{ total, built, sent, phase }` where `phase` is `"building"` or
+/// `"transmitting"` and the counts are `0..=total`. Returns JSON `null` when no
+/// drain is in flight (before it starts, or once it has finished).
+pub fn drain_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        // Snapshot under a brief read lock, then drop it: the drain only touches
+        // DRAIN_PROGRESS at its very start and end, so this never blocks on the
+        // long-running drain the way a LIGHTCLIENT read would.
+        let status = {
+            let progress = DRAIN_PROGRESS
+                .read()
+                .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+            progress.as_ref().and_then(|handle| handle.status())
+        };
+        Ok(match status {
+            Some(s) => {
+                use zingolib::lightclient::migrate::DrainPhase;
+                object! {
+                    "total" => s.total,
+                    "built" => s.built,
+                    "sent" => s.sent,
+                    "phase" => match s.phase {
+                        DrainPhase::Building => "building",
+                        DrainPhase::Transmitting => "transmitting",
+                    },
+                }
+                .pretty(2)
+            }
+            None => json::JsonValue::Null.pretty(2),
+        })
     })
 }

@@ -813,6 +813,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -839,6 +841,8 @@ fun uniffi_zingo_checksum_func_create_new_transparent_address(
 fun uniffi_zingo_checksum_func_create_new_unified_address(
 ): Short
 fun uniffi_zingo_checksum_func_drain_orchard_to_ironwood(
+): Short
+fun uniffi_zingo_checksum_func_drain_status(
 ): Short
 fun uniffi_zingo_checksum_func_get_balance(
 ): Short
@@ -986,6 +990,8 @@ fun uniffi_zingo_fn_func_create_new_transparent_address(uniffi_out_err: UniffiRu
 fun uniffi_zingo_fn_func_create_new_unified_address(`receivers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_drain_orchard_to_ironwood(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_drain_status(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_get_balance(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1219,6 +1225,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_drain_orchard_to_ironwood() != 44502.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_drain_status() != 22064.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_get_balance() != 46672.toShort()) {
@@ -1710,6 +1719,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_drain_orchard_to_ironwood(
+        _status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `drainStatus`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_drain_status(
         _status)
 }
     )
