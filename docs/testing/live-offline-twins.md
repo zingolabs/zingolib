@@ -8,6 +8,21 @@ module, and a file all named `unit_test_twins` (also reachable through
 the `extra-credit-tests` bundle). Run them with
 `cargo nextest run -p libtonode-tests --features unit_test_twins`.
 
+**Amendment (2026-07-21):** two live originals were deleted at the
+user's direction: `list_value_transfers_check_fees` and
+`from_t_z_o_tz_to_zo_tzo_to_orchard` (rows 5 and 8). Both bit-rotted
+during the ironwood-era balance migration: their `bump_and_check_pmc!`
+and `bump_and_check!` macros bound an `i:` argument but expanded to
+`i: 0`, so every ironwood expectation their call sites recorded —
+including values the adjacent comments narrate landing in the ironwood
+pool — was silently replaced by a zero assertion. The defect was
+invisible in default CI because the file sits behind the off-by-default
+`unit_test_twins` feature, and would have failed the scheduled
+extra-credit run. The offline twins in
+`zingolib/src/lightclient/mock_chain_tests.rs` expand the argument
+correctly and carry the same ledgers, so the twins are now the sole
+record of both tests. The six remaining originals are unaffected.
+
 **Census note:** the move takes the eight originals out of the default
 suite, so the default non-ignored census drops by eight relative to the
 protection audit's 274 (they remain runnable, verbatim, behind the
@@ -52,10 +67,10 @@ outputs decrypt and spend like real ones.
 | 2 | slow::sapling_dust_fee_collection | proposal_shape::sapling_dust_is_not_collected_toward_fees | EQUIVALENT-CORE |
 | 3 | fast::mine_to_transparent_and_shield | built_transaction_shape::four_coin_shield_builds_and_nets_input_minus_fee | NARROWED-BUT-SHARPENED; live stays load-bearing |
 | 4 | slow::zero_value_receipts | mock_chain_tests::zero_value_receipts | EQUIVALENT (assertion-identical) |
-| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical) |
+| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | LIVE ORIGINAL DELETED 2026-07-21 (bit rot; twin is sole record) |
 | 6 | slow::self_send_to_t_displays_as_one_transaction | mock_chain_tests::self_send_to_t_displays_as_one_transaction | EQUIVALENT (assertion-identical) |
 | 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT-CORE, one documented literal divergence |
-| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT (assertion-identical, full 16-step ledger) |
+| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | LIVE ORIGINAL DELETED 2026-07-21 (bit rot; twin is sole record) |
 
 **1 — multi-note gathering.** The twin asserts strictly more than the
 live original at proposal time: exact selection (both 40_000 notes),
@@ -84,7 +99,8 @@ original additionally proves zebra relays a zero-value output.
 **5 — value-transfer fees.** Identical balance and composite-fee
 (25_000) assertions; the twin's self-receipts (own taddr, own sapling)
 arrive through genuine scanning of mock blocks, exercising the same
-wallet paths.
+wallet paths. *Live original deleted 2026-07-21 (see the amendment
+above); the twin is the sole record.*
 
 **6 — self-send display.** Identical flow (incoming mixed send mined in
 the same block as the wallet's own mixed self-send) and the same
@@ -104,7 +120,8 @@ funding source, both shields (including the two-coin shield), the two
 InsufficientFunds refusals with identical shortfall numbers (20_000 and
 60_000 against available 0), per-step balances, and the cumulative
 205_000 confirmed-fee total. Live-only residue: zebra accepting each of
-the twelve broadcasts.
+the twelve broadcasts. *Live original deleted 2026-07-21 (see the
+amendment above); the twin is the sole record.*
 
 **Status (2026-07-08): `#[ignore]`d pending zingolabs/zingolib#2447.**
 This twin's step-1 funding is purely transparent, and pepper-sync's
