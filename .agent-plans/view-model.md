@@ -53,3 +53,83 @@ work; this session works ONLY here).
    text-only interpretation applied in zingo-viewmodel; every
    TransactionSummary consumer (zingo-cli list/display, wallet tests)
    is audited in this review.
+4. **Crate identity (2026-07-21).** Name `zingo-viewmodel`, directory
+   `zingo-viewmodel/` at the workspace root, an ORDINARY member of the
+   main workspace and main Cargo.lock (not the netutils excluded-
+   workspace treatment — it pulls no nym crates). Mixnet presentation
+   gated behind its own forwarding `nym = ["zingolib/nym"]` feature;
+   the ci-pr `nym-feature` job grows `-p zingo-viewmodel`. Consequence
+   established from code: zingo-cli consumes value_transfers,
+   messages_containing, and all three do_total_* commands, so
+   zingo-cli also gains the zingo-viewmodel dependency.
+5. **Canonical memo = typed `zcash_protocol::memo::Memo` (2026-07-21).**
+   NoteSummary/OutgoingNoteSummary re-type memo from Option<String>
+   (text-only) to the lossless Memo enum (received side plain Memo;
+   outgoing side Option<Memo> only if absence is structural — verify
+   while implementing). Canonical JsonValue/Display render memos as a
+   lossless kind-plus-hex object (text field present when text); the
+   raw summaries CLI/JSON shape visibly changes in this branch.
+   zingo-viewmodel applies the text-only interpretation to reproduce
+   today's ValueTransfer JSON bit-for-bit for mobile.
+6. **Mixnet presentation = status view, wording moves once
+   (2026-07-21).** A nym-gated extension trait provides
+   `mixnet_status_view() -> MixnetStatusView { mode, socks5_addr }`
+   with a Display impl carrying today's exact CLI status wording and a
+   JsonValue impl ({"mode": "off"|"bootstrapping"|"ready",
+   "socks5_addr": ...}) for mobile. zingo-cli's `nym status` arm
+   collapses to the view's to_string(), byte-identical output. The
+   `nym on`/`nym off` confirmation strings stay in the CLI (command
+   dialogue, not state presentation).
+7. **Glossary = third bounded context (2026-07-21).**
+   `zingo-viewmodel/CONTEXT.md` is the presentation domain's glossary;
+   CONTEXT-MAP.md gains the entry. ValueTransfer (and kinds), finsight
+   rollups, and status-view language move there; TransactionSummary
+   stays in zingolib's glossary re-described as the canonical
+   per-transaction reduction ("Summary / Display" loses "/ Display").
+   New terms: Canonical Reduction + the privilege/no-reasonable-
+   disagreement test (zingolib context), Editorial Reduction
+   (view-model context). Glossary follows code as terms land.
+8. **ADR ratified; number now 0013 (2026-07-21).**
+   RENUMBERED from the ratified 0012: the sealed-wallet session
+   claimed 0012 in draft PR #2496 on 2026-07-21, and 0013 is free in
+   every worktree.
+   `docs/adr/0013-editorial-reductions-in-zingo-viewmodel.md`: the
+   privilege AND no-reasonable-disagreement rule as the boundary test,
+   plus the ratified mechanism (extension traits, preserved names,
+   bit-for-bit JSON, typed canonical memos). Cross-worktree finding,
+   not ours to fix: sibling worktrees claim 0010 (spend pipeline) and
+   0011 (typed-errors ratchet), colliding with this branch's
+   0011-nym-mixnet-transmission — whoever merges second renumbers;
+   0012 is free everywhere.
+9. **Editorial fixture moves with the logic (2026-07-21).**
+   `create_various_value_transfers` relocates to zingo-viewmodel
+   behind a `testutils` feature (depending on zingolib/testutils);
+   libtonode-tests re-points. Dependency direction stays
+   viewmodel -> zingolib, always.
+10. **Verification = golden-JSON regression harness (2026-07-21).**
+    Goldens are captured by PRE-split code on this branch's tip:
+    deterministic synthetic wallets dump value_transfers,
+    messages_containing (with/without filter), all three do_total_*
+    (pretty JSON) plus Display renderings, checked in as files. The
+    test carries into zingo-viewmodel and asserts byte-for-byte
+    reproduction; goldens are never regenerated during the branch.
+    summary.rs unit tests move with the code; nym status Display is
+    asserted against today's literal strings.
+
+## Implementation — increment 1 (DONE 2026-07-21): scaffold + goldens
+
+`zingo-viewmodel` scaffolded (empty lib, dev-deps only: zingolib/testutils
++ pepper-sync/test-features + the summary-test import set) and added to
+the workspace members. `tests/golden.rs` builds a deterministic offline
+wallet (received text/empty/arbitrary memos, send with memo,
+memo-to-self, basic send-to-self, ZFZ dual-output) via the
+new_for_test_* constructors (datetime pinned 0) and captured 8 goldens
+from PRE-extraction code: value_transfers desc/asc JSON + Display,
+messages all/filtered, the three do_total_* (key-order canonicalized —
+HashMap-backed, random order is not part of the contract). Kind
+coverage verified: 3 sent, 2 received, 2 send-to-self, 1 memo-to-self;
+the arbitrary-memo silent drop is pinned (memos: []). Verified: check,
+test (bless run + clean reproduce), clippy -D warnings, fmt all green.
+Known gap: no Shield-kind golden (needs transparent spend links no
+offline constructor provides; same gap as the moved unit tests, the
+chain-bound libtonode tests pin it).

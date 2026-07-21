@@ -6,6 +6,7 @@ members = [
     "zingo-memo",
     "zingo-price",
     "zingo-status",
+    "zingo-viewmodel",
     "zingolib",
     "zingolib_testutils",
 ]

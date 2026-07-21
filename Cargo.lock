@@ -4940,6 +4940,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-viewmodel"
+version = "0.1.0"
+dependencies = [
+ "json",
+ "pepper-sync",
+ "tokio",
+ "zcash_client_backend",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zingo-status",
+ "zingo_common_components",
+ "zingo_test_vectors",
+ "zingolib",
+ "zip32",
+]
+
+[[package]]
 name = "zingo_common_components"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

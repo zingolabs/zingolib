@@ -1,0 +1,28 @@
+[package]
+name = "zingo-viewmodel"
+description = "Editorial reductions over zingolib's canonical wallet data."
+version = "0.1.0"
+authors = ["<zingo@zingolabs.org>"]
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[dependencies]
+# Intentionally empty at the scaffold stage: the editorial layer moves here
+# in the extraction increments, at which point zingolib becomes a real
+# dependency and the `nym = ["zingolib/nym"]` feature lands with the
+# mixnet-status view.
+
+[dev-dependencies]
+json = { workspace = true }
+pepper-sync = { workspace = true, features = ["test-features"] }
+tokio = { workspace = true, features = ["full"] }
+zcash_client_backend = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+zingo_common_components = { workspace = true }
+zingo-status = { workspace = true }
+zingo_test_vectors = { workspace = true }
+zingolib = { workspace = true, features = ["testutils"] }
+zip32 = { workspace = true }
