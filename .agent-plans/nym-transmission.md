@@ -773,6 +773,20 @@ disconnect_clean 5.4s, starts_and_reports_address 5.8s (the previous
 socks5_tunnel_works 6.8s. The hedged racing planner is validated against
 the live mixnet. Remaining: the push, stages 2-3, un-draft + review.
 
+SMOKE STAGE 3: PASSED (user-run, 2026-07-21) — THE SMOKE LADDER IS
+COMPLETE. Release zingo-cli --features nym, connected mainnet session:
+after increment 17, `nym status` reported ready ONLY once the health gate
+verified the draw (the two prior attempts drew dead paths and would now
+redraw/refuse); `nym probe` showed all 11 witnesses green over the mixnet
+(1.7-7.2s); `quicksend` of 10_000 zat over the mixnet returned txid
+8fbccde9825036ea1c0baba75058e36b6515089b448285c5cca61504e8c27324 with NO
+heartbeat line — a sub-30s first-witness success, so witness rotation's
+single-witness happy path held and increment 13's heartbeat correctly
+stayed silent. Forced-on-at-startup + mixnet-routed send + txid confirmed,
+end to end. The three prior dead-path failures were all the same root
+cause (an unhealthy gateway draw announced as ready), which increment 17
+closes.
+
 SMOKE STAGE 2: PASSED (2026-07-21): `makers bundle-nym-proxy` built the
 proxy in the netutils workspace and placed it at target/debug/nym-proxy;
 the bundled binary run live printed the NYM_STATUS bootstrap narration
