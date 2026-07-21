@@ -94,6 +94,21 @@ mod tests {
     }
 
     #[test]
+    fn every_entry_is_https() {
+        // Mixnet transmission is TLS-only end to end, so the exit gateway that
+        // terminates the tunnel cannot read or tamper with the traffic. Every
+        // broadcast target must be https; the transmit path refuses anything
+        // else at dial time.
+        for entry in broadcast_indexers() {
+            assert_eq!(
+                entry.scheme_str(),
+                Some("https"),
+                "broadcast entry {entry} must be https"
+            );
+        }
+    }
+
+    #[test]
     fn every_entry_is_port_443() {
         // The mixnet exit gateways relay 443 but mishandle non-standard ports
         // (2026-07-21 paired probe: every port-9067 witness failed the

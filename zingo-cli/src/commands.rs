@@ -837,8 +837,17 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
             let target = args
                 .get(1)
                 .map(|raw| {
-                    raw.parse::<http::Uri>()
-                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))
+                    let uri = raw
+                        .parse::<http::Uri>()
+                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))?;
+                    // https-only: the mixnet leg refuses a plaintext target at
+                    // dial time, so reject it up front with a clear message.
+                    if uri.scheme_str() != Some("https") {
+                        return Err(NymCommandError::InvalidProbeTarget(format!(
+                            "{raw} (indexers must be https)"
+                        )));
+                    }
+                    Ok(uri)
                 })
                 .transpose()?;
             Ok(NymSubCommand::Probe { target })
@@ -3172,6 +3181,13 @@ mod nym_command_parsing {
             parse_nym_args(&["probe", "not a uri"]),
             Err(NymCommandError::InvalidProbeTarget(_))
         ));
+        assert!(
+            matches!(
+                parse_nym_args(&["probe", "http://zec.rocks:9067"]),
+                Err(NymCommandError::InvalidProbeTarget(_))
+            ),
+            "a plaintext http target is refused: mixnet transmission is https-only"
+        );
         assert_eq!(
             parse_nym_args(&["history"]).expect("history parses"),
             NymSubCommand::History

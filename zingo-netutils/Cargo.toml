@@ -57,6 +57,9 @@ nym = [
     "dep:nym-validator-client",
     "dep:tokio-socks",
     "dep:tokio",
+    # The proxy binary health-gates readiness with a real GetLightdInfo round
+    # trip through the mixnet, which lives in the socks5-transmit module.
+    "socks5-transmit",
 ]
 
 # The spawnable mixnet proxy process (ADR 0011, consumption model A). Built

@@ -1057,6 +1057,52 @@ present (this one). (4) the glossary's Mixnet Mode entry keeps the
 lifetime-binding BEHAVIOR but the process-group/stdin-pipe MECHANISM
 moved to the ADR amendment — CONTEXT.md stays implementation-free.
 
+## Implementation — increment 17 (DONE 2026-07-21): health-gated readiness
+
+LIVE FINDING (user, 2026-07-21): a second stage-3 attempt drew a mixnet
+path where ALL 11 port-443 witnesses failed identically at the 20s
+connect_timeout ("deadline elapsed ... after the tunnel was
+established"), while clearnet to all 11 was fine and the PRIOR session's
+same 11 succeeded in 2-6s. Diagnosis: the gateway draw brought the local
+SOCKS5 listener up (so we announced Ready) but carried NO data end to end
+— tunnels establish, the TLS handshake stalls. Root cause in code:
+NymProxy::check_connectivity only does a TCP CONNECT through the tunnel,
+NOT a data round trip, so it is a FALSE-POSITIVE health check; and the
+binary announced SOCKS5_ADDR the instant the listener was up, with no
+verification. Ready meant "listener up", not "mixnet carries traffic".
+
+FIX: the nym-proxy binary now health-gates readiness. After connecting,
+before announcing, it runs a real get_lightd_info_via_socks5 round trip
+through its own SOCKS5 to HEALTH_CHECK_INDEXER (zec.rocks:443, over the
+mixnet, no wallet data) under a 15s per-attempt bound. On failure it
+proxy.reconnect()s (fresh gateway draw) and retries, up to
+MAX_HEALTH_ATTEMPTS=3 distinct paths; only a verified path prints
+SOCKS5_ADDR. Exhaustion → non-zero exit → supervisor sees stdout close →
+MixnetMode::Died (increment 16), so the session starts but sends refuse
+fail-closed with the `nym on` recovery hint, never announcing a dead
+Ready. netutils `nym` feature now enables `socks5-transmit` (for
+get_lightd_info_via_socks5); MAIN LOCK UNAFFECTED (it never turns on
+netutils `nym`). check_connectivity left in place (unused; TCP-only, kept
+for callers who only need reachability, but NOT the readiness gate).
+
+Verified: netutils nym clippy -D warnings + lib tests + nym-proxy build +
+fmt; zingolib nym (main lock) + workspace check green. The redraw/retry
+loop is exercised by the live smoke ladder (needs a real mixnet); the
+pure bound is thin. FOLLOW-UP (noted): rotate HEALTH_CHECK_INDEXER across
+a set rather than always zec.rocks; feed increment-14 history into draw
+scoring so a known-bad path is deprioritized.
+
+HTTPS-ONLY (user rule 2026-07-21, folded in): indexer connections must
+always be https, never plaintext http. Enforced, not conventional:
+connect_via_socks5 returns Socks5TransmitError::InsecureScheme for any
+non-https scheme (the old is_https branch + 9067 plaintext fallback
+DELETED — always TLS, port defaults to 443); broadcast_indexers.rs gains
+every_entry_is_https beside every_entry_is_port_443; `nym probe <uri>`
+rejects a non-https target at parse time. Falsifiers on all three.
+Rationale: the SOCKS5 tunnel terminates at an UNTRUSTED mixnet exit
+gateway, so only end-to-end TLS keeps it from reading/tampering. Recorded
+as a durable standard in agent memory (https-only-indexers).
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

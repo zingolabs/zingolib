@@ -66,6 +66,14 @@ pub enum Socks5TransmitError {
     /// The indexer was reached but rejected the operation on its merits.
     #[error("indexer rejected the transaction: {0}")]
     Rejected(String),
+    /// The indexer URI is not https. Mixnet transmission is TLS-only so the
+    /// exit gateway cannot read or tamper with the traffic; a plaintext
+    /// indexer is refused rather than dialed.
+    #[error("refusing to transmit to a non-https indexer: {indexer}")]
+    InsecureScheme {
+        /// The offending non-https URI.
+        indexer: String,
+    },
 }
 
 /// Renders `error` with its complete `source()` chain, which the top-level
@@ -137,9 +145,9 @@ pub async fn get_lightd_info_via_socks5(
 
 /// Build a gRPC client to `indexer` dialed through the local SOCKS5 proxy at
 /// `socks5_addr`. Shared by the send, delivery-check, and probe paths so the
-/// dialing plumbing lives in one place. Each RPC opens its own SOCKS5 tunnel;
-/// TLS, when the indexer is https, is layered on top by the endpoint's
-/// tls_config.
+/// dialing plumbing lives in one place. Each RPC opens its own SOCKS5 tunnel
+/// with TLS layered on top; the indexer must be https (a plaintext scheme is
+/// refused) so the exit gateway cannot read or tamper with the traffic.
 ///
 /// The proxy dial and the tunnel establishment each run under `timeout` and
 /// record a phase-typed error out of band: tonic collapses connector errors
@@ -153,7 +161,15 @@ async fn connect_via_socks5(
 ) -> Result<CompactTxStreamerClient<Channel>, Socks5TransmitError> {
     ensure_default_crypto_provider();
 
-    let is_https = indexer.scheme_str() == Some("https");
+    // Mixnet transmission is https-only: the connection must be TLS end to end
+    // so the mixnet exit gateway, which terminates the SOCKS5 tunnel, cannot
+    // read or tamper with the traffic. A plaintext (http) indexer is refused
+    // rather than dialed.
+    if indexer.scheme_str() != Some("https") {
+        return Err(Socks5TransmitError::InsecureScheme {
+            indexer: indexer.to_string(),
+        });
+    }
     let host = indexer
         .host()
         .ok_or_else(|| Socks5TransmitError::TunnelTransport {
@@ -161,13 +177,11 @@ async fn connect_via_socks5(
             detail: "indexer uri has no host".to_string(),
         })?
         .to_string();
-    let port = indexer
-        .port_u16()
-        .unwrap_or(if is_https { 443 } else { 9067 });
+    let port = indexer.port_u16().unwrap_or(443);
     let destination = format!("{host}:{port}");
     let socks5_addr = socks5_addr.to_string();
 
-    let mut endpoint = Endpoint::from_shared(indexer.to_string())
+    let endpoint = Endpoint::from_shared(indexer.to_string())
         .map_err(|e| Socks5TransmitError::TunnelTransport {
             destination: destination.clone(),
             detail: e.to_string(),
@@ -181,15 +195,12 @@ async fn connect_via_socks5(
         // port the mixnet exit mishandles) hangs for minutes instead of
         // failing over.
         .timeout(timeout)
-        .connect_timeout(timeout);
-    if is_https {
-        endpoint = endpoint
-            .tls_config(ClientTlsConfig::new().with_webpki_roots())
-            .map_err(|e| Socks5TransmitError::TunnelTransport {
-                destination: destination.clone(),
-                detail: e.to_string(),
-            })?;
-    }
+        .connect_timeout(timeout)
+        .tls_config(ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| Socks5TransmitError::TunnelTransport {
+            destination: destination.clone(),
+            detail: e.to_string(),
+        })?;
 
     let phase_error: Arc<Mutex<Option<Socks5TransmitError>>> = Arc::default();
     let connector_phase = phase_error.clone();
@@ -283,6 +294,22 @@ mod tests {
 
     fn an_indexer() -> Uri {
         "https://indexer.example:443".parse().expect("static uri")
+    }
+
+    /// HYPOTHESIS: a plaintext (http) indexer is refused before any dial, so
+    /// mixnet traffic is never sent unencrypted to the exit gateway. Falsified
+    /// if an http URI reaches the connector.
+    #[tokio::test]
+    async fn a_non_https_indexer_is_refused() {
+        let http = "http://indexer.example:9067".parse().expect("static uri");
+        let err =
+            send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, Duration::from_secs(5))
+                .await
+                .expect_err("http must be refused");
+        assert!(
+            matches!(err, Socks5TransmitError::InsecureScheme { .. }),
+            "expected InsecureScheme, got: {err}"
+        );
     }
 
     /// HYPOTHESIS: a dead local proxy is reported as the proxy phase, not an
