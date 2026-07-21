@@ -21,10 +21,35 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::indexer_history::{
+    AttemptKind, AttemptRoute, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
+};
 use crate::lightclient::transmit::{
     TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
     resilient_transmit,
 };
+
+/// Records one finished send attempt against `host` into the cross-session
+/// history: route, elapsed time, and the failure detail when it failed.
+fn record_send_attempt(
+    history: &IndexerHistoryHandle,
+    host: &str,
+    route: AttemptRoute,
+    started: std::time::Instant,
+    outcome: &Result<String, String>,
+) {
+    history.record(&IndexerAttempt {
+        unix_secs: now_unix_secs(),
+        host: host.to_string(),
+        route,
+        kind: AttemptKind::Send,
+        millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        outcome: match outcome {
+            Ok(_) => Ok(()),
+            Err(detail) => Err(detail.clone()),
+        },
+    });
+}
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
@@ -170,6 +195,7 @@ async fn transmit_one_transaction(
     height: u64,
     txid: &TxId,
     progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
 ) -> Result<String, String> {
     match socks5_proxy {
         None => {
@@ -177,7 +203,8 @@ async fn transmit_one_transaction(
                 .uri()
                 .host()
                 .map_or_else(|| indexer.uri().to_string(), str::to_string);
-            resilient_transmit(
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
                 tx_bytes,
                 height,
@@ -186,11 +213,13 @@ async fn transmit_one_transaction(
                 |event| progress.set(format!("indexer {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message)
+            .map_err(|TransmitFailed(message)| message);
+            record_send_attempt(history, &host, AttemptRoute::Clearnet, started, &outcome);
+            outcome
         }
         #[cfg(feature = "nym")]
         Some(socks5_addr) => {
-            mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid, progress).await
+            mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid, progress, history).await
         }
         #[cfg(not(feature = "nym"))]
         Some(_) => Err("a mixnet route requires the nym feature".to_string()),
@@ -209,6 +238,7 @@ async fn mixnet_fanout_transmit(
     height: u64,
     txid: &TxId,
     progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
 ) -> Result<String, String> {
     use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
     use crate::nym::broadcast_indexers::broadcast_indexers;
@@ -226,7 +256,8 @@ async fn mixnet_fanout_transmit(
                 socks5_addr,
                 indexer,
             };
-            resilient_transmit(
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
                 &target,
                 &tx_bytes,
                 height,
@@ -235,7 +266,9 @@ async fn mixnet_fanout_transmit(
                 |event| progress.set(format!("witness {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message)
+            .map_err(|TransmitFailed(message)| message);
+            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
+            outcome
         }
     };
 
@@ -514,6 +547,7 @@ impl LightClient {
         // on every exit so no stale line outlives this call.
         let progress = self.transmit_progress.clone();
         let _progress_scope = TransmitProgressScope(progress.clone());
+        let history = self.indexer_history.clone();
         let total = calculated_txids.len();
 
         let mut wallet = self.wallet().write().await;
@@ -559,6 +593,7 @@ impl LightClient {
                 height.into(),
                 txid,
                 &progress,
+                &history,
             )
             .await
             {

@@ -42,6 +42,7 @@ use crate::{
 use error::LightClientError;
 
 pub mod error;
+pub mod indexer_history;
 pub mod migrate;
 pub mod offline;
 pub mod propose;
@@ -130,6 +131,9 @@ pub struct LightClient {
     /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
+    /// The cross-session per-indexer attempt history, appended beside the
+    /// wallet file by every transmission arm and diagnostic probe.
+    indexer_history: indexer_history::IndexerHistoryHandle,
     /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
     /// `None` means Mixnet Mode is off.
     #[cfg(feature = "nym")]
@@ -194,6 +198,9 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -223,6 +230,9 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            // Synthetic test wallets have no durable directory; the default
+            // handle records nowhere and loads empty.
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         }
@@ -270,6 +280,9 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -294,6 +307,14 @@ impl LightClient {
     /// retries, queued probes, and mixnet fan-out rounds.
     pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
         self.transmit_progress.clone()
+    }
+
+    /// A cloneable handle to the cross-session per-indexer attempt history —
+    /// every transmission arm and diagnostic probe appends to it, and
+    /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
+    /// record for display or scoring.
+    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
+        self.indexer_history.clone()
     }
 
     /// A snapshot of the in-progress immediate drain
@@ -666,6 +687,30 @@ impl LightClient {
     /// bootstrapping. Send and price-fetch share this single resolver.
     pub fn mixnet_route(&self) -> Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady> {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
+    }
+
+    /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
+    /// against every Broadcast Indexer when `target` is `None`. Indexers are
+    /// probed concurrently; each probe runs `GetLightdInfo` over both routes
+    /// (the mixnet leg is skipped when the proxy is not ready) and appends
+    /// its outcomes to the cross-session indexer history. The clearnet leg
+    /// contacts indexers from the real IP — this is a user-invoked
+    /// diagnostic, never an automatic path.
+    pub async fn probe_broadcast_indexers(
+        &self,
+        target: Option<http::Uri>,
+        timeout: std::time::Duration,
+    ) -> Vec<crate::nym::probe::PairedProbe> {
+        let targets = target
+            .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
+                vec![uri]
+            });
+        let socks5_addr = self.mixnet_socks5_addr();
+        let history = self.indexer_history.clone();
+        futures::future::join_all(targets.iter().map(|indexer| {
+            crate::nym::probe::probe_indexer(indexer, socks5_addr.as_deref(), timeout, &history)
+        }))
+        .await
     }
 }
 

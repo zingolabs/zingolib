@@ -930,6 +930,42 @@ refuses/cannot reach the indexer destinations (provider exit policy),
 which stage 1's different provider draw allowed. Increment 14 (below)
 instruments to discriminate.
 
+## Implementation — increment 14 (IN PROGRESS 2026-07-21): diagnose + persist
+
+USER DIRECTIVE (after the stage-3 all-six-witnesses failure): (1) persist
+per-indexer data across sessions; (2) instrument connection attempts at
+higher resolution; (3) make clearnet/mixnet probe pairing easy to
+discern mixnet-specific failures.
+
+GROUNDING DIAGNOSTIC (live, 2026-07-21): a fresh proxy + paired curl
+probes: zec.rocks:443 / us.zec.stardust.rest:443 / webhighway.website:443
+all WORK through the mixnet tunnel (responses byte-identical to
+clearnet); carover0.xyz:9067 times out through the tunnel while fine on
+clearnet. Conclusions: the tunnel mechanism is sound; exit-gateway
+policy is provider- and port-dependent (9067 blocked where 443 passes);
+the user's uniform six-way failure (incl. zec.rocks:443) points at a
+dead proxy child (^C process group) or a fully-closed provider draw —
+phase-typed errors will discriminate.
+
+Design: (2) netutils socks5 helpers gain phase-typed errors —
+ProxyUnreachable (TCP to 127.0.0.1 proxy) / TunnelRefused (SOCKS5
+CONNECT to the destination, carrying the reply/timeout) / TunnelTransport
+(post-tunnel TLS/h2) / per-phase elapsed — surfaced through arm errors,
+narration, and the fan-out summary. (3) netutils
+get_lightd_info_via_socks5 + a zingolib paired-probe API
+(LightClient::probe_broadcast_indexers: clearnet + mixnet GetLightdInfo
+per Broadcast Indexer) + CLI `nym probe [uri]` rendering the pair side
+by side. (1) an append-only JSONL history in the wallet directory
+(zingolib owns wallet-dir file I/O), one line per attempt {unix time,
+host, route, kind send|probe, outcome, millis}, written by the transmit
+arms and probes; `nym history` renders per-host aggregates. No new deps:
+hand-rolled JSONL if serde_json is not already in the tree.
+
+File claims (mine): zingo-netutils/src/socks5_transmit.rs (or the
+module housing the socks5 helpers), zingolib/src/nym/* (probe, history),
+zingolib/src/lightclient/send.rs, zingolib/src/lightclient.rs (handle
+wiring), zingo-cli/src/commands.rs (nym probe|history), this file.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration

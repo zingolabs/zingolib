@@ -82,7 +82,8 @@ pub use nym_proxy::NymProxy;
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
 pub use socks5_transmit::{
-    Socks5TransmitError, send_transaction_via_socks5, transaction_known_via_socks5,
+    Socks5TransmitError, get_lightd_info_via_socks5, send_transaction_via_socks5,
+    transaction_known_via_socks5,
 };
 
 fn client_tls_config() -> ClientTlsConfig {

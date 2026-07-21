@@ -716,6 +716,13 @@ impl Command for NymCommand {
                                   With no path: $ZINGO_NYM_PROXY, else a nym-proxy
                                   bundled beside this binary, else `nym-proxy` on PATH.
             nym off               Disable Mixnet Mode; send and price-fetch use clearnet.
+            nym probe [uri]       Diagnostic: run GetLightdInfo against every Broadcast
+                                  Indexer (or just the given uri) over BOTH clearnet and
+                                  the mixnet, side by side, to discern whether a failure
+                                  is mixnet-specific. The clearnet leg contacts indexers
+                                  from your real IP.
+            nym history           Per-indexer attempt history accumulated across
+                                  sessions: sends and probes, per route.
 
             When Mixnet Mode is on, send and price-fetch route over the mixnet and
             fail closed while it is still bootstrapping, never falling back to
@@ -725,7 +732,7 @@ impl Command for NymCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Control the Nym mixnet transport (on/off/status)."
+        "Control the Nym mixnet transport (on/off/status/probe/history)."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -787,8 +794,14 @@ fn bundled_proxy_path() -> Option<String> {
 #[derive(Debug, thiserror::Error)]
 pub enum NymCommandError {
     #[cfg(feature = "nym")]
-    #[error("unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off")]
+    #[error(
+        "unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off | \
+         nym probe [uri] | nym history"
+    )]
     UnknownSubCommand(String),
+    #[cfg(feature = "nym")]
+    #[error("'{0}' is not a valid indexer uri to probe")]
+    InvalidProbeTarget(String),
     #[cfg(not(feature = "nym"))]
     #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
     FeatureAbsent,
@@ -808,6 +821,8 @@ enum NymSubCommand {
     Status,
     On { path: Option<String> },
     Off,
+    Probe { target: Option<http::Uri> },
+    History,
 }
 
 #[cfg(feature = "nym")]
@@ -818,8 +833,120 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
             path: args.get(1).map(|path| path.to_string()),
         }),
         Some("off") => Ok(NymSubCommand::Off),
+        Some("probe") => {
+            let target = args
+                .get(1)
+                .map(|raw| {
+                    raw.parse::<http::Uri>()
+                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))
+                })
+                .transpose()?;
+            Ok(NymSubCommand::Probe { target })
+        }
+        Some("history") => Ok(NymSubCommand::History),
         Some(other) => Err(NymCommandError::UnknownSubCommand(other.to_string())),
     }
+}
+
+/// How long each probe leg may take. Generous for the mixnet leg's tunnel
+/// establishment; a hanging exit is reported as a timeout, not waited out.
+#[cfg(feature = "nym")]
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Render one paired probe: the two legs side by side, so a mixnet-specific
+/// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
+/// unit tests.
+#[cfg(feature = "nym")]
+fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
+    let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
+        Ok(summary) => format!("ok in {}ms — {summary}", leg.millis),
+        Err(detail) => format!("FAILED after {}ms — {detail}", leg.millis),
+    };
+    let mixnet = match &probe.mixnet {
+        Some(mixnet_leg) => leg(mixnet_leg),
+        None => "skipped (mixnet proxy not ready)".to_string(),
+    };
+    format!(
+        "{}\n  clearnet: {}\n  mixnet:   {}",
+        probe.host,
+        leg(&probe.clearnet),
+        mixnet
+    )
+}
+
+/// Render the accumulated per-indexer history as per-host, per-route
+/// aggregates, most-attempted hosts first. Pure over the loaded attempts and
+/// a caller-supplied "now" so tests pin the ages.
+#[cfg(feature = "nym")]
+fn render_history(
+    attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
+    now_unix_secs: u64,
+) -> String {
+    use std::collections::BTreeMap;
+
+    use zingolib::lightclient::indexer_history::AttemptRoute;
+
+    if attempts.is_empty() {
+        return "No indexer history recorded yet.".to_string();
+    }
+
+    struct RouteStats {
+        attempts: usize,
+        ok: usize,
+        last_unix_secs: u64,
+        last_ok: bool,
+    }
+    let mut hosts: BTreeMap<String, BTreeMap<&'static str, RouteStats>> = BTreeMap::new();
+    for attempt in attempts {
+        let route = match attempt.route {
+            AttemptRoute::Clearnet => "clearnet",
+            AttemptRoute::Mixnet => "mixnet",
+        };
+        let stats = hosts
+            .entry(attempt.host.clone())
+            .or_default()
+            .entry(route)
+            .or_insert(RouteStats {
+                attempts: 0,
+                ok: 0,
+                last_unix_secs: 0,
+                last_ok: false,
+            });
+        stats.attempts += 1;
+        if attempt.outcome.is_ok() {
+            stats.ok += 1;
+        }
+        if attempt.unix_secs >= stats.last_unix_secs {
+            stats.last_unix_secs = attempt.unix_secs;
+            stats.last_ok = attempt.outcome.is_ok();
+        }
+    }
+
+    let age = |unix_secs: u64| -> String {
+        let elapsed = now_unix_secs.saturating_sub(unix_secs);
+        match elapsed {
+            0..60 => format!("{elapsed}s"),
+            60..3600 => format!("{}m", elapsed / 60),
+            3600..86400 => format!("{}h", elapsed / 3600),
+            _ => format!("{}d", elapsed / 86400),
+        }
+    };
+
+    let mut lines = vec!["Indexer history (all sessions):".to_string()];
+    for (host, routes) in &hosts {
+        let mut summaries: Vec<String> = Vec::new();
+        for (route, stats) in routes {
+            summaries.push(format!(
+                "{route} {}/{} ok, last {} {} ago",
+                stats.ok,
+                stats.attempts,
+                if stats.last_ok { "ok" } else { "failed" },
+                age(stats.last_unix_secs),
+            ));
+        }
+        lines.push(format!("  {host}: {}", summaries.join("; ")));
+    }
+    lines.join("\n")
 }
 
 /// Render the `nym status` line for a Mixnet Mode, the live bootstrap
@@ -879,6 +1006,26 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
             NymSubCommand::Off => {
                 lightclient.disable_mixnet().await;
                 Ok("Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string())
+            }
+            NymSubCommand::Probe { target } => {
+                let probes = lightclient
+                    .probe_broadcast_indexers(target, PROBE_TIMEOUT)
+                    .await;
+                Ok(probes
+                    .iter()
+                    .map(render_paired_probe)
+                    .collect::<Vec<_>>()
+                    .join("\n"))
+            }
+            NymSubCommand::History => {
+                let attempts = lightclient.indexer_history_handle().load();
+                Ok(render_history(
+                    &attempts,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|elapsed| elapsed.as_secs())
+                        .unwrap_or(0),
+                ))
             }
         }
     })
@@ -2999,8 +3146,105 @@ mod nym_command_parsing {
             parse_nym_args(&["bogus"])
                 .expect_err("an unknown subcommand is typed")
                 .to_string(),
-            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off"
+            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off | \
+             nym probe [uri] | nym history"
         );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn probe_parses_its_optional_target_and_rejects_junk() {
+        assert_eq!(
+            parse_nym_args(&["probe"]).expect("bare probe parses"),
+            NymSubCommand::Probe { target: None }
+        );
+        assert_eq!(
+            parse_nym_args(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
+            NymSubCommand::Probe {
+                target: Some("https://zec.rocks:443".parse().expect("static uri")),
+            }
+        );
+        assert!(matches!(
+            parse_nym_args(&["probe", "not a uri"]),
+            Err(NymCommandError::InvalidProbeTarget(_))
+        ));
+        assert_eq!(
+            parse_nym_args(&["history"]).expect("history parses"),
+            NymSubCommand::History
+        );
+    }
+
+    /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
+    /// legible at a glance — clearnet ok beside mixnet FAILED. Falsified if
+    /// either leg's outcome, timing, or the not-ready skip is dropped.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn paired_probe_renders_both_legs_side_by_side() {
+        use zingolib::nym::probe::{PairedProbe, ProbeLeg};
+
+        let mixnet_specific = PairedProbe {
+            host: "carover0.xyz".to_string(),
+            clearnet: ProbeLeg {
+                outcome: Ok("chain main, height 3420400".to_string()),
+                millis: 210,
+            },
+            mixnet: Some(ProbeLeg {
+                outcome: Err(
+                    "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+                        .to_string(),
+                ),
+                millis: 20_000,
+            }),
+        };
+        assert_eq!(
+            render_paired_probe(&mixnet_specific),
+            "carover0.xyz\n  clearnet: ok in 210ms — chain main, height 3420400\n  mixnet:   FAILED after 20000ms — the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+        );
+
+        let proxy_not_ready = PairedProbe {
+            host: "zec.rocks".to_string(),
+            clearnet: ProbeLeg {
+                outcome: Ok("chain main, height 3420400".to_string()),
+                millis: 180,
+            },
+            mixnet: None,
+        };
+        assert_eq!(
+            render_paired_probe(&proxy_not_ready),
+            "zec.rocks\n  clearnet: ok in 180ms — chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+        );
+    }
+
+    /// HYPOTHESIS: the history rendering aggregates per host and route with
+    /// the most recent outcome and its age. Falsified if counts mix routes
+    /// or the last outcome reflects file order rather than timestamps.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn history_aggregates_per_host_and_route() {
+        use zingolib::lightclient::indexer_history::{AttemptKind, AttemptRoute, IndexerAttempt};
+
+        let attempt = |host: &str, route, unix_secs, outcome: Result<(), &str>| IndexerAttempt {
+            unix_secs,
+            host: host.to_string(),
+            route,
+            kind: AttemptKind::Send,
+            millis: 10,
+            outcome: outcome.map_err(str::to_string),
+        };
+        let attempts = vec![
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, Err("tunnel")),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
+            attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
+            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, Err("tunnel")),
+        ];
+
+        assert_eq!(
+            render_history(&attempts, 2_060),
+            "Indexer history (all sessions):\n  \
+             carover0.xyz: mixnet 0/1 ok, last failed 4m ago\n  \
+             zec.rocks: clearnet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
+        );
+        assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
 
     #[cfg(not(feature = "nym"))]
