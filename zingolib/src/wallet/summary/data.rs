@@ -3,12 +3,45 @@
 use chrono::DateTime;
 use json::JsonValue;
 
+use zcash_protocol::memo::Memo;
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::output::SpendStatus;
+
+/// The canonical, lossless JSON encoding of a memo: its kind, plus the
+/// text of a text memo or the hex of the carried bytes otherwise. No
+/// interpretation happens here — rendering opinions (text-only display,
+/// empty-memo hiding) belong to consumers such as zingo-viewmodel.
+#[must_use]
+pub fn memo_to_json(memo: &Memo) -> JsonValue {
+    match memo {
+        Memo::Empty => json::object! { "kind" => "empty" },
+        Memo::Text(text) => json::object! { "kind" => "text", "text" => text.to_string() },
+        Memo::Arbitrary(bytes) => json::object! {
+            "kind" => "arbitrary",
+            "bytes" => hex::encode(&bytes[..]),
+        },
+        Memo::Future(bytes) => json::object! {
+            "kind" => "future",
+            "bytes" => hex::encode(bytes.as_slice()),
+        },
+    }
+}
+
+/// The canonical display rendering of a memo: the text of a text memo,
+/// nothing for an empty one, and `kind:hex` for the non-text kinds.
+#[must_use]
+pub fn display_memo(memo: &Memo) -> String {
+    match memo {
+        Memo::Empty => String::new(),
+        Memo::Text(text) => text.to_string(),
+        Memo::Arbitrary(bytes) => format!("arbitrary:{}", hex::encode(&bytes[..])),
+        Memo::Future(bytes) => format!("future:{}", hex::encode(bytes.as_slice())),
+    }
+}
 
 /// Scope enum with `std::fmt::Display` impl for use with summaries.
 #[derive(Clone, Debug, PartialEq)]
@@ -151,12 +184,13 @@ impl TransactionSummary {
     }
 
     /// All memos on this transaction's wallet-received shielded notes, in pool
-    /// order ironwood, orchard, sapling.
+    /// order ironwood, orchard, sapling — every memo, losslessly typed;
+    /// text-only interpretation belongs to consumers.
     #[must_use]
-    pub fn received_memos(&self) -> Vec<String> {
+    pub fn received_memos(&self) -> Vec<Memo> {
         self.shielded_notes_by_pool()
             .into_iter()
-            .flat_map(|(notes, _)| notes.iter().filter_map(|note| note.memo.clone()))
+            .flat_map(|(notes, _)| notes.iter().map(|note| note.memo.clone()))
             .collect()
     }
 
@@ -378,7 +412,7 @@ pub struct NoteSummary {
     pub status: ConfirmationStatus,
     pub block_height: BlockHeight,
     pub spend_status: SpendStatus,
-    pub memo: Option<String>,
+    pub memo: Memo,
     pub time: u32,
     pub txid: TxId,
     pub output_index: u32,
@@ -388,7 +422,7 @@ pub struct NoteSummary {
 
 impl std::fmt::Display for NoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = display_memo(&self.memo);
         let time = if let Some(dt) = chrono::DateTime::from_timestamp(i64::from(self.time), 0) {
             format!("{dt}")
         } else {
@@ -428,7 +462,7 @@ impl From<NoteSummary> for json::JsonValue {
             "value" => note.value,
             "status" => format!("{} at block height {}", note.status, note.block_height),
             "spend_status" => note.spend_status.to_string(),
-            "memo" => note.memo,
+            "memo" => memo_to_json(&note.memo),
             "time" => note.time,
             "txid" => note.txid.to_string(),
             "output_index" => note.output_index,
@@ -513,7 +547,7 @@ pub struct BasicNoteSummary {
     pub value: u64,
     pub spend_status: SpendStatus,
     pub output_index: u32,
-    pub memo: Option<String>,
+    pub memo: Memo,
     // TODO: add key id with address index, not implemented into sync engine yet
 }
 
@@ -524,7 +558,7 @@ impl BasicNoteSummary {
         value: u64,
         spend_status: SpendStatus,
         output_index: u32,
-        memo: Option<String>,
+        memo: Memo,
     ) -> Self {
         BasicNoteSummary {
             value,
@@ -537,7 +571,7 @@ impl BasicNoteSummary {
 
 impl std::fmt::Display for BasicNoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = display_memo(&self.memo);
         write!(
             f,
             "\t{{
@@ -557,7 +591,7 @@ impl From<BasicNoteSummary> for JsonValue {
             "value" => note.value,
             "spend_status" => note.spend_status.to_string(),
             "output_index" => note.output_index,
-            "memo" => note.memo,
+            "memo" => memo_to_json(&note.memo),
         }
     }
 }
@@ -703,7 +737,7 @@ impl std::fmt::Display for BasicCoinSummaries {
 #[derive(Clone, PartialEq, Debug)]
 pub struct OutgoingNoteSummary {
     pub value: u64,
-    pub memo: Option<String>,
+    pub memo: Memo,
     pub recipient: String,
     pub recipient_unified_address: Option<String>,
     pub output_index: u32,
@@ -713,7 +747,7 @@ pub struct OutgoingNoteSummary {
 
 impl std::fmt::Display for OutgoingNoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = display_memo(&self.memo);
         let recipient_unified_address = self
             .recipient_unified_address
             .clone()
@@ -745,7 +779,7 @@ impl From<OutgoingNoteSummary> for JsonValue {
     fn from(note: OutgoingNoteSummary) -> Self {
         json::object! {
             "value" => note.value,
-            "memo" => note.memo,
+            "memo" => memo_to_json(&note.memo),
             "recipient" => note.recipient,
             "recipient_unified_address" => note.recipient_unified_address,
             "output_index" => note.output_index,

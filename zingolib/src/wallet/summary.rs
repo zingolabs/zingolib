@@ -3,8 +3,6 @@
 /// Not to be used for internal logic in the system.
 use std::cmp::Ordering;
 
-use zcash_protocol::memo::Memo;
-
 use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OutgoingNoteInterface, OutputInterface, TransparentCoin,
@@ -54,11 +52,7 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = output.memo().clone();
 
                         BasicNoteSummary::from_parts(
                             output.value(),
@@ -74,11 +68,7 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = output.memo().clone();
 
                         BasicNoteSummary::from_parts(
                             output.value(),
@@ -94,11 +84,7 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = output.memo().clone();
 
                         BasicNoteSummary::from_parts(
                             output.value(),
@@ -126,11 +112,7 @@ impl LightWallet {
                     .outgoing_ironwood_notes()
                     .iter()
                     .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = note.memo().clone();
 
                         Ok(OutgoingNoteSummary {
                             memo,
@@ -150,11 +132,7 @@ impl LightWallet {
                     .outgoing_orchard_notes()
                     .iter()
                     .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = note.memo().clone();
 
                         Ok(OutgoingNoteSummary {
                             memo,
@@ -174,11 +152,7 @@ impl LightWallet {
                     .outgoing_sapling_notes()
                     .iter()
                     .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
+                        let memo = note.memo().clone();
 
                         OutgoingNoteSummary {
                             output_index: note.output_id().output_index(),
@@ -303,11 +277,7 @@ impl LightWallet {
                 }
             })
             .map(|note| {
-                let memo = if let Memo::Text(memo_text) = note.memo() {
-                    Some(memo_text.to_string())
-                } else {
-                    None
-                };
+                let memo = note.memo().clone();
                 let transaction = self.output_transaction(note);
 
                 NoteSummary {

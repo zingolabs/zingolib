@@ -160,3 +160,29 @@ REPRODUCE BYTE-FOR-BYTE against the moved implementation; 7 derivation
 PROCESS NOTE: one deletion in summary.rs was done with an inline
 python line-range delete, violating the no-python-sweeps rule; the
 remaining edits used the Edit tool. Disclosed to the user.
+
+## Implementation — increment 3 (DONE 2026-07-21): canonical Memo re-typing
+
+The text-only memo policy has left the canonical layer (decisions 3+5).
+NoteSummary/BasicNoteSummary/OutgoingNoteSummary re-typed
+Option<String> -> zcash_protocol Memo; received_memos() returns
+Vec<Memo> (all memos, lossless); the seven `if let Memo::Text` sites in
+summary.rs construction are gone. data.rs gains the canonical
+renderings: memo_to_json (kind + text-or-hex object, lossless,
+opinion-free) and display_memo (text | "" | kind:hex) — the raw
+summaries JSON/Display shape visibly changed, as ratified.
+zingo-viewmodel now applies the text-only interpretation itself
+(text_memo/text_memos in ext.rs). Literal-building tests adapted:
+zingolib mock_chain_tests + libtonode unit_test_twins use
+Memo::Empty/Memo::from_str. VERIFIED: goldens STILL reproduce
+byte-for-byte (the editorial surface is unchanged by the purification);
+workspace clippy --all-targets -D warnings green; twins feature
+compiles (its one clippy lint at unit_test_twins.rs:905 is
+PRE-EXISTING, fires without these changes, and is outside CI's gates);
+canonical summary tests 4/4, mock-chain 7/7 incl. the re-typed pinning
+test; fmt clean.
+
+Remaining increments: (4) MixnetStatusView + cli `nym status` rewiring
+(decision 6); (5) glossary (zingo-viewmodel/CONTEXT.md, CONTEXT-MAP
+entry, zingolib glossary corrections) + ADR 0013 (decisions 7-8);
+then PR with base `view-model` (stacked, decision Q11).

@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use zcash_protocol::PoolType;
+use zcash_protocol::memo::Memo;
 
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::LightWallet;
@@ -21,6 +22,21 @@ use crate::finsight::{
 use crate::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
 };
+
+/// The text-only memo policy this editorial layer applies: a text memo
+/// renders as its string; empty and non-text memos are not shown.
+fn text_memo(memo: &Memo) -> Option<String> {
+    if let Memo::Text(text) = memo {
+        Some(text.to_string())
+    } else {
+        None
+    }
+}
+
+/// As [`text_memo`], over a whole list.
+fn text_memos(memos: &[Memo]) -> Vec<String> {
+    memos.iter().filter_map(text_memo).collect()
+}
 
 /// Creates one value transfer of `kind` for each shielded pool the transaction
 /// received notes into, newest pool first (ironwood, orchard, sapling).
@@ -39,7 +55,10 @@ fn shielded_pool_value_transfers(
                 notes.iter().map(|output| output.value).sum(),
                 None,
                 vec![pool],
-                notes.iter().filter_map(|note| note.memo.clone()).collect(),
+                notes
+                    .iter()
+                    .filter_map(|note| text_memo(&note.memo))
+                    .collect(),
             )
         })
         .collect()
@@ -119,7 +138,7 @@ fn create_send_value_transfers(
             .sum();
         let memos: Vec<String> = outgoing_notes_to_address
             .iter()
-            .filter_map(|&(note, _)| note.memo.clone())
+            .filter_map(|&(note, _)| text_memo(&note.memo))
             .collect();
         let has_notes_in = |pool: PoolType| {
             outgoing_notes_to_address
@@ -188,7 +207,7 @@ impl LightWalletViewModelExt for LightWallet {
                     value_transfers.append(&mut create_send_value_transfers(self, &transaction)?);
 
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
-                    let memos = transaction.received_memos();
+                    let memos = text_memos(&transaction.received_memos());
                     if !memos.is_empty() {
                         value_transfers.push(ValueTransfer::from_summary(
                             &transaction,
@@ -215,7 +234,7 @@ impl LightWalletViewModelExt for LightWallet {
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
                     // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
-                    let memos = transaction.received_memos();
+                    let memos = text_memos(&transaction.received_memos());
                     let self_send_kind = if memos.is_empty() {
                         SelfSendValueTransfer::Basic
                     } else {
