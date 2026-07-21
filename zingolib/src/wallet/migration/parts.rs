@@ -440,7 +440,11 @@ impl crate::wallet::LightWallet {
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the tree state is unavailable.
+    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// pass — the tree state is unavailable, the boundary predates the
+    /// NU6.3 activation, or the bound note is spent or has diverged from
+    /// the part record — so one part's condition never aborts the whole
+    /// broadcast pass; skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
