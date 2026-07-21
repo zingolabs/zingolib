@@ -108,6 +108,7 @@ async fn inject_scheduled_migration(
         },
         params,
         strategy: SigningStrategy::LazyAtBoundary,
+        mode: zingolib::wallet::migration::MigrationMode::Scheduled,
         account: AccountId::ZERO,
         phase: MigrationPhase::PartsScheduled,
         parts,
@@ -237,7 +238,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // retention, so that boundary's checkpoint is pruned, and far enough
     // below the third boundary that the hidden blocks stay inside the
     // bucket. The second boundary rather than the first, because the
-    // broadcast path refuses a part whose boundary lies below the NU6.3
+    // broadcast path skips a part whose boundary lies below the NU6.3
     // activation, and the deferred activation below sits past the first.
     const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
         + MAX_REORG_ALLOWANCE

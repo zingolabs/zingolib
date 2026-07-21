@@ -348,6 +348,7 @@ async fn wallet_round_trips_migration_state_at_current_version() {
         },
         params,
         strategy: SigningStrategy::LazyAtBoundary,
+        mode: crate::wallet::migration::MigrationMode::Scheduled,
         account: zip32::AccountId::ZERO,
         phase: MigrationPhase::PartsScheduled,
         parts: vec![part],
