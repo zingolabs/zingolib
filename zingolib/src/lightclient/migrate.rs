@@ -2,10 +2,14 @@
 //!
 //! The scheduled flow a mobile client drives:
 //! [`LightClient::plan_ironwood_migration`] →
-//! [`LightClient::start_ironwood_migration`] (consent) → note-splitting
-//! rounds → [`LightClient::reconcile_migration`] on every launch →
+//! [`LightClient::start_ironwood_migration`] (consent) →
+//! [`LightClient::continue_note_splitting`] after each sync until the parts
+//! are scheduled → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
+//! The lifecycle wiring for that flow (which call belongs to which app
+//! moment, consent and disclosure UX, scheduling background wakes) is laid
+//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -186,6 +190,31 @@ pub struct MigrationSummary {
     pub stranded: u64,
 }
 
+/// What one [`LightClient::continue_note_splitting`] call did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SplitStep {
+    /// The next note-splitting round was built and broadcast. Sync until
+    /// its transactions confirm, then reconcile and call again.
+    RoundBroadcast {
+        /// The round just sent, counted from zero.
+        round: u32,
+        /// Its transactions.
+        txids: Vec<TxId>,
+    },
+    /// The pending round is not replannable yet. `pending` lists its
+    /// unconfirmed transactions; an empty list means every transaction
+    /// confirmed but the anchor has not reached the round's outputs.
+    /// Either way: sync and call again. Nothing was written.
+    AwaitingConfirmation {
+        /// The transactions still in flight.
+        pending: Vec<TxId>,
+    },
+    /// Note splitting is finished and the parts are bound to their notes
+    /// and scheduled. [`LightClient::broadcast_due_parts`] takes over from
+    /// here.
+    SplittingComplete,
+}
+
 /// The migration's progress, arranged for direct rendering.
 #[derive(Debug, Clone)]
 pub struct MigrationStatus {
@@ -246,8 +275,8 @@ impl LightClient {
     /// shown. If the wallet's notes changed in between, the call fails and
     /// the client re-plans. When the note set is already fully split, parts
     /// are bound to their notes and scheduled immediately. Otherwise the
-    /// migration starts in the [`MigrationPhase::Planned`] phase and note
-    /// splitting proceeds from there.
+    /// migration starts in the [`MigrationPhase::Planned`] phase and
+    /// [`Self::continue_note_splitting`] drives the rounds from there.
     /// `per_bucket` overrides `k_max` in the migration params, capping how
     /// many parts share each broadcast window. Lower values spread parts
     /// across more sessions (better privacy, slower completion); higher values
@@ -307,6 +336,164 @@ impl LightClient {
         wallet.migration = Some(state);
         wallet.save_required = true;
         Ok(())
+    }
+
+    /// Drives one step of note splitting for the scheduled migration flow:
+    /// replans from the wallet's current notes, then either builds and
+    /// broadcasts the next round of Orchard self-sends, or, once the replan
+    /// shows every note part-ready, binds the parts to their notes and
+    /// schedules them.
+    ///
+    /// Call it after a sync whenever [`Self::reconcile_migration`] reports
+    /// [`RecommendedAction::ContinueNoteSplitting`] or
+    /// [`RecommendedAction::RetrySplit`], and keep the loop going until it
+    /// returns [`SplitStep::SplittingComplete`]. Failed or expired split
+    /// transactions need no dedicated handling: their notes come back into
+    /// the replan, which re-derives whatever splitting remains. Blind calls
+    /// are safe. While the pending round is still confirming, or its outputs
+    /// have not reached the anchor, it returns
+    /// [`SplitStep::AwaitingConfirmation`] and writes nothing.
+    ///
+    /// Consent (ZIP 318 FR7): the first round refuses to execute when the
+    /// wallet's notes no longer hash to the consented plan
+    /// ([`MigrationError::ConsentStale`]); each later round replans from
+    /// where the notes actually are, the continuation semantics of
+    /// [`Self::migrate_to_ironwood`].
+    ///
+    /// Splits are Orchard self-sends, transmitted over the client's regular
+    /// server connection rather than the decoupled part-broadcast endpoint:
+    /// they reveal no value and precede any pool-crossing transfer, and the
+    /// caller is interactive here anyway (the sends already coincide with
+    /// the user's sync activity).
+    pub async fn continue_note_splitting(&mut self) -> Result<SplitStep, LightClientError> {
+        // Hold the wallet stable from triage through build: the plan is
+        // value-based and the build re-selects notes by value, so a scan
+        // landing in between would surface as a spurious build failure.
+        let sync = self.pause_sync_scoped()?;
+
+        let (account, consented_plan_hash, next_round) = {
+            let wallet = self.wallet().read().await;
+            let state = wallet
+                .migration
+                .as_ref()
+                .ok_or(MigrationError::NoMigration)?;
+            let next_round = match &state.phase {
+                MigrationPhase::PartsScheduled | MigrationPhase::Complete { .. } => {
+                    return Ok(SplitStep::SplittingComplete);
+                }
+                MigrationPhase::Planned => 0,
+                MigrationPhase::NoteSplitting {
+                    round,
+                    pending_txids,
+                } => {
+                    let pending: Vec<TxId> = pending_txids
+                        .iter()
+                        .filter(|txid| {
+                            !wallet.transaction_failed(txid)
+                                && wallet.transaction_confirmed_height(txid).is_none()
+                        })
+                        .copied()
+                        .collect();
+                    if !pending.is_empty() {
+                        return Ok(SplitStep::AwaitingConfirmation { pending });
+                    }
+                    // The round's outputs enter planning once the anchor
+                    // reaches their confirmation heights; replanning earlier
+                    // would read a note set with the round half-applied.
+                    let (_, anchor_height) = wallet
+                        .get_migration_heights()?
+                        .ok_or(WalletError::NoSyncData)?;
+                    let unanchored = pending_txids.iter().any(|txid| {
+                        wallet
+                            .transaction_confirmed_height(txid)
+                            .is_some_and(|height| height > anchor_height)
+                    });
+                    if unanchored {
+                        return Ok(SplitStep::AwaitingConfirmation {
+                            pending: Vec::new(),
+                        });
+                    }
+                    round + 1
+                }
+            };
+            (state.account, state.consent.plan_hash, next_round)
+        };
+
+        if next_round as usize >= MAX_ROUNDS {
+            return Err(MigrationError::SplitDidNotConverge(MAX_ROUNDS).into());
+        }
+
+        let plan = self.plan_ironwood_migration(account).await?;
+        if next_round == 0 && plan_hash(&plan) != consented_plan_hash {
+            return Err(MigrationError::ConsentStale.into());
+        }
+
+        if plan.is_split() {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .with_migration_state(|wallet, state| {
+                    wallet.bind_parts_to_notes(state, account)?;
+                    let now_height = wallet
+                        .sync_state
+                        .last_known_chain_height()
+                        .ok_or(WalletError::NoSyncData)?;
+                    plan_schedule(
+                        &mut state.parts,
+                        now_height,
+                        &state.params,
+                        &mut rand::rngs::OsRng,
+                    )?;
+                    state.phase = MigrationPhase::PartsScheduled;
+                    wallet.save_required = true;
+                    Ok::<_, LightClientError>(())
+                })
+                .ok_or(MigrationError::NoMigration)??;
+            return Ok(SplitStep::SplittingComplete);
+        }
+
+        let round = plan
+            .split_rounds
+            .into_iter()
+            .next()
+            .expect("unsplit plan has at least one round");
+        let txids = self
+            .build_transactions(&round, |wallet, planned| {
+                wallet.build_note_split_transaction(account, planned)
+            })
+            .await?;
+
+        // Persist the attempt before transmitting, so a transmit failure
+        // (partial or total) leaves a reconcilable round: the failed
+        // transactions are marked in the wallet, and the next call replans
+        // over their released notes.
+        {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .with_migration_state(|wallet, state| {
+                    state.phase = MigrationPhase::NoteSplitting {
+                        round: next_round,
+                        pending_txids: txids.clone(),
+                    };
+                    wallet.save_required = true;
+                })
+                .ok_or(MigrationError::NoMigration)?;
+        }
+
+        let transmitted = self
+            .transmit_transactions(
+                NonEmpty::from_vec(txids.clone()).expect("planned rounds are never empty"),
+            )
+            .await;
+        drop(sync);
+        if let Err(e) = transmitted {
+            self.fail_unsent_transactions(&txids).await;
+            return Err(e);
+        }
+
+        Ok(SplitStep::RoundBroadcast {
+            round: next_round,
+            txids,
+        })
     }
 
     /// The broadcast-only client parts are submitted through: the dedicated
@@ -549,10 +736,10 @@ impl LightClient {
     /// and applies the actions that are safe unattended: promoting
     /// nullifier-mined parts to confirmed, marking expiries and
     /// invalidations, rebuilding expired parts against a fresh boundary,
-    /// binding and scheduling parts once splitting confirms, and marking
-    /// completion. Actions needing consent or a user-facing disclosure
-    /// (catch-up, replanning the remainder) are returned untouched in the
-    /// report.
+    /// and marking completion. Actions needing consent, a user-facing
+    /// disclosure (catch-up, replanning the remainder), or the network
+    /// (driving note splitting via [`Self::continue_note_splitting`]) are
+    /// returned untouched in the report.
     ///
     /// Pure over persisted state plus the wallet's local chain view: call it
     /// on every launch. It never synchronizes.
@@ -582,28 +769,14 @@ impl LightClient {
                                 schedule::bucket_index(now_height, state.params.bucket_modulus) + 1;
                             part.reassign(next_bucket)?;
                         }
-                        RecommendedAction::BindAndSchedule => {
-                            let account = state.account;
-                            wallet.bind_parts_to_notes(state, account)?;
-                            let now_height = wallet
-                                .sync_state
-                                .last_known_chain_height()
-                                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                            plan_schedule(
-                                &mut state.parts,
-                                now_height,
-                                &state.params,
-                                &mut rand::rngs::OsRng,
-                            )?;
-                            state.phase = MigrationPhase::PartsScheduled;
-                        }
                         RecommendedAction::MarkComplete { residual } => {
                             state.phase = MigrationPhase::Complete {
                                 residual: *residual,
                             };
                         }
                         // Left to the caller: user-facing disclosure or fresh
-                        // consent required, or nothing to apply.
+                        // consent required, a network-touching step
+                        // (`continue_note_splitting`), or nothing to apply.
                         RecommendedAction::PromptCatchUp { .. }
                         | RecommendedAction::ReplanRemainder
                         | RecommendedAction::RetrySplit { .. }
@@ -1496,5 +1669,230 @@ mod tests {
             ),
             "the drain must reject a scheduled migration without syncing, got {result:?}"
         );
+    }
+
+    /// The scheduled note-splitting driver. Round execution itself (build,
+    /// prove, transmit) is shared with `migrate_to_ironwood` and exercised
+    /// end to end by the libtonode scenarios; the cells here pin the
+    /// driver's triage — what it refuses, what it defers untouched, and the
+    /// terminal bind-and-schedule step.
+    mod continue_note_splitting {
+        use std::num::NonZeroU32;
+
+        use zcash_primitives::transaction::TxId;
+
+        use super::super::{MAX_ROUNDS, SplitStep};
+        use super::*;
+        use crate::lightclient::error::{LightClientError, MigrationError};
+        use crate::wallet::migration::CANONICAL_PART_FEE;
+
+        /// The txid of the fabricated transaction that created the wallet's
+        /// note of `value`.
+        fn creating_txid(wallet: &LightWallet, value: u64) -> TxId {
+            wallet
+                .wallet_transactions
+                .iter()
+                .find(|(_, tx)| {
+                    OrchardNote::transaction_outputs(tx)
+                        .iter()
+                        .any(|note| note.value() == value)
+                })
+                .map(|(txid, _)| *txid)
+                .expect("the fabricated note has a creating transaction")
+        }
+
+        /// A consented migration with no bound parts, in `phase`. The
+        /// consent hash is all zeros, which no real plan hashes to.
+        fn splitting_state(params: MigrationParams, phase: MigrationPhase) -> MigrationState {
+            let mut state = scheduled_state(params, Vec::new());
+            state.phase = phase;
+            state
+        }
+
+        #[tokio::test]
+        async fn without_a_migration_errors() {
+            let (wallet, _) = wallet_with_migration_note(360);
+            let mut client = LightClient::new_for_test(wallet).await;
+            let result = client.continue_note_splitting().await;
+            assert!(
+                matches!(
+                    result,
+                    Err(LightClientError::MigrationError(
+                        MigrationError::NoMigration
+                    ))
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// A blind call past the splitting phase is a safe no-op.
+        #[tokio::test]
+        async fn scheduled_parts_report_splitting_complete() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(0).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            assert_eq!(
+                client.continue_note_splitting().await.unwrap(),
+                SplitStep::SplittingComplete
+            );
+        }
+
+        /// FR7: the first round executes only the exact plan the user
+        /// consented to. The state's all-zero consent hash cannot match the
+        /// wallet's real plan, so the round must refuse.
+        #[tokio::test]
+        async fn stale_consent_blocks_the_first_round() {
+            let (mut wallet, _) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            wallet.migration = Some(splitting_state(params, MigrationPhase::Planned));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let result = client.continue_note_splitting().await;
+            assert!(
+                matches!(
+                    result,
+                    Err(LightClientError::MigrationError(
+                        MigrationError::ConsentStale
+                    ))
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// While the pending round has an unconfirmed transaction the driver
+        /// defers and writes nothing: retrying or replanning would race the
+        /// in-flight split.
+        #[tokio::test]
+        async fn unconfirmed_round_defers_untouched() {
+            let (mut wallet, _) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let in_flight = TxId::from_bytes([9; 32]);
+            let phase = MigrationPhase::NoteSplitting {
+                round: 0,
+                pending_txids: vec![in_flight],
+            };
+            wallet.migration = Some(splitting_state(params, phase.clone()));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            assert_eq!(
+                client.continue_note_splitting().await.unwrap(),
+                SplitStep::AwaitingConfirmation {
+                    pending: vec![in_flight]
+                }
+            );
+            let wallet = client.wallet().read().await;
+            assert_eq!(
+                wallet.migration.as_ref().unwrap().phase,
+                phase,
+                "deferring writes nothing"
+            );
+        }
+
+        /// A confirmed round whose outputs sit above the anchor is not
+        /// replannable yet: an earlier replan would read a note set with the
+        /// round half-applied. The empty `pending` distinguishes anchor lag
+        /// from unconfirmed transactions.
+        #[tokio::test]
+        async fn confirmed_round_above_the_anchor_defers() {
+            let mut wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .orchard_note(NOTE_VALUE)
+                    .orchard_note(2 * NOTE_VALUE)
+                    .tip(360)
+                    .build();
+            // Anchor below the second note's confirmation height.
+            wallet.wallet_settings.min_confirmations =
+                NonZeroU32::new(360).expect("non-zero literal");
+            let confirmed = creating_txid(&wallet, 2 * NOTE_VALUE);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            wallet.migration = Some(splitting_state(
+                params,
+                MigrationPhase::NoteSplitting {
+                    round: 0,
+                    pending_txids: vec![confirmed],
+                },
+            ));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            assert_eq!(
+                client.continue_note_splitting().await.unwrap(),
+                SplitStep::AwaitingConfirmation {
+                    pending: Vec::new()
+                }
+            );
+        }
+
+        /// The round counter survives across sessions, so a resolved round
+        /// at the convergence bound aborts instead of splitting forever.
+        #[tokio::test]
+        async fn resolved_round_at_the_bound_aborts() {
+            let (mut wallet, _) = wallet_with_migration_note(360);
+            let confirmed = creating_txid(&wallet, NOTE_VALUE);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            wallet.migration = Some(splitting_state(
+                params,
+                MigrationPhase::NoteSplitting {
+                    round: u32::try_from(MAX_ROUNDS - 1).expect("bound fits u32"),
+                    pending_txids: vec![confirmed],
+                },
+            ));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let result = client.continue_note_splitting().await;
+            assert!(
+                matches!(
+                    result,
+                    Err(LightClientError::MigrationError(
+                        MigrationError::SplitDidNotConverge(MAX_ROUNDS)
+                    ))
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// The terminal step: the pending round confirmed and the replan
+        /// shows every note part-ready, so the driver binds the parts to
+        /// their notes, schedules them, and hands over to the part
+        /// broadcaster.
+        #[tokio::test]
+        async fn confirmed_split_binds_and_schedules() {
+            const PART_READY: u64 = NOTE_VALUE + CANONICAL_PART_FEE;
+            let mut wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .orchard_note(PART_READY)
+                    .tip(360)
+                    .build();
+            let confirmed = creating_txid(&wallet, PART_READY);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            wallet.migration = Some(splitting_state(
+                params,
+                MigrationPhase::NoteSplitting {
+                    round: 0,
+                    pending_txids: vec![confirmed],
+                },
+            ));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            assert_eq!(
+                client.continue_note_splitting().await.unwrap(),
+                SplitStep::SplittingComplete
+            );
+
+            let wallet = client.wallet().read().await;
+            let state = wallet.migration.as_ref().expect("the migration stands");
+            assert_eq!(state.phase, MigrationPhase::PartsScheduled);
+            assert_eq!(state.parts.len(), 1, "one part per denomination");
+            assert_eq!(state.parts[0].denomination, NOTE_VALUE);
+            assert_eq!(
+                state.parts[0].state,
+                PartState::Assigned,
+                "scheduling assigned the part its bucket"
+            );
+            assert!(wallet.save_required, "the transition must persist");
+        }
     }
 }

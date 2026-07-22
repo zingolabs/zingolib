@@ -447,7 +447,7 @@ impl crate::wallet::LightWallet {
         )
     }
 
-    pub(in crate::wallet::migration) fn get_migration_heights(
+    pub(crate) fn get_migration_heights(
         &self,
     ) -> Result<
         Option<(

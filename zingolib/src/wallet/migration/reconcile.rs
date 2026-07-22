@@ -64,17 +64,21 @@ pub enum PartClass {
 pub enum RecommendedAction {
     /// A note-splitting round is still confirming. Keep waiting.
     AwaitSplitConfirmation,
-    /// A note-splitting transaction failed or expired. Rebuild it against a
-    /// fresh anchor.
+    /// A note-splitting transaction failed or expired. The failure released
+    /// its notes, so the retry is a replan: drive
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] once the
+    /// round's remaining transactions resolve.
     RetrySplit {
         /// The failed transaction.
         txid: TxId,
     },
-    /// Every split confirmed: bind parts to notes and schedule them. Safe
-    /// unattended (the schedule was already consented to as part of the
-    /// plan).
-    BindAndSchedule,
-    /// Note splitting has not started yet. Drive the next round.
+    /// Note splitting needs driving: it has not started, or the pending
+    /// round fully confirmed.
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] replans
+    /// from the wallet's notes and either executes the next round or, once
+    /// every note is part-ready, binds the parts and schedules them.
+    /// Whether the confirmed round was the last one is only decidable by
+    /// that replan, which pure reconciliation cannot perform.
     ContinueNoteSplitting,
     /// The part's own transaction mined but the record lagged (for example a
     /// crash between submit and record). Safe unattended.
@@ -161,7 +165,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
                 }
             }
             if all_confirmed {
-                report.actions.push(RecommendedAction::BindAndSchedule);
+                report.actions.push(RecommendedAction::ContinueNoteSplitting);
             } else if report.actions.is_empty() {
                 report
                     .actions
@@ -615,7 +619,12 @@ mod tests {
             .confirmed
             .insert(split_txid, BlockHeight::from_u32(9_000));
         let report = reconcile(&state, &chain);
-        assert_eq!(report.actions, vec![RecommendedAction::BindAndSchedule]);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::ContinueNoteSplitting],
+            "a fully confirmed round hands back to the splitting driver, \
+             which alone can tell a finished split from one needing more rounds"
+        );
     }
 
     #[test]

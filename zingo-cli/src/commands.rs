@@ -29,6 +29,7 @@ use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
+use zingolib::lightclient::migrate::SplitStep;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -2191,6 +2192,7 @@ enum MigrationSubCommand {
         plan_hash: [u8; 32],
         per_bucket: Option<u32>,
     },
+    Continue,
     Auto,
     Status,
     Reconcile,
@@ -2230,6 +2232,7 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
                 per_bucket,
             })
         }
+        "continue" => Ok(MigrationSubCommand::Continue),
         "auto" => Ok(MigrationSubCommand::Auto),
         "status" => Ok(MigrationSubCommand::Status),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
@@ -2305,6 +2308,29 @@ fn run_migration(
                 per_bucket,
             ))?;
             "Migration started.".to_string()
+        }
+        MigrationSubCommand::Continue => {
+            RT.block_on(lightclient.sync_and_await())
+                .map_err(MigrationCommandError::Sync)?;
+            match RT.block_on(lightclient.continue_note_splitting())? {
+                SplitStep::RoundBroadcast { round, txids } => object! {
+                    "round" => round,
+                    "split_txids" => txids_json(&txids),
+                }
+                .pretty(2),
+                SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
+                    "Round confirmed; waiting for the anchor to reach its outputs. \
+                     Sync and retry."
+                        .to_string()
+                }
+                SplitStep::AwaitingConfirmation { pending } => object! {
+                    "awaiting_confirmation" => txids_json(&pending),
+                }
+                .pretty(2),
+                SplitStep::SplittingComplete => {
+                    "Note splitting complete; parts are scheduled.".to_string()
+                }
+            }
         }
         MigrationSubCommand::Auto => {
             RT.block_on(lightclient.sync_and_await())
@@ -2415,6 +2441,10 @@ impl Command for MigrationCommand {
             hash and begins the migration. --per-bucket N caps how many parts share each
             broadcast window (lower = more sessions, better privacy; higher = fewer
             sessions, faster). Fails if the wallet's notes changed since planning.
+            `continue` syncs the wallet, then drives one step of note splitting:
+            broadcasts the next round of Orchard self-sends, or, once every note is
+            part-ready, binds the parts to their notes and schedules them. Repeat
+            (syncing between rounds) until it reports the parts scheduled.
             `auto` syncs the wallet, then broadcasts any parts whose random target block
             within the current bucket window has been reached. Run this periodically
             to drive the migration without manual steps.
@@ -2431,6 +2461,7 @@ impl Command for MigrationCommand {
             Usage:
             migration plan
             migration start <plan_hash> [--per-bucket N]
+            migration continue
             migration auto
             migration status
             migration reconcile
@@ -2584,6 +2615,14 @@ mod migration_command_parsing {
             parse_migration_args(&["start", "abc"]),
             Err(MigrationCommandError::MalformedPlanHash)
         ));
+    }
+
+    #[test]
+    fn continue_parses_bare() {
+        assert_eq!(
+            parse_migration_args(&["continue"]).expect("bare continue parses"),
+            MigrationSubCommand::Continue
+        );
     }
 
     #[test]
