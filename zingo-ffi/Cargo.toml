@@ -8,7 +8,6 @@ pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feature
 zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feature/swap-op-return", features = [
     "test_lwd_zebrad",
 ] }
-regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
 zcash_address = "0.12.0"
