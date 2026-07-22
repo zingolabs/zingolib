@@ -815,6 +815,20 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -830,11 +844,15 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_zingo_checksum_func_change_server(
+    fun uniffi_zingo_checksum_func_cancel_ironwood_migration(
+): Short
+fun uniffi_zingo_checksum_func_change_server(
 ): Short
 fun uniffi_zingo_checksum_func_check_my_address(
 ): Short
 fun uniffi_zingo_checksum_func_confirm(
+): Short
+fun uniffi_zingo_checksum_func_continue_note_splitting(
 ): Short
 fun uniffi_zingo_checksum_func_create_new_transparent_address(
 ): Short
@@ -898,17 +916,25 @@ fun uniffi_zingo_checksum_func_init_logging(
 ): Short
 fun uniffi_zingo_checksum_func_init_new(
 ): Short
+fun uniffi_zingo_checksum_func_migration_status(
+): Short
 fun uniffi_zingo_checksum_func_parse_address(
 ): Short
 fun uniffi_zingo_checksum_func_parse_ufvk(
 ): Short
 fun uniffi_zingo_checksum_func_pause_sync(
 ): Short
+fun uniffi_zingo_checksum_func_plan_ironwood_migration(
+): Short
 fun uniffi_zingo_checksum_func_plan_orchard_drain(
 ): Short
 fun uniffi_zingo_checksum_func_poll_sync(
 ): Short
+fun uniffi_zingo_checksum_func_reconcile_migration(
+): Short
 fun uniffi_zingo_checksum_func_remove_transaction(
+): Short
+fun uniffi_zingo_checksum_func_reschedule_parts(
 ): Short
 fun uniffi_zingo_checksum_func_run_rescan(
 ): Short
@@ -927,6 +953,8 @@ fun uniffi_zingo_checksum_func_set_crypto_default_provider_to_ring(
 fun uniffi_zingo_checksum_func_set_option_wallet(
 ): Short
 fun uniffi_zingo_checksum_func_shield(
+): Short
+fun uniffi_zingo_checksum_func_start_ironwood_migration(
 ): Short
 fun uniffi_zingo_checksum_func_status_sync(
 ): Short
@@ -979,11 +1007,15 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_zingo_fn_func_change_server(`serveruri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zingo_fn_func_cancel_ironwood_migration(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_change_server(`serveruri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_check_my_address(`address`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_confirm(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_continue_note_splitting(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_create_new_transparent_address(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1047,17 +1079,25 @@ fun uniffi_zingo_fn_func_init_logging(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_init_new(`serveruri`: RustBuffer.ByValue,`birthday`: Int,`chainhint`: RustBuffer.ByValue,`performancelevel`: RustBuffer.ByValue,`minconfirmations`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_migration_status(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_parse_address(`address`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_parse_ufvk(`ufvk`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_pause_sync(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_plan_ironwood_migration(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_plan_orchard_drain(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_poll_sync(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_reconcile_migration(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_remove_transaction(`txid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_reschedule_parts(`perBucket`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_run_rescan(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1076,6 +1116,8 @@ fun uniffi_zingo_fn_func_set_crypto_default_provider_to_ring(uniffi_out_err: Uni
 fun uniffi_zingo_fn_func_set_option_wallet(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_shield(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_start_ironwood_migration(`planHashHex`: RustBuffer.ByValue,`perBucket`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_status_sync(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1209,6 +1251,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_zingo_checksum_func_cancel_ironwood_migration() != 44347.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zingo_checksum_func_change_server() != 47175.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1216,6 +1261,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_confirm() != 11704.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_continue_note_splitting() != 26867.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_create_new_transparent_address() != 37063.toShort()) {
@@ -1311,6 +1359,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_init_new() != 65130.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zingo_checksum_func_migration_status() != 14110.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zingo_checksum_func_parse_address() != 37603.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1320,13 +1371,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_pause_sync() != 1407.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zingo_checksum_func_plan_ironwood_migration() != 49625.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zingo_checksum_func_plan_orchard_drain() != 34771.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_poll_sync() != 35296.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zingo_checksum_func_reconcile_migration() != 36661.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zingo_checksum_func_remove_transaction() != 54006.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_reschedule_parts() != 2084.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_run_rescan() != 52086.toShort()) {
@@ -1354,6 +1414,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_shield() != 33728.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_start_ironwood_migration() != 47149.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_status_sync() != 2462.toShort()) {
@@ -1640,6 +1703,38 @@ public object FfiConverterTypeZingolibError : FfiConverterRustBuffer<ZingolibExc
 /**
  * @suppress
  */
+public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
+    override fun read(buf: ByteBuffer): kotlin.UInt? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUInt.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UInt?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUInt.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UInt?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUInt.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteArray?> {
     override fun read(buf: ByteBuffer): kotlin.ByteArray? {
         if (buf.get().toInt() == 0) {
@@ -1665,6 +1760,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
         }
     }
 }
+    @Throws(ZingolibException::class) fun `cancelIronwoodMigration`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_cancel_ironwood_migration(
+        _status)
+}
+    )
+    }
+    
+
     @Throws(ZingolibException::class) fun `changeServer`(`serveruri`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
@@ -1689,6 +1794,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_confirm(
+        _status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `continueNoteSplitting`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_continue_note_splitting(
         _status)
 }
     )
@@ -2005,6 +2120,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
     }
     
 
+    @Throws(ZingolibException::class) fun `migrationStatus`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_migration_status(
+        _status)
+}
+    )
+    }
+    
+
     @Throws(ZingolibException::class) fun `parseAddress`(`address`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
@@ -2035,6 +2160,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
     }
     
 
+    @Throws(ZingolibException::class) fun `planIronwoodMigration`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_plan_ironwood_migration(
+        _status)
+}
+    )
+    }
+    
+
     @Throws(ZingolibException::class) fun `planOrchardDrain`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
@@ -2055,11 +2190,31 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
     }
     
 
+    @Throws(ZingolibException::class) fun `reconcileMigration`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_reconcile_migration(
+        _status)
+}
+    )
+    }
+    
+
     @Throws(ZingolibException::class) fun `removeTransaction`(`txid`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_remove_transaction(
         FfiConverterString.lower(`txid`),_status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `rescheduleParts`(`perBucket`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_reschedule_parts(
+        FfiConverterUInt.lower(`perBucket`),_status)
 }
     )
     }
@@ -2150,6 +2305,16 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_shield(
         _status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `startIronwoodMigration`(`planHashHex`: kotlin.String, `perBucket`: kotlin.UInt?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_start_ironwood_migration(
+        FfiConverterString.lower(`planHashHex`),FfiConverterOptionalUInt.lower(`perBucket`),_status)
 }
     )
     }

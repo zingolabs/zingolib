@@ -217,4 +217,30 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string drain_status();
+
+  [Throws=ZingolibError]
+  string plan_ironwood_migration();
+
+  [Throws=ZingolibError]
+  string start_ironwood_migration(
+    string plan_hash_hex,
+    u32? per_bucket
+  );
+
+  [Throws=ZingolibError]
+  string continue_note_splitting();
+
+  [Throws=ZingolibError]
+  string reschedule_parts(
+    u32 per_bucket
+  );
+
+  [Throws=ZingolibError]
+  string migration_status();
+
+  [Throws=ZingolibError]
+  string reconcile_migration();
+
+  [Throws=ZingolibError]
+  string cancel_ironwood_migration();
 };

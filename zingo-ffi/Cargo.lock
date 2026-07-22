@@ -2314,7 +2314,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "bip32",
  "byteorder",
@@ -2344,7 +2344,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
  "zingo-status",
  "zip32",
 ]
@@ -5080,7 +5080,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -5105,7 +5105,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -5119,7 +5119,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -5134,7 +5134,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -5157,7 +5157,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5204,7 +5204,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
@@ -5215,7 +5215,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux#9de19702165e1c02385cf7cc7d574228635ead44"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
 dependencies = [
  "http",
  "nonempty",
@@ -5227,7 +5227,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=feat%2Fdrain-progress-ux)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",

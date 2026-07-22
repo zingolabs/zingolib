@@ -50,6 +50,10 @@ use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
+use zingolib::lightclient::migrate::SplitStep;
+use zingolib::wallet::migration::{
+    MigrationParams, MigrationPhase, RecommendedAction, parts::SigningStrategy, split::plan_hash,
+};
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::keys::{
@@ -2177,5 +2181,412 @@ pub fn drain_status() -> Result<String, ZingolibError> {
             }
             None => json::JsonValue::Null.pretty(2),
         })
+    })
+}
+
+// ----- ZIP 318 private migration (note splitting + scheduled parts) -----
+
+/// Lowercase-hex rendering of a consent hash, the form the plan JSON carries
+/// and `start_ironwood_migration` accepts back.
+fn hash32_to_hex(hash: &[u8; 32]) -> String {
+    hash.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn hex_to_hash32(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+fn migration_phase_json(phase: &MigrationPhase) -> json::JsonValue {
+    match phase {
+        MigrationPhase::Planned => object! { "kind" => "planned" },
+        MigrationPhase::NoteSplitting {
+            round,
+            pending_txids,
+        } => object! {
+            "kind" => "note_splitting",
+            "round" => *round,
+            "pending_txids" => pending_txids
+                .iter()
+                .map(|txid| txid.to_string())
+                .collect::<Vec<_>>(),
+        },
+        MigrationPhase::PartsScheduled => object! { "kind" => "parts_scheduled" },
+        MigrationPhase::Complete { residual } => object! {
+            "kind" => "complete",
+            "residual" => *residual,
+        },
+    }
+}
+
+/// Plans the ZIP 318 private migration from the account's current spendable
+/// Orchard notes. Pure and deterministic: nothing is signed or sent, so the
+/// plan can be rendered for consent. Mirror of `plan_orchard_drain` for the
+/// split path.
+///
+/// Returns, on success, the plan as JSON: `{ split_rounds:
+/// [[{ inputs: [u64], outputs: [u64], fee: u64 }]], parts: [u64], split_fee,
+/// parts_fee, stranded, plan_hash }` (values in zatoshis, `plan_hash` in hex).
+/// Consent must disclose `stranded`. Pass `plan_hash` back to
+/// `start_ironwood_migration` unchanged.
+pub fn plan_ironwood_migration() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .read()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            Ok(RT.block_on(async move {
+                match lightclient.plan_ironwood_migration(AccountId::ZERO).await {
+                    Ok(plan) => {
+                        let params = {
+                            let wallet = lightclient.wallet().read().await;
+                            MigrationParams::provisional(wallet.chain_type())
+                        };
+                        let split_rounds = plan
+                            .split_rounds
+                            .iter()
+                            .map(|round| {
+                                round
+                                    .iter()
+                                    .map(|tx| {
+                                        object! {
+                                            "inputs" => tx.inputs.clone(),
+                                            "outputs" => tx.outputs.clone(),
+                                            "fee" => tx.fee(),
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect::<Vec<_>>();
+                        object! {
+                            "split_rounds" => split_rounds,
+                            "parts" => plan.parts.clone(),
+                            "split_fee" => plan.split_fee(),
+                            "parts_fee" => plan.parts_fee(&params),
+                            "stranded" => plan.stranded,
+                            "plan_hash" => hash32_to_hex(&plan_hash(&plan)),
+                        }
+                    }
+                    Err(e) => {
+                        object! { "error" => e.to_string() }
+                    }
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Records the user's consent to the exact plan they were shown (by its
+/// `plan_hash` from `plan_ironwood_migration`) and persists the migration
+/// state. Nothing is broadcast here; `continue_note_splitting` drives the
+/// rounds afterwards.
+///
+/// `per_bucket` caps how many parts share one broadcast window; `null` keeps
+/// zingolib's default, and `reschedule_parts` can change it any time before
+/// the first part is signed. Signing is always `LazyAtBoundary` (the only
+/// sound strategy while ZIP 244 commits the anchor into the signature hash).
+///
+/// Returns `{ started: true }`, or `{ error }` — notably `ConsentStale` when
+/// the wallet's notes changed since planning (replan and re-show).
+pub fn start_ironwood_migration(
+    plan_hash_hex: String,
+    per_bucket: Option<u32>,
+) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            let Some(hash) = hex_to_hash32(&plan_hash_hex) else {
+                return Ok(object! { "error" => "invalid plan hash" }.pretty(2));
+            };
+            Ok(RT.block_on(async move {
+                match lightclient
+                    .start_ironwood_migration(
+                        AccountId::ZERO,
+                        SigningStrategy::LazyAtBoundary,
+                        hash,
+                        per_bucket,
+                    )
+                    .await
+                {
+                    Ok(()) => object! { "started" => true },
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Drives one step of note splitting: builds, proves and broadcasts the next
+/// round of Orchard self-sends, or reports what the round is waiting on.
+/// zingolib pauses the running sync itself for the critical section. Call
+/// after a sync tick and keep looping until `splitting_complete`.
+///
+/// Like the drain, this holds the lightclient for the whole prove+broadcast,
+/// so dispatch it on the concurrent native queue, never the main one.
+///
+/// Returns one of:
+/// `{ step: "round_broadcast", round, txids: [..] }` (sync until they
+/// confirm, then call again),
+/// `{ step: "awaiting_confirmation", pending: [..] }` (nothing written; an
+/// empty `pending` means confirmed but the anchor hasn't reached the outputs
+/// — sync and retry either way), or
+/// `{ step: "splitting_complete" }` (parts bound and scheduled).
+pub fn continue_note_splitting() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.continue_note_splitting().await {
+                    Ok(SplitStep::RoundBroadcast { round, txids }) => object! {
+                        "step" => "round_broadcast",
+                        "round" => round,
+                        "txids" => txids
+                            .iter()
+                            .map(|txid| txid.to_string())
+                            .collect::<Vec<_>>(),
+                    },
+                    Ok(SplitStep::AwaitingConfirmation { pending }) => object! {
+                        "step" => "awaiting_confirmation",
+                        "pending" => pending
+                            .iter()
+                            .map(|txid| txid.to_string())
+                            .collect::<Vec<_>>(),
+                    },
+                    Ok(SplitStep::SplittingComplete) => object! {
+                        "step" => "splitting_complete",
+                    },
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Sets how many parts share each broadcast window and re-buckets every part
+/// under the new cadence with fresh randomization. Callable any time between
+/// consent and the first signed part; afterwards it fails with
+/// `CadenceFixed`. After a successful call the old schedule is void:
+/// re-read `migration_status` and re-arm the platform scheduler.
+///
+/// Returns `{ rescheduled: true }` or `{ error }`.
+pub fn reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.reschedule_parts(per_bucket).await {
+                    Ok(()) => object! { "rescheduled" => true },
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The migration's progress, arranged for direct rendering. ZIP 318 requires
+/// showing `orchard_confirmed_spendable` (the Orchard-pool figure
+/// specifically) while a migration is in flight.
+///
+/// Returns `{ orchard_confirmed_spendable, phase, parts_total,
+/// parts_confirmed, value_total, value_migrated, per_bucket, bucket_modulus,
+/// next_wakes: [{ bucket_index, boundary, part_ids, denominations,
+/// estimated_unix_time, estimated_target_unix_time }] }`. `phase` is `null`
+/// when no migration is in progress, else `{ kind }` with per-kind fields
+/// (`round`/`pending_txids` while note splitting, `residual` when complete).
+/// `denominations` (zatoshis) mirror `part_ids` element-for-element, so a
+/// schedule screen renders each window's batch without a second call.
+pub fn migration_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .read()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            Ok(RT.block_on(async move {
+                match lightclient.migration_status().await {
+                    Ok(status) => {
+                        // Join each wake's part ids to their denominations (and
+                        // pick up the effective cadence) from the persisted
+                        // migration state; WakePoint alone carries only ids.
+                        let (denoms_by_id, per_bucket, bucket_modulus) = {
+                            let wallet = lightclient.wallet().read().await;
+                            match &wallet.migration {
+                                Some(state) => (
+                                    state
+                                        .parts
+                                        .iter()
+                                        .map(|part| (part.id.0, part.denomination))
+                                        .collect::<std::collections::HashMap<_, _>>(),
+                                    Some(state.params.k_max),
+                                    state.params.bucket_modulus,
+                                ),
+                                None => (
+                                    std::collections::HashMap::new(),
+                                    None,
+                                    MigrationParams::provisional(wallet.chain_type())
+                                        .bucket_modulus,
+                                ),
+                            }
+                        };
+                        let next_wakes = status
+                            .next_wakes
+                            .iter()
+                            .map(|wake| {
+                                object! {
+                                    "bucket_index" => wake.bucket_index,
+                                    "boundary" => u32::from(wake.boundary),
+                                    "part_ids" => wake
+                                        .part_ids
+                                        .iter()
+                                        .map(|id| id.0)
+                                        .collect::<Vec<_>>(),
+                                    "denominations" => wake
+                                        .part_ids
+                                        .iter()
+                                        .map(|id| denoms_by_id.get(&id.0).copied().unwrap_or(0))
+                                        .collect::<Vec<_>>(),
+                                    "estimated_unix_time" => wake.estimated_unix_time,
+                                    "estimated_target_unix_time" => wake.estimated_target_unix_time,
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        object! {
+                            "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
+                            "phase" => match &status.phase {
+                                Some(phase) => migration_phase_json(phase),
+                                None => json::JsonValue::Null,
+                            },
+                            "parts_total" => status.parts_total,
+                            "parts_confirmed" => status.parts_confirmed,
+                            "value_total" => status.value_total,
+                            "value_migrated" => status.value_migrated,
+                            "per_bucket" => per_bucket,
+                            "bucket_modulus" => bucket_modulus,
+                            "next_wakes" => next_wakes,
+                        }
+                    }
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Classifies every part against the local chain view, applies what is safe
+/// unattended (promotions, expiries, rebuilds, completion) and returns what
+/// needs the app. Call on every launch; never syncs, offline-safe.
+///
+/// Returns `{ actions: [{ action, ... }] }`. The app-facing ones:
+/// `continue_note_splitting` / `retry_split { txid }` (drive the splitting
+/// loop), `await_split_confirmation` (sync first), `prompt_catch_up { parts }`
+/// (folded into the next execute tap in manual mode), `replan_remainder`
+/// (fresh consent required). The rest report what was applied unattended.
+pub fn reconcile_migration() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.reconcile_migration().await {
+                    Ok(report) => {
+                        let actions = report
+                            .actions
+                            .iter()
+                            .map(|action| match action {
+                                RecommendedAction::AwaitSplitConfirmation => {
+                                    object! { "action" => "await_split_confirmation" }
+                                }
+                                RecommendedAction::RetrySplit { txid } => object! {
+                                    "action" => "retry_split",
+                                    "txid" => txid.to_string(),
+                                },
+                                RecommendedAction::ContinueNoteSplitting => {
+                                    object! { "action" => "continue_note_splitting" }
+                                }
+                                RecommendedAction::PromoteConfirmed { part, .. } => object! {
+                                    "action" => "promote_confirmed",
+                                    "part" => part.0,
+                                },
+                                RecommendedAction::Rebuild { part } => object! {
+                                    "action" => "rebuild",
+                                    "part" => part.0,
+                                },
+                                RecommendedAction::MarkInvalidated { part } => object! {
+                                    "action" => "mark_invalidated",
+                                    "part" => part.0,
+                                },
+                                RecommendedAction::ReplanRemainder => {
+                                    object! { "action" => "replan_remainder" }
+                                }
+                                RecommendedAction::PromptCatchUp { parts, .. } => object! {
+                                    "action" => "prompt_catch_up",
+                                    "parts" => parts.iter().map(|id| id.0).collect::<Vec<_>>(),
+                                },
+                                RecommendedAction::MarkComplete { residual } => object! {
+                                    "action" => "mark_complete",
+                                    "residual" => *residual,
+                                },
+                            })
+                            .collect::<Vec<_>>();
+                        object! { "actions" => actions }
+                    }
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Abandons the in-progress migration: confirmed parts stand, pending ones
+/// are dropped and their notes released. The wallet then offers a fresh plan
+/// for whatever Orchard balance remains.
+///
+/// Returns `{ cancelled: true }` or `{ error }`.
+pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.cancel_ironwood_migration().await {
+                    Ok(()) => object! { "cancelled" => true },
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
     })
 }
