@@ -108,8 +108,21 @@ pub struct WakePoint {
     /// The parts due in this window.
     pub part_ids: Vec<PartId>,
     /// Rough unix time the boundary is expected to be mined, extrapolated
-    /// from `now` at the target block spacing.
+    /// from `now` at the target block spacing. Aim silent work here: the
+    /// boundary's tree state is only witnessable for a finite retention
+    /// after it, so a sync shortly after this moment secures the window.
     pub estimated_unix_time: u64,
+    /// Rough unix time the window's *latest* per-part random target is
+    /// expected. Aim the user-facing wake here: at this moment every part
+    /// of the window is due, so one visit sends the whole batch.
+    pub estimated_target_unix_time: u64,
+}
+
+/// Rough unix time `height` is expected to be mined, extrapolated from
+/// `now_height` at the target block spacing (past heights estimate as now).
+pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
+    let blocks_until = u64::from(u32::from(height).saturating_sub(u32::from(now_height)));
+    now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
 /// The broadcast windows within the next `horizon` buckets, soonest first.
@@ -124,7 +137,7 @@ pub fn next_wakes(
     params: &MigrationParams,
 ) -> Vec<WakePoint> {
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
-    let mut buckets: std::collections::BTreeMap<u64, Vec<PartId>> =
+    let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
     for part in parts {
         if !matches!(part.state, PartState::Assigned | PartState::Signed) {
@@ -134,20 +147,25 @@ pub fn next_wakes(
             continue;
         };
         if bucket > current_bucket && bucket <= current_bucket.saturating_add(horizon) {
-            buckets.entry(bucket).or_default().push(part.id);
+            let (part_ids, latest_target) = buckets.entry(bucket).or_default();
+            part_ids.push(part.id);
+            *latest_target = (*latest_target).max(part.target_height);
         }
     }
 
     buckets
         .into_iter()
-        .map(|(bucket, part_ids)| {
+        .map(|(bucket, (part_ids, latest_target))| {
             let boundary = boundary_of(bucket, params.bucket_modulus);
-            let blocks_until = u64::from(u32::from(boundary).saturating_sub(u32::from(now_height)));
+            // A part without a target (a catch-up shift) is due at the
+            // window opening, which every in-window target is at or past.
+            let latest_target = latest_target.unwrap_or(boundary + 1);
             WakePoint {
                 bucket_index: bucket,
                 boundary,
                 part_ids,
-                estimated_unix_time: now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS,
+                estimated_unix_time: estimated_unix_at(boundary, now_height, now_unix),
+                estimated_target_unix_time: estimated_unix_at(latest_target, now_height, now_unix),
             }
         })
         .collect()
@@ -370,6 +388,20 @@ mod tests {
                 boundary_of(wake.bucket_index, params.bucket_modulus)
             );
             assert!(wake.estimated_unix_time > now_unix);
+
+            // The user-facing wake time is the window's latest per-part
+            // target, never earlier than the window opening.
+            let latest_target = parts
+                .iter()
+                .filter(|part| part.bucket_index == Some(wake.bucket_index))
+                .filter_map(|part| part.target_height)
+                .max()
+                .expect("scheduled parts carry targets");
+            assert_eq!(
+                wake.estimated_target_unix_time,
+                estimated_unix_at(latest_target, now, now_unix)
+            );
+            assert!(wake.estimated_target_unix_time >= wake.estimated_unix_time);
         }
 
         // A confirmed part never appears in a wake.

@@ -54,7 +54,7 @@ pub use parts::{
 };
 pub use quantize::{Denominations, decompose};
 pub use reconcile::{ChainView, PartClass, RecommendedAction, ReconcileReport, reconcile};
-pub use schedule::{WakePoint, next_wakes, plan_schedule};
+pub use schedule::{WakePoint, estimated_unix_at, next_wakes, plan_schedule};
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
     plan_migration,

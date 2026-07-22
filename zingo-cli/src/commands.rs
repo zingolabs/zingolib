@@ -29,7 +29,7 @@ use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
-use zingolib::lightclient::migrate::SplitStep;
+use zingolib::lightclient::migrate::{PartSendResult, SplitStep};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -2175,6 +2175,8 @@ pub enum MigrationCommandError {
     MalformedPlanHash,
     #[error("--per-bucket expects a positive integer.")]
     MalformedPerBucket,
+    #[error("cadence expects the number of parts per broadcast window.")]
+    MalformedCadence,
     #[error("spacing must be a number of seconds.")]
     MalformedSpacing,
     #[error("sync failed: {0}")]
@@ -2193,6 +2195,12 @@ enum MigrationSubCommand {
         per_bucket: Option<u32>,
     },
     Continue,
+    Cadence {
+        per_bucket: u32,
+    },
+    Execute {
+        spacing: std::time::Duration,
+    },
     Auto,
     Status,
     Reconcile,
@@ -2233,6 +2241,24 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
             })
         }
         "continue" => Ok(MigrationSubCommand::Continue),
+        "cadence" => {
+            let per_bucket = args
+                .get(1)
+                .and_then(|value| value.parse::<u32>().ok())
+                .ok_or(MigrationCommandError::MalformedCadence)?;
+            Ok(MigrationSubCommand::Cadence { per_bucket })
+        }
+        "execute" => {
+            let spacing = match args.get(1) {
+                Some(seconds) => std::time::Duration::from_secs(
+                    seconds
+                        .parse::<u64>()
+                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
+                ),
+                None => std::time::Duration::from_secs(30),
+            };
+            Ok(MigrationSubCommand::Execute { spacing })
+        }
         "auto" => Ok(MigrationSubCommand::Auto),
         "status" => Ok(MigrationSubCommand::Status),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
@@ -2332,6 +2358,37 @@ fn run_migration(
                 }
             }
         }
+        MigrationSubCommand::Cadence { per_bucket } => {
+            RT.block_on(lightclient.reschedule_parts(per_bucket))?;
+            format!("Cadence set to {per_bucket} per window; the schedule was re-drawn.")
+        }
+        MigrationSubCommand::Execute { spacing } => {
+            RT.block_on(lightclient.sync_and_await())
+                .map_err(MigrationCommandError::Sync)?;
+            let report = RT.block_on(lightclient.execute_due_parts(spacing))?;
+            object! {
+                "outcomes" => report
+                    .outcomes
+                    .iter()
+                    .map(|outcome| object! {
+                        "part" => outcome.part.0,
+                        "denomination" => outcome.denomination,
+                        "result" => match &outcome.result {
+                            PartSendResult::Sent(txid) => object! { "sent" => txid.to_string() },
+                            PartSendResult::Slid => object! { "slid" => true },
+                            PartSendResult::NotDue { estimated_unix_time } => {
+                                object! { "not_due_until" => *estimated_unix_time }
+                            }
+                            PartSendResult::Failed { error } => {
+                                object! { "failed" => error.clone() }
+                            }
+                        },
+                    })
+                    .collect::<Vec<_>>(),
+                "halted" => report.halted,
+            }
+            .pretty(2)
+        }
         MigrationSubCommand::Auto => {
             RT.block_on(lightclient.sync_and_await())
                 .map_err(MigrationCommandError::Sync)?;
@@ -2359,6 +2416,7 @@ fn run_migration(
                         "boundary" => u32::from(wake.boundary),
                         "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
                         "estimated_unix_time" => wake.estimated_unix_time,
+                        "estimated_target_unix_time" => wake.estimated_target_unix_time,
                     })
                     .collect::<Vec<_>>(),
             }
@@ -2445,6 +2503,14 @@ impl Command for MigrationCommand {
             broadcasts the next round of Orchard self-sends, or, once every note is
             part-ready, binds the parts to their notes and schedules them. Repeat
             (syncing between rounds) until it reports the parts scheduled.
+            `cadence <N>` sets how many parts share each broadcast window and re-draws
+            the schedule. Usable until the first part is signed, so the choice can wait
+            for the end of note splitting.
+            `execute [spacing_seconds]` syncs, then sends everything the migration owes
+            right now in one batch: the current window's due parts plus any missed
+            windows' parts, sequenced with the given spacing (default 30 seconds).
+            Reports a per-part outcome (sent, slid to a coming window, not due yet,
+            failed). The manual-execution counterpart to `auto`.
             `auto` syncs the wallet, then broadcasts any parts whose random target block
             within the current bucket window has been reached. Run this periodically
             to drive the migration without manual steps.
@@ -2462,6 +2528,8 @@ impl Command for MigrationCommand {
             migration plan
             migration start <plan_hash> [--per-bucket N]
             migration continue
+            migration cadence <N>
+            migration execute [spacing_seconds]
             migration auto
             migration status
             migration reconcile
@@ -2622,6 +2690,34 @@ mod migration_command_parsing {
         assert_eq!(
             parse_migration_args(&["continue"]).expect("bare continue parses"),
             MigrationSubCommand::Continue
+        );
+    }
+
+    #[test]
+    fn cadence_requires_a_count() {
+        assert_eq!(
+            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
+            MigrationSubCommand::Cadence { per_bucket: 4 }
+        );
+        assert!(matches!(
+            parse_migration_args(&["cadence"]),
+            Err(MigrationCommandError::MalformedCadence)
+        ));
+    }
+
+    #[test]
+    fn execute_defaults_spacing_to_thirty_seconds() {
+        assert_eq!(
+            parse_migration_args(&["execute"]).expect("bare execute parses"),
+            MigrationSubCommand::Execute {
+                spacing: std::time::Duration::from_secs(30),
+            }
+        );
+        assert_eq!(
+            parse_migration_args(&["execute", "5"]).expect("spaced execute parses"),
+            MigrationSubCommand::Execute {
+                spacing: std::time::Duration::from_secs(5),
+            }
         );
     }
 

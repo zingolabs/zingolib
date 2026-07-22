@@ -122,6 +122,9 @@ pub struct LightClient {
     /// A side channel off the wallet lock, so it stays pollable while build and
     /// transmit hold the wallet write lock across their loops.
     drain_progress: migrate::DrainProgressHandle,
+    /// Live progress of a running migration execute batch
+    /// ([`Self::execute_due_parts`]), the same side-channel pattern.
+    batch_progress: migrate::BatchProgressHandle,
 }
 
 impl LightClient {
@@ -181,6 +184,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
         })
     }
 
@@ -207,6 +211,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
         }
     }
 
@@ -251,6 +256,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
         })
     }
 
@@ -325,6 +331,22 @@ impl LightClient {
     /// ```
     pub fn drain_progress_handle(&self) -> migrate::DrainProgressHandle {
         self.drain_progress.clone()
+    }
+
+    /// A snapshot of the running migration execute batch
+    /// ([`Self::execute_due_parts`]), or `None` when idle. Reads a side
+    /// channel, never the wallet lock.
+    pub fn batch_status(&self) -> Option<migrate::BatchStatus> {
+        self.batch_progress.status()
+    }
+
+    /// A cloneable handle to the execute batch's live progress. Grab it
+    /// *before* starting the batch, then poll
+    /// [`migrate::BatchProgressHandle::status`] concurrently while the
+    /// batch holds `&mut self` — the same pattern as
+    /// [`Self::drain_progress_handle`].
+    pub fn batch_progress_handle(&self) -> migrate::BatchProgressHandle {
+        self.batch_progress.clone()
     }
 
     /// Returns the wallet's mnemonic phrase as a string.
