@@ -1,9 +1,43 @@
 # Mobile adoption of the Nym transmission arc: the critical path
 
-Recorded 2026-07-21. Tracked as GitHub issues: #2508 (tracking) over the
-chain #2502 (CP-1), #2503 (CP-2), #2504 (CP-3), #2505 (CP-4), #2506
-(CP-5), #2507 (CP-6) — CP-1 and CP-2 are parallel roots, each later step
-blocked by its predecessor.
+Recorded 2026-07-21. Tracked as GitHub issues: #2508 (tracking) over a
+seven-step chain — #2502 (step 1, merge), #2503 (step 2, attach seam,
+DONE), #2513 (step 3, Android transport), #2505 (step 4, wallet
+bindings), #2506 (step 5, app policy/UX), #2507 (step 6, Android device
+smoke), #2504 (step 7, the Mac-gated iOS block, last).
+
+## REORDERED Android-first (user directive, 2026-07-21)
+
+The iOS work needs a Mac; everything Android needs builds on Linux. The
+critical path therefore completes on Android first, and the entire iOS
+block — cross-compile, XCFramework, Swift hosting, iOS smoke — runs
+last as step 7. Mapping from the original spine below: CP-1/CP-2 keep
+their places (steps 1-2); the Android transport, formerly off-spine,
+is promoted to step 3 (#2513) using the uniform UniFFI shim model (the
+committed, host-proven `nym-proxy-ffi` crate, cross-compiled with
+cargo-ndk, loaded from jniLibs — exec-from-nativeLibraryDir stays the
+fallback); CP-4/CP-5 become steps 4-5 scoped Android-first; CP-6
+becomes step 6, the Android smoke that completes the path; CP-3 (iOS)
+becomes step 7. The spine prose below keeps its original CP numbering
+for the trail; the tracker #2508 is the order of record.
+
+## Lane coordination (2026-07-21, post-reorder)
+
+Two agents, no file overlap:
+- The CP-3/shim agent (netutils workspace): step 3's build side —
+  rustup Android targets, cargo-ndk cross-compile of `nym-proxy-ffi`
+  for the Android ABIs (aws-lc-rs + the ratified transitive ring under
+  NDK), uniffi-bindgen Kotlin generation, and the death-observer wiring
+  noted in the slice-1 gaps. Host facts, probed 2026-07-21: cargo-ndk
+  is installed, NDK 28.2.13676358 is at ~/Android/Sdk/ndk, no Android
+  rust targets installed yet, ANDROID_NDK_HOME unset.
+- The CP-2/attach agent (this note's author): step 4 in the
+  zingo-mobile checkout at ~/src/zingolabs/zmobs/dev on a NEW branch —
+  the five UDL functions + wrappers + `features = ["nym"]` on the
+  zingolib dep + TS types — GATED on the user pushing
+  `nym_mobile_adoption` to zingolabs so the seam is pinnable; then step
+  3's zmobs side (jniLibs packaging, Kotlin glue) once the shim's
+  Kotlin bindings exist.
 
 This file documents ONLY the critical path from the
 current state of PR #2470 to the end state: a user on an iOS device and an
