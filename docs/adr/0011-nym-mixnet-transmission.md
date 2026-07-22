@@ -50,6 +50,20 @@ that default, mobile, and CI builds remain free of it. No `[patch]` tables and
 no fork or branch pins are authorized; the crate having moved in-workspace, the
 proof of concept's `nym_proxy.rs` ports directly with no external pin.
 
+The nym exception carries a transitive TLS-backend exception, ratified
+2026-07-21. This workspace's crypto backend is aws-lc-rs, never ring — every
+backend we choose selects aws-lc-rs — but `nym-sdk` transitively links ring
+through its cosmos credential core (`nym-client-core` → `cosmrs` →
+`tendermint-rpc` → `reqwest 0.11` → `hyper-rustls 0.24` → `rustls 0.21`, and
+rustls gained the aws-lc-rs backend only in 0.23). It sits in the mixnet
+client's core, so no feature flag severs it, and cutting it would require
+forking or `[patch]`-ing nym, both barred. The ring is accepted as unavoidable
+and confined to the standalone `zingo-netutils` nym build — the proxy binary
+and the mobile UniFFI shim — never entering the main wallet lock, whose only
+ring is a separate build-time transitive of `zcash_proofs`'s parameter
+downloader and predates this work. Eliminating both is tracked upstream, not
+undertaken here.
+
 ## NymVPN is provided by the user, never embedded
 
 The NymVPN layer that protects the sync tier is installed and run by the user
@@ -270,10 +284,30 @@ stdin-EOF watchdog included, runs it from there.
 Third, iOS cannot spawn processes at all, and two Rust static libraries
 cannot link into one binary. There the boundary becomes a dynamic library:
 the standalone netutils workspace — already a separate resolution unit with
-its own lockfile — builds the proxy as a small C-ABI dynamic framework
+its own lockfile — builds the proxy as a small UniFFI dynamic framework
 (start returning the SOCKS5 address, stop, and a death callback), the app
-hosts it, and hands the address to the wallet's attach entry. The C ABI is
-deliberately not a UniFFI surface: UniFFI binds the wallet layer
-(zingolib's toggle and status methods, which are plain strings and enums),
-while the proxy boundary stays three C functions the host language calls
-directly. The two boundaries never meet in one interface definition.
+hosts it, and hands the address to the wallet's attach entry. The proxy is
+its own UniFFI component, distinct from the wallet's: UniFFI binds the
+wallet layer (zingolib's toggle and status methods, which are plain strings
+and enums) as one component, while the proxy is a separate component with
+its own generated bindings. The two boundaries never meet in one interface
+definition.
+
+Amendment (2026-07-21): the mobile proxy boundary is UniFFI, not a raw C
+ABI. An earlier draft of this decision specified three hand-written
+`extern "C"` functions, deliberately not a UniFFI surface, for minimalism.
+That is reversed. This repository requires every Rust file to carry
+`#![forbid(unsafe_code)]`, and a hand-written C ABI cannot honour it: the
+raw-pointer marshalling, the callback function pointer, and the
+`CString`/`Box` `into_raw`/`from_raw` calls are all `unsafe`, which would
+force a ratified exception to the rule and place hand-rolled unsafe in the
+shim. A UniFFI surface does not. It was verified empirically that
+`#![forbid(unsafe_code)]` does not fire on uniffi's proc-macro-generated
+scaffolding — a control crate carrying the lint compiled a
+`#[uniffi::export]` whose expansion holds dozens of `unsafe` occurrences,
+while a single hand-written `unsafe` block in that same crate did trip the
+lint. UniFFI is therefore the only option that keeps `forbid` intact with
+no exception, contributing zero hand-written unsafe while the lint still
+rejects any a future contributor introduces. The minimalism argument does
+not outweigh preserving the safety invariant the whole codebase depends
+on.

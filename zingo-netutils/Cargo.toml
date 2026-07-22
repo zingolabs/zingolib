@@ -25,6 +25,13 @@ tokio-stream = { workspace = true, optional = true }
 # transitive graph needs `crypto-common ^0.2`, irreconcilable with the
 # parent's `crypto-common =0.2.0-rc.1` pin. That is why zingo-netutils is
 # its own workspace (see [workspace] below and the root manifest's exclude).
+#
+# TLS-backend note: nym-sdk transitively links `ring` (via its cosmos
+# credential core: nym-client-core -> cosmrs -> tendermint-rpc -> reqwest 0.11
+# -> hyper-rustls 0.24 -> rustls 0.21, which predates rustls's aws-lc-rs
+# backend). This workspace otherwise uses aws-lc-rs only. The ring is a ratified,
+# unavoidable transitive exception (ADR 0011), confined to this standalone nym
+# build and never the main wallet lock; upstream removal is tracked separately.
 nym-sdk = { version = "1.21.2", optional = true }
 nym-http-api-client = { version = "1.21.3", optional = true }
 nym-validator-client = { version = "1.21.3", optional = true, default-features = false, features = [
@@ -89,6 +96,11 @@ x509-parser.workspace = true
 # no zcash dependency, so its standalone graph carries no such pin.
 [workspace]
 resolver = "2"
+# The UniFFI proxy shim (ADR 0011 mobile amendment, CP-3): a cdylib/staticlib
+# that hosts NymProxy behind a UniFFI surface for mobile. A member so it shares
+# this standalone lockfile (where nym-sdk's crypto-common resolves without the
+# parent workspace's zcash pin).
+members = ["nym-proxy-ffi"]
 
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the

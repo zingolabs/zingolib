@@ -39,15 +39,30 @@ Startable immediately, in parallel with CP-1.
 
 **CP-3 — The iOS transport (the long pole).** The standalone
 zingo-netutils workspace — already its own resolution unit with its own
-lockfile — gains a `cdylib` target exposing three C functions over
-`NymProxy`: start (yields the local SOCKS5 address or an error), stop,
-and a death callback. Packaged as an XCFramework; the app hosts it and
-hands the address to `attach_mixnet`. Feasibility: proven in principle —
-NymVPN's shipping iOS client embeds the same Rust nym core via FFI, and
-this needs strictly less (a SOCKS5 client only; no tunnel APIs, no VPN
-entitlement, ordinary App Store networking). The risks are build-system:
-cross-compiling the TLS stack (aws-lc-rs / ring) for device and
-simulator, and hosting a tokio runtime in a loaded dylib. Difficulty:
+lockfile — gains a `cdylib`/`staticlib` UniFFI shim member crate exposing
+the proxy over `NymProxy`: start (yields the local SOCKS5 address or an
+error), stop, and a death callback (a UniFFI callback interface the host
+implements). Packaged as an XCFramework; the app hosts it and hands the
+address to `attach_mixnet`. AMENDED 2026-07-21 (was: a raw hand-written
+C ABI): the boundary is a **UniFFI surface**, not hand-written C. Reason,
+empirically verified this session: `#![forbid(unsafe_code)]` does NOT fire
+on uniffi's proc-macro-generated FFI unsafe (a control crate with forbid
+compiled a `#[uniffi::export]` whose expansion carries 57 unsafe
+occurrences, while a single hand-written `unsafe` block in the same crate
+DID trip forbid). So UniFFI is the ONLY option that keeps every file's
+`#![forbid(unsafe_code)]` intact with NO exception — zero hand-written
+unsafe, and forbid still guards against any a contributor later adds. A
+raw C ABI would force a ratified forbid exception and hand-rolled unsafe.
+The plan's earlier "two boundaries never meet" concern is unaffected: two
+separate UniFFI components (wallet, proxy) are distinct surfaces with
+distinct generated bindings. Feasibility: proven in principle — NymVPN's
+shipping iOS client embeds the same Rust nym core via FFI, and this needs
+strictly less (a SOCKS5 client only; no tunnel APIs, no VPN entitlement,
+ordinary App Store networking). The risks are build-system:
+cross-compiling the aws-lc-rs TLS backend (nym-sdk also transitively links
+ring via its cosmos core — a ratified exception, ADR 0011, cross-compiled
+the same) for device and simulator, and hosting a tokio runtime in a loaded
+dylib. Difficulty:
 the hardest single step — one to three weeks of build and integration
 engineering. Depends on CP-2 for the wallet-side attach.
 
@@ -55,8 +70,9 @@ engineering. Depends on CP-2 for the wallet-side attach.
 (`attach_mixnet`, `enable_mixnet`, `disable_mixnet`, `mixnet_mode`,
 `mixnet_bootstrap_detail`) and the four-variant mode enum added to the
 binding layer. All plain strings, options, and one enum — expressible in
-a UniFFI UDL or the older command bridge alike. The proxy's C ABI never
-appears here: bindings carry the wallet layer only. Feasibility: certain.
+a UniFFI UDL or the older command bridge alike. The proxy's UniFFI
+component (CP-3) stays a distinct surface: these bindings carry the
+wallet layer only. Feasibility: certain.
 Difficulty: small, days including regenerated bindings and TypeScript
 types.
 
@@ -78,7 +94,7 @@ backgrounding mid-send, died recovery).
 
 The Android transport runs in parallel with CP-3 and finishes earlier
 (moderate, about a week; either exec-from-nativeLibraryDir with
-extractNativeLibs=true, or the same C-ABI dylib model as iOS — the
+extractNativeLibs=true, or the same UniFFI dylib model as iOS — the
 uniform model is preferred), so iOS dominates the schedule. Shipping —
 as distinct from development — additionally requires the zingolib pin
 bump in zingo-mobile after CP-1, and inherits feat/ironwood's own merge
@@ -89,3 +105,72 @@ timeline, which is outside this arc's control.
 With one engineer plus agent support: roughly four to seven weeks from
 CP-1 to CP-6, dominated by the iOS build engineering (CP-3) and app
 review cycles (CP-5).
+
+## CP-3 (#2504) working notes — claim + gating decision (2026-07-21)
+
+CLAIMED by this agent, in parallel with CP-2/#2503 (another agent, the
+zingolib attach seam). No file overlap: CP-3 works ONLY the standalone
+zingo-netutils workspace (own lockfile); CP-2 works zingolib/src/nym.
+The "blocked by #2503" edge is runtime integration (the app wires the
+address into attach_mixnet), NOT a compile dependency — the cdylib
+consumes only NymProxy, which exists.
+
+Prospective file claims (gated on the decision below):
+- `zingo-netutils/` workspace: a NEW FFI shim member crate exposing the
+  three C functions (start/stop/death-callback) over NymProxy.
+- `tools/workbench/` : an XCFramework packaging tool (Rust std; runs on
+  macOS).
+- iOS Rust targets / cargo config for aarch64-apple-ios + sim.
+- this file.
+
+SLICE 1 DONE (2026-07-21): the UniFFI shim member crate
+`zingo-netutils/nym-proxy-ffi` (`zingo-nym-proxy-ffi`) exists and builds on
+the HOST as both a cdylib (libzingo_nym_proxy_ffi.so) and a staticlib,
+proving the two build risks the plan named — the UniFFI FFI shape as a
+loaded dylib, and hosting a tokio runtime inside it. Surface: a
+`MixnetProxyHandle` uniffi::Object wrapping a multi-thread Runtime + an
+`Option<NymProxy>`, with `start()` (constructor -> handle or ProxyFfiError),
+`socks5_address()`, `stop()` (idempotent), and a `ProxyDeathObserver`
+callback interface. `#![forbid(unsafe_code)]` KEPT and intact — zero
+hand-written unsafe, the whole reason for the UniFFI amendment. uniffi 0.28
+and nym-sdk coexist in the standalone lockfile; clippy -D warnings clean;
+main workspace + netutils default unaffected (parent excludes netutils).
+
+SLICE-1 KNOWN GAPS (follow-on, none blocking the build proof):
+- ProxyDeathObserver is defined but NOT yet wired: NymProxy exposes no
+  death signal, and start() takes no observer yet. Death detection ties to
+  the Q4 liveness decision — likely the shim monitors its nym client and/or
+  zingolib's attach probe covers it. Wire when CP-2's attach lands.
+- start() returns the raw address with no in-shim health gate/redraw yet;
+  CP-2's attach_mixnet health-gates (increment-17 round trip) on the wallet
+  side. If we want the proxy-owner-remediates redraw (Q3) in the shim,
+  extract the binary's health_gate+reconnect loop into a shared lib fn both
+  bin/nym-proxy.rs and this shim call (DRY).
+- MACOS-ONLY REMAINDER (cannot run on this Linux host): rustup targets
+  aarch64-apple-ios + sim, cross-compiling the aws-lc-rs TLS backend (and
+  nym-sdk's transitive ring — the ratified exception below),
+  uniffi-bindgen for the Swift bindings, and the XCFramework packaging
+  (a workbench tool). This is the bulk of CP-3's 1-3 week estimate.
+
+RING EXCEPTION (user-ratified 2026-07-21, decision A): the backend policy is
+aws-lc-rs, never ring, but nym-sdk transitively links ring via its cosmos
+core (unseverable without a barred fork/[patch]) and the main wallet already
+carries a build-time ring via zcash_proofs's param downloader. Both accepted
+as unavoidable transitive exceptions, documented in ADR 0011, deny.toml, and
+netutils/Cargo.toml; upstream removal filed as a tracked follow-up (decision
+B queued). The nym ring is confined to this standalone build; the wallet lock
+stays ring-free at runtime.
+
+GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
+`extern "C"` bodies, raw-pointer marshalling, the death-callback function
+pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
+collides head-on with the hard rule that every Rust file carries
+`#![forbid(unsafe_code)]` (forbid, not deny, so uncircumventable in-file).
+Recommended resolution: confine ALL unsafe to ONE purpose-built FFI shim
+crate that carries a scoped exception, leaving every other crate's forbid
+intact — mirroring the ratified nym-deps exception. Awaiting ratification
+before writing the C boundary. On THIS Linux host the high-value,
+locally-provable first slice is a host-target build of that cdylib
+proving the two risks the plan names (the C ABI marshalling and hosting a
+tokio runtime in a loaded dylib); the actual aarch64-apple-ios
+cross-compile + XCFramework needs macOS.
