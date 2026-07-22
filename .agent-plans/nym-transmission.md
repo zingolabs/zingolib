@@ -1117,6 +1117,54 @@ Rationale: the SOCKS5 tunnel terminates at an UNTRUSTED mixnet exit
 gateway, so only end-to-end TLS keeps it from reading/tampering. Recorded
 as a durable standard in agent memory (https-only-indexers).
 
+## Implementation — increment 18 (DONE 2026-07-21, uncommitted): the attach seam (#2503)
+
+Critical-path step 2 (issue #2503): LightClient::attach_mixnet(addr)
+beside the spawn path, for platform-hosted proxies (mobile). Design per
+ADR 0011's mobile amendment: MixnetProxy grows an Attached transport
+variant owning no child; readiness gated on a DATA ROUND TRIP through
+the endpoint (get_lightd_info_via_socks5 to a health indexer, increment-
+17 lesson, bounded attempts) — success -> Ready, failure -> Died, never
+a false Ready; liveness thereafter by a periodic local TCP probe of the
+endpoint — a failed probe lands Died and clears the address. stop()
+keeps the abort-transport-then-set-Off ordering so deliberate Off never
+loses to Died. The state driver is generic over injected readiness +
+probe closures for paused-time falsifiers. Sync validation: a
+non-parsing address is an immediate InvalidAddress error.
+
+File claims (mine): zingolib/src/nym/supervisor.rs,
+zingolib/src/lightclient.rs (attach_mixnet method only),
+zingolib/Cargo.toml (dev-only tokio test-util for paused-time tests),
+this file.
+
+BUILT: MixnetProxy refactored to a shared-state struct over a Transport
+enum (Spawned{child,reader,_stdin} / Attached{driver}); accessors and
+mode semantics identical for both. MixnetProxy::attach(addr) validates
+the address synchronously (new InvalidAddress variant), starts
+Bootstrapping with a "validating the attached mixnet endpoint" detail,
+and spawns drive_attached_state — generic over injected readiness +
+probe effects: readiness success publishes Ready+address, failure lands
+Died (never a false Ready, probe never consulted); then a probe every
+ATTACH_PROBE_INTERVAL=30s, failure landing Died with the address
+cleared. Real effects: attach_readiness = get_lightd_info_via_socks5 to
+ATTACH_HEALTH_INDEXER (zec.rocks:443), 15s bound, 2 attempts 1s apart
+(no path redraw is possible — the platform owns the endpoint); probe =
+5s-bounded local TCP connect (its job is noticing the platform host
+dying; path quality is the fan-out's job). stop() keeps
+abort-watcher-then-set-Off on both variants. LightClient::attach_mixnet
+replaces any running proxy, mirroring enable_mixnet.
+
+FALSIFIERS (4 new, all green): readiness-failure lands Died never Ready
+and never consults the probe; probe-failure-after-Ready publishes Ready+
+address first (snapshotted inside the probe closure) then lands Died
+with the address cleared (paused time); attach rejects a malformed
+address and stop() is a deliberate Off; a real attach to a refusing
+localhost port lands Died and resolve_route refuses with
+MixnetNotReady::Died (the end-to-end fail-closed check). Verified:
+clippy -p zingolib -p zingo-cli --features nym --all-targets -D warnings
+green (unmasked exit codes), 32 nym lib tests, default check green, fmt
+clean. Commit pending user go-ahead.
+
 ## Mobile adoption plan (RECORDED 2026-07-21, design only — no code yet)
 
 ADR 0011 gained the "runtime boundary generalizes for mobile" amendment:
@@ -1125,22 +1173,27 @@ in its own resolution unit, meeting the wallet at a runtime boundary
 carrying a SOCKS5 endpoint + a liveness signal). The step-by-step
 adoption issue is drafted (scratchpad issue-mobile-adoption.md); the
 serial spine is documented in
-.agent-plans/mobile-adoption-critical-path.md and tracked in Linear.
-Plan shape: step 0 (zls, blocking) = LightClient::attach_mixnet(addr)
-beside the spawn path, liveness by periodic endpoint probe -> Died;
-step 1 (Android) = ship nym-proxy as libnym_proxy.so in jniLibs and exec
-from nativeLibraryDir via the EXISTING enable_mixnet supervisor; step 2
-(iOS, no exec possible) = netutils-workspace cdylib exposing a
-3-function C ABI (start->addr/stop/death-callback) as an XCFramework,
-app hosts it and calls attach_mixnet; step 3 = device smoke mirroring
-the PR hand-test. FFI layering (user question resolved): the C ABI
-NEVER appears in the UniFFI UDL — UniFFI binds the wallet layer
-(attach/enable/disable/mode/detail: plain strings + one 4-variant enum,
-all UDL-expressible; lives in zingo-mobile's binding component, zingolib
-stays uniffi-free), while the proxy boundary is three C functions Swift
-calls directly through a bridging header (Android needs no FFI at all —
-it execs). Attach's readiness check reuses increment 17's lesson: gate
-on a data round trip, not a TCP connect.
+.agent-plans/mobile-adoption-critical-path.md and tracked as GitHub
+issues #2502-#2508 (Linear was attempted first, then the user redirected
+to GitHub). Plan shape: step 0 (zls, blocking) =
+LightClient::attach_mixnet(addr) beside the spawn path, liveness by
+periodic endpoint probe -> Died; step 1 (Android) = ship nym-proxy as
+libnym_proxy.so in jniLibs and exec from nativeLibraryDir via the
+EXISTING enable_mixnet supervisor; step 2 (iOS, no exec possible) =
+netutils-workspace shim exposing the proxy as an XCFramework, app hosts
+it and calls attach_mixnet; step 3 = device smoke mirroring the PR
+hand-test. FFI layering (user question resolved; CORRECTED 2026-07-21,
+ratified): the proxy boundary is its OWN UniFFI component — the original
+hand-written 3-function C ABI is superseded, because uniffi's
+proc-macro-generated FFI keeps every file's forbid(unsafe_code) intact
+with no exception while hand-written unsafe trips it (empirical, see the
+CP-3 notes in the critical-path plan and ADR 0011's amendment). The
+wallet layer stays a separate binding surface
+(attach/enable/disable/mode/detail: plain strings + one 4-variant enum;
+lives in zingo-mobile's binding component, zingolib stays uniffi-free);
+the two components never share one interface definition. Android needs
+no proxy FFI at all — it execs. Attach's readiness check reuses
+increment 17's lesson: gate on a data round trip, not a TCP connect.
 
 ## Implementation — increment 3 design notes
 

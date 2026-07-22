@@ -649,6 +649,25 @@ impl LightClient {
         Ok(())
     }
 
+    /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5
+    /// endpoint (ADR 0011's mobile amendment) instead of spawning the bundled
+    /// nym-proxy binary. Returns immediately; [`Self::mixnet_mode`] reports
+    /// `Bootstrapping` while a data round trip validates the endpoint, then
+    /// `Ready`, or `Died` if validation or the ongoing liveness probe fails —
+    /// an attached transport refuses rather than falls back to clearnet,
+    /// exactly like a spawned one. Attaching while a proxy is running
+    /// replaces it.
+    pub async fn attach_mixnet(
+        &mut self,
+        socks5_addr: &str,
+    ) -> Result<(), crate::nym::MixnetProxyError> {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+        self.mixnet_proxy = Some(crate::nym::MixnetProxy::attach(socks5_addr)?);
+        Ok(())
+    }
+
     /// Disable Mixnet Mode. This is a deliberate, per-session choice: the
     /// mixnet-only surfaces then route over clearnet as informed consent, and
     /// the proxy child is shut down.

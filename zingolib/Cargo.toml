@@ -87,6 +87,9 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
+# `test-util` enables paused-time tests (`start_paused`) for the attached-
+# transport falsifiers; dev-only, so the shipped graph is unchanged.
+tokio = { workspace = true, features = ["full", "test-util"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
 tempfile = { workspace = true }
