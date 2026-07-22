@@ -28,7 +28,7 @@ use rustls::crypto::{CryptoProvider, ring::default_provider};
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::NetworkType;
+use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -225,6 +225,18 @@ lazy_static! {
     static ref LIGHTCLIENT: RwLock<Option<LightClient>> = RwLock::new(None);
 }
 
+// Live progress of the in-flight immediate Orchard->Ironwood drain, held in a
+// side channel *outside* the LIGHTCLIENT lock. `drain_orchard_to_ironwood`
+// holds LIGHTCLIENT.write() for its whole `block_on`, so a `drain_status` poll
+// that read the lightclient would deadlock behind it. Instead the drain stashes
+// a cloned `DrainProgressHandle` (an independent Arc<Mutex<Option<DrainStatus>>>)
+// here; the poller reads only this global and never contends for the drain's
+// wallet/lightclient lock. `None` between drains.
+lazy_static! {
+    static ref DRAIN_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::DrainProgressHandle>> =
+        RwLock::new(None);
+}
+
 lazy_static! {
     pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
@@ -334,7 +346,10 @@ fn build_connection_params(
     })
 }
 
-fn build_client_config(params: &ConnectionParams, wallet_config: WalletConfig) -> ClientConfig {
+fn build_client_config(
+    params: &ConnectionParams,
+    wallet_config: WalletConfig,
+) -> Result<ClientConfig, ZingolibError> {
     let builder = ClientConfig::builder()
         .set_chain_type(params.chain_type)
         .set_wallet_dir(PathBuf::new())
@@ -345,7 +360,7 @@ fn build_client_config(params: &ConnectionParams, wallet_config: WalletConfig) -
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    builder.build()
+    builder.build().map_err(ZingolibError::init)
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -367,7 +382,7 @@ fn init_lightclient(
         let params =
             build_connection_params(server_uri, chain_hint, performance_level, min_confirmations)?;
         let wallet_config = make_wallet_config(&params)?;
-        let config = build_client_config(&params, wallet_config);
+        let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
             .map_err(ZingolibError::init)?;
@@ -559,7 +574,13 @@ pub fn init_from_b64(
                     continue;
                 }
             };
-            let config = build_client_config(&params, WalletConfig::Read);
+            let config = match build_client_config(&params, WalletConfig::Read) {
+                Ok(c) => c,
+                Err(e) => {
+                    last_error = e;
+                    continue;
+                }
+            };
             match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
                 Ok(l) => {
                     built = Some((l, params));
@@ -817,6 +838,41 @@ mod read_error_channel_tests {
             "the failure must be the typed Read variant: {error}"
         );
     }
+
+    // Reproduces the exact `From<ValueTransfers>` shape (array nested under
+    // "value_transfers") to prove the migrated-amount splice targets the right
+    // field: only send-to-self transfers with a mapped txid are overwritten.
+    #[test]
+    fn splice_migrated_values_overwrites_only_mapped_self_sends() {
+        let mut json_vts = json::object! {
+            "value_transfers" => json::array![
+                json::object!{ "kind" => "send-to-self", "txid" => "aaa", "value" => 0 },
+                json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
+                json::object!{ "kind" => "send-to-self", "txid" => "ccc", "value" => 0 },
+            ]
+        };
+        let mut migrated_by_txid = std::collections::HashMap::new();
+        migrated_by_txid.insert("aaa".to_string(), 500u64); // a migration
+        // "ccc" is a self-send but not a migration (no mapping) -> untouched.
+
+        splice_migrated_values(&mut json_vts, &migrated_by_txid);
+
+        assert_eq!(
+            json_vts["value_transfers"][0]["value"].as_u64(),
+            Some(500),
+            "the mapped send-to-self must carry the migrated amount"
+        );
+        assert_eq!(
+            json_vts["value_transfers"][1]["value"].as_u64(),
+            Some(100),
+            "a plain send must be left alone"
+        );
+        assert_eq!(
+            json_vts["value_transfers"][2]["value"].as_u64(),
+            Some(0),
+            "an unmapped self-send must be left alone"
+        );
+    }
 }
 
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
@@ -873,12 +929,66 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     })
 }
 
+/// Overwrites the `value` of each Orchard->Ironwood migration value transfer
+/// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
+/// object produced by `From<ValueTransfers>`; migrations are the send-to-self
+/// transfers keyed in `migrated_by_txid`. zingolib reports `value == 0` for
+/// self-sends, so without this the migrated amount is invisible.
+///
+/// Note the array is nested under `"value_transfers"` — `members_mut()` on the
+/// outer object yields an empty iterator, so we must index in first.
+fn splice_migrated_values(
+    json_vts: &mut json::JsonValue,
+    migrated_by_txid: &std::collections::HashMap<String, u64>,
+) {
+    for vt in json_vts["value_transfers"].members_mut() {
+        if vt["kind"].as_str() != Some("send-to-self") {
+            continue;
+        }
+        let txid = vt["txid"].as_str().unwrap_or_default().to_string();
+        if let Some(&migrated) = migrated_by_txid.get(&txid) {
+            vt["value"] = json::JsonValue::from(migrated);
+        }
+    }
+}
+
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
+
+            // An Orchard -> Ironwood migration is a send-to-self, which zingolib
+            // reports with `value == 0` because `total_value_sent` excludes
+            // self-addressed value. To surface how much was migrated, recover it
+            // from the transaction's self-received ironwood notes and splice it
+            // into the matching value transfer's `value`. Keyed by txid; only
+            // self-sends funded from Orchard that land ironwood notes qualify.
+            let migrated_by_txid: std::collections::HashMap<String, u64> =
+                match wallet.transaction_summaries(true).await {
+                    Ok(summaries) => summaries
+                        .0
+                        .iter()
+                        .filter(|s| {
+                            s.kind.to_string() == "send-to-self"
+                                && s.pools_sent_from.iter().any(|p| p.to_string() == "Orchard")
+                                && !s.ironwood_notes.is_empty()
+                        })
+                        .map(|s| {
+                            (
+                                s.txid.to_string(),
+                                s.ironwood_notes.iter().map(|n| n.value).sum::<u64>(),
+                            )
+                        })
+                        .collect(),
+                    Err(e) => return Err(ZingolibError::read(e)),
+                };
+
             match wallet.value_transfers(true).await {
-                Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
+                Ok(value_transfers) => {
+                    let mut json_vts = json::JsonValue::from(value_transfers);
+                    splice_migrated_values(&mut json_vts, &migrated_by_txid);
+                    Ok(json_vts.pretty(2))
+                }
                 Err(e) => Err(ZingolibError::read(e)),
             }
         })
@@ -966,8 +1076,20 @@ pub fn info_server() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                match lightclient.info().await {
-                    Ok(info) => json::JsonValue::from(info).pretty(2),
+                let info = lightclient.info().await;
+                // Read from the WALLET's chain rather than the server's, so it
+                // agrees with `chain_name_short` and stays right when the two
+                // disagree.
+                let ironwood_activation = ironwood_activation_height(lightclient.chain_type());
+                match info {
+                    Ok(info) => {
+                        let mut val = json::JsonValue::from(info);
+                        val["ironwood_activation_height"] = match ironwood_activation {
+                            Some(height) => height.into(),
+                            None => json::JsonValue::Null,
+                        };
+                        val.pretty(2)
+                    }
                     Err(e) => format!("Error: {e}"),
                 }
             }))
@@ -975,6 +1097,18 @@ pub fn info_server() -> Result<String, ZingolibError> {
             Err(ZingolibError::LightclientNotInitialized)
         }
     })
+}
+
+/// Ironwood (NU6.3) activation height for `chain`, straight from zingolib's
+/// consensus parameters — mainnet and testnet delegate to `zcash_protocol`'s
+/// table, and regtest reports whatever its `ActivationHeights` were built
+/// with. Sourcing it here keeps the app on exactly the schedule the wallet
+/// backend transacts against, instead of a copy that has to be kept in step by
+/// hand.
+fn ironwood_activation_height(chain: ChainType) -> Option<u32> {
+    chain
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .map(u32::from)
 }
 
 /// The loaded wallet's chain as the short token the JS layer uses
@@ -1883,5 +2017,165 @@ pub fn confirm() -> Result<String, ZingolibError> {
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
+    })
+}
+
+/// Plans an immediate drain of the account's Orchard pool into Ironwood. Pure
+/// and deterministic: nothing is signed or broadcast, so the plan can be shown
+/// to the user for consent first. Mirror of `send`'s propose phase.
+///
+/// Returns, on success, the drain plan as JSON:
+/// `{ transactions: [{ inputs: [u64], output: u64, fee: u64 }], migrated,
+/// fee, stranded }` (all zatoshis). Each transaction spends its `inputs`
+/// Orchard notes into a single Ironwood `output`; the fee is `sum(inputs) -
+/// output`. An empty `transactions` array means there is nothing worth
+/// migrating.
+pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.plan_orchard_drain(AccountId::ZERO).await {
+                    Ok(plan) => {
+                        let transactions = plan
+                            .transactions
+                            .iter()
+                            .map(|tx| {
+                                object! {
+                                    "inputs" => tx.inputs.clone(),
+                                    "output" => tx.output,
+                                    "fee" => tx.fee(),
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        object! {
+                            "transactions" => transactions,
+                            "migrated" => plan.migrated,
+                            "fee" => plan.fee,
+                            "stranded" => plan.stranded,
+                        }
+                    }
+                    Err(e) => {
+                        object! { "error" => e.to_string() }
+                    }
+                }
+                .pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Spends every spendable Orchard note in the account into the Ironwood pool in
+/// one round of transactions, broadcasting them all at once. This is the
+/// *migrate immediately* path (`plan_orchard_drain` executed): the amount
+/// crossing the pool boundary is visible on-chain, so the caller must have
+/// disclosed that. Mirror of `confirm`'s broadcast phase.
+///
+/// Uses zingolib's `drain_orchard_to_ironwood_presynced`: this app owns the
+/// sync lifecycle (a background sync runs continuously), so the drain must NOT
+/// launch its own sync — the syncing variant `drain_orchard_to_ironwood`
+/// collides with the running sync and fails with `SyncAlreadyRunning`. It
+/// drains against current wallet state instead, matching `send`/`shield`.
+///
+/// Returns, on success, `{ txids: [..], migrated, fee, stranded }` (values in
+/// zatoshis). Notes worth at most the sweep minimum are left behind and
+/// reported as `stranded`.
+pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            // Publish this drain's progress handle to the DRAIN_PROGRESS side
+            // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
+            // whole drain, so a concurrent `drain_status` poll must read this
+            // handle (an independent Arc) rather than the lightclient. The handle
+            // reads idle (`null`) until the drain arms it after planning.
+            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+                *progress = Some(lightclient.drain_progress_handle());
+            }
+            let out = RT.block_on(async move {
+                // Pause our continuous background sync before the drain plans:
+                // the presynced drain requires a SyncPauseGuard so the plan and
+                // the build observe one stable wallet state (dropping `sync` at
+                // the end of this block resumes the engine). Without it, planning
+                // could select notes the running sync then mutates underneath,
+                // between the plan and the build.
+                let sync = match lightclient.pause_sync_scoped() {
+                    Ok(sync) => sync,
+                    Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                };
+                match lightclient
+                    .drain_orchard_to_ironwood_presynced(AccountId::ZERO, &sync)
+                    .await
+                {
+                    Ok(summary) => {
+                        object! {
+                            "txids" => summary.txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>(),
+                            "migrated" => summary.migrated,
+                            "fee" => summary.fee,
+                            "stranded" => summary.stranded,
+                        }
+                    }
+                    Err(e) => {
+                        object! { "error" => e.to_string() }
+                    }
+                }
+                .pretty(2)
+            });
+            // Drop the stale handle. The drain's own scope guard already reset
+            // the snapshot to idle on the way out, so a late poll reads `null`
+            // whether or not this clear has landed yet.
+            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+                *progress = None;
+            }
+            Ok(out)
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// A snapshot of the in-flight immediate drain's progress, for rendering
+/// "Building i/N" then "Broadcasting i/N" after the user presses Accept. Reads
+/// the DRAIN_PROGRESS side channel only, never LIGHTCLIENT, so it stays
+/// responsive while `drain_orchard_to_ironwood` holds the lightclient lock
+/// across its whole build-and-broadcast loop.
+///
+/// Returns, while a drain runs:
+/// `{ total, built, sent, phase }` where `phase` is `"building"` or
+/// `"transmitting"` and the counts are `0..=total`. Returns JSON `null` when no
+/// drain is in flight (before it starts, or once it has finished).
+pub fn drain_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        // Snapshot under a brief read lock, then drop it: the drain only touches
+        // DRAIN_PROGRESS at its very start and end, so this never blocks on the
+        // long-running drain the way a LIGHTCLIENT read would.
+        let status = {
+            let progress = DRAIN_PROGRESS
+                .read()
+                .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+            progress.as_ref().and_then(|handle| handle.status())
+        };
+        Ok(match status {
+            Some(s) => {
+                use zingolib::lightclient::migrate::DrainPhase;
+                object! {
+                    "total" => s.total,
+                    "built" => s.built,
+                    "sent" => s.sent,
+                    "phase" => match s.phase {
+                        DrainPhase::Building => "building",
+                        DrainPhase::Transmitting => "transmitting",
+                    },
+                }
+                .pretty(2)
+            }
+            None => json::JsonValue::Null.pretty(2),
+        })
     })
 }

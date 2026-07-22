@@ -208,4 +208,13 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string confirm();
+
+  [Throws=ZingolibError]
+  string plan_orchard_drain();
+
+  [Throws=ZingolibError]
+  string drain_orchard_to_ironwood();
+
+  [Throws=ZingolibError]
+  string drain_status();
 };
