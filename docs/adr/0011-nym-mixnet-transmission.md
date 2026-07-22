@@ -244,3 +244,36 @@ interrupt orphans a session from its transport. On platforms without process
 groups the child shares the terminal's group and an interrupt still reaches
 it; the outcome is the safe one — the mode becomes died and the surfaces
 refuse — rather than a silent clearnet fallback.
+
+## Amendment (2026-07-21): the runtime boundary generalizes for mobile
+
+The spawned-child consumption model is the desktop instance of a general
+rule, not the rule itself. What the dependency conflict actually forces is
+that the nym stack live in its own resolution unit and meet the wallet at a
+*runtime* boundary that carries exactly two things: a local SOCKS5 endpoint
+and a liveness signal. A child process is one such boundary. Mobile platforms
+demand others, and the wallet core should not care which one is in play.
+
+Three consequences, one per layer. First, zingolib gains an attach entry
+point beside the spawn one: the platform hands the wallet an already-running
+local SOCKS5 address, the mode reaches ready after a connectivity check, and
+liveness is thereafter observed by a periodic probe of that endpoint — probe
+failure lands died, preserving the refuse-never-clearnet invariant without
+the stdout pipe. Everything downstream of "mode plus address" — the route
+resolver, the fan-out, the price fetch, the status narration — is unchanged.
+
+Second, Android keeps the spawn model. An app may execute a bundled binary
+only from its native-library directory, so the proxy ships as a native
+library named like one (`libnym_proxy.so`) and the existing supervisor,
+stdin-EOF watchdog included, runs it from there.
+
+Third, iOS cannot spawn processes at all, and two Rust static libraries
+cannot link into one binary. There the boundary becomes a dynamic library:
+the standalone netutils workspace — already a separate resolution unit with
+its own lockfile — builds the proxy as a small C-ABI dynamic framework
+(start returning the SOCKS5 address, stop, and a death callback), the app
+hosts it, and hands the address to the wallet's attach entry. The C ABI is
+deliberately not a UniFFI surface: UniFFI binds the wallet layer
+(zingolib's toggle and status methods, which are plain strings and enums),
+while the proxy boundary stays three C functions the host language calls
+directly. The two boundaries never meet in one interface definition.

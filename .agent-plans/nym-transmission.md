@@ -1117,6 +1117,31 @@ Rationale: the SOCKS5 tunnel terminates at an UNTRUSTED mixnet exit
 gateway, so only end-to-end TLS keeps it from reading/tampering. Recorded
 as a durable standard in agent memory (https-only-indexers).
 
+## Mobile adoption plan (RECORDED 2026-07-21, design only — no code yet)
+
+ADR 0011 gained the "runtime boundary generalizes for mobile" amendment:
+the spawned child is the desktop instance of the general rule (nym stack
+in its own resolution unit, meeting the wallet at a runtime boundary
+carrying a SOCKS5 endpoint + a liveness signal). The step-by-step
+adoption issue is drafted (scratchpad issue-mobile-adoption.md); the
+serial spine is documented in
+.agent-plans/mobile-adoption-critical-path.md and tracked in Linear.
+Plan shape: step 0 (zls, blocking) = LightClient::attach_mixnet(addr)
+beside the spawn path, liveness by periodic endpoint probe -> Died;
+step 1 (Android) = ship nym-proxy as libnym_proxy.so in jniLibs and exec
+from nativeLibraryDir via the EXISTING enable_mixnet supervisor; step 2
+(iOS, no exec possible) = netutils-workspace cdylib exposing a
+3-function C ABI (start->addr/stop/death-callback) as an XCFramework,
+app hosts it and calls attach_mixnet; step 3 = device smoke mirroring
+the PR hand-test. FFI layering (user question resolved): the C ABI
+NEVER appears in the UniFFI UDL — UniFFI binds the wallet layer
+(attach/enable/disable/mode/detail: plain strings + one 4-variant enum,
+all UDL-expressible; lives in zingo-mobile's binding component, zingolib
+stays uniffi-free), while the proxy boundary is three C functions Swift
+calls directly through a bridging header (Android needs no FFI at all —
+it execs). Attach's readiness check reuses increment 17's lesson: gate
+on a data round trip, not a TCP connect.
+
 ## Implementation — increment 3 design notes
 
 De-duplicate the retry / duplicate-in-mempool / queued-probe orchestration
