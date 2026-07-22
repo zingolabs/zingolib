@@ -3178,3 +3178,120 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
         })
     })
 }
+
+/// The Mixnet Mode tri-state-plus-died as the strings the app layer shows.
+fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
+    match mode {
+        zingolib::nym::MixnetMode::Off => "off",
+        zingolib::nym::MixnetMode::Bootstrapping => "bootstrapping",
+        zingolib::nym::MixnetMode::Ready => "ready",
+        zingolib::nym::MixnetMode::Died => "died",
+    }
+}
+
+/// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5 endpoint
+/// (the UniFFI proxy shim's address). Readiness is validated by a data round
+/// trip; poll [`mixnet_mode`] for `bootstrapping` -> `ready`, or `died`.
+pub fn attach_mixnet(socks5_addr: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient.attach_mixnet(&socks5_addr).await {
+                    Ok(()) => {
+                        object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                            .pretty(2)
+                    }
+                    Err(e) => format!("Error: {e}"),
+                }
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Enable Mixnet Mode by spawning the bundled nym-proxy binary at
+/// `proxy_path` (the exec fallback; Android-attached and iOS builds use
+/// [`attach_mixnet`] instead).
+pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                match lightclient
+                    .enable_mixnet(std::path::Path::new(&proxy_path))
+                    .await
+                {
+                    Ok(()) => {
+                        object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                            .pretty(2)
+                    }
+                    Err(e) => format!("Error: {e}"),
+                }
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Disable Mixnet Mode: the user's deliberate per-session consent to
+/// clearnet for the send and price surfaces.
+pub fn disable_mixnet() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                lightclient.disable_mixnet().await;
+                object! { "mixnet_mode" => "off" }.pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The current Mixnet Mode: `off`, `bootstrapping`, `ready` (with the local
+/// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
+/// [`attach_mixnet`] or [`enable_mixnet`] to recover).
+pub fn mixnet_mode() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            let mut status = object! {
+                "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()),
+            };
+            if let Some(addr) = lightclient.mixnet_socks5_addr() {
+                status["socks5_addr"] = addr.into();
+            }
+            Ok(status.pretty(2))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The proxy's latest bootstrap progress line while Mixnet Mode is
+/// bootstrapping, so the app can narrate the connect race; empty otherwise.
+pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
+            Ok(object! { "detail" => detail }.pretty(2))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
