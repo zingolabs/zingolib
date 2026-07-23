@@ -7,7 +7,20 @@ enum ZingolibError {
     "Init",
     "Sync",
     "Rescan",
-    "Read"
+    "Read",
+    "Send",
+    "Shield",
+    "InvalidInput",
+    "Wallet",
+    "Indexer",
+    "Offline",
+    "SideChannelPoisoned",
+    "MigrationNotInProgress",
+    "MigrationAlreadyInProgress",
+    "MigrationConsentStale",
+    "MigrationCadenceFixed",
+    "MigrationSplit",
+    "Migration"
 };
 
 namespace zingo {
