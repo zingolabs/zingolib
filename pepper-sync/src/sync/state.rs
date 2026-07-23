@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
     ShieldedPool,
-    consensus::{self, BlockHeight, NetworkUpgrade},
+    consensus::{self, BlockHeight},
 };
 
 use crate::{
@@ -514,42 +514,21 @@ fn determine_block_range(
     shielded_protocol: Option<ShieldedPool>,
 ) -> Range<BlockHeight> {
     if let Some(mut shielded_protocol) = shielded_protocol {
+        // Walk down to the newest pool already active at `block_height`,
+        // judging each pool by its Pool Activation (the single
+        // pool-to-upgrade derivation; a missing activation means the pool
+        // is not active).
         loop {
-            match shielded_protocol {
-                ShieldedPool::Sapling => {
-                    if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Sapling)
-                            .expect("network activation height should be set")
-                    {
-                        panic!("pre-sapling not supported");
-                    } else {
-                        break;
-                    }
-                }
-                ShieldedPool::Orchard => {
-                    if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Nu5)
-                            .expect("network activation height should be set")
-                    {
-                        shielded_protocol = ShieldedPool::Sapling;
-                    } else {
-                        break;
-                    }
-                }
-                ShieldedPool::Ironwood => {
-                    // Treat a missing NU6.3 activation height as not active.
-                    if consensus_parameters
-                        .activation_height(consensus::NetworkUpgrade::Nu6_3)
-                        .is_none_or(|activation| block_height < activation)
-                    {
-                        shielded_protocol = ShieldedPool::Orchard;
-                    } else {
-                        break;
-                    }
-                }
+            let active = crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+                .is_some_and(|activation| block_height >= activation.height());
+            if active {
+                break;
             }
+            shielded_protocol = match shielded_protocol {
+                ShieldedPool::Sapling => panic!("pre-sapling not supported"),
+                ShieldedPool::Orchard => ShieldedPool::Sapling,
+                ShieldedPool::Ironwood => ShieldedPool::Orchard,
+            };
         }
 
         let shard_ranges = match shielded_protocol {
@@ -573,18 +552,13 @@ fn determine_block_range(
                 // pool's own history: the wallet birthday clamped to the
                 // pool's activation height. An unclamped birthday would let
                 // the chain-tip punch flood the entire wallet range.
-                let pool_upgrade = match shielded_protocol {
-                    ShieldedPool::Sapling => consensus::NetworkUpgrade::Sapling,
-                    ShieldedPool::Orchard => consensus::NetworkUpgrade::Nu5,
-                    ShieldedPool::Ironwood => consensus::NetworkUpgrade::Nu6_3,
-                };
-                let activation = consensus_parameters
-                    .activation_height(pool_upgrade)
-                    .expect("the pool was selected because its upgrade is active");
-                sync_state
-                    .wallet_birthday()
-                    .expect("scan range should not be empty")
-                    .max(activation)
+                crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+                    .expect("the pool was selected because its upgrade is active")
+                    .max_with(
+                        sync_state
+                            .wallet_birthday()
+                            .expect("scan range should not be empty"),
+                    )
             };
             let end = sync_state
                 .last_known_chain_height()
@@ -1001,9 +975,10 @@ where
         ))
     } else {
         // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height = consensus_parameters
-            .activation_height(NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
+        let sapling_activation_height =
+            crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
+                .expect("should have some sapling activation height")
+                .height();
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
@@ -1080,17 +1055,10 @@ pub(super) fn add_shard_ranges(
     sync_state: &mut SyncState,
     subtree_roots: &[SubtreeRoot],
 ) {
-    let network_upgrade_activation_height = match shielded_protocol {
-        ShieldedPool::Sapling => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("activation height should exist for this network upgrade!"),
-        ShieldedPool::Orchard => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Nu5)
-            .expect("activation height should exist for this network upgrade!"),
-        ShieldedPool::Ironwood => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Nu6_3)
-            .expect("activation height should exist for this network upgrade!"),
-    };
+    let network_upgrade_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+            .expect("activation height should exist for this network upgrade!")
+            .height();
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
         ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),

@@ -24,6 +24,16 @@ pub trait ChainView {
     /// The highest block height the wallet knows of.
     fn chain_tip(&self) -> Option<BlockHeight>;
 
+    /// The Spend-Evidence Height: the height through which the wallet's
+    /// evidence of spends and transaction inclusion is complete — every
+    /// block at or below it scanned with its nullifiers mapped. This is
+    /// the only lawful input to judgments that condemn (a transaction
+    /// expired-unmined, a part dead): the chain tip runs ahead of
+    /// scanning, and condemning against it invites false invalidation
+    /// (issue #2493, finding 8). Forward planning may use
+    /// [`Self::chain_tip`].
+    fn spend_evidence_height(&self) -> Option<BlockHeight>;
+
     /// The confirmed or pending spend of the given note, if the wallet has
     /// observed one: the spending txid and its confirmation height.
     fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)>;
@@ -49,6 +59,17 @@ pub enum PartClass {
     SlippedWithinTolerance,
     /// Its window passed beyond the slip tolerance without a broadcast.
     Overdue,
+    /// Signed, its window passed, and its transaction is still valid:
+    /// broadcasting it now would mine a permanent lateness fingerprint
+    /// (the cleartext expiry and the stale anchor single the part out
+    /// within its denomination cohort), so it waits out its expiry and
+    /// rebuilds fresh — on-chain indistinguishable from an on-schedule
+    /// part. Not part of the catch-up cohort; surfaced so status can say
+    /// why nothing was sent and when the rebuild comes.
+    AwaitingExpiry {
+        /// The expiry height being waited out.
+        expiry: BlockHeight,
+    },
     /// Its transaction reached expiry unmined.
     Expired,
     /// Its bound note was spent outside the migration.
@@ -183,10 +204,12 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
     // Completion is judged on the persisted states only: promotions
     // recommended by this very pass complete on the next one, after they
     // have been applied and saved.
-    let all_confirmed = state
-        .parts
-        .iter()
-        .all(|part| matches!(part.state, PartState::Confirmed { .. }));
+    let all_terminal = state.parts.iter().all(|part| {
+        matches!(
+            part.state,
+            PartState::Confirmed { .. } | PartState::Invalidated
+        )
+    });
 
     for part in &state.parts {
         let class = classify(part, state, chain, chain_tip, &mut report);
@@ -206,20 +229,28 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
             disclosure_required: true,
         });
     }
-    if any_invalidated && chain.orchard_confirmed_spendable(state.account) > 0 {
-        // The ZIP 318 invalidation predicate: confirmed-spendable Orchard
-        // balance remains while a scheduled part is invalid.
+    let spendable = chain.orchard_confirmed_spendable(state.account);
+    if any_invalidated && spendable > state.params.sweep_min {
+        // The ZIP 318 invalidation predicate: a worthwhile
+        // confirmed-spendable Orchard balance remains while a scheduled
+        // part is invalid. At or below the Sweep Minimum a replan would
+        // strand everything it planned, so no replan is offered.
         report.actions.push(RecommendedAction::ReplanRemainder);
     }
-    if all_confirmed && !state.parts.is_empty() {
-        let residual = chain.orchard_confirmed_spendable(state.account);
-        if residual <= state.params.sweep_min {
-            report
-                .actions
-                .push(RecommendedAction::MarkComplete { residual });
-        } else {
+    // The completion rule: when every part is terminal, the migration
+    // concludes unless a worthwhile remainder exists. Complete means
+    // "nothing left for this migration to do", not "everything migrated" —
+    // an insistently spent-away migration completes with zero confirmed
+    // parts, reported faithfully by the status surface.
+    if all_terminal && !state.parts.is_empty() {
+        if spendable <= state.params.sweep_min {
+            report.actions.push(RecommendedAction::MarkComplete {
+                residual: spendable,
+            });
+        } else if !any_invalidated {
             // Fee rounding left an economic amount behind: quantize it into
-            // a final transfer (fresh consent, it is a new plan).
+            // a final transfer (fresh consent, it is a new plan). The
+            // invalidated case pushed ReplanRemainder above.
             report.actions.push(RecommendedAction::ReplanRemainder);
         }
     }
@@ -273,11 +304,18 @@ fn classify(
         return PartClass::OnTrack;
     };
 
-    // Expiry: a signed-or-broadcast transaction past its expiry is dead.
+    // Expiry: a signed-or-broadcast transaction is condemned as dead only
+    // on complete evidence — the Spend-Evidence Height must reach the
+    // expiry, so every block the transaction could have mined in has been
+    // scanned with its nullifiers mapped. Judging against the chain tip
+    // here condemned parts whose exonerating spend sat in the unscanned
+    // gap (issue #2493, finding 8).
     if matches!(part.state, PartState::Signed | PartState::Broadcast)
-        && part
-            .expiry_height
-            .is_some_and(|expiry_height| tip > expiry_height)
+        && part.expiry_height.is_some_and(|expiry_height| {
+            chain
+                .spend_evidence_height()
+                .is_some_and(|evidence| evidence >= expiry_height)
+        })
     {
         report
             .actions
@@ -294,6 +332,15 @@ fn classify(
             let blocks_past = u32::from(tip) - u32::from(window_end);
             return if blocks_past <= SLIP_TOLERANCE_BLOCKS {
                 PartClass::SlippedWithinTolerance
+            } else if part.state == PartState::Signed {
+                // An overdue signed part is not catch-up material: its
+                // still-valid transaction waits out its expiry rather than
+                // minting a lateness fingerprint (see
+                // [`PartClass::AwaitingExpiry`]).
+                match part.expiry_height {
+                    Some(expiry) => PartClass::AwaitingExpiry { expiry },
+                    None => PartClass::Overdue,
+                }
             } else {
                 PartClass::Overdue
             };
@@ -306,6 +353,14 @@ fn classify(
 impl ChainView for crate::wallet::LightWallet {
     fn chain_tip(&self) -> Option<BlockHeight> {
         self.sync_state.last_known_chain_height()
+    }
+
+    fn spend_evidence_height(&self) -> Option<BlockHeight> {
+        // `fully_scanned_height`, not `highest_scanned_height`: scan ranges
+        // complete out of order, and a scanned-but-unmapped block still
+        // lacks spend evidence. Only the gap-free, nullifier-mapped
+        // frontier is evidence-complete.
+        self.sync_state.fully_scanned_height()
     }
 
     fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
@@ -371,6 +426,7 @@ mod tests {
 
     struct MockChainView {
         tip: Option<BlockHeight>,
+        spend_evidence: Option<BlockHeight>,
         note_spends: HashMap<OutputId, (TxId, Option<BlockHeight>)>,
         confirmed: HashMap<TxId, BlockHeight>,
         failed: Vec<TxId>,
@@ -381,6 +437,9 @@ mod tests {
         fn default() -> Self {
             MockChainView {
                 tip: Some(BlockHeight::from_u32(10_000)),
+                // Evidence keeps pace with the tip unless a test says
+                // otherwise.
+                spend_evidence: Some(BlockHeight::from_u32(10_000)),
                 note_spends: HashMap::new(),
                 confirmed: HashMap::new(),
                 failed: Vec::new(),
@@ -392,6 +451,9 @@ mod tests {
     impl ChainView for MockChainView {
         fn chain_tip(&self) -> Option<BlockHeight> {
             self.tip
+        }
+        fn spend_evidence_height(&self) -> Option<BlockHeight> {
+            self.spend_evidence
         }
         fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
             self.note_spends.get(&output_id).copied()
@@ -449,6 +511,39 @@ mod tests {
     /// Bucket arithmetic for the provisional M = 256 and tip 10_000: the tip
     /// sits in bucket 39.
     const TIP_BUCKET: u64 = 10_000 / 256;
+
+    /// Issue #2493, finding 8: a migration whose every part is terminal
+    /// and whose replannable balance is zero must reach a terminal
+    /// recommendation. An `Invalidated` part with nothing left to replan
+    /// currently satisfies neither `MarkComplete` (not every part is
+    /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
+    /// reconcile recommends nothing forever and the stuck state blocks
+    /// both the immediate migration and the drain until the user finds
+    /// `cancel`.
+    #[test]
+    fn terminal_parts_with_nothing_replannable_reach_complete() {
+        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
+        confirmed
+            .mark_confirmed(BlockHeight::from_u32(9_000))
+            .unwrap();
+        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
+        invalidated.mark_invalidated().unwrap();
+        let state = scheduled_state(vec![confirmed, invalidated]);
+
+        // The default view's confirmed-spendable Orchard balance is zero:
+        // nothing remains to replan.
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|action| matches!(action, RecommendedAction::MarkComplete { .. })),
+            "every part is terminal and nothing is replannable, yet the \
+             migration cannot conclude: {:?}",
+            report.actions,
+        );
+    }
 
     #[test]
     fn future_and_open_windows_are_on_track() {

@@ -118,8 +118,11 @@ async fn inject_scheduled_migration(
 /// A part's bound note is excluded from ordinary input selection while
 /// another note can satisfy the request, the fallback pass consumes it when
 /// nothing else can, and the external spend then invalidates the part on
-/// reconciliation with a remainder replan recommended (the ZIP 318
-/// invalidation predicate).
+/// reconciliation. The remainder left behind sits exactly at the Sweep
+/// Minimum, so under the ratified completion rule (#2493 finding 8) no
+/// replan is offered — a replan would strand everything it planned — and
+/// the next reconciliation concludes the migration with the remainder
+/// disclosed as its residual.
 #[tokio::test]
 async fn bound_note_reservation_and_external_spend_invalidation() {
     // Two V2 Orchard notes: the 100_000 note plays a bound split note, the
@@ -195,18 +198,42 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
         "the external spend must invalidate the part: {:?}",
         report.actions
     );
+    // The surviving change note is exactly the Sweep Minimum (10_000):
+    // not worth replanning, so no replan is offered (ratified completion
+    // rule; the prior behavior offered a replan that could only strand).
+    assert!(
+        !report
+            .actions
+            .iter()
+            .any(|action| matches!(action, RecommendedAction::ReplanRemainder)),
+        "a remainder at the Sweep Minimum must not prompt a replan: {:?}",
+        report.actions
+    );
+    {
+        let wallet = recipient.wallet().read().await;
+        assert_eq!(
+            wallet.migration.as_ref().unwrap().parts[0].state,
+            PartState::Invalidated
+        );
+    }
+
+    // With every part terminal and nothing worth replanning, the next
+    // reconciliation concludes the migration, disclosing the stranded
+    // remainder as its residual.
+    let report = recipient.reconcile_migration().await.unwrap();
     assert!(
         report
             .actions
             .iter()
-            .any(|action| matches!(action, RecommendedAction::ReplanRemainder)),
-        "spendable Orchard value remains, so a remainder replan is required: {:?}",
+            .any(|action| matches!(action, RecommendedAction::MarkComplete { residual: 10_000 })),
+        "an all-terminal migration with a Sweep-Minimum remainder must \
+         complete: {:?}",
         report.actions
     );
     let wallet = recipient.wallet().read().await;
     assert_eq!(
-        wallet.migration.as_ref().unwrap().parts[0].state,
-        PartState::Invalidated
+        wallet.migration.as_ref().unwrap().phase,
+        MigrationPhase::Complete { residual: 10_000 }
     );
 }
 

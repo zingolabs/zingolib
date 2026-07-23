@@ -101,6 +101,17 @@ pub enum MigrationError {
     /// The migration in progress belongs to a different account.
     #[error("The migration in progress belongs to a different account.")]
     DifferentAccount,
+    /// An immediate migration part anchors at the current bucket's
+    /// boundary, and the first boundary at or above the NU6.3 activation
+    /// has not opened yet: no anchor exists for the part to commit to.
+    #[error(
+        "The first post-activation bucket boundary (height {retry_after}) has not opened yet. \
+         Retry after it."
+    )]
+    ActivationBoundaryPending {
+        /// The first bucket boundary an Ironwood part can anchor to.
+        retry_after: zcash_protocol::consensus::BlockHeight,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
