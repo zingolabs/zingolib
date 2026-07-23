@@ -1289,3 +1289,52 @@ forced-on-at-startup wiring; the nym-proxy binary's runtime/bundled location.
   help-text fix.
 - `zingolib/CONTEXT.md` — glossary entries as terms resolve.
 - `docs/adr/` — new ADR on the Nym transport decision.
+
+## Implementation — increment 19 (DONE 2026-07-22, uncommitted): witness ≠ sync indexer
+
+BUILT as designed below. VERIFIED: fmt --all --check clean; clippy -p
+zingolib -p zingo-cli --features nym --all-targets -D warnings green
+(unmasked exit codes, set -e); 35 nym lib tests pass incl. the 3 new
+falsifiers (operator-level exclusion via a regional-variant sync URI,
+out-of-list sync URI excludes nothing, emptied pool refuses with the
+typed error); default cargo check -p zingolib green (the invariant is
+nym-gated; the default build is untouched). ADR 0014 written, ADR 0011
+cross-reference amendment appended, CONTEXT.md Broadcast Indexer entry
+updated to state the enforced invariant. Commit pending user go-ahead.
+
+USER DIRECTIVE (2026-07-22): enforce that the Broadcast Indexer and the
+sync indexer are never the same; make the invariant universal and record
+it in an ADR. Rationale is the Q8 threat model: the sync indexer already
+holds the wallet's address set (and, on bare clearnet, its IP), so a
+witness draw that lands on it hands the named adversary the raw
+transaction too, silently defeating Witness Rotation.
+
+Design: exclusion is OPERATOR-level (the increment-12 rule — rotation's
+accumulating party is the operator, not the DNS name), enforced at the
+single choke point where a transmission draw is assembled. A new pure
+`eligible_witnesses(sync_indexer)` in broadcast_indexers.rs filters the
+curated pool by registrable-domain match against the sync indexer's host
+(shared `operator_domain` helper, extracted from the
+one_endpoint_per_operator test); an emptied pool is a typed error the
+send surfaces as a refusal, never a silent fallback. `mixnet_fanout_
+transmit` gains the sync indexer URI parameter and draws only from the
+eligible pool. Diagnostic surfaces that carry no wallet data (`nym
+probe`, the proxy health gate's GetLightdInfo) intentionally keep the
+full list; the Q7 clearnet toggle-off path is a consented direct
+submission, not a draw, and stays outside the invariant — both
+boundaries recorded in the ADR. New ADR 0014 (0012 is taken locally by
+pool-activation and by the sealed-wallet PR #2496, 0013 by the viewmodel
+PR); ADR 0011 gains a one-paragraph cross-reference amendment; the
+CONTEXT.md Broadcast Indexer glossary entry gains the invariant sentence.
+
+File claims (mine):
+- `zingolib/src/nym/broadcast_indexers.rs` — operator_domain helper,
+  eligible_witnesses + typed empty-pool error, falsifiers.
+- `zingolib/src/lightclient/send.rs` — thread the sync indexer URI into
+  the fan-out; draw from eligible_witnesses.
+- `docs/adr/0014-broadcast-witness-never-the-sync-indexer.md` — new.
+- `docs/adr/0011-nym-mixnet-transmission.md` — cross-reference paragraph
+  only.
+- `zingolib/CONTEXT.md` — Broadcast Indexer glossary entry only
+  (re-read before edit; stage explicit paths).
+- `.agent-plans/nym-transmission.md` (this file).

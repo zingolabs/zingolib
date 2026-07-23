@@ -189,7 +189,7 @@
 
 **Witness Rotation** — The send-privacy property whereby each Transmission's Broadcast Indexer is picked at random, so no single indexer accumulates a record of all the user's sends. On the happy path exactly one indexer witnesses a given send; when delivery cannot be confirmed, the send escalates through serially gated rounds of fresh random picks, accepting redundancy only on that failure path, up to a fixed cap of distinct witnesses. This escalation guards against a censoring indexer that accepts a submission but suppresses or misreports the relay. See `docs/adr/0011-nym-mixnet-transmission.md`.
 
-**Broadcast Indexer** — An Indexer used only as a Transmission target, drawn at random from a curated broadcast list kept separate from the sync-server list. The list holds one endpoint per operator, since the accumulating party Witness Rotation defends against is the operator, not the DNS name. Distinct from the sync Indexer that serves compact blocks; decoupling them keeps the address-knowing sync indexer from necessarily witnessing the broadcast.
+**Broadcast Indexer** — An Indexer used only as a Transmission target, drawn at random from a curated broadcast list kept separate from the sync-server list. The list holds one endpoint per operator, since the accumulating party Witness Rotation defends against is the operator, not the DNS name. Distinct from the sync Indexer that serves compact blocks, and the distinction is an enforced invariant rather than a tendency: every transmission draw excludes the sync indexer's operator from the pool, so the address-knowing sync indexer never witnesses a broadcast, and a draw with no eligible witness refuses rather than falling back. See `docs/adr/0014-broadcast-witness-never-the-sync-indexer.md`.
 
 ---
 
