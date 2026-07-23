@@ -219,7 +219,7 @@ fn plan_pool_truncation(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::shardtree_ext::{CheckpointOutcome, ShardTreeExt};
+    use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
 
     fn wallet_state() -> WalletTruncationState {
         WalletTruncationState {
@@ -451,9 +451,9 @@ mod test {
             assert_eq!(
                 shard_trees
                     .orchard
-                    .checkpoint_classified(BlockHeight::from_u32(height))
+                    .append_checkpoint(BlockHeight::from_u32(height))
                     .unwrap(),
-                CheckpointOutcome::Added
+                CheckpointAppendOutcome::Appended
             );
         }
 

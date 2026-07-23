@@ -2391,7 +2391,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
 
         use crate::mocks::MockWalletBuilder;
-        use crate::shardtree_ext::{CheckpointOutcome, ShardTreeExt};
+        use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
         use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
         use crate::wallet::{ShardTrees, SyncState, TreeBounds, WalletBlock, traits::SyncBlocks};
 
@@ -2452,16 +2452,16 @@ mod test {
                 assert_eq!(
                     shard_trees
                         .sapling
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
                 assert_eq!(
                     shard_trees
                         .orchard
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             let mut wallet = synced_wallet(shard_trees);
@@ -2493,18 +2493,18 @@ mod test {
                 assert_eq!(
                     shard_trees
                         .sapling
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             for height in 9..=10u32 {
                 assert_eq!(
                     shard_trees
                         .orchard
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             let mut wallet = synced_wallet(shard_trees);
