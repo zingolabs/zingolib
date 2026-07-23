@@ -1641,22 +1641,15 @@ where
             .highest_scanned_height()
             .expect("should be non-empty in this scope"),
     };
-    let shard_tree_state = truncate::ShardTreeTruncationState::gather(
-        wallet
-            .get_shard_trees_mut()
-            .map_err(SyncError::WalletError)?,
-        truncate_height,
-    );
-
-    match truncate::plan_truncation(wallet_state, shard_tree_state, truncate_height) {
+    match truncate::plan_truncation(wallet_state, truncate_height) {
         truncate::TruncationPlan::NoOp => Ok(()),
         truncate::TruncationPlan::ClearAll => {
             truncate_stores(wallet, consensus::H0)?;
             wallet.clear_shard_trees()
         }
-        truncate::TruncationPlan::Truncate { height, trees } => {
+        truncate::TruncationPlan::Truncate { height } => {
             truncate_stores(wallet, height)?;
-            match wallet.truncate_shard_trees(height, &trees) {
+            match wallet.truncate_shard_trees(height) {
                 Ok(()) => Ok(()),
                 Err(SyncError::TruncationError(height, pooltype)) => {
                     clear_wallet_data(wallet)?;
@@ -2020,8 +2013,15 @@ where
     // Resume from the stored-root count, except that a newest root which
     // is still bare (never scanned into) is refetched every session: no
     // checkpoint witnesses it, so this refetch is the only mechanism that
-    // heals it after a reorg (see `subtree_fetch_start_index`).
+    // heals it after a reorg (see `subtree_fetch_start_index`). When a
+    // refetch happens, the pool's newest stored shard range is dropped
+    // before the fetched roots are accounted, so the range accounting is
+    // rebuilt from the refetched root — never duplicated, and corrected
+    // if a reorg moved the subtree's completing height.
     let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    let stored_sapling_roots = witness::stored_subtree_root_count(&shard_trees.sapling);
+    let stored_orchard_roots = witness::stored_subtree_root_count(&shard_trees.orchard);
+    let stored_ironwood_roots = witness::stored_subtree_root_count(&shard_trees.ironwood);
     let sapling_start_index = witness::subtree_fetch_start_index(&shard_trees.sapling);
     let orchard_start_index = witness::subtree_fetch_start_index(&shard_trees.orchard);
     let ironwood_start_index = witness::subtree_fetch_start_index(&shard_trees.ironwood);
@@ -2051,12 +2051,18 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
+    if (sapling_start_index as usize) < stored_sapling_roots && !sapling_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Sapling);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Sapling,
         sync_state,
         &sapling_subtree_roots,
     );
+    if (orchard_start_index as usize) < stored_orchard_roots && !orchard_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Orchard);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Orchard,
@@ -2064,6 +2070,9 @@ where
         &orchard_subtree_roots,
     );
     if !ironwood_subtree_roots.is_empty() {
+        if (ironwood_start_index as usize) < stored_ironwood_roots {
+            state::pop_newest_shard_range(sync_state, ShieldedPool::Ironwood);
+        }
         state::add_shard_ranges(
             consensus_parameters,
             ShieldedPool::Ironwood,
@@ -2391,7 +2400,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
 
         use crate::mocks::MockWalletBuilder;
-        use crate::shardtree_ext::{CheckpointOutcome, ShardTreeExt};
+        use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
         use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
         use crate::wallet::{ShardTrees, SyncState, TreeBounds, WalletBlock, traits::SyncBlocks};
 
@@ -2452,16 +2461,16 @@ mod test {
                 assert_eq!(
                     shard_trees
                         .sapling
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
                 assert_eq!(
                     shard_trees
                         .orchard
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             let mut wallet = synced_wallet(shard_trees);
@@ -2493,18 +2502,18 @@ mod test {
                 assert_eq!(
                     shard_trees
                         .sapling
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             for height in 9..=10u32 {
                 assert_eq!(
                     shard_trees
                         .orchard
-                        .checkpoint_classified(BlockHeight::from_u32(height))
+                        .append_checkpoint(BlockHeight::from_u32(height))
                         .unwrap(),
-                    CheckpointOutcome::Added
+                    CheckpointAppendOutcome::Appended
                 );
             }
             let mut wallet = synced_wallet(shard_trees);

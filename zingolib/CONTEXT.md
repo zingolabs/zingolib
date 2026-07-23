@@ -36,6 +36,16 @@
 
 **Stranded** — Value a migration plan leaves behind in the Orchard pool because moving it is not worthwhile. This covers notes worth at most the Sweep Minimum, pooled balance too small to fund the smallest denomination, and balance that would arrive at or below the Sweep Minimum after fees. A plan reports its stranded value explicitly; value is never dropped silently.
 
+**Denomination** — A canonical value permitted for a migration Part's Ironwood output, drawn from a small standard set fixed by ZIP 318 and shared by every migrating wallet, so migrated amounts collide across the whole population instead of fingerprinting a wallet. Value below the smallest Denomination cannot cross the Turnstile as a standard note. *Avoid*: "bucket" for a value quantum (the early Shielded Labs migration writing used it that way); in this repo a Bucket is a scheduling window only.
+
+**Part** — One canonical pool-crossing migration transfer: a transaction with exactly one Orchard spend and one Ironwood output worth a single Denomination, no change output, and the canonical fee. A migration is a set of Parts, each pre-funded by an exactly-sized note so no Part waits on another's change.
+
+**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window and anchors to the tree state at the Bucket's opening Boundary. Buckets are windows in chain time, never value quanta (see Denomination).
+
+**Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it.
+
+**Cohort** — The Parts assigned to the same Bucket, and therefore sharing its anchor and broadcast window.
+
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 
 **Coin** — A transparent output (UTXO).
@@ -77,6 +87,10 @@
 **WalletBlock** — A compact record of a scanned block, retained only at scan range bounds or when it contains wallet-relevant transactions.
 
 **Shard Tree** — An incremental Merkle tree structure used to build note commitment tree witnesses required for spending Notes.
+
+**Frontier** — The right edge of a note commitment tree: the newest commitment plus the minimal set of subtree roots needed to keep appending and to compute the current root. A Frontier locates the tree's end — its position is what a Checkpoint records — but proves nothing about interior commitments; witnesses come from scanned subtrees, not Frontiers. Serving a Frontier at a height is how a wallet joins the chain at its Birthday without scanning prior history.
+
+**Checkpoint** — An association between a Block Height and the state a Shard Tree had at that height: the position of its Frontier, or emptiness. Checkpoints are the only height-indexed data in a Shard Tree; they anchor witnesses to specific heights and bound how far a Re-org can roll the tree back. Appending a checkpoint stamps the *current* Frontier at a new highest height; checkpoints for past heights must instead travel with the historical tree state they describe.
 
 **WalletSettings** — Runtime configuration embedded in the wallet: sync config and minimum confirmations.
 

@@ -1722,17 +1722,17 @@ impl ShardTrees {
         let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         // These trees are freshly created, so the initial checkpoint must
-        // be `Added`; a `NotAboveNewest` here would break the
+        // be `Appended`; a `NotAboveNewest` here would break the
         // initialization invariant that `add_initial_frontier` and
         // truncation planning rely on.
         for tree_checkpoint in [
-            sapling.checkpoint_classified(BlockHeight::from_u32(0)),
-            orchard.checkpoint_classified(BlockHeight::from_u32(0)),
-            ironwood.checkpoint_classified(BlockHeight::from_u32(0)),
+            sapling.append_checkpoint(BlockHeight::from_u32(0)),
+            orchard.append_checkpoint(BlockHeight::from_u32(0)),
+            ironwood.append_checkpoint(BlockHeight::from_u32(0)),
         ] {
             assert_eq!(
                 tree_checkpoint.expect("should never fail"),
-                crate::shardtree_ext::CheckpointOutcome::Added
+                crate::shardtree_ext::CheckpointAppendOutcome::Appended
             );
         }
 

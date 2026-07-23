@@ -134,7 +134,7 @@ impl TxMap {
                 // benign, the checkpoint exists. Classified rather than
                 // discarded so a genuinely skipped checkpoint can never
                 // hide in a boolean again.
-                let _ = sap_tree.checkpoint_classified(height).expect("infallible");
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -143,7 +143,7 @@ impl TxMap {
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
                 // As for sapling above: height-sorted, duplicates benign.
-                let _ = orch_tree.checkpoint_classified(height).expect("infallible");
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
@@ -206,7 +206,7 @@ impl TxMap {
                 // benign, the checkpoint exists. Classified rather than
                 // discarded so a genuinely skipped checkpoint can never
                 // hide in a boolean again.
-                let _ = sap_tree.checkpoint_classified(height).expect("infallible");
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -215,7 +215,7 @@ impl TxMap {
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
                 // As for sapling above: height-sorted, duplicates benign.
-                let _ = orch_tree.checkpoint_classified(height).expect("infallible");
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
