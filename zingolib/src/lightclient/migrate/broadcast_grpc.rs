@@ -33,12 +33,13 @@ impl BroadcastClient for GrpcBroadcastClient {
     async fn submit(
         &self,
         raw_tx: Vec<u8>,
+        txid: TxId,
         expiry_height: BlockHeight,
     ) -> Result<TxId, BroadcastError> {
         let mut indexer = zingo_netutils::GrpcIndexer::new(self.uri.clone())
             .await
             .map_err(|e| BroadcastError::Transport(e.to_string()))?;
-        let txid_hex = indexer
+        indexer
             .send_transaction(
                 RawTransaction {
                     data: raw_tx,
@@ -48,8 +49,8 @@ impl BroadcastClient for GrpcBroadcastClient {
             )
             .await
             .map_err(|status| BroadcastError::Rejected(status.to_string()))?;
-        crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
-            BroadcastError::Rejected(format!("endpoint returned an invalid txid: {e}"))
-        })
+        // The wallet's locally computed txid is authoritative; the endpoint's
+        // echoed id is not trusted over it.
+        Ok(txid)
     }
 }

@@ -703,6 +703,7 @@ pub(crate) mod broadcast {
         async fn submit(
             &self,
             raw_tx: Vec<u8>,
+            txid: zcash_primitives::transaction::TxId,
             expiry_height: BlockHeight,
         ) -> Result<zcash_primitives::transaction::TxId, BroadcastError> {
             if self.fail.load(Ordering::Relaxed) {
@@ -714,7 +715,7 @@ pub(crate) mod broadcast {
                 .lock()
                 .unwrap()
                 .push((raw_tx, expiry_height));
-            Ok(super::default_txid())
+            Ok(txid)
         }
     }
 }

@@ -37,6 +37,38 @@ use crate::wallet::migration::{
 };
 
 pub mod broadcast_grpc;
+#[cfg(feature = "nym")]
+pub mod broadcast_socks5;
+
+/// The broadcast client migration parts are submitted through, resolved per
+/// the Mixnet Mode route. A single concrete type so the generic broadcast loop
+/// takes one client whether the route is clearnet or the mixnet fan-out.
+enum RoutedBroadcastClient {
+    /// Clearnet gRPC to the dedicated or fallback endpoint.
+    Clearnet(broadcast_grpc::GrpcBroadcastClient),
+    /// The Nym mixnet fan-out over the Broadcast Indexers (witness rotation).
+    #[cfg(feature = "nym")]
+    Mixnet(broadcast_socks5::Socks5BroadcastClient),
+}
+
+impl BroadcastClient for RoutedBroadcastClient {
+    async fn submit(
+        &self,
+        raw_tx: Vec<u8>,
+        txid: TxId,
+        expiry_height: BlockHeight,
+    ) -> Result<TxId, crate::wallet::migration::broadcast::BroadcastError> {
+        match self {
+            RoutedBroadcastClient::Clearnet(client) => {
+                client.submit(raw_tx, txid, expiry_height).await
+            }
+            #[cfg(feature = "nym")]
+            RoutedBroadcastClient::Mixnet(client) => {
+                client.submit(raw_tx, txid, expiry_height).await
+            }
+        }
+    }
+}
 
 /// How long to wait between sync polls while a note-splitting round confirms.
 const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -304,16 +336,33 @@ impl LightClient {
         Ok(())
     }
 
-    /// The broadcast-only client parts are submitted through: the dedicated
-    /// `migration_broadcast_uri` when configured (independent of the Indexer
-    /// connection), the synchronization endpoint (with a logged correlation
-    /// warning) otherwise. With neither endpoint configured the client emits
-    /// no network traffic and this returns [`LightClientError::Offline`].
-    fn migration_broadcast_client(
-        &self,
-    ) -> Result<broadcast_grpc::GrpcBroadcastClient, LightClientError> {
+    /// The broadcast-only client parts are submitted through, resolved per the
+    /// Mixnet Mode route (ZIP 318's "route every migration broadcast through
+    /// the enabled network").
+    ///
+    /// When Mixnet Mode is ready the parts fan out over the Nym mixnet
+    /// (witness rotation, IP obfuscation), the same transport a regular send
+    /// uses. When it is bootstrapping or died this refuses rather than leaking
+    /// to clearnet — the fail-closed invariant, deferring the part to the next
+    /// window. Only a deliberate Mixnet Mode off (or a build without the `nym`
+    /// feature) uses clearnet: the dedicated `migration_broadcast_uri` when
+    /// configured, else the synchronization endpoint with a logged correlation
+    /// warning. With neither endpoint configured the clearnet path emits no
+    /// traffic and this returns [`LightClientError::Offline`].
+    fn migration_broadcast_client(&self) -> Result<RoutedBroadcastClient, LightClientError> {
+        #[cfg(feature = "nym")]
+        if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
+            return Ok(RoutedBroadcastClient::Mixnet(
+                broadcast_socks5::Socks5BroadcastClient::new(
+                    socks5_addr,
+                    self.indexer_history.clone(),
+                ),
+            ));
+        }
         match &self.migration_broadcast_uri {
-            Some(uri) => Ok(broadcast_grpc::GrpcBroadcastClient::new(uri.clone())),
+            Some(uri) => Ok(RoutedBroadcastClient::Clearnet(
+                broadcast_grpc::GrpcBroadcastClient::new(uri.clone()),
+            )),
             None => {
                 let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
                 log::warn!(
@@ -321,7 +370,9 @@ impl LightClient {
                      broadcast to the synchronization endpoint, which lets that server \
                      correlate synchronization with migration activity"
                 );
-                Ok(broadcast_grpc::GrpcBroadcastClient::new(indexer_uri))
+                Ok(RoutedBroadcastClient::Clearnet(
+                    broadcast_grpc::GrpcBroadcastClient::new(indexer_uri),
+                ))
             }
         }
     }
@@ -508,7 +559,7 @@ impl LightClient {
                     wallet.save_required = true;
                 })
                 .ok_or(MigrationError::NoMigration)?;
-            match client.submit(raw_tx, expiry_height).await {
+            match client.submit(raw_tx, txid, expiry_height).await {
                 Ok(_) => {
                     wallet
                         .with_migration_state(|wallet, state| {

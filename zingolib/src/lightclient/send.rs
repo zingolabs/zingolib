@@ -232,7 +232,7 @@ async fn transmit_one_transaction(
 /// escalates round by round until an indexer confirms delivery or the witness
 /// cap is reached.
 #[cfg(feature = "nym")]
-async fn mixnet_fanout_transmit(
+pub(crate) async fn mixnet_fanout_transmit(
     socks5_addr: &str,
     tx_bytes: &[u8],
     height: u64,

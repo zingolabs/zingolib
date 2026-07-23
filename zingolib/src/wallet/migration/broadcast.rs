@@ -13,11 +13,15 @@ use zcash_protocol::consensus::BlockHeight;
 
 /// Submits raw transactions and does nothing else.
 pub trait BroadcastClient: Send + Sync {
-    /// Submits a raw transaction, returning its txid as reported by the
-    /// endpoint.
+    /// Submits a raw transaction whose locally computed `txid` is supplied by
+    /// the caller — the wallet built the transaction, so its txid is
+    /// authoritative and a network path may need it for an independent
+    /// delivery check rather than trusting the endpoint's echoed id. Returns
+    /// that txid on acceptance.
     fn submit(
         &self,
         raw_tx: Vec<u8>,
+        txid: TxId,
         expiry_height: BlockHeight,
     ) -> impl std::future::Future<Output = Result<TxId, BroadcastError>> + Send;
 }
