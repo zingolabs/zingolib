@@ -247,6 +247,21 @@ directive (2026-07-22): never add a new language to the repo without
 human consent — the Rust wire round trip is the sanctioned pattern.
 6/6 pass under nextest; Kotlin regenerated; arm64 rebuilt clean.
 
+GOLDEN WIRE CONTRACT (user-directed 2026-07-22, uncommitted): the wire
+encoding of every value the nym FFI carries (Socks5Endpoint incl. port
+extremes, ProxyDeathReason, all three ProxyFfiError variants) is pinned
+as hex files in `nym-proxy-ffi/test-data/golden/` — never-regenerate
+contract artifacts (the ignored bless test only creates ABSENT pins).
+Three suites assert lowering AND lifting against the SAME files:
+Rust `tests/golden_wire.rs` (runs here, 9/9 green with the suite),
+Kotlin `contract-tests/kotlin/GoldenWireContractTest.kt` (JUnit 4,
+authored against the real generated converters — step-4 lane wires it
+into zingo-mobile's test run, property `zingo.golden.dir`), and Swift
+`contract-tests/swift/GoldenWireContractTests.swift` (XCTest, authored
+against generated Swift inspected on this host, runs in the Mac-gated
+step 7, env `ZINGO_GOLDEN_DIR`). Kotlin/Swift files added with explicit
+user consent (the new-language rule). See contract-tests/README.md.
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
