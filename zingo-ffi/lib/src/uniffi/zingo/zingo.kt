@@ -1669,6 +1669,32 @@ sealed class ZingolibException(message: String): kotlin.Exception(message) {
         
         class Read(message: String) : ZingolibException(message)
         
+        class Send(message: String) : ZingolibException(message)
+        
+        class Shield(message: String) : ZingolibException(message)
+        
+        class InvalidInput(message: String) : ZingolibException(message)
+        
+        class Wallet(message: String) : ZingolibException(message)
+        
+        class Indexer(message: String) : ZingolibException(message)
+        
+        class Offline(message: String) : ZingolibException(message)
+        
+        class SideChannelPoisoned(message: String) : ZingolibException(message)
+        
+        class MigrationNotInProgress(message: String) : ZingolibException(message)
+        
+        class MigrationAlreadyInProgress(message: String) : ZingolibException(message)
+        
+        class MigrationConsentStale(message: String) : ZingolibException(message)
+        
+        class MigrationCadenceFixed(message: String) : ZingolibException(message)
+        
+        class MigrationSplit(message: String) : ZingolibException(message)
+        
+        class Migration(message: String) : ZingolibException(message)
+        
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<ZingolibException> {
         override fun lift(error_buf: RustBuffer.ByValue): ZingolibException = FfiConverterTypeZingolibError.lift(error_buf)
@@ -1690,6 +1716,19 @@ public object FfiConverterTypeZingolibError : FfiConverterRustBuffer<ZingolibExc
             6 -> ZingolibException.Sync(FfiConverterString.read(buf))
             7 -> ZingolibException.Rescan(FfiConverterString.read(buf))
             8 -> ZingolibException.Read(FfiConverterString.read(buf))
+            9 -> ZingolibException.Send(FfiConverterString.read(buf))
+            10 -> ZingolibException.Shield(FfiConverterString.read(buf))
+            11 -> ZingolibException.InvalidInput(FfiConverterString.read(buf))
+            12 -> ZingolibException.Wallet(FfiConverterString.read(buf))
+            13 -> ZingolibException.Indexer(FfiConverterString.read(buf))
+            14 -> ZingolibException.Offline(FfiConverterString.read(buf))
+            15 -> ZingolibException.SideChannelPoisoned(FfiConverterString.read(buf))
+            16 -> ZingolibException.MigrationNotInProgress(FfiConverterString.read(buf))
+            17 -> ZingolibException.MigrationAlreadyInProgress(FfiConverterString.read(buf))
+            18 -> ZingolibException.MigrationConsentStale(FfiConverterString.read(buf))
+            19 -> ZingolibException.MigrationCadenceFixed(FfiConverterString.read(buf))
+            20 -> ZingolibException.MigrationSplit(FfiConverterString.read(buf))
+            21 -> ZingolibException.Migration(FfiConverterString.read(buf))
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
         
@@ -1731,6 +1770,58 @@ public object FfiConverterTypeZingolibError : FfiConverterRustBuffer<ZingolibExc
             }
             is ZingolibException.Read -> {
                 buf.putInt(8)
+                Unit
+            }
+            is ZingolibException.Send -> {
+                buf.putInt(9)
+                Unit
+            }
+            is ZingolibException.Shield -> {
+                buf.putInt(10)
+                Unit
+            }
+            is ZingolibException.InvalidInput -> {
+                buf.putInt(11)
+                Unit
+            }
+            is ZingolibException.Wallet -> {
+                buf.putInt(12)
+                Unit
+            }
+            is ZingolibException.Indexer -> {
+                buf.putInt(13)
+                Unit
+            }
+            is ZingolibException.Offline -> {
+                buf.putInt(14)
+                Unit
+            }
+            is ZingolibException.SideChannelPoisoned -> {
+                buf.putInt(15)
+                Unit
+            }
+            is ZingolibException.MigrationNotInProgress -> {
+                buf.putInt(16)
+                Unit
+            }
+            is ZingolibException.MigrationAlreadyInProgress -> {
+                buf.putInt(17)
+                Unit
+            }
+            is ZingolibException.MigrationConsentStale -> {
+                buf.putInt(18)
+                Unit
+            }
+            is ZingolibException.MigrationCadenceFixed -> {
+                buf.putInt(19)
+                Unit
+            }
+            is ZingolibException.MigrationSplit -> {
+                buf.putInt(20)
+                Unit
+            }
+            is ZingolibException.Migration -> {
+                buf.putInt(21)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
