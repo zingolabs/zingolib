@@ -10,7 +10,7 @@
 
 **Block Height** — A `u32`-compatible integer identifying a block's position on the chain. Used as the primary ordering key for sync progress.
 
-**Birthday** — The earliest block height at which a wallet may have received funds. Scanning begins here on first sync.
+**Birthday** — The earliest block height at which a wallet may have received funds. Scanning begins here on first sync. Birthday is a property of a wallet, never of a pool or an upgrade: a pool begins at its Pool Activation, and a network upgrade has an activation height. *Avoid*: pool birthday.
 
 **Library Birthday** — A per-ChainType block height baked into each zingolib release, chosen so that it had already been mined when the release was cut. Any wallet a given release creates necessarily post-dates the release, so this height is a safe Birthday for a NewSeed wallet created while Indexerless, where no Indexer can report the chain height. It never applies to restores: a restored seed or viewing key may predate the library, so restoring always requires a caller-supplied Birthday. The caller passes it explicitly; the library only publishes the value.
 
@@ -26,7 +26,7 @@
 
 **Pool** — A shielding protocol or address type. Four pools exist: `Transparent`, `Sapling`, `Orchard`, and `Ironwood`. The Ironwood pool activates at NU6.3 and succeeds Orchard; the Orchard→Ironwood migration (ZIP 318) moves value between them.
 
-**Pool Activation** — The block height at which a shielded pool begins to exist on the chain, derived solely from the chain's consensus parameters through a single pool-to-network-upgrade mapping: Sapling activates at the Sapling upgrade, Orchard at NU5, Ironwood at NU6.3. Every height clamp involving a pool's existence — the effective pool birthday guarding witnesses, the migration schedule's activation floor — is a derivation from Pool Activation, never an independent mapping.
+**Pool Activation** — The block height at which a shielded pool begins to exist on the chain, derived solely from the chain's consensus parameters through a single pool-to-network-upgrade mapping: Sapling activates at the Sapling upgrade, Orchard at NU5, Ironwood at NU6.3. Every height clamp involving a pool's existence — the witness guard's clamp of the wallet Birthday to the Pool Activation, the migration schedule's activation floor — is a derivation from Pool Activation, never an independent mapping. A pool is never said to have a Birthday (see Birthday).
 
 **Ironwood** — The shielded pool introduced by NU6.3. An Ironwood note is addressed through the same receiver as an Orchard note: the Ironwood receiver of a Unified Address *is* its Orchard receiver. Under the ZIP 318 Turnstile, ordinary payments into the old Orchard pool are disabled after NU6.3 activation, so new payments to that receiver travel as Ironwood.
 

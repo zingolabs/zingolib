@@ -1168,7 +1168,9 @@ impl PoolActivation {
 
     /// The later of the activation and `height`: the effective floor for
     /// heights that must not precede the pool's existence (a wallet
-    /// birthday clamped to the pool, a scan-range start).
+    /// Birthday clamped to the pool's activation, the lower bound of a
+    /// scan range). Birthday remains a wallet property throughout; the
+    /// pool contributes only its activation height.
     #[must_use]
     pub fn max_with(&self, height: BlockHeight) -> BlockHeight {
         self.0.max(height)
