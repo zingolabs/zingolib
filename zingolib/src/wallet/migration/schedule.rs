@@ -203,6 +203,26 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
+/// Whether a part already assigned to `current_bucket` would broadcast right
+/// now: it still awaits broadcast ([`PartState::Assigned`] or
+/// [`PartState::Signed`]) and the chain has reached its random target — a
+/// catch-up-shifted part carries no target and is due at the window opening.
+///
+/// The single-part rule shared by the broadcast loop and the "due now" status
+/// read, so a status can never advertise a part a send would find not yet due
+/// (the stale-tip bounce). It does *not* fold in earlier, missed windows: an
+/// overdue part sits in a bucket below `current_bucket` and is catch-up's
+/// business.
+pub fn part_due_in_current_bucket(
+    part: &PartRecord,
+    now_height: BlockHeight,
+    current_bucket: u64,
+) -> bool {
+    matches!(part.state, PartState::Assigned | PartState::Signed)
+        && part.bucket_index == Some(current_bucket)
+        && part.target_height.is_none_or(|target| now_height >= target)
+}
+
 /// The broadcast windows within the next `horizon` buckets, soonest first.
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has

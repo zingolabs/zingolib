@@ -2419,6 +2419,11 @@ fn run_migration(
                         "estimated_target_unix_time" => wake.estimated_target_unix_time,
                     })
                     .collect::<Vec<_>>(),
+                "due_now" => status.due_now.as_ref().map(|batch| object! {
+                    "boundary" => u32::from(batch.boundary),
+                    "part_ids" => batch.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    "denominations" => batch.denominations.clone(),
+                }),
             }
             .pretty(2)
         }
