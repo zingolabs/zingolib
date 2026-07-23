@@ -388,6 +388,88 @@ where
     })
 }
 
+/// Parses the schedule suffix of a `regtest:<schedule>` chain hint into
+/// activation heights.
+///
+/// The format is the harness convention (`regtest-launcher`, and the shape
+/// of `REGTEST_FIXTURE_HEIGHTS_CLI_STRING`): comma-separated `key=height`
+/// entries applied left to right over the bare-"regtest" default schedule,
+/// where `height` is a block height or `off`, and `all` sets every upgrade
+/// through NU6.3 at once. Unknown keys and malformed heights are errors,
+/// never silently dropped — a wrong schedule fails loudly here instead of
+/// as a consensus-branch-id rejection at broadcast.
+fn parse_regtest_activation_heights(spec: &str) -> Result<ActivationHeights, String> {
+    let default = ActivationHeights::default();
+    let mut overwinter = default.overwinter();
+    let mut sapling = default.sapling();
+    let mut blossom = default.blossom();
+    let mut heartwood = default.heartwood();
+    let mut canopy = default.canopy();
+    let mut nu5 = default.nu5();
+    let mut nu6 = default.nu6();
+    let mut nu6_1 = default.nu6_1();
+    let mut nu6_2 = default.nu6_2();
+    let mut nu6_3 = default.nu6_3();
+    let mut nu7 = default.nu7();
+
+    for entry in spec.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (key, value) = entry
+            .split_once('=')
+            .ok_or_else(|| format!("expected key=height, got \"{entry}\""))?;
+        let height = match value.trim() {
+            "off" => None,
+            v => Some(
+                v.parse::<u32>()
+                    .map_err(|_| format!("invalid height \"{v}\" for \"{}\"", key.trim()))?,
+            ),
+        };
+        match key.trim() {
+            "all" => {
+                overwinter = height;
+                sapling = height;
+                blossom = height;
+                heartwood = height;
+                canopy = height;
+                nu5 = height;
+                nu6 = height;
+                nu6_1 = height;
+                nu6_2 = height;
+                nu6_3 = height;
+            }
+            "overwinter" => overwinter = height,
+            "sapling" => sapling = height,
+            "blossom" => blossom = height,
+            "heartwood" => heartwood = height,
+            "canopy" => canopy = height,
+            "nu5" => nu5 = height,
+            "nu6" => nu6 = height,
+            "nu6_1" => nu6_1 = height,
+            "nu6_2" => nu6_2 = height,
+            "nu6_3" => nu6_3 = height,
+            "nu7" => nu7 = height,
+            other => return Err(format!("unknown network upgrade \"{other}\"")),
+        }
+    }
+
+    Ok(ActivationHeights::builder()
+        .set_overwinter(overwinter)
+        .set_sapling(sapling)
+        .set_blossom(blossom)
+        .set_heartwood(heartwood)
+        .set_canopy(canopy)
+        .set_nu5(nu5)
+        .set_nu6(nu6)
+        .set_nu6_1(nu6_1)
+        .set_nu6_2(nu6_2)
+        .set_nu6_3(nu6_3)
+        .set_nu7(nu7)
+        .build())
+}
+
 struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
@@ -407,7 +489,19 @@ fn build_connection_params(
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
-        _ => return Err(ZingolibError::init("Not a valid chain hint!")),
+        hint => match hint.strip_prefix("regtest:") {
+            // A regtest chain has no universal schedule: the node that was
+            // launched is the only authority on its activation heights
+            // (infrastructure ADR 0003), so the harness that launched it
+            // passes the schedule through the hint. Bare "regtest" keeps
+            // the historical all-at-height-1 default.
+            Some(schedule) => {
+                ChainType::Regtest(parse_regtest_activation_heights(schedule).map_err(|e| {
+                    ZingolibError::init(format!("Invalid regtest activation heights: {e}"))
+                })?)
+            }
+            None => return Err(ZingolibError::init("Not a valid chain hint!")),
+        },
     };
 
     // Offline Mode = empty uri → no Indexer is ever configured; the client
@@ -763,6 +857,73 @@ mod wallet_export_tests {
     fn no_save_needed_crosses_as_null() {
         let crossed = map_wallet_save(Ok(None)).expect("no-save is not a failure");
         assert_eq!(crossed, None);
+    }
+}
+
+/// The regtest schedule handoff: a `regtest:<schedule>` hint must carry
+/// the launched node's activation heights into the wallet verbatim
+/// (infrastructure ADR 0003 — the validator is the only heights
+/// authority), and a malformed schedule must fail at parse time, never
+/// surface later as a consensus-branch-id rejection at broadcast.
+#[cfg(test)]
+mod regtest_activation_heights_tests {
+    use super::*;
+
+    #[test]
+    fn empty_schedule_matches_the_bare_regtest_default() {
+        let parsed = parse_regtest_activation_heights("").expect("empty schedule is valid");
+        assert_eq!(parsed, ActivationHeights::default());
+    }
+
+    #[test]
+    fn fixture_schedule_parses_to_the_mixed_chain() {
+        // The harness fixture shape: pre-NU5 upgrades at 1, NU5/NU6 at 2,
+        // the NU6.x line at 5, NU7 unscheduled.
+        let parsed =
+            parse_regtest_activation_heights("all=1,nu5=2,nu6=2,nu6_1=5,nu6_2=5,nu6_3=5,nu7=off")
+                .expect("the fixture schedule is valid");
+        assert_eq!(parsed.canopy(), Some(1));
+        assert_eq!(parsed.nu5(), Some(2));
+        assert_eq!(parsed.nu6(), Some(2));
+        assert_eq!(parsed.nu6_1(), Some(5));
+        assert_eq!(parsed.nu6_2(), Some(5));
+        assert_eq!(parsed.nu6_3(), Some(5));
+        assert_eq!(parsed.nu7(), None);
+    }
+
+    #[test]
+    fn entries_apply_left_to_right_over_all() {
+        let parsed = parse_regtest_activation_heights("all=3,nu6_3=7").expect("override is valid");
+        assert_eq!(parsed.nu6(), Some(3));
+        assert_eq!(parsed.nu6_3(), Some(7));
+    }
+
+    #[test]
+    fn unknown_upgrade_is_an_error_not_a_silent_drop() {
+        let error = parse_regtest_activation_heights("nu99=1")
+            .expect_err("an unknown upgrade must be rejected");
+        assert!(error.contains("nu99"), "error names the bad key: {error}");
+    }
+
+    #[test]
+    fn malformed_height_is_an_error() {
+        let error = parse_regtest_activation_heights("nu5=soon")
+            .expect_err("a non-numeric height must be rejected");
+        assert!(error.contains("soon"), "error names the bad value: {error}");
+    }
+
+    #[test]
+    fn hint_without_schedule_prefix_still_fails_init() {
+        let error = match build_connection_params(
+            String::new(),
+            "shmegtest".to_string(),
+            "Medium".to_string(),
+            1,
+        ) {
+            Err(error) => error,
+            Ok(_) => panic!("an unknown chain hint must be rejected"),
+        };
+        assert!(matches!(error, ZingolibError::Init(_)));
     }
 }
 

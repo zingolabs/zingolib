@@ -1,5 +1,5 @@
 [workspace]
-members = ["lib", "android", "ios", "zingomobile_utils"]
+members = ["lib", "android", "ios", "zingomobile_utils", "workbench"]
 resolver = "2"
 
 [workspace.dependencies]
