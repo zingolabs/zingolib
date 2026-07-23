@@ -110,6 +110,8 @@ pub enum ZingolibError {
     MigrationSplit(String),
     #[error("Error: migration: {0}")]
     Migration(String),
+    #[error("Error: mixnet: {0}")]
+    Mixnet(String),
 }
 
 impl ZingolibError {
@@ -3198,15 +3200,16 @@ pub fn attach_mixnet(socks5_addr: String) -> Result<String, ZingolibError> {
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.attach_mixnet(&socks5_addr).await {
-                    Ok(()) => {
-                        object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
-                            .pretty(2)
-                    }
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
+            RT.block_on(async move {
+                lightclient
+                    .attach_mixnet(&socks5_addr)
+                    .await
+                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                Ok(
+                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                        .pretty(2),
+                )
+            })
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
@@ -3222,18 +3225,16 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient
+            RT.block_on(async move {
+                lightclient
                     .enable_mixnet(std::path::Path::new(&proxy_path))
                     .await
-                {
-                    Ok(()) => {
-                        object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
-                            .pretty(2)
-                    }
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
+                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                Ok(
+                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                        .pretty(2),
+                )
+            })
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }

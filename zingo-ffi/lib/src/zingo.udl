@@ -20,7 +20,8 @@ enum ZingolibError {
     "MigrationConsentStale",
     "MigrationCadenceFixed",
     "MigrationSplit",
-    "Migration"
+    "Migration",
+    "Mixnet"
 };
 
 namespace zingo {
