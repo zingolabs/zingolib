@@ -829,6 +829,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -861,6 +865,10 @@ fun uniffi_zingo_checksum_func_create_new_unified_address(
 fun uniffi_zingo_checksum_func_drain_orchard_to_ironwood(
 ): Short
 fun uniffi_zingo_checksum_func_drain_status(
+): Short
+fun uniffi_zingo_checksum_func_execute_due_parts(
+): Short
+fun uniffi_zingo_checksum_func_execute_due_parts_status(
 ): Short
 fun uniffi_zingo_checksum_func_get_balance(
 ): Short
@@ -1024,6 +1032,10 @@ fun uniffi_zingo_fn_func_create_new_unified_address(`receivers`: RustBuffer.ByVa
 fun uniffi_zingo_fn_func_drain_orchard_to_ironwood(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_drain_status(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_execute_due_parts(`spacingMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zingo_fn_func_execute_due_parts_status(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_get_balance(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1278,6 +1290,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_drain_status() != 22064.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zingo_checksum_func_execute_due_parts() != 55009.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zingo_checksum_func_execute_due_parts_status() != 21746.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zingo_checksum_func_get_balance() != 46672.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1527,6 +1545,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 
     override fun write(value: UInt, buf: ByteBuffer) {
         buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterULong: FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8UL
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
     }
 }
 
@@ -1844,6 +1885,26 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_drain_status(
+        _status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `executeDueParts`(`spacingMs`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_execute_due_parts(
+        FfiConverterULong.lower(`spacingMs`),_status)
+}
+    )
+    }
+    
+
+    @Throws(ZingolibException::class) fun `executeDuePartsStatus`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(ZingolibException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_execute_due_parts_status(
         _status)
 }
     )
