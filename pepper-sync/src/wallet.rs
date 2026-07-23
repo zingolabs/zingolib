@@ -1116,6 +1116,76 @@ impl OutputInterface for TransparentCoin {
     }
 }
 
+/// The network upgrade at which a shielded pool begins to exist.
+///
+/// This is the workspace's single pool-to-upgrade mapping (ADR 0014 in the
+/// workspace root): upstream `zcash_protocol` deliberately ships
+/// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
+/// is defined exactly once, here. Every height clamp involving a pool's
+/// existence derives from it; a second mapping anywhere in the workspace
+/// is a defect.
+#[must_use]
+pub fn pool_upgrade(pool: ShieldedPool) -> consensus::NetworkUpgrade {
+    match pool {
+        ShieldedPool::Sapling => consensus::NetworkUpgrade::Sapling,
+        ShieldedPool::Orchard => consensus::NetworkUpgrade::Nu5,
+        ShieldedPool::Ironwood => consensus::NetworkUpgrade::Nu6_3,
+    }
+}
+
+/// A pool's activation height: the block height at which the pool begins
+/// to exist on the chain.
+///
+/// The only constructor is the derivation [`PoolActivation::of`], so a
+/// value of this type carries its provenance: it came from the chain's
+/// consensus parameters through [`pool_upgrade`], never from arithmetic a
+/// call site invented. Seams that must not run without an activation floor
+/// (the migration schedule planner, for one) demand this type in their
+/// signatures, making floor omission unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolActivation(BlockHeight);
+
+impl PoolActivation {
+    /// Derives the pool's activation height from the chain's consensus
+    /// parameters. `None` when the chain never activates the pool's
+    /// upgrade — a real state (regtest schedules may defer an upgrade
+    /// indefinitely), in which the pool simply cannot be scheduled
+    /// against.
+    pub fn of(
+        consensus_parameters: &impl consensus::Parameters,
+        pool: ShieldedPool,
+    ) -> Option<Self> {
+        consensus_parameters
+            .activation_height(pool_upgrade(pool))
+            .map(Self)
+    }
+
+    /// The activation height.
+    #[must_use]
+    pub fn height(&self) -> BlockHeight {
+        self.0
+    }
+
+    /// The later of the activation and `height`: the effective floor for
+    /// heights that must not precede the pool's existence (a wallet
+    /// Birthday clamped to the pool's activation, the lower bound of a
+    /// scan range). Birthday remains a wallet property throughout; the
+    /// pool contributes only its activation height.
+    #[must_use]
+    pub fn max_with(&self, height: BlockHeight) -> BlockHeight {
+        self.0.max(height)
+    }
+
+    /// A fabricated activation for tests exercising floor arithmetic
+    /// without a full parameter set. Production code has no path here:
+    /// the derivation constructor is the only other way in.
+    #[cfg(any(test, feature = "test-features"))]
+    #[must_use]
+    pub fn new_for_test(height: BlockHeight) -> Self {
+        Self(height)
+    }
+}
+
 /// Marker for the Sapling pool, distinguishing note types whose inner data
 /// is otherwise identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
