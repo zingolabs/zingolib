@@ -566,9 +566,11 @@ impl LightClient {
                         .sync_state
                         .last_known_chain_height()
                         .ok_or(WalletError::NoSyncData)?;
+                    let activation = wallet.ironwood_activation()?;
                     plan_schedule(
                         &mut state.parts,
                         now_height,
+                        activation,
                         &state.params,
                         &mut rand::rngs::OsRng,
                     )?;
@@ -675,9 +677,11 @@ impl LightClient {
                         .sync_state
                         .last_known_chain_height()
                         .ok_or(WalletError::NoSyncData)?;
+                    let activation = wallet.ironwood_activation()?;
                     plan_schedule(
                         &mut state.parts,
                         now_height,
+                        activation,
                         &state.params,
                         &mut rand::rngs::OsRng,
                     )?;
@@ -969,23 +973,6 @@ impl LightClient {
                                 &state.params,
                             )?;
                         }
-                        RecommendedAction::BindAndSchedule => {
-                            let account = state.account;
-                            wallet.bind_parts_to_notes(state, account)?;
-                            let now_height = wallet
-                                .sync_state
-                                .last_known_chain_height()
-                                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                            let activation = wallet.ironwood_activation()?;
-                            plan_schedule(
-                                &mut state.parts,
-                                now_height,
-                                activation,
-                                &state.params,
-                                &mut rand::rngs::OsRng,
-                            )?;
-                            state.phase = MigrationPhase::PartsScheduled;
-                        }
                         RecommendedAction::MarkComplete { residual } => {
                             state.phase = MigrationPhase::Complete {
                                 residual: *residual,
@@ -1057,27 +1044,25 @@ impl LightClient {
             return Ok(overdue);
         }
 
-        {
-            let mut wallet = self.wallet().write().await;
-            wallet
-                .with_migration_state(|wallet, state| {
-                    wallet.save_required = true;
-                    let now_height = wallet
-                        .sync_state
-                        .last_known_chain_height()
-                        .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                    let current_bucket =
-                        schedule::bucket_index(now_height, state.params.bucket_modulus);
-                    for part_id in &overdue {
-                        let part = &mut state.parts[part_id.0 as usize];
-                        if part.state == PartState::Assigned {
-                            // Catch-up fires now by disclosed intent:
-                            // explicitly immediate placement. Overdue
-                            // signed parts never reach here — reconcile
-                            // classifies them AwaitingExpiry, outside the
-                            // catch-up cohort.
-                            schedule::place_immediate(part, current_bucket)?;
-                        }
+        let mut wallet = self.wallet().write().await;
+        wallet
+            .with_migration_state(|wallet, state| {
+                wallet.save_required = true;
+                let now_height = wallet
+                    .sync_state
+                    .last_known_chain_height()
+                    .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                let current_bucket =
+                    schedule::bucket_index(now_height, state.params.bucket_modulus);
+                for part_id in &overdue {
+                    let part = &mut state.parts[part_id.0 as usize];
+                    if part.state == PartState::Assigned {
+                        // Catch-up fires now by disclosed intent:
+                        // explicitly immediate placement. Overdue
+                        // signed parts never reach here — reconcile
+                        // classifies them AwaitingExpiry, outside the
+                        // catch-up cohort.
+                        schedule::place_immediate(part, current_bucket)?;
                     }
                 }
                 Ok::<_, crate::wallet::error::WalletError>(())
