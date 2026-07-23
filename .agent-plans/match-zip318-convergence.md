@@ -65,8 +65,29 @@ whole cadence surface that existed only to set it — the `per_bucket`
 argument of `start_ironwood_migration`, `reschedule_parts`, the
 `CadenceFixed` error, and the zingo-cli `migrate cadence` subcommand —
 is deleted. Additional file claim: `zingo-cli/src/commands.rs`.
-Deviation 2 (anchor age, rolling witness cache) remains ratified but
-unstarted; its design notes live in the session record.
+Deviation 2 (anchor age) remains ratified but unstarted. Design sketch,
+established 2026-07-23: a faithful proving-time draw is impossible with
+witness capture at proving time, because the shard trees retain at most
+`MAX_REORG_ALLOWANCE = 100` checkpoints (pepper-sync/src/sync.rs:59) —
+less than one boundary interval. The plan is a persisted rolling witness
+cache: `refresh_part_witnesses` captures, at every post-sync refresh, a
+witness for every pending part at the most recent boundary (not only the
+part's own bucket boundary), keeps up to `ANCHOR_AGE_CAP = 16`
+boundaries per part (store schema change: `anchor_witness` becomes a
+boundary-to-witness map; another INNER_VERSION bump), and at proving
+time a geometric age (p = 1/2 by fair-coin bits, age >= 1, redraw past
+the cap) is drawn over the cached candidate set, mirroring upstream
+`draw_anchor_boundary` — candidates bounded below by the first boundary
+strictly above NU6.3 activation (`first_anchorable_boundary` exists) and
+at or after the funding note's creation height, and above by the most
+recent boundary minus one modulus. A wallet whose cache holds no aged
+witness must wait for the next boundary rather than anchor at age 0,
+which reference wallets never emit. `rand_chacha` is not a zingolib
+dependency, so upstream's seeded draw goldens cannot be replayed
+verbatim; pin our own goldens with a deterministic in-test `RngCore`.
+The CONTEXT.md glossary entries for Bucket and Cohort must be revised
+when this lands (a cohort becomes transfers sharing a boundary anchor,
+not parts sharing a bucket).
 
 ## Done (2026-07-23)
 
