@@ -37,3 +37,24 @@ impl MixnetMode {
         matches!(self, MixnetMode::Ready)
     }
 }
+
+/// The IP-correlation disclaimer a frontend must show alongside Mixnet Mode
+/// status, satisfying ZIP-0318's requirement that the wallet explain the
+/// IP-correlation risk.
+///
+/// Mixnet Mode obfuscates only the Transmission and price-fetch surfaces;
+/// synchronization stays on the ordinary connector (ADR 0011, "Per-surface
+/// transport tiers"). A bare "ready" status would let a user believe sync is
+/// protected too, so this text names the residual exposure: the sync indexer
+/// still learns the client IP and can correlate it with the wallet's on-chain
+/// activity, and a reused IP can leak the wallet's total balance. It is kept
+/// here as one canonical string so every frontend renders the same disclaimer
+/// rather than each paraphrasing the risk.
+pub const IP_CORRELATION_DISCLAIMER: &str = "\
+IP-correlation risk: Mixnet Mode covers only transaction broadcast and \
+price-fetch. Wallet synchronization always uses the ordinary connection, so \
+the sync indexer — and any network operator on that path — sees your IP \
+address and can correlate it with the transactions you broadcast; reusing the \
+same IP across sessions can reveal your wallet's total balance to that \
+operator. To hide your IP during synchronization as well, route the wallet \
+through a system-level VPN or NymVPN. See ZIP-0318.";

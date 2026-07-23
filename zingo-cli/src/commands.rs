@@ -991,13 +991,33 @@ fn render_status(
     }
 }
 
+/// The complete `nym status` output: the Mixnet Mode line followed by the
+/// IP-correlation disclaimer. The disclaimer always accompanies the status
+/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
+/// synchronization stays on the ordinary connector — so a bare "ready" must
+/// never be read as end-to-end IP protection. The canonical text lives in
+/// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
+/// wording.
+#[cfg(feature = "nym")]
+fn render_status_with_disclaimer(
+    mode: zingolib::nym::MixnetMode,
+    socks5_addr: Option<&str>,
+    bootstrap_detail: Option<&str>,
+) -> String {
+    format!(
+        "{}\n\n{}",
+        render_status(mode, socks5_addr, bootstrap_detail),
+        zingolib::nym::IP_CORRELATION_DISCLAIMER,
+    )
+}
+
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
     let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
         match subcommand {
-            NymSubCommand::Status => Ok(render_status(
+            NymSubCommand::Status => Ok(render_status_with_disclaimer(
                 lightclient.mixnet_mode(),
                 lightclient.mixnet_socks5_addr().as_deref(),
                 lightclient.mixnet_bootstrap_detail().as_deref(),
@@ -3377,5 +3397,43 @@ mod nym_command_parsing {
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
             "a stale detail must not leak into the ready line"
         );
+    }
+
+    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
+    /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
+    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
+    /// line is preserved verbatim as the first line. Falsified if the
+    /// disclaimer is dropped in any mode, no longer leads with the mode line,
+    /// or omits the sync/IP/indexer/balance risk it must name.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn status_always_carries_the_ip_correlation_disclaimer() {
+        use zingolib::nym::MixnetMode;
+
+        for mode in [
+            MixnetMode::Off,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Ready,
+            MixnetMode::Died,
+        ] {
+            let addr = Some("127.0.0.1:43210");
+            let out = render_status_with_disclaimer(mode, addr, None);
+            assert!(
+                out.starts_with(&render_status(mode, addr, None)),
+                "the mode line must lead the status output: {out}"
+            );
+            for phrase in [
+                "IP-correlation risk",
+                "synchronization",
+                "sync indexer",
+                "total balance",
+                "ZIP-0318",
+            ] {
+                assert!(
+                    out.contains(phrase),
+                    "the disclaimer must name {phrase:?} in mode {mode:?}: {out}"
+                );
+            }
+        }
     }
 }
