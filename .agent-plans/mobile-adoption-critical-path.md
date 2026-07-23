@@ -195,6 +195,58 @@ netutils/Cargo.toml; upstream removal filed as a tracked follow-up (decision
 B queued). The nym ring is confined to this standalone build; the wallet lock
 stays ring-free at runtime.
 
+## Step 3 (#2513) claim — Android transport (2026-07-21)
+
+CLAIMED by the reboot_nym-worktree agent (the same agent that built the
+CP-3 shim, d591b7a7b). Per the Android-first reorder, #2513 is the next
+buildable step: cross-compile `zingo-nym-proxy-ffi` for the Android ABIs
+with cargo-ndk, generate the Kotlin bindings with uniffi-bindgen, and
+package the `.so` files for `jniLibs`. File claims:
+
+- `zingo-netutils/` standalone workspace ONLY (the shim crate, its cargo
+  config for Android targets, and any DRY extraction of the health-gate
+  loop into the lib).
+- `tools/workbench/`: an Android packaging tool, if one proves needed.
+- this file.
+
+No zingolib/src claims — the wallet-side attach seam (#2503) is complete
+and untouched here. Other agents: please claim around, not inside,
+`zingo-netutils/`.
+
+STEP-3 PROGRESS (2026-07-21, uncommitted): the named grind did not bite.
+The shim cross-compiles clean under NDK r28c (cargo-ndk was already on
+the host) for arm64-v8a (debug and release) and x86_64 (debug) —
+aws-lc-rs and nym's transitive ring both compiled without intervention.
+The release arm64 `.so` is 31 MB pre-strip. A new workspace member,
+`zingo-netutils/uniffi-bindgen` (`zingo-uniffi-bindgen`), is the
+uniffi-recommended project-local bindgen binary (uniffi 0.28 + cli
+feature, forbid intact, clippy clean); library-mode generation against
+the host cdylib produced the Kotlin bindings at
+`nym-proxy-ffi/bindings/kotlin/`, and the full surface
+(`MixnetProxyHandle.start/socks5Address/stop`, `ProxyDeathObserver`)
+round-tripped. Remaining for #2513: decide whether generated bindings
+are committed or build products, jniLibs packaging (a workbench or
+gradle concern, likely in zingo-mobile), the armv7 question, and the
+death-observer wiring from the known gaps above.
+
+STRUCTURED-BOUNDARY RULE (user directive, 2026-07-22, BOTH LANES): any
+NEW UniFFI surface — UDL or proc-macro — uses maximally structured
+types; never a bare String where something more explicit fits, and FFI
+round-trip tests accompany the surface. Applied to the shim the same
+day (uncommitted): `socks5_address() -> String` is GONE, replaced by
+`socks5_endpoint() -> Socks5Endpoint` (a record: host String, port
+u16 -> Kotlin UShort); the death observer takes a typed
+`ProxyDeathReason` enum (MixnetDisconnected { detail }), not a message
+string; unparseable listener addresses are a typed `Address` error
+variant. Tests: two Rust unit tests on the endpoint derivation plus
+`tests/ffi_roundtrip.rs`, all-Rust round trips over uniffi's safe
+`Lift`/`Lower` wire encoding (record incl. port extremes, death-reason
+enum with non-ASCII detail, every error variant). A Python
+foreign-language testcase existed briefly and was REMOVED by user
+directive (2026-07-22): never add a new language to the repo without
+human consent — the Rust wire round trip is the sanctioned pattern.
+6/6 pass under nextest; Kotlin regenerated; arm64 rebuilt clean.
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
