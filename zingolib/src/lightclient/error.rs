@@ -71,9 +71,6 @@ pub enum MigrationError {
     /// consented plan no longer describes what would be sent.
     #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
     ConsentStale,
-    /// The broadcast cadence can change only while every part is unsent.
-    #[error("Phase 2 has begun; the broadcast cadence can no longer change.")]
-    CadenceFixed,
     /// Note splitting kept producing new rounds past the round bound.
     #[error("Migration did not converge within {0} rounds.")]
     SplitDidNotConverge(usize),

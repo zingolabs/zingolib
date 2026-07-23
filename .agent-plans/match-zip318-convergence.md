@@ -55,6 +55,19 @@ The user runs nextest/container suites; this session verifies with
 `cargo check`, `cargo clippy`, `cargo fmt`, and fast targeted unit tests
 only, and proposes a commit without creating one.
 
+## Ratified follow-on (2026-07-23): deviation 5, k_max removal
+
+The user ratified retiring deviation 5 on this same branch (PR #2520):
+ZIP 318 places no cap on per-wallet multiplicity, so `k_max` is removed
+from `MigrationParams` (store `INNER_VERSION` bumps to 3; a v2 read
+discards the legacy slot), the `plan_schedule` clamp falls away, and the
+whole cadence surface that existed only to set it — the `per_bucket`
+argument of `start_ironwood_migration`, `reschedule_parts`, the
+`CadenceFixed` error, and the zingo-cli `migrate cadence` subcommand —
+is deleted. Additional file claim: `zingo-cli/src/commands.rs`.
+Deviation 2 (anchor age, rolling witness cache) remains ratified but
+unstarted; its design notes live in the session record.
+
 ## Done (2026-07-23)
 
 All edits applied and verified: `cargo check` and `cargo clippy

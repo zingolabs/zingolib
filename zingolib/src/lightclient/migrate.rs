@@ -4,8 +4,7 @@
 //! [`LightClient::plan_ironwood_migration`] →
 //! [`LightClient::start_ironwood_migration`] (consent) →
 //! [`LightClient::continue_note_splitting`] after each sync until the parts
-//! are scheduled → [`LightClient::reschedule_parts`] when the user picks the
-//! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
+//! are scheduled → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
 //! The lifecycle wiring for that flow (which call belongs to which app
@@ -395,18 +394,16 @@ impl LightClient {
     /// are bound to their notes and scheduled immediately. Otherwise the
     /// migration starts in the [`MigrationPhase::Planned`] phase and
     /// [`Self::continue_note_splitting`] drives the rounds from there.
-    /// `per_bucket` overrides `k_max` in the migration params, capping how
-    /// many parts share each broadcast window. Lower values spread parts
-    /// across more sessions (better privacy, slower completion); higher values
-    /// concentrate them (faster, more correlated). `None` keeps the default,
-    /// and the choice can be made or revised later through
-    /// [`Self::reschedule_parts`], any time before the first part is signed.
+    ///
+    /// There is no per-window multiplicity knob: ZIP 318 places no cap on
+    /// per-wallet multiplicity, so how many parts share a window follows
+    /// from the schedule alone (issue #2519, deviation 5).
+    /// <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#a-note-on-cohort-size-vs-per-wallet-multiplicity>
     pub async fn start_ironwood_migration(
         &mut self,
         account: zip32::AccountId,
         strategy: SigningStrategy,
         consented_plan_hash: [u8; 32],
-        per_bucket: Option<u32>,
     ) -> Result<(), LightClientError> {
         if strategy == SigningStrategy::PreSigned {
             return Err(MigrationError::PreSignedUnavailable.into());
@@ -432,10 +429,7 @@ impl LightClient {
         }
         let activation = wallet.ironwood_activation()?;
 
-        let mut params = MigrationParams::provisional(wallet.chain_type());
-        if let Some(k) = per_bucket {
-            params.k_max = k.max(1);
-        }
+        let params = MigrationParams::provisional(wallet.chain_type());
         let mut state = MigrationState {
             consent: ConsentBinding {
                 params_hash: params.params_hash(),
@@ -625,71 +619,6 @@ impl LightClient {
             round: next_round,
             txids,
         })
-    }
-
-    /// Chooses the Phase 2 cadence: `per_bucket` parts (at least one) share
-    /// each broadcast window. Callable any time between consent and the
-    /// first signed part, which lets a client defer the choice to the
-    /// Phase 1 → Phase 2 boundary — the natural place for a "how many
-    /// batches?" screen — instead of bundling it into the consent call.
-    ///
-    /// Before parts exist (the `Planned` and `NoteSplitting` phases) the
-    /// choice is recorded and the terminal scheduling step uses it. Once
-    /// parts are scheduled, the whole set is re-bucketed under the new
-    /// cadence with fresh randomization, starting from the next bucket
-    /// boundary. Either way the consent binding is re-recorded under the
-    /// updated parameters: the cadence tap is itself the schedule consent
-    /// (ZIP 318 FR7 — `params_hash` covers `k_max`), and the schedule the
-    /// user last confirmed is the one Phase 2 executes.
-    ///
-    /// Fails with [`MigrationError::CadenceFixed`] once any part is signed,
-    /// broadcast, confirmed, or otherwise past `Assigned`: the cadence the
-    /// remaining parts were consented under is then already partly executed.
-    /// Afterwards, re-read [`Self::migration_status`] and re-arm platform
-    /// wakes from `next_wakes` — the old schedule's times are void.
-    pub async fn reschedule_parts(&mut self, per_bucket: u32) -> Result<(), LightClientError> {
-        let mut wallet = self.wallet().write().await;
-        wallet
-            .with_migration_state(|wallet, state| {
-                if matches!(state.phase, MigrationPhase::Complete { .. })
-                    || state
-                        .parts
-                        .iter()
-                        .any(|part| !matches!(part.state, PartState::Bound | PartState::Assigned))
-                {
-                    return Err(MigrationError::CadenceFixed.into());
-                }
-
-                state.params.k_max = per_bucket.max(1);
-                state.consent = ConsentBinding {
-                    params_hash: state.params.params_hash(),
-                    plan_hash: state.consent.plan_hash,
-                    consented_at: u64::from(crate::utils::now()),
-                };
-
-                for part in state.parts.iter_mut() {
-                    if part.state == PartState::Assigned {
-                        part.unassign()?;
-                    }
-                }
-                if !state.parts.is_empty() {
-                    let now_height = wallet
-                        .sync_state
-                        .last_known_chain_height()
-                        .ok_or(WalletError::NoSyncData)?;
-                    let activation = wallet.ironwood_activation()?;
-                    plan_schedule(
-                        &mut state.parts,
-                        now_height,
-                        activation,
-                        &state.params,
-                        &mut rand::rngs::OsRng,
-                    )?;
-                }
-                wallet.save_required = true;
-                Ok::<_, LightClientError>(())
-            })
-            .ok_or(MigrationError::NoMigration)?
     }
 
     /// The broadcast-only client parts are submitted through: the dedicated
@@ -2429,7 +2358,6 @@ mod tests {
                 AccountId::ZERO,
                 SigningStrategy::LazyAtBoundary,
                 plan_hash(&plan),
-                None,
             )
             .await;
         assert!(
@@ -2756,121 +2684,6 @@ mod tests {
                 state.parts[0].bucket_index,
                 Some(current_bucket),
                 "the overdue part was folded into the current window"
-            );
-        }
-    }
-
-    /// Cadence rescheduling: the Phase 2 "how many batches?" choice,
-    /// deferrable to the Phase 1 → Phase 2 boundary.
-    mod reschedule_parts {
-        use super::*;
-        use crate::lightclient::error::{LightClientError, MigrationError};
-
-        /// The parameter set `reschedule_parts(per_bucket)` must rebind
-        /// consent to.
-        fn params_with_cadence(wallet: &LightWallet, per_bucket: u32) -> MigrationParams {
-            let mut params = MigrationParams::provisional(wallet.chain_type());
-            params.k_max = per_bucket;
-            params
-        }
-
-        #[tokio::test]
-        async fn rebuckets_scheduled_parts_and_rebinds_consent() {
-            let (mut wallet, bound_note) = wallet_with_migration_note(360);
-            let params = MigrationParams::provisional(wallet.chain_type());
-            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
-            part.assign(0).expect("fresh parts are bound");
-            wallet.migration = Some(scheduled_state(params, vec![part]));
-            let expected_params = params_with_cadence(&wallet, 3);
-
-            let mut client = LightClient::new_for_test(wallet).await;
-            client.reschedule_parts(3).await.expect("reschedulable");
-
-            let wallet = client.wallet().read().await;
-            let state = wallet.migration.as_ref().expect("the migration stands");
-            assert_eq!(state.params.k_max, 3);
-            assert_eq!(
-                state.consent.params_hash,
-                expected_params.params_hash(),
-                "the cadence tap is the schedule consent"
-            );
-            assert!(state.consent.consented_at > 0, "consent time re-recorded");
-            let part = &state.parts[0];
-            assert_eq!(part.state, PartState::Assigned);
-            let current_bucket = schedule::bucket_index(
-                zcash_protocol::consensus::BlockHeight::from_u32(360),
-                state.params.bucket_modulus,
-            );
-            assert_eq!(
-                part.bucket_index,
-                Some(current_bucket + 1),
-                "re-bucketed after the current bucket containing tip 360"
-            );
-            assert!(part.target_height.is_some(), "fresh random target drawn");
-            assert!(wallet.save_required, "the reschedule must persist");
-        }
-
-        #[tokio::test]
-        async fn frozen_once_a_part_is_signed() {
-            let (mut wallet, bound_note) = wallet_with_migration_note(360);
-            let params = MigrationParams::provisional(wallet.chain_type());
-            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
-            part.assign(1).expect("fresh parts are bound");
-            part.mark_signed(
-                zcash_primitives::transaction::TxId::from_bytes([7; 32]),
-                zcash_protocol::consensus::BlockHeight::from_u32(600),
-                None,
-            )
-            .expect("assigned parts sign");
-            wallet.migration = Some(scheduled_state(params, vec![part]));
-
-            let mut client = LightClient::new_for_test(wallet).await;
-            let result = client.reschedule_parts(2).await;
-            assert!(
-                matches!(
-                    result,
-                    Err(LightClientError::MigrationError(
-                        MigrationError::CadenceFixed
-                    ))
-                ),
-                "got {result:?}"
-            );
-        }
-
-        /// Before parts exist the call records the choice for the terminal
-        /// scheduling step, and a zero clamps to one part per window.
-        #[tokio::test]
-        async fn mid_split_choice_is_recorded_and_clamped() {
-            let (mut wallet, _) = wallet_with_migration_note(360);
-            let params = MigrationParams::provisional(wallet.chain_type());
-            let mut state = scheduled_state(params, Vec::new());
-            state.phase = MigrationPhase::Planned;
-            wallet.migration = Some(state);
-            let expected_params = params_with_cadence(&wallet, 1);
-
-            let mut client = LightClient::new_for_test(wallet).await;
-            client.reschedule_parts(0).await.expect("recordable");
-
-            let wallet = client.wallet().read().await;
-            let state = wallet.migration.as_ref().expect("the migration stands");
-            assert_eq!(state.params.k_max, 1, "zero clamps to one");
-            assert_eq!(state.consent.params_hash, expected_params.params_hash());
-            assert_eq!(state.phase, MigrationPhase::Planned, "phase untouched");
-        }
-
-        #[tokio::test]
-        async fn without_a_migration_errors() {
-            let (wallet, _) = wallet_with_migration_note(360);
-            let mut client = LightClient::new_for_test(wallet).await;
-            let result = client.reschedule_parts(4).await;
-            assert!(
-                matches!(
-                    result,
-                    Err(LightClientError::MigrationError(
-                        MigrationError::NoMigration
-                    ))
-                ),
-                "got {result:?}"
             );
         }
     }

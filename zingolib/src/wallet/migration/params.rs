@@ -57,8 +57,6 @@ pub struct MigrationParams {
     /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
     /// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L95>
     pub bucket_modulus: u32,
-    /// `K_MAX`: the per-cohort multiplicity bound.
-    pub k_max: u32,
     /// The signing-session target the schedule aims at for typical balances.
     pub target_sessions: u32,
     /// Bounds the notes merged (spends) or created (outputs) by one
@@ -99,6 +97,13 @@ impl MigrationParams {
             // deviations 3 and 4), and the denomination set widened to the
             // ZIP's full `{1, 2, 5} × 10^k` ladder between 0.01 and
             // 10000 ZEC (previously powers of ten between 0.001 and 100).
+            // The former `k_max` per-cohort multiplicity bound is gone
+            // (issue #2519, deviation 5): ZIP 318 deliberately places no
+            // cap on per-wallet multiplicity, since truncating the outcome
+            // of random draws with an arbitrary bound would only distort
+            // the distribution.
+            // <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#a-note-on-cohort-size-vs-per-wallet-multiplicity>
+            // <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L40-L45>
             version: 1,
             denominations: vec![
                 10_000 * COIN, // 10000 ZEC, the largest crossing denomination
@@ -125,7 +130,6 @@ impl MigrationParams {
             dust_floor: COIN / 100,
             sweep_min: 2 * MARGINAL_FEE,
             bucket_modulus: 144,
-            k_max: 8,
             target_sessions: 6,
             max_actions_per_split_tx: 32,
             expiry_modulus: 34_560,
@@ -149,7 +153,6 @@ impl MigrationParams {
         hasher.update(&self.dust_floor.to_le_bytes());
         hasher.update(&self.sweep_min.to_le_bytes());
         hasher.update(&self.bucket_modulus.to_le_bytes());
-        hasher.update(&self.k_max.to_le_bytes());
         hasher.update(&self.target_sessions.to_le_bytes());
         hasher.update(&(self.max_actions_per_split_tx as u64).to_le_bytes());
         hasher.update(&self.expiry_modulus.to_le_bytes());

@@ -2173,10 +2173,6 @@ pub enum MigrationCommandError {
     MissingPlanHash,
     #[error("the plan hash must be 64 hex characters.")]
     MalformedPlanHash,
-    #[error("--per-bucket expects a positive integer.")]
-    MalformedPerBucket,
-    #[error("cadence expects the number of parts per broadcast window.")]
-    MalformedCadence,
     #[error("spacing must be a number of seconds.")]
     MalformedSpacing,
     #[error("sync failed: {0}")]
@@ -2190,23 +2186,13 @@ pub enum MigrationCommandError {
 #[derive(Debug, PartialEq, Eq)]
 enum MigrationSubCommand {
     Plan,
-    Start {
-        plan_hash: [u8; 32],
-        per_bucket: Option<u32>,
-    },
+    Start { plan_hash: [u8; 32] },
     Continue,
-    Cadence {
-        per_bucket: u32,
-    },
-    Execute {
-        spacing: std::time::Duration,
-    },
+    Execute { spacing: std::time::Duration },
     Auto,
     Status,
     Reconcile,
-    Catchup {
-        spacing: std::time::Duration,
-    },
+    Catchup { spacing: std::time::Duration },
     Cancel,
 }
 
@@ -2223,31 +2209,9 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
                 .ok()
                 .and_then(|bytes| bytes.try_into().ok())
                 .ok_or(MigrationCommandError::MalformedPlanHash)?;
-            let mut per_bucket = None;
-            let mut remaining = args[2..].iter();
-            while let Some(arg) = remaining.next() {
-                if *arg == "--per-bucket" {
-                    per_bucket = Some(
-                        remaining
-                            .next()
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .ok_or(MigrationCommandError::MalformedPerBucket)?,
-                    );
-                }
-            }
-            Ok(MigrationSubCommand::Start {
-                plan_hash,
-                per_bucket,
-            })
+            Ok(MigrationSubCommand::Start { plan_hash })
         }
         "continue" => Ok(MigrationSubCommand::Continue),
-        "cadence" => {
-            let per_bucket = args
-                .get(1)
-                .and_then(|value| value.parse::<u32>().ok())
-                .ok_or(MigrationCommandError::MalformedCadence)?;
-            Ok(MigrationSubCommand::Cadence { per_bucket })
-        }
         "execute" => {
             let spacing = match args.get(1) {
                 Some(seconds) => std::time::Duration::from_secs(
@@ -2323,15 +2287,11 @@ fn run_migration(
             }
             .pretty(2)
         }
-        MigrationSubCommand::Start {
-            plan_hash,
-            per_bucket,
-        } => {
+        MigrationSubCommand::Start { plan_hash } => {
             RT.block_on(lightclient.start_ironwood_migration(
                 zip32::AccountId::ZERO,
                 migration::SigningStrategy::LazyAtBoundary,
                 plan_hash,
-                per_bucket,
             ))?;
             "Migration started.".to_string()
         }
@@ -2357,10 +2317,6 @@ fn run_migration(
                     "Note splitting complete; parts are scheduled.".to_string()
                 }
             }
-        }
-        MigrationSubCommand::Cadence { per_bucket } => {
-            RT.block_on(lightclient.reschedule_parts(per_bucket))?;
-            format!("Cadence set to {per_bucket} per window; the schedule was re-drawn.")
         }
         MigrationSubCommand::Execute { spacing } => {
             RT.block_on(lightclient.sync_and_await())
@@ -2495,17 +2451,14 @@ impl Command for MigrationCommand {
             `plan` computes the migration plan (note-splitting rounds, parts, fees,
             stranded dust) from the wallet's spendable Orchard notes and prints its plan
             hash. Nothing is signed or sent.
-            `start <plan_hash> [--per-bucket N]` records consent to the plan with that
-            hash and begins the migration. --per-bucket N caps how many parts share each
-            broadcast window (lower = more sessions, better privacy; higher = fewer
-            sessions, faster). Fails if the wallet's notes changed since planning.
+            `start <plan_hash>` records consent to the plan with that hash and begins
+            the migration. Fails if the wallet's notes changed since planning. How many
+            parts share a broadcast window follows from the schedule alone: ZIP 318
+            places no per-wallet multiplicity cap.
             `continue` syncs the wallet, then drives one step of note splitting:
             broadcasts the next round of Orchard self-sends, or, once every note is
             part-ready, binds the parts to their notes and schedules them. Repeat
             (syncing between rounds) until it reports the parts scheduled.
-            `cadence <N>` sets how many parts share each broadcast window and re-draws
-            the schedule. Usable until the first part is signed, so the choice can wait
-            for the end of note splitting.
             `execute [spacing_seconds]` syncs, then sends everything the migration owes
             right now in one batch: the current window's due parts plus any missed
             windows' parts, sequenced with the given spacing (default 30 seconds).
@@ -2526,9 +2479,8 @@ impl Command for MigrationCommand {
 
             Usage:
             migration plan
-            migration start <plan_hash> [--per-bucket N]
+            migration start <plan_hash>
             migration continue
-            migration cadence <N>
             migration execute [spacing_seconds]
             migration auto
             migration status
@@ -2664,15 +2616,14 @@ mod migration_command_parsing {
     use super::*;
 
     #[test]
-    fn start_parses_hash_and_per_bucket() {
+    fn start_parses_hash() {
         let hash_hex = "11".repeat(32);
-        let parsed = parse_migration_args(&["start", &hash_hex, "--per-bucket", "3"])
-            .expect("well-formed arguments parse");
+        let parsed =
+            parse_migration_args(&["start", &hash_hex]).expect("well-formed arguments parse");
         assert_eq!(
             parsed,
             MigrationSubCommand::Start {
                 plan_hash: [0x11; 32],
-                per_bucket: Some(3),
             }
         );
     }
@@ -2694,14 +2645,12 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn cadence_requires_a_count() {
-        assert_eq!(
-            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
-            MigrationSubCommand::Cadence { per_bucket: 4 }
-        );
+    fn cadence_is_no_longer_a_sub_command() {
+        // ZIP 318 places no per-wallet multiplicity cap (issue #2519,
+        // deviation 5), so the cadence knob is gone.
         assert!(matches!(
-            parse_migration_args(&["cadence"]),
-            Err(MigrationCommandError::MalformedCadence)
+            parse_migration_args(&["cadence", "4"]),
+            Err(MigrationCommandError::InvalidSubCommand)
         ));
     }
 
@@ -2738,8 +2687,8 @@ mod migration_command_parsing {
             "Error: migration command expects a sub-command. Type \"help migration\" for usage."
         );
         assert_eq!(
-            format!("Error: {}", MigrationCommandError::MalformedPerBucket),
-            "Error: --per-bucket expects a positive integer."
+            format!("Error: {}", MigrationCommandError::MalformedSpacing),
+            "Error: spacing must be a number of seconds."
         );
     }
 }

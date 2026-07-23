@@ -19,7 +19,8 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
-const INNER_VERSION: u8 = 2;
+/// Version 3 drops the `k_max` params slot (issue #2519, deviation 5).
+const INNER_VERSION: u8 = 3;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -34,7 +35,6 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
     writer.write_u64::<LittleEndian>(params.dust_floor)?;
     writer.write_u64::<LittleEndian>(params.sweep_min)?;
     writer.write_u32::<LittleEndian>(params.bucket_modulus)?;
-    writer.write_u32::<LittleEndian>(params.k_max)?;
     writer.write_u32::<LittleEndian>(params.target_sessions)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
     writer.write_u32::<LittleEndian>(params.expiry_modulus)?;
@@ -99,7 +99,13 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             "bucket_modulus must be nonzero",
         ));
     }
-    let k_max = reader.read_u32::<LittleEndian>()?;
+    // Version 2 carried a `k_max` multiplicity cap in a u32 slot here;
+    // ZIP 318 places no per-wallet multiplicity cap (issue #2519,
+    // deviation 5), so version 3 drops the slot and a legacy read
+    // discards it.
+    if inner_version <= 2 {
+        let _legacy_k_max = reader.read_u32::<LittleEndian>()?;
+    }
     let target_sessions = reader.read_u32::<LittleEndian>()?;
     let max_actions_per_split_tx =
         usize::try_from(reader.read_u64::<LittleEndian>()?).map_err(|_| {
@@ -119,7 +125,6 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         dust_floor,
         sweep_min,
         bucket_modulus,
-        k_max,
         target_sessions,
         max_actions_per_split_tx,
         expiry_modulus,
@@ -343,7 +348,6 @@ mod tests {
             any::<u64>(),
             any::<u32>(),
             any::<u32>(),
-            any::<u32>(),
             1usize..=1000,
             any::<u32>(),
             any::<u64>(),
@@ -356,7 +360,6 @@ mod tests {
                     dust_floor,
                     sweep_min,
                     bucket_modulus,
-                    k_max,
                     target_sessions,
                     max_actions_per_split_tx,
                     expiry_modulus,
@@ -368,7 +371,6 @@ mod tests {
                     dust_floor,
                     sweep_min,
                     bucket_modulus,
-                    k_max,
                     target_sessions,
                     max_actions_per_split_tx,
                     expiry_modulus,
@@ -552,9 +554,11 @@ mod tests {
         assert!(read(bytes.as_slice()).is_err());
     }
 
-    /// Version 2 only appended the mode byte, so a v1 blob is a v2 blob
-    /// with the version byte lowered and the trailing mode byte dropped.
-    /// Reading it must succeed and default the mode to `Scheduled`, the
+    /// Version 2 only appended the mode byte, and version 3 dropped the
+    /// legacy `k_max` params slot; a v1 blob is therefore the current blob
+    /// with the version byte lowered, a `k_max` u32 re-inserted after
+    /// `bucket_modulus`, and the trailing mode byte dropped. Reading it
+    /// must succeed and default the mode to `Scheduled`, the
     /// conservative reading that makes the immediate path refuse to
     /// collapse an old persisted state.
     #[test]
@@ -564,6 +568,14 @@ mod tests {
         let mut bytes = Vec::new();
         write(&mut bytes, &state).expect("writes");
         bytes[0] = 1;
+        // Offset of the retired `k_max` slot: the inner version byte, the
+        // params version, the denominations vector (a single CompactSize
+        // length byte below 253 entries plus eight bytes each), denom_cap,
+        // dust_floor, sweep_min, and bucket_modulus.
+        let denominations = state.params.denominations.len();
+        assert!(denominations < 253, "CompactSize stays a single byte");
+        let k_max_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
+        bytes.splice(k_max_offset..k_max_offset, 8u32.to_le_bytes());
         bytes.pop();
 
         let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");

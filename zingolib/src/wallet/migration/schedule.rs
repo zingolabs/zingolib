@@ -155,8 +155,16 @@ pub fn canonical_expiry_height(
 /// Assigns every [`PartState::Bound`] part to an anchor-height bucket and
 /// picks a random broadcast target within that bucket's window.
 ///
-/// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
-/// share each cohort. Cohorts fill consecutive future buckets starting at
+/// Multiplicity `k = max(1, ceil(parts / target_sessions))` parts share
+/// each cohort. There is deliberately no upper cap: ZIP 318 places no
+/// bound on per-wallet multiplicity, since truncating the outcome of
+/// random draws with an arbitrary bound would only distort the
+/// distribution (issue #2519, deviation 5).
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#a-note-on-cohort-size-vs-per-wallet-multiplicity>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L40-L45>
+///
+/// Cohorts fill consecutive future buckets starting at
 /// [`first_permitted_bucket`] — after `now_height`'s bucket and at or above
 /// the pool's activation floor — largest denominations first. Bucket
 /// assignments are deterministic; target heights within each window are
@@ -182,7 +190,7 @@ pub fn plan_schedule(
     let k = u64::try_from(unassigned.len())
         .expect("part count fits u64")
         .div_ceil(u64::from(params.target_sessions.max(1)))
-        .clamp(1, u64::from(params.k_max.max(1)));
+        .max(1);
 
     // Largest denominations first, ties broken by part id for determinism.
     let mut ranked = unassigned;
@@ -427,11 +435,9 @@ mod tests {
             denominations in proptest::collection::vec(1u64..=10_000_000_000, 1..80),
             now in 0u32..=10_000_000,
             target_sessions in 1u32..=12,
-            k_max in 1u32..=16,
         ) {
             let mut params = params();
             params.target_sessions = target_sessions;
-            params.k_max = k_max;
             let now = BlockHeight::from_u32(now);
 
             let mut parts = parts_with_denominations(&denominations);
@@ -439,7 +445,7 @@ mod tests {
 
             let k = (denominations.len() as u64)
                 .div_ceil(u64::from(target_sessions))
-                .clamp(1, u64::from(k_max));
+                .max(1);
             let mut cohort_sizes: std::collections::BTreeMap<u64, u64> = Default::default();
             let current_bucket = bucket_index(now, params.bucket_modulus);
             for part in &parts {
