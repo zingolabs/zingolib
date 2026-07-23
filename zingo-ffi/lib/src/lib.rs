@@ -2714,11 +2714,14 @@ pub fn reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError> {
 /// Returns `{ orchard_confirmed_spendable, phase, parts_total,
 /// parts_confirmed, value_total, value_migrated, per_bucket, bucket_modulus,
 /// next_wakes: [{ bucket_index, boundary, part_ids, denominations,
-/// estimated_unix_time, estimated_target_unix_time }] }`. `phase` is `null`
+/// estimated_unix_time, estimated_target_unix_time }], due_now }`. `phase` is `null`
 /// when no migration is in progress, else `{ kind }` with per-kind fields
 /// (`round`/`pending_txids` while note splitting, `residual` when complete).
 /// `denominations` (zatoshis) mirror `part_ids` element-for-element, so a
 /// schedule screen renders each window's batch without a second call.
+/// `due_now` is the batch the client can broadcast this instant (`{ boundary,
+/// part_ids, denominations }`) or `null` when a send would build nothing; it
+/// carries the current window, which `next_wakes` (future windows only) omits.
 pub fn migration_status() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2767,6 +2770,22 @@ pub fn migration_status() -> Result<String, ZingolibError> {
                     }
                 })
                 .collect::<Vec<_>>();
+            // The window the chain is currently inside, which next_wakes
+            // structurally omits (it lists future windows only). `null` when a
+            // send this instant would build nothing, so the client's Send
+            // action gates on it being present.
+            let due_now = match &status.due_now {
+                Some(batch) => object! {
+                    "boundary" => u32::from(batch.boundary),
+                    "part_ids" => batch
+                        .part_ids
+                        .iter()
+                        .map(|id| id.0)
+                        .collect::<Vec<_>>(),
+                    "denominations" => batch.denominations.clone(),
+                },
+                None => json::JsonValue::Null,
+            };
             Ok(object! {
                 "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
                 "phase" => match &status.phase {
@@ -2780,6 +2799,7 @@ pub fn migration_status() -> Result<String, ZingolibError> {
                 "per_bucket" => per_bucket,
                 "bucket_modulus" => bucket_modulus,
                 "next_wakes" => next_wakes,
+                "due_now" => due_now,
             }
             .pretty(2))
         })

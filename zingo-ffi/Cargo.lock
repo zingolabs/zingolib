@@ -2261,7 +2261,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "bip32",
  "byteorder",
@@ -5005,7 +5005,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -5030,7 +5030,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -5044,7 +5044,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -5059,7 +5059,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -5082,7 +5082,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5140,7 +5140,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#cb0757a8d618522244dd5e7da44c03b2b9e0a731"
+source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#0d2039e2fde0572f6bec54bf946e189f23bc7e36"
 dependencies = [
  "http",
  "nonempty",
