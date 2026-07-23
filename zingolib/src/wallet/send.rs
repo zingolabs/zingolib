@@ -98,7 +98,7 @@ impl LightWallet {
         };
         let scan_ranges = self.sync_state.scan_ranges();
         // The scan floor: the wallet's Birthday clamped to the Pool
-        // Activation (ADR 0012, never a local mapping) — the earliest
+        // Activation (ADR 0014, never a local mapping) — the earliest
         // height that must be scanned before a note in this pool can be
         // witnessed. Each pool's commitment tree exists only from its
         // activation height. Sapling and Orchard implicitly rely on

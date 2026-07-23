@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
     ShieldedPool,
-    consensus::{self, BlockHeight, NetworkUpgrade},
+    consensus::{self, BlockHeight},
 };
 
 use crate::{
@@ -975,9 +975,10 @@ where
         ))
     } else {
         // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height = consensus_parameters
-            .activation_height(NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
+        let sapling_activation_height =
+            crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
+                .expect("should have some sapling activation height")
+                .height();
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
@@ -1054,17 +1055,10 @@ pub(super) fn add_shard_ranges(
     sync_state: &mut SyncState,
     subtree_roots: &[SubtreeRoot],
 ) {
-    let network_upgrade_activation_height = match shielded_protocol {
-        ShieldedPool::Sapling => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("activation height should exist for this network upgrade!"),
-        ShieldedPool::Orchard => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Nu5)
-            .expect("activation height should exist for this network upgrade!"),
-        ShieldedPool::Ironwood => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Nu6_3)
-            .expect("activation height should exist for this network upgrade!"),
-    };
+    let network_upgrade_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+            .expect("activation height should exist for this network upgrade!")
+            .height();
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
         ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),

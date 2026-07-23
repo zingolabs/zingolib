@@ -1118,7 +1118,7 @@ impl OutputInterface for TransparentCoin {
 
 /// The network upgrade at which a shielded pool begins to exist.
 ///
-/// This is the workspace's single pool-to-upgrade mapping (ADR 0012 in the
+/// This is the workspace's single pool-to-upgrade mapping (ADR 0014 in the
 /// workspace root): upstream `zcash_protocol` deliberately ships
 /// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
 /// is defined exactly once, here. Every height clamp involving a pool's
