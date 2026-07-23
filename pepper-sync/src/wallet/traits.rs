@@ -372,33 +372,10 @@ pub trait SyncShardTrees: SyncWallet {
         truncate_height: BlockHeight,
     ) -> Result<(), SyncError<Self::Error>> {
         let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
-        let sapling = plan_pool_truncation(
-            tree_facts(&shard_trees.sapling, truncate_height),
-            truncate_height,
-        );
-        apply_pool_truncation(
-            &mut shard_trees.sapling,
-            sapling,
-            truncate_height,
-            PoolType::SAPLING,
-        )?;
-        let orchard = plan_pool_truncation(
-            tree_facts(&shard_trees.orchard, truncate_height),
-            truncate_height,
-        );
-        apply_pool_truncation(
-            &mut shard_trees.orchard,
-            orchard,
-            truncate_height,
-            PoolType::ORCHARD,
-        )?;
-        let ironwood = plan_pool_truncation(
-            tree_facts(&shard_trees.ironwood, truncate_height),
-            truncate_height,
-        );
-        apply_pool_truncation(
+        truncate_pool_tree(&mut shard_trees.sapling, truncate_height, PoolType::SAPLING)?;
+        truncate_pool_tree(&mut shard_trees.orchard, truncate_height, PoolType::ORCHARD)?;
+        truncate_pool_tree(
             &mut shard_trees.ironwood,
-            ironwood,
             truncate_height,
             PoolType::IRONWOOD,
         )?;
@@ -416,7 +393,9 @@ where
     ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize)
 }
 
-/// Applies one pool's [`PoolTruncation`] outcome to its shard tree.
+/// Truncates one pool's shard tree: reads the tree's facts, decides its
+/// outcome through the pure per-pool rule ([`plan_pool_truncation`]),
+/// and applies it.
 ///
 /// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
 /// checkpoint at `truncate_height`; [`PoolTruncation::Untouched`] leaves
@@ -424,9 +403,8 @@ where
 /// rollback the tree store unexpectedly refuses — becomes
 /// [`SyncError::TruncationError`] naming the pool, so the caller can
 /// fall back to the clear-and-rescan recovery.
-fn apply_pool_truncation<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+fn truncate_pool_tree<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
-    outcome: PoolTruncation,
     truncate_height: BlockHeight,
     pool: PoolType,
 ) -> Result<(), SyncError<E>>
@@ -434,7 +412,7 @@ where
     H: Hashable + Clone + PartialEq,
     E: std::fmt::Debug + std::fmt::Display,
 {
-    match outcome {
+    match plan_pool_truncation(tree_facts(tree, truncate_height), truncate_height) {
         PoolTruncation::Untouched => Ok(()),
         PoolTruncation::ToCheckpoint { checkpoint } => {
             match tree.rollback_to_checkpoint(checkpoint)? {
