@@ -1048,6 +1048,7 @@ mod proposal_shape {
             },
             params,
             strategy: SigningStrategy::LazyAtBoundary,
+            mode: crate::wallet::migration::MigrationMode::Scheduled,
             account: zip32::AccountId::ZERO,
             phase: MigrationPhase::PartsScheduled,
             parts: vec![PartRecord::new(

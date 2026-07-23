@@ -342,6 +342,29 @@ pub enum SkipReason {
         /// The boundary whose tree state is unavailable.
         boundary: BlockHeight,
     },
+    /// The part's boundary predates the NU6.3 activation height, so no
+    /// ironwood output can anchor there. Reconciliation reassigns the part
+    /// once post-activation buckets open.
+    BoundaryBeforeActivation {
+        /// The boundary the part anchors to.
+        boundary: BlockHeight,
+        /// The NU6.3 activation height it fails to reach.
+        activation: BlockHeight,
+    },
+    /// The bound note is already spent (the user insistently spent it, or a
+    /// restart raced an earlier broadcast). Reconciliation invalidates the
+    /// part and recommends a remainder replan.
+    BoundNoteSpent {
+        /// The spent note's wallet output id.
+        bound: OutputId,
+    },
+    /// The wallet's record of the bound note no longer matches the part
+    /// record (nullifier disagreement). Reconciliation resolves the
+    /// divergence.
+    BoundNoteMismatch {
+        /// The mismatched note's wallet output id.
+        bound: OutputId,
+    },
 }
 
 impl crate::wallet::LightWallet {
@@ -430,7 +453,11 @@ impl crate::wallet::LightWallet {
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the tree state is unavailable.
+    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// pass — the tree state is unavailable, the boundary predates the
+    /// NU6.3 activation, or the bound note is spent or has diverged from
+    /// the part record — so one part's condition never aborts the whole
+    /// broadcast pass; skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
@@ -464,9 +491,10 @@ impl crate::wallet::LightWallet {
                 WalletError::MigrationBuild("NU6.3 has no activation height".to_string())
             })?;
         if boundary < activation {
-            return Err(WalletError::MigrationBuild(format!(
-                "part boundary {boundary} is below the NU6.3 activation height {activation}"
-            )));
+            return Ok(PrepareResult::Skip(SkipReason::BoundaryBeforeActivation {
+                boundary,
+                activation,
+            }));
         }
 
         let tree_tip = self
@@ -502,14 +530,14 @@ impl crate::wallet::LightWallet {
                 .nullifier()
                 .is_none_or(|nullifier| nullifier.to_bytes() != bound.nullifier)
             {
-                return Err(WalletError::MigrationDeviation(
-                    "bound note's nullifier does not match the part record".to_string(),
-                ));
+                return Ok(PrepareResult::Skip(SkipReason::BoundNoteMismatch {
+                    bound: bound.output_id,
+                }));
             }
             if wallet_note.spending_transaction().is_some() {
-                return Err(WalletError::MigrationBuild(
-                    "bound note is already spent; reconciliation required".to_string(),
-                ));
+                return Ok(PrepareResult::Skip(SkipReason::BoundNoteSpent {
+                    bound: bound.output_id,
+                }));
             }
             (*wallet_note.note(), wallet_note.value())
         };

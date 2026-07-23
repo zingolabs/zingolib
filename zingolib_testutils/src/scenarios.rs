@@ -169,6 +169,38 @@ pub fn default_test_activation_heights() -> ActivationHeights {
         .build()
 }
 
+/// The activation-height schedule of the externally consumed
+/// `*_mobileclient` scenarios: [`default_test_activation_heights`] with
+/// NU6.3 deferred (never activating).
+///
+/// zingo-mobile pins these scenarios (and their port, 20_000) outside
+/// this workspace and expects pre-ironwood semantics: funding lands in
+/// the orchard pool on a chain that never crosses the NU6.3 activation.
+/// The workspace default flipped to ironwood-era (ADR 0009), which
+/// silently changed the mobileclient scenarios' behavior with no diff
+/// line in their own functions — the drift issue zingolabs/zingolib#2493
+/// records. Deferring NU6.3 here restores the external contract: V5
+/// transactions, orchard-pool funding, and
+/// `normalize_shielded_faucet_balance` structurally inert (its
+/// offload-and-drain step is gated on activation proximity).
+pub fn mobileclient_activation_heights() -> ActivationHeights {
+    let fixture =
+        wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());
+    ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(None)
+        .set_nu7(None)
+        .build()
+}
+
 /// The deferred (lockbox) funding stream in the harness's regtest fixture
 /// skims 1/100 of the block subsidy from its start height (2) onward.
 pub const DEFERRED_STREAM_SKIM: u64 = block_rewards::CANOPY / 100;
@@ -1021,7 +1053,10 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
         // would panic at its first send. (zebrad cannot mine to Sapling,
         // so Orchard is the only immediately-spendable pool.)
         PoolType::ORCHARD,
-        default_test_activation_heights(),
+        // NOT the workspace default: zingo-mobile pins pre-ironwood
+        // semantics for these scenarios (see
+        // [`mobileclient_activation_heights`]).
+        mobileclient_activation_heights(),
         None,
     )
     .await
@@ -1047,10 +1082,10 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
             true,
         )
         .await;
-    // Fund the faucet with spendable Orchard coinbase, exactly as
-    // faucet()/faucet_recipient() do: normalize_shielded_faucet_balance
-    // mines the NU6.1/NU6.2 ladder-clearing blocks, offloads the excess and
-    // confirms, leaving a spendable orchard balance.
+    // The mobileclient chain defers NU6.3, so this normalization call is
+    // structurally inert (its offload-and-drain step is gated on
+    // activation proximity); it stays for parity with faucet() should the
+    // mobileclient schedule ever change.
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -1400,4 +1435,26 @@ where
     assert_eq!(local_net.validator().get_chain_height().await, target);
 
     target
+}
+
+#[cfg(test)]
+mod tests {
+    /// The externally consumed mobileclient scenarios must never cross
+    /// the NU6.3 activation: zingo-mobile pins pre-ironwood semantics
+    /// (orchard-pool funding, V5 transactions) outside this workspace,
+    /// and the workspace default flipping to ironwood-era must not leak
+    /// into them again (zingolabs/zingolib#2493).
+    #[test]
+    fn mobileclient_heights_defer_ironwood() {
+        let mobileclient = super::mobileclient_activation_heights();
+        assert_eq!(mobileclient.nu6_3(), None);
+
+        // Everything below NU6.3 stays aligned with the workspace
+        // default, so only the ironwood flip is pinned out.
+        let default = super::default_test_activation_heights();
+        assert_eq!(mobileclient.nu5(), default.nu5());
+        assert_eq!(mobileclient.nu6(), default.nu6());
+        assert_eq!(mobileclient.nu6_1(), default.nu6_1());
+        assert_eq!(mobileclient.nu6_2(), default.nu6_2());
+    }
 }

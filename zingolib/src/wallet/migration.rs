@@ -76,6 +76,23 @@ pub struct ConsentBinding {
     pub consented_at: u64,
 }
 
+/// Which flow created and drives this migration.
+///
+/// The distinction is consent-bearing: a [`Scheduled`](Self::Scheduled)
+/// migration's bucket windows are what the user confirmed, so the
+/// immediate path must refuse to collapse them, while an
+/// [`Immediate`](Self::Immediate) migration may be resumed and re-driven
+/// by another immediate call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationMode {
+    /// The consent-scheduled flow of `start_ironwood_migration`: parts
+    /// broadcast inside their consented bucket windows.
+    Scheduled,
+    /// The one-call interactive flow of `migrate_to_ironwood`: everything
+    /// sends now, with the disclosed correlation.
+    Immediate,
+}
+
 /// The coarse stage the migration is in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MigrationPhase {
@@ -109,6 +126,8 @@ pub struct MigrationState {
     pub consent: ConsentBinding,
     /// How Phase 2 transactions are signed.
     pub strategy: SigningStrategy,
+    /// Which flow created and drives this migration.
+    pub mode: MigrationMode,
     /// The account being migrated.
     pub account: zip32::AccountId,
     /// The coarse stage.

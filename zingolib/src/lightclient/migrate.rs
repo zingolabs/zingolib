@@ -35,10 +35,10 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
-    BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationParams, MigrationPhase,
-    MigrationPlan, MigrationState, PartId, PartState, PrepareResult, RecommendedAction,
-    ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration, plan_schedule,
-    reconcile, schedule,
+    BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationMode, MigrationParams,
+    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
+    RecommendedAction, ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration,
+    plan_schedule, reconcile, schedule,
 };
 
 pub mod broadcast_grpc;
@@ -434,6 +434,9 @@ impl LightClient {
         if hash != consented_plan_hash {
             return Err(MigrationError::ConsentStale.into());
         }
+        if !plan.is_split() {
+            return Err(MigrationError::NoteSplittingRequired.into());
+        }
 
         let mut wallet = self.wallet().write().await;
         if wallet.migration.is_some() {
@@ -452,24 +455,23 @@ impl LightClient {
             },
             params,
             strategy,
+            mode: MigrationMode::Scheduled,
             account,
             phase: MigrationPhase::Planned,
             parts: Vec::new(),
         };
-        if plan.is_split() {
-            wallet.bind_parts_to_notes(&mut state, account)?;
-            let now_height = wallet
-                .sync_state
-                .last_known_chain_height()
-                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-            plan_schedule(
-                &mut state.parts,
-                now_height,
-                &state.params,
-                &mut rand::rngs::OsRng,
-            )?;
-            state.phase = MigrationPhase::PartsScheduled;
-        }
+        wallet.bind_parts_to_notes(&mut state, account)?;
+        let now_height = wallet
+            .sync_state
+            .last_known_chain_height()
+            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        plan_schedule(
+            &mut state.parts,
+            now_height,
+            &state.params,
+            &mut rand::rngs::OsRng,
+        )?;
+        state.phase = MigrationPhase::PartsScheduled;
         wallet.migration = Some(state);
         wallet.save_required = true;
         Ok(())
@@ -1500,6 +1502,11 @@ impl LightClient {
         &mut self,
         account: zip32::AccountId,
     ) -> Result<MigrationSummary, LightClientError> {
+        {
+            let mut wallet = self.wallet().write().await;
+            immediate_migration_entry_gate(&mut wallet, account)?;
+        }
+
         let mut split_txids = Vec::new();
         let mut part_txids = Vec::new();
 
@@ -1523,6 +1530,7 @@ impl LightClient {
                             },
                             params,
                             strategy: SigningStrategy::LazyAtBoundary,
+                            mode: MigrationMode::Immediate,
                             account,
                             phase: MigrationPhase::Planned,
                             parts: Vec::new(),
@@ -1659,6 +1667,34 @@ impl LightClient {
     }
 }
 
+/// The entry gate of the one-call immediate path: decides what an existing
+/// migration state means for a new immediate run.
+///
+/// A consented scheduled migration must not be collapsed into an immediate
+/// one — its bucket windows are what the user confirmed — and a different
+/// account's migration must not be disturbed; both refuse. A completed
+/// migration is history: the slot clears so the rerun migrates newly
+/// received funds instead of skipping binding against stale confirmed
+/// parts. An interrupted immediate migration passes through and resumes.
+fn immediate_migration_entry_gate(
+    wallet: &mut crate::wallet::LightWallet,
+    account: zip32::AccountId,
+) -> Result<(), MigrationError> {
+    match &wallet.migration {
+        None => Ok(()),
+        Some(state) if state.account != account => Err(MigrationError::DifferentAccount),
+        Some(state) if matches!(state.phase, MigrationPhase::Complete { .. }) => {
+            wallet.migration = None;
+            wallet.save_required = true;
+            Ok(())
+        }
+        Some(state) if state.mode == MigrationMode::Scheduled => {
+            Err(MigrationError::ScheduledMigrationExists)
+        }
+        Some(_) => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
@@ -1669,8 +1705,8 @@ mod tests {
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::LightWallet;
     use crate::wallet::migration::{
-        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
-        PartRecord, PartState, SigningStrategy, schedule,
+        BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase, MigrationState,
+        PartId, PartRecord, PartState, SigningStrategy, schedule,
     };
 
     use super::{DrainPhase, DrainProgressHandle};
@@ -1758,6 +1794,7 @@ mod tests {
             },
             params,
             strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
             account: AccountId::ZERO,
             phase: MigrationPhase::PartsScheduled,
             parts,
@@ -1901,6 +1938,229 @@ mod tests {
             wallet.sync_state.last_known_chain_height(),
             Some(known_height),
             "the skip must not move the wallet's known height"
+        );
+    }
+
+    /// The entry gate of the one-call immediate path (issue #2493,
+    /// findings 3 and 4): a consented scheduled migration is refused
+    /// rather than collapsed into an immediate broadcast, a different
+    /// account's migration is refused, a completed migration clears so
+    /// the rerun binds newly received funds instead of skipping binding
+    /// against stale confirmed parts, and an interrupted immediate
+    /// migration passes through to resume.
+    mod immediate_entry_gate {
+        use super::*;
+        use crate::lightclient::error::MigrationError;
+        use crate::lightclient::migrate::immediate_migration_entry_gate;
+
+        fn wallet_with_state(mode: MigrationMode, phase: MigrationPhase) -> LightWallet {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            let mut state = scheduled_state(params, vec![part]);
+            state.mode = mode;
+            state.phase = phase;
+            wallet.migration = Some(state);
+            wallet
+        }
+
+        #[test]
+        fn consented_schedule_is_refused_and_survives() {
+            let mut wallet =
+                wallet_with_state(MigrationMode::Scheduled, MigrationPhase::PartsScheduled);
+            let result = immediate_migration_entry_gate(&mut wallet, AccountId::ZERO);
+            assert!(
+                matches!(result, Err(MigrationError::ScheduledMigrationExists)),
+                "the immediate path must not collapse a consented schedule: {result:?}"
+            );
+            assert!(
+                wallet.migration.is_some(),
+                "the refusal must leave the schedule untouched"
+            );
+        }
+
+        #[test]
+        fn different_account_is_refused() {
+            let mut wallet =
+                wallet_with_state(MigrationMode::Immediate, MigrationPhase::PartsScheduled);
+            let other_account = zip32::AccountId::try_from(1).expect("in range");
+            let result = immediate_migration_entry_gate(&mut wallet, other_account);
+            assert!(matches!(result, Err(MigrationError::DifferentAccount)));
+            assert!(wallet.migration.is_some());
+        }
+
+        #[test]
+        fn completed_migration_clears_for_a_fresh_run() {
+            for mode in [MigrationMode::Immediate, MigrationMode::Scheduled] {
+                let mut wallet =
+                    wallet_with_state(mode, MigrationPhase::Complete { residual: 5_000 });
+                wallet.save_required = false;
+                immediate_migration_entry_gate(&mut wallet, AccountId::ZERO)
+                    .expect("a completed migration is history");
+                assert!(
+                    wallet.migration.is_none(),
+                    "the completed state must clear so the rerun binds fresh parts"
+                );
+                assert!(wallet.save_required, "the clearing must persist");
+            }
+        }
+
+        #[test]
+        fn interrupted_immediate_migration_resumes() {
+            let mut wallet =
+                wallet_with_state(MigrationMode::Immediate, MigrationPhase::PartsScheduled);
+            immediate_migration_entry_gate(&mut wallet, AccountId::ZERO)
+                .expect("an interrupted immediate migration resumes");
+            assert!(wallet.migration.is_some(), "the in-flight state survives");
+        }
+    }
+
+    /// Per-part recoverable conditions must skip the part, not abort the
+    /// whole broadcast pass with a hard error (issue #2493, finding 2):
+    /// one bad part previously left every other due part unsent until a
+    /// reconcile happened to run.
+    mod per_part_conditions_skip {
+        use zcash_primitives::transaction::TxId;
+
+        use super::*;
+        use crate::wallet::migration::{BoundaryWitness, PrepareResult, SkipReason};
+
+        /// Past the provisional first bucket boundary, as in
+        /// [`super::boundary_tree_state_unavailable_skips_the_part`].
+        const TIP: u32 = 360;
+
+        /// An assigned part carrying a fabricated boundary witness, so
+        /// `prepare_part` reaches the bound-note revalidation instead of
+        /// skipping earlier on the missing checkpoint. The revalidation
+        /// runs before the witness bytes are parsed, so garbage suffices.
+        fn assigned_part_with_witness(bound_note: BoundNote, bucket: u64) -> PartRecord {
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(bucket).expect("fresh parts are bound");
+            part.anchor_witness = Some(BoundaryWitness {
+                anchor: [0; 32],
+                position: 0,
+                auth_path: Vec::new(),
+            });
+            part
+        }
+
+        #[test]
+        fn spent_bound_note_skips() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let bucket = schedule::bucket_index(
+                wallet.sync_state.last_known_chain_height().unwrap(),
+                params.bucket_modulus,
+            );
+            // The user insistently spends the reserved note.
+            wallet
+                .wallet_transactions
+                .values_mut()
+                .flat_map(|tx| tx.orchard_notes_mut())
+                .filter(|note| note.output_id() == bound_note.output_id)
+                .for_each(|note| {
+                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
+                });
+
+            let mut part = assigned_part_with_witness(bound_note, bucket);
+            let result = wallet
+                .prepare_part(AccountId::ZERO, &mut part, &params)
+                .expect("a spent bound note is a skip, not an error");
+            assert!(
+                matches!(
+                    result,
+                    PrepareResult::Skip(SkipReason::BoundNoteSpent { bound })
+                        if bound == bound_note.output_id
+                ),
+                "expected a spent-note skip, got a different outcome"
+            );
+        }
+
+        #[test]
+        fn mismatched_nullifier_skips() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let bucket = schedule::bucket_index(
+                wallet.sync_state.last_known_chain_height().unwrap(),
+                params.bucket_modulus,
+            );
+            let diverged = BoundNote {
+                nullifier: [0xAA; 32],
+                ..bound_note
+            };
+
+            let mut part = assigned_part_with_witness(diverged, bucket);
+            let result = wallet
+                .prepare_part(AccountId::ZERO, &mut part, &params)
+                .expect("a diverged bound note is a skip, not an error");
+            assert!(matches!(
+                result,
+                PrepareResult::Skip(SkipReason::BoundNoteMismatch { bound })
+                    if bound == bound_note.output_id
+            ));
+        }
+
+        #[test]
+        fn pre_activation_boundary_skips() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+
+            // Bucket zero's boundary is height zero, below any activation.
+            let mut part = assigned_part_with_witness(bound_note, 0);
+            let result = wallet
+                .prepare_part(AccountId::ZERO, &mut part, &params)
+                .expect("a pre-activation boundary is a skip, not an error");
+            assert!(matches!(
+                result,
+                PrepareResult::Skip(SkipReason::BoundaryBeforeActivation { .. })
+            ));
+        }
+    }
+
+    /// The scheduled flow refuses a plan that still needs note splitting
+    /// (issue #2493, finding 1): no production code drives the
+    /// [`MigrationPhase::NoteSplitting`] phase, so persisting the state
+    /// would strand the consent in `Planned` forever while blocking the
+    /// drain path with `AlreadyInProgress`.
+    #[tokio::test]
+    async fn unsplit_plan_is_refused_without_stranding_consent() {
+        use crate::lightclient::error::{LightClientError, MigrationError};
+        use crate::wallet::migration::plan_hash;
+
+        // A single messy-valued note guarantees splitting is required.
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(1_234_567_890)
+            .tip(360)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let plan = client
+            .plan_ironwood_migration(AccountId::ZERO)
+            .await
+            .expect("planning is pure");
+        assert!(!plan.is_split(), "premise: the wallet needs splitting");
+
+        let result = client
+            .start_ironwood_migration(
+                AccountId::ZERO,
+                SigningStrategy::LazyAtBoundary,
+                plan_hash(&plan),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(LightClientError::MigrationError(
+                    MigrationError::NoteSplittingRequired
+                ))
+            ),
+            "an unsplit plan must be refused: {result:?}"
+        );
+        let wallet = client.wallet().read().await;
+        assert!(
+            wallet.migration.is_none(),
+            "the refusal must not strand a Planned state"
         );
     }
 

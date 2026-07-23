@@ -1061,6 +1061,19 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
+/// Drops the newest stored shard range for `shielded_protocol`, so a
+/// refetched newest subtree root can rebuild it through
+/// [`add_shard_ranges`] — never duplicated, and corrected when a reorg
+/// moved the subtree's completing height. No-op when no range exists.
+pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
+    let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
+    };
+    shard_ranges.pop();
+}
+
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedPool,
@@ -1147,6 +1160,58 @@ pub(super) fn update_found_note_shard_priority(
 mod tests {
     use super::*;
     use zcash_protocol::local_consensus::LocalNetwork;
+
+    /// A refetched newest subtree root (see
+    /// `crate::sync::update_subtree_roots`) rebuilds its shard range via
+    /// pop-then-readd: idempotent when the completing height is
+    /// unchanged, corrected when a reorg moved it — never duplicated.
+    #[test]
+    fn refetched_newest_root_rebuilds_its_shard_range() {
+        fn root(completing_block_height: u64) -> SubtreeRoot {
+            SubtreeRoot {
+                completing_block_height,
+                ..Default::default()
+            }
+        }
+        let mut sync_state = SyncState::new();
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(100), root(200)],
+        );
+        let initial = sync_state.orchard_shard_ranges.clone();
+        assert_eq!(initial.len(), 2);
+
+        // Unchanged completing height: pop-then-readd is idempotent.
+        pop_newest_shard_range(&mut sync_state, ShieldedPool::Orchard);
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(200)],
+        );
+        assert_eq!(sync_state.orchard_shard_ranges, initial);
+
+        // A reorg moved the completing height: the range is corrected,
+        // not duplicated.
+        pop_newest_shard_range(&mut sync_state, ShieldedPool::Orchard);
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(205)],
+        );
+        assert_eq!(sync_state.orchard_shard_ranges.len(), 2);
+        assert_eq!(
+            sync_state.orchard_shard_ranges.last().unwrap().end,
+            BlockHeight::from_u32(206)
+        );
+        assert_eq!(
+            sync_state.orchard_shard_ranges.last().unwrap().start,
+            BlockHeight::from_u32(100)
+        );
+    }
 
     const BASE_NETWORK: LocalNetwork = LocalNetwork {
         overwinter: Some(BlockHeight::from_u32(1)),
