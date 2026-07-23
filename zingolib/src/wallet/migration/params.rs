@@ -30,6 +30,8 @@ pub struct MigrationParams {
     /// against `MARGINAL_FEE` itself.
     pub sweep_min: u64,
     /// `M`: bucket boundaries are the block heights ≡ 0 (mod `M`).
+    /// Invariant: nonzero. `provisional` never produces zero and the
+    /// store rejects one at read, so bucket arithmetic may divide by it.
     pub bucket_modulus: u32,
     /// `K_MAX`: the per-cohort multiplicity bound.
     pub k_max: u32,

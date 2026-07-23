@@ -1,20 +1,21 @@
-//! The truncation contract.
+//! The truncation contract: two pure decision rules, applied where the
+//! data lives.
 //!
-//! [`plan_truncation`] is a pure function that decides what a correct
-//! truncation of the wallet does. It receives the three states that
-//! govern the decision — the wallet state ([`WalletTruncationState`]:
-//! birthday and highest scanned height), the shard-tree state
-//! ([`ShardTreeTruncationState`]: per-pool checkpoint facts), and the
-//! chain state (the height up to which the chain still agrees with the
-//! wallet, i.e. the truncation target) — and returns a
-//! [`TruncationPlan`] naming the correct post-truncation state of every
-//! store. It mutates nothing; the caller applies the plan.
+//! [`plan_truncation`] routes the wallet-level decision — from the
+//! wallet state ([`WalletTruncationState`]: birthday and highest
+//! scanned height) and the truncation target, it returns whether the
+//! truncation is a no-op, a full clear, or a rollback to the target.
+//! `plan_pool_truncation` is the per-tree rule: from one tree's
+//! checkpoint facts ([`TreeTruncationFacts`]) it returns that tree's
+//! outcome, and the shard-tree applier derives each tree's outcome
+//! through it at the point of application. Both rules are pure; all
+//! mutation stays with the appliers.
 //!
-//! Every plan variant carries the evidence that justifies it: a rollback
-//! carries the checkpoint it found, and a rescan sentence carries the
-//! newest checkpoint that condemned the tree. The applier derives its
-//! actions and its error messages from that evidence instead of
-//! re-deriving or asserting it.
+//! Every per-pool outcome carries the evidence that justifies it: a
+//! rollback carries the checkpoint it found, and a rescan sentence
+//! carries the newest checkpoint that condemned the tree. The applier
+//! derives its actions and its error messages from that evidence
+//! instead of re-deriving or asserting it.
 //!
 //! The contract the plan guarantees, per store:
 //!
@@ -39,8 +40,6 @@ use shardtree::ShardTree;
 use shardtree::store::ShardStore;
 use shardtree::store::memory::MemoryShardStore;
 use zcash_protocol::consensus::{self, BlockHeight};
-
-use crate::wallet::ShardTrees;
 
 /// The wallet state a truncation decision reads: where scanning began
 /// and how far it has reached.
@@ -75,32 +74,8 @@ pub struct TreeTruncationFacts {
     pub newest_checkpoint: Option<BlockHeight>,
 }
 
-/// The per-pool shard-tree facts a truncation decision reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ShardTreeTruncationState {
-    /// Facts about the sapling tree.
-    pub sapling: TreeTruncationFacts,
-    /// Facts about the orchard tree.
-    pub orchard: TreeTruncationFacts,
-    /// Facts about the ironwood tree.
-    pub ironwood: TreeTruncationFacts,
-}
-
-impl ShardTreeTruncationState {
-    /// Gathers the per-pool facts from the wallet's shard trees at the
-    /// given truncation target. Read-only.
-    #[must_use]
-    pub fn gather(shard_trees: &ShardTrees, truncate_height: BlockHeight) -> Self {
-        Self {
-            sapling: tree_facts(&shard_trees.sapling, truncate_height),
-            orchard: tree_facts(&shard_trees.orchard, truncate_height),
-            ironwood: tree_facts(&shard_trees.ironwood, truncate_height),
-        }
-    }
-}
-
 /// Reads one tree's truncation facts from its store.
-fn tree_facts<H, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+pub(crate) fn tree_facts<H, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     tree: &ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
     truncate_height: BlockHeight,
 ) -> TreeTruncationFacts
@@ -140,17 +115,6 @@ pub enum PoolTruncation {
     },
 }
 
-/// The correct truncation outcome for the three shard trees.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ShardTreeTruncationPlan {
-    /// Outcome for the sapling tree.
-    pub sapling: PoolTruncation,
-    /// Outcome for the orchard tree.
-    pub orchard: PoolTruncation,
-    /// Outcome for the ironwood tree.
-    pub ironwood: PoolTruncation,
-}
-
 /// The correct post-truncation state of every store, decided purely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TruncationPlan {
@@ -164,12 +128,11 @@ pub enum TruncationPlan {
     ClearAll,
     /// Roll the wallet back: blocks, transactions, nullifiers, and
     /// outpoints retain exactly the data at or below `height`, and each
-    /// shard tree applies its per-pool outcome.
+    /// shard tree applies the per-pool outcome `plan_pool_truncation`
+    /// derives at the point of application.
     Truncate {
         /// The height retained; everything strictly above it goes.
         height: BlockHeight,
-        /// The per-pool shard-tree outcomes.
-        trees: ShardTreeTruncationPlan,
     },
 }
 
@@ -180,7 +143,6 @@ pub enum TruncationPlan {
 #[must_use]
 pub fn plan_truncation(
     wallet_state: WalletTruncationState,
-    shard_tree_state: ShardTreeTruncationState,
     truncate_height: BlockHeight,
 ) -> TruncationPlan {
     if truncate_height == consensus::H0 || truncate_height < wallet_state.birthday {
@@ -191,17 +153,12 @@ pub fn plan_truncation(
     }
     TruncationPlan::Truncate {
         height: truncate_height,
-        trees: ShardTreeTruncationPlan {
-            sapling: plan_pool_truncation(shard_tree_state.sapling, truncate_height),
-            orchard: plan_pool_truncation(shard_tree_state.orchard, truncate_height),
-            ironwood: plan_pool_truncation(shard_tree_state.ironwood, truncate_height),
-        },
     }
 }
 
 /// Decides the correct truncation of one shard tree, purely, from the
 /// evidence in its facts.
-fn plan_pool_truncation(
+pub(crate) fn plan_pool_truncation(
     facts: TreeTruncationFacts,
     truncate_height: BlockHeight,
 ) -> PoolTruncation {
@@ -219,7 +176,8 @@ fn plan_pool_truncation(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::shardtree_ext::{CheckpointOutcome, ShardTreeExt};
+    use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
+    use crate::wallet::ShardTrees;
 
     fn wallet_state() -> WalletTruncationState {
         WalletTruncationState {
@@ -237,43 +195,27 @@ mod test {
         }
     }
 
-    fn tree_state(each: TreeTruncationFacts) -> ShardTreeTruncationState {
-        ShardTreeTruncationState {
-            sapling: each,
-            orchard: each,
-            ironwood: each,
-        }
-    }
-
-    /// The migrated pre-ironwood wallet: an empty ironwood tree whose
-    /// only checkpoint is the height-zero initialization checkpoint
-    /// records nothing above the target, so it is untouched — never
-    /// broken.
+    /// The migrated pre-ironwood wallet: sapling and orchard roll back to
+    /// their target checkpoints, and the empty ironwood tree whose only
+    /// checkpoint is the height-zero initialization checkpoint records
+    /// nothing above the target, so it is untouched — never broken.
     #[test]
     fn migrated_empty_tree_is_untouched() {
-        let plan = plan_truncation(
-            wallet_state(),
-            ShardTreeTruncationState {
-                sapling: facts(Some(8), Some(10)),
-                orchard: facts(Some(8), Some(10)),
-                ironwood: facts(None, Some(0)),
-            },
-            BlockHeight::from_u32(8),
-        );
         assert_eq!(
-            plan,
+            plan_truncation(wallet_state(), BlockHeight::from_u32(8)),
             TruncationPlan::Truncate {
                 height: BlockHeight::from_u32(8),
-                trees: ShardTreeTruncationPlan {
-                    sapling: PoolTruncation::ToCheckpoint {
-                        checkpoint: BlockHeight::from_u32(8),
-                    },
-                    orchard: PoolTruncation::ToCheckpoint {
-                        checkpoint: BlockHeight::from_u32(8),
-                    },
-                    ironwood: PoolTruncation::Untouched,
-                },
             }
+        );
+        assert_eq!(
+            plan_pool_truncation(facts(Some(8), Some(10)), BlockHeight::from_u32(8)),
+            PoolTruncation::ToCheckpoint {
+                checkpoint: BlockHeight::from_u32(8),
+            }
+        );
+        assert_eq!(
+            plan_pool_truncation(facts(None, Some(0)), BlockHeight::from_u32(8)),
+            PoolTruncation::Untouched
         );
     }
 
@@ -315,11 +257,7 @@ mod test {
     /// A target above the highest scanned block removes nothing.
     #[test]
     fn target_above_highest_scanned_is_a_no_op() {
-        let plan = plan_truncation(
-            wallet_state(),
-            tree_state(facts(None, None)),
-            BlockHeight::from_u32(11),
-        );
+        let plan = plan_truncation(wallet_state(), BlockHeight::from_u32(11));
         assert_eq!(plan, TruncationPlan::NoOp);
     }
 
@@ -327,11 +265,7 @@ mod test {
     /// every store resets.
     #[test]
     fn target_below_birthday_clears_all() {
-        let plan = plan_truncation(
-            wallet_state(),
-            tree_state(facts(None, None)),
-            BlockHeight::from_u32(5),
-        );
+        let plan = plan_truncation(wallet_state(), BlockHeight::from_u32(5));
         assert_eq!(plan, TruncationPlan::ClearAll);
     }
 
@@ -344,7 +278,6 @@ mod test {
                 birthday: consensus::H0,
                 highest_scanned_height: BlockHeight::from_u32(10),
             },
-            tree_state(facts(None, None)),
             consensus::H0,
         );
         assert_eq!(plan, TruncationPlan::ClearAll);
@@ -354,12 +287,8 @@ mod test {
     /// its first block rather than clearing.
     #[test]
     fn target_at_birthday_truncates() {
-        let plan = plan_truncation(
-            wallet_state(),
-            tree_state(facts(Some(6), Some(10))),
-            BlockHeight::from_u32(6),
-        );
-        assert!(matches!(plan, TruncationPlan::Truncate { height, .. }
+        let plan = plan_truncation(wallet_state(), BlockHeight::from_u32(6));
+        assert!(matches!(plan, TruncationPlan::Truncate { height }
             if height == BlockHeight::from_u32(6)));
     }
 
@@ -380,36 +309,36 @@ mod test {
         for birthday in heights() {
             for highest_scanned_height in heights() {
                 for target in heights() {
+                    let plan = plan_truncation(
+                        WalletTruncationState {
+                            birthday,
+                            highest_scanned_height,
+                        },
+                        target,
+                    );
+
+                    // The wallet-level reference model, stated
+                    // independently of the implementation.
+                    if target == consensus::H0 || target < birthday {
+                        assert_eq!(plan, TruncationPlan::ClearAll);
+                        continue;
+                    }
+                    if target > highest_scanned_height {
+                        assert_eq!(plan, TruncationPlan::NoOp);
+                        continue;
+                    }
+                    assert_eq!(plan, TruncationPlan::Truncate { height: target });
+
+                    // The per-pool reference model at this target.
                     for checkpoint_at_target in [None, Some(target)] {
                         for newest_checkpoint in newest_choices() {
-                            let each = TreeTruncationFacts {
-                                checkpoint_at_target,
-                                newest_checkpoint,
-                            };
-                            let plan = plan_truncation(
-                                WalletTruncationState {
-                                    birthday,
-                                    highest_scanned_height,
+                            let outcome = plan_pool_truncation(
+                                TreeTruncationFacts {
+                                    checkpoint_at_target,
+                                    newest_checkpoint,
                                 },
-                                tree_state(each),
                                 target,
                             );
-
-                            // The reference model, stated independently
-                            // of the implementation.
-                            if target == consensus::H0 || target < birthday {
-                                assert_eq!(plan, TruncationPlan::ClearAll);
-                                continue;
-                            }
-                            if target > highest_scanned_height {
-                                assert_eq!(plan, TruncationPlan::NoOp);
-                                continue;
-                            }
-                            let TruncationPlan::Truncate { height, trees } = plan else {
-                                panic!("expected Truncate for target {target:?}, got {plan:?}");
-                            };
-                            assert_eq!(height, target);
-
                             let expected = if let Some(checkpoint) = checkpoint_at_target {
                                 PoolTruncation::ToCheckpoint { checkpoint }
                             } else {
@@ -420,17 +349,12 @@ mod test {
                                     _ => PoolTruncation::Untouched,
                                 }
                             };
-                            for outcome in [trees.sapling, trees.orchard, trees.ironwood] {
-                                assert_eq!(outcome, expected);
-                                // The safety property behind the migrated-
-                                // wallet wipe: nothing-above-target is
-                                // never a rescan sentence.
-                                if newest_checkpoint.is_none_or(|newest| newest <= target) {
-                                    assert!(!matches!(
-                                        outcome,
-                                        PoolTruncation::RequiresRescan { .. }
-                                    ));
-                                }
+                            assert_eq!(outcome, expected);
+                            // The safety property behind the migrated-
+                            // wallet wipe: nothing-above-target is never
+                            // a rescan sentence.
+                            if newest_checkpoint.is_none_or(|newest| newest <= target) {
+                                assert!(!matches!(outcome, PoolTruncation::RequiresRescan { .. }));
                             }
                         }
                     }
@@ -451,32 +375,33 @@ mod test {
             assert_eq!(
                 shard_trees
                     .orchard
-                    .checkpoint_classified(BlockHeight::from_u32(height))
+                    .append_checkpoint(BlockHeight::from_u32(height))
                     .unwrap(),
-                CheckpointOutcome::Added
+                CheckpointAppendOutcome::Appended
             );
         }
 
-        let at_five = ShardTreeTruncationState::gather(&shard_trees, BlockHeight::from_u32(5));
         assert_eq!(
-            at_five.orchard,
+            tree_facts(&shard_trees.orchard, BlockHeight::from_u32(5)),
             TreeTruncationFacts {
                 checkpoint_at_target: Some(BlockHeight::from_u32(5)),
                 newest_checkpoint: Some(BlockHeight::from_u32(5)),
             }
         );
         assert_eq!(
-            at_five.sapling,
+            tree_facts(&shard_trees.sapling, BlockHeight::from_u32(5)),
             TreeTruncationFacts {
                 checkpoint_at_target: None,
                 newest_checkpoint: Some(BlockHeight::from_u32(0)),
             }
         );
-        assert_eq!(at_five.ironwood, at_five.sapling);
-
-        let at_four = ShardTreeTruncationState::gather(&shard_trees, BlockHeight::from_u32(4));
         assert_eq!(
-            at_four.orchard,
+            tree_facts(&shard_trees.ironwood, BlockHeight::from_u32(5)),
+            tree_facts(&shard_trees.sapling, BlockHeight::from_u32(5)),
+        );
+
+        assert_eq!(
+            tree_facts(&shard_trees.orchard, BlockHeight::from_u32(4)),
             TreeTruncationFacts {
                 checkpoint_at_target: None,
                 newest_checkpoint: Some(BlockHeight::from_u32(5)),
@@ -547,10 +472,16 @@ mod properties {
         /// rescan.
         #[test]
         fn nothing_above_target_is_never_condemned(
-            checkpoints in checkpoint_sets(),
+            candidates in checkpoint_sets(),
             target in 0u32..=1_000,
         ) {
-            prop_assume!(checkpoints.last().is_none_or(|&newest| newest <= target));
+            // Constructed, not assumed: keeping only checkpoints at or
+            // below the target samples the property's whole domain
+            // without rejects (a prop_assume here starved the runner).
+            let checkpoints: BTreeSet<u32> = candidates
+                .into_iter()
+                .filter(|&height| height <= target)
+                .collect();
             let outcome = plan_pool_truncation(
                 facts_for_set(&checkpoints, target),
                 BlockHeight::from_u32(target),
@@ -586,18 +517,11 @@ mod properties {
             birthday in 0u32..=1_000,
             highest_scanned_height in 0u32..=1_000,
             target in 0u32..=1_000,
-            checkpoints in checkpoint_sets(),
         ) {
-            let each = facts_for_set(&checkpoints, target);
             let plan = plan_truncation(
                 WalletTruncationState {
                     birthday: BlockHeight::from_u32(birthday),
                     highest_scanned_height: BlockHeight::from_u32(highest_scanned_height),
-                },
-                ShardTreeTruncationState {
-                    sapling: each,
-                    orchard: each,
-                    ironwood: each,
                 },
                 BlockHeight::from_u32(target),
             );
@@ -607,7 +531,7 @@ mod properties {
                 prop_assert_eq!(plan, TruncationPlan::NoOp);
             } else {
                 prop_assert!(
-                    matches!(plan, TruncationPlan::Truncate { height, .. }
+                    matches!(plan, TruncationPlan::Truncate { height }
                         if height == BlockHeight::from_u32(target)),
                     "expected Truncate at height {}, got {:?}",
                     target,

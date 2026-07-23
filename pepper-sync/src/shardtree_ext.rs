@@ -21,13 +21,21 @@ use std::convert::Infallible;
 use incrementalmerkletree::Hashable;
 use zcash_protocol::consensus::BlockHeight;
 
-/// Outcome of adding a checkpoint at the tree's rightmost leaf state.
+/// Outcome of appending a checkpoint that records the tree's current
+/// frontier position at a new height.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckpointOutcome {
-    /// The checkpoint was added.
-    Added,
+pub enum CheckpointAppendOutcome {
+    /// The association between the id and the current frontier position
+    /// was recorded.
+    Appended,
     /// The id is not above the store's newest checkpoint; the tree is
-    /// unchanged and no checkpoint was added.
+    /// unchanged. Appending stamps the *current* frontier, so recording
+    /// it at or below an already-stamped height would duplicate or
+    /// falsify the height-to-frontier record. Checkpoints for past
+    /// heights travel with their own tree states through the
+    /// order-agnostic channels instead ([`ShardTree::insert_tree`]'s
+    /// per-subtree checkpoint maps, and the store-level
+    /// `ShardStore::add_checkpoint`).
     NotAboveNewest,
 }
 
@@ -44,11 +52,12 @@ pub enum RollbackOutcome {
 /// downstream crates route through it too (zingolib's legacy wallet
 /// import does; its own source-walk test enforces its confinement).
 pub trait ShardTreeExt {
-    /// As [`ShardTree::checkpoint`], with the boolean classified.
-    fn checkpoint_classified(
+    /// As [`ShardTree::checkpoint`], with the boolean classified: append
+    /// a checkpoint recording the tree's current frontier at the id.
+    fn append_checkpoint(
         &mut self,
         checkpoint_id: BlockHeight,
-    ) -> Result<CheckpointOutcome, ShardTreeError<Infallible>>;
+    ) -> Result<CheckpointAppendOutcome, ShardTreeError<Infallible>>;
 
     /// As [`ShardTree::truncate_to_checkpoint`], with the boolean
     /// classified.
@@ -63,14 +72,14 @@ impl<H, const DEPTH: u8, const SHARD_HEIGHT: u8> ShardTreeExt
 where
     H: Hashable + Clone + PartialEq,
 {
-    fn checkpoint_classified(
+    fn append_checkpoint(
         &mut self,
         checkpoint_id: BlockHeight,
-    ) -> Result<CheckpointOutcome, ShardTreeError<Infallible>> {
+    ) -> Result<CheckpointAppendOutcome, ShardTreeError<Infallible>> {
         Ok(if self.checkpoint(checkpoint_id)? {
-            CheckpointOutcome::Added
+            CheckpointAppendOutcome::Appended
         } else {
-            CheckpointOutcome::NotAboveNewest
+            CheckpointAppendOutcome::NotAboveNewest
         })
     }
 
@@ -146,12 +155,12 @@ mod test {
 
         let five = BlockHeight::from_u32(5);
         assert_eq!(
-            tree.checkpoint_classified(five).unwrap(),
-            CheckpointOutcome::Added
+            tree.append_checkpoint(five).unwrap(),
+            CheckpointAppendOutcome::Appended
         );
         assert_eq!(
-            tree.checkpoint_classified(five).unwrap(),
-            CheckpointOutcome::NotAboveNewest
+            tree.append_checkpoint(five).unwrap(),
+            CheckpointAppendOutcome::NotAboveNewest
         );
         assert_eq!(
             tree.rollback_to_checkpoint(five).unwrap(),

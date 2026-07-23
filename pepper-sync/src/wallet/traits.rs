@@ -19,7 +19,7 @@ use zip32::AccountId;
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::truncate::{PoolTruncation, ShardTreeTruncationPlan};
+use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
     Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
@@ -359,35 +359,23 @@ pub trait SyncShardTrees: SyncWallet {
         Ok(())
     }
 
-    /// Applies the shard-tree share of a truncation plan (see
-    /// [`crate::sync::truncate`]): each tree rolls back to its checkpoint
-    /// at `truncate_height`, stays untouched because it records nothing
-    /// above that height, or — holding state it cannot roll back —
-    /// aborts with [`SyncError::TruncationError`] so the caller can fall
-    /// back to the clear-and-rescan recovery. No decision is made here;
-    /// the plan is authoritative, and a planned rollback the tree store
-    /// unexpectedly refuses is reported as the same truncation error.
+    /// Removes all shard tree data above the given `truncate_height`:
+    /// each tree rolls back to its checkpoint at that height, stays
+    /// untouched because it records nothing above it, or — holding state
+    /// it cannot roll back — aborts with
+    /// [`SyncError::TruncationError`] so the caller can fall back to the
+    /// clear-and-rescan recovery. Each tree's outcome is decided by the
+    /// pure per-pool rule `plan_pool_truncation` over facts read here
+    /// at the point of application (see [`crate::sync::truncate`]).
     fn truncate_shard_trees(
         &mut self,
         truncate_height: BlockHeight,
-        plan: &ShardTreeTruncationPlan,
     ) -> Result<(), SyncError<Self::Error>> {
         let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
-        apply_pool_truncation(
-            &mut shard_trees.sapling,
-            plan.sapling,
-            truncate_height,
-            PoolType::SAPLING,
-        )?;
-        apply_pool_truncation(
-            &mut shard_trees.orchard,
-            plan.orchard,
-            truncate_height,
-            PoolType::ORCHARD,
-        )?;
-        apply_pool_truncation(
+        truncate_pool_tree(&mut shard_trees.sapling, truncate_height, PoolType::SAPLING)?;
+        truncate_pool_tree(&mut shard_trees.orchard, truncate_height, PoolType::ORCHARD)?;
+        truncate_pool_tree(
             &mut shard_trees.ironwood,
-            plan.ironwood,
             truncate_height,
             PoolType::IRONWOOD,
         )?;
@@ -405,7 +393,9 @@ where
     ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize)
 }
 
-/// Applies one pool's [`PoolTruncation`] outcome to its shard tree.
+/// Truncates one pool's shard tree: reads the tree's facts, decides its
+/// outcome through the pure per-pool rule ([`plan_pool_truncation`]),
+/// and applies it.
 ///
 /// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
 /// checkpoint at `truncate_height`; [`PoolTruncation::Untouched`] leaves
@@ -413,9 +403,8 @@ where
 /// rollback the tree store unexpectedly refuses — becomes
 /// [`SyncError::TruncationError`] naming the pool, so the caller can
 /// fall back to the clear-and-rescan recovery.
-fn apply_pool_truncation<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+fn truncate_pool_tree<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
-    outcome: PoolTruncation,
     truncate_height: BlockHeight,
     pool: PoolType,
 ) -> Result<(), SyncError<E>>
@@ -423,7 +412,7 @@ where
     H: Hashable + Clone + PartialEq,
     E: std::fmt::Debug + std::fmt::Display,
 {
-    match outcome {
+    match plan_pool_truncation(tree_facts(tree, truncate_height), truncate_height) {
         PoolTruncation::Untouched => Ok(()),
         PoolTruncation::ToCheckpoint { checkpoint } => {
             match tree.rollback_to_checkpoint(checkpoint)? {
