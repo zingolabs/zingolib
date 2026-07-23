@@ -301,6 +301,15 @@ strings" (CP-4 above) predates this rule — new UDL entries in
 zingo-mobile should model the mode as a proper enum, not a string,
 where the existing bridge permits.
 
+PUBLISHED (2026-07-23): the four step-3 increments above are open for
+review as PR #2524 (branch `nym_android_shim`, base
+`nym_mobile_adoption`; commits `1168670ed`, `14b8774cd`, `5330ba5f1`,
+`9232242b8`). The "(uncommitted)" markers in those paragraphs are
+historical: the work is committed there, and on the local working
+branch as `81bdc59f9`, `b9a4006ff`, `54fe6c3a4`, `291263715`. Issue
+#2508's step-3 line records the shim side as complete and points at the
+PR; what remains of #2513 is consuming the bundle in zingo-mobile.
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
