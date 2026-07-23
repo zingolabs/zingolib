@@ -73,13 +73,16 @@ The synchronization client stays exactly as it is; a separate component, built
 from a single shared mixnet proxy, owns the two mixnet surfaces. Routing is
 decided by each operation's static tier, never by a per-call boolean, so no
 call site can accidentally route a send over the wrong transport. A send picks
-one indexer at random from a curated broadcast list of roughly ten reliable,
+one indexer at random from a curated broadcast list of eleven reliable,
 low-latency indexers — a list kept separate from the sync-server list, because
 broadcast wants reliable relay and sync-ranking wants low query latency — and
-submits over the mixnet. The purpose is witness rotation: because the indexer
-that carries any given send is random, no single indexer accumulates a picture
-of all the user's sends, and the broadcast target is decoupled from the
-address-knowing sync indexer.
+submits over the mixnet. Those eleven are the mixnet-reachable subset of the
+fourteen distinct operators the 2026-07-21 discovery sweep found; the other
+three were excluded because they answer only on port 9067, which the mixnet
+exit gateways cannot reliably relay. The purpose is witness rotation: because
+the indexer that carries any given send is random, no single indexer
+accumulates a picture of all the user's sends, and the broadcast target is
+decoupled from the address-knowing sync indexer.
 
 Delivery is pursued through an escalating, serially gated fan-out whose purpose
 is robustness to censorship. The adversary here is a Broadcast Indexer that
