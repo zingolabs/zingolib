@@ -2,7 +2,12 @@
 enum ZingolibError {
     "LightclientNotInitialized",
     "LightclientLockPoisoned",
-    "Panic"
+    "Panic",
+    "Save",
+    "Init",
+    "Sync",
+    "Rescan",
+    "Read"
 };
 
 namespace zingo {
@@ -49,7 +54,7 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string save_to_b64();
+  bytes? save_wallet_bytes();
 
   [Throws=ZingolibError]
   string get_latest_block_server(
@@ -171,9 +176,6 @@ namespace zingo {
   string create_new_transparent_address();
 
   [Throws=ZingolibError]
-  string reserve_ephemeral_address();
-
-  [Throws=ZingolibError]
   string check_my_address(
     string address
   );
@@ -206,4 +208,13 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string confirm();
+
+  [Throws=ZingolibError]
+  string plan_orchard_drain();
+
+  [Throws=ZingolibError]
+  string drain_orchard_to_ironwood();
+
+  [Throws=ZingolibError]
+  string drain_status();
 };

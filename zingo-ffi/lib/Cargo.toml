@@ -12,8 +12,6 @@ zcash_keys = { workspace = true }
 zcash_address = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_client_backend = { workspace = true }
-
-rusqlite = { version = "0.37.0", features = ["bundled"] }
 zingo_common_components = { workspace = true }
 zingo-netutils = { workspace = true }
 
@@ -28,7 +26,6 @@ uniffi = { workspace = true, features = ["cli"] }
 tokio = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }
-bip0039 = { workspace = true }
 zip32 = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
