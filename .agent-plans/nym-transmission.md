@@ -1300,7 +1300,12 @@ out-of-list sync URI excludes nothing, emptied pool refuses with the
 typed error); default cargo check -p zingolib green (the invariant is
 nym-gated; the default build is untouched). ADR 0014 written, ADR 0011
 cross-reference amendment appended, CONTEXT.md Broadcast Indexer entry
-updated to state the enforced invariant. Commit pending user go-ahead.
+updated to state the enforced invariant. COMMITTED 5053f4fc7 and
+published as branch witness_never_sync_indexer, PR #2515 with base
+nym_mobile_adoption (the ADR 0011 / plan edits append after that lane's
+mobile amendments, so the invariant stacks there). Rebased clean onto the
+published base 30380d859 on 2026-07-23 at the user's direction, so the PR
+diff carries only the invariant work.
 
 USER DIRECTIVE (2026-07-22): enforce that the Broadcast Indexer and the
 sync indexer are never the same; make the invariant universal and record
