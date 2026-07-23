@@ -126,6 +126,115 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
     }
 }
 
+/// Maximum anchor AGE, in boundaries, that the recency-weighted draw will
+/// accept: age counts boundaries strictly before the most recent boundary
+/// observed at proving time, so a draw past this cap (a very old anchor) is
+/// discarded and redrawn. Sixteen boundaries is about two days. A property
+/// of the draw algorithm rather than a consented schedule parameter, so it
+/// lives here beside the draw, exactly as in the reference implementation.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L101>
+pub const ANCHOR_AGE_CAP: u32 = 16;
+
+/// A recency-weighted anchor age: `Geometric(1/2)` over `1, 2, 3, ...`, so
+/// the most probable age is one boundary, the mean is two, and age zero
+/// (the most recent boundary) is NEVER produced. Each bit of a fresh `u64`
+/// is one fair coin flip; a set bit stops the count.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L330-L349>
+fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
+    let mut age: u32 = 1;
+    loop {
+        let mut bits: u64 = rng.r#gen();
+        for _ in 0..u64::BITS {
+            if bits & 1 == 1 {
+                return age;
+            }
+            bits >>= 1;
+            age += 1;
+        }
+    }
+}
+
+/// Select the boundary height a transfer proves its anchor against, drawn
+/// at PROVING time (ZIP 318's anchor-selection rule). Returns the chosen
+/// boundary HEIGHT, or `None` if the candidate set is empty; the caller
+/// resolves the tree state (the cached witness) at that height.
+///
+/// The CANDIDATE ANCHOR SET is the boundaries that are simultaneously
+/// strictly above `nu63_activation`, at or after `funding_creation_height`
+/// (the funding note must already be in the tree at the anchor), and
+/// strictly below the most recent boundary at or below `chain_tip_height`
+/// (age is always at least one). A recency-weighted age in
+/// `[1, ANCHOR_AGE_CAP]` is drawn ([`draw_anchor_age`]) and the candidate
+/// is `previous_boundary(chain_tip) - age * M`; a draw exceeding the cap or
+/// landing outside the candidate set is discarded and redrawn.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L351-L399>
+pub fn draw_anchor_boundary(
+    nu63_activation: BlockHeight,
+    funding_creation_height: BlockHeight,
+    chain_tip_height: BlockHeight,
+    params: &MigrationParams,
+    rng: &mut impl Rng,
+) -> Option<BlockHeight> {
+    let modulus = params.bucket_modulus;
+    let most_recent = u32::from(previous_boundary(chain_tip_height, modulus));
+    let (lowest, highest) = candidate_boundary_bounds(
+        u32::from(nu63_activation),
+        u32::from(funding_creation_height),
+        most_recent,
+        modulus,
+    )?;
+
+    // Rejection-sample the geometric age until the candidate lands in
+    // [lowest, highest].
+    loop {
+        let age = draw_anchor_age(rng);
+        if age > ANCHOR_AGE_CAP {
+            continue;
+        }
+        let Some(candidate) = most_recent.checked_sub(age * modulus) else {
+            continue;
+        };
+        if candidate >= lowest && candidate <= highest {
+            return Some(BlockHeight::from_u32(candidate));
+        }
+    }
+}
+
+/// The inclusive `[lowest, highest]` boundary-height bounds of the
+/// candidate anchor set, or `None` if the set is empty. The highest usable
+/// boundary is the one strictly below `most_recent` (age is at least one);
+/// the lowest is the first boundary both strictly above `nu63_activation`
+/// and at or after `funding_creation_height`.
+fn candidate_boundary_bounds(
+    nu63_activation: u32,
+    funding_creation_height: u32,
+    most_recent: u32,
+    modulus: u32,
+) -> Option<(u32, u32)> {
+    let highest = most_recent.checked_sub(modulus)?;
+    let above_activation = (nu63_activation - (nu63_activation % modulus)).saturating_add(modulus);
+    let at_or_after_funding = boundary_at_or_after(funding_creation_height, modulus);
+    let lowest = above_activation.max(at_or_after_funding);
+    (lowest <= highest).then_some((lowest, highest))
+}
+
+/// The smallest boundary height at or after `height`: `height` rounded UP
+/// to a multiple of the modulus. Saturates at `u32::MAX`.
+fn boundary_at_or_after(height: u32, modulus: u32) -> u32 {
+    let remainder = height % modulus;
+    if remainder == 0 {
+        height
+    } else {
+        height.saturating_add(modulus - remainder)
+    }
+}
+
 /// The canonical rolling expiry height for a part scheduled to broadcast at
 /// `scheduled_height`: the most recent multiple of `params.expiry_modulus`
 /// at or below it, plus twice that modulus, giving every part between one
@@ -516,6 +625,77 @@ mod tests {
                 bucket_index(boundary, modulus),
                 bucket_index(height, modulus)
             );
+        }
+    }
+
+    /// Hand-derived goldens for the geometric age draw: `StepRng` yields a
+    /// fixed word whose low bits encode the coin flips, so the expected age
+    /// is one plus the number of trailing zero bits.
+    #[test]
+    fn anchor_age_goldens() {
+        use rand::rngs::mock::StepRng;
+        // (word, expected age): bit 0 set -> age 1; k trailing zeros -> k+1.
+        let cases: [(u64, u32); 5] = [
+            (u64::MAX, 1),
+            (0b10, 2),
+            (0b100, 3),
+            (0b1000_0000, 8),
+            (1 << 20, 21),
+        ];
+        for (word, expected) in cases {
+            let mut rng = StepRng::new(word, 0);
+            assert_eq!(draw_anchor_age(&mut rng), expected, "word {word:#b}");
+        }
+    }
+
+    proptest! {
+        // The drawn boundary is always a candidate: a boundary multiple,
+        // strictly below the most recent boundary (age >= 1, so the most
+        // recent boundary is never used), within ANCHOR_AGE_CAP boundaries
+        // of it, strictly above the activation, and at or after the funding
+        // note's creation.
+        #[test]
+        fn drawn_anchor_is_always_a_candidate(
+            activation in 0u32..=1_000_000,
+            funding_offset in 0u32..=2_000,
+            tip_offset in 0u32..=5_000,
+        ) {
+            let params = params();
+            let modulus = params.bucket_modulus;
+            let funding = activation + funding_offset;
+            let tip = funding + tip_offset;
+            let drawn = draw_anchor_boundary(
+                BlockHeight::from_u32(activation),
+                BlockHeight::from_u32(funding),
+                BlockHeight::from_u32(tip),
+                &params,
+                &mut rand::rngs::OsRng,
+            );
+            let most_recent = u32::from(previous_boundary(BlockHeight::from_u32(tip), modulus));
+            match drawn {
+                None => {
+                    // Empty candidate set: no boundary is simultaneously
+                    // strictly above activation, at or after funding, and
+                    // strictly below the most recent boundary.
+                    let lowest = (activation - (activation % modulus) + modulus)
+                        .max(boundary_at_or_after(funding, modulus));
+                    prop_assert!(
+                        most_recent < modulus || lowest > most_recent - modulus,
+                        "draw returned None on a non-empty candidate set"
+                    );
+                }
+                Some(boundary) => {
+                    let boundary = u32::from(boundary);
+                    prop_assert_eq!(boundary % modulus, 0, "a boundary multiple");
+                    prop_assert!(boundary < most_recent, "never the most recent boundary");
+                    prop_assert!(
+                        most_recent - boundary <= ANCHOR_AGE_CAP * modulus,
+                        "within the age cap"
+                    );
+                    prop_assert!(boundary > activation, "strictly above activation");
+                    prop_assert!(boundary >= funding, "funding note in the tree");
+                }
+            }
         }
     }
 
