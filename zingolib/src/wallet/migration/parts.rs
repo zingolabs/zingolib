@@ -586,7 +586,11 @@ impl crate::wallet::LightWallet {
         let denomination = part.denomination;
         let part_fee = params.part_fee;
         let target_height = boundary + 1;
-        let expiry_height = boundary + params.expiry_delta;
+        // The expiry follows the part's scheduled broadcast height (the
+        // canonical rolling window; see `schedule::canonical_expiry_height`).
+        // A catch-up part without a target is due at the window opening.
+        let scheduled_height = part.target_height.unwrap_or(target_height);
+        let expiry_height = super::schedule::canonical_expiry_height(scheduled_height, params);
         let params_clone = params.clone();
 
         let prove: ProveOnce = Box::new(move || {

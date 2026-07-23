@@ -37,7 +37,7 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
     writer.write_u32::<LittleEndian>(params.k_max)?;
     writer.write_u32::<LittleEndian>(params.target_sessions)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
-    writer.write_u32::<LittleEndian>(params.expiry_delta)?;
+    writer.write_u32::<LittleEndian>(params.expiry_modulus)?;
     writer.write_u64::<LittleEndian>(params.part_fee)?;
 
     writer.write_all(&state.consent.params_hash)?;
@@ -108,7 +108,9 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
                 "max_actions_per_split_tx does not fit in this platform's usize",
             )
         })?;
-    let expiry_delta = reader.read_u32::<LittleEndian>()?;
+    // Params version 1 repurposed this u32 slot from the retired
+    // boundary-relative `expiry_delta`; the layout is unchanged.
+    let expiry_modulus = reader.read_u32::<LittleEndian>()?;
     let part_fee = reader.read_u64::<LittleEndian>()?;
     let params = MigrationParams {
         version,
@@ -120,7 +122,7 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         k_max,
         target_sessions,
         max_actions_per_split_tx,
-        expiry_delta,
+        expiry_modulus,
         part_fee,
     };
 
@@ -357,7 +359,7 @@ mod tests {
                     k_max,
                     target_sessions,
                     max_actions_per_split_tx,
-                    expiry_delta,
+                    expiry_modulus,
                     part_fee,
                 )| MigrationParams {
                     version,
@@ -369,7 +371,7 @@ mod tests {
                     k_max,
                     target_sessions,
                     max_actions_per_split_tx,
-                    expiry_delta,
+                    expiry_modulus,
                     part_fee,
                 },
             )

@@ -864,7 +864,14 @@ impl LightClient {
                         .expect("assigned parts carry a bucket");
                     let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
                     let target_height = boundary + 1;
-                    let expiry_height = boundary + state.params.expiry_delta;
+                    // The expiry follows the part's scheduled broadcast
+                    // height (the canonical rolling window; see
+                    // `schedule::canonical_expiry_height`). A catch-up part
+                    // without a target is due at the window opening.
+                    let scheduled_height =
+                        state.parts[index].target_height.unwrap_or(target_height);
+                    let expiry_height =
+                        schedule::canonical_expiry_height(scheduled_height, &state.params);
                     wallet.record_part_result(
                         &mut state.parts[index],
                         txid,
@@ -1824,8 +1831,8 @@ mod tests {
     use super::{DrainPhase, DrainProgressHandle};
 
     /// The value of the one fabricated note every scenario here binds a
-    /// migration part to.
-    const NOTE_VALUE: u64 = 100_000;
+    /// migration part to: the smallest canonical denomination (0.01 ZEC).
+    const NOTE_VALUE: u64 = 1_000_000;
 
     /// The drain-progress side channel: a fresh handle is idle, `begin` arms it,
     /// the per-transaction mutators advance a clone the same way a mobile poll
@@ -2790,10 +2797,14 @@ mod tests {
             assert!(state.consent.consented_at > 0, "consent time re-recorded");
             let part = &state.parts[0];
             assert_eq!(part.state, PartState::Assigned);
+            let current_bucket = schedule::bucket_index(
+                zcash_protocol::consensus::BlockHeight::from_u32(360),
+                state.params.bucket_modulus,
+            );
             assert_eq!(
                 part.bucket_index,
-                Some(2),
-                "re-bucketed after the current bucket (tip 360 sits in bucket 1)"
+                Some(current_bucket + 1),
+                "re-bucketed after the current bucket containing tip 360"
             );
             assert!(part.target_height.is_some(), "fresh random target drawn");
             assert!(wallet.save_required, "the reschedule must persist");

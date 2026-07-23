@@ -126,6 +126,32 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
     }
 }
 
+/// The canonical rolling expiry height for a part scheduled to broadcast at
+/// `scheduled_height`: the most recent multiple of `params.expiry_modulus`
+/// at or below it, plus twice that modulus, giving every part between one
+/// and two modulus periods (about one to two months) of validity.
+///
+/// A pure function of the scheduled broadcast height, so the committed
+/// expiry is identical for every migration transaction — from any wallet —
+/// whose broadcast falls in the same period, and reveals nothing else. ZIP
+/// 318 derives it from the *scheduled* height, never the construction
+/// height, which would leak when the wallet planned its schedule. Because
+/// the expiry modulus is an exact multiple of the bucket modulus
+/// (34 560 = 240 × 144), a bucket never straddles a period: every scheduled
+/// target within a bucket yields the same expiry as the bucket's boundary.
+/// Saturates at `u32::MAX`.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#canonical-migration-transaction-structure>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L301-L313>
+pub fn canonical_expiry_height(
+    scheduled_height: BlockHeight,
+    params: &MigrationParams,
+) -> BlockHeight {
+    let h = u32::from(scheduled_height);
+    // `BlockHeight`'s delta addition saturates at `u32::MAX`.
+    BlockHeight::from_u32(h - (h % params.expiry_modulus)) + (2 * params.expiry_modulus)
+}
+
 /// Assigns every [`PartState::Bound`] part to an anchor-height bucket and
 /// picks a random broadcast target within that bucket's window.
 ///
@@ -437,6 +463,41 @@ mod tests {
             );
         }
 
+        // The canonical expiry lies in (scheduled, scheduled + 2·modulus],
+        // is anchored at a multiple of the expiry modulus, and always
+        // leaves strictly more than one modulus period of validity.
+        #[test]
+        fn canonical_expiry_in_rolling_window(scheduled in 0u32..=100_000_000) {
+            let params = params();
+            let expiry = u32::from(canonical_expiry_height(
+                BlockHeight::from_u32(scheduled),
+                &params,
+            ));
+            prop_assert!(expiry > scheduled);
+            prop_assert!(expiry <= scheduled + 2 * params.expiry_modulus);
+            prop_assert_eq!((expiry - 2 * params.expiry_modulus) % params.expiry_modulus, 0);
+            prop_assert!(expiry - scheduled > params.expiry_modulus);
+        }
+
+        // Expiry periods align with anchor buckets (the expiry modulus is
+        // an exact multiple of the bucket modulus), so every scheduled
+        // target inside a bucket shares its boundary's expiry.
+        #[test]
+        fn canonical_expiry_is_constant_across_a_bucket(
+            bucket in 0u64..=100_000,
+            offset in 0u32..=4095,
+        ) {
+            let params = params();
+            prop_assert_eq!(params.expiry_modulus % params.bucket_modulus, 0);
+            let boundary = boundary_of(bucket, params.bucket_modulus);
+            let target =
+                BlockHeight::from_u32(u32::from(boundary) + offset % params.bucket_modulus);
+            prop_assert_eq!(
+                canonical_expiry_height(target, &params),
+                canonical_expiry_height(boundary, &params)
+            );
+        }
+
         // previous_boundary is the closest height ≡ 0 (mod M) at or below.
         #[test]
         fn bucket_algebra(height in 0u32..=100_000_000, modulus in 1u32..=4096) {
@@ -448,6 +509,82 @@ mod tests {
             prop_assert_eq!(
                 bucket_index(boundary, modulus),
                 bucket_index(height, modulus)
+            );
+        }
+    }
+
+    /// Mirrors the reference implementation's `most_recent_boundary` golden
+    /// vectors, hand-derived from the shared modulus `M == 144`, so our
+    /// boundary arithmetic and the reference agree on the same data.
+    ///
+    /// Test data: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L493-L521>
+    #[test]
+    fn previous_boundary_matches_reference_golden_vectors() {
+        let modulus = params().bucket_modulus;
+        assert_eq!(modulus, 144);
+        // Each case is (input height, height rounded down to a multiple of 144).
+        let cases: [(u32, u32); 7] = [
+            (0, 0),
+            (143, 0),
+            (144, 144), // an exact boundary maps to itself
+            (287, 144),
+            (288, 288),           // 2 * 144
+            (300, 288),           // 300 = 2*144 + 12
+            (1_000_000, 999_936), // 6944 * 144 = 999_936, rem 64
+        ];
+        for (height, expected) in cases {
+            assert_eq!(
+                previous_boundary(BlockHeight::from_u32(height), modulus),
+                BlockHeight::from_u32(expected),
+                "previous_boundary({height})"
+            );
+        }
+    }
+
+    /// Mirrors the reference implementation's `expiry_examples` edge cases,
+    /// so our canonical expiry and the reference agree on the same data.
+    ///
+    /// Test data: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L805-L816>
+    #[test]
+    fn canonical_expiry_matches_reference_edge_cases() {
+        let params = params();
+        let window = 2 * params.expiry_modulus;
+        // At an exact modulus boundary the window is the full 2 * modulus.
+        assert_eq!(
+            canonical_expiry_height(BlockHeight::from_u32(0), &params),
+            BlockHeight::from_u32(window)
+        );
+        assert_eq!(
+            canonical_expiry_height(BlockHeight::from_u32(params.expiry_modulus), &params),
+            BlockHeight::from_u32(params.expiry_modulus + window)
+        );
+        // Just before the next modulus, validity is just over one modulus.
+        assert_eq!(
+            canonical_expiry_height(BlockHeight::from_u32(params.expiry_modulus - 1), &params),
+            BlockHeight::from_u32(window)
+        );
+    }
+
+    /// Pins the worked example in ZIP 318's canonical-expiry text: NU6.3
+    /// activates at Mainnet height 3428143, so a part scheduled before
+    /// height 3456000 expires at 3490560, and one scheduled between
+    /// 3456000 and 3490559 expires at 3525120.
+    ///
+    /// <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#canonical-migration-transaction-structure>
+    #[test]
+    fn canonical_expiry_matches_the_zip_worked_example() {
+        let params = params();
+        assert_eq!(params.expiry_modulus, 34_560);
+        for scheduled in [3_428_143, 3_455_999] {
+            assert_eq!(
+                canonical_expiry_height(BlockHeight::from_u32(scheduled), &params),
+                BlockHeight::from_u32(3_490_560),
+            );
+        }
+        for scheduled in [3_456_000, 3_490_559] {
+            assert_eq!(
+                canonical_expiry_height(BlockHeight::from_u32(scheduled), &params),
+                BlockHeight::from_u32(3_525_120),
             );
         }
     }
