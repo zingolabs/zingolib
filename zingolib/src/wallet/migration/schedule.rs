@@ -78,8 +78,10 @@ pub fn first_anchorable_boundary(activation: PoolActivation, bucket_modulus: u32
 }
 
 /// The first bucket whose boundary sits at or above the Pool Activation.
+/// The modulus is nonzero by the [`MigrationParams::bucket_modulus`]
+/// invariant (enforced at store read), as in every bucket computation.
 fn activation_bucket(activation: PoolActivation, bucket_modulus: u32) -> u64 {
-    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus.max(1)))
+    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus))
 }
 
 /// Places a part in `bucket` with a fresh random target inside the
