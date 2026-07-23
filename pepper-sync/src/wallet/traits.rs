@@ -365,7 +365,7 @@ pub trait SyncShardTrees: SyncWallet {
     /// it cannot roll back — aborts with
     /// [`SyncError::TruncationError`] so the caller can fall back to the
     /// clear-and-rescan recovery. Each tree's outcome is decided by the
-    /// pure per-pool rule [`plan_pool_truncation`] over facts read here
+    /// pure per-pool rule `plan_pool_truncation` over facts read here
     /// at the point of application (see [`crate::sync::truncate`]).
     fn truncate_shard_trees(
         &mut self,

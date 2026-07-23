@@ -5,7 +5,7 @@
 //! wallet state ([`WalletTruncationState`]: birthday and highest
 //! scanned height) and the truncation target, it returns whether the
 //! truncation is a no-op, a full clear, or a rollback to the target.
-//! [`plan_pool_truncation`] is the per-tree rule: from one tree's
+//! `plan_pool_truncation` is the per-tree rule: from one tree's
 //! checkpoint facts ([`TreeTruncationFacts`]) it returns that tree's
 //! outcome, and the shard-tree applier derives each tree's outcome
 //! through it at the point of application. Both rules are pure; all
@@ -128,7 +128,7 @@ pub enum TruncationPlan {
     ClearAll,
     /// Roll the wallet back: blocks, transactions, nullifiers, and
     /// outpoints retain exactly the data at or below `height`, and each
-    /// shard tree applies the per-pool outcome [`plan_pool_truncation`]
+    /// shard tree applies the per-pool outcome `plan_pool_truncation`
     /// derives at the point of application.
     Truncate {
         /// The height retained; everything strictly above it goes.
