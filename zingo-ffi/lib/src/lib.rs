@@ -241,6 +241,17 @@ lazy_static! {
         RwLock::new(None);
 }
 
+// Live progress of the in-flight scheduled-parts execute batch (phase 2 of the
+// private migration), held in a side channel outside the LIGHTCLIENT lock for
+// the same reason as DRAIN_PROGRESS: `execute_due_parts` holds LIGHTCLIENT.write()
+// for its whole `block_on`, so an `execute_due_parts_status` poll reading the
+// lightclient would deadlock behind it. The batch stashes a cloned
+// `BatchProgressHandle` (an independent Arc) here. `None` between batches.
+lazy_static! {
+    static ref BATCH_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::BatchProgressHandle>> =
+        RwLock::new(None);
+}
+
 lazy_static! {
     pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
@@ -2564,6 +2575,140 @@ pub fn reconcile_migration() -> Result<String, ZingolibError> {
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
+    })
+}
+
+/// Serializes a completed execute batch's report for the client.
+fn batch_report_json(report: &zingolib::lightclient::migrate::BatchReport) -> json::JsonValue {
+    use zingolib::lightclient::migrate::PartSendResult;
+    let outcomes = report
+        .outcomes
+        .iter()
+        .map(|o| {
+            let result = match &o.result {
+                PartSendResult::Sent(txid) => object! {
+                    "kind" => "sent",
+                    "txid" => txid.to_string(),
+                },
+                PartSendResult::Slid => object! { "kind" => "slid" },
+                PartSendResult::NotDue {
+                    estimated_unix_time,
+                } => object! {
+                    "kind" => "not_due",
+                    "estimated_unix_time" => *estimated_unix_time,
+                },
+                PartSendResult::Failed { error } => object! {
+                    "kind" => "failed",
+                    "error" => error.clone(),
+                },
+            };
+            object! {
+                "part" => o.part.0,
+                "denomination" => o.denomination,
+                "result" => result,
+            }
+        })
+        .collect::<Vec<_>>();
+    object! {
+        "outcomes" => outcomes,
+        "halted" => match &report.halted {
+            Some(e) => json::JsonValue::from(e.clone()),
+            None => json::JsonValue::Null,
+        },
+    }
+}
+
+/// Sends everything the scheduled migration owes right now, in one
+/// user-triggered batch: the current window's due parts plus any missed
+/// windows', folded in. Sends are sequenced `spacing_ms` apart, never
+/// simultaneous. This is the phase-2 execute tap for the private path — the
+/// user opens the app from a window's reminder, the app syncs, then calls this
+/// once to send the whole batch.
+///
+/// zingolib pauses the running sync itself for the critical section. Like the
+/// drain, it holds the lightclient for the whole prove+broadcast, so dispatch
+/// it on the concurrent native queue, never the main one; poll
+/// `execute_due_parts_status` concurrently for progress.
+///
+/// Returns `{ outcomes: [{ part, denomination, result }], halted }`, where each
+/// `result` is `{ kind: "sent", txid }`, `{ kind: "slid" }`,
+/// `{ kind: "not_due", estimated_unix_time }`, or `{ kind: "failed", error }`,
+/// and `halted` is the error that stopped the batch early or `null`. An empty
+/// `outcomes` with `halted` null means nothing was owed. `{ error }` on an
+/// infrastructure failure (offline, no migration in progress).
+pub fn execute_due_parts(spacing_ms: u64) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            // Publish the batch progress handle to the BATCH_PROGRESS side
+            // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
+            // whole batch, so a concurrent `execute_due_parts_status` poll must
+            // read this handle (an independent Arc) rather than the lightclient.
+            // The handle reads idle (`null`) until execute_due_parts arms it
+            // after folding in overdue parts.
+            if let Ok(mut progress) = BATCH_PROGRESS.write() {
+                *progress = Some(lightclient.batch_progress_handle());
+            }
+            let out = RT.block_on(async move {
+                match lightclient
+                    .execute_due_parts(std::time::Duration::from_millis(spacing_ms))
+                    .await
+                {
+                    Ok(report) => batch_report_json(&report),
+                    Err(e) => object! { "error" => e.to_string() },
+                }
+                .pretty(2)
+            });
+            // Drop the stale handle. The batch's own scope guard already reset
+            // the snapshot to idle on the way out, so a late poll reads `null`
+            // whether or not this clear has landed yet.
+            if let Ok(mut progress) = BATCH_PROGRESS.write() {
+                *progress = None;
+            }
+            Ok(out)
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// A snapshot of the in-flight execute batch's progress, for rendering
+/// "Sending i/N". Reads the BATCH_PROGRESS side channel only, never LIGHTCLIENT,
+/// so it stays responsive while `execute_due_parts` holds the lightclient lock
+/// across its whole prove-and-broadcast loop.
+///
+/// Returns, while a batch runs: `{ total, resolved, sent, phase }` where `phase`
+/// is `"sending"` or `"spacing"` and the counts are `0..=total`. Returns JSON
+/// `null` when no batch is in flight (before it starts, or once it finishes).
+pub fn execute_due_parts_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        // Snapshot under a brief read lock, then drop it: the batch only touches
+        // BATCH_PROGRESS at its very start and end, so this never blocks on the
+        // long-running batch the way a LIGHTCLIENT read would.
+        let status = {
+            let progress = BATCH_PROGRESS
+                .read()
+                .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+            progress.as_ref().and_then(|handle| handle.status())
+        };
+        Ok(match status {
+            Some(s) => {
+                use zingolib::lightclient::migrate::BatchPhase;
+                object! {
+                    "total" => s.total,
+                    "resolved" => s.resolved,
+                    "sent" => s.sent,
+                    "phase" => match s.phase {
+                        BatchPhase::Sending => "sending",
+                        BatchPhase::Spacing => "spacing",
+                    },
+                }
+                .pretty(2)
+            }
+            None => json::JsonValue::Null.pretty(2),
+        })
     })
 }
 

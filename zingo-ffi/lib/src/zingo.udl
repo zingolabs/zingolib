@@ -242,5 +242,13 @@ namespace zingo {
   string reconcile_migration();
 
   [Throws=ZingolibError]
+  string execute_due_parts(
+    u64 spacing_ms
+  );
+
+  [Throws=ZingolibError]
+  string execute_due_parts_status();
+
+  [Throws=ZingolibError]
   string cancel_ironwood_migration();
 };
