@@ -94,6 +94,24 @@ where
     located_tree_data
 }
 
+/// The number of subtree roots the shard store currently holds.
+pub(crate) fn stored_subtree_root_count<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> usize
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    shard_tree
+        .store()
+        .get_shard_roots()
+        .expect("infallible")
+        .len()
+}
+
 /// The index to resume subtree-root fetching from: the count of stored
 /// roots, minus one when the newest stored shard is still a bare
 /// server-fetched root (a single leaf node, no scanned contents).
