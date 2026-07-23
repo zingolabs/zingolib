@@ -2976,6 +2976,7 @@ version = "2.0.0"
 dependencies = [
  "regchest_utils",
  "tokio",
+ "zcash_local_net",
  "zingolib_testutils",
  "zingomobile_utils",
 ]
