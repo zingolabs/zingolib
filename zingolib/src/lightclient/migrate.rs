@@ -452,13 +452,9 @@ impl LightClient {
         if hash != consented_plan_hash {
             return Err(MigrationError::ConsentStale.into());
         }
-        if !plan.is_split() {
-            return Err(MigrationError::NoteSplittingRequired.into());
-        }
         if wallet.migration.is_some() {
             return Err(MigrationError::AlreadyInProgress.into());
         }
-        let activation = wallet.ironwood_activation()?;
 
         let mut params = MigrationParams::provisional(wallet.chain_type());
         if let Some(k) = per_bucket {
@@ -477,19 +473,28 @@ impl LightClient {
             phase: MigrationPhase::Planned,
             parts: Vec::new(),
         };
-        wallet.bind_parts_to_notes(&mut state, account)?;
-        let now_height = wallet
-            .sync_state
-            .last_known_chain_height()
-            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        plan_schedule(
-            &mut state.parts,
-            now_height,
-            activation,
-            &state.params,
-            &mut rand::rngs::OsRng,
-        )?;
-        state.phase = MigrationPhase::PartsScheduled;
+        // When the notes are already fully split, bind the parts and schedule
+        // Phase 2 now. Otherwise the migration stays in `Planned` and
+        // `continue_note_splitting` drives the Phase 1 splitting rounds. (Issue
+        // #2493 finding 1 refused unsplit plans outright, on the premise that
+        // nothing drives the splitting phase; the mobile scheduled flow does
+        // drive it, so refusing here strands Phase 1 before it can begin.)
+        if plan.is_split() {
+            let activation = wallet.ironwood_activation()?;
+            wallet.bind_parts_to_notes(&mut state, account)?;
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+            plan_schedule(
+                &mut state.parts,
+                now_height,
+                activation,
+                &state.params,
+                &mut rand::rngs::OsRng,
+            )?;
+            state.phase = MigrationPhase::PartsScheduled;
+        }
         wallet.migration = Some(state);
         wallet.save_required = true;
         Ok(())
@@ -2459,14 +2464,13 @@ mod tests {
         );
     }
 
-    /// The scheduled flow refuses a plan that still needs note splitting
-    /// (issue #2493, finding 1): no production code drives the
-    /// [`MigrationPhase::NoteSplitting`] phase, so persisting the state
-    /// would strand the consent in `Planned` forever while blocking the
-    /// drain path with `AlreadyInProgress`.
+    /// The scheduled flow accepts a plan that still needs note splitting: it
+    /// persists the consent in `Planned` so `continue_note_splitting` can drive
+    /// Phase 1. (Issue #2493 finding 1 refused unsplit plans on the premise
+    /// that nothing drives the splitting phase; the mobile scheduled flow does,
+    /// so refusing here strands Phase 1 before it can begin.)
     #[tokio::test]
-    async fn unsplit_plan_is_refused_without_stranding_consent() {
-        use crate::lightclient::error::{LightClientError, MigrationError};
+    async fn unsplit_plan_starts_in_planned_for_splitting() {
         use crate::wallet::migration::plan_hash;
 
         // A single messy-valued note guarantees splitting is required.
@@ -2482,27 +2486,29 @@ mod tests {
             .expect("planning is pure");
         assert!(!plan.is_split(), "premise: the wallet needs splitting");
 
-        let result = client
+        client
             .start_ironwood_migration(
                 AccountId::ZERO,
                 SigningStrategy::LazyAtBoundary,
                 plan_hash(&plan),
                 None,
             )
-            .await;
-        assert!(
-            matches!(
-                result,
-                Err(LightClientError::MigrationError(
-                    MigrationError::NoteSplittingRequired
-                ))
-            ),
-            "an unsplit plan must be refused: {result:?}"
-        );
+            .await
+            .expect("an unsplit plan starts in the Planned phase for splitting");
+
         let wallet = client.wallet().read().await;
+        let state = wallet
+            .migration
+            .as_ref()
+            .expect("the migration is persisted so splitting can be driven");
+        assert_eq!(
+            state.phase,
+            MigrationPhase::Planned,
+            "an unsplit plan waits in Planned for continue_note_splitting"
+        );
         assert!(
-            wallet.migration.is_none(),
-            "the refusal must not strand a Planned state"
+            state.parts.is_empty(),
+            "no parts are bound until splitting completes"
         );
     }
 
