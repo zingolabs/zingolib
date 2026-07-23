@@ -663,9 +663,7 @@ impl LightClient {
                     || state
                         .parts
                         .iter()
-                        .any(|part| {
-                            !matches!(part.state, PartState::Bound | PartState::Assigned)
-                        })
+                        .any(|part| !matches!(part.state, PartState::Bound | PartState::Assigned))
                 {
                     return Err(MigrationError::CadenceFixed.into());
                 }
