@@ -280,6 +280,27 @@ COMPLETE pending the bindings-artifact decision; what remains of step 3
 is packaging into zingo-mobile (jniLibs + Kotlin glue, step-4 lane
 adjacency).
 
+PACKAGING ENTRY POINT (2026-07-22, uncommitted, PROVEN): `makers
+bundle-android-shim` — a workbench bin following the bundle-nym-proxy
+pattern — release-builds the shim for ALL FOUR ABIs zingo-mobile ships
+(arm64-v8a, armeabi-v7a, x86, x86_64 per its gradle.properties; the
+armv7 question is thereby settled: yes, plus x86), regenerates the
+Kotlin bindings from the host cdylib, and lays out
+`target/android-shim/{jniLibs/<abi>/,kotlin/}`. Full run verified on
+this host: ~10 min cold, four genuine Android ELFs (20-31 MB pre-strip;
+gradle strips on package) — the 32-bit targets cross-compiled
+aws-lc-rs/ring clean too. Bindings decision EXECUTED (user "proceed"):
+generated bindings are build products, gitignored at
+`zingo-netutils/nym-proxy-ffi/bindings/`; the wire contract is the
+golden pins. STEP-4 LANE: your jniLibs consumption is now one task
+away — run `makers bundle-android-shim` and point gradle at
+`target/android-shim/`. Issue #2508's step-3 line updated on GitHub
+(user-directed) to record shim-side completion. NOTE
+for the step-4 lane: the spine's "the mode surfaces as house-style
+strings" (CP-4 above) predates this rule — new UDL entries in
+zingo-mobile should model the mode as a proper enum, not a string,
+where the existing bridge permits.
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
