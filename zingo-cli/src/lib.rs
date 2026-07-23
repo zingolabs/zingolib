@@ -81,6 +81,14 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with_all(["server", "waitsync"])
                 .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
+            .arg(Arg::new("no-mixnet")
+                .long("no-mixnet")
+                .action(clap::ArgAction::SetTrue)
+                .help("Do not force the Nym mixnet on at startup. Send and price-fetch then use clearnet for this session. Without this flag a connected session starts the mixnet automatically (requires the `nym` build feature)."))
+            .arg(Arg::new("nym-proxy")
+                .long("nym-proxy")
+                .value_name("PATH")
+                .help("Path to the nym-proxy binary spawned for Mixnet Mode. Without it: $ZINGO_NYM_PROXY, then a nym-proxy bundled beside this binary, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -507,6 +515,14 @@ pub(crate) struct ConfigTemplate {
     sync: bool,
     waitsync: bool,
     chaintype: ChainType,
+    /// `--no-mixnet`: opt out of forcing the Nym mixnet on at startup. Read
+    /// only by the forced-on policy, which the `nym` feature gates.
+    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
+    no_mixnet: bool,
+    /// `--nym-proxy`: an explicit path to the nym-proxy binary. Read only by
+    /// the forced-on policy, which the `nym` feature gates.
+    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
+    nym_proxy_path: Option<String>,
 }
 
 impl ConfigTemplate {
@@ -578,6 +594,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
         let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
+        let no_mixnet = matches.get_flag("no-mixnet");
+        let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
         Ok(Self {
             mode,
             communication_mode,
@@ -590,6 +608,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             sync,
             waitsync,
             chaintype,
+            no_mixnet,
+            nym_proxy_path,
         })
     }
 }
@@ -692,6 +712,33 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
             Some(server) => info!("Lightclient connecting to {server}"),
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
+    }
+
+    // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
+    // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected,
+    // unless the user opts out with --no-mixnet. The off-state is never
+    // persisted — this runs every launch. Offline sessions never transmit and
+    // skip the bootstrap. A spawn failure fails closed: the session aborts
+    // rather than quietly transmitting over clearnet.
+    #[cfg(feature = "nym")]
+    if filled_template.communication_mode == CommunicationMode::Online && !filled_template.no_mixnet
+    {
+        let path = std::path::PathBuf::from(commands::resolve_proxy_path(
+            filled_template.nym_proxy_path.as_deref(),
+        ));
+        RT.block_on(lightclient.enable_mixnet(&path)).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to start the Nym mixnet proxy at '{}': {e}. Mixnet Mode is required for a \
+                 connected session; install the nym-proxy binary, pass --nym-proxy <path>, set \
+                 $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this session.",
+                path.display()
+            ))
+        })?;
+        info!(
+            "Mixnet Mode enabling; the nym proxy at {} is bootstrapping. Send and price-fetch \
+             become available once it is ready (see `nym status`).",
+            path.display()
+        );
     }
 
     if filled_template.sync {

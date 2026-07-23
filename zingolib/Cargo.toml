@@ -10,6 +10,10 @@ license = "MIT"
 
 [features]
 default = []
+# IP-obfuscation transport (ADR 0011). Off by default. Enables the wallet-side
+# SOCKS5 transmit path in zingo-netutils (light — no nym-sdk, resolves in the
+# main lockfile); the wallet dials the spawned nym-proxy through it.
+nym = ["zingo-netutils/socks5-transmit"]
 testutils = [
     "portpicker",
     "zingo_test_vectors",
