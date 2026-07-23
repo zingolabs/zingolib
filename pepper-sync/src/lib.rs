@@ -109,6 +109,7 @@ pub mod config;
 pub mod error;
 pub mod keys;
 pub(crate) mod scan;
+pub mod shardtree_ext;
 pub mod sync;
 pub(crate) mod utils;
 pub mod wallet;

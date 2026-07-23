@@ -2188,6 +2188,7 @@ dependencies = [
  "jubjub",
  "memuse",
  "orchard",
+ "proptest",
  "rayon",
  "sapling-crypto",
  "shardtree",

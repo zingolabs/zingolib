@@ -15,11 +15,11 @@ use pepper_sync::wallet::OutputId;
 
 use super::params::MigrationParams;
 use super::parts::{BoundNote, BoundaryWitness, PartId, PartRecord, PartState, SigningStrategy};
-use super::{ConsentBinding, MigrationPhase, MigrationState};
+use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
-/// version.
-const INNER_VERSION: u8 = 1;
+/// version. Version 2 appends the [`MigrationMode`] byte after the parts.
+const INNER_VERSION: u8 = 2;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -67,7 +67,12 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
         }
     }
 
-    Vector::write(&mut writer, &state.parts, |w, part| write_part(w, part))
+    Vector::write(&mut writer, &state.parts, |w, part| write_part(w, part))?;
+
+    writer.write_u8(match state.mode {
+        MigrationMode::Scheduled => 0,
+        MigrationMode::Immediate => 1,
+    })
 }
 
 /// Deserializes the migration section.
@@ -159,10 +164,29 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
 
     let parts = Vector::read(&mut reader, |r| read_part(r, inner_version))?;
 
+    // Version 1 predates the mode marker. Scheduled is the conservative
+    // reading: it makes the immediate path refuse to collapse the state
+    // rather than assume the user consented to an immediate migration.
+    let mode = if inner_version >= 2 {
+        match reader.read_u8()? {
+            0 => MigrationMode::Scheduled,
+            1 => MigrationMode::Immediate,
+            other => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid migration mode {other}"),
+                ));
+            }
+        }
+    } else {
+        MigrationMode::Scheduled
+    };
+
     Ok(MigrationState {
         params,
         consent,
         strategy,
+        mode,
         account,
         phase,
         parts,
@@ -441,12 +465,23 @@ mod tests {
             any::<[u8; 32]>(),
             any::<u64>(),
             any::<bool>(),
+            any::<bool>(),
             0u32..(1 << 31),
             arbitrary_phase(),
             proptest::collection::vec(arbitrary_part(), 0..12),
         )
             .prop_map(
-                |(params, params_hash, plan_hash, consented_at, lazy, account, phase, parts)| {
+                |(
+                    params,
+                    params_hash,
+                    plan_hash,
+                    consented_at,
+                    lazy,
+                    immediate,
+                    account,
+                    phase,
+                    parts,
+                )| {
                     MigrationState {
                         params,
                         consent: ConsentBinding {
@@ -458,6 +493,11 @@ mod tests {
                             SigningStrategy::LazyAtBoundary
                         } else {
                             SigningStrategy::PreSigned
+                        },
+                        mode: if immediate {
+                            MigrationMode::Immediate
+                        } else {
+                            MigrationMode::Scheduled
                         },
                         account: zip32::AccountId::try_from(account).expect("in range"),
                         phase,
@@ -487,6 +527,7 @@ mod tests {
                 consented_at: 0,
             },
             strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
             account: zip32::AccountId::ZERO,
             phase: MigrationPhase::Planned,
             parts: Vec::new(),
@@ -499,6 +540,26 @@ mod tests {
         write(&mut bytes, &planned_state()).expect("writes");
         bytes[0] = INNER_VERSION + 1;
         assert!(read(bytes.as_slice()).is_err());
+    }
+
+    /// Version 2 only appended the mode byte, so a v1 blob is a v2 blob
+    /// with the version byte lowered and the trailing mode byte dropped.
+    /// Reading it must succeed and default the mode to `Scheduled`, the
+    /// conservative reading that makes the immediate path refuse to
+    /// collapse an old persisted state.
+    #[test]
+    fn v1_blob_reads_with_scheduled_mode() {
+        let mut state = planned_state();
+        state.mode = MigrationMode::Immediate;
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+        bytes[0] = 1;
+        bytes.pop();
+
+        let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");
+        assert_eq!(recovered.mode, MigrationMode::Scheduled);
+        state.mode = MigrationMode::Scheduled;
+        assert_eq!(recovered, state);
     }
 
     /// The `as usize` cast reading `max_actions_per_split_tx` silently

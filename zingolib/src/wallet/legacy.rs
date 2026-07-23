@@ -8,6 +8,7 @@ use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
 use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
+use pepper_sync::shardtree_ext::ShardTreeExt as _;
 use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
@@ -128,7 +129,12 @@ impl TxMap {
                 sap_tree
                     .insert_witness_nodes(sap_wit, height - 1)
                     .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
+                // Witnesses arrive height-sorted, so `NotAboveNewest` here
+                // means a second witness at an already-checkpointed height:
+                // benign, the checkpoint exists. Classified rather than
+                // discarded so a genuinely skipped checkpoint can never
+                // hide in a boolean again.
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -136,7 +142,8 @@ impl TxMap {
                 orch_tree
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+                // As for sapling above: height-sorted, duplicates benign.
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
@@ -194,7 +201,12 @@ impl TxMap {
                 sap_tree
                     .insert_witness_nodes(sap_wit, height - 1)
                     .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
+                // Witnesses arrive height-sorted, so `NotAboveNewest` here
+                // means a second witness at an already-checkpointed height:
+                // benign, the checkpoint exists. Classified rather than
+                // discarded so a genuinely skipped checkpoint can never
+                // hide in a boolean again.
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -202,7 +214,8 @@ impl TxMap {
                 orch_tree
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+                // As for sapling above: height-sorted, duplicates benign.
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
@@ -1260,5 +1273,53 @@ impl WalletZecPriceInfo {
             last_historical_prices_fetched_at,
             historical_prices_retry_count,
         })
+    }
+}
+
+#[cfg(test)]
+mod shardtree_boundary {
+    /// zingolib's half of the confinement rule pepper-sync enforces for
+    /// itself: raw calls to shardtree's boolean operations conflate
+    /// distinct outcomes (the class behind the migrated-wallet wipe), so
+    /// every call in this crate routes through
+    /// `pepper_sync::shardtree_ext`. The walk fails the build the moment
+    /// a raw call reappears.
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        let src_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut rust_sources = Vec::new();
+        collect_rust_sources(&src_root, &mut rust_sources);
+        assert!(!rust_sources.is_empty());
+
+        // The call parenthesis is appended at runtime so this test's own
+        // pattern list does not match itself during the walk.
+        let raw_patterns = [
+            ".checkpoint",
+            ".truncate_to_checkpoint",
+            ".truncate_to_checkpoint_depth",
+        ]
+        .map(|method| format!("{method}("));
+        for path in rust_sources {
+            let source = std::fs::read_to_string(&path).unwrap();
+            for pattern in &raw_patterns {
+                assert!(
+                    !source.contains(pattern),
+                    "{} calls a raw shardtree boolean operation ({pattern}); \
+                     route it through pepper_sync::shardtree_ext instead",
+                    path.display(),
+                );
+            }
+        }
+    }
+
+    fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect_rust_sources(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push(path);
+            }
+        }
     }
 }

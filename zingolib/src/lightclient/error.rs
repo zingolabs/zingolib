@@ -81,6 +81,23 @@ pub enum MigrationError {
     /// window.
     #[error("Timed out waiting for note-splitting transactions to confirm.")]
     SplitConfirmationTimeout,
+    /// The scheduled flow was asked to start over a plan that still needs
+    /// note splitting, which no scheduled-flow driver executes yet.
+    #[error(
+        "The wallet's notes need splitting before a scheduled migration, and the scheduled flow \
+         does not drive note splitting yet. Run the immediate migration instead."
+    )]
+    NoteSplittingRequired,
+    /// The one-call immediate path found a consented scheduled migration
+    /// and must not collapse its schedule.
+    #[error(
+        "A consented scheduled migration is in progress. Let it run (auto broadcasting), advance \
+         it with catch-up, or cancel it before an immediate migration."
+    )]
+    ScheduledMigrationExists,
+    /// The migration in progress belongs to a different account.
+    #[error("The migration in progress belongs to a different account.")]
+    DifferentAccount,
 }
 
 #[derive(Debug, thiserror::Error)]

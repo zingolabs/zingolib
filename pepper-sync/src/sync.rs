@@ -46,6 +46,7 @@ use crate::witness;
 pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
+pub mod truncate;
 
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
@@ -1617,6 +1618,11 @@ where
 }
 
 /// Removes wallet blocks, transactions, nullifiers, outpoints and shard tree data above the given `truncate_height`.
+///
+/// The decision of what a correct truncation does is made purely by
+/// [`truncate::plan_truncation`] from the wallet state, the shard-tree
+/// state, and the truncation target; this function only applies the
+/// returned plan.
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
@@ -1627,42 +1633,56 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let highest_scanned_height = sync_state
-        .highest_scanned_height()
-        .expect("should be non-empty in this scope");
-    let wallet_birthday = sync_state
-        .wallet_birthday()
-        .expect("should be non-empty in this scope");
-    let checked_truncate_height = match truncate_height.cmp(&wallet_birthday) {
-        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
-        std::cmp::Ordering::Less => consensus::H0,
+    let wallet_state = truncate::WalletTruncationState {
+        birthday: sync_state
+            .wallet_birthday()
+            .expect("should be non-empty in this scope"),
+        highest_scanned_height: sync_state
+            .highest_scanned_height()
+            .expect("should be non-empty in this scope"),
     };
-
-    if checked_truncate_height > highest_scanned_height {
-        return Ok(());
-    }
-
-    wallet
-        .truncate_wallet_blocks(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_wallet_transactions(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_nullifiers(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_outpoints(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    match wallet.truncate_shard_trees(checked_truncate_height) {
-        Ok(_) => Ok(()),
-        Err(SyncError::TruncationError(height, pooltype)) => {
-            clear_wallet_data(wallet)?;
-
-            Err(SyncError::TruncationError(height, pooltype))
+    match truncate::plan_truncation(wallet_state, truncate_height) {
+        truncate::TruncationPlan::NoOp => Ok(()),
+        truncate::TruncationPlan::ClearAll => {
+            truncate_stores(wallet, consensus::H0)?;
+            wallet.clear_shard_trees()
         }
-        Err(e) => Err(e),
-    }?;
+        truncate::TruncationPlan::Truncate { height } => {
+            truncate_stores(wallet, height)?;
+            match wallet.truncate_shard_trees(height) {
+                Ok(()) => Ok(()),
+                Err(SyncError::TruncationError(height, pooltype)) => {
+                    clear_wallet_data(wallet)?;
+
+                    Err(SyncError::TruncationError(height, pooltype))
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
+/// Removes wallet blocks, transactions, nullifiers and outpoints above the
+/// given `truncate_height`.
+fn truncate_stores<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+{
+    wallet
+        .truncate_wallet_blocks(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_wallet_transactions(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_nullifiers(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_outpoints(truncate_height)
+        .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1990,30 +2010,21 @@ async fn update_subtree_roots<W>(
 where
     W: SyncWallet + SyncShardTrees,
 {
-    let sapling_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .sapling
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let orchard_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .orchard
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let ironwood_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .ironwood
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
+    // Resume from the stored-root count, except that a newest root which
+    // is still bare (never scanned into) is refetched every session: no
+    // checkpoint witnesses it, so this refetch is the only mechanism that
+    // heals it after a reorg (see `subtree_fetch_start_index`). When a
+    // refetch happens, the pool's newest stored shard range is dropped
+    // before the fetched roots are accounted, so the range accounting is
+    // rebuilt from the refetched root — never duplicated, and corrected
+    // if a reorg moved the subtree's completing height.
+    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    let stored_sapling_roots = witness::stored_subtree_root_count(&shard_trees.sapling);
+    let stored_orchard_roots = witness::stored_subtree_root_count(&shard_trees.orchard);
+    let stored_ironwood_roots = witness::stored_subtree_root_count(&shard_trees.ironwood);
+    let sapling_start_index = witness::subtree_fetch_start_index(&shard_trees.sapling);
+    let orchard_start_index = witness::subtree_fetch_start_index(&shard_trees.orchard);
+    let ironwood_start_index = witness::subtree_fetch_start_index(&shard_trees.ironwood);
     let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
         client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
         client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),
@@ -2040,12 +2051,18 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
+    if (sapling_start_index as usize) < stored_sapling_roots && !sapling_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Sapling);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Sapling,
         sync_state,
         &sapling_subtree_roots,
     );
+    if (orchard_start_index as usize) < stored_orchard_roots && !orchard_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Orchard);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Orchard,
@@ -2053,6 +2070,9 @@ where
         &orchard_subtree_roots,
     );
     if !ironwood_subtree_roots.is_empty() {
+        if (ironwood_start_index as usize) < stored_ironwood_roots {
+            state::pop_newest_shard_range(sync_state, ShieldedPool::Ironwood);
+        }
         state::add_shard_ranges(
             consensus_parameters,
             ShieldedPool::Ironwood,
@@ -2363,6 +2383,149 @@ mod test {
             status.total_outputs_scanned = 10_000;
             status.total_outputs = 10_000;
             assert!(!status.is_complete());
+        }
+    }
+
+    /// The truncation contract of [`crate::sync::truncate_wallet_data`]:
+    /// a reorg truncation rolls every store back to the truncate height,
+    /// and a shard tree that records nothing above that height — such as
+    /// the empty ironwood tree a pre-ironwood (v0) wallet blob migrates
+    /// to — is untouched, never classified broken. Only a tree that
+    /// holds state above the height and cannot roll back to it forces
+    /// the clear-and-rescan path.
+    mod truncation {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
+        use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
+        use crate::wallet::{ShardTrees, SyncState, TreeBounds, WalletBlock, traits::SyncBlocks};
+
+        /// A wallet block carrying only what truncation reads: its height.
+        fn block(height: u32) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        /// A wallet synced through height 10 with a birthday of 6: one
+        /// fully scanned range, one wallet block per scanned height, and
+        /// the given shard trees.
+        fn synced_wallet(shard_trees: ShardTrees) -> crate::mocks::MockWallet {
+            let wallet_blocks: BTreeMap<_, _> = (6..=10u32)
+                .map(|height| (BlockHeight::from_u32(height), block(height)))
+                .collect();
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(6)..BlockHeight::from_u32(11),
+                ScanPriority::Scanned,
+            )]);
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(6))
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .shard_trees(shard_trees)
+                .create_mock_wallet()
+        }
+
+        /// A pre-ironwood (v0) wallet blob deserializes to an ironwood
+        /// tree holding only the initialization checkpoint at height
+        /// zero (`ShardTrees::read`), while sapling and orchard carry
+        /// the checkpoints of past scanning. The first routine reorg
+        /// truncation after the upgrade must roll sapling and orchard
+        /// back and leave the empty ironwood tree untouched — not
+        /// classify it broken and wipe the wallet.
+        #[test]
+        fn migrated_wallet_survives_reorg_truncation() {
+            // Sapling and orchard hold checkpoints for the scanned
+            // heights; the ironwood tree stays exactly as
+            // `ShardTrees::new` built it (its height-zero initialization
+            // checkpoint and nothing else), which is also the state
+            // `ShardTrees::read` produces for a pre-ironwood blob.
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .sapling
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+                assert_eq!(
+                    shard_trees
+                        .orchard
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            // A routine two-block reorg rolls the wallet back to height 8.
+            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+
+            assert!(
+                result.is_ok(),
+                "reorg truncation wiped a healthy migrated wallet: {result:?}"
+            );
+            // The blocks at and below the truncate height survive; the
+            // clear-and-rescan path leaves none.
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_ok());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(8)).is_ok());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(9)).is_err());
+        }
+
+        /// A tree that records state above the truncate height but holds
+        /// no checkpoint at it cannot roll back; the established recovery
+        /// — clear all wallet data and rescan — is preserved for it.
+        #[test]
+        fn unrecoverable_tree_still_clears_wallet_data() {
+            // Orchard scanned past the target but its checkpoint at the
+            // target height is gone (e.g. pruned): checkpoints exist only
+            // above it.
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .sapling
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            for height in 9..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .orchard
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+
+            assert!(matches!(
+                result,
+                Err(crate::error::SyncError::TruncationError(_, _))
+            ));
+            // The wallet was cleared for rescan.
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_err());
         }
     }
 
