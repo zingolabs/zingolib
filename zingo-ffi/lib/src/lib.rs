@@ -1134,6 +1134,260 @@ mod read_error_channel_tests {
     }
 }
 
+/// Pins the behavior of [`ffi_error`], the one funnel from zingolib's error
+/// taxonomy to the FFI's typed variants. The match itself is exhaustive, so
+/// a new zingolib variant fails compilation; these tests pin which variant
+/// each input maps to, so a remapping (or a regression to prose in the data
+/// channel) turns the suite red rather than silently shifting the codes the
+/// bridges and TypeScript branch on. Inputs are limited to variants
+/// constructible without wallet or network state; the Shield and Indexer
+/// arms carry deeply nested foreign payloads and stay guarded by
+/// exhaustiveness alone.
+#[cfg(test)]
+mod error_funnel_tests {
+    use super::*;
+    use zcash_protocol::TxId;
+    use zingolib::lightclient::error::{MigrationError, TransmissionError};
+    use zingolib::wallet::error::WalletError;
+
+    /// (input, is-the-pinned-variant, the pinned variant's name).
+    type FunnelCase = (LightClientError, fn(&ZingolibError) -> bool, &'static str);
+
+    #[test]
+    fn the_funnel_maps_each_constructible_input_to_its_pinned_variant() {
+        let cases: Vec<FunnelCase> = vec![
+            (
+                LightClientError::SyncLaunchError,
+                |e| matches!(e, ZingolibError::Sync(_)),
+                "Sync",
+            ),
+            (
+                LightClientError::SyncNotRunning,
+                |e| matches!(e, ZingolibError::Sync(_)),
+                "Sync",
+            ),
+            (
+                LightClientError::SendError(SendError::NoStoredProposal),
+                |e| matches!(e, ZingolibError::Send(_)),
+                "Send",
+            ),
+            (
+                LightClientError::SendError(SendError::TransmissionError(
+                    TransmissionError::TransmissionFailed("node said no".to_string()),
+                )),
+                |e| matches!(e, ZingolibError::Send(_)),
+                "Send",
+            ),
+            (
+                LightClientError::FileError(std::io::Error::other("disk full")),
+                |e| matches!(e, ZingolibError::Save(_)),
+                "Save",
+            ),
+            (
+                LightClientError::WalletError(WalletError::MnemonicNotFound),
+                |e| matches!(e, ZingolibError::Wallet(_)),
+                "Wallet",
+            ),
+            (
+                LightClientError::Offline,
+                |e| matches!(e, ZingolibError::Offline),
+                "Offline",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::NoMigration),
+                |e| matches!(e, ZingolibError::MigrationNotInProgress),
+                "MigrationNotInProgress",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::AlreadyInProgress),
+                |e| matches!(e, ZingolibError::MigrationAlreadyInProgress),
+                "MigrationAlreadyInProgress",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::ConsentStale),
+                |e| matches!(e, ZingolibError::MigrationConsentStale(_)),
+                "MigrationConsentStale",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::CadenceFixed),
+                |e| matches!(e, ZingolibError::MigrationCadenceFixed(_)),
+                "MigrationCadenceFixed",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::PreSignedUnavailable),
+                |e| matches!(e, ZingolibError::Migration(_)),
+                "Migration",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitDidNotConverge(3)),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitTransactionFailed(
+                    TxId::from_bytes([0u8; 32]),
+                )),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitConfirmationTimeout),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+        ];
+        for (input, is_expected, expected_name) in cases {
+            let input_text = input.to_string();
+            let mapped = ffi_error(input);
+            assert!(
+                is_expected(&mapped),
+                "{input_text:?} must map to the {expected_name} variant, got: {mapped}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_funnel_preserves_the_upstream_message_verbatim_in_the_variant() {
+        // The bridges forward the Display text as the rejection message, so
+        // the funnel must not paraphrase or truncate the upstream prose.
+        let upstream = LightClientError::SendError(SendError::TransmissionError(
+            TransmissionError::TransmissionFailed("node said no".to_string()),
+        ));
+        let upstream_text = upstream.to_string();
+        let mapped = ffi_error(upstream);
+        assert!(
+            mapped.to_string().contains(&upstream_text),
+            "the mapped error must carry the upstream text \"{upstream_text}\": {mapped}"
+        );
+    }
+}
+
+/// Pins [`hex_to_hash32`] and [`hash32_to_hex`], the consent-hash boundary
+/// that `start_ironwood_migration` trusts before anything is signed. The
+/// parser was rewritten from per-pair `from_str_radix` (which accepted
+/// `+`-signed pairs and could panic on multi-byte UTF-8 slicing) to
+/// `hex::decode`; the rejection cases pin that tightening as deliberate.
+#[cfg(test)]
+mod consent_hash_tests {
+    use super::*;
+
+    #[test]
+    fn a_hash_round_trips_through_hex_and_back() {
+        let hash: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let hex = hash32_to_hex(&hash);
+        assert_eq!(hex.len(), 64);
+        assert_eq!(hex_to_hash32(&hex), Some(hash));
+    }
+
+    #[test]
+    fn uppercase_hex_decodes_to_the_same_hash() {
+        let hash = [0xabu8; 32];
+        let hex = hash32_to_hex(&hash).to_uppercase();
+        assert_eq!(hex_to_hash32(&hex), Some(hash));
+    }
+
+    #[test]
+    fn anything_but_64_hex_digits_is_rejected() {
+        let valid = hash32_to_hex(&[0u8; 32]);
+        let rejected = [
+            String::new(),
+            valid[..62].to_string(),      // too short (even length)
+            valid[..63].to_string(),      // odd length
+            format!("{valid}00"),         // too long
+            format!("zz{}", &valid[2..]), // non-hex digits
+            format!("+a{}", &valid[2..]), // signed pair the old parser accepted
+            format!("é{}", &valid[2..]),  // multi-byte UTF-8: must not panic
+        ];
+        for input in rejected {
+            assert_eq!(
+                hex_to_hash32(&input),
+                None,
+                "{input:?} must be rejected, not coerced into a consent hash"
+            );
+        }
+    }
+}
+
+/// The migration read-path contract: with no initialized client, the
+/// read-lock entry points fail typed — never as prose in the data channel.
+/// These pin `with_initialized_lightclient_read`, which the migration
+/// getters introduced. nextest runs each test in its own process, so the
+/// LIGHTCLIENT global is reliably uninitialized.
+#[cfg(test)]
+mod migration_error_channel_tests {
+    use super::*;
+
+    fn assert_uninitialized(result: Result<String, ZingolibError>, ffi: &str) {
+        let error = result.expect_err("an uninitialized client must fail typed");
+        assert!(
+            matches!(error, ZingolibError::LightclientNotInitialized),
+            "{ffi} must fail with the typed uninitialized variant: {error}"
+        );
+    }
+
+    #[test]
+    fn plan_ironwood_migration_fails_typed_without_a_client() {
+        assert_uninitialized(plan_ironwood_migration(), "plan_ironwood_migration");
+    }
+
+    #[test]
+    fn migration_status_fails_typed_without_a_client() {
+        assert_uninitialized(migration_status(), "migration_status");
+    }
+}
+
+/// The parse/stub data/error channel contract: input the caller got wrong
+/// travels as the typed InvalidInput variant, and unimplemented endpoints
+/// fail typed — never `Ok("Error: ...")` prose in the data channel, which
+/// is exactly what these calls returned before the typed surface.
+#[cfg(test)]
+mod parse_and_stub_error_channel_tests {
+    use super::*;
+
+    #[test]
+    fn empty_address_travels_on_the_error_channel() {
+        let error = parse_address(String::new())
+            .expect_err("an empty address must be typed, not prose in the data channel");
+        assert!(
+            matches!(error, ZingolibError::InvalidInput(_)),
+            "the failure must be the typed InvalidInput variant: {error}"
+        );
+    }
+
+    #[test]
+    fn empty_ufvk_travels_on_the_error_channel() {
+        let error = parse_ufvk(String::new())
+            .expect_err("an empty viewkey must be typed, not prose in the data channel");
+        assert!(
+            matches!(error, ZingolibError::InvalidInput(_)),
+            "the failure must be the typed InvalidInput variant: {error}"
+        );
+    }
+
+    #[test]
+    fn unimplemented_option_stubs_fail_typed() {
+        for (result, ffi) in [
+            (set_option_wallet(), "set_option_wallet"),
+            (get_option_wallet(), "get_option_wallet"),
+        ] {
+            let error = result.expect_err("an unimplemented endpoint must fail typed");
+            assert!(
+                matches!(error, ZingolibError::Wallet(_)),
+                "{ffi} must fail with the typed Wallet variant: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn crypto_provider_install_succeeds_and_is_idempotent() {
+        for attempt in 1..=2 {
+            let value = set_crypto_default_provider_to_ring()
+                .expect("installing the ring provider must succeed");
+            assert_eq!(value, "true", "attempt {attempt} must resolve plain data");
+        }
+    }
+}
+
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::DEVELOPER_DONATION_ADDRESS.to_string()))
 }
