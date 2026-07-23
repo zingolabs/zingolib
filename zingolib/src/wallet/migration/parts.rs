@@ -874,14 +874,23 @@ mod tests {
     /// target inside the new window — see
     /// `schedule::tests::place_draws_a_fresh_target_inside_the_new_window`.
     /// The raw `reassign` transition deliberately does not manage the
-    /// target; placement does.
+    /// target; placement does. Here, the full complement: every state
+    /// except `Expired` refuses the transition.
     #[test]
     fn reassign_is_reachable_only_from_expired() {
-        let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
-        assert!(
-            part.reassign(5).is_err(),
-            "bound parts assign, not reassign"
-        );
+        for state in ALL_STATES {
+            let is_expired = matches!(state, PartState::Expired);
+            let mut part = part_in(state);
+            if is_expired {
+                part.reassign(5).expect("expired parts reassign");
+            } else {
+                assert!(
+                    part.reassign(5).is_err(),
+                    "reassign must be illegal from {:?}",
+                    part.state,
+                );
+            }
+        }
     }
 
     fn part_in(state: PartState) -> PartRecord {

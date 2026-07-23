@@ -91,6 +91,14 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
     let dust_floor = reader.read_u64::<LittleEndian>()?;
     let sweep_min = reader.read_u64::<LittleEndian>()?;
     let bucket_modulus = reader.read_u32::<LittleEndian>()?;
+    // Every bucket computation divides or multiplies by the modulus, so a
+    // zero from a corrupt file must fail typed here, not panic downstream.
+    if bucket_modulus == 0 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "bucket_modulus must be nonzero",
+        ));
+    }
     let k_max = reader.read_u32::<LittleEndian>()?;
     let target_sessions = reader.read_u32::<LittleEndian>()?;
     let max_actions_per_split_tx =
@@ -568,6 +576,21 @@ mod tests {
     /// the stream (the desired `usize::try_from` + `InvalidData` behavior)
     /// or preserve the value. It passes vacuously on 64-bit hosts; run under
     /// a 32-bit target (e.g. i686-unknown-linux-gnu) to observe the failure.
+    /// Every bucket computation divides or multiplies by the modulus, so a
+    /// zero arriving from a corrupt wallet file must fail the read typed
+    /// rather than panic downstream bucket arithmetic.
+    #[test]
+    fn zero_bucket_modulus_is_rejected_at_read() {
+        let mut state = planned_state();
+        state.params.bucket_modulus = 0;
+
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+
+        let error = read(bytes.as_slice()).expect_err("a zero modulus must not read");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
     #[test]
     fn max_actions_read_never_silently_truncates() {
         const SENTINEL: u64 = 0x1122_3344;
