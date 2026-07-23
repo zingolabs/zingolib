@@ -262,6 +262,24 @@ against generated Swift inspected on this host, runs in the Mac-gated
 step 7, env `ZINGO_GOLDEN_DIR`). Kotlin/Swift files added with explicit
 user consent (the new-language rule). See contract-tests/README.md.
 
+DEATH OBSERVER WIRED (2026-07-22, uncommitted) — the last slice-1 gap:
+`start(observer: Option<ProxyDeathObserver>)` spawns a liveness monitor
+on the shim's runtime. The probe is a SOCKS5 method-selection handshake
+against the local listener — a data round trip (increment-17 honored)
+yet purely local; end-to-end mixnet reachability remains the wallet
+attach probe's job, per the ratified split (NymProxy exposes no push
+death signal; nym-sdk's Socks5MixnetClient checked, none surfaced).
+Cadence 15s, two consecutive strikes fire
+`on_death(MixnetDisconnected{detail})` EXACTLY once and the monitor
+ends; `stop()` aborts the monitor first, so deliberate stop never reads
+as death. Hermetic tests over a mock SOCKS5 responder cover pass,
+method-refusal, dead-listener, and the once-only monitor contract.
+13/13 green, clippy clean, Kotlin regenerated (start now takes
+`ProxyDeathObserver?`), arm64 re-proven. Shim-side #2513 work is now
+COMPLETE pending the bindings-artifact decision; what remains of step 3
+is packaging into zingo-mobile (jniLibs + Kotlin glue, step-4 lane
+adjacency).
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which
