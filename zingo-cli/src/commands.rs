@@ -47,8 +47,10 @@ const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::fr
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` — the
 /// transmit-progress side channel `operation` narrates into — plus the elapsed
 /// seconds. `emit` is injected so tests capture the lines; production prints
-/// them. Grab the progress handle *before* building `operation`, which
-/// borrows the client mutably.
+/// them to STDERR, never stdout — command results own stdout, so a scripted
+/// `zingo-cli ... quicksend | jq` stays parseable however slow the send
+/// (PR #2470 review, M5). Grab the progress handle *before* building
+/// `operation`, which borrows the client mutably.
 async fn with_transmit_heartbeat<T>(
     label: &str,
     latest: impl Fn() -> Option<String>,
@@ -1686,7 +1688,7 @@ impl Command for QuickSendCommand {
             match with_transmit_heartbeat(
                 "quicksend",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.quick_send(request, zip32::AccountId::ZERO, true),
             )
             .await
@@ -1793,7 +1795,7 @@ impl Command for QuickShieldCommand {
             match with_transmit_heartbeat(
                 "quickshield",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.quick_shield(zip32::AccountId::ZERO),
             )
             .await
@@ -1849,7 +1851,7 @@ impl Command for ConfirmCommand {
             match with_transmit_heartbeat(
                 "confirm",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.send_stored_proposal(true),
             )
             .await
@@ -1997,7 +1999,7 @@ impl Command for TransmitCommand {
             Ok(match with_transmit_heartbeat(
                 "transmit",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.transmit_calculated(txids),
             )
             .await
@@ -2705,7 +2707,7 @@ fn run_migrate(
     let summary = RT.block_on(with_transmit_heartbeat(
         "migrate",
         move || progress.latest(),
-        |line| println!("{line}"),
+        |line| eprintln!("{line}"),
         lightclient.migrate_to_ironwood(zip32::AccountId::ZERO),
     ))?;
     Ok(object! {
@@ -2742,7 +2744,7 @@ fn run_migration(
             RT.block_on(with_transmit_heartbeat(
                 "migration start",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.start_ironwood_migration(
                     zip32::AccountId::ZERO,
                     migration::SigningStrategy::LazyAtBoundary,
@@ -2808,7 +2810,7 @@ fn run_migration(
             let txids = RT.block_on(with_transmit_heartbeat(
                 "migration catchup",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.catch_up_migration(spacing),
             ))?;
             if txids.is_empty() {
