@@ -102,7 +102,16 @@ the bucket plumbing wholesale is not needed for camouflage. A new named
 placement (`place_scheduled`) joins the placement monopoly. Expiry
 already follows `target_height`, so it inherits the drawn schedule.
 
-## Pending: preparation-delay wiring (deviation 1, second half)
+## DONE (2026-07-24): preparation-delay wiring (deviation 1, second half)
+
+Landed as commit 611117423 (rebased onto the post-#2419-merge branch
+refresh): rounds queue per-transaction drawn due heights in
+MigrationPhase::NoteSplitting, transactions build at their due wakes,
+and SplitStep::AwaitingSchedule reports the next due height. Every
+deviation tracked by issue #2519 is now retired. The original design
+note follows.
+
+## Original design note: preparation-delay wiring (deviation 1, second half)
 
 The pure layer (PREP_MEAN_DELAY = 24, PREP_MAX_DELAY = 96,
 draw_prep_delay, mirroring the ZIP's note-preparation SHOULD) is
