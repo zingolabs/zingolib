@@ -12,7 +12,7 @@ use log::info;
 use bip0039::Mnemonic;
 use zip32::AccountId;
 
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -23,7 +23,7 @@ use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use super::{LightWallet, error::KeyError};
+use super::{LightWallet, RecoveryInfo, error::KeyError};
 use crate::wallet::{WalletSettings, legacy::WalletZecPriceInfo, utils};
 use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
@@ -52,8 +52,12 @@ impl LightWallet {
     /// version). (A pre-release revision of 42 also wrote an
     /// `allow_v6_transactions` bool after `min_confirmations`; the setting
     /// was removed before any release carried it, so version 42 is defined
-    /// without the byte and files from those testing builds are not
-    /// readable.)
+    /// without the byte. Files from those testing builds are read by
+    /// disambiguating the tail — see [`Self::read_price_and_migration`].)
+    ///
+    /// Version 43 is retired: pre-release builds briefly wrote it with the
+    /// final version 42 layout, so it is accepted at read as 42 and must
+    /// never be assigned to a new layout. The next format bump is 44.
     #[must_use]
     pub const fn serialized_version() -> u64 {
         42
@@ -145,7 +149,9 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=42 => Self::read_v32(reader, chain_type, version),
+            // 43 is a retired pre-release version with the final 42 layout;
+            // see the `serialized_version` docs.
+            32..=43 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -605,16 +611,38 @@ impl LightWallet {
             }
         };
 
-        let price_list = if version >= 34 {
-            PriceList::read(&mut reader)?
+        let (price_list, migration) = if version == 42 {
+            // Version 42 exists in two layouts: pre-release builds wrote an
+            // `allow_v6_transactions` byte here, before the price list (see
+            // the `serialized_version` docs). Disambiguate by parsing the
+            // buffered tail anchored at end of file: the canonical layout
+            // first, then the pre-release layout with its leading bool
+            // skipped.
+            let mut tail = Vec::new();
+            reader.read_to_end(&mut tail)?;
+            match Self::read_price_and_migration(&tail) {
+                Ok(parsed) => parsed,
+                Err(canonical_error) => match tail.first() {
+                    Some(0 | 1) => {
+                        Self::read_price_and_migration(&tail[1..]).map_err(|_| canonical_error)?
+                    }
+                    _ => return Err(canonical_error),
+                },
+            }
         } else {
-            PriceList::new()
-        };
+            let price_list = if version >= 34 {
+                PriceList::read(&mut reader)?
+            } else {
+                PriceList::new()
+            };
 
-        let migration = if version >= 42 {
-            Optional::read(&mut reader, crate::wallet::migration::store::read)?
-        } else {
-            None
+            let migration = if version >= 42 {
+                Optional::read(&mut reader, crate::wallet::migration::store::read)?
+            } else {
+                None
+            };
+
+            (price_list, migration)
         };
 
         Ok(Self {
@@ -637,6 +665,79 @@ impl LightWallet {
             migration,
             send_proposal: None,
             save_required: false,
+        })
+    }
+
+    /// Parses the final section of a version 42 wallet file — the price list
+    /// followed by the optional migration section — anchored at end of file.
+    /// Trailing bytes are an error, so the two revisions of version 42
+    /// cannot be confused: the pre-release revision carries exactly one
+    /// extra leading byte, which makes exactly one of the two anchored
+    /// parses consume the whole tail.
+    fn read_price_and_migration(
+        mut tail: &[u8],
+    ) -> io::Result<(PriceList, Option<crate::wallet::migration::MigrationState>)> {
+        let price_list = PriceList::read(&mut tail)?;
+        let migration = Optional::read(&mut tail, crate::wallet::migration::store::read)?;
+        if !tail.is_empty() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "unexpected trailing bytes after wallet data",
+            ));
+        }
+        Ok((price_list, migration))
+    }
+
+    /// Recovers the seed phrase, birthday, and account count from the stable
+    /// prefix of a version 32+ wallet file, without parsing the rest of the
+    /// file. This is the escape hatch when [`Self::read`] fails on a file
+    /// written by an orphaned or unknown format revision: the recovered
+    /// info suffices to restore the wallet from seed and rescan.
+    ///
+    /// Fails on legacy files (version below 32), whose seed is stored too
+    /// deep in the file to reach without a full parse, and on view-only
+    /// wallets, which store no seed.
+    pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        if version < 32 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("wallet version {version} predates the recoverable prefix layout"),
+            ));
+        }
+        if version >= 41 {
+            let _chain_type_index = reader.read_u8()?;
+        } else {
+            let _chain_name = utils::read_string(&mut reader)?;
+        }
+        let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
+        if seed_bytes.is_empty() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "wallet file stores no seed (view-only wallet); nothing to recover",
+            ));
+        }
+        if version < 35 {
+            let _account_index = reader.read_u32::<LittleEndian>()?;
+        }
+        let mnemonic = <Mnemonic>::from_entropy(seed_bytes)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
+        let birthday = reader.read_u32::<LittleEndian>()?;
+        let no_of_accounts = if version >= 35 {
+            u32::try_from(CompactSize::read(&mut reader)?).map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("stored account count is not a valid u32: {e}"),
+                )
+            })?
+        } else {
+            1
+        };
+
+        Ok(RecoveryInfo {
+            seed_phrase: mnemonic.phrase().to_string(),
+            birthday: u64::from(birthday),
+            no_of_accounts,
         })
     }
 }

@@ -364,3 +364,89 @@ async fn wallet_round_trips_migration_state_at_current_version() {
     );
     assert_eq!(recovered.migration, Some(state));
 }
+
+/// Expectations and bytes for the orphaned-layout tests below: the wallet's
+/// chain type and recovery info, the file saved at the current version, and
+/// the serialized length of the file tail (price list plus optional
+/// migration section), which locates the pre-release insertion point.
+async fn current_version_wallet_bytes() -> (
+    crate::config::ChainType,
+    crate::wallet::RecoveryInfo,
+    Vec<u8>,
+    usize,
+) {
+    use zcash_encoding::Optional;
+
+    let client = NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
+    ))
+    .load_example_wallet()
+    .await;
+    let mut wallet = client.wallet().write().await;
+    wallet.save_required = true;
+    let bytes = wallet.save().unwrap().expect("save required");
+
+    let mut tail = Vec::new();
+    wallet.price_list.write(&mut tail).unwrap();
+    Optional::write(&mut tail, wallet.migration.as_ref(), |w, migration| {
+        crate::wallet::migration::store::write(w, migration)
+    })
+    .unwrap();
+
+    let chain_type = wallet.chain_type();
+    let recovery_info = wallet.recovery_info().unwrap();
+    (chain_type, recovery_info, bytes, tail.len())
+}
+
+/// Pre-release ironwood builds briefly wrote version 43 with the final
+/// version 42 layout. Those files must load as if they were version 42.
+#[tokio::test]
+async fn wallet_reads_retired_version_43_as_current() {
+    use crate::wallet::LightWallet;
+
+    let (chain_type, recovery_info, mut bytes, _tail_length) = current_version_wallet_bytes().await;
+    bytes[..8].copy_from_slice(&43u64.to_le_bytes());
+
+    let recovered = LightWallet::read(bytes.as_slice(), chain_type)
+        .expect("retired version 43 must read as the final 42 layout");
+    assert_eq!(recovered.recovery_info().unwrap(), recovery_info);
+}
+
+/// Pre-release ironwood builds before the `allow_v6_transactions` removal
+/// wrote version 42 with an extra bool between `min_confirmations` and the
+/// price list. Both bool values must load under the disambiguating reader.
+#[tokio::test]
+async fn wallet_reads_pre_release_v42_with_allow_v6_byte() {
+    use crate::wallet::LightWallet;
+
+    let (chain_type, recovery_info, bytes, tail_length) = current_version_wallet_bytes().await;
+    let insertion_point = bytes.len() - tail_length;
+
+    for allow_v6_byte in [0u8, 1u8] {
+        let mut pre_release = bytes.clone();
+        pre_release.insert(insertion_point, allow_v6_byte);
+
+        let recovered = LightWallet::read(pre_release.as_slice(), chain_type)
+            .expect("pre-release v42 layout must read via tail disambiguation");
+        assert_eq!(recovered.recovery_info().unwrap(), recovery_info);
+    }
+}
+
+/// When the full parse fails — here simulated by a truncated file — the
+/// prefix-only salvage reader must still recover seed, birthday, and
+/// account count, so no format break can strand a wallet.
+#[tokio::test]
+async fn recovery_info_salvages_a_wallet_file_that_fails_to_read() {
+    use crate::wallet::LightWallet;
+
+    let (chain_type, recovery_info, mut bytes, _tail_length) = current_version_wallet_bytes().await;
+    bytes.truncate(bytes.len() - 10);
+
+    assert!(
+        LightWallet::read(bytes.as_slice(), chain_type).is_err(),
+        "truncated file must fail the full parse for this test to be meaningful"
+    );
+    let salvaged = LightWallet::read_recovery_info(bytes.as_slice())
+        .expect("prefix salvage must survive a corrupt tail");
+    assert_eq!(salvaged, recovery_info);
+}
