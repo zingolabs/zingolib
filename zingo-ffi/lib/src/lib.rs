@@ -157,7 +157,11 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
             MigrationError::ConsentStale => ZingolibError::MigrationConsentStale(text),
             MigrationError::CadenceFixed => ZingolibError::MigrationCadenceFixed(text),
-            MigrationError::PreSignedUnavailable => ZingolibError::Migration(text),
+            MigrationError::ScheduledMigrationExists => ZingolibError::MigrationAlreadyInProgress,
+            MigrationError::PreSignedUnavailable
+            | MigrationError::NoteSplittingRequired
+            | MigrationError::DifferentAccount
+            | MigrationError::ActivationBoundaryPending { .. } => ZingolibError::Migration(text),
             MigrationError::SplitDidNotConverge(_)
             | MigrationError::SplitTransactionFailed(_)
             | MigrationError::SplitConfirmationTimeout => ZingolibError::MigrationSplit(text),
