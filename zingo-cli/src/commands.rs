@@ -47,8 +47,10 @@ const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::fr
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` — the
 /// transmit-progress side channel `operation` narrates into — plus the elapsed
 /// seconds. `emit` is injected so tests capture the lines; production prints
-/// them. Grab the progress handle *before* building `operation`, which
-/// borrows the client mutably.
+/// them to STDERR, never stdout — command results own stdout, so a scripted
+/// `zingo-cli ... quicksend | jq` stays parseable however slow the send
+/// (PR #2470 review, M5). Grab the progress handle *before* building
+/// `operation`, which borrows the client mutably.
 async fn with_transmit_heartbeat<T>(
     label: &str,
     latest: impl Fn() -> Option<String>,
@@ -679,10 +681,11 @@ impl Command for CurrentPriceCommand {
             Updates and returns current price of ZEC.
             Currently only supports USD.
 
-            The price is fetched over the Nym mixnet when Mixnet Mode is on, which
-            hides the client IP from the price source; see the `nym` command. While
-            the mixnet is bootstrapping the fetch fails closed rather than leaking
-            over clearnet.
+            The price fetch has no clearnet tier: it travels ONLY over the Nym
+            mixnet, which hides the client IP from the price source. It requires
+            a build with the `nym` feature and Mixnet Mode ready (see the `nym`
+            command); while the mixnet bootstraps, or when Mixnet Mode is off,
+            the fetch is refused rather than sent over clearnet.
 
             Usage:
             current_price
@@ -722,7 +725,11 @@ impl Command for NymCommand {
                                   is mixnet-specific. The clearnet leg contacts indexers
                                   from your real IP.
             nym history           Per-indexer attempt history accumulated across
-                                  sessions: sends and probes, per route.
+                                  sessions: sends and probes, per route. Recording
+                                  needs the nym-diary build feature plus the
+                                  per-session --indexer-diary opt-in; the diary
+                                  stores hosts, timings, and a failure category,
+                                  never server text, and is capped.
 
             When Mixnet Mode is on, send and price-fetch route over the mixnet and
             fail closed while it is still bootstrapping, never falling back to
@@ -883,10 +890,36 @@ fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     )
 }
 
+/// The `nym history` body when the indexer diary is compiled in: render the
+/// accumulated record, and remind an opted-out session how recording starts.
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
+fn nym_history_command(lightclient: &LightClient) -> String {
+    let handle = lightclient.indexer_history_handle();
+    let mut rendered = render_history(
+        &handle.load(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0),
+    );
+    if !handle.is_recording() {
+        rendered.push_str("\n(recording is off this session; start with --indexer-diary)");
+    }
+    rendered
+}
+
+/// The `nym history` body when the indexer diary is not compiled in.
+#[cfg(all(feature = "nym", not(feature = "nym-diary")))]
+fn nym_history_command(_lightclient: &LightClient) -> String {
+    "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
+     opt a session in with --indexer-diary to record per-indexer history."
+        .to_string()
+}
+
 /// Render the accumulated per-indexer history as per-host, per-route
 /// aggregates, most-attempted hosts first. Pure over the loaded attempts and
 /// a caller-supplied "now" so tests pin the ages.
-#[cfg(feature = "nym")]
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
 fn render_history(
     attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
     now_unix_secs: u64,
@@ -991,13 +1024,33 @@ fn render_status(
     }
 }
 
+/// The complete `nym status` output: the Mixnet Mode line followed by the
+/// IP-correlation disclaimer. The disclaimer always accompanies the status
+/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
+/// synchronization stays on the ordinary connector — so a bare "ready" must
+/// never be read as end-to-end IP protection. The canonical text lives in
+/// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
+/// wording.
+#[cfg(feature = "nym")]
+fn render_status_with_disclaimer(
+    mode: zingolib::nym::MixnetMode,
+    socks5_addr: Option<&str>,
+    bootstrap_detail: Option<&str>,
+) -> String {
+    format!(
+        "{}\n\n{}",
+        render_status(mode, socks5_addr, bootstrap_detail),
+        zingolib::nym::IP_CORRELATION_DISCLAIMER,
+    )
+}
+
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
     let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
         match subcommand {
-            NymSubCommand::Status => Ok(render_status(
+            NymSubCommand::Status => Ok(render_status_with_disclaimer(
                 lightclient.mixnet_mode(),
                 lightclient.mixnet_socks5_addr().as_deref(),
                 lightclient.mixnet_bootstrap_detail().as_deref(),
@@ -1030,16 +1083,7 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
                     .collect::<Vec<_>>()
                     .join("\n"))
             }
-            NymSubCommand::History => {
-                let attempts = lightclient.indexer_history_handle().load();
-                Ok(render_history(
-                    &attempts,
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|elapsed| elapsed.as_secs())
-                        .unwrap_or(0),
-                ))
-            }
+            NymSubCommand::History => Ok(nym_history_command(lightclient)),
         }
     })
 }
@@ -1664,7 +1708,7 @@ impl Command for QuickSendCommand {
             match with_transmit_heartbeat(
                 "quicksend",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.quick_send(request, zip32::AccountId::ZERO, true),
             )
             .await
@@ -1771,7 +1815,7 @@ impl Command for QuickShieldCommand {
             match with_transmit_heartbeat(
                 "quickshield",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.quick_shield(zip32::AccountId::ZERO),
             )
             .await
@@ -1827,7 +1871,7 @@ impl Command for ConfirmCommand {
             match with_transmit_heartbeat(
                 "confirm",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.send_stored_proposal(true),
             )
             .await
@@ -1975,7 +2019,7 @@ impl Command for TransmitCommand {
             Ok(match with_transmit_heartbeat(
                 "transmit",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.transmit_calculated(txids),
             )
             .await
@@ -2683,7 +2727,7 @@ fn run_migrate(
     let summary = RT.block_on(with_transmit_heartbeat(
         "migrate",
         move || progress.latest(),
-        |line| println!("{line}"),
+        |line| eprintln!("{line}"),
         lightclient.migrate_to_ironwood(zip32::AccountId::ZERO),
     ))?;
     Ok(object! {
@@ -2720,7 +2764,7 @@ fn run_migration(
             RT.block_on(with_transmit_heartbeat(
                 "migration start",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.start_ironwood_migration(
                     zip32::AccountId::ZERO,
                     migration::SigningStrategy::LazyAtBoundary,
@@ -2786,7 +2830,7 @@ fn run_migration(
             let txids = RT.block_on(with_transmit_heartbeat(
                 "migration catchup",
                 move || progress.latest(),
-                |line| println!("{line}"),
+                |line| eprintln!("{line}"),
                 lightclient.catch_up_migration(spacing),
             ))?;
             if txids.is_empty() {
@@ -3238,24 +3282,27 @@ mod nym_command_parsing {
     /// HYPOTHESIS: the history rendering aggregates per host and route with
     /// the most recent outcome and its age. Falsified if counts mix routes
     /// or the last outcome reflects file order rather than timestamps.
-    #[cfg(feature = "nym")]
+    #[cfg(all(feature = "nym", feature = "nym-diary"))]
     #[test]
     fn history_aggregates_per_host_and_route() {
-        use zingolib::lightclient::indexer_history::{AttemptKind, AttemptRoute, IndexerAttempt};
+        use zingolib::lightclient::indexer_history::{
+            AttemptKind, AttemptRoute, FailureKind, IndexerAttempt,
+        };
 
-        let attempt = |host: &str, route, unix_secs, outcome: Result<(), &str>| IndexerAttempt {
+        let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
             host: host.to_string(),
             route,
             kind: AttemptKind::Send,
             millis: 10,
-            outcome: outcome.map_err(str::to_string),
+            outcome,
         };
+        let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
-            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, Err("tunnel")),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
             attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
-            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, Err("tunnel")),
+            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
         ];
 
         assert_eq!(
@@ -3377,5 +3424,43 @@ mod nym_command_parsing {
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
             "a stale detail must not leak into the ready line"
         );
+    }
+
+    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
+    /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
+    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
+    /// line is preserved verbatim as the first line. Falsified if the
+    /// disclaimer is dropped in any mode, no longer leads with the mode line,
+    /// or omits the sync/IP/indexer/balance risk it must name.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn status_always_carries_the_ip_correlation_disclaimer() {
+        use zingolib::nym::MixnetMode;
+
+        for mode in [
+            MixnetMode::Off,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Ready,
+            MixnetMode::Died,
+        ] {
+            let addr = Some("127.0.0.1:43210");
+            let out = render_status_with_disclaimer(mode, addr, None);
+            assert!(
+                out.starts_with(&render_status(mode, addr, None)),
+                "the mode line must lead the status output: {out}"
+            );
+            for phrase in [
+                "IP-correlation risk",
+                "synchronization",
+                "sync indexer",
+                "total balance",
+                "ZIP-0318",
+            ] {
+                assert!(
+                    out.contains(phrase),
+                    "the disclaimer must name {phrase:?} in mode {mode:?}: {out}"
+                );
+            }
+        }
     }
 }

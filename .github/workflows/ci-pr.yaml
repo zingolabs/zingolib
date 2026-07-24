@@ -34,6 +34,7 @@ jobs:
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -96,6 +97,14 @@ jobs:
       - name: Test
         run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
 
+      # Membership in the root workspace used to gate rustdoc through
+      # checkmate's doc phase; clippy does not run rustdoc lints, so the
+      # standalone workspace needs its own doc gate.
+      - name: Doc
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. It is off by default, so the
   # --workspace jobs above never compile it; this job builds and lints the
@@ -123,14 +132,26 @@ jobs:
           fi
 
       - name: Clippy
-        run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
+        run: cargo clippy -p zingolib -p zingo-cli --features nym,nym-diary --all-targets -- -D warnings
 
-      - name: Test the nym module
-        run: "cargo test -p zingolib --features nym --lib nym::"
+      # Whole suites, deliberately unfiltered: module-path filter lists rot
+      # as gated tests land outside them (PR #2470 review, M6). Re-running
+      # the ungated tests under the features is the price of a gate that
+      # cannot silently go dark; everything here is deterministic and
+      # mixnet-free.
+      - name: Test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --lib
+
+      - name: Test zingo-cli under the nym features
+        run: cargo test -p zingo-cli --features nym,nym-diary --lib
+
+      - name: Doc-test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --doc
 
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings

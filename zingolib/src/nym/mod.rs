@@ -18,6 +18,6 @@ pub mod probe;
 pub mod route;
 pub mod supervisor;
 
-pub use mode::MixnetMode;
+pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
 pub use supervisor::{MixnetProxy, MixnetProxyError};

@@ -22,7 +22,7 @@ use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::indexer_history::{
-    AttemptKind, AttemptRoute, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
+    AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
 };
 use crate::lightclient::transmit::{
     TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
@@ -30,7 +30,8 @@ use crate::lightclient::transmit::{
 };
 
 /// Records one finished send attempt against `host` into the cross-session
-/// history: route, elapsed time, and the failure detail when it failed.
+/// history: route, elapsed time, and the sanitized failure category when it
+/// failed — never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
     host: &str,
@@ -46,7 +47,7 @@ fn record_send_attempt(
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         outcome: match outcome {
             Ok(_) => Ok(()),
-            Err(detail) => Err(detail.clone()),
+            Err(detail) => Err(FailureKind::classify(detail)),
         },
     });
 }
@@ -242,7 +243,7 @@ async fn transmit_one_transaction(
 /// cap is reached.
 ///
 /// The draw comes from [`eligible_witnesses`], never the raw curated list: a
-/// witness is never the sync indexer's operator (ADR 0014), because that party
+/// witness is never the sync indexer's operator (ADR 0015), because that party
 /// already holds the wallet's address set and must not receive the broadcast
 /// too. An emptied pool refuses rather than falling back.
 #[cfg(feature = "nym")]

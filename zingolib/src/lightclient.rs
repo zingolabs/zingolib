@@ -131,8 +131,10 @@ pub struct LightClient {
     /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
-    /// The cross-session per-indexer attempt history, appended beside the
-    /// wallet file by every transmission arm and diagnostic probe.
+    /// The cross-session per-indexer attempt history (the indexer diary).
+    /// Disk-backed only under the `nym-diary` feature, and recording only
+    /// after the session opts in via `set_indexer_diary`; otherwise the
+    /// handle is inert.
     indexer_history: indexer_history::IndexerHistoryHandle,
     /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
     /// `None` means Mixnet Mode is off.
@@ -198,9 +200,12 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
             indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
                 &config.get_wallet_path(),
             ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -280,9 +285,12 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
             indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
                 &config.get_wallet_path(),
             ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -309,12 +317,24 @@ impl LightClient {
         self.transmit_progress.clone()
     }
 
-    /// A cloneable handle to the cross-session per-indexer attempt history —
-    /// every transmission arm and diagnostic probe appends to it, and
+    /// A cloneable handle to the cross-session per-indexer attempt history
+    /// (the indexer diary) —
     /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
-    /// record for display or scoring.
+    /// record for display or scoring. Transmission arms and diagnostic probes
+    /// append to it only in a `nym-diary` build whose session has opted in
+    /// via `set_indexer_diary`; in every other configuration the handle is
+    /// inert and loads empty.
     pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
         self.indexer_history.clone()
+    }
+
+    /// Opt this session in to (or back out of) recording the indexer diary:
+    /// one sanitized line per transmission arm or probe leg, appended to
+    /// `indexer-history.tsv` beside the wallet. The choice is never
+    /// persisted — every session starts with recording off.
+    #[cfg(feature = "nym-diary")]
+    pub fn set_indexer_diary(&self, record: bool) {
+        self.indexer_history.set_recording(record);
     }
 
     /// A snapshot of the in-progress immediate drain
@@ -552,27 +572,35 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
-    /// Update and return the current ZEC price in USD, obeying the Mixnet Mode
-    /// policy for the price-fetch surface (ADR 0011). When Mixnet Mode is on
-    /// and ready the fetch is proxied through the mixnet; while it is
-    /// bootstrapping the fetch fails closed rather than leaking over clearnet;
-    /// and it goes over clearnet only when Mixnet Mode is off, which is a
-    /// deliberate toggle-off. Builds compiled without the `nym` feature always
-    /// fetch over clearnet.
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
+    /// mixnet when Mixnet Mode is ready, fails closed while the mode
+    /// bootstraps or after the proxy dies, and is refused — never routed over
+    /// clearnet — while the mode is toggled off.
+    #[cfg(feature = "nym")]
     pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
-        #[cfg(feature = "nym")]
-        let route = self.mixnet_route()?;
-        #[cfg(feature = "nym")]
-        let socks5_proxy = route.socks5_proxy();
-        #[cfg(not(feature = "nym"))]
-        let socks5_proxy: Option<&str> = None;
+        let socks5_addr = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
+            crate::nym::MixnetRoute::Clearnet => {
+                return Err(LightClientError::PriceFetchRequiresMixnet);
+            }
+        };
 
         Ok(self
             .wallet()
             .write()
             .await
-            .update_current_price(socks5_proxy)
+            .update_current_price(&socks5_addr)
             .await?)
+    }
+
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
+    /// the Nym mixnet, so a build without the `nym` feature refuses: the
+    /// fetch code is not compiled in at all.
+    #[cfg(not(feature = "nym"))]
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Err(LightClientError::PriceFetchUnsupported)
     }
 
     /// Creates an additional ZIP-32 account derived from the wallet seed.

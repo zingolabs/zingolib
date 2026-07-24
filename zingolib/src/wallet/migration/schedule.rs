@@ -78,8 +78,10 @@ pub fn first_anchorable_boundary(activation: PoolActivation, bucket_modulus: u32
 }
 
 /// The first bucket whose boundary sits at or above the Pool Activation.
+/// The modulus is nonzero by the [`MigrationParams::bucket_modulus`]
+/// invariant (enforced at store read), as in every bucket computation.
 fn activation_bucket(activation: PoolActivation, bucket_modulus: u32) -> u64 {
-    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus.max(1)))
+    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus))
 }
 
 /// Places a part in `bucket` with a fresh random target inside the
@@ -227,45 +229,6 @@ pub fn next_wakes(
             }
         })
         .collect()
-}
-
-/// Shifts the remaining schedule after missed windows (ZIP 318: "shift the
-/// remaining schedule by the offset").
-///
-/// If any [`PartState::Assigned`] part sits in a bucket at or before
-/// `now_height`'s, every assigned part moves forward by the offset that puts
-/// the earliest one in the next bucket. Relative cohort structure is
-/// preserved. Parts already signed, broadcast or terminal are untouched.
-/// No-op when nothing was missed.
-#[allow(clippy::result_large_err)]
-pub fn catch_up_shift(
-    parts: &mut [PartRecord],
-    now_height: BlockHeight,
-    params: &MigrationParams,
-) -> Result<(), WalletError> {
-    let current_bucket = bucket_index(now_height, params.bucket_modulus);
-    let Some(earliest) = parts
-        .iter()
-        .filter(|part| part.state == PartState::Assigned)
-        .filter_map(|part| part.bucket_index)
-        .min()
-    else {
-        return Ok(());
-    };
-    if earliest > current_bucket {
-        return Ok(());
-    }
-
-    let offset = current_bucket + 1 - earliest;
-    for part in parts.iter_mut() {
-        if part.state == PartState::Assigned {
-            let bucket = part
-                .bucket_index
-                .expect("assigned parts always carry a bucket");
-            part.shift(bucket + offset)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -468,39 +431,6 @@ mod tests {
                 bucket_index(boundary, modulus),
                 bucket_index(height, modulus)
             );
-        }
-    }
-
-    #[test]
-    fn catch_up_shift_is_a_no_op_when_nothing_missed() {
-        let params = params();
-        let mut parts = parts_with_denominations(&[100, 200, 300]);
-        let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
-        let before = parts.clone();
-        catch_up_shift(&mut parts, now, &params).unwrap();
-        assert_eq!(parts, before);
-    }
-
-    #[test]
-    fn catch_up_shift_moves_the_whole_remaining_schedule() {
-        let params = params();
-        let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
-        let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
-        let buckets_before: Vec<u64> = parts.iter().map(|p| p.bucket_index.unwrap()).collect();
-
-        // The chain has advanced two buckets past the first window.
-        let later = BlockHeight::from_u32(u32::from(boundary_of(
-            buckets_before.iter().min().unwrap() + 2,
-            params.bucket_modulus,
-        )));
-        catch_up_shift(&mut parts, later, &params).unwrap();
-
-        let current_bucket = bucket_index(later, params.bucket_modulus);
-        let offset = current_bucket + 1 - buckets_before.iter().min().unwrap();
-        for (part, before) in parts.iter().zip(&buckets_before) {
-            assert_eq!(part.bucket_index.unwrap(), before + offset);
         }
     }
 

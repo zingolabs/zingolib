@@ -1118,7 +1118,8 @@ impl OutputInterface for TransparentCoin {
 
 /// The network upgrade at which a shielded pool begins to exist.
 ///
-/// This is the workspace's single pool-to-upgrade mapping (ADR 0012 in the
+/// This is the workspace's single pool-to-upgrade mapping (ADR 0014,
+/// `docs/adr/0014-pool-activation-derived-in-pepper-sync.md` in the
 /// workspace root): upstream `zcash_protocol` deliberately ships
 /// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
 /// is defined exactly once, here. Every height clamp involving a pool's
@@ -1168,7 +1169,9 @@ impl PoolActivation {
 
     /// The later of the activation and `height`: the effective floor for
     /// heights that must not precede the pool's existence (a wallet
-    /// birthday clamped to the pool, a scan-range start).
+    /// Birthday clamped to the pool's activation, the lower bound of a
+    /// scan range). Birthday remains a wallet property throughout; the
+    /// pool contributes only its activation height.
     #[must_use]
     pub fn max_with(&self, height: BlockHeight) -> BlockHeight {
         self.0.max(height)
@@ -1722,17 +1725,17 @@ impl ShardTrees {
         let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         // These trees are freshly created, so the initial checkpoint must
-        // be `Added`; a `NotAboveNewest` here would break the
+        // be `Appended`; a `NotAboveNewest` here would break the
         // initialization invariant that `add_initial_frontier` and
         // truncation planning rely on.
         for tree_checkpoint in [
-            sapling.checkpoint_classified(BlockHeight::from_u32(0)),
-            orchard.checkpoint_classified(BlockHeight::from_u32(0)),
-            ironwood.checkpoint_classified(BlockHeight::from_u32(0)),
+            sapling.append_checkpoint(BlockHeight::from_u32(0)),
+            orchard.append_checkpoint(BlockHeight::from_u32(0)),
+            ironwood.append_checkpoint(BlockHeight::from_u32(0)),
         ] {
             assert_eq!(
                 tree_checkpoint.expect("should never fail"),
-                crate::shardtree_ext::CheckpointOutcome::Added
+                crate::shardtree_ext::CheckpointAppendOutcome::Appended
             );
         }
 
