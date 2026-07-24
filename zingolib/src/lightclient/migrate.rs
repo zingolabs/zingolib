@@ -2010,6 +2010,291 @@ mod tests {
         assert_eq!(part.attempts, 1, "the attempt was recorded before submit");
     }
 
+    /// Harm-level pins for the high-severity findings of issue #2493,
+    /// asserting the user-visible contract each finding claimed was
+    /// violated rather than the mechanism the fix chose. Each test is
+    /// written to run against the pre-fix parent of its fix commit with at
+    /// most fixture-level adaptation, so a red run there demonstrates the
+    /// finding was real while a green run here proves the fix reaches the
+    /// harm. The fix commits' own mechanism tests live elsewhere in this
+    /// module and stay authoritative for the chosen error variants.
+    mod issue_2493_high_severity_harms {
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use super::*;
+        use crate::lightclient::error::{LightClientError, MigrationError};
+        use crate::wallet::migration::{BoundaryWitness, plan_hash};
+
+        /// Finding 1: the scheduled flow on a fragmented wallet must never
+        /// persist a migration state that no production path can advance.
+        /// Before the fix, `start_ironwood_migration` stored the consent as
+        /// `Planned`, nothing implemented the note splitting reconcile kept
+        /// recommending, and the stuck state blocked the drain path with
+        /// `AlreadyInProgress`. The refusal variant is pinned by
+        /// [`super::unsplit_plan_is_refused_without_stranding_consent`];
+        /// this test pins the harm chain mechanism-free — no stranded
+        /// state, and a drain that is not told a migration is in progress.
+        #[tokio::test]
+        async fn fragmented_wallet_is_never_stranded_nor_its_drain_blocked() {
+            // A single messy-valued note guarantees the plan needs
+            // splitting.
+            let wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .orchard_note(987_654_321)
+                    .tip(360)
+                    .build();
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let plan = client
+                .plan_ironwood_migration(AccountId::ZERO)
+                .await
+                .expect("planning is pure");
+            assert!(!plan.is_split(), "premise: the plan requires splitting");
+
+            let scheduled = client
+                .start_ironwood_migration(
+                    AccountId::ZERO,
+                    SigningStrategy::LazyAtBoundary,
+                    plan_hash(&plan),
+                    None,
+                )
+                .await;
+            assert!(
+                scheduled.is_err(),
+                "no driver for scheduled-flow splitting exists; accepting \
+                 the consent would strand it"
+            );
+
+            {
+                let wallet = client.wallet().read().await;
+                assert!(
+                    wallet.migration.is_none(),
+                    "nothing may persist a state no production path advances"
+                );
+            }
+
+            let drain = client.drain_orchard_to_ironwood(AccountId::ZERO).await;
+            assert!(
+                !matches!(
+                    drain,
+                    Err(LightClientError::MigrationError(
+                        MigrationError::AlreadyInProgress
+                    ))
+                ),
+                "the failed scheduled attempt must not block the drain \
+                 path, got {drain:?}"
+            );
+        }
+
+        /// Finding 2: one unpreparable part must not leave the other due
+        /// parts unsent until a reconcile happens to run. The bad part's
+        /// bound note was spent out from under the migration — a per-part
+        /// recoverable condition that belongs to reconciliation — while a
+        /// healthy signed part shares the same open window. Before the
+        /// fix, `prepare_part` returned a hard error that Phase A
+        /// propagated, aborting the pass before the healthy part was
+        /// reached.
+        #[tokio::test]
+        async fn one_bad_part_never_blocks_the_other_due_parts() {
+            // Mid-window in bucket 1 of the provisional M = 256, as in
+            // [`super::open_window_part_is_broadcast_at_relaunch`].
+            const TIP: u32 = 300;
+            const BAD_VALUE: u64 = 90_000;
+
+            let wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .orchard_note(BAD_VALUE)
+                    .orchard_note(NOTE_VALUE)
+                    .tip(TIP)
+                    .build();
+            let bind = |wallet: &LightWallet, value: u64| {
+                wallet
+                    .wallet_transactions
+                    .values()
+                    .flat_map(OrchardNote::transaction_outputs)
+                    .find(|note| note.value() == value)
+                    .map(|note| BoundNote {
+                        output_id: note.output_id(),
+                        nullifier: note
+                            .nullifier()
+                            .expect("scanned notes carry nullifiers")
+                            .to_bytes(),
+                        commitment: [0; 32],
+                    })
+                    .expect("the wallet holds the fabricated note")
+            };
+            let bad_note = bind(&wallet, BAD_VALUE);
+            let healthy_note = bind(&wallet, NOTE_VALUE);
+
+            // The user insistently spends the bad part's reserved note.
+            let mut wallet = wallet;
+            wallet
+                .wallet_transactions
+                .values_mut()
+                .flat_map(|tx| tx.orchard_notes_mut())
+                .filter(|note| note.output_id() == bad_note.output_id)
+                .for_each(|note| {
+                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
+                });
+
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("the synthetic wallet is fully synced");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+
+            // The bad part carries a fabricated witness so `prepare_part`
+            // reaches the bound-note revalidation instead of skipping
+            // earlier on the missing checkpoint.
+            let mut bad = PartRecord::new(PartId(0), BAD_VALUE, bad_note);
+            bad.assign(current_bucket).expect("fresh parts are bound");
+            bad.anchor_witness = Some(BoundaryWitness {
+                anchor: [0; 32],
+                position: 0,
+                auth_path: Vec::new(),
+            });
+
+            // The healthy part was signed in a previous session; only the
+            // submit remains.
+            let healthy_txid = TxId::from_bytes([7; 32]);
+            let signed_blob = vec![0xAB; 64];
+            let mut healthy = PartRecord::new(PartId(1), NOTE_VALUE, healthy_note);
+            healthy
+                .assign(current_bucket)
+                .expect("fresh parts are bound");
+            healthy
+                .mark_signed(healthy_txid, window_end, Some(signed_blob))
+                .expect("assigned parts sign");
+
+            wallet.migration = Some(scheduled_state(params, vec![bad, healthy]));
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let broadcast_client = MockBroadcastClient::default();
+            let sent = client
+                .broadcast_due_parts_with(&broadcast_client)
+                .await
+                .expect("one recoverable part must not abort the pass");
+            assert_eq!(
+                sent,
+                vec![healthy_txid],
+                "the healthy due part broadcasts in this pass, not after \
+                 some later reconcile"
+            );
+            assert_eq!(broadcast_client.submissions.lock().unwrap().len(), 1);
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(
+                parts[0].state,
+                PartState::Assigned,
+                "the bad part falls to reconciliation, unharmed"
+            );
+            assert_eq!(parts[0].attempts, 0);
+            assert_eq!(parts[1].state, PartState::Broadcast);
+        }
+
+        /// Finding 3: the one-call path must re-check the recorded consent
+        /// before anything else. Before the fix it reused an existing
+        /// scheduled migration without re-checking the plan hash or
+        /// account and force-shifted every pending part into the current
+        /// bucket — the correlated immediate broadcast the recorded
+        /// consent rejected. The refusal must be a migration-domain
+        /// decision reached before any network action (this client is
+        /// offline; a connectivity error here would mean the consent
+        /// check came second), and the schedule must survive untouched.
+        #[tokio::test]
+        async fn one_call_path_never_disturbs_a_consented_schedule() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("the synthetic wallet is fully synced");
+            let future_bucket = schedule::bucket_index(now_height, params.bucket_modulus) + 3;
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(future_bucket).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+            let transactions_before = wallet.wallet_transactions.len();
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let result = client.migrate_to_ironwood(AccountId::ZERO).await;
+            assert!(
+                matches!(result, Err(LightClientError::MigrationError(_))),
+                "the consent must be re-checked before any network action, \
+                 got {result:?}"
+            );
+
+            let wallet = client.wallet().read().await;
+            let state = wallet
+                .migration
+                .as_ref()
+                .expect("the consented schedule survives");
+            let part = &state.parts[0];
+            assert_eq!(
+                part.bucket_index,
+                Some(future_bucket),
+                "no force-shift into the current bucket"
+            );
+            assert_eq!(part.state, PartState::Assigned);
+            assert_eq!(part.attempts, 0, "nothing was broadcast");
+            assert_eq!(
+                wallet.wallet_transactions.len(),
+                transactions_before,
+                "no transaction was built from the schedule"
+            );
+        }
+
+        /// Finding 4: a rerun after completion must migrate the newly
+        /// received funds or refuse — never the fee-burning no-op. Before
+        /// the fix, the stale confirmed parts of the completed migration
+        /// made `state.parts` non-empty, which defeated binding, so a
+        /// rerun executed split rounds (paying fees), broadcast nothing,
+        /// overwrote `Complete` with `PartsScheduled`, and reported a
+        /// success summary with empty `part_txids`. The stale part set
+        /// standing as the basis of the rerun is the root of that whole
+        /// chain, and is observable even offline.
+        #[tokio::test]
+        async fn rerun_after_completion_never_reuses_the_stale_part_set() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let mut stale = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            stale.assign(1).expect("fresh parts are bound");
+            stale
+                .mark_confirmed(BlockHeight::from_u32(300))
+                .expect("the part's transaction confirmed");
+            let mut state = scheduled_state(params, vec![stale]);
+            state.mode = MigrationMode::Immediate;
+            state.phase = MigrationPhase::Complete { residual: 0 };
+            wallet.migration = Some(state);
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let result = client.migrate_to_ironwood(AccountId::ZERO).await;
+
+            if let Ok(summary) = &result {
+                assert!(
+                    !summary.part_txids.is_empty(),
+                    "a successful rerun must have broadcast something; an \
+                     empty success is the finding's fee-burning no-op"
+                );
+            }
+            let wallet = client.wallet().read().await;
+            assert!(
+                wallet.migration.as_ref().is_none_or(|state| {
+                    !state
+                        .parts
+                        .iter()
+                        .any(|part| matches!(part.state, PartState::Confirmed { .. }))
+                }),
+                "the completed migration's stale confirmed parts must not \
+                 stand as the basis of the rerun: they defeat binding and \
+                 produce the broadcastless success"
+            );
+        }
+    }
+
     /// A scheduled migration rejects the syncing drain *before* the drain
     /// pays for a sync. The client here is offline, so any attempt to sync
     /// first surfaces as [`LightClientError::Offline`] instead of the

@@ -1457,4 +1457,65 @@ mod tests {
         assert_eq!(mobileclient.nu6_1(), default.nu6_1());
         assert_eq!(mobileclient.nu6_2(), default.nu6_2());
     }
+
+    /// Issue #2493, finding 5, the harm side: the drift was a behavior
+    /// change with *no diff line* in the `*_mobileclient` functions —
+    /// they inherited the workspace default schedule, so flipping that
+    /// default to ironwood-era silently handed zingo-mobile's externally
+    /// pinned consumers an NU6.3-activated chain with ironwood-pool
+    /// funding. [`mobileclient_heights_defer_ironwood`] pins the deferred
+    /// schedule's *content*; this test pins the *call edge*, source-walk
+    /// style (the same idiom as pepper-sync's shardtree_ext boundary
+    /// test), so no mobileclient scenario can quietly rebind to the
+    /// workspace default. With `nu6_3()` `None`, the faucet
+    /// normalization's offload-and-drain gate
+    /// (`nu6_3().is_some_and(..)`) is structurally unreachable and
+    /// funding stays in the orchard pool.
+    #[test]
+    fn mobileclient_scenarios_use_the_deferred_schedule() {
+        // Walk only the scenario code: this tests module legitimately
+        // names the workspace-default schedule.
+        let source = include_str!("scenarios.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("split always yields a first element");
+
+        let mut mobileclient_bodies = 0;
+        for segment in source.split("async fn ").skip(1) {
+            let name = segment
+                .split('(')
+                .next()
+                .expect("a function name precedes its parameter list");
+            if !name.ends_with("_mobileclient") {
+                continue;
+            }
+            mobileclient_bodies += 1;
+            assert!(
+                !segment.contains("default_test_activation_heights()"),
+                "{name} calls the workspace-default schedule; the \
+                 mobileclient scenarios pin pre-ironwood semantics for \
+                 external consumers (issue #2493, finding 5)"
+            );
+        }
+        assert!(
+            mobileclient_bodies >= 4,
+            "the source walk found only {mobileclient_bodies} mobileclient \
+             scenarios; the split heuristic no longer matches the source"
+        );
+
+        // The root every mobileclient derivative funds through must opt
+        // into the deferred schedule explicitly.
+        let root = source
+            .split("async fn unfunded_mobileclient")
+            .nth(1)
+            .expect("the root mobileclient scenario exists");
+        let root_body = root
+            .split("async fn ")
+            .next()
+            .expect("split always yields a first element");
+        assert!(
+            root_body.contains("mobileclient_activation_heights()"),
+            "unfunded_mobileclient must use the deferred schedule"
+        );
+    }
 }
