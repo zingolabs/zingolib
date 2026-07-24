@@ -1005,7 +1005,7 @@ impl LightClient {
                     for index in 0..state.parts.len() {
                         let due = {
                             let part = &state.parts[index];
-                            schedule::part_due_in_current_bucket(part, now_height, current_bucket)
+                            schedule::part_in_current_bucket(part, current_bucket)
                                 && only.is_none_or(|part_id| part.id == part_id)
                         };
                         if !due {
@@ -1303,11 +1303,11 @@ impl LightClient {
     ///
     /// This is the manual-execution entry point for a client whose user
     /// triggers each window from a wake-up notification: sync first, then
-    /// one call sends the whole batch. Parts whose window boundary is no
-    /// longer witnessable report [`PartSendResult::Slid`] and fall to
-    /// reconciliation for a coming window. Parts whose random target is
-    /// still ahead report [`PartSendResult::NotDue`] with the target's
-    /// estimated time, so the screen can invite the user back.
+    /// one call sends the whole batch. Every part of the open window is sent;
+    /// the random target height is advisory (the reminder hint), not a gate.
+    /// Parts whose window boundary is no longer witnessable report
+    /// [`PartSendResult::Slid`] and fall to reconciliation for a coming
+    /// window.
     ///
     /// Disclosure (ZIP 318): user-present sends correlate the broadcasts
     /// with the user's activity. Under a manual-execution flow every send
@@ -1331,7 +1331,9 @@ impl LightClient {
         self.wallet().write().await.refresh_part_witnesses()?;
 
         // The owed set: every part of the current window, shifted or not.
-        let (owed, now_height) = {
+        // The window being open is the whole due condition now — a part's
+        // random target no longer gates its send.
+        let owed: Vec<(PartId, u64)> = {
             let wallet = self.wallet().read().await;
             let state = wallet
                 .migration
@@ -1342,40 +1344,20 @@ impl LightClient {
                 .last_known_chain_height()
                 .ok_or(WalletError::NoSyncData)?;
             let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
-            let owed: Vec<(PartId, u64, Option<BlockHeight>)> = state
+            state
                 .parts
                 .iter()
-                .filter(|part| {
-                    matches!(part.state, PartState::Assigned | PartState::Signed)
-                        && part.bucket_index == Some(current_bucket)
-                })
-                .map(|part| (part.id, part.denomination, part.target_height))
-                .collect();
-            (owed, now_height)
+                .filter(|part| schedule::part_in_current_bucket(part, current_bucket))
+                .map(|part| (part.id, part.denomination))
+                .collect()
         };
-        let now_unix = u64::from(crate::utils::now());
 
         self.batch_progress.begin(owed.len() as u32);
         let _scope = BatchProgressScope(self.batch_progress.clone());
 
         let mut report = BatchReport::default();
         let mut sent = 0u32;
-        for (index, (part, denomination, target)) in owed.iter().enumerate() {
-            if let Some(target) = target.filter(|target| now_height < *target) {
-                report.outcomes.push(PartOutcome {
-                    part: *part,
-                    denomination: *denomination,
-                    result: PartSendResult::NotDue {
-                        estimated_unix_time: schedule::estimated_unix_at(
-                            target, now_height, now_unix,
-                        ),
-                    },
-                });
-                self.batch_progress
-                    .resolve(report.outcomes.len() as u32, sent);
-                continue;
-            }
-
+        for (index, (part, denomination)) in owed.iter().enumerate() {
             match self.broadcast_due_parts_selected(client, Some(*part)).await {
                 Ok(txids) if !txids.is_empty() => {
                     sent += 1;
@@ -3040,10 +3022,13 @@ mod tests {
             );
         }
 
-        /// A part whose random target is still ahead is reported with the
-        /// target's estimated time and nothing touches the network.
+        /// A part whose random target is still ahead is now attempted for the
+        /// whole open window rather than deferred: the target is advisory (the
+        /// reminder hint), not a send gate. Here the boundary is unwitnessable
+        /// in the synthetic wallet so the attempt slides — the point is that no
+        /// outcome is `NotDue`.
         #[tokio::test]
-        async fn not_yet_due_part_reports_its_target() {
+        async fn target_ahead_part_is_attempted_not_deferred() {
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
             let params = MigrationParams::provisional(wallet.chain_type());
             let now_height = wallet
@@ -3053,34 +3038,32 @@ mod tests {
             let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
-            part.target_height = Some(BlockHeight::from_u32(500));
+            part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
             wallet.migration = Some(scheduled_state(params, vec![part]));
 
             let mut client = LightClient::new_for_test(wallet).await;
             let broadcast_client = MockBroadcastClient::default();
-            let before = u64::from(crate::utils::now());
             let report = client
                 .execute_due_parts_with(&broadcast_client, Duration::ZERO)
                 .await
                 .unwrap();
-            let after = u64::from(crate::utils::now());
 
-            // 140 blocks ahead at the 75-second target spacing.
-            let expected_offset = (500 - 360) * 75;
+            assert!(
+                !report
+                    .outcomes
+                    .iter()
+                    .any(|outcome| matches!(outcome.result, PartSendResult::NotDue { .. })),
+                "the target no longer defers a send; got {:?}",
+                report.outcomes,
+            );
             assert!(matches!(
                 report.outcomes[..],
                 [PartOutcome {
-                    part: PartId(0),
-                    denomination: NOTE_VALUE,
-                    result: PartSendResult::NotDue { estimated_unix_time },
-                }] if estimated_unix_time >= before + expected_offset
-                    && estimated_unix_time <= after + expected_offset
+                    result: PartSendResult::Slid,
+                    ..
+                }]
             ));
             assert!(report.halted.is_none());
-            assert!(
-                broadcast_client.submissions.lock().unwrap().is_empty(),
-                "nothing reaches the endpoint"
-            );
         }
 
         /// The signed open-window part goes out and the report says so.
@@ -3245,8 +3228,10 @@ mod tests {
             assert_eq!(part.state, PartState::Assigned);
             assert_eq!(
                 part.bucket_index,
-                Some(2),
-                "re-bucketed after the current bucket (tip 360 sits in bucket 1)"
+                Some(1),
+                "re-bucketed into the current bucket (tip 360 sits in bucket 1): \
+                 rescheduling before any send re-runs the schedule, so the first \
+                 cohort is again immediately due"
             );
             assert!(part.target_height.is_some(), "fresh random target drawn");
             assert!(wallet.save_required, "the reschedule must persist");
@@ -3641,13 +3626,13 @@ mod tests {
         use super::super::{PartOutcome, PartSendResult};
         use super::*;
 
-        /// The bounce, pinned: a current-window part whose random target the
-        /// chain has not reached is *not* advertised as due, and a tap
-        /// confirms it — execute reports `NotDue` and sends nothing. The
-        /// mobile client used to infer this batch from `next_wakes` off a
-        /// stale tip and offer a send that bounced with nothing built.
+        /// The relaxed gate (Phase 2 privacy change): a current-window part
+        /// whose random target the chain has not reached is now advertised as
+        /// due for the whole open window — the target is advisory, surfaced
+        /// only as the reminder hint. This is the exact case the old target
+        /// gate hid.
         #[tokio::test]
-        async fn target_ahead_is_not_due_and_a_send_would_bounce() {
+        async fn target_ahead_is_advertised_due() {
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
             let params = MigrationParams::provisional(wallet.chain_type());
             let now_height = wallet
@@ -3655,33 +3640,59 @@ mod tests {
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
             let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let boundary = schedule::boundary_of(current_bucket, params.bucket_modulus);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
-            part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360
+            part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
             wallet.migration = Some(scheduled_state(params, vec![part]));
 
-            let mut client = LightClient::new_for_test(wallet).await;
-
-            // The status offers no batch...
-            assert!(
-                client.migration_status().await.unwrap().due_now.is_none(),
-                "a part whose target is ahead must not be advertised as due",
-            );
-
-            // ...and a send confirms nothing would go out.
-            let broadcast_client = MockBroadcastClient::default();
-            let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+            let client = LightClient::new_for_test(wallet).await;
+            let batch = client
+                .migration_status()
                 .await
-                .unwrap();
-            assert!(matches!(
-                report.outcomes[..],
-                [PartOutcome {
-                    result: PartSendResult::NotDue { .. },
-                    ..
-                }]
-            ));
-            assert!(broadcast_client.submissions.lock().unwrap().is_empty());
+                .unwrap()
+                .due_now
+                .expect("the open-window part is due even with its target ahead");
+            assert_eq!(batch.part_ids, vec![PartId(0)]);
+            assert_eq!(batch.boundary, boundary);
+        }
+
+        /// End to end: scheduling a fresh cohort makes batch 1 immediately due.
+        /// `plan_schedule` opens the first cohort in the current bucket, so
+        /// `due_now` is `Some` at the very tip it was scheduled at — no sync
+        /// advance, no waiting for the next window.
+        #[tokio::test]
+        async fn first_batch_is_due_the_moment_it_is_scheduled() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let activation = wallet.ironwood_activation().expect("ironwood activates");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            schedule::plan_schedule(
+                std::slice::from_mut(&mut part),
+                now_height,
+                activation,
+                &params,
+                &mut rand::rngs::OsRng,
+            )
+            .expect("a bound part schedules");
+            assert_eq!(
+                part.bucket_index,
+                Some(current_bucket),
+                "the first cohort opens in the current bucket",
+            );
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let client = LightClient::new_for_test(wallet).await;
+            assert!(
+                client.migration_status().await.unwrap().due_now.is_some(),
+                "batch 1 is due at the tip it was scheduled at, with no sync advance",
+            );
         }
 
         /// A signed open-window part is advertised as due, with its boundary
@@ -3735,9 +3746,9 @@ mod tests {
         }
 
         /// Anti-drift: the advertised batch equals the set a tap actually
-        /// attempts — the parts execute resolves to Sent, Slid or Failed,
-        /// never the `NotDue` ones it skips. A signed part (target reached)
-        /// alongside an assigned part still ahead of its target.
+        /// attempts — every part of the open window, resolving to Sent, Slid
+        /// or Failed. A signed part alongside an assigned part whose random
+        /// target is still ahead: both are due now, so both are attempted.
         #[tokio::test]
         async fn due_now_equals_what_execute_attempts() {
             const TIP: u32 = 300;
@@ -3758,7 +3769,9 @@ mod tests {
             signed
                 .mark_signed(TxId::from_bytes([7; 32]), window_end, Some(vec![0xAB; 64]))
                 .expect("assigned parts sign");
-            // Part 1: assigned, random target still ahead → NotDue, skipped.
+            // Part 1: assigned, random target still ahead → now due for the
+            // open window and attempted (it slides, unwitnessable, but is not
+            // deferred as it was under the old target gate).
             let mut ahead = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
             ahead.assign(current_bucket).expect("fresh parts are bound");
             ahead.target_height = Some(BlockHeight::from_u32(400)); // in-window, ahead of tip 300
@@ -3789,7 +3802,7 @@ mod tests {
                 advertised, attempted,
                 "due_now must equal the set a tap attempts to broadcast",
             );
-            assert_eq!(advertised, std::collections::BTreeSet::from([0]));
+            assert_eq!(advertised, std::collections::BTreeSet::from([0, 1]));
         }
 
         /// `due_now` is `None` outside the parts-scheduled phase and once every

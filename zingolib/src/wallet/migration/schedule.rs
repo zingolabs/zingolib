@@ -167,7 +167,16 @@ pub fn plan_schedule(
         )
     });
 
-    let first_bucket = first_permitted_bucket(now_height, activation, params);
+    // The first cohort opens in the *current* bucket (floored at activation:
+    // a pre-activation boundary can anchor no Ironwood output, issue #2493
+    // finding 6), so the first batch is sendable the instant Phase 2 is
+    // scheduled — its window is already open. Later cohorts fill consecutive
+    // buckets from there, each one window sooner than the old `+ 1` start.
+    // This is local to initial scheduling; `first_permitted_bucket` remains
+    // the chooser for expiry rebuild and reassignment, which target a fresh
+    // future window.
+    let first_bucket = bucket_index(now_height, params.bucket_modulus)
+        .max(activation_bucket(activation, params.bucket_modulus));
     for (rank, index) in ranked.into_iter().enumerate() {
         let bucket = first_bucket + rank as u64 / k;
         place(&mut parts[index], bucket, rng, params)?;
@@ -203,24 +212,21 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
-/// Whether a part already assigned to `current_bucket` would broadcast right
-/// now: it still awaits broadcast ([`PartState::Assigned`] or
-/// [`PartState::Signed`]) and the chain has reached its random target — a
-/// catch-up-shifted part carries no target and is due at the window opening.
+/// Whether a part is due to broadcast right now: it still awaits broadcast
+/// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open —
+/// it is assigned to `current_bucket`, whose boundary is at or below the tip
+/// by definition. The part's random `target_height` no longer gates
+/// sendability; it is advisory, exposed only as the reminder hint
+/// [`WakePoint::estimated_target_unix_time`], so a part is due for the whole
+/// open window rather than only from its target onward.
 ///
 /// The single-part rule shared by the broadcast loop and the "due now" status
-/// read, so a status can never advertise a part a send would find not yet due
-/// (the stale-tip bounce). It does *not* fold in earlier, missed windows: an
-/// overdue part sits in a bucket below `current_bucket` and is catch-up's
-/// business.
-pub fn part_due_in_current_bucket(
-    part: &PartRecord,
-    now_height: BlockHeight,
-    current_bucket: u64,
-) -> bool {
+/// read, so a status can never advertise a part a send would decline. It does
+/// *not* fold in earlier, missed windows: an overdue part sits in a bucket
+/// below `current_bucket` and is catch-up's business.
+pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
     matches!(part.state, PartState::Assigned | PartState::Signed)
         && part.bucket_index == Some(current_bucket)
-        && part.target_height.is_none_or(|target| now_height >= target)
 }
 
 /// The broadcast windows within the next `horizon` buckets, soonest first.
@@ -389,11 +395,12 @@ mod tests {
         let now = BlockHeight::from_u32(10_000);
         plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
 
-        let first_bucket = bucket_index(now, params.bucket_modulus) + 1;
+        // The first cohort opens in the current bucket now, not the next.
+        let first_bucket = bucket_index(now, params.bucket_modulus);
         for part in &parts {
             assert_eq!(part.state, PartState::Assigned);
             let bucket = part.bucket_index.unwrap();
-            assert!(bucket >= first_bucket, "future bucket");
+            assert!(bucket >= first_bucket, "current or future bucket");
             // Target is within the part's bucket window.
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
@@ -410,6 +417,52 @@ mod tests {
         let distinct: std::collections::BTreeSet<u64> =
             parts.iter().filter_map(|p| p.bucket_index).collect();
         assert_eq!(distinct.len(), 5);
+    }
+
+    /// The random target no longer gates sendability: a current-bucket part
+    /// awaiting broadcast is due for the whole open window, the exact case the
+    /// old target-gated predicate rejected. Bucket membership plus
+    /// awaiting-broadcast state is the whole rule.
+    #[test]
+    fn part_in_current_bucket_ignores_the_target_height() {
+        let params = params();
+        let current_bucket = 40;
+        let mut part = bound_part(0, 1_000_000);
+        part.assign(current_bucket).unwrap();
+        // A target high in the window — above where an early-window tip sits.
+        part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 200);
+
+        assert!(
+            part_in_current_bucket(&part, current_bucket),
+            "Assigned with its target still ahead is due"
+        );
+        assert!(
+            !part_in_current_bucket(&part, current_bucket + 1),
+            "a part of another bucket is not due"
+        );
+
+        part.mark_confirmed(BlockHeight::from_u32(20_000)).unwrap();
+        assert!(
+            !part_in_current_bucket(&part, current_bucket),
+            "a confirmed part is not due"
+        );
+    }
+
+    /// The first cohort is placed in the bucket the chain is currently in, so
+    /// its window is already open and the first batch is immediately sendable.
+    #[test]
+    fn first_cohort_opens_in_the_current_bucket() {
+        let params = params();
+        let mut parts = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
+        let now = BlockHeight::from_u32(10_000);
+        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+
+        let current_bucket = bucket_index(now, params.bucket_modulus);
+        let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
+        assert_eq!(
+            earliest, current_bucket,
+            "the first cohort opens in the current bucket"
+        );
     }
 
     proptest! {
@@ -439,7 +492,7 @@ mod tests {
             for part in &parts {
                 prop_assert_eq!(part.state, PartState::Assigned, "total");
                 let bucket = part.bucket_index.unwrap();
-                prop_assert!(bucket > current_bucket, "future buckets only");
+                prop_assert!(bucket >= current_bucket, "current or future buckets");
                 *cohort_sizes.entry(bucket).or_default() += 1;
                 // Target is within the bucket's window.
                 let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
@@ -482,7 +535,24 @@ mod tests {
 
         let wakes = next_wakes(&parts, now, now_unix, u64::MAX, &params);
         let listed: usize = wakes.iter().map(|w| w.part_ids.len()).sum();
-        assert_eq!(listed, parts.len(), "every assigned part appears");
+
+        // next_wakes lists strictly future windows. The first cohort now opens
+        // in the current bucket and is surfaced through `due_now`, not here, so
+        // every future-bucket part appears and no current-bucket one does.
+        let current_bucket = bucket_index(now, params.bucket_modulus);
+        let future_parts = parts
+            .iter()
+            .filter(|part| part.bucket_index.is_some_and(|bucket| bucket > current_bucket))
+            .count();
+        assert!(
+            future_parts > 0 && future_parts < parts.len(),
+            "the fixture must span current and future buckets"
+        );
+        assert_eq!(listed, future_parts, "every future-bucket part appears");
+        assert!(
+            wakes.iter().all(|wake| wake.bucket_index > current_bucket),
+            "no wake is for the current bucket"
+        );
         for pair in wakes.windows(2) {
             assert!(pair[0].bucket_index < pair[1].bucket_index, "soonest first");
         }

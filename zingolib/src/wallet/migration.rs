@@ -57,7 +57,7 @@ pub use reconcile::{
     ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
 };
 pub use schedule::{
-    WakePoint, estimated_unix_at, next_wakes, part_due_in_current_bucket, plan_schedule,
+    WakePoint, estimated_unix_at, next_wakes, part_in_current_bucket, plan_schedule,
 };
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
