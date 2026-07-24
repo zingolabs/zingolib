@@ -2,7 +2,7 @@
 //! model A).
 //!
 //! The wallet bundles this binary and spawns it as a child process. On
-//! startup it connects a [`NymProxy`](zingo_netutils::NymProxy) to the Nym
+//! startup it connects a [`NymProxy`] to the Nym
 //! mixnet, then prints its local SOCKS5 address to stdout as a single line:
 //!
 //! ```text

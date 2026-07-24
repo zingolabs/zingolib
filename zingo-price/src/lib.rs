@@ -1,8 +1,13 @@
 #![warn(missing_docs)]
 
-//! Crate for fetching ZEC prices.
+//! Crate for ZEC price types, storage, and — behind the `socks5-fetch`
+//! feature — fetching.
 //!
-//! Currently only supports USD.
+//! Currently only supports USD. The fetch path is the crate's ONLY network
+//! surface, and it requires a local SOCKS5 proxy address (the Nym mixnet
+//! transport): a price is never fetched over clearnet (ADR 0011, amendment
+//! 2026-07-23). Without the feature the crate carries no network
+//! dependencies at all.
 
 use std::{
     collections::HashSet,
@@ -11,6 +16,7 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+#[cfg(feature = "socks5-fetch")]
 use serde::Deserialize;
 use zcash_encoding::{Optional, Vector};
 
@@ -19,9 +25,11 @@ use zcash_encoding::{Optional, Vector};
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// Request failed.
+    #[cfg(feature = "socks5-fetch")]
     #[error("request failed. {0}")]
     RequestFailed(#[from] reqwest::Error),
     /// Deserialization failed.
+    #[cfg(feature = "socks5-fetch")]
     #[error("deserialization failed. {0}")]
     DeserializationFailed(#[from] serde_json::Error),
     /// Parse error.
@@ -31,6 +39,7 @@ pub enum PriceError {
     #[error("price list start time has not been set.")]
     PriceListNotInitialized,
     /// Decimal conversion error.
+    #[cfg(feature = "socks5-fetch")]
     #[error("decimal conversion error. {0}")]
     DecimalError(#[from] rust_decimal::Error),
     /// Invalid price.
@@ -38,6 +47,7 @@ pub enum PriceError {
     InvalidPrice,
 }
 
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Deserialize)]
 struct CurrentPriceResponse {
     price: String,
@@ -110,14 +120,11 @@ impl PriceList {
 
     /// Update and return current price of ZEC.
     ///
-    /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
-    /// request is routed through that local SOCKS5 proxy (the Nym mixnet
-    /// transport); `None` fetches over clearnet. This is a pure mechanism: the
-    /// caller decides which route the Mixnet Mode policy requires.
-    pub async fn update_current_price(
-        &mut self,
-        socks5_proxy: Option<&str>,
-    ) -> Result<Price, PriceError> {
+    /// Currently only USD is supported. The request is routed through the
+    /// local SOCKS5 proxy at `socks5_proxy` (the Nym mixnet transport) and
+    /// only through it — the price fetch has no clearnet tier.
+    #[cfg(feature = "socks5-fetch")]
+    pub async fn update_current_price(&mut self, socks5_proxy: &str) -> Result<Price, PriceError> {
         get_current_price(socks5_proxy).await
     }
 
@@ -199,24 +206,23 @@ impl PriceList {
 /// kept). Required because reqwest is built with `rustls-tls-no-provider`.
 /// Mirrors `zingo_netutils::ensure_default_crypto_provider`, which cannot be
 /// used here: zingo-netutils sits above this crate in the dependency graph.
+#[cfg(feature = "socks5-fetch")]
 fn ensure_default_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }
 }
 
-/// Get current price of ZEC in USD, optionally through a local SOCKS5 proxy.
-///
-/// When `socks5_proxy` is `Some(addr)`, the request is proxied through
-/// `socks5h://addr`, so the destination hostname is resolved at the proxy and
-/// never leaked to the local clearnet resolver. `None` fetches over clearnet.
-async fn get_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
+/// Get current price of ZEC in USD through the local SOCKS5 proxy at
+/// `socks5_proxy` — the crate's only network path, so a price is never
+/// fetched over clearnet. The request is proxied through `socks5h://addr`,
+/// so the destination hostname is resolved at the proxy and never leaked to
+/// the local clearnet resolver.
+#[cfg(feature = "socks5-fetch")]
+async fn get_current_price(socks5_proxy: &str) -> Result<Price, PriceError> {
     ensure_default_crypto_provider();
-    let mut builder = reqwest::Client::builder();
-    if let Some(addr) = socks5_proxy {
-        builder = builder.proxy(reqwest::Proxy::all(format!("socks5h://{addr}"))?);
-    }
-    let httpget = builder
+    let httpget = reqwest::Client::builder()
+        .proxy(reqwest::Proxy::all(format!("socks5h://{socks5_proxy}"))?)
         .build()?
         .get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
         .send()

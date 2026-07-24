@@ -52,10 +52,48 @@ pub enum LightClientError {
     /// Price fetch error.
     #[error("Price fetch error. {0}")]
     PriceError(#[from] PriceError),
+    /// The price fetch was attempted while Mixnet Mode is toggled off. The
+    /// fetch has no clearnet tier (ADR 0011, 2026-07-23): unlike send, it is
+    /// refused rather than routed over clearnet on the deliberate opt-out.
+    #[cfg(feature = "nym")]
+    #[error(
+        "the price fetch travels only over the Nym mixnet and has no clearnet fallback; \
+         Mixnet Mode is off — enable it (`nym on`) to fetch the price"
+    )]
+    PriceFetchRequiresMixnet,
+    /// The price fetch was attempted in a build without the `nym` feature,
+    /// which compiles no fetch code at all (ADR 0011, 2026-07-23).
+    #[cfg(not(feature = "nym"))]
+    #[error(
+        "the price fetch travels only over the Nym mixnet, and this build has no mixnet \
+         support; rebuild with the `nym` feature to fetch the price"
+    )]
+    PriceFetchUnsupported,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error("{0}")]
     MixnetNotReady(#[from] crate::nym::MixnetNotReady),
+    /// The configured migration broadcast target shares the synchronization
+    /// endpoint's host, which would let that server correlate the wallet's
+    /// sync stream with its migration cohort (ADR 0011, 2026-07-23).
+    #[cfg(feature = "nym")]
+    #[error(
+        "the migration broadcast target '{host}' is the synchronization endpoint; migration \
+         parts never go to the sync server. Configure a different migration_broadcast_uri or \
+         remove it to use the Broadcast Indexer rotation."
+    )]
+    MigrationBroadcastTargetIsSyncEndpoint {
+        /// The host both endpoints share.
+        host: String,
+    },
+    /// Excluding the synchronization endpoint left no Broadcast Indexer to
+    /// carry migration parts over the mixnet.
+    #[cfg(feature = "nym")]
+    #[error(
+        "no eligible Broadcast Indexer remains after excluding the synchronization endpoint's \
+         host from the curated list"
+    )]
+    NoEligibleBroadcastIndexer,
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

@@ -14,7 +14,7 @@ use zingo_netutils::lightwallet_protocol::RawTransaction;
 
 use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
 
-const SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Submits parts over gRPC and can do nothing else.
 pub struct GrpcBroadcastClient {

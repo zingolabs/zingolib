@@ -572,27 +572,35 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
-    /// Update and return the current ZEC price in USD, obeying the Mixnet Mode
-    /// policy for the price-fetch surface (ADR 0011). When Mixnet Mode is on
-    /// and ready the fetch is proxied through the mixnet; while it is
-    /// bootstrapping the fetch fails closed rather than leaking over clearnet;
-    /// and it goes over clearnet only when Mixnet Mode is off, which is a
-    /// deliberate toggle-off. Builds compiled without the `nym` feature always
-    /// fetch over clearnet.
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
+    /// mixnet when Mixnet Mode is ready, fails closed while the mode
+    /// bootstraps or after the proxy dies, and is refused — never routed over
+    /// clearnet — while the mode is toggled off.
+    #[cfg(feature = "nym")]
     pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
-        #[cfg(feature = "nym")]
-        let route = self.mixnet_route()?;
-        #[cfg(feature = "nym")]
-        let socks5_proxy = route.socks5_proxy();
-        #[cfg(not(feature = "nym"))]
-        let socks5_proxy: Option<&str> = None;
+        let socks5_addr = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
+            crate::nym::MixnetRoute::Clearnet => {
+                return Err(LightClientError::PriceFetchRequiresMixnet);
+            }
+        };
 
         Ok(self
             .wallet()
             .write()
             .await
-            .update_current_price(socks5_proxy)
+            .update_current_price(&socks5_addr)
             .await?)
+    }
+
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
+    /// the Nym mixnet, so a build without the `nym` feature refuses: the
+    /// fetch code is not compiled in at all.
+    #[cfg(not(feature = "nym"))]
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Err(LightClientError::PriceFetchUnsupported)
     }
 
     /// Creates an additional ZIP-32 account derived from the wallet seed.
