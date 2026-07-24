@@ -189,19 +189,6 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Assigned → Bound`: return the part to the unscheduled pool so a
-    /// fresh schedule can re-bucket it (a cadence change before Phase 2
-    /// begins). Clears every scheduling artifact; the binding to its note
-    /// stands.
-    #[allow(clippy::result_large_err)]
-    pub fn unassign(&mut self) -> Result<(), WalletError> {
-        self.transition(&["Assigned"], PartState::Bound)?;
-        self.bucket_index = None;
-        self.target_height = None;
-        self.boundary_witnesses.clear();
-        Ok(())
-    }
-
     /// `Expired → Assigned`: rebuild with the same denomination and note in a
     /// fresh bucket, clearing the stale transaction artifacts (FR15, no fresh
     /// consent needed since the denomination and total are unchanged).
