@@ -649,9 +649,11 @@ impl LightClient {
             }
 
             // Published after the transaction is confirmed transmitted and its
-            // server txid verified. No-op unless an immediate drain armed the
-            // side channel.
+            // server txid verified. Each is a no-op unless its owner armed the
+            // side channel — an immediate drain or a note-splitting round —
+            // and the two are mutually exclusive in practice.
             self.drain_progress.set_sent(index as u32 + 1);
+            self.split_progress.set_sent(index as u32 + 1);
         }
 
         Ok(calculated_txids)

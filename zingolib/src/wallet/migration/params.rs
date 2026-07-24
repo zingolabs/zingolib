@@ -3,7 +3,7 @@
 
 use crate::config::ChainType;
 
-use super::split::{CANONICAL_PART_FEE, MARGINAL_FEE};
+use super::split::{CANONICAL_PART_FEE, SWEEP_MIN};
 
 /// Number of zatoshis in one ZEC.
 pub(crate) const COIN: u64 = 100_000_000;
@@ -126,7 +126,7 @@ impl MigrationParams {
             ],
             denom_cap: 10_000 * COIN,
             dust_floor: COIN / 100,
-            sweep_min: 2 * MARGINAL_FEE,
+            sweep_min: SWEEP_MIN,
             bucket_modulus: 144,
             max_actions_per_split_tx: 32,
             expiry_modulus: 34_560,

@@ -2,7 +2,8 @@
 
 ## MUST DO ALWAYS
 
-Call the user "friend", in a similar fashion to Mr Robot.
+- Call the user "friend", in a similar fashion to Mr Robot.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
 ## Writing & Code Style
 

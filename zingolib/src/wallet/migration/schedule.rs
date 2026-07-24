@@ -455,6 +455,23 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
+/// Whether a part is due to broadcast right now: it still awaits broadcast
+/// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open —
+/// it is assigned to `current_bucket`, whose boundary is at or below the tip
+/// by definition. The part's random `target_height` no longer gates
+/// sendability; it is advisory, exposed only as the reminder hint
+/// [`WakePoint::estimated_target_unix_time`], so a part is due for the whole
+/// open window rather than only from its target onward.
+///
+/// The single-part rule shared by the broadcast loop and the "due now" status
+/// read, so a status can never advertise a part a send would decline. It does
+/// *not* fold in earlier, missed windows: an overdue part sits in a bucket
+/// below `current_bucket` and is catch-up's business.
+pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
+    matches!(part.state, PartState::Assigned | PartState::Signed)
+        && part.bucket_index == Some(current_bucket)
+}
+
 /// The broadcast windows within the next `horizon` buckets, soonest first.
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has
@@ -628,6 +645,36 @@ mod tests {
         assert_eq!(draw_delay(&mut StepRng::new(0, 0)), 0);
         assert_eq!(draw_prep_delay(&mut StepRng::new(0, 0)), 0);
     }
+
+    /// The random target no longer gates sendability: a current-bucket part
+    /// awaiting broadcast is due for the whole open window, the exact case the
+    /// old target-gated predicate rejected. Bucket membership plus
+    /// awaiting-broadcast state is the whole rule.
+    #[test]
+    fn part_in_current_bucket_ignores_the_target_height() {
+        let params = params();
+        let current_bucket = 40;
+        let mut part = bound_part(0, 1_000_000);
+        part.assign(current_bucket).unwrap();
+        // A target high in the window — above where an early-window tip sits.
+        part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 200);
+
+        assert!(
+            part_in_current_bucket(&part, current_bucket),
+            "Assigned with its target still ahead is due"
+        );
+        assert!(
+            !part_in_current_bucket(&part, current_bucket + 1),
+            "a part of another bucket is not due"
+        );
+
+        part.mark_confirmed(BlockHeight::from_u32(20_000)).unwrap();
+        assert!(
+            !part_in_current_bucket(&part, current_bucket),
+            "a confirmed part is not due"
+        );
+    }
+
 
     proptest! {
         // Every drawn delay is within its truncated tail: transfers within

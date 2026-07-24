@@ -10,7 +10,7 @@ use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::parts::{PartId, PartState};
+use super::parts::{PartId, PartRecord, PartState};
 use super::{MigrationPhase, MigrationState};
 
 /// About two hours at the 75-second target spacing: the slip a best-effort
@@ -258,6 +258,65 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
     }
 
     report
+}
+
+/// The parts a user-triggered
+/// [`crate::lightclient::LightClient::execute_due_parts`] would broadcast this
+/// instant, computed read-only from a reconcile `report` and the schedule.
+///
+/// This is the current window's parts whose random target the chain has
+/// reached, plus the overdue parts catch-up folds into the current window —
+/// only the [`PartState::Assigned`] ones, since a [`PartState::Signed`]
+/// overdue part keeps its stale anchor and is rebuilt rather than folded.
+/// Parts reconciliation would instead confirm, invalidate or rebuild are
+/// excluded: a natively-current part is admitted only while it is still
+/// classified [`PartClass::OnTrack`].
+///
+/// Mirrors `execute_due_parts` (which folds via the same reconcile pass) so a
+/// "batch due now" shown to the user can never name a part a send would not
+/// build. `report` must come from [`reconcile`] over the same `parts`.
+pub fn due_now_parts(
+    parts: &[PartRecord],
+    report: &ReconcileReport,
+    now_height: BlockHeight,
+    params: &super::params::MigrationParams,
+) -> Vec<PartId> {
+    let current_bucket = super::schedule::bucket_index(now_height, params.bucket_modulus);
+    let overdue: std::collections::HashSet<PartId> = report
+        .actions
+        .iter()
+        .find_map(|action| match action {
+            RecommendedAction::PromptCatchUp { parts, .. } => Some(parts.iter().copied().collect()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let on_track: std::collections::HashSet<PartId> = report
+        .assessments
+        .iter()
+        .filter(|assessment| assessment.class == PartClass::OnTrack)
+        .map(|assessment| assessment.id)
+        .collect();
+
+    parts
+        .iter()
+        .filter(|part| {
+            if overdue.contains(&part.id) {
+                // Catch-up folds only Assigned overdue parts into the current
+                // window (target reset, due at once); a Signed one is left for
+                // a rebuild against a fresh boundary and is not sent this batch.
+                part.state == PartState::Assigned
+            } else {
+                // A natively-current part goes out as soon as its window is
+                // open. Gating on OnTrack drops the parts reconciliation will
+                // confirm, invalidate or expire instead of sending — they
+                // would otherwise leak through the state/bucket check while
+                // still Assigned or Signed.
+                on_track.contains(&part.id)
+                    && super::schedule::part_in_current_bucket(part, current_bucket)
+            }
+        })
+        .map(|part| part.id)
+        .collect()
 }
 
 fn classify(
@@ -600,6 +659,146 @@ mod tests {
                 parts: vec![PartId(0)],
                 disclosure_required: true,
             }]
+        );
+    }
+
+    #[test]
+    fn due_now_reports_the_current_window_regardless_of_the_target() {
+        // Tip 10_000 sits in the tip bucket; its window spans one modulus
+        // of blocks from that bucket's opening boundary. The drawn target
+        // must lie inside that window, so place it between the tip and the
+        // window's close.
+        let window_close = (tip_bucket() as u32 + 1) * modulus();
+        let target = BlockHeight::from_u32(window_close - 10);
+        let mut part = assigned_part(0, tip_bucket());
+        part.target_height = Some(target); // advisory only
+        let state = scheduled_state(vec![part]);
+
+        // The tip is below the random target, yet the window is open: the part
+        // is due, because the target no longer gates sendability.
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            ),
+            vec![PartId(0)],
+            "a current-window part is due even with its target ahead",
+        );
+
+        // And it stays due later in the window, past the target.
+        let late_tip = BlockHeight::from_u32(window_close - 5);
+        let chain = MockChainView {
+            tip: Some(late_tip),
+            ..Default::default()
+        };
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            due_now_parts(&state.parts, &report, late_tip, &state.params),
+            vec![PartId(0)],
+        );
+    }
+
+    #[test]
+    fn due_now_folds_assigned_overdue_parts_but_not_signed_ones() {
+        // Bucket tip_bucket() - 2 closed well beyond the slip tolerance. The
+        // Assigned part is Overdue and folds into the batch; the Signed one is
+        // classified AwaitingExpiry — it waits out its expiry and rebuilds
+        // rather than broadcasting late — so it is outside the catch-up cohort
+        // and never folds.
+        let assigned = assigned_part(0, tip_bucket() - 2);
+        let mut signed = assigned_part(1, tip_bucket() - 2);
+        signed
+            .mark_signed(
+                TxId::from_bytes([9; 32]),
+                BlockHeight::from_u32(20_000),
+                None,
+            )
+            .unwrap();
+        let state = scheduled_state(vec![assigned, signed]);
+
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert!(
+            report.actions.contains(&RecommendedAction::PromptCatchUp {
+                parts: vec![PartId(0)],
+                disclosure_required: true,
+            }),
+            "only the Assigned overdue part is surfaced for catch-up",
+        );
+        assert!(
+            matches!(
+                report
+                    .assessments
+                    .iter()
+                    .find(|assessment| assessment.id == PartId(1))
+                    .map(|assessment| assessment.class),
+                Some(PartClass::AwaitingExpiry { .. })
+            ),
+            "the signed overdue part awaits its expiry instead of catching up",
+        );
+        assert_eq!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            ),
+            vec![PartId(0)],
+            "only the Assigned overdue part is sendable this instant",
+        );
+    }
+
+    #[test]
+    fn due_now_excludes_future_windows() {
+        let part = assigned_part(0, tip_bucket() + 3);
+        let state = scheduled_state(vec![part]);
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            )
+            .is_empty(),
+            "a part whose window has not opened is a future wake, not a due batch",
+        );
+    }
+
+    #[test]
+    fn due_now_omits_a_current_part_reconciliation_will_invalidate() {
+        // A current-window Assigned part whose bound note was spent outside the
+        // migration: reconcile classifies it Invalidated, so a tap would not
+        // send it and `due_now` must not advertise it. With no random target
+        // it clears the bucket predicate, so only the OnTrack class gate drops
+        // it — the property that gate exists for.
+        let mut part = assigned_part(0, tip_bucket());
+        part.target_height = None;
+        let state = scheduled_state(vec![part]);
+        let mut chain = MockChainView::default();
+        chain.note_spends.insert(
+            output_id(0),
+            (
+                TxId::from_bytes([250; 32]),
+                Some(BlockHeight::from_u32(9_990)),
+            ),
+        );
+        let report = reconcile(&state, &chain);
+        assert_eq!(report.assessments[0].class, PartClass::Invalidated);
+        assert!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            )
+            .is_empty(),
+            "an externally-spent part is not sendable and must not be advertised",
         );
     }
 

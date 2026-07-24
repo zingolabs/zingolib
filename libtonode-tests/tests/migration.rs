@@ -18,6 +18,9 @@ use zingolib::wallet::migration::{
     BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
     PartState, RecommendedAction, SigningStrategy, schedule,
 };
+use zingolib::wallet::summary::data::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,
 };
@@ -423,10 +426,38 @@ async fn two_phase_migration_end_to_end() {
         Some(MigrationPhase::Complete { .. })
     ));
     assert_eq!(status.parts_confirmed, status.parts_total);
-    // FIXME: assert the Ironwood pool balance directly once pepper-sync
-    // scans Ironwood notes. Until then the confirmed part denominations
-    // are the migrated value.
+
+    // The state machine's own accounting of the migrated value...
     assert_eq!(status.value_migrated, expected_migrated);
+    // ...and the same value scanned back out of the Ironwood pool.
+    let confirmed_ironwood = recipient
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap()
+        .confirmed_ironwood_balance
+        .map(|zats| zats.into_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        confirmed_ironwood, expected_migrated,
+        "the migrated value must appear in the Ironwood pool"
+    );
+
+    // Every confirmed part spends Orchard into the wallet's own Ironwood pool,
+    // so it must be classified as a migration value transfer, not a plain
+    // send-to-self.
+    let value_transfers = recipient.value_transfers(true).await.unwrap();
+    for part_txid in &summary.part_txids {
+        assert!(
+            value_transfers.iter().any(|vt| vt.txid == *part_txid
+                && vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Migration,
+                    ))),
+            "part {part_txid:?} must be classified as a migration value transfer"
+        );
+    }
 }
 
 /// The deferred NU6.3 activation height for scenarios that must fund the
@@ -603,6 +634,21 @@ async fn drain_all_orchard_to_ironwood() {
         summary.migrated,
         "the drained value must appear in the Ironwood pool"
     );
+
+    // The drain moves Orchard funds into the wallet's own Ironwood pool, so
+    // each drain transaction must be classified as a migration value transfer,
+    // not a plain send-to-self.
+    let value_transfers = recipient.value_transfers(true).await.unwrap();
+    for drain_txid in &summary.txids {
+        assert!(
+            value_transfers.iter().any(|vt| vt.txid == *drain_txid
+                && vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Migration,
+                    ))),
+            "drain {drain_txid:?} must be classified as a migration value transfer"
+        );
+    }
 }
 
 /// A drain of a fragmented wallet chunks into several independent transactions,

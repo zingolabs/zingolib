@@ -365,14 +365,17 @@ impl LightWallet {
                     ));
                 }
                 TransactionKind::Sent(SendType::SendToSelf) => {
-                    // create 1 memo-to-self if a sending transaction receives any number of memos
-                    // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
-                    // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
+                    // create 1 memo-to-self if a sending transaction receives any number of memos,
+                    // else 1 migration transfer if this moved Orchard funds into the Ironwood pool,
+                    // otherwise 1 basic send-to-self so every transaction creates at least 1 value transfer.
+                    // (deshield and other pool-movement kinds may join this list later.)
                     let memos = transaction.received_memos();
-                    let self_send_kind = if memos.is_empty() {
-                        SelfSendValueTransfer::Basic
-                    } else {
+                    let self_send_kind = if !memos.is_empty() {
                         SelfSendValueTransfer::MemoToSelf
+                    } else if transaction.is_orchard_to_ironwood_migration() {
+                        SelfSendValueTransfer::Migration
+                    } else {
+                        SelfSendValueTransfer::Basic
                     };
                     value_transfers.push(ValueTransfer::from_summary(
                         &transaction,

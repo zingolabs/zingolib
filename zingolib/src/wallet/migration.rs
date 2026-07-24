@@ -53,8 +53,12 @@ pub use parts::{
     SigningStrategy, SkipReason,
 };
 pub use quantize::{Denominations, decompose};
-pub use reconcile::{ChainView, PartClass, RecommendedAction, ReconcileReport, reconcile};
-pub use schedule::{WakePoint, estimated_unix_at, next_wakes, plan_schedule};
+pub use reconcile::{
+    ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
+};
+pub use schedule::{
+    WakePoint, estimated_unix_at, next_wakes, part_in_current_bucket, plan_schedule,
+};
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
     plan_migration,
