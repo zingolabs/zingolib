@@ -1,10 +1,15 @@
-//! Bucket math and schedule assignment (ZIP 318 Phase 2).
+//! Boundary math, the Poisson broadcast schedule, and the proving-time
+//! anchor draw (ZIP 318 Phase 2).
 //!
-//! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
-//! Bucket `i` spans heights `[i·M, (i+1)·M)`; a part assigned to bucket `i`
-//! broadcasts while the chain is inside it, anchored to the tree state at the
-//! boundary `i·M`. Because that anchor is identical for every wallet sending
-//! into the same bucket, it carries no per-wallet timing information.
+//! Boundaries are the block heights ≡ 0 (mod `M`); buckets — the spans
+//! between consecutive boundaries — are internal bookkeeping for wakes and
+//! reconciliation. A part's broadcast height is drawn by the Poisson
+//! schedule ([`plan_schedule`]): the parts are shuffled into a uniformly
+//! random order and each is placed an exponential inter-arrival delay after
+//! the previous one, so a wallet's transfers look like an unremarkable
+//! Poisson process. Its anchor is drawn separately at proving time from
+//! recent boundaries ([`draw_anchor_boundary`]), so transfers across all
+//! wallets share a small set of common anchors.
 
 use pepper_sync::wallet::PoolActivation;
 use rand::Rng;
@@ -104,6 +109,20 @@ pub fn place(
     Ok(())
 }
 
+/// Places a part at an exact scheduled broadcast height drawn by the
+/// Poisson schedule ([`plan_schedule`]), deriving its bookkeeping bucket
+/// from the target. See [`place`] for the placement monopoly.
+#[allow(clippy::result_large_err)]
+pub fn place_scheduled(
+    part: &mut PartRecord,
+    target: BlockHeight,
+    params: &MigrationParams,
+) -> Result<(), WalletError> {
+    transition_to_bucket(part, bucket_index(target, params.bucket_modulus))?;
+    part.target_height = Some(target);
+    Ok(())
+}
+
 /// Places a part in `bucket` due the moment the window is open — the
 /// catch-up and immediate-mode operation, where firing now is the
 /// disclosed intent. See [`place`] for the placement monopoly.
@@ -123,6 +142,62 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
         PartState::Bound => part.assign(bucket),
         PartState::Expired => part.reassign(bucket),
         _ => part.shift(bucket),
+    }
+}
+
+/// Mean of the exponential inter-arrival delay between successive
+/// transfers, in blocks; the exponential rate is `1 / MEAN_DELAY`. Equal to
+/// the boundary modulus `M` by specification (about three hours at the
+/// 75-second target spacing); `mean_delay_equals_the_boundary_modulus`
+/// pins the equality against the provisional params.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L71>
+pub const MEAN_DELAY: u32 = 144;
+
+/// Upper bound (inclusive) on a single inter-arrival delay, in blocks: a
+/// draw exceeding this is discarded and redrawn, truncating the
+/// exponential's heavy tail so no transfer is starved for an unbounded
+/// time. `4 * MEAN_DELAY`, about twelve hours.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L76>
+pub const MAX_DELAY: u32 = 4 * MEAN_DELAY;
+
+/// Width of one step when the unit interval `[0, 1)` is split into `2^53`
+/// equal parts. Drawing 53 random bits and scaling by this yields a value
+/// spread uniformly over those evenly spaced points.
+const UNIT_STEP: f64 = 1.0 / ((1u64 << 53) as f64);
+
+/// Number of high bits kept from a drawn `u64` to form a 53-bit mantissa
+/// (an `f64` has a 53-bit significand, so this is the most uniform grid
+/// representable without rounding bias).
+const U64_TO_MANTISSA_SHIFT: u32 = 11;
+
+/// Draw a uniform `f64` in `(0, 1]` from `rng`: the top 53 bits of a fresh
+/// `u64` scaled onto `[0, 1)`, then mapped through `1 - u` so zero is
+/// excluded (keeping `ln` finite) and one is included.
+fn draw_unit_left_open(rng: &mut impl Rng) -> f64 {
+    let u: u64 = rng.r#gen();
+    1.0 - ((u >> U64_TO_MANTISSA_SHIFT) as f64) * UNIT_STEP
+}
+
+/// Draw one TRANSFER inter-arrival delay in blocks from the truncated
+/// exponential distribution by inverse CDF: `round(-MEAN_DELAY * ln(u))`
+/// for `u` uniform in `(0, 1]`, discarding and redrawing above
+/// [`MAX_DELAY`]. The return is always in `[0, MAX_DELAY]`.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L181-L199>
+pub fn draw_delay(rng: &mut impl Rng) -> u32 {
+    loop {
+        let u = draw_unit_left_open(rng);
+        // ln(u) <= 0 for u in (0, 1], so the product is non-negative, and
+        // rounding (ties up) is truncation of x + 0.5.
+        let delay = (-(f64::from(MEAN_DELAY)) * u.ln() + 0.5) as u64 as u32;
+        if delay <= MAX_DELAY {
+            return delay;
+        }
     }
 }
 
@@ -261,23 +336,24 @@ pub fn canonical_expiry_height(
     BlockHeight::from_u32(h - (h % params.expiry_modulus)) + (2 * params.expiry_modulus)
 }
 
-/// Assigns every [`PartState::Bound`] part to an anchor-height bucket and
-/// picks a random broadcast target within that bucket's window.
+/// Draws the Poisson broadcast schedule for every [`PartState::Bound`]
+/// part (ZIP 318 "Transfer scheduling", issue #2519 deviation 1).
 ///
-/// Multiplicity `k = max(1, ceil(parts / target_sessions))` parts share
-/// each cohort. There is deliberately no upper cap: ZIP 318 places no
-/// bound on per-wallet multiplicity, since truncating the outcome of
-/// random draws with an arbitrary bound would only distort the
-/// distribution (issue #2519, deviation 5).
+/// The parts are first SHUFFLED into a uniformly random order, so the
+/// temporal sequence of denominations a wallet emits is not a predictable
+/// function of its balance; each part's scheduled height then advances a
+/// running height by an independent exponential inter-arrival delay
+/// ([`draw_delay`]), so the broadcasts approximate a Poisson process.
+/// There is deliberately no per-wallet multiplicity cap (deviation 5). The
+/// running height starts one full boundary interval past the lowest
+/// candidate anchor boundary — the first boundary strictly above the
+/// pool's activation and at or after the funding notes' creation
+/// (conservatively, `now_height`) — so every transfer's candidate anchor
+/// set is non-empty by construction. Buckets remain derived bookkeeping:
+/// each part's bucket is the one containing its drawn target.
 ///
-/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#a-note-on-cohort-size-vs-per-wallet-multiplicity>
-/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L40-L45>
-///
-/// Cohorts fill consecutive future buckets starting at
-/// [`first_permitted_bucket`] — after `now_height`'s bucket and at or above
-/// the pool's activation floor — largest denominations first. Bucket
-/// assignments are deterministic; target heights within each window are
-/// randomized so parts do not cluster at the boundary.
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L279-L291>
 #[allow(clippy::result_large_err)]
 pub fn plan_schedule(
     parts: &mut [PartRecord],
@@ -286,7 +362,7 @@ pub fn plan_schedule(
     params: &MigrationParams,
     rng: &mut impl Rng,
 ) -> Result<(), WalletError> {
-    let unassigned: Vec<usize> = parts
+    let mut unassigned: Vec<usize> = parts
         .iter()
         .enumerate()
         .filter(|(_, part)| part.state == PartState::Bound)
@@ -296,24 +372,20 @@ pub fn plan_schedule(
         return Ok(());
     }
 
-    let k = u64::try_from(unassigned.len())
-        .expect("part count fits u64")
-        .div_ceil(u64::from(params.target_sessions.max(1)))
-        .max(1);
+    // SHUFFLE MUST: a uniformly random broadcast order.
+    use rand::seq::SliceRandom as _;
+    unassigned.shuffle(rng);
 
-    // Largest denominations first, ties broken by part id for determinism.
-    let mut ranked = unassigned;
-    ranked.sort_by_key(|&index| {
-        (
-            std::cmp::Reverse(parts[index].denomination),
-            parts[index].id,
-        )
-    });
+    let modulus = params.bucket_modulus;
+    let above_activation = u32::from(first_anchorable_boundary(activation, modulus))
+        .max(u32::from(previous_boundary(activation.height(), modulus)).saturating_add(modulus));
+    let lowest_candidate =
+        above_activation.max(boundary_at_or_after(u32::from(now_height), modulus));
+    let mut running = lowest_candidate.saturating_add(modulus);
 
-    let first_bucket = first_permitted_bucket(now_height, activation, params);
-    for (rank, index) in ranked.into_iter().enumerate() {
-        let bucket = first_bucket + rank as u64 / k;
-        place(&mut parts[index], bucket, rng, params)?;
+    for index in unassigned {
+        running = running.saturating_add(draw_delay(rng));
+        place_scheduled(&mut parts[index], BlockHeight::from_u32(running), params)?;
     }
     Ok(())
 }
@@ -503,79 +575,76 @@ mod tests {
         );
     }
 
+    /// `MEAN_DELAY` is specified equal to the boundary modulus `M`; pin
+    /// the equality against the provisional params so neither drifts.
     #[test]
-    fn schedule_fills_consecutive_buckets_largest_first() {
-        let params = params();
-        // 13 parts, target 6 sessions → k = 3, so 5 buckets: 3+3+3+3+1.
-        let denominations: Vec<u64> = (1..=13).map(|i| i * 1_000_000).collect();
-        let mut parts = parts_with_denominations(&denominations);
-        let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+    fn mean_delay_equals_the_boundary_modulus() {
+        assert_eq!(MEAN_DELAY, params().bucket_modulus);
+        assert_eq!(MAX_DELAY, 4 * MEAN_DELAY);
+    }
 
-        let first_bucket = bucket_index(now, params.bucket_modulus) + 1;
-        for part in &parts {
-            assert_eq!(part.state, PartState::Assigned);
-            let bucket = part.bucket_index.unwrap();
-            assert!(bucket >= first_bucket, "future bucket");
-            // Target is within the part's bucket window.
-            let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-            let target = u32::from(part.target_height.unwrap());
-            assert!(target >= boundary && target < boundary + params.bucket_modulus);
-        }
-        // Largest denominations land in the earliest buckets.
-        for a in &parts {
-            for b in &parts {
-                if a.denomination > b.denomination {
-                    assert!(a.bucket_index.unwrap() <= b.bucket_index.unwrap());
-                }
-            }
-        }
-        let distinct: std::collections::BTreeSet<u64> =
-            parts.iter().filter_map(|p| p.bucket_index).collect();
-        assert_eq!(distinct.len(), 5);
+    /// A drawn `u` of exactly 1 (all-zero mantissa bits) yields ln(1) = 0,
+    /// so the delay is zero: the inverse-CDF's fixed point, hand-derivable.
+    #[test]
+    fn zero_entropy_draws_a_zero_delay() {
+        use rand::rngs::mock::StepRng;
+        assert_eq!(draw_delay(&mut StepRng::new(0, 0)), 0);
     }
 
     proptest! {
-        // Totality, target-in-window, cohort bound and session count for any
-        // part set and parameterization. Bucket assignments are deterministic;
-        // target_height is intentionally random so we only pin bucket structure.
+        // Every transfer delay is within the truncated tail (DELAYS MUST).
+        #[test]
+        fn delay_within_bounds(seed_step in 1u64..=u64::MAX) {
+            use rand::rngs::mock::StepRng;
+            let mut rng = StepRng::new(0, seed_step);
+            for _ in 0..8 {
+                prop_assert!(draw_delay(&mut rng) <= MAX_DELAY);
+            }
+        }
+
+        // The Poisson schedule: every Bound part is assigned, targets sit
+        // strictly past both `now` and the activation floor plus one full
+        // boundary interval, consecutive drawn gaps never exceed MAX_DELAY
+        // (so the whole span is bounded), and each part's bookkeeping
+        // bucket is the one containing its drawn target.
         #[test]
         fn schedule_properties(
             denominations in proptest::collection::vec(1u64..=10_000_000_000, 1..80),
             now in 0u32..=10_000_000,
-            target_sessions in 1u32..=12,
         ) {
-            let mut params = params();
-            params.target_sessions = target_sessions;
+            let params = params();
+            let modulus = params.bucket_modulus;
             let now = BlockHeight::from_u32(now);
 
             let mut parts = parts_with_denominations(&denominations);
             plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
 
-            let k = (denominations.len() as u64)
-                .div_ceil(u64::from(target_sessions))
-                .max(1);
-            let mut cohort_sizes: std::collections::BTreeMap<u64, u64> = Default::default();
-            let current_bucket = bucket_index(now, params.bucket_modulus);
+            let start = {
+                let mut lowest = u32::from(now).div_ceil(modulus) * modulus;
+                if lowest < u32::from(now) + 1 {
+                    lowest += modulus;
+                }
+                // One full interval past the lowest candidate; the floor
+                // here is permissive because no_floor() has activation 0.
+                u32::from(now).max(lowest)
+            };
+            let mut targets: Vec<u32> = Vec::new();
             for part in &parts {
                 prop_assert_eq!(part.state, PartState::Assigned, "total");
-                let bucket = part.bucket_index.unwrap();
-                prop_assert!(bucket > current_bucket, "future buckets only");
-                *cohort_sizes.entry(bucket).or_default() += 1;
-                // Target is within the bucket's window.
-                let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
                 let target = u32::from(part.target_height.unwrap());
-                prop_assert!(
-                    target >= boundary && target < boundary + params.bucket_modulus,
-                    "target in window"
+                prop_assert!(target > u32::from(now), "future targets only");
+                prop_assert!(target >= start, "past the candidate floor");
+                prop_assert_eq!(
+                    part.bucket_index.unwrap(),
+                    bucket_index(BlockHeight::from_u32(target), modulus),
+                    "bucket derived from the target"
                 );
+                targets.push(target);
             }
-            prop_assert!(cohort_sizes.values().all(|&size| size <= k), "k bound");
-            prop_assert_eq!(
-                cohort_sizes.len() as u64,
-                (denominations.len() as u64).div_ceil(k),
-                "session count"
-            );
+            targets.sort_unstable();
+            for gap in targets.windows(2) {
+                prop_assert!(gap[1] - gap[0] <= MAX_DELAY, "drawn gaps are capped");
+            }
         }
 
         // The canonical expiry lies in (scheduled, scheduled + 2·modulus],

@@ -57,8 +57,6 @@ pub struct MigrationParams {
     /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
     /// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L95>
     pub bucket_modulus: u32,
-    /// The signing-session target the schedule aims at for typical balances.
-    pub target_sessions: u32,
     /// Bounds the notes merged (spends) or created (outputs) by one
     /// note-splitting transaction. This caps the Orchard action count at this
     /// value before NU6.3 (spends and outputs share actions) and at twice it
@@ -130,7 +128,6 @@ impl MigrationParams {
             dust_floor: COIN / 100,
             sweep_min: 2 * MARGINAL_FEE,
             bucket_modulus: 144,
-            target_sessions: 6,
             max_actions_per_split_tx: 32,
             expiry_modulus: 34_560,
             part_fee: CANONICAL_PART_FEE,
@@ -153,7 +150,6 @@ impl MigrationParams {
         hasher.update(&self.dust_floor.to_le_bytes());
         hasher.update(&self.sweep_min.to_le_bytes());
         hasher.update(&self.bucket_modulus.to_le_bytes());
-        hasher.update(&self.target_sessions.to_le_bytes());
         hasher.update(&(self.max_actions_per_split_tx as u64).to_le_bytes());
         hasher.update(&self.expiry_modulus.to_le_bytes());
         hasher.update(&self.part_fee.to_le_bytes());

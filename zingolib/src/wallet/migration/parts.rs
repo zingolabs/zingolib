@@ -121,10 +121,10 @@ pub struct PartRecord {
     /// The anchor-height bucket this part broadcasts in
     /// (boundary = `bucket_index * M`).
     pub bucket_index: Option<u64>,
-    /// A randomly chosen block within the bucket window at which the part
-    /// fires. Randomizing the target within `[boundary, boundary + M)`
-    /// prevents the server from seeing all parts cluster at the boundary.
-    /// Cleared whenever the bucket changes so a fresh target is chosen.
+    /// The scheduled broadcast height, drawn by the Poisson schedule
+    /// (shuffled order, exponential inter-arrival delays; see
+    /// [`super::schedule::plan_schedule`]). Cleared whenever the bucket
+    /// changes so a fresh target is chosen.
     pub target_height: Option<BlockHeight>,
     /// Lifecycle state.
     pub state: PartState,

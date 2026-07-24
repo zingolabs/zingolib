@@ -37,7 +37,6 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
     writer.write_u64::<LittleEndian>(params.dust_floor)?;
     writer.write_u64::<LittleEndian>(params.sweep_min)?;
     writer.write_u32::<LittleEndian>(params.bucket_modulus)?;
-    writer.write_u32::<LittleEndian>(params.target_sessions)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
     writer.write_u32::<LittleEndian>(params.expiry_modulus)?;
     writer.write_u64::<LittleEndian>(params.part_fee)?;
@@ -105,10 +104,14 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
     // ZIP 318 places no per-wallet multiplicity cap (issue #2519,
     // deviation 5), so version 3 drops the slot and a legacy read
     // discards it.
+    // Version 2 carried a `target_sessions` signing-session target after
+    // the `k_max` slot; the Poisson schedule (issue #2519, deviation 1)
+    // retired both, so version 3 drops the slots and a legacy read
+    // discards them.
     if inner_version <= 2 {
         let _legacy_k_max = reader.read_u32::<LittleEndian>()?;
+        let _legacy_target_sessions = reader.read_u32::<LittleEndian>()?;
     }
-    let target_sessions = reader.read_u32::<LittleEndian>()?;
     let max_actions_per_split_tx =
         usize::try_from(reader.read_u64::<LittleEndian>()?).map_err(|_| {
             Error::new(
@@ -127,7 +130,6 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         dust_floor,
         sweep_min,
         bucket_modulus,
-        target_sessions,
         max_actions_per_split_tx,
         expiry_modulus,
         part_fee,
@@ -372,7 +374,6 @@ mod tests {
             any::<u64>(),
             any::<u64>(),
             any::<u32>(),
-            any::<u32>(),
             1usize..=1000,
             any::<u32>(),
             any::<u64>(),
@@ -385,7 +386,6 @@ mod tests {
                     dust_floor,
                     sweep_min,
                     bucket_modulus,
-                    target_sessions,
                     max_actions_per_split_tx,
                     expiry_modulus,
                     part_fee,
@@ -396,7 +396,6 @@ mod tests {
                     dust_floor,
                     sweep_min,
                     bucket_modulus,
-                    target_sessions,
                     max_actions_per_split_tx,
                     expiry_modulus,
                     part_fee,
@@ -609,8 +608,12 @@ mod tests {
         // dust_floor, sweep_min, and bucket_modulus.
         let denominations = state.params.denominations.len();
         assert!(denominations < 253, "CompactSize stays a single byte");
-        let k_max_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
-        bytes.splice(k_max_offset..k_max_offset, 8u32.to_le_bytes());
+        let legacy_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
+        // The retired `k_max` then `target_sessions` u32 slots.
+        let mut legacy_slots = Vec::new();
+        legacy_slots.extend(8u32.to_le_bytes());
+        legacy_slots.extend(6u32.to_le_bytes());
+        bytes.splice(legacy_offset..legacy_offset, legacy_slots);
         bytes.pop();
 
         let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");

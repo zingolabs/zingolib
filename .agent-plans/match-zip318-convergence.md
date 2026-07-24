@@ -89,6 +89,19 @@ The CONTEXT.md glossary entries for Bucket and Cohort must be revised
 when this lands (a cohort becomes transfers sharing a boundary anchor,
 not parts sharing a bucket).
 
+## Ratified follow-on (2026-07-24): deviation 1, Poisson transfer timing
+
+Transfers first, preparation delays second (its own commit). The ZIP's
+MUSTs: shuffle the parts uniformly (largest-first ordering dies),
+exponential inter-arrival delays (`MEAN_DELAY = 144`, redraw past
+`MAX_DELAY = 576`), cumulative from a start no earlier than one full
+bucket interval past the lowest candidate boundary. Buckets stay as
+derived bookkeeping (`bucket_index(target)`) for wakes and reconcile —
+the on-chain observable is the broadcast time and expiry, and retiring
+the bucket plumbing wholesale is not needed for camouflage. A new named
+placement (`place_scheduled`) joins the placement monopoly. Expiry
+already follows `target_height`, so it inherits the drawn schedule.
+
 ## Done (2026-07-23)
 
 All edits applied and verified: `cargo check` and `cargo clippy
