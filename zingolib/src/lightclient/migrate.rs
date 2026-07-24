@@ -930,35 +930,74 @@ impl LightClient {
             .ok_or(MigrationError::NoMigration)?
     }
 
-    /// Sends overdue parts now, in sequence with `spacing` between
-    /// broadcasts (never simultaneously), after the caller has shown the
-    /// ZIP 318 disclosure that sending at application-open time correlates
-    /// the broadcasts with the user's activity.
+    /// Releases AT MOST ONE overdue part immediately — after the caller has
+    /// shown the ZIP 318 disclosure that sending at application-open time
+    /// correlates the broadcast with the user's activity — and re-spreads
+    /// every other overdue part with freshly drawn exponential delays from
+    /// the present height (issue #2519, deviation 6). Sending several
+    /// pool-crossing transfers within one session would leak the balance,
+    /// so the ZIP forbids it: the wallet MUST NOT send more than one
+    /// overdue transfer at wallet open.
     ///
-    /// Each overdue part is shifted into the current bucket (its old anchor
-    /// is stale) before materializing and broadcasting.
-    pub async fn catch_up_migration(
-        &mut self,
-        spacing: Duration,
-    ) -> Result<Vec<TxId>, LightClientError> {
-        let overdue = self.fold_in_overdue_parts().await?;
-        if overdue.is_empty() {
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#fallback-on-application-open>
+    pub async fn catch_up_migration(&mut self) -> Result<Vec<TxId>, LightClientError> {
+        let overdue: Vec<PartId> = self
+            .reconcile_migration()
+            .await?
+            .actions
+            .iter()
+            .find_map(|action| match action {
+                RecommendedAction::PromptCatchUp { parts, .. } => Some(parts.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let Some((release, respread)) = overdue.split_first() else {
             return Ok(Vec::new());
-        }
-        self.wallet().write().await.refresh_part_witnesses()?;
+        };
 
+        let mut wallet = self.wallet().write().await;
+        wallet
+            .with_migration_state(|wallet, state| {
+                wallet.save_required = true;
+                let now_height = wallet
+                    .sync_state
+                    .last_known_chain_height()
+                    .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+                let current_bucket =
+                    schedule::bucket_index(now_height, state.params.bucket_modulus);
+                // The released part fires now by disclosed intent. Overdue
+                // signed parts never reach here — reconcile classifies
+                // them AwaitingExpiry, outside the catch-up cohort.
+                let part = &mut state.parts[release.0 as usize];
+                if part.state == PartState::Assigned {
+                    schedule::place_immediate(part, current_bucket)?;
+                }
+                // The rest are re-spread: fresh cumulative exponential
+                // inter-arrival delays from the present height, so the
+                // remaining broadcasts resume the Poisson process instead
+                // of bursting in this session.
+                let mut running = u32::from(now_height);
+                for part_id in respread {
+                    let part = &mut state.parts[part_id.0 as usize];
+                    if part.state == PartState::Assigned {
+                        running =
+                            running.saturating_add(schedule::draw_delay(&mut rand::rngs::OsRng));
+                        schedule::place_scheduled(
+                            part,
+                            zcash_protocol::consensus::BlockHeight::from_u32(running),
+                            &state.params,
+                        )?;
+                    }
+                }
+                Ok::<_, crate::wallet::error::WalletError>(())
+            })
+            .ok_or(MigrationError::NoMigration)??;
+        drop(wallet);
+
+        self.wallet().write().await.refresh_part_witnesses()?;
         let client = self.migration_broadcast_client()?;
-        let mut sent = Vec::new();
-        for part_id in overdue {
-            let txids = self
-                .broadcast_due_parts_selected(&client, Some(part_id))
-                .await?;
-            if !txids.is_empty() {
-                sent.extend(txids);
-                tokio::time::sleep(spacing).await;
-            }
-        }
-        Ok(sent)
+        self.broadcast_due_parts_selected(&client, Some(*release))
+            .await
     }
 
     /// Reconciles, then shifts every part reconciliation reports as overdue
@@ -2275,15 +2314,76 @@ mod tests {
 
         // Catch-up has nothing to act on and says so; the part is
         // untouched, with no broadcast attempted.
-        let sent = client
-            .catch_up_migration(std::time::Duration::ZERO)
-            .await
-            .expect("catch-up runs");
+        let sent = client.catch_up_migration().await.expect("catch-up runs");
         assert!(sent.is_empty());
         let wallet = client.wallet().read().await;
         let part = &wallet.migration.as_ref().unwrap().parts[0];
         assert_eq!(part.state, PartState::Signed, "the signature is kept");
         assert_eq!(part.attempts, 0, "no lateness fingerprint is broadcast");
+    }
+
+    /// ZIP 318 fallback-on-open (issue #2519, deviation 6): catch-up
+    /// releases AT MOST ONE overdue part into the current window; every
+    /// other overdue part is re-spread to a freshly drawn future height
+    /// rather than broadcast in the same session.
+    ///
+    /// <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#fallback-on-application-open>
+    #[tokio::test]
+    async fn catch_up_releases_at_most_one_overdue_part() {
+        let (mut wallet, bound_note) = wallet_with_migration_note(360);
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let now_height = wallet
+            .sync_state
+            .last_known_chain_height()
+            .expect("synced synthetic wallet");
+        let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+
+        // Two overdue parts from a long-missed window.
+        let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        first.assign(0).expect("fresh parts are bound");
+        let mut second = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+        second.assign(0).expect("fresh parts are bound");
+        wallet.migration = Some(scheduled_state(params.clone(), vec![first, second]));
+
+        let mut client = LightClient::new_for_test(wallet).await;
+        // The synthetic wallet has no broadcast endpoint: the single
+        // release attempt reports Offline, after the re-scheduling — the
+        // behavior under test — has been persisted.
+        let result = client.catch_up_migration().await;
+        assert!(
+            matches!(
+                result,
+                Err(crate::lightclient::error::LightClientError::Offline)
+            ),
+            "got {result:?}"
+        );
+
+        let wallet = client.wallet().read().await;
+        let parts = &wallet.migration.as_ref().unwrap().parts;
+        assert_eq!(
+            parts[0].bucket_index,
+            Some(current_bucket),
+            "exactly one overdue part is released into the current window"
+        );
+        assert!(
+            parts[0].target_height.is_none(),
+            "the released part fires immediately by disclosed intent"
+        );
+        let respread_target = parts[1]
+            .target_height
+            .expect("re-spread parts carry targets");
+        assert!(
+            respread_target > now_height,
+            "the second overdue part is re-spread to a future height, not sent this session"
+        );
+        assert_eq!(
+            parts[1].bucket_index,
+            Some(schedule::bucket_index(
+                respread_target,
+                params.bucket_modulus
+            )),
+            "the re-spread bucket is derived from the drawn target"
+        );
     }
 
     /// Issue #2493, finding 10: `value_migrated` reports the account's

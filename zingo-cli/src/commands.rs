@@ -2192,7 +2192,7 @@ enum MigrationSubCommand {
     Auto,
     Status,
     Reconcile,
-    Catchup { spacing: std::time::Duration },
+    Catchup,
     Cancel,
 }
 
@@ -2226,17 +2226,7 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
         "auto" => Ok(MigrationSubCommand::Auto),
         "status" => Ok(MigrationSubCommand::Status),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
-        "catchup" => {
-            let spacing = match args.get(1) {
-                Some(seconds) => std::time::Duration::from_secs(
-                    seconds
-                        .parse::<u64>()
-                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
-                ),
-                None => std::time::Duration::from_secs(30),
-            };
-            Ok(MigrationSubCommand::Catchup { spacing })
-        }
+        "catchup" => Ok(MigrationSubCommand::Catchup),
         "cancel" => Ok(MigrationSubCommand::Cancel),
         _ => Err(MigrationCommandError::InvalidSubCommand),
     }
@@ -2397,8 +2387,8 @@ fn run_migration(
             }
             .pretty(2)
         }
-        MigrationSubCommand::Catchup { spacing } => {
-            let txids = RT.block_on(lightclient.catch_up_migration(spacing))?;
+        MigrationSubCommand::Catchup => {
+            let txids = RT.block_on(lightclient.catch_up_migration())?;
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
@@ -2471,9 +2461,10 @@ impl Command for MigrationCommand {
             phase, part counts and values, and the coming broadcast windows.
             `reconcile` checks the persisted schedule against the chain and applies the
             actions that are safe unattended. Run it after every sync.
-            `catchup [spacing_seconds]` sends overdue parts now, in sequence with the
-            given spacing (default 30 seconds). Disclosure (ZIP 318): sending at
-            catch-up time correlates the broadcasts with this wallet's activity.
+            `catchup` sends AT MOST ONE overdue part now and re-spreads the rest with
+            freshly drawn delays; ZIP 318 forbids sending several pool-crossing
+            transfers in one session. Disclosure (ZIP 318): sending at catch-up time
+            correlates the broadcast with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand; pending parts are
             dropped and their notes released.
 
@@ -2485,7 +2476,7 @@ impl Command for MigrationCommand {
             migration auto
             migration status
             migration reconcile
-            migration catchup [spacing_seconds]
+            migration catchup
             migration cancel
         "}
     }
@@ -2671,12 +2662,10 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn catchup_defaults_spacing_to_thirty_seconds() {
+    fn catchup_parses_bare() {
         assert_eq!(
             parse_migration_args(&["catchup"]).expect("bare catchup parses"),
-            MigrationSubCommand::Catchup {
-                spacing: std::time::Duration::from_secs(30),
-            }
+            MigrationSubCommand::Catchup
         );
     }
 
