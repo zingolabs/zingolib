@@ -73,11 +73,81 @@ pub const BROADCAST_INDEXERS: &[&str] = &[
 ];
 
 /// Parses [`BROADCAST_INDEXERS`] into `Uri`s, skipping any that fail to parse.
+///
+/// This is the raw curated list, for diagnostic surfaces that carry no wallet
+/// data (the `nym probe` pairing). A transmission draw MUST NOT use it
+/// directly: it goes through [`eligible_witnesses`], which enforces the
+/// witness-is-never-the-sync-indexer invariant (ADR 0014).
 pub fn broadcast_indexers() -> Vec<Uri> {
     BROADCAST_INDEXERS
         .iter()
         .filter_map(|entry| entry.parse().ok())
         .collect()
+}
+
+/// Every witness the sync indexer's operator left in the pool was excluded —
+/// there is nothing safe to draw, so the send refuses (ADR 0014).
+#[derive(Clone, Debug, thiserror::Error)]
+#[error(
+    "no eligible Broadcast Indexer: every entry in the pool belongs to the \
+     sync indexer's operator ({sync_operator}), and a witness is never allowed \
+     to be the sync indexer"
+)]
+pub(crate) struct NoEligibleWitnesses {
+    /// The operator domain of the excluded sync indexer.
+    pub(crate) sync_operator: String,
+}
+
+/// The pool a transmission draw is allowed to use: the curated Broadcast
+/// Indexers minus every entry operated by the party that runs `sync_indexer`.
+///
+/// This is the sole sanctioned pool constructor for any surface that hands a
+/// raw transaction to a drawn indexer (ADR 0014). The sync indexer already
+/// holds the wallet's address set, so a draw that lands on it would hand that
+/// same party the broadcast too, defeating Witness Rotation exactly where it
+/// matters most. Exclusion is by operator, not by exact URI, for the same
+/// reason the list holds one endpoint per operator: `eu.zec.rocks` and
+/// `zec.rocks` are the same accumulating party.
+///
+/// Refuses with [`NoEligibleWitnesses`] if the exclusion empties the pool,
+/// so a misconfigured list fails closed instead of silently broadcasting to
+/// the sync indexer.
+pub(crate) fn eligible_witnesses(sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligibleWitnesses> {
+    eligible_from(broadcast_indexers(), sync_indexer)
+}
+
+/// Pure core of [`eligible_witnesses`], over an arbitrary pool for testability.
+fn eligible_from(pool: Vec<Uri>, sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligibleWitnesses> {
+    let sync_operator = sync_indexer.host().map(operator_domain);
+    let eligible: Vec<Uri> = pool
+        .into_iter()
+        .filter(|entry| {
+            entry.host().map(operator_domain) != sync_operator || sync_operator.is_none()
+        })
+        .collect();
+    if eligible.is_empty() {
+        return Err(NoEligibleWitnesses {
+            sync_operator: sync_operator.unwrap_or_default(),
+        });
+    }
+    Ok(eligible)
+}
+
+/// The operator key of a host: its registrable parent domain, approximated as
+/// the last two dot-separated labels (the whole host when it has fewer). Two
+/// hosts with the same key are treated as one accumulating party. The
+/// approximation can only over-exclude (two unrelated hosts sharing a suffix
+/// collapse together), which merely shrinks the pool — it never lets the sync
+/// indexer's operator through.
+fn operator_domain(host: &str) -> String {
+    let labels: Vec<&str> = host.rsplit('.').collect();
+    labels
+        .iter()
+        .take(2)
+        .rev()
+        .copied()
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 #[cfg(test)]
@@ -136,14 +206,7 @@ mod tests {
                     .host()
                     .expect("every broadcast URI has a host")
                     .to_string();
-                let labels: Vec<&str> = host.rsplit('.').collect();
-                labels
-                    .iter()
-                    .take(2)
-                    .rev()
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .join(".")
+                operator_domain(&host)
             })
             .collect();
         let mut deduped = operator_domains.clone();
@@ -154,5 +217,38 @@ mod tests {
             operator_domains.len(),
             "two broadcast entries share an operator domain: {operator_domains:?}"
         );
+    }
+
+    #[test]
+    fn the_sync_indexers_operator_is_excluded_from_the_witness_pool() {
+        // A regional variant, not the listed URI, so this fails if exclusion
+        // ever weakens to exact-URI matching: the accumulating party is the
+        // operator (ADR 0014).
+        let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
+        let pool = eligible_witnesses(&sync).expect("ten operators remain");
+        assert_eq!(pool.len(), BROADCAST_INDEXERS.len() - 1);
+        assert!(
+            pool.iter()
+                .all(|entry| operator_domain(entry.host().unwrap()) != "zec.rocks"),
+            "the sync indexer's operator must never appear in the witness pool"
+        );
+    }
+
+    #[test]
+    fn a_sync_indexer_outside_the_pool_excludes_nothing() {
+        let sync: Uri = "https://my.private.indexer.example:443".parse().unwrap();
+        let pool = eligible_witnesses(&sync).expect("nothing to exclude");
+        assert_eq!(pool.len(), BROADCAST_INDEXERS.len());
+    }
+
+    #[test]
+    fn an_emptied_pool_refuses_rather_than_drawing_the_sync_indexer() {
+        // With a one-operator pool, excluding the sync indexer's operator
+        // leaves nothing to draw; the send must fail closed, never fall back
+        // to broadcasting through the sync indexer.
+        let sync: Uri = "https://na.zec.rocks:443".parse().unwrap();
+        let pool = vec!["https://zec.rocks:443".parse().unwrap()];
+        let err = eligible_from(pool, &sync).expect_err("the pool must empty");
+        assert_eq!(err.sync_operator, "zec.rocks");
     }
 }

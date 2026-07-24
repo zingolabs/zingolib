@@ -311,3 +311,14 @@ no exception, contributing zero hand-written unsafe while the lint still
 rejects any a future contributor introduces. The minimalism argument does
 not outweigh preserving the safety invariant the whole codebase depends
 on.
+
+## Amendment (2026-07-22): a Broadcast Witness is never the sync indexer
+
+Witness Rotation as ratified here left one draw unconstrained: nothing
+prevented the random pick from landing on the very indexer the wallet
+synchronizes against — the one party that already holds the address set,
+and the named adversary of this decision. That gap is closed by ADR 0014,
+which makes the exclusion a universal, code-enforced invariant: every
+transmission draw filters the curated pool by the sync indexer's operator,
+and an emptied pool refuses in keeping with the fail-closed rule. See
+`docs/adr/0014-broadcast-witness-never-the-sync-indexer.md`.
