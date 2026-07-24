@@ -12,8 +12,10 @@ license = "MIT"
 default = []
 # IP-obfuscation transport (ADR 0011). Off by default. Enables the wallet-side
 # SOCKS5 transmit path in zingo-netutils (light — no nym-sdk, resolves in the
-# main lockfile); the wallet dials the spawned nym-proxy through it.
-nym = ["zingo-netutils/socks5-transmit"]
+# main lockfile); the wallet dials the spawned nym-proxy through it. Also the
+# only thing that compiles a price fetch: the fetch has no clearnet tier
+# (amendment 2026-07-23), so without this feature zingo-price is types-only.
+nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 # Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
 # the wallet). Off by default; even when compiled, recording is a per-session
 # runtime opt-in, the outcome column is a sanitized category token, and the

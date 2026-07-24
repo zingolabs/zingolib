@@ -679,10 +679,11 @@ impl Command for CurrentPriceCommand {
             Updates and returns current price of ZEC.
             Currently only supports USD.
 
-            The price is fetched over the Nym mixnet when Mixnet Mode is on, which
-            hides the client IP from the price source; see the `nym` command. While
-            the mixnet is bootstrapping the fetch fails closed rather than leaking
-            over clearnet.
+            The price fetch has no clearnet tier: it travels ONLY over the Nym
+            mixnet, which hides the client IP from the price source. It requires
+            a build with the `nym` feature and Mixnet Mode ready (see the `nym`
+            command); while the mixnet bootstraps, or when Mixnet Mode is off,
+            the fetch is refused rather than sent over clearnet.
 
             Usage:
             current_price

@@ -273,3 +273,27 @@ sync server's host is refused with a typed error, and the random draw
 excludes that host from the list — so no single server can correlate a
 wallet's sync stream with its migration cohort, which is the correlation
 ZIP 318's scheduling machinery exists to prevent.
+
+## Amendment (2026-07-23): the price fetch loses its clearnet tier
+
+Ratified in the same review walk-through as the migration amendment
+above, and stricter: the price fetch travels ONLY over the mixnet, with
+no clearnet tier in any configuration. Unlike send — whose clearnet
+opt-out exists because a user may need to move funds when the mixnet is
+unavailable — the price fetch contacts a third-party price API whose
+value is cosmetic, and a clearnet contact leaks the client IP and
+wallet-alive timing to a party outside the Zcash ecosystem. There is no
+availability argument, so there is no opt-out: while Mixnet Mode is off
+the fetch is refused with a typed error naming the remedy, and while it
+bootstraps or after the proxy dies it fails closed as before.
+
+The gate is a single switch. zingolib's `nym` feature forwards
+`zingo-price/socks5-fetch`, the only configuration in which any fetch
+code exists: the fetch function requires a SOCKS5 proxy address, so
+even an enabled build cannot express a clearnet fetch, and a default
+build compiles no fetch at all. zingo-price's network dependencies
+(reqwest and its TLS/serde companions) became optional behind that
+feature, so the default build's dependency graph shrinks below its
+pre-mixnet shape; the crate's price types and their wallet-file
+serialization stay unconditional, keeping wallet files portable between
+builds with and without the feature.
