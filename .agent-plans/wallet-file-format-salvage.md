@@ -30,5 +30,9 @@ migration.
 - zingolib/src/wallet/disk/testing/tests.rs (new tests)
 - zingolib/src/wallet.rs (RecoveryInfo construction only, if needed)
 - zingo-cli/src/lib.rs (recovery_info salvage fallback on startup failure)
+- docs/adr/0015-landing-in-dev-ships-the-wallet-file-format.md (new ADR)
+- zingolib/CONTEXT.md (Persistence glossary: Wallet Version, Shipped
+  Format, Recovery Salvage)
+- .gitignore (data_wallets corpus guard)
 
 Claimed 2026-07-24 by the session working dismad's migration report.
