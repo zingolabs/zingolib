@@ -3296,3 +3296,12 @@ pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
         }
     })
 }
+
+/// The canonical IP-correlation disclaimer (ZIP-0318): Mixnet Mode covers only
+/// transaction broadcast and price-fetch, and synchronization still exposes
+/// the client IP to the sync indexer. One constant from zingolib so every
+/// frontend renders the same text; infallible because it needs no wallet and
+/// has no failure path.
+pub fn mixnet_ip_correlation_disclaimer() -> String {
+    zingolib::nym::IP_CORRELATION_DISCLAIMER.to_string()
+}

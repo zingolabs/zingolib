@@ -293,4 +293,6 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string mixnet_bootstrap_detail();
+
+  string mixnet_ip_correlation_disclaimer();
 };
