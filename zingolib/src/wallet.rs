@@ -21,7 +21,9 @@ use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
-use error::{KeyError, PriceError, WalletError};
+#[cfg(feature = "nym")]
+use error::PriceError;
+use error::{KeyError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
@@ -404,14 +406,12 @@ impl LightWallet {
 
     /// Update and return current price of ZEC.
     ///
-    /// Currently only USD is supported. `socks5_proxy` selects the route: when
-    /// `Some`, the fetch is proxied through that local SOCKS5 address (the Nym
-    /// mixnet transport); when `None`, it goes over clearnet. The caller
-    /// resolves which route the Mixnet Mode policy requires.
-    pub async fn update_current_price(
-        &mut self,
-        socks5_proxy: Option<&str>,
-    ) -> Result<f32, PriceError> {
+    /// Currently only USD is supported. The fetch goes through the local
+    /// SOCKS5 proxy at `socks5_proxy` — the Nym mixnet transport — and only
+    /// through it: the price fetch has no clearnet tier (ADR 0011, amendment
+    /// 2026-07-23), so builds without the `nym` feature have no fetch at all.
+    #[cfg(feature = "nym")]
+    pub async fn update_current_price(&mut self, socks5_proxy: &str) -> Result<f32, PriceError> {
         let current_price = self
             .price_list
             .update_current_price(socks5_proxy)
