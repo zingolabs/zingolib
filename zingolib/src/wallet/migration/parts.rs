@@ -136,10 +136,15 @@ pub struct PartRecord {
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub signed_blob: Option<Vec<u8>>,
-    /// The boundary anchor and witness, cached while the boundary checkpoint
-    /// is retained. Cleared on reassignment (a fresh bucket means a fresh
-    /// boundary).
-    pub anchor_witness: Option<BoundaryWitness>,
+    /// The rolling witness cache: the bound note's anchor and witness at
+    /// each recent boundary, keyed by boundary height and captured while
+    /// that boundary's checkpoint is retained (a window shorter than one
+    /// boundary interval, so capture happens boundary by boundary as syncs
+    /// pass them). The proving-time anchor draw
+    /// ([`super::schedule::draw_anchor_boundary`]) resolves against this
+    /// cache; entries older than
+    /// [`super::schedule::ANCHOR_AGE_CAP`] boundaries are pruned.
+    pub boundary_witnesses: std::collections::BTreeMap<u32, BoundaryWitness>,
     /// Broadcast attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
     pub attempts: u8,
@@ -158,7 +163,7 @@ impl PartRecord {
             txid: None,
             expiry_height: None,
             signed_blob: None,
-            anchor_witness: None,
+            boundary_witnesses: std::collections::BTreeMap::new(),
             attempts: 0,
         }
     }
@@ -193,7 +198,7 @@ impl PartRecord {
         self.transition(&["Assigned"], PartState::Bound)?;
         self.bucket_index = None;
         self.target_height = None;
-        self.anchor_witness = None;
+        self.boundary_witnesses.clear();
         Ok(())
     }
 
@@ -207,7 +212,7 @@ impl PartRecord {
         self.txid = None;
         self.expiry_height = None;
         self.signed_blob = None;
-        self.anchor_witness = None;
+        self.boundary_witnesses.clear();
         Ok(())
     }
 
@@ -281,7 +286,7 @@ impl PartRecord {
         }
         self.bucket_index = Some(bucket_index);
         self.target_height = None;
-        self.anchor_witness = None;
+        self.boundary_witnesses.clear();
         Ok(())
     }
 }
@@ -429,23 +434,44 @@ impl crate::wallet::LightWallet {
         }))
     }
 
-    /// Caches the boundary anchor and witness of every part whose boundary
-    /// checkpoint is currently retained. Call after synchronization: the
-    /// retention window is finite and a captured witness is good forever.
+    /// Grows every pending part's rolling witness cache with the most
+    /// recent boundary whose checkpoint is currently retained, and prunes
+    /// entries past [`super::schedule::ANCHOR_AGE_CAP`]. Call after every
+    /// synchronization: the checkpoint retention window is shorter than one
+    /// boundary interval, so the cache accumulates candidates boundary by
+    /// boundary, and a captured witness is good forever. The proving-time
+    /// anchor draw resolves against this cache.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
     #[allow(clippy::result_large_err)]
     pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+        use shardtree::store::ShardStore as _;
+        let Some(tree_tip) = self
+            .shard_trees
+            .orchard
+            .store()
+            .max_checkpoint_id()
+            .expect("infallible")
+        else {
+            return Ok(());
+        };
         self.with_migration_state(|wallet, state| {
+            let modulus = state.params.bucket_modulus;
+            let latest = super::schedule::previous_boundary(tree_tip, modulus);
+            let floor = u32::from(latest).saturating_sub(super::schedule::ANCHOR_AGE_CAP * modulus);
             for part in state
                 .parts
                 .iter_mut()
-                .filter(|part| part.state == PartState::Assigned && part.anchor_witness.is_none())
+                .filter(|part| part.state == PartState::Assigned)
             {
-                let Some(bucket) = part.bucket_index else {
-                    continue;
-                };
-                let boundary = super::schedule::boundary_of(bucket, state.params.bucket_modulus);
-                if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
-                    part.anchor_witness = Some(witness);
+                let before = part.boundary_witnesses.len();
+                part.boundary_witnesses.retain(|&b, _| b >= floor);
+                if !part.boundary_witnesses.contains_key(&u32::from(latest))
+                    && let Some(witness) = wallet.capture_boundary_witness(part, latest)?
+                {
+                    part.boundary_witnesses.insert(u32::from(latest), witness);
+                }
+                if part.boundary_witnesses.len() != before {
                     wallet.save_required = true;
                 }
             }
@@ -464,7 +490,7 @@ impl crate::wallet::LightWallet {
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
-    /// `part.anchor_witness` if the boundary witness needs capturing.
+    /// `part.boundary_witnesses` when the latest boundary needs capturing.
     #[allow(clippy::result_large_err)]
     pub fn prepare_part(
         &mut self,
@@ -512,13 +538,6 @@ impl crate::wallet::LightWallet {
             }));
         }
 
-        if part.anchor_witness.is_none() {
-            part.anchor_witness = self.capture_boundary_witness(part, boundary)?;
-        }
-        let Some(boundary_witness) = part.anchor_witness.clone() else {
-            return Ok(PrepareResult::Skip(SkipReason::MissedBoundary { boundary }));
-        };
-
         // Revalidate the bound note.
         let bound = part.note.expect("witnessed parts have a bound note");
         let (note, note_value) = {
@@ -549,6 +568,42 @@ impl crate::wallet::LightWallet {
                 note_value, part.denomination, params.part_fee
             )));
         }
+
+        // Top up the rolling cache with the currently retained boundary,
+        // then DRAW the anchor at proving time over the cached witnesses
+        // (ZIP 318 anchor selection; issue #2519, deviation 2). The cache
+        // holds only boundaries whose checkpoint witnessed the bound note,
+        // so cache membership enforces the funding-note candidate
+        // condition; the draw enforces the activation and age conditions,
+        // and never yields the most recent boundary.
+        //
+        // Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
+        let chain_tip = tree_tip.expect("tree tip checked above");
+        let latest = super::schedule::previous_boundary(chain_tip, params.bucket_modulus);
+        if !part.boundary_witnesses.contains_key(&u32::from(latest))
+            && let Some(witness) = self.capture_boundary_witness(part, latest)?
+        {
+            part.boundary_witnesses.insert(u32::from(latest), witness);
+        }
+        let mut drawn = None;
+        for _ in 0..64 {
+            let Some(candidate) = super::schedule::draw_anchor_boundary(
+                activation,
+                activation,
+                chain_tip,
+                params,
+                &mut rand::rngs::OsRng,
+            ) else {
+                break;
+            };
+            if let Some(witness) = part.boundary_witnesses.get(&u32::from(candidate)) {
+                drawn = Some(witness.clone());
+                break;
+            }
+        }
+        let Some(boundary_witness) = drawn else {
+            return Ok(PrepareResult::Skip(SkipReason::MissedBoundary { boundary }));
+        };
 
         // Construct the anchor and Merkle path from the cached witness bytes.
         let anchor =

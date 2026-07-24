@@ -19,7 +19,9 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
-/// Version 3 drops the `k_max` params slot (issue #2519, deviation 5).
+/// Version 3 drops the `k_max` params slot (issue #2519, deviation 5) and
+/// replaces the part's single optional witness with the boundary-keyed
+/// rolling witness cache (deviation 2); a legacy read discards both.
 const INNER_VERSION: u8 = 3;
 
 /// Serializes the migration section.
@@ -242,15 +244,15 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     Optional::write(&mut writer, part.signed_blob.as_ref(), |w, signed_blob| {
         Vector::write(w, signed_blob, |w, byte| w.write_u8(*byte))
     })?;
-    Optional::write(
-        &mut writer,
-        part.anchor_witness.as_ref(),
-        |mut w, witness| {
-            w.write_all(&witness.anchor)?;
-            w.write_u64::<LittleEndian>(witness.position)?;
-            Vector::write(&mut w, &witness.auth_path, |w, node| w.write_all(node))
-        },
-    )?;
+    // Version 3: the rolling witness cache, a boundary-keyed map (the
+    // single optional witness of version 2 is discarded on legacy read).
+    let witnesses: Vec<(&u32, &BoundaryWitness)> = part.boundary_witnesses.iter().collect();
+    Vector::write(&mut writer, &witnesses, |mut w, (boundary, witness)| {
+        w.write_u32::<LittleEndian>(**boundary)?;
+        w.write_all(&witness.anchor)?;
+        w.write_u64::<LittleEndian>(witness.position)?;
+        Vector::write(&mut w, &witness.auth_path, |w, node| w.write_all(node))
+    })?;
     writer.write_u8(part.attempts)
 }
 
@@ -302,21 +304,44 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
     let signed_blob = Optional::read(&mut reader, |r| {
         Vector::read(r, byteorder::ReadBytesExt::read_u8)
     })?;
-    let anchor_witness = Optional::read(&mut reader, |mut r| {
-        let mut anchor = [0u8; 32];
-        r.read_exact(&mut anchor)?;
-        let position = r.read_u64::<LittleEndian>()?;
-        let auth_path = Vector::read(&mut r, |r| {
-            let mut node = [0u8; 32];
-            r.read_exact(&mut node)?;
-            Ok(node)
+    let boundary_witnesses = if inner_version <= 2 {
+        // Version 2 stored a single optional witness with no boundary key;
+        // discard it (nothing shipped wrote one) and recapture after sync.
+        Optional::read(&mut reader, |mut r| {
+            let mut anchor = [0u8; 32];
+            r.read_exact(&mut anchor)?;
+            let _position = r.read_u64::<LittleEndian>()?;
+            Vector::read(&mut r, |r| {
+                let mut node = [0u8; 32];
+                r.read_exact(&mut node)?;
+                Ok(node)
+            })?;
+            Ok(())
         })?;
-        Ok(BoundaryWitness {
-            anchor,
-            position,
-            auth_path,
-        })
-    })?;
+        std::collections::BTreeMap::new()
+    } else {
+        Vector::read(&mut reader, |mut r| {
+            let boundary = r.read_u32::<LittleEndian>()?;
+            let mut anchor = [0u8; 32];
+            r.read_exact(&mut anchor)?;
+            let position = r.read_u64::<LittleEndian>()?;
+            let auth_path = Vector::read(&mut r, |r| {
+                let mut node = [0u8; 32];
+                r.read_exact(&mut node)?;
+                Ok(node)
+            })?;
+            Ok((
+                boundary,
+                BoundaryWitness {
+                    anchor,
+                    position,
+                    auth_path,
+                },
+            ))
+        })?
+        .into_iter()
+        .collect()
+    };
     let attempts = reader.read_u8()?;
 
     Ok(PartRecord {
@@ -329,7 +354,7 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
         txid,
         expiry_height,
         signed_blob,
-        anchor_witness,
+        boundary_witnesses,
         attempts,
     })
 }
@@ -442,13 +467,23 @@ mod tests {
                     txid,
                     expiry_height: expiry_height.map(BlockHeight::from_u32),
                     signed_blob,
-                    anchor_witness: anchor_witness.map(|(anchor, position, auth_path)| {
-                        BoundaryWitness {
-                            anchor,
-                            position,
-                            auth_path,
-                        }
-                    }),
+                    boundary_witnesses: anchor_witness
+                        .map(|(anchor, position, auth_path)| {
+                            // Keyed at the provisional boundary modulus — a
+                            // named ZIP 318 value, never a bare literal.
+                            let modulus =
+                                MigrationParams::provisional(crate::config::ChainType::Mainnet)
+                                    .bucket_modulus;
+                            std::collections::BTreeMap::from([(
+                                modulus,
+                                BoundaryWitness {
+                                    anchor,
+                                    position,
+                                    auth_path,
+                                },
+                            )])
+                        })
+                        .unwrap_or_default(),
                     attempts,
                 },
             )

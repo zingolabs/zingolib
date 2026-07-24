@@ -1753,8 +1753,8 @@ mod tests {
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::LightWallet;
     use crate::wallet::migration::{
-        BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase, MigrationState,
-        PartId, PartRecord, PartState, SigningStrategy, schedule,
+        BoundNote, CANONICAL_PART_FEE, ConsentBinding, MigrationMode, MigrationParams,
+        MigrationPhase, MigrationState, PartId, PartRecord, PartState, SigningStrategy, schedule,
     };
 
     use super::{DrainPhase, DrainProgressHandle};
@@ -1811,15 +1811,16 @@ mod tests {
     /// [`NOTE_VALUE`] legacy-Orchard note, plus that note's binding for a
     /// migration part.
     fn wallet_with_migration_note(tip: u32) -> (LightWallet, BoundNote) {
+        // A part's funding note is sized denomination + part fee exactly.
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(NOTE_VALUE)
+            .orchard_note(NOTE_VALUE + CANONICAL_PART_FEE)
             .tip(tip)
             .build();
         let bound_note = wallet
             .wallet_transactions
             .values()
             .flat_map(OrchardNote::transaction_outputs)
-            .find(|note| note.value() == NOTE_VALUE)
+            .find(|note| note.value() == NOTE_VALUE + CANONICAL_PART_FEE)
             .map(|note| BoundNote {
                 output_id: note.output_id(),
                 nullifier: note
@@ -1981,7 +1982,7 @@ mod tests {
         let part = &wallet.migration.as_ref().unwrap().parts[0];
         assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
         assert_eq!(part.attempts, 0, "a skip records no attempt");
-        assert!(part.anchor_witness.is_none());
+        assert!(part.boundary_witnesses.is_empty());
         assert_eq!(
             wallet.sync_state.last_known_chain_height(),
             Some(known_height),
@@ -2099,11 +2100,14 @@ mod tests {
         fn assigned_part_with_witness(bound_note: BoundNote, bucket: u64) -> PartRecord {
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(bucket).expect("fresh parts are bound");
-            part.anchor_witness = Some(BoundaryWitness {
-                anchor: [0; 32],
-                position: 0,
-                auth_path: Vec::new(),
-            });
+            part.boundary_witnesses.insert(
+                0,
+                BoundaryWitness {
+                    anchor: [0; 32],
+                    position: 0,
+                    auth_path: Vec::new(),
+                },
+            );
             part
         }
 
@@ -2848,7 +2852,7 @@ mod tests {
         #[tokio::test]
         async fn resolved_round_at_the_bound_aborts() {
             let (mut wallet, _) = wallet_with_migration_note(360);
-            let confirmed = creating_txid(&wallet, NOTE_VALUE);
+            let confirmed = creating_txid(&wallet, NOTE_VALUE + CANONICAL_PART_FEE);
             let params = MigrationParams::provisional(wallet.chain_type());
             wallet.migration = Some(splitting_state(
                 params,
