@@ -59,6 +59,95 @@ jobs:
         with:
           hack-subcommand: check
 
+  # zingo-netutils is excluded from the root workspace and owns its own
+  # Cargo.lock (so a future `nym` build resolves independently of the
+  # zcash crypto-common pin, ADR 0011). The --workspace jobs above and the
+  # nextest archive in test.yaml therefore skip it; this job restores its
+  # coverage against its own manifest.
+  netutils-standalone:
+    name: zingo-netutils (standalone workspace)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zingo-netutils
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Format
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+
+      # Membership in the root workspace used to gate rustdoc through
+      # checkmate's doc phase; clippy does not run rustdoc lints, so the
+      # standalone workspace needs its own doc gate.
+      - name: Doc
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # The `nym` feature gates the mixnet transmission and price-fetch surfaces
+  # (ADR 0011) in zingolib and zingo-cli. It is off by default, so the
+  # --workspace jobs above never compile it; this job builds and lints the
+  # gated code and runs its deterministic, mixnet-free unit tests.
+  nym-feature:
+    name: nym feature (zingolib + zingo-cli)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Clippy
+        run: cargo clippy -p zingolib -p zingo-cli --features nym,nym-diary --all-targets -- -D warnings
+
+      # Whole suites, deliberately unfiltered: module-path filter lists rot
+      # as gated tests land outside them (PR #2470 review, M6). Re-running
+      # the ungated tests under the features is the price of a gate that
+      # cannot silently go dark; everything here is deterministic and
+      # mixnet-free.
+      - name: Test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --lib
+
+      - name: Test zingo-cli under the nym features
+        run: cargo test -p zingo-cli --features nym,nym-diary --lib
+
+      - name: Doc-test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --doc
+
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04

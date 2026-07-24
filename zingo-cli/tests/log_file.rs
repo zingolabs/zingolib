@@ -44,6 +44,9 @@ fn interactive_mode_redirects_tracing_to_log_file() {
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg("https://zec.rocks:443")
+        // This test observes log redirection, not transmission; opt out of
+        // the forced Mixnet Mode so a nym-featured build needs no proxy.
+        .arg("--no-mixnet")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -139,6 +142,9 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
+        // This test observes log redirection, not transmission; opt out of
+        // the forced Mixnet Mode so a nym-featured build needs no proxy.
+        .arg("--no-mixnet")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")

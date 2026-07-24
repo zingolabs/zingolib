@@ -1,0 +1,299 @@
+# IP obfuscation for Transmission and price-fetch runs over the Nym mixnet
+
+To keep a server-side adversary — principally the indexer — from learning the
+client's IP address and linking it to a wallet's activity, we route the two
+highest-linkage outbound surfaces, Transmission and price-fetch, through the
+Nym mixnet, while leaving synchronization on the ordinary connector. The
+motivation is fund protection: a broadcast is a transaction submitted *to the
+indexer*, so an indexer that sees the client's real IP at broadcast time, or
+that has already fingerprinted the IP against the wallet's address set during
+sync, can tie a person to a transaction. The mixnet hides the client's IP from
+every service it fronts, which is the property that broadcast most needs.
+
+## The adversary and why the mixnet, not Tor
+
+The named adversary sits server-side at any service the client contacts; a
+mixnet exit gateway seeing the *destination* is acceptable, because the
+service then sees only the gateway. We chose the Nym mixnet over Tor
+deliberately. Send has never in fact run over Tor: the historical Tor support
+was wired only to price fetching and was removed in June 2026, so there was no
+incumbent to preserve. Send over Nym, by contrast, was proven in an unmerged
+May 2026 proof of concept, and the mixnet's per-packet mixing defends against
+the timing correlation that ordinary onion routing does not. We accept the
+mixnet's higher latency because the surfaces that carry it are small and
+infrequent.
+
+## Per-surface transport tiers
+
+Obfuscation is a property of each surface rather than of the whole client, and
+two transports run at once. Transmission and price-fetch require the mixnet.
+Synchronization — including pepper-sync's long-lived mempool stream — does not;
+it may run over bare clearnet or, for a user who wants the indexer blinded to
+their IP during sync as well, over a system-provided NymVPN. Sync degrades
+gracefully and never fails closed. This tiering spends the expensive anonymity
+only where the linkage is most dangerous and spares the continuous, latency-
+sensitive sync stream from mixnet cost. A consequence follows and is recorded
+plainly: bare-clearnet sync leaks the real IP and the wallet's address set to
+the very indexer that Transmission is hiding from, so the coherent fully-
+protected posture is NymVPN sync paired with mixnet send, and bare clearnet is
+the explicit "do not care" tier.
+
+## The dependency exception
+
+Enabling this stack requires the Nym SDK and its companions
+(`nym-sdk`, `nym-http-api-client`, `nym-validator-client`, `tokio-socks`, and
+`tower`) to enter the in-workspace `zingo-netutils` crate. This is a ratified
+exception to the standing rule against new dependencies, granted specifically
+because these crates are permissively licensed and published on crates.io, and
+narrowed by placing the whole stack behind an off-by-default `nym` feature so
+that default, mobile, and CI builds remain free of it. No `[patch]` tables and
+no fork or branch pins are authorized; the crate having moved in-workspace, the
+proof of concept's `nym_proxy.rs` ports directly with no external pin.
+
+## NymVPN is provided by the user, never embedded
+
+The NymVPN layer that protects the sync tier is installed and run by the user
+at the operating-system level; the wallet does not embed it. Three independent
+facts forbid an in-process link. The NymVPN client stack is GPL-3.0 while every
+zingolib crate is MIT, so static linking would relicense the distributed
+wallet. Its crates are unpublished, reachable only by a git pin the dependency
+rule forbids. And the tunnel needs a system TUN device that a wallet process
+cannot create — on Android it is the single consent-gated `VpnService`, on iOS
+a separate entitled Network Extension — so an embed is impossible on the mobile
+targets that matter most. The low-latency mode we would want for sync is
+moreover NymVPN-exclusive: the mixnet SDK is fixed at five hops and exposes no
+faster tier, so no shortcut through the already-approved SDK exists. A thin,
+desktop-only control client that speaks `nym-vpn-proto` gRPC to a user-run
+daemon, linking no GPL code, is reserved as a possible later refinement for
+callers who want the wallet to guarantee the tunnel is up before syncing.
+
+## The seam, and how a send behaves
+
+The synchronization client stays exactly as it is; a separate component, built
+from a single shared mixnet proxy, owns the two mixnet surfaces. Routing is
+decided by each operation's static tier, never by a per-call boolean, so no
+call site can accidentally route a send over the wrong transport. A send picks
+one indexer at random from a curated broadcast list of eleven reliable,
+low-latency indexers — a list kept separate from the sync-server list, because
+broadcast wants reliable relay and sync-ranking wants low query latency — and
+submits over the mixnet. Those eleven are the mixnet-reachable subset of the
+fourteen distinct operators the 2026-07-21 discovery sweep found; the other
+three were excluded because they answer only on port 9067, which the mixnet
+exit gateways cannot reliably relay. The purpose is witness rotation: because
+the indexer that carries any given send is random, no single indexer
+accumulates a picture of all the user's sends, and the broadcast target is
+decoupled from the address-knowing sync indexer.
+
+Delivery is pursued through an escalating, serially gated fan-out whose purpose
+is robustness to censorship. The adversary here is a Broadcast Indexer that
+suppresses a send — accepting the connection but declining to relay the
+transaction, or misreporting the outcome — and the countermeasure is the
+ability to route the same send around it to honest indexers. The first round
+submits to a single random indexer, so the common case — a send that lands on
+its first try — contacts exactly one witness and keeps the rotation property
+intact. Only if that submission fails to confirm delivery does the send
+escalate: the second round submits to two fresh random indexers in parallel,
+and the third round, entered only after both of the second round's submissions
+fail, submits to three more. Each round is gated on the complete failure of the
+round before it, so parallelism widens only as evidence of censorship or
+failure accumulates, and the fan-out stops at a cap of six distinct indexers,
+which the one-two-three schedule reaches at the end of the third round. Within
+a round the first indexer to confirm delivery wins and the rest are abandoned.
+This supersedes the project's earlier "never fired redundantly, exactly one
+submission in flight" rule: redundancy is now accepted on the failure path as
+the price of censorship resistance, while the happy path keeps its
+single-witness discipline.
+
+Because the client cannot assume whether zainod, lightwalletd, or another
+server sits at the far end of the mixnet, failover is driven by attempt counts
+and delivery checks, never by classifying a server's error text. A round
+"fails," and so escalates, on any outcome short of confirmed delivery — a
+transport failure, a refusal, or a silence — since a censoring indexer can
+present any of these. Success is defined by delivery: an accepted submission, a
+duplicate already in the mempool or chain, or a delivery check that finds the
+transaction known. Because a censoring indexer can also misreport delivery, the
+strongest confirmation is one that does not rest solely on the word of the
+indexer being tested — a cross-check against a different indexer or the
+client's own sync view of the public mempool — and the implementation should
+prefer such an independent check where it is available. There is no
+merit-rejection short-circuit; an unbroadcastable transaction is bounded
+instead by the six-indexer cap, after which the send surfaces failure for the
+user to retry, which reshuffles the list. The retry, duplicate-in-mempool, and
+queued-for-download handling for each individual submission is the one
+resilient-transmission policy already shared with the clearnet path; the
+fan-out orchestrates that shared per-indexer policy across rounds rather than
+duplicating it. One persistent
+mixnet client serves every send, since the indexer never sees the Nym client
+identity and a fresh client per send would pay the gateway-registration cost
+needlessly; each send nonetheless takes fresh reply isolation within that one
+client as cheap defense in depth against a network-level observer.
+
+## The toggle and its fail-closed invariant
+
+The mixnet is controllable at runtime through a `LightClient` API that both
+zingo-mobile and zingo-cli drive, exposing a tri-state status — off,
+bootstrapping, or ready — because "on but not yet reachable" is a real state a
+user interface must show. The mixnet is forced on at the start of every
+connected session and its off-state is never persisted, so the worst case is a
+user re-disabling it rather than a forgotten-off clearnet broadcast; an
+`--offline` session, which never transmits, skips the bootstrap entirely. The
+invariant that protects funds is that a clearnet send happens only as the
+user's deliberate, per-session choice: when the mixnet is on and its transport
+fails mid-send, the send refuses rather than silently dropping to clearnet.
+Informed consent is permitted; silent degradation is not.
+
+## Testing
+
+The mixnet is unreachable from CI, so every piece of send, toggle, and
+fail-closed logic is tested there against an injected mock transport and a
+seeded, injectable random-number generator; the real proxy bootstrap and a live
+transaction over the mixnet are a single feature-gated smoke test run by hand.
+This makes injectability of the transport and the generator a binding
+constraint on the design rather than a convenience.
+
+## Considered options
+
+We rejected routing send over Tor, which never carried a send here and offers
+weaker correlation resistance than a mixnet. We rejected embedding NymVPN for
+the license, distribution, and mobile-OS reasons above. We rejected sourcing
+price from an on-chain oracle — which would have eliminated the price surface
+rather than obfuscating it — because it would make the wallet depend on an
+oracle that does not yet exist; price-fetch therefore rides the mixnet like
+send, reusing the same proxy through the HTTP client's SOCKS5 support.
+
+## Consequences
+
+The Nym stack grows the dependency tree, contained behind the `nym` feature.
+NymVPN's low-latency gateways require a paid credential, so a fully-protected
+sync posture costs the user money and setup while mixnet send and price cost
+nothing; bare-clearnet sync will consequently be the common real-world posture,
+which makes the indexer-correlation caveat a live concern to document rather
+than a corner case. The mixnet bootstrap imposes a startup latency on connected
+sessions, and a send attempted during bootstrapping must wait or report
+"connecting," never silently clearnet or silently fail.
+
+## Amendment (2026-07-16): the mixnet proxy is a spawned child process
+
+The description above of "a separate component, built from a single shared
+mixnet proxy" implied the proxy is linked into the wallet process. Dependency
+resolution forbids that. The nym-sdk stack requires `crypto-common ^0.2`,
+which cannot share a `Cargo.lock` with this workspace's `crypto-common
+=0.2.0-rc.1` pin, reached through `zcash_primitives` 0.29; both requirements
+fall in the same `0.2.x` compatibility range, so a single lockfile can hold
+only one and satisfies neither side. `zingo-netutils` was therefore made its
+own workspace with its own lockfile, and the mixnet transport genuinely
+cannot be linked into the wallet.
+
+The ratified model is out-of-process. `zingo-netutils` builds a `nym-proxy`
+binary in its own lockfile that runs the embedded Nym SOCKS5 client and
+prints its local SOCKS5 address. The wallet bundles that binary, spawns it as
+a child process, reads its address, and routes the Transmission and
+price-fetch surfaces through it with a light SOCKS5 client (`tokio-socks`)
+that resolves cleanly in the main lockfile. The tri-state Mixnet Mode maps to
+the child's lifecycle: off is not spawned, bootstrapping is spawned and
+connecting, ready is SOCKS5-reachable. The fail-closed invariant is unchanged
+— if the child never reaches ready, a send refuses rather than falling back
+to clearnet.
+
+Everything else in this record stands: the per-surface tiers, the
+witness-rotation broadcast over the curated Broadcast Indexer list, the toggle
+semantics, and the sync tier's user-provided NymVPN.
+
+## Amendment (2026-07-17): the broadcaster is an escalating fan-out
+
+The broadcast policy this record originally described — a single random pick
+with sequential failover and "exactly one submission ever in flight" — is
+superseded. Its stated purpose was witness rotation for privacy; the amended
+purpose adds robustness to censorship, since a Broadcast Indexer can accept a
+send and then suppress the relay. A send now uses an escalating, serially gated
+fan-out: round one submits to a single random indexer, round two submits to two
+fresh indexers in parallel only after round one fails to confirm delivery, and
+round three submits to three more only after both of round two's arms fail. The
+fan-out is capped at six distinct indexers, which the one-two-three schedule
+reaches at the end of round three. Witness rotation is retained on the happy
+path — a first-try success still contacts exactly one witness — and redundancy
+is accepted only once delivery is in doubt. The "The two mixnet surfaces"
+section above has been rewritten to reflect this; the delivery-check and
+no-error-string-classification discipline is unchanged, and each individual
+submission still runs the one resilient-transmission policy shared with the
+clearnet path.
+
+## Amendment (2026-07-21): a fourth mode, and the proxy's lifetime coupling
+
+The tri-state Mixnet Mode this record ratified is superseded by four states:
+off, bootstrapping, ready, and died. A live stage-three smoke run exposed the
+gap. The user interrupted a stuck command with Ctrl-C, the terminal delivered
+the signal to the whole foreground process group, and the nym-proxy child died
+silently — after which every fan-out arm failed against a proxy that the mode
+still reported as ready. Died names that condition: the spawned proxy exited
+unexpectedly, during bootstrap or after reaching ready. It is distinct from
+off because it is unconsented. Off remains the only state that routes the
+mixnet-only surfaces over clearnet, as the user's deliberate choice; died
+refuses, and the refusal tells the user to re-enable the mixnet, which spawns
+a fresh proxy. The supervisor's reader consequently watches the child for its
+whole life rather than detaching once the address arrives, and a death clears
+the stale SOCKS5 address so no surface can dial a dead proxy.
+
+Two mechanisms bind the child's lifetime to the wallet session without letting
+a terminal signal tear the transport out from under it. The child is spawned
+in its own process group, so a Ctrl-C aimed at a wallet command no longer
+reaches the proxy; the interrupt aborts the command while the mixnet keeps
+running. And the supervisor holds the child's stdin pipe open for the child's
+whole life while the child watches that pipe for end-of-file: any parent exit
+— clean, panicked, or killed with SIGKILL, which skips ordinary
+kill-on-drop cleanup — closes the pipe and the child disconnects from the
+mixnet and exits. No orphaned proxy survives its parent, and no parent
+interrupt orphans a session from its transport. On platforms without process
+groups the child shares the terminal's group and an interrupt still reaches
+it; the outcome is the safe one — the mode becomes died and the surfaces
+refuse — rather than a silent clearnet fallback.
+
+## Amendment (2026-07-23): migration parts obey Mixnet Mode, and never target the sync server
+
+Ratified while walking the PR #2470 review findings (M3). The original
+record routed Transmission and price-fetch by Mixnet Mode but left ZIP 318
+migration-part broadcasts on unconditional clearnet, silently breaking the
+mode's central invariant for the wallet's most correlation-sensitive
+traffic. Migration broadcasts now obey the same policy as every other
+transmitting surface. While the mode is on — assuming the `nym` feature is
+compiled in and the session has not opted out — parts travel ONLY over the
+mixnet and MUST NEVER go over clearnet: the broadcast client resolves the
+route first and fails closed while the proxy bootstraps or after it dies,
+refusing rather than falling back. Clearnet carries parts only through the
+user's deliberate per-session toggle-off, or in a build compiled without
+the feature, where the historical behavior (the dedicated
+`migration_broadcast_uri`, else the synchronization endpoint with a logged
+correlation warning) is unchanged.
+
+Over the mixnet, migration parts ride Witness Rotation like sends: each
+submission draws one Broadcast Indexer at random from the curated list.
+The synchronization endpoint is forbidden as a mixnet target in both
+shapes of the draw — a configured `migration_broadcast_uri` sharing the
+sync server's host is refused with a typed error, and the random draw
+excludes that host from the list — so no single server can correlate a
+wallet's sync stream with its migration cohort, which is the correlation
+ZIP 318's scheduling machinery exists to prevent.
+
+## Amendment (2026-07-23): the price fetch loses its clearnet tier
+
+Ratified in the same review walk-through as the migration amendment
+above, and stricter: the price fetch travels ONLY over the mixnet, with
+no clearnet tier in any configuration. Unlike send — whose clearnet
+opt-out exists because a user may need to move funds when the mixnet is
+unavailable — the price fetch contacts a third-party price API whose
+value is cosmetic, and a clearnet contact leaks the client IP and
+wallet-alive timing to a party outside the Zcash ecosystem. There is no
+availability argument, so there is no opt-out: while Mixnet Mode is off
+the fetch is refused with a typed error naming the remedy, and while it
+bootstraps or after the proxy dies it fails closed as before.
+
+The gate is a single switch. zingolib's `nym` feature forwards
+`zingo-price/socks5-fetch`, the only configuration in which any fetch
+code exists: the fetch function requires a SOCKS5 proxy address, so
+even an enabled build cannot express a clearnet fetch, and a default
+build compiles no fetch at all. zingo-price's network dependencies
+(reqwest and its TLS/serde companions) became optional behind that
+feature, so the default build's dependency graph shrinks below its
+pre-mixnet shape; the crate's price types and their wallet-file
+serialization stay unconditional, keeping wallet files portable between
+builds with and without the feature.

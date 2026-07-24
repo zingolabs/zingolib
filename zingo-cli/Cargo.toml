@@ -3,6 +3,15 @@ name = "zingo-cli"
 version = "0.4.0"
 edition = "2024"
 
+[features]
+# Compile in the Nym mixnet transport so `nym on|off|status` can drive it.
+# Off by default; the command reports the feature is absent when it is not set.
+nym = ["zingolib/nym"]
+# Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
+# in to recording and `nym history` can display it. Off by default; without
+# it the flag warns and records nothing.
+nym-diary = ["zingolib/nym-diary"]
+
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
@@ -24,14 +33,17 @@ nonempty = { workspace = true }
 rustyline = { workspace = true }
 zingo-status = { workspace = true }
 shellwords = { workspace = true }
-tokio = { workspace = true }
+# macros + time back the transmit heartbeat's select!/interval; rt-multi-thread
+# backs the command runtime (previously inherited via feature unification).
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros"] }
+# test-util powers the paused-clock heartbeat tests.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

@@ -8,19 +8,34 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[features]
+# The fetch path, and the ONLY way this crate performs network requests: a
+# SOCKS5 proxy address is required, so a price is never fetched over
+# clearnet (ADR 0011, amendment 2026-07-23). Off by default — without it
+# the crate is price types and storage only, with no network dependencies.
+# zingolib's `nym` feature forwards this one.
+socks5-fetch = [
+    "dep:reqwest",
+    "dep:rust_decimal",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+]
+
 [dependencies]
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
 # rustls-tls-no-provider: never auto-selects a rustls CryptoProvider; the
 # fetch path installs aws-lc-rs (first-install-wins) before requesting.
-reqwest = { workspace = true, default-features = false, features = [
+reqwest = { workspace = true, optional = true, default-features = false, features = [
     "cookies",
     "rustls-tls-no-provider",
     "json",
+    "socks",
 ] }
-rust_decimal = { workspace = true }
-rustls = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+rust_decimal = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
