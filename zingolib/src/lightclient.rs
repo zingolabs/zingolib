@@ -126,6 +126,10 @@ pub struct LightClient {
     /// A side channel off the wallet lock, so it stays pollable while build and
     /// transmit hold the wallet write lock across their loops.
     drain_progress: migrate::DrainProgressHandle,
+    /// Live progress of the note-splitting round a [`Self::quick_split`] call
+    /// is building/transmitting, or `None` when idle. The Phase 1 counterpart
+    /// to `drain_progress`, the same off-the-wallet-lock side channel.
+    split_progress: migrate::SplitProgressHandle,
     /// Live progress of a running migration execute batch
     /// ([`Self::execute_due_parts`]), the same side-channel pattern.
     batch_progress: migrate::BatchProgressHandle,
@@ -202,6 +206,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             #[cfg(feature = "nym-diary")]
@@ -238,6 +243,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             // Synthetic test wallets have no durable directory; the default
@@ -289,6 +295,7 @@ impl LightClient {
             save_handle: None,
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             #[cfg(feature = "nym-diary")]
@@ -404,6 +411,24 @@ impl LightClient {
     /// ```
     pub fn drain_progress_handle(&self) -> migrate::DrainProgressHandle {
         self.drain_progress.clone()
+    }
+
+    /// A snapshot of the note-splitting round a [`Self::quick_split`] call is
+    /// building, or `None` when idle. Reads a side channel, not the wallet, so
+    /// it never blocks on the round's wallet write lock. To poll while a
+    /// `quick_split` — which borrows `&mut self` — runs, grab a
+    /// [`Self::split_progress_handle`] first.
+    pub fn split_status(&self) -> Option<migrate::SplitStatus> {
+        self.split_progress.status()
+    }
+
+    /// A cloneable handle to the note-splitting round's live progress. Grab it
+    /// *before* calling [`Self::quick_split`], then poll
+    /// [`migrate::SplitProgressHandle::status`] concurrently while the round
+    /// holds `&mut self` — the Phase 1 counterpart to
+    /// [`Self::drain_progress_handle`].
+    pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
+        self.split_progress.clone()
     }
 
     /// A snapshot of the running migration execute batch

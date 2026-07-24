@@ -44,6 +44,10 @@
 
 **Part** — One canonical pool-crossing migration transfer: a transaction with exactly one Orchard spend and one Ironwood output worth a single Denomination, no change output, and the canonical fee. A migration is a set of Parts, each pre-funded by an exactly-sized note so no Part waits on another's change.
 
+**Note splitting** — Phase 1 of the private Migration: Orchard→Orchard self-sends that reshape a wallet's arbitrary Orchard notes into notes worth exactly one Denomination plus a Part fee, so each later Part spends one note with no change. Both ends are shielded, so it reveals no value and may run before NU6.3 activation; it is *transmitted* over the ordinary connection, never broadcast over the Migration Broadcast Endpoint. It both merges fragments and divides large notes (see Round). *Avoid*: "splitting" for the fan-out alone.
+
+**Round** — One batch of independent Note-splitting transactions built and broadcast together. Rounds are sequential: a Round's shielded outputs must confirm and be witnessed before the next Round can spend them, because a later Round's inputs are an earlier Round's outputs. A wallet needs about log₃₂(N) Rounds and most need one. A consumer drives Phase 1 one Round per call. Distinct from a Bucket, which is a Phase 2 broadcast window, not a splitting step.
+
 **Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window and anchors to the tree state at the Bucket's opening Boundary. Buckets are windows in chain time, never value quanta (see Denomination).
 
 **Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it.
