@@ -14,6 +14,11 @@ default = []
 # SOCKS5 transmit path in zingo-netutils (light — no nym-sdk, resolves in the
 # main lockfile); the wallet dials the spawned nym-proxy through it.
 nym = ["zingo-netutils/socks5-transmit"]
+# Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
+# the wallet). Off by default; even when compiled, recording is a per-session
+# runtime opt-in, the outcome column is a sanitized category token, and the
+# file is capped. Without this feature the handle is inert.
+nym-diary = []
 testutils = [
     "portpicker",
     "zingo_test_vectors",

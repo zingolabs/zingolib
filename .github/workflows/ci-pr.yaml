@@ -123,10 +123,13 @@ jobs:
           fi
 
       - name: Clippy
-        run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
+        run: cargo clippy -p zingolib -p zingo-cli --features nym,nym-diary --all-targets -- -D warnings
 
       - name: Test the nym module
         run: "cargo test -p zingolib --features nym --lib nym::"
+
+      - name: Test the indexer diary under its feature
+        run: "cargo test -p zingolib --features nym,nym-diary --lib indexer_history::"
 
   run-doc-tests:
     name: Run doc tests

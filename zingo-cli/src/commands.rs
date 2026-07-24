@@ -722,7 +722,11 @@ impl Command for NymCommand {
                                   is mixnet-specific. The clearnet leg contacts indexers
                                   from your real IP.
             nym history           Per-indexer attempt history accumulated across
-                                  sessions: sends and probes, per route.
+                                  sessions: sends and probes, per route. Recording
+                                  needs the nym-diary build feature plus the
+                                  per-session --indexer-diary opt-in; the diary
+                                  stores hosts, timings, and a failure category,
+                                  never server text, and is capped.
 
             When Mixnet Mode is on, send and price-fetch route over the mixnet and
             fail closed while it is still bootstrapping, never falling back to
@@ -883,10 +887,36 @@ fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     )
 }
 
+/// The `nym history` body when the indexer diary is compiled in: render the
+/// accumulated record, and remind an opted-out session how recording starts.
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
+fn nym_history_command(lightclient: &LightClient) -> String {
+    let handle = lightclient.indexer_history_handle();
+    let mut rendered = render_history(
+        &handle.load(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0),
+    );
+    if !handle.is_recording() {
+        rendered.push_str("\n(recording is off this session; start with --indexer-diary)");
+    }
+    rendered
+}
+
+/// The `nym history` body when the indexer diary is not compiled in.
+#[cfg(all(feature = "nym", not(feature = "nym-diary")))]
+fn nym_history_command(_lightclient: &LightClient) -> String {
+    "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
+     opt a session in with --indexer-diary to record per-indexer history."
+        .to_string()
+}
+
 /// Render the accumulated per-indexer history as per-host, per-route
 /// aggregates, most-attempted hosts first. Pure over the loaded attempts and
 /// a caller-supplied "now" so tests pin the ages.
-#[cfg(feature = "nym")]
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
 fn render_history(
     attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
     now_unix_secs: u64,
@@ -1030,16 +1060,7 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
                     .collect::<Vec<_>>()
                     .join("\n"))
             }
-            NymSubCommand::History => {
-                let attempts = lightclient.indexer_history_handle().load();
-                Ok(render_history(
-                    &attempts,
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|elapsed| elapsed.as_secs())
-                        .unwrap_or(0),
-                ))
-            }
+            NymSubCommand::History => Ok(nym_history_command(lightclient)),
         }
     })
 }
@@ -3238,24 +3259,27 @@ mod nym_command_parsing {
     /// HYPOTHESIS: the history rendering aggregates per host and route with
     /// the most recent outcome and its age. Falsified if counts mix routes
     /// or the last outcome reflects file order rather than timestamps.
-    #[cfg(feature = "nym")]
+    #[cfg(all(feature = "nym", feature = "nym-diary"))]
     #[test]
     fn history_aggregates_per_host_and_route() {
-        use zingolib::lightclient::indexer_history::{AttemptKind, AttemptRoute, IndexerAttempt};
+        use zingolib::lightclient::indexer_history::{
+            AttemptKind, AttemptRoute, FailureKind, IndexerAttempt,
+        };
 
-        let attempt = |host: &str, route, unix_secs, outcome: Result<(), &str>| IndexerAttempt {
+        let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
             host: host.to_string(),
             route,
             kind: AttemptKind::Send,
             millis: 10,
-            outcome: outcome.map_err(str::to_string),
+            outcome,
         };
+        let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
-            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, Err("tunnel")),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
             attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
-            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, Err("tunnel")),
+            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
         ];
 
         assert_eq!(

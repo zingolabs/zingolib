@@ -21,7 +21,7 @@ use http::Uri;
 use zingo_netutils::{GrpcIndexer, Indexer as _};
 
 use crate::lightclient::indexer_history::{
-    AttemptKind, AttemptRoute, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
+    AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
 };
 
 /// One leg of a paired probe.
@@ -113,7 +113,7 @@ fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute,
         millis: leg.millis,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
-            Err(detail) => Err(detail.clone()),
+            Err(detail) => Err(FailureKind::classify(detail)),
         },
     });
 }
