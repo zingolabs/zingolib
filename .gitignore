@@ -11,3 +11,6 @@ libtonode-tests/tests/chain_generics.proptest-regressions
 libtonode-tests/store_all_checkpoints_test
 .zingo-cli/
 .DS_Store
+
+# Local corpus of real wallet files (live seed material — never commit)
+/data_wallets/

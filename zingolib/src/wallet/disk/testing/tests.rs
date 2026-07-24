@@ -450,3 +450,79 @@ async fn recovery_info_salvages_a_wallet_file_that_fails_to_read() {
         .expect("prefix salvage must survive a corrupt tail");
     assert_eq!(salvaged, recovery_info);
 }
+
+/// Sweeps the local corpus of real wallet files in `data_wallets/` at the
+/// workspace root: every file must either fully parse or yield recovery
+/// info from the prefix salvage, so no corpus wallet is stranded.
+///
+/// The corpus holds live seed material, so it is gitignored and this test
+/// never prints seeds; it reports only per-file outcomes. On machines
+/// without the corpus (CI included) the sweep is an empty pass.
+#[test]
+fn data_wallets_corpus_parses_or_salvages() {
+    use crate::config::ChainType;
+    use crate::wallet::LightWallet;
+
+    let corpus_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("zingolib lives one level below the workspace root")
+        .join("data_wallets");
+    if !corpus_dir.is_dir() {
+        eprintln!("no data_wallets corpus on this machine; nothing to sweep");
+        return;
+    }
+
+    let mut corpus_paths = std::fs::read_dir(&corpus_dir)
+        .expect("corpus directory must be listable")
+        .map(|entry| {
+            entry
+                .expect("corpus directory entries must be readable")
+                .path()
+        })
+        .filter(|path| path.extension().is_some_and(|extension| extension == "dat"))
+        .collect::<Vec<_>>();
+    corpus_paths.sort();
+    assert!(
+        !corpus_paths.is_empty(),
+        "data_wallets exists but holds no .dat files; nothing swept"
+    );
+
+    for path in corpus_paths {
+        let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let bytes = std::fs::read(&path).expect("corpus files must be readable");
+
+        // Device wallets are mainnet or testnet; regtest wallets cannot
+        // occur in the corpus because their activation heights are not
+        // recoverable from the file alone.
+        let full_parse = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .or_else(|_| LightWallet::read(bytes.as_slice(), ChainType::Testnet));
+
+        match full_parse {
+            Ok(wallet) => {
+                eprintln!(
+                    "{file_name}: parsed fully (stored version {})",
+                    wallet.read_version()
+                );
+            }
+            Err(read_error) => {
+                let salvaged = LightWallet::read_recovery_info(bytes.as_slice()).unwrap_or_else(
+                    |salvage_error| {
+                        panic!(
+                            "{file_name}: full parse failed ({read_error}) and prefix \
+                                 salvage also failed ({salvage_error})"
+                        )
+                    },
+                );
+                assert!(
+                    !salvaged.seed_phrase.is_empty(),
+                    "{file_name}: salvage produced an empty seed phrase"
+                );
+                eprintln!(
+                    "{file_name}: full parse failed ({read_error}); salvaged recovery info \
+                     (birthday {}, {} accounts)",
+                    salvaged.birthday, salvaged.no_of_accounts
+                );
+            }
+        }
+    }
+}
