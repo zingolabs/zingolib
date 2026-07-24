@@ -94,8 +94,8 @@ impl DrainPlan {
 const MAX_DRAIN_INPUTS: usize = 32;
 
 /// Plans a drain of the Orchard notes with the given values (zatoshis): spend
-/// every note worth more than the [`SWEEP_MIN`] Sweep Minimum into one Ironwood
-/// output, chunked so no transaction exceeds [`MAX_DRAIN_INPUTS`] inputs.
+/// every note worth more than the `SWEEP_MIN` Sweep Minimum into one Ironwood
+/// output, chunked so no transaction exceeds `MAX_DRAIN_INPUTS` inputs.
 /// Deterministic and pure.
 ///
 /// Notes worth at most `SWEEP_MIN` are stranded rather than selected (see the
