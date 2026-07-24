@@ -675,7 +675,6 @@ mod tests {
         );
     }
 
-
     proptest! {
         // Every drawn delay is within its truncated tail: transfers within
         // MAX_DELAY (DELAYS MUST), preparations within PREP_MAX_DELAY.

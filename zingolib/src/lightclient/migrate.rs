@@ -2286,9 +2286,7 @@ mod tests {
         MigrationPhase, MigrationState, PartId, PartRecord, PartState, SigningStrategy, schedule,
     };
 
-    use super::{
-        DrainPhase, DrainProgressHandle, SplitOutcome, SplitPhase, SplitProgressHandle,
-    };
+    use super::{DrainPhase, DrainProgressHandle, SplitOutcome, SplitPhase, SplitProgressHandle};
 
     /// The value of the one fabricated note every scenario here binds a
     /// migration part to: the smallest canonical denomination (0.01 ZEC).
@@ -3771,7 +3769,6 @@ mod tests {
             assert_eq!(batch.part_ids, vec![PartId(0)]);
             assert_eq!(batch.boundary, boundary);
         }
-
 
         /// A signed open-window part is advertised as due, with its boundary
         /// and denomination, and the advertised batch is exactly what a tap
