@@ -1063,6 +1063,32 @@ impl LightClient {
     ///
     /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#fallback-on-application-open>
     pub async fn catch_up_migration(&mut self) -> Result<Vec<TxId>, LightClientError> {
+        let Some(release) = self.apply_overdue_fallback().await? else {
+            return Ok(Vec::new());
+        };
+
+        self.wallet().write().await.refresh_part_witnesses()?;
+        let client = self.migration_broadcast_client()?;
+        self.broadcast_due_parts_selected(&client, Some(release))
+            .await
+    }
+
+    /// Reconciles, then applies the ZIP 318 fallback rule to the parts
+    /// whose windows were missed: releases AT MOST ONE overdue part into
+    /// the current bucket, due immediately, and re-spreads every other
+    /// overdue part with freshly drawn cumulative exponential inter-arrival
+    /// delays from the present height, so the remaining broadcasts resume
+    /// the Poisson process instead of bursting in this session. Returns the
+    /// released part's id, `None` when nothing was missed.
+    ///
+    /// Shared by catch-up and the user-triggered execute batch: both are
+    /// disclosed user-present sessions, and sending several pool-crossing
+    /// transfers within one session would leak the balance, so the ZIP's
+    /// MUST NOT send more than one overdue transfer binds both entry
+    /// points alike.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#fallback-on-application-open>
+    async fn apply_overdue_fallback(&mut self) -> Result<Option<PartId>, LightClientError> {
         let overdue: Vec<PartId> = self
             .reconcile_migration()
             .await?
@@ -1074,7 +1100,7 @@ impl LightClient {
             })
             .unwrap_or_default();
         let Some((release, respread)) = overdue.split_first() else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
 
         let mut wallet = self.wallet().write().await;
@@ -1094,10 +1120,6 @@ impl LightClient {
                 if part.state == PartState::Assigned {
                     schedule::place_immediate(part, current_bucket)?;
                 }
-                // The rest are re-spread: fresh cumulative exponential
-                // inter-arrival delays from the present height, so the
-                // remaining broadcasts resume the Poisson process instead
-                // of bursting in this session.
                 let mut running = u32::from(now_height);
                 for part_id in respread {
                     let part = &mut state.parts[part_id.0 as usize];
@@ -1114,64 +1136,15 @@ impl LightClient {
                 Ok::<_, crate::wallet::error::WalletError>(())
             })
             .ok_or(MigrationError::NoMigration)??;
-        drop(wallet);
-
-        self.wallet().write().await.refresh_part_witnesses()?;
-        let client = self.migration_broadcast_client()?;
-        self.broadcast_due_parts_selected(&client, Some(*release))
-            .await
+        Ok(Some(*release))
     }
 
-    /// Reconciles, then shifts every part reconciliation reports as overdue
-    /// into the current bucket, ready to send now. Returns the shifted ids,
-    /// empty when nothing was missed. Shared by catch-up and the
-    /// user-triggered execute batch.
-    async fn fold_in_overdue_parts(&mut self) -> Result<Vec<PartId>, LightClientError> {
-        let overdue: Vec<PartId> = self
-            .reconcile_migration()
-            .await?
-            .actions
-            .iter()
-            .find_map(|action| match action {
-                RecommendedAction::PromptCatchUp { parts, .. } => Some(parts.clone()),
-                _ => None,
-            })
-            .unwrap_or_default();
-        if overdue.is_empty() {
-            return Ok(overdue);
-        }
-
-        let mut wallet = self.wallet().write().await;
-        wallet
-            .with_migration_state(|wallet, state| {
-                wallet.save_required = true;
-                let now_height = wallet
-                    .sync_state
-                    .last_known_chain_height()
-                    .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                let current_bucket =
-                    schedule::bucket_index(now_height, state.params.bucket_modulus);
-                for part_id in &overdue {
-                    let part = &mut state.parts[part_id.0 as usize];
-                    if part.state == PartState::Assigned {
-                        // Catch-up fires now by disclosed intent:
-                        // explicitly immediate placement. Overdue
-                        // signed parts never reach here — reconcile
-                        // classifies them AwaitingExpiry, outside the
-                        // catch-up cohort.
-                        schedule::place_immediate(part, current_bucket)?;
-                    }
-                }
-                Ok::<_, crate::wallet::error::WalletError>(())
-            })
-            .ok_or(MigrationError::NoMigration)??;
-        drop(wallet);
-        Ok(overdue)
-    }
-
-    /// Sends everything the migration owes right now, in one user-triggered
-    /// batch: the current window's due parts plus any missed windows' parts,
-    /// folded in. Sends are sequenced `spacing` apart, never simultaneous.
+    /// Sends what the migration owes right now, in one user-triggered
+    /// batch: the current window's due parts, plus AT MOST ONE part from a
+    /// missed window, released under the ZIP 318 fallback rule; every
+    /// other overdue part is re-spread to a freshly drawn future height
+    /// rather than sent in this session ([`Self::apply_overdue_fallback`]).
+    /// Sends are sequenced `spacing` apart, never simultaneous.
     /// The report carries a per-part outcome, and
     /// [`Self::batch_progress_handle`] observes the batch live from another
     /// thread while this call holds `&mut self`.
@@ -1187,7 +1160,11 @@ impl LightClient {
     /// Disclosure (ZIP 318): user-present sends correlate the broadcasts
     /// with the user's activity. Under a manual-execution flow every send
     /// has this property, on time or late, so the client shows the
-    /// disclosure once, when the cadence is chosen.
+    /// disclosure once, when the cadence is chosen. Disclosure covers
+    /// only that correlation: the at-most-one release exists for a
+    /// different reason — several pool-crossing transfers in one session
+    /// would leak the balance — so no disclosure licenses sending more
+    /// than one overdue part per session.
     pub async fn execute_due_parts(
         &mut self,
         spacing: Duration,
@@ -1202,7 +1179,7 @@ impl LightClient {
         client: &impl BroadcastClient,
         spacing: Duration,
     ) -> Result<BatchReport, LightClientError> {
-        self.fold_in_overdue_parts().await?;
+        self.apply_overdue_fallback().await?;
         self.wallet().write().await.refresh_part_witnesses()?;
 
         // The owed set: every part of the current window, shifted or not.
@@ -2871,10 +2848,10 @@ mod tests {
             );
         }
 
-        /// A part from a missed window folds into the batch: shifted into
-        /// the current window and attempted alongside it.
+        /// A single part from a missed window is released into the batch:
+        /// shifted into the current window and attempted alongside it.
         #[tokio::test]
-        async fn overdue_part_folds_into_the_batch() {
+        async fn overdue_part_is_released_into_the_batch() {
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
             let params = MigrationParams::provisional(wallet.chain_type());
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -2909,7 +2886,93 @@ mod tests {
             assert_eq!(
                 state.parts[0].bucket_index,
                 Some(current_bucket),
-                "the overdue part was folded into the current window"
+                "the overdue part was released into the current window"
+            );
+        }
+
+        /// ZIP 318 fallback (issue #2519, deviation 6): the user-triggered
+        /// execute batch is bound by the same rule as catch-up. Of several
+        /// parts from missed windows, AT MOST ONE is released into the
+        /// batch; every other overdue part is re-spread to a freshly drawn
+        /// future height, never sent in the same session.
+        ///
+        /// <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#fallback-on-application-open>
+        #[tokio::test]
+        async fn second_overdue_part_is_respread_not_sent() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+
+            // Two overdue parts from a long-missed window.
+            let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            first.assign(0).expect("fresh parts are bound");
+            let mut second = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+            second.assign(0).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params.clone(), vec![first, second]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let broadcast_client = MockBroadcastClient::default();
+            let report = client
+                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            // The released part is attempted (the synthetic wallet cannot
+            // witness the boundary, so it slides); the re-spread part is
+            // never attempted this session. Its drawn target may land
+            // inside the current window, in which case the report lists it
+            // as not yet due — but nothing beyond the single release may
+            // reach the endpoint.
+            assert!(matches!(
+                report.outcomes[0],
+                PartOutcome {
+                    part: PartId(0),
+                    result: PartSendResult::Slid,
+                    ..
+                }
+            ));
+            assert!(
+                report.outcomes.iter().all(|outcome| !matches!(
+                    outcome.result,
+                    PartSendResult::Sent(_) | PartSendResult::Failed { .. }
+                )),
+                "got {:?}",
+                report.outcomes
+            );
+            assert!(
+                broadcast_client.submissions.lock().unwrap().is_empty(),
+                "nothing beyond the single release reaches the endpoint"
+            );
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(
+                parts[0].bucket_index,
+                Some(current_bucket),
+                "exactly one overdue part is released into the current window"
+            );
+            assert!(
+                parts[0].target_height.is_none(),
+                "the released part fires immediately by disclosed intent"
+            );
+            let respread_target = parts[1]
+                .target_height
+                .expect("re-spread parts carry targets");
+            assert!(
+                respread_target > now_height,
+                "the second overdue part is re-spread to a future height, not sent this session"
+            );
+            assert_eq!(
+                parts[1].bucket_index,
+                Some(schedule::bucket_index(
+                    respread_target,
+                    params.bucket_modulus
+                )),
+                "the re-spread bucket is derived from the drawn target"
             );
         }
     }
