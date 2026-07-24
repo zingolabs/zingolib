@@ -16,6 +16,7 @@ jobs:
     name: Coverage
     needs: compute-image-tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
