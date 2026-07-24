@@ -182,23 +182,60 @@ fn draw_unit_left_open(rng: &mut impl Rng) -> f64 {
     1.0 - ((u >> U64_TO_MANTISSA_SHIFT) as f64) * UNIT_STEP
 }
 
-/// Draw one TRANSFER inter-arrival delay in blocks from the truncated
-/// exponential distribution by inverse CDF: `round(-MEAN_DELAY * ln(u))`
-/// for `u` uniform in `(0, 1]`, discarding and redrawing above
-/// [`MAX_DELAY`]. The return is always in `[0, MAX_DELAY]`.
+/// Mean of the exponential inter-arrival delay between successive
+/// PREPARATION transactions, in blocks (about thirty minutes). Preparation
+/// needs temporal decoupling — a burst of identically shaped padded
+/// transactions at a single moment is a linkable cluster — but no anchor
+/// bucketing, so its spacing is much tighter than the transfers'
+/// [`MEAN_DELAY`].
 ///
-/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
-/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L181-L199>
-pub fn draw_delay(rng: &mut impl Rng) -> u32 {
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L84>
+pub const PREP_MEAN_DELAY: u32 = 24;
+
+/// Upper bound (inclusive) on a single preparation inter-arrival delay, in
+/// blocks (about two hours): `4 * PREP_MEAN_DELAY`, the same tail
+/// truncation as the transfers' [`MAX_DELAY`]. A draw exceeding this is
+/// discarded and redrawn.
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L89>
+pub const PREP_MAX_DELAY: u32 = 4 * PREP_MEAN_DELAY;
+
+/// Draw one inter-arrival delay in blocks from a truncated exponential
+/// distribution with the given `mean` by inverse CDF: `round(-mean *
+/// ln(u))` for `u` uniform in `(0, 1]`, discarding and redrawing above
+/// `cap`. The return is always in `[0, cap]`.
+fn draw_delay_with(mean: u32, cap: u32, rng: &mut impl Rng) -> u32 {
     loop {
         let u = draw_unit_left_open(rng);
         // ln(u) <= 0 for u in (0, 1], so the product is non-negative, and
         // rounding (ties up) is truncation of x + 0.5.
-        let delay = (-(f64::from(MEAN_DELAY)) * u.ln() + 0.5) as u64 as u32;
-        if delay <= MAX_DELAY {
+        let delay = (-(f64::from(mean)) * u.ln() + 0.5) as u64 as u32;
+        if delay <= cap {
             return delay;
         }
     }
+}
+
+/// Draw one TRANSFER inter-arrival delay in blocks: mean [`MEAN_DELAY`],
+/// discard-and-redraw above [`MAX_DELAY`] (ZIP 318 "Transfer scheduling"
+/// MUST).
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#transfer-scheduling>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L192-L199>
+pub fn draw_delay(rng: &mut impl Rng) -> u32 {
+    draw_delay_with(MEAN_DELAY, MAX_DELAY, rng)
+}
+
+/// Draw one PREPARATION inter-arrival delay in blocks: mean
+/// [`PREP_MEAN_DELAY`], discard-and-redraw above [`PREP_MAX_DELAY`]
+/// (ZIP 318 "Note preparation transactions" SHOULD).
+///
+/// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
+/// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L201-L206>
+pub fn draw_prep_delay(rng: &mut impl Rng) -> u32 {
+    draw_delay_with(PREP_MEAN_DELAY, PREP_MAX_DELAY, rng)
 }
 
 /// Maximum anchor AGE, in boundaries, that the recency-weighted draw will
@@ -589,16 +626,19 @@ mod tests {
     fn zero_entropy_draws_a_zero_delay() {
         use rand::rngs::mock::StepRng;
         assert_eq!(draw_delay(&mut StepRng::new(0, 0)), 0);
+        assert_eq!(draw_prep_delay(&mut StepRng::new(0, 0)), 0);
     }
 
     proptest! {
-        // Every transfer delay is within the truncated tail (DELAYS MUST).
+        // Every drawn delay is within its truncated tail: transfers within
+        // MAX_DELAY (DELAYS MUST), preparations within PREP_MAX_DELAY.
         #[test]
         fn delay_within_bounds(seed_step in 1u64..=u64::MAX) {
             use rand::rngs::mock::StepRng;
             let mut rng = StepRng::new(0, seed_step);
             for _ in 0..8 {
                 prop_assert!(draw_delay(&mut rng) <= MAX_DELAY);
+                prop_assert!(draw_prep_delay(&mut rng) <= PREP_MAX_DELAY);
             }
         }
 

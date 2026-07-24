@@ -102,6 +102,22 @@ the bucket plumbing wholesale is not needed for camouflage. A new named
 placement (`place_scheduled`) joins the placement monopoly. Expiry
 already follows `target_height`, so it inherits the drawn schedule.
 
+## Pending: preparation-delay wiring (deviation 1, second half)
+
+The pure layer (PREP_MEAN_DELAY = 24, PREP_MAX_DELAY = 96,
+draw_prep_delay, mirroring the ZIP's note-preparation SHOULD) is
+committed. The wiring is a driver restructure recorded for its own
+session: continue_note_splitting today builds and broadcasts a whole
+round per call — a same-moment burst the ZIP calls a linkable cluster.
+The converged shape persists a drawn due height per preparation
+transaction (cumulative prep delays; layer n+1 starts after layer n's
+last scheduled height plus a small mining margin) and builds each
+transaction at its due wake with a near-tip anchor, mirroring the
+broadcast_due_parts pattern; building at the due time also sidesteps
+the expiry problem of holding signed transactions across a delay of up
+to 96 blocks. This changes MigrationPhase::NoteSplitting's persisted
+shape (another INNER_VERSION 3 extension while it remains unreleased).
+
 ## Done (2026-07-23)
 
 All edits applied and verified: `cargo check` and `cargo clippy
