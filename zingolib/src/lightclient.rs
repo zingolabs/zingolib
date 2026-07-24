@@ -131,8 +131,10 @@ pub struct LightClient {
     /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
-    /// The cross-session per-indexer attempt history, appended beside the
-    /// wallet file by every transmission arm and diagnostic probe.
+    /// The cross-session per-indexer attempt history (the indexer diary).
+    /// Disk-backed only under the `nym-diary` feature, and recording only
+    /// after the session opts in via `set_indexer_diary`; otherwise the
+    /// handle is inert.
     indexer_history: indexer_history::IndexerHistoryHandle,
     /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
     /// `None` means Mixnet Mode is off.
@@ -198,9 +200,12 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
             indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
                 &config.get_wallet_path(),
             ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -280,9 +285,12 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
             indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
                 &config.get_wallet_path(),
             ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_proxy: None,
         })
@@ -309,12 +317,24 @@ impl LightClient {
         self.transmit_progress.clone()
     }
 
-    /// A cloneable handle to the cross-session per-indexer attempt history —
-    /// every transmission arm and diagnostic probe appends to it, and
+    /// A cloneable handle to the cross-session per-indexer attempt history
+    /// (the indexer diary) —
     /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
-    /// record for display or scoring.
+    /// record for display or scoring. Transmission arms and diagnostic probes
+    /// append to it only in a `nym-diary` build whose session has opted in
+    /// via `set_indexer_diary`; in every other configuration the handle is
+    /// inert and loads empty.
     pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
         self.indexer_history.clone()
+    }
+
+    /// Opt this session in to (or back out of) recording the indexer diary:
+    /// one sanitized line per transmission arm or probe leg, appended to
+    /// `indexer-history.tsv` beside the wallet. The choice is never
+    /// persisted — every session starts with recording off.
+    #[cfg(feature = "nym-diary")]
+    pub fn set_indexer_diary(&self, record: bool) {
+        self.indexer_history.set_recording(record);
     }
 
     /// A snapshot of the in-progress immediate drain

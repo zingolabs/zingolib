@@ -89,6 +89,10 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .long("nym-proxy")
                 .value_name("PATH")
                 .help("Path to the nym-proxy binary spawned for Mixnet Mode. Without it: $ZINGO_NYM_PROXY, then a nym-proxy bundled beside this binary, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
+            .arg(Arg::new("indexer-diary")
+                .long("indexer-diary")
+                .action(clap::ArgAction::SetTrue)
+                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `nym history`). The diary stores hosts, timings, and a failure category — never server text — and is capped. Requires the `nym-diary` build feature; the choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -523,6 +527,9 @@ pub(crate) struct ConfigTemplate {
     /// the forced-on policy, which the `nym` feature gates.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     nym_proxy_path: Option<String>,
+    /// `--indexer-diary`: opt this session in to recording the indexer diary.
+    /// Effective only with the `nym-diary` build feature; other builds warn.
+    indexer_diary: bool,
 }
 
 impl ConfigTemplate {
@@ -596,6 +603,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let waitsync = matches.get_flag("waitsync");
         let no_mixnet = matches.get_flag("no-mixnet");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
+        let indexer_diary = matches.get_flag("indexer-diary");
         Ok(Self {
             mode,
             communication_mode,
@@ -610,6 +618,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             chaintype,
             no_mixnet,
             nym_proxy_path,
+            indexer_diary,
         })
     }
 }
@@ -712,6 +721,23 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
             Some(server) => info!("Lightclient connecting to {server}"),
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
+    }
+
+    // The indexer diary is a per-session runtime opt-in on top of its build
+    // gate: recording starts only when the user passes --indexer-diary, and
+    // the choice is never persisted. A build without the feature warns loudly
+    // instead of silently not recording — failing safe is not recording.
+    #[cfg(feature = "nym-diary")]
+    if filled_template.indexer_diary {
+        lightclient.set_indexer_diary(true);
+        info!("Indexer diary: recording send and probe outcomes this session (`nym history`).");
+    }
+    #[cfg(not(feature = "nym-diary"))]
+    if filled_template.indexer_diary {
+        eprintln!(
+            "--indexer-diary has no effect: this build has no indexer diary support. \
+             Rebuild zingo-cli with `--features nym-diary`."
+        );
     }
 
     // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
