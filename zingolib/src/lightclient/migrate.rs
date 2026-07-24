@@ -15,6 +15,11 @@
 //! offers the user: move everything at once, no note splitting and no
 //! schedule, accepting that the transfers are correlated and the amounts are
 //! the wallet's own.
+//!
+//! Part broadcasts obey the Mixnet Mode policy (ADR 0011, amendment
+//! 2026-07-23): while the mode is on they travel only over the mixnet, fail
+//! closed while it is not ready, and never target the synchronization
+//! endpoint's host. See [`broadcast_route`].
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,6 +42,7 @@ use crate::wallet::migration::{
 };
 
 pub mod broadcast_grpc;
+pub mod broadcast_route;
 
 /// How long to wait between sync polls while a note-splitting round confirms.
 const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -304,16 +310,40 @@ impl LightClient {
         Ok(())
     }
 
-    /// The broadcast-only client parts are submitted through: the dedicated
-    /// `migration_broadcast_uri` when configured (independent of the Indexer
-    /// connection), the synchronization endpoint (with a logged correlation
-    /// warning) otherwise. With neither endpoint configured the client emits
-    /// no network traffic and this returns [`LightClientError::Offline`].
+    /// The broadcast-only client parts are submitted through, resolved by the
+    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
+    /// transmitting surface.
+    ///
+    /// While the mode is on, parts travel ONLY over the mixnet — this fails
+    /// closed ([`MixnetNotReady`](crate::nym::MixnetNotReady)) while the
+    /// proxy bootstraps or after it dies — to one Broadcast Indexer drawn at
+    /// random per submission, with the synchronization endpoint's host
+    /// forbidden as a target (a `migration_broadcast_uri` on that host is
+    /// refused). Clearnet carries parts only when the user deliberately
+    /// toggled the mode off, or in a build without the `nym` feature: then
+    /// the dedicated `migration_broadcast_uri` when configured, else the
+    /// synchronization endpoint with a logged correlation warning, else
+    /// [`LightClientError::Offline`] with no traffic emitted.
     fn migration_broadcast_client(
         &self,
-    ) -> Result<broadcast_grpc::GrpcBroadcastClient, LightClientError> {
-        match &self.migration_broadcast_uri {
-            Some(uri) => Ok(broadcast_grpc::GrpcBroadcastClient::new(uri.clone())),
+    ) -> Result<broadcast_route::RoutedBroadcastClient, LightClientError> {
+        #[cfg(feature = "nym")]
+        if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
+            let sync_host = self
+                .indexer_uri()
+                .and_then(|uri| uri.host().map(str::to_string));
+            let candidates = broadcast_route::eligible_candidates(
+                self.migration_broadcast_uri.clone(),
+                sync_host.as_deref(),
+                crate::nym::broadcast_indexers::broadcast_indexers(),
+            )?;
+            return Ok(broadcast_route::RoutedBroadcastClient::Mixnet(
+                broadcast_route::MixnetBroadcastClient::new(socks5_addr, candidates),
+            ));
+        }
+
+        let clearnet = match &self.migration_broadcast_uri {
+            Some(uri) => broadcast_grpc::GrpcBroadcastClient::new(uri.clone()),
             None => {
                 let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
                 log::warn!(
@@ -321,9 +351,10 @@ impl LightClient {
                      broadcast to the synchronization endpoint, which lets that server \
                      correlate synchronization with migration activity"
                 );
-                Ok(broadcast_grpc::GrpcBroadcastClient::new(indexer_uri))
+                broadcast_grpc::GrpcBroadcastClient::new(indexer_uri)
             }
-        }
+        };
+        Ok(broadcast_route::RoutedBroadcastClient::Clearnet(clearnet))
     }
 
     /// Materializes and broadcasts every part whose bucket window is open.

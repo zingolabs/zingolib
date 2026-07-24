@@ -82,8 +82,8 @@ pub use nym_proxy::NymProxy;
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
 pub use socks5_transmit::{
-    Socks5TransmitError, get_lightd_info_via_socks5, send_transaction_via_socks5,
-    transaction_known_via_socks5,
+    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
+    send_transaction_via_socks5, transaction_known_via_socks5,
 };
 
 fn client_tls_config() -> ClientTlsConfig {
@@ -343,15 +343,27 @@ impl GrpcIndexer {
     }
 }
 
+/// A lightwalletd `SendResponse` rejection: the server heard the submission
+/// and said no, reported with its complete data — the numeric code and the
+/// message — so the caller decides what to make of it.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("code {code}: {message}")]
+pub struct SendRejection {
+    /// The server's nonzero `error_code`.
+    pub code: i32,
+    /// The server's `error_message`, verbatim.
+    pub message: String,
+}
+
 /// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
 /// transaction was accepted and `error_message` carries the txid (sometimes
-/// quote-wrapped, which is stripped); any other code is a rejection whose
-/// message is returned as the error. The single definition shared by the
-/// clearnet [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
+/// quote-wrapped, which is stripped); any other code is a rejection carrying
+/// both fields. The single definition shared by the clearnet
+/// [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
 pub(crate) fn parse_send_response(
     error_code: i32,
     error_message: String,
-) -> Result<String, String> {
+) -> Result<String, SendRejection> {
     if error_code == 0 {
         let mut transaction_id = error_message;
         // The length guard keeps a lone `"` from satisfying both quote
@@ -364,7 +376,10 @@ pub(crate) fn parse_send_response(
         }
         Ok(transaction_id)
     } else {
-        Err(error_message)
+        Err(SendRejection {
+            code: error_code,
+            message: error_message,
+        })
     }
 }
 
@@ -389,10 +404,13 @@ mod send_response_parsing {
     }
 
     #[test]
-    fn rejection_carries_the_server_message() {
+    fn rejection_carries_the_code_and_the_server_message() {
         assert_eq!(
             parse_send_response(-25, "failed to validate".to_string()),
-            Err("failed to validate".to_string())
+            Err(SendRejection {
+                code: -25,
+                message: "failed to validate".to_string()
+            })
         );
     }
 
@@ -441,8 +459,10 @@ impl Indexer for GrpcIndexer {
             .send_transaction(request)
             .await?
             .into_inner();
+        // The clearnet path keeps its historical error text: the bare server
+        // message, without the code prefix `SendRejection` renders.
         parse_send_response(sendresponse.error_code, sendresponse.error_message)
-            .map_err(|message| tonic::Status::new(tonic::Code::Unknown, message))
+            .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))
     }
 
     async fn get_tree_state(

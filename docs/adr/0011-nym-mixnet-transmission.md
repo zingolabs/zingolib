@@ -247,3 +247,29 @@ interrupt orphans a session from its transport. On platforms without process
 groups the child shares the terminal's group and an interrupt still reaches
 it; the outcome is the safe one — the mode becomes died and the surfaces
 refuse — rather than a silent clearnet fallback.
+
+## Amendment (2026-07-23): migration parts obey Mixnet Mode, and never target the sync server
+
+Ratified while walking the PR #2470 review findings (M3). The original
+record routed Transmission and price-fetch by Mixnet Mode but left ZIP 318
+migration-part broadcasts on unconditional clearnet, silently breaking the
+mode's central invariant for the wallet's most correlation-sensitive
+traffic. Migration broadcasts now obey the same policy as every other
+transmitting surface. While the mode is on — assuming the `nym` feature is
+compiled in and the session has not opted out — parts travel ONLY over the
+mixnet and MUST NEVER go over clearnet: the broadcast client resolves the
+route first and fails closed while the proxy bootstraps or after it dies,
+refusing rather than falling back. Clearnet carries parts only through the
+user's deliberate per-session toggle-off, or in a build compiled without
+the feature, where the historical behavior (the dedicated
+`migration_broadcast_uri`, else the synchronization endpoint with a logged
+correlation warning) is unchanged.
+
+Over the mixnet, migration parts ride Witness Rotation like sends: each
+submission draws one Broadcast Indexer at random from the curated list.
+The synchronization endpoint is forbidden as a mixnet target in both
+shapes of the draw — a configured `migration_broadcast_uri` sharing the
+sync server's host is refused with a typed error, and the random draw
+excludes that host from the list — so no single server can correlate a
+wallet's sync stream with its migration cohort, which is the correlation
+ZIP 318's scheduling machinery exists to prevent.

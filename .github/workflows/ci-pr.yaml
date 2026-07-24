@@ -128,8 +128,8 @@ jobs:
       - name: Test the nym module
         run: "cargo test -p zingolib --features nym --lib nym::"
 
-      - name: Test the indexer diary under its feature
-        run: "cargo test -p zingolib --features nym,nym-diary --lib indexer_history::"
+      - name: Test the feature-gated diary and broadcast-route modules
+        run: "cargo test -p zingolib --features nym,nym-diary --lib -- indexer_history:: migrate::broadcast_route::"
 
   run-doc-tests:
     name: Run doc tests
