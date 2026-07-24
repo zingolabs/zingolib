@@ -7,6 +7,10 @@ edition = "2024"
 # Compile in the Nym mixnet transport so `nym on|off|status` can drive it.
 # Off by default; the command reports the feature is absent when it is not set.
 nym = ["zingolib/nym"]
+# Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
+# in to recording and `nym history` can display it. Off by default; without
+# it the flag warns and records nothing.
+nym-diary = ["zingolib/nym-diary"]
 
 [dependencies]
 pepper-sync = { workspace = true }
