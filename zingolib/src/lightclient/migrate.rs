@@ -1174,7 +1174,7 @@ impl LightClient {
     /// batch: the current window's due parts, plus AT MOST ONE part from a
     /// missed window, released under the ZIP 318 fallback rule; every
     /// other overdue part is re-spread to a freshly drawn future height
-    /// rather than sent in this session ([`Self::apply_overdue_fallback`]).
+    /// rather than sent in this session (`apply_overdue_fallback`, private).
     /// Sends are sequenced `spacing` apart, never simultaneous.
     /// The report carries a per-part outcome, and
     /// [`Self::batch_progress_handle`] observes the batch live from another
