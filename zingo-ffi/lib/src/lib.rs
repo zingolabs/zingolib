@@ -152,6 +152,9 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::FileError(_) => ZingolibError::Save(text),
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
+        LightClientError::PriceError(_) | LightClientError::PriceFetchUnsupported => {
+            ZingolibError::Read(text)
+        }
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -1104,26 +1107,26 @@ mod read_error_channel_tests {
 
     // Reproduces the exact `From<ValueTransfers>` shape (array nested under
     // "value_transfers") to prove the migrated-amount splice targets the right
-    // field: only send-to-self transfers with a mapped txid are overwritten.
+    // field: only `migration` transfers with a mapped txid are overwritten.
     #[test]
-    fn splice_migrated_values_overwrites_only_mapped_self_sends() {
+    fn splice_migrated_values_overwrites_only_mapped_migrations() {
         let mut json_vts = json::object! {
             "value_transfers" => json::array![
-                json::object!{ "kind" => "send-to-self", "txid" => "aaa", "value" => 0 },
+                json::object!{ "kind" => "migration", "txid" => "aaa", "value" => 0 },
                 json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
-                json::object!{ "kind" => "send-to-self", "txid" => "ccc", "value" => 0 },
+                json::object!{ "kind" => "migration", "txid" => "ccc", "value" => 0 },
             ]
         };
         let mut migrated_by_txid = std::collections::HashMap::new();
-        migrated_by_txid.insert("aaa".to_string(), 500u64); // a migration
-        // "ccc" is a self-send but not a migration (no mapping) -> untouched.
+        migrated_by_txid.insert("aaa".to_string(), 500u64);
+        // "ccc" is a migration without a mapped amount -> untouched.
 
         splice_migrated_values(&mut json_vts, &migrated_by_txid);
 
         assert_eq!(
             json_vts["value_transfers"][0]["value"].as_u64(),
             Some(500),
-            "the mapped send-to-self must carry the migrated amount"
+            "the mapped migration must carry the migrated amount"
         );
         assert_eq!(
             json_vts["value_transfers"][1]["value"].as_u64(),
@@ -1133,7 +1136,7 @@ mod read_error_channel_tests {
         assert_eq!(
             json_vts["value_transfers"][2]["value"].as_u64(),
             Some(0),
-            "an unmapped self-send must be left alone"
+            "an unmapped migration must be left alone"
         );
     }
 }
@@ -1448,9 +1451,10 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
 
 /// Overwrites the `value` of each Orchard->Ironwood migration value transfer
 /// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
-/// object produced by `From<ValueTransfers>`; migrations are the send-to-self
-/// transfers keyed in `migrated_by_txid`. zingolib reports `value == 0` for
-/// self-sends, so without this the migrated amount is invisible.
+/// object produced by `From<ValueTransfers>`; zingolib classifies these
+/// transfers with `kind: "migration"` and the migrated amount lives in
+/// `migrated_by_txid`. zingolib reports `value == 0` for self-sends (a
+/// migration is one), so without this the migrated amount is invisible.
 ///
 /// Note the array is nested under `"value_transfers"` — `members_mut()` on the
 /// outer object yields an empty iterator, so we must index in first.
@@ -1459,7 +1463,7 @@ fn splice_migrated_values(
     migrated_by_txid: &std::collections::HashMap<String, u64>,
 ) {
     for vt in json_vts["value_transfers"].members_mut() {
-        if vt["kind"].as_str() != Some("send-to-self") {
+        if vt["kind"].as_str() != Some("migration") {
             continue;
         }
         let txid = vt["txid"].as_str().unwrap_or_default().to_string();
@@ -1478,18 +1482,15 @@ pub fn get_value_transfers() -> Result<String, ZingolibError> {
             // reports with `value == 0` because `total_value_sent` excludes
             // self-addressed value. To surface how much was migrated, recover it
             // from the transaction's self-received ironwood notes and splice it
-            // into the matching value transfer's `value`. Keyed by txid; only
-            // self-sends funded from Orchard that land ironwood notes qualify.
+            // into the matching value transfer's `value`. Keyed by txid, using
+            // zingolib's own migration predicate so the map stays in lockstep
+            // with the value transfers it classifies as `migration`.
             let migrated_by_txid: std::collections::HashMap<String, u64> =
                 match wallet.transaction_summaries(true).await {
                     Ok(summaries) => summaries
                         .0
                         .iter()
-                        .filter(|s| {
-                            s.kind.to_string() == "send-to-self"
-                                && s.pools_sent_from.iter().any(|p| p.to_string() == "Orchard")
-                                && !s.ironwood_notes.is_empty()
-                        })
+                        .filter(|s| s.is_orchard_to_ironwood_migration())
                         .map(|s| {
                             (
                                 s.txid.to_string(),
@@ -1951,11 +1952,10 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 pub fn zec_price() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet().write().await;
-            let price = wallet
+            let price = lightclient
                 .update_current_price()
                 .await
-                .map_err(ZingolibError::read)?;
+                .map_err(ffi_error)?;
             Ok(object! { "current_price" => price }.pretty(2))
         })
     })
@@ -2434,11 +2434,12 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
 /// crossing the pool boundary is visible on-chain, so the caller must have
 /// disclosed that. Mirror of `confirm`'s broadcast phase.
 ///
-/// Uses zingolib's `drain_orchard_to_ironwood_presynced`: this app owns the
-/// sync lifecycle (a background sync runs continuously), so the drain must NOT
-/// launch its own sync — the syncing variant `drain_orchard_to_ironwood`
-/// collides with the running sync and fails with `SyncAlreadyRunning`. It
-/// drains against current wallet state instead, matching `send`/`shield`.
+/// Uses zingolib's `quick_drain`, the send-shaped mobile entry point. It pauses
+/// our continuous background sync internally, plans against current wallet
+/// state, builds and transmits every drain transaction, then restores sync
+/// before it returns (`resume_sync: true`). No self-sync, no reconcile loop,
+/// matching `send`/`shield`. The older `drain_orchard_to_ironwood_presynced`
+/// (guard parameter) is a Rust-internal form and no longer crosses the FFI.
 ///
 /// Returns, on success, `{ txids: [..], migrated, fee, stranded }` (values in
 /// zatoshis). Notes worth at most the sweep minimum are left behind and
@@ -2454,17 +2455,11 @@ pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
             *progress = Some(lightclient.drain_progress_handle());
         }
         let out = RT.block_on(async move {
-            // Pause our continuous background sync before the drain plans:
-            // the presynced drain requires a SyncPauseGuard so the plan and
-            // the build observe one stable wallet state (dropping `sync` at
-            // the end of this block resumes the engine). Without it, planning
-            // could select notes the running sync then mutates underneath,
-            // between the plan and the build.
-            let sync = lightclient
-                .pause_sync_scoped()
-                .map_err(|e| ffi_error(e.into()))?;
+            // quick_drain holds the pause internally: it plans, builds, and
+            // transmits under one stable wallet state, then resumes sync on
+            // return. resume_sync: true is the normal case.
             let summary = lightclient
-                .drain_orchard_to_ironwood_presynced(AccountId::ZERO, &sync)
+                .quick_drain(AccountId::ZERO, true)
                 .await
                 .map_err(ffi_error)?;
             Ok(object! {
