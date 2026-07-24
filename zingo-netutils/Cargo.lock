@@ -8124,7 +8124,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cb08c58c7ed7033150132febe696bef553f891b1ede57424b40d87a89e3c170"
 dependencies = [
  "anyhow",
+ "camino",
  "cargo_metadata 0.15.4",
+ "clap",
  "uniffi_bindgen",
  "uniffi_core",
  "uniffi_macros",
@@ -9185,6 +9187,13 @@ dependencies = [
  "tokio",
  "uniffi",
  "zingo-netutils",
+]
+
+[[package]]
+name = "zingo-uniffi-bindgen"
+version = "0.1.0"
+dependencies = [
+ "uniffi",
 ]
 
 [[package]]

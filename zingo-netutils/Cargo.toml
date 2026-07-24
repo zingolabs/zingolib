@@ -100,7 +100,7 @@ resolver = "2"
 # that hosts NymProxy behind a UniFFI surface for mobile. A member so it shares
 # this standalone lockfile (where nym-sdk's crypto-common resolves without the
 # parent workspace's zcash pin).
-members = ["nym-proxy-ffi"]
+members = ["nym-proxy-ffi", "uniffi-bindgen"]
 
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the

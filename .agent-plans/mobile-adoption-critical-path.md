@@ -195,6 +195,121 @@ netutils/Cargo.toml; upstream removal filed as a tracked follow-up (decision
 B queued). The nym ring is confined to this standalone build; the wallet lock
 stays ring-free at runtime.
 
+## Step 3 (#2513) claim — Android transport (2026-07-21)
+
+CLAIMED by the reboot_nym-worktree agent (the same agent that built the
+CP-3 shim, d591b7a7b). Per the Android-first reorder, #2513 is the next
+buildable step: cross-compile `zingo-nym-proxy-ffi` for the Android ABIs
+with cargo-ndk, generate the Kotlin bindings with uniffi-bindgen, and
+package the `.so` files for `jniLibs`. File claims:
+
+- `zingo-netutils/` standalone workspace ONLY (the shim crate, its cargo
+  config for Android targets, and any DRY extraction of the health-gate
+  loop into the lib).
+- `tools/workbench/`: an Android packaging tool, if one proves needed.
+- this file.
+
+No zingolib/src claims — the wallet-side attach seam (#2503) is complete
+and untouched here. Other agents: please claim around, not inside,
+`zingo-netutils/`.
+
+STEP-3 PROGRESS (2026-07-21, uncommitted): the named grind did not bite.
+The shim cross-compiles clean under NDK r28c (cargo-ndk was already on
+the host) for arm64-v8a (debug and release) and x86_64 (debug) —
+aws-lc-rs and nym's transitive ring both compiled without intervention.
+The release arm64 `.so` is 31 MB pre-strip. A new workspace member,
+`zingo-netutils/uniffi-bindgen` (`zingo-uniffi-bindgen`), is the
+uniffi-recommended project-local bindgen binary (uniffi 0.28 + cli
+feature, forbid intact, clippy clean); library-mode generation against
+the host cdylib produced the Kotlin bindings at
+`nym-proxy-ffi/bindings/kotlin/`, and the full surface
+(`MixnetProxyHandle.start/socks5Address/stop`, `ProxyDeathObserver`)
+round-tripped. Remaining for #2513: decide whether generated bindings
+are committed or build products, jniLibs packaging (a workbench or
+gradle concern, likely in zingo-mobile), the armv7 question, and the
+death-observer wiring from the known gaps above.
+
+STRUCTURED-BOUNDARY RULE (user directive, 2026-07-22, BOTH LANES): any
+NEW UniFFI surface — UDL or proc-macro — uses maximally structured
+types; never a bare String where something more explicit fits, and FFI
+round-trip tests accompany the surface. Applied to the shim the same
+day (uncommitted): `socks5_address() -> String` is GONE, replaced by
+`socks5_endpoint() -> Socks5Endpoint` (a record: host String, port
+u16 -> Kotlin UShort); the death observer takes a typed
+`ProxyDeathReason` enum (MixnetDisconnected { detail }), not a message
+string; unparseable listener addresses are a typed `Address` error
+variant. Tests: two Rust unit tests on the endpoint derivation plus
+`tests/ffi_roundtrip.rs`, all-Rust round trips over uniffi's safe
+`Lift`/`Lower` wire encoding (record incl. port extremes, death-reason
+enum with non-ASCII detail, every error variant). A Python
+foreign-language testcase existed briefly and was REMOVED by user
+directive (2026-07-22): never add a new language to the repo without
+human consent — the Rust wire round trip is the sanctioned pattern.
+6/6 pass under nextest; Kotlin regenerated; arm64 rebuilt clean.
+
+GOLDEN WIRE CONTRACT (user-directed 2026-07-22, uncommitted): the wire
+encoding of every value the nym FFI carries (Socks5Endpoint incl. port
+extremes, ProxyDeathReason, all three ProxyFfiError variants) is pinned
+as hex files in `nym-proxy-ffi/test-data/golden/` — never-regenerate
+contract artifacts (the ignored bless test only creates ABSENT pins).
+Three suites assert lowering AND lifting against the SAME files:
+Rust `tests/golden_wire.rs` (runs here, 9/9 green with the suite),
+Kotlin `contract-tests/kotlin/GoldenWireContractTest.kt` (JUnit 4,
+authored against the real generated converters — step-4 lane wires it
+into zingo-mobile's test run, property `zingo.golden.dir`), and Swift
+`contract-tests/swift/GoldenWireContractTests.swift` (XCTest, authored
+against generated Swift inspected on this host, runs in the Mac-gated
+step 7, env `ZINGO_GOLDEN_DIR`). Kotlin/Swift files added with explicit
+user consent (the new-language rule). See contract-tests/README.md.
+
+DEATH OBSERVER WIRED (2026-07-22, uncommitted) — the last slice-1 gap:
+`start(observer: Option<ProxyDeathObserver>)` spawns a liveness monitor
+on the shim's runtime. The probe is a SOCKS5 method-selection handshake
+against the local listener — a data round trip (increment-17 honored)
+yet purely local; end-to-end mixnet reachability remains the wallet
+attach probe's job, per the ratified split (NymProxy exposes no push
+death signal; nym-sdk's Socks5MixnetClient checked, none surfaced).
+Cadence 15s, two consecutive strikes fire
+`on_death(MixnetDisconnected{detail})` EXACTLY once and the monitor
+ends; `stop()` aborts the monitor first, so deliberate stop never reads
+as death. Hermetic tests over a mock SOCKS5 responder cover pass,
+method-refusal, dead-listener, and the once-only monitor contract.
+13/13 green, clippy clean, Kotlin regenerated (start now takes
+`ProxyDeathObserver?`), arm64 re-proven. Shim-side #2513 work is now
+COMPLETE pending the bindings-artifact decision; what remains of step 3
+is packaging into zingo-mobile (jniLibs + Kotlin glue, step-4 lane
+adjacency).
+
+PACKAGING ENTRY POINT (2026-07-22, uncommitted, PROVEN): `makers
+bundle-android-shim` — a workbench bin following the bundle-nym-proxy
+pattern — release-builds the shim for ALL FOUR ABIs zingo-mobile ships
+(arm64-v8a, armeabi-v7a, x86, x86_64 per its gradle.properties; the
+armv7 question is thereby settled: yes, plus x86), regenerates the
+Kotlin bindings from the host cdylib, and lays out
+`target/android-shim/{jniLibs/<abi>/,kotlin/}`. Full run verified on
+this host: ~10 min cold, four genuine Android ELFs (20-31 MB pre-strip;
+gradle strips on package) — the 32-bit targets cross-compiled
+aws-lc-rs/ring clean too. Bindings decision EXECUTED (user "proceed"):
+generated bindings are build products, gitignored at
+`zingo-netutils/nym-proxy-ffi/bindings/`; the wire contract is the
+golden pins. STEP-4 LANE: your jniLibs consumption is now one task
+away — run `makers bundle-android-shim` and point gradle at
+`target/android-shim/`. Issue #2508's step-3 line updated on GitHub
+(user-directed) to record shim-side completion. NOTE
+for the step-4 lane: the spine's "the mode surfaces as house-style
+strings" (CP-4 above) predates this rule — new UDL entries in
+zingo-mobile should model the mode as a proper enum, not a string,
+where the existing bridge permits.
+
+PUBLISHED (2026-07-23): the four step-3 increments above are open for
+review as PR #2524 (branch `nym_android_shim`, base
+`nym_mobile_adoption`; commits `1168670ed`, `14b8774cd`, `5330ba5f1`,
+`9232242b8`). The "(uncommitted)" markers in those paragraphs are
+historical: the work is committed there, and on the local working
+branch as `81bdc59f9`, `b9a4006ff`, `54fe6c3a4`, `291263715`. Issue
+#2508's step-3 line records the shim side as complete and points at the
+PR; what remains of #2513 is consuming the bundle in zingo-mobile.
+
 GATING DECISION (RESOLVED — user ratified UniFFI 2026-07-21): a hand-written C ABI —
 `extern "C"` bodies, raw-pointer marshalling, the death-callback function
 pointer, CString/Box `into_raw`/`from_raw` — REQUIRES `unsafe`, which

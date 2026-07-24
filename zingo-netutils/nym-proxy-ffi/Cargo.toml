@@ -18,5 +18,8 @@ zingo-netutils = { path = "..", features = ["nym"] }
 uniffi = "0.28"
 # The shim owns a long-lived runtime that keeps the NymProxy client and its
 # SOCKS5 listener alive across start and stop.
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
 thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
