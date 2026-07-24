@@ -694,9 +694,7 @@ impl LightClient {
                     || state
                         .parts
                         .iter()
-                        .any(|part| {
-                            !matches!(part.state, PartState::Bound | PartState::Assigned)
-                        })
+                        .any(|part| !matches!(part.state, PartState::Bound | PartState::Assigned))
                 {
                     return Err(MigrationError::CadenceFixed.into());
                 }
@@ -1380,16 +1378,14 @@ impl LightClient {
 
     /// Plans an immediate drain of the account's Orchard pool into Ironwood.
     ///
-    /// Pure and deterministic, nothing is signed or sent, so the plan (its
-    /// transaction count, fees and stranded dust) can be shown to the user for
-    /// consent before [`Self::drain_orchard_to_ironwood`] executes it.
+    /// Pure and deterministic, nothing is signed or sent, so the plan
+    /// can be shown to the user for consent before [`Self::drain_orchard_to_ironwood`] executes it.
     pub async fn plan_orchard_drain(
         &self,
         account: zip32::AccountId,
     ) -> Result<DrainPlan, LightClientError> {
         let wallet = self.wallet().read().await;
-        let params = MigrationParams::provisional(wallet.chain_type());
-        Ok(wallet.plan_drain(account, &params)?)
+        Ok(wallet.plan_drain(account)?)
     }
 
     /// Spends every spendable Orchard note in `account` into the Ironwood pool,
@@ -1496,6 +1492,52 @@ impl LightClient {
             fee: plan.fee,
             stranded: plan.stranded,
         })
+    }
+
+    /// The immediate Orchard→Ironwood drain as a single send-shaped call, the
+    /// mobile-facing counterpart to [`Self::quick_send`].
+    ///
+    /// Pauses sync internally — like [`Self::quick_send`] and
+    /// [`Self::quick_shield`], and a no-op when no engine is running — drains
+    /// the account's spendable Orchard notes into Ironwood against the wallet's
+    /// *current* state without synchronizing, and restores the prior sync mode
+    /// on return unless `resume_sync` is `false`, in which case the pause is
+    /// left for the caller (the shipped `resume_sync` protocol of the send
+    /// paths).
+    ///
+    /// This is the send-family entry point for the immediate migration, and
+    /// the only drain that crosses the UniFFI boundary:
+    /// [`Self::drain_orchard_to_ironwood`] self-syncs and so collides with a
+    /// consumer's continuous background sync, and
+    /// [`Self::drain_orchard_to_ironwood_presynced`] takes a
+    /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
+    /// synced, exactly as it must before any send.
+    ///
+    /// Preview the plan first with [`Self::plan_orchard_drain`] (its
+    /// transaction count, fee, and stranded value), and observe live progress
+    /// through [`Self::drain_progress_handle`]. Like every immediate path it
+    /// puts the wallet's real amounts on-chain, correlated with each other and
+    /// the caller's activity; the caller must disclose this (ZIP 318). See
+    /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
+    pub async fn quick_drain(
+        &mut self,
+        account: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<DrainSummary, LightClientError> {
+        // Establish the stable-state pause ourselves — quick_send's idiom —
+        // rather than demanding it as a `SyncPauseGuard` parameter the FFI
+        // boundary cannot express. The guard owns an `Arc` clone of the
+        // sync-mode handle, not a borrow of `self`, so it lives across the
+        // `&mut self` drain call, and `?` refuses rather than draining under a
+        // state the pause could not stabilize.
+        let guard = self.pause_sync_scoped()?;
+        let result = self
+            .drain_orchard_to_ironwood_presynced(account, &guard)
+            .await;
+        if !resume_sync {
+            guard.disarm();
+        }
+        result
     }
 
     /// Builds and transmits one batch of planned migration transactions under

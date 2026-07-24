@@ -18,6 +18,15 @@ use super::quantize::decompose;
 /// to the crate constant by test.
 pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
+/// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
+/// at most this, and never manufactures an output worth at most this.
+/// Provisionally twice the marginal fee — a selected note must return strictly
+/// more than double the marginal action cost it adds, not merely break even.
+/// Shared by both migration paths: the private schedule reads it through
+/// [`MigrationParams`], and the immediate [`super::drain`] reads it directly,
+/// so the two strand identically.
+pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
+
 /// Orchard pads every non-empty bundle to at least this many actions
 /// (`orchard::builder`'s `MIN_ACTIONS`, which is private). Pinned to
 /// `BundleType::num_actions` by test.
