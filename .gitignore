@@ -14,3 +14,4 @@ libtonode-tests/store_all_checkpoints_test
 # Generated uniffi bindings are build products (bundle-android-shim regenerates
 # them from the cdylib); the wire contract is pinned by test-data/golden instead.
 zingo-netutils/nym-proxy-ffi/bindings/
+.agent-plans/
