@@ -1,7 +1,7 @@
 use bip0039::Mnemonic;
 
 use zcash_keys::keys::Era;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::{
     config::ClientConfig,
@@ -30,7 +30,7 @@ impl NetworkSeedVersion {
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_seed()).await;
         for pool in [
             PoolType::Transparent,
-            PoolType::Shielded(ShieldedProtocol::Orchard),
+            PoolType::Shielded(ShieldedPool::Orchard),
         ] {
             assert_eq!(wallet.get_address(pool), self.example_wallet_address(pool));
         }
@@ -306,4 +306,61 @@ async fn reload_wallet_from_file() {
     assert_eq!(ufvk_string, v_ufvk_string);
 
     // NOTE: removed balance check as need to sync to restore transaction data.
+}
+
+/// A pre-42 wallet loads with no migration section, and a populated
+/// [`crate::wallet::migration::MigrationState`] survives a full wallet
+/// write/read round trip at the current serialized version.
+#[tokio::test]
+async fn wallet_round_trips_migration_state_at_current_version() {
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::{
+        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+        PartRecord, SigningStrategy,
+    };
+    use pepper_sync::wallet::OutputId;
+    use zcash_primitives::transaction::TxId;
+
+    let client = NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
+    ))
+    .load_example_wallet()
+    .await;
+    let mut wallet = client.wallet().write().await;
+    assert!(wallet.migration.is_none(), "pre-42 wallet has no migration");
+
+    let params = MigrationParams::provisional(wallet.chain_type());
+    let mut part = PartRecord::new(
+        PartId(0),
+        100_000_000,
+        BoundNote {
+            output_id: OutputId::new(TxId::from_bytes([3; 32]), 1),
+            nullifier: [4; 32],
+            commitment: [5; 32],
+        },
+    );
+    part.assign(12).unwrap();
+    let state = MigrationState {
+        consent: ConsentBinding {
+            params_hash: params.params_hash(),
+            plan_hash: [6; 32],
+            consented_at: 1_782_000_000,
+        },
+        params,
+        strategy: SigningStrategy::LazyAtBoundary,
+        mode: crate::wallet::migration::MigrationMode::Scheduled,
+        account: zip32::AccountId::ZERO,
+        phase: MigrationPhase::PartsScheduled,
+        parts: vec![part],
+    };
+    wallet.migration = Some(state.clone());
+    wallet.save_required = true;
+
+    let bytes = wallet.save().unwrap().expect("save required");
+    let recovered = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
+    assert_eq!(
+        recovered.current_version(),
+        LightWallet::serialized_version()
+    );
+    assert_eq!(recovered.migration, Some(state));
 }

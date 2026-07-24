@@ -24,6 +24,7 @@ append-only-vec = { workspace = true }
 bech32 = { workspace = true }
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+blake2b_simd = { workspace = true }
 bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
 chrono = { workspace = true }
@@ -74,7 +75,7 @@ zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
-zaino-proto = { git = "https://github.com/zingolabs/zaino.git", rev = "2e2816cb3755e7ff4d18bed1a96b95dc07c1549c", version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
+zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
 tokio-stream = { workspace = true, optional = true }
 
 [build-dependencies]
@@ -83,10 +84,11 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
-zaino-proto = { git = "https://github.com/zingolabs/zaino.git", rev = "2e2816cb3755e7ff4d18bed1a96b95dc07c1549c", default-features = false, features = ["grpc_proxy_server"] }
+zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"] }
 zingo_test_vectors = { workspace = true }
 
 [badges]

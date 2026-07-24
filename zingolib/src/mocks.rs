@@ -240,6 +240,7 @@ pub mod orchard_note {
         value: Option<NoteValue>,
         rho: Option<Rho>,
         random_seed: Option<RandomSeed>,
+        note_version: Option<orchard::NoteVersion>,
     }
 
     impl OrchardCryptoNoteBuilder {
@@ -251,6 +252,7 @@ pub mod orchard_note {
                 value: None,
                 rho: None,
                 random_seed: None,
+                note_version: None,
             }
         }
 
@@ -259,6 +261,7 @@ pub mod orchard_note {
         build_method!(value, NoteValue);
         build_method!(rho, Rho);
         build_method!(random_seed, RandomSeed);
+        build_method!(note_version, orchard::NoteVersion);
 
         /// selects a default recipient address for the orchard note
         pub fn default_recipient(&mut self) -> &mut Self {
@@ -327,6 +330,7 @@ pub mod orchard_note {
                 self.value.unwrap(),
                 self.rho.unwrap(),
                 self.random_seed.unwrap(),
+                self.note_version.unwrap(),
             )
             .unwrap()
         }
@@ -366,6 +370,7 @@ pub mod orchard_note {
                 .default_recipient()
                 .randomize_rho_and_rseed()
                 .value(NoteValue::from_raw(800_000))
+                .note_version(orchard::NoteVersion::V3)
                 .clone()
         }
     }
@@ -375,6 +380,7 @@ pub mod proposal {
     //! Module for mocking structs from [`zcash_client_backend::proposal`]
 
     use std::collections::BTreeMap;
+    use std::num::NonZero;
 
     use nonempty::NonEmpty;
 
@@ -383,6 +389,7 @@ pub mod proposal {
     use sapling_crypto::Rseed;
     use sapling_crypto::value::NoteValue;
     use zcash_address::ZcashAddress;
+    use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
     use zcash_client_backend::fees::TransactionBalance;
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
@@ -390,7 +397,7 @@ pub mod proposal {
     use zcash_primitives::transaction::fees::zip317::FeeRule;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zcash_protocol::{PoolType, ShieldedPool};
 
     use super::{default_txid, default_zaddr};
     use crate::testutils::{build_method, build_method_push};
@@ -410,6 +417,8 @@ pub mod proposal {
         fee_rule: Option<FeeRule>,
         min_target_height: Option<BlockHeight>,
         steps: Option<NonEmpty<Step<OutputRef>>>,
+        confirmations_policy: Option<ConfirmationsPolicy>,
+        ironwood_active: Option<bool>,
     }
 
     #[allow(dead_code)]
@@ -421,12 +430,16 @@ pub mod proposal {
                 fee_rule: None,
                 min_target_height: None,
                 steps: None,
+                confirmations_policy: None,
+                ironwood_active: None,
             }
         }
 
         build_method!(fee_rule, FeeRule);
         build_method!(min_target_height, BlockHeight);
         build_method!(steps, NonEmpty<Step<OutputRef>>);
+        build_method!(confirmations_policy, ConfirmationsPolicy);
+        build_method!(ironwood_active, bool);
 
         /// Builds after all fields have been set.
         #[must_use]
@@ -437,10 +450,13 @@ pub mod proposal {
                 step.payment_pools().clone(),
                 step.transparent_inputs().to_vec(),
                 step.shielded_inputs().cloned(),
+                step.anchor_height().unwrap(),
                 step.balance().clone(),
                 self.fee_rule.unwrap(),
                 self.min_target_height.unwrap().into(),
+                self.confirmations_policy.unwrap(),
                 step.is_shielding(),
+                self.ironwood_active.unwrap(),
             )
             .unwrap()
         }
@@ -453,7 +469,12 @@ pub mod proposal {
             builder
                 .fee_rule(FeeRule::standard())
                 .min_target_height(BlockHeight::from_u32(1))
-                .steps(NonEmpty::singleton(StepBuilder::default().build()));
+                .steps(NonEmpty::singleton(StepBuilder::default().build()))
+                .confirmations_policy(ConfirmationsPolicy::new_symmetrical(
+                    NonZero::try_from(1).unwrap(),
+                    false,
+                ))
+                .ironwood_active(true);
             builder
         }
     }
@@ -470,11 +491,13 @@ pub mod proposal {
     pub struct StepBuilder {
         transaction_request: Option<TransactionRequest>,
         payment_pools: Option<BTreeMap<usize, PoolType>>,
-        transparent_inputs: Option<Vec<WalletTransparentOutput>>,
+        transparent_inputs: Option<Vec<WalletTransparentOutput<()>>>,
         shielded_inputs: Option<Option<ShieldedInputs<OutputRef>>>,
+        anchor_height: Option<BlockHeight>,
         prior_step_inputs: Option<Vec<StepOutput>>,
         balance: Option<TransactionBalance>,
         is_shielding: Option<bool>,
+        ironwood_active: Option<bool>,
     }
 
     impl StepBuilder {
@@ -486,20 +509,24 @@ pub mod proposal {
                 payment_pools: None,
                 transparent_inputs: None,
                 shielded_inputs: None,
+                anchor_height: None,
                 prior_step_inputs: None,
                 balance: None,
                 is_shielding: None,
+                ironwood_active: None,
             }
         }
 
         build_method!(transaction_request, TransactionRequest);
         build_method!(payment_pools, BTreeMap<usize, PoolType>
         );
-        build_method!(transparent_inputs, Vec<WalletTransparentOutput>);
+        build_method!(transparent_inputs, Vec<WalletTransparentOutput<()>>);
         build_method!(shielded_inputs, Option<ShieldedInputs<OutputRef>>);
+        build_method!(anchor_height, BlockHeight);
         build_method!(prior_step_inputs, Vec<StepOutput>);
         build_method!(balance, TransactionBalance);
         build_method!(is_shielding, bool);
+        build_method!(ironwood_active, bool);
 
         /// Builds after all fields have been set.
         #[must_use]
@@ -510,9 +537,11 @@ pub mod proposal {
                 self.payment_pools.unwrap(),
                 self.transparent_inputs.unwrap(),
                 self.shielded_inputs.unwrap(),
+                self.anchor_height,
                 self.prior_step_inputs.unwrap(),
                 self.balance.unwrap(),
                 self.is_shielding.unwrap(),
+                self.ironwood_active.unwrap(),
             )
             .unwrap()
         }
@@ -529,7 +558,10 @@ pub mod proposal {
                 Rseed::AfterZip212([7; 32]),
             );
             let mut payment_pools = BTreeMap::new();
-            payment_pools.insert(0, PoolType::Shielded(ShieldedProtocol::Orchard));
+            // Ironwood is active by default (see `ironwood_active(true)` below), and the
+            // backend routes every shielded payment to the Ironwood pool — directing one to
+            // Orchard trips the turnstile assertion in `Step::from_parts`.
+            payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Ironwood));
 
             let mut builder = Self::new();
             builder
@@ -537,9 +569,8 @@ pub mod proposal {
                 .payment_pools(payment_pools)
                 .transparent_inputs(vec![])
                 // .shielded_inputs(None)
-                .shielded_inputs(Some(ShieldedInputs::from_parts(
-                    BlockHeight::from_u32(1),
-                    NonEmpty::singleton(ReceivedNote::from_parts(
+                .shielded_inputs(Some(ShieldedInputs::from_parts(NonEmpty::singleton(
+                    ReceivedNote::from_parts(
                         OutputRef::new(OutputId::new(txid, 0), PoolType::SAPLING),
                         txid,
                         0,
@@ -548,10 +579,12 @@ pub mod proposal {
                         Position::from(1),
                         None, // mined_height. TODO: How should we use this here?
                         None, // max_shielding_input_height. TODO: How should we use this here?
-                    )),
-                )))
+                    ),
+                ))))
+                .anchor_height(BlockHeight::from_u32(1))
                 .prior_step_inputs(vec![])
                 .balance(TransactionBalance::new(vec![], Zatoshis::const_from_u64(20_000)).unwrap())
+                .ironwood_active(true)
                 .is_shielding(false);
             builder
         }
@@ -642,6 +675,46 @@ pub mod proposal {
                 )
                 .amount(Zatoshis::from_u64(100_000).unwrap());
             builder
+        }
+    }
+}
+
+/// Mock for the migration broadcast client.
+pub(crate) mod broadcast {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+
+    /// Records every submission; fails with a transport error while `fail`
+    /// is set (the raw transaction is then not consumed, mirroring the real
+    /// client's transient-failure contract).
+    #[derive(Default)]
+    pub struct MockBroadcastClient {
+        /// Raw transactions received, with their expiry heights.
+        pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
+        /// When set, every submit fails.
+        pub fail: AtomicBool,
+    }
+
+    impl BroadcastClient for MockBroadcastClient {
+        async fn submit(
+            &self,
+            raw_tx: Vec<u8>,
+            expiry_height: BlockHeight,
+        ) -> Result<zcash_primitives::transaction::TxId, BroadcastError> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(BroadcastError::Transport(
+                    "mock transport failure".to_string(),
+                ));
+            }
+            self.submissions
+                .lock()
+                .unwrap()
+                .push((raw_tx, expiry_height));
+            Ok(super::default_txid())
         }
     }
 }

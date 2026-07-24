@@ -14,7 +14,7 @@ use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
-use zingo_netutils::lightwallet_protocol::RawTransaction;
+use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
@@ -68,6 +68,7 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     Proposal::multi_step(
         proposal.fee_rule().clone(),
         TargetHeight::from(lifted_target),
+        proposal.confirmations_policy(),
         proposal.steps().clone(),
     )
 }
@@ -140,7 +141,11 @@ impl LightClient {
 
     /// Creates and transmits transactions from a stored proposal.
     ///
-    /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
+    /// If sync was running prior to creating a send proposal, sync will have
+    /// been paused. If `resume_sync` is `true`, the engine is restored to
+    /// the mode it held before the proposal was created — a pause the
+    /// caller established before proposing is preserved, not overridden. If
+    /// `false`, the engine stays paused for the caller to resume.
     pub async fn send_stored_proposal(
         &mut self,
         resume_sync: bool,
@@ -157,13 +162,11 @@ impl LightClient {
                     proposal,
                     shielding_account,
                 } => self.shield(proposal, shielding_account).await,
-            }?;
+            };
 
-            if resume_sync {
-                let _ignore_error = self.resume_sync();
-            }
+            self.release_proposal_pause(resume_sync);
 
-            Ok(txids)
+            txids
         } else {
             Err(SendError::NoStoredProposal.into())
         }
@@ -192,44 +195,53 @@ impl LightClient {
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
-        if let Some(proposal) = opt_proposal {
-            let chain_type = wallet.chain_type();
-            let txids = match proposal {
-                ZingoProposal::Send {
-                    proposal,
-                    sending_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
+        let Some(proposal) = opt_proposal else {
+            return Err(SendError::NoStoredProposal.into());
+        };
+        let chain_type = wallet.chain_type();
+        let result = match proposal {
+            ZingoProposal::Send {
+                proposal,
+                sending_account,
+            } => {
+                let retargeted = if indexerless {
+                    retarget_for_offline_signing(&proposal, &chain_type)
+                        .map_err(SendError::RetargetError)
+                } else {
+                    Ok(proposal)
+                };
+                match retargeted {
+                    Ok(proposal) => wallet
                         .calculate_transactions(proposal, sending_account)
                         .await
-                        .map_err(SendError::CalculateSendError)?
+                        .map_err(SendError::CalculateSendError),
+                    Err(e) => Err(e),
                 }
-                ZingoProposal::Shield {
-                    proposal,
-                    shielding_account,
-                } => {
-                    let proposal = if indexerless {
-                        retarget_for_offline_signing(&proposal, &chain_type)
-                            .map_err(SendError::RetargetError)?
-                    } else {
-                        proposal
-                    };
-                    wallet
+            }
+            ZingoProposal::Shield {
+                proposal,
+                shielding_account,
+            } => {
+                let retargeted = if indexerless {
+                    retarget_for_offline_signing(&proposal, &chain_type)
+                        .map_err(SendError::RetargetError)
+                } else {
+                    Ok(proposal)
+                };
+                match retargeted {
+                    Ok(proposal) => wallet
                         .calculate_transactions(proposal, shielding_account)
                         .await
-                        .map_err(SendError::CalculateShieldError)?
+                        .map_err(SendError::CalculateShieldError),
+                    Err(e) => Err(e),
                 }
-            };
-            Ok(txids)
-        } else {
-            Err(SendError::NoStoredProposal.into())
-        }
+            }
+        };
+        drop(wallet);
+        // The proposal is consumed on every path above, so its pause
+        // has nothing left to guard; the engine returns to its prior mode.
+        self.release_proposal_pause(true);
+        result.map_err(LightClientError::from)
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
@@ -246,7 +258,10 @@ impl LightClient {
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
-    /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
+    /// If sync is running, it is paused before creating the send proposal.
+    /// If `resume_sync` is `true`, the engine is restored to its prior mode
+    /// after the send, on every exit path; if `false`, it stays paused for
+    /// the caller to resume.
     pub async fn quick_send(
         &mut self,
         request: TransactionRequest,
@@ -255,28 +270,38 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
-        let _ignore_error = self.pause_sync();
-        let proposal = self
+        let guard = self.pause_sync_scoped().ok();
+        let proposal_result = self
             .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id)
-            .map_err(SendError::ProposeSendError)?;
-        let txids = self.send(proposal, account_id).await?;
-        if resume_sync {
-            let _ignore_error = self.resume_sync();
+            .map_err(SendError::ProposeSendError);
+        let txids = match proposal_result {
+            Ok(proposal) => self.send(proposal, account_id).await,
+            Err(e) => Err(e.into()),
+        };
+        if let Some(guard) = guard
+            && !resume_sync
+        {
+            guard.disarm();
         }
 
-        Ok(txids)
+        txids
     }
 
-    /// Shields all transparent funds skipping proposal confirmation.
+    /// Shields all transparent funds skipping proposal confirmation. The
+    /// sync engine is paused before the proposal's wallet reads and
+    /// restored to its prior mode when the call returns; the shield path
+    /// previously proposed, built, and stored transactions under a running
+    /// engine.
     pub async fn quick_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
+        let _guard = self.pause_sync_scoped().ok();
         let proposal = self
             .wallet()
             .write()
@@ -289,13 +314,13 @@ impl LightClient {
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
     /// Returns list of txids for successfully transmitted transactions.
-    async fn transmit_transactions(
+    pub(crate) async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let indexer = self.require_indexer()?.clone();
         let mut wallet = self.wallet().write().await;
-        for txid in calculated_txids.iter() {
+        for (index, txid) in calculated_txids.iter().enumerate() {
             let calculated_transaction = wallet
                 .wallet_transactions
                 .get(txid)
@@ -389,6 +414,27 @@ impl LightClient {
                             }
                         }
                         if retry_count >= MAX_RETRIES {
+                            // a transmission error does not prove the transaction failed to reach
+                            // the network. an earlier attempt may have been accepted with its
+                            // response lost (e.g. a timeout), causing rebroadcasts to be rejected
+                            // as duplicates. only mark the transaction failed if the server does
+                            // not know it.
+                            if indexer
+                                .clone()
+                                .get_transaction(
+                                    TxFilter {
+                                        block: None,
+                                        index: 0,
+                                        hash: txid.as_ref().to_vec(),
+                                    },
+                                    DEFAULT_REQUEST_TIMEOUT,
+                                )
+                                .await
+                                .is_ok()
+                            {
+                                break Ok(txid.to_string());
+                            }
+
                             pepper_sync::set_transactions_failed(
                                 &mut wallet.wallet_transactions,
                                 vec![*txid],
@@ -409,7 +455,11 @@ impl LightClient {
                 .wallet_transactions
                 .get_mut(txid)
                 .ok_or(WalletError::TransactionNotFound(*txid))?
-                .update_status(ConfirmationStatus::Transmitted(height), crate::utils::now());
+                .update_status(
+                    ConfirmationStatus::Transmitted(height),
+                    crate::utils::now(),
+                    false,
+                );
             wallet.save_required = true;
 
             let txid_from_server =
@@ -421,6 +471,11 @@ impl LightClient {
                 )
                 .into());
             }
+
+            // Published after the transaction is confirmed transmitted and its
+            // server txid verified. No-op unless an immediate drain armed the
+            // side channel.
+            self.drain_progress.set_sent(index as u32 + 1);
         }
 
         Ok(calculated_txids)
@@ -518,9 +573,10 @@ mod built_transaction_shape {
     /// and the documented shield-eligibility race are inexpressible
     /// offline): four transparent coins shield in one step, and the
     /// built transaction nets exactly their sum minus the 30_000
-    /// four-input shield fee into orchard. The live assert is the
-    /// post-confirmation orchard balance; the offline equivalent is the
-    /// orchard bundle's value balance on the built transaction.
+    /// four-input shield fee into the Ironwood pool (a V6 shield's
+    /// change lands in the ironwood bundle, ADR 0009). The live assert
+    /// is the post-confirmation balance; the offline equivalent is the
+    /// ironwood bundle's value balance on the built transaction.
     #[tokio::test]
     async fn four_coin_shield_builds_and_nets_input_minus_fee() {
         let coin_value = 1_000_000u64;
@@ -557,14 +613,14 @@ mod built_transaction_shape {
             transparent.vout.is_empty(),
             "a shield pays no transparent outputs"
         );
-        let orchard = transaction
-            .orchard_bundle()
-            .expect("a shield produces orchard change");
-        // Negative value balance is value flowing INTO the orchard pool:
+        let ironwood = transaction
+            .ironwood_bundle()
+            .expect("a V6 shield produces ironwood change");
+        // Negative value balance is value flowing INTO the ironwood pool:
         // the four coins minus the 30_000 zip317 fee (four transparent
-        // inputs plus the orchard action pair).
+        // inputs plus the ironwood action pair).
         assert_eq!(
-            i64::from(orchard.value_balance()),
+            i64::from(ironwood.value_balance()),
             -i64::try_from(4 * coin_value - 30_000).unwrap()
         );
     }
@@ -572,12 +628,14 @@ mod built_transaction_shape {
     /// Gap-1b cell of the remediation plan, mirroring the live
     /// multi_input_sapling_send_with_orchard_change_no_panic offline: a
     /// payment that no single sapling note covers builds (proves) a
-    /// two-input sapling spend whose change crosses to orchard. The
-    /// sapling proving parameters are embedded in the crate, so the
-    /// plan's parameters precondition is satisfied in the unit
-    /// environment.
+    /// two-input sapling spend. Under V6 the change stays in Sapling —
+    /// the upstream change selector avoids pool-crossing when no orchard
+    /// flow exists (ADR 0009) — while the payment to the orchard receiver
+    /// lands in the ironwood bundle. The sapling proving parameters are
+    /// embedded in the crate, so the plan's parameters precondition is
+    /// satisfied in the unit environment.
     #[tokio::test]
-    async fn two_input_sapling_spend_with_orchard_change_builds_offline() {
+    async fn two_input_sapling_spend_with_sapling_change_builds_offline() {
         use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
 
@@ -587,9 +645,9 @@ mod built_transaction_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        // 25_000 plus the 20_000 ZIP-317 fee (two sapling spends, two
-        // orchard actions) exceeds either note alone, so both are
-        // gathered and 5_000 returns as orchard change.
+        // 25_000 plus the 20_000 ZIP-317 fee (two sapling spends covering
+        // the change, plus the ironwood payment pair) exceeds either note
+        // alone, so both are gathered and 5_000 returns as sapling change.
         let request = TransactionRequest::new(vec![Payment::without_memo(
             external_orchard_address(),
             Zatoshis::const_from_u64(25_000),
@@ -603,11 +661,7 @@ mod built_transaction_shape {
         let change = step.balance().proposed_change();
         assert_eq!(change.len(), 1);
         assert_eq!(u64::from(change[0].value()), 5_000);
-        assert_eq!(
-            change[0].output_pool(),
-            zcash_protocol::PoolType::ORCHARD,
-            "the change crosses to orchard"
-        );
+        assert_eq!(change[0].output_pool(), zcash_protocol::PoolType::IRONWOOD,);
 
         let txids = client
             .wallet()
@@ -633,15 +687,20 @@ mod built_transaction_shape {
             2,
             "both fabricated sapling notes are spent"
         );
-        // The sapling outputs are the builder's dummy padding; the real
-        // change is the orchard action asserted above.
-        let orchard_bundle = transaction
-            .orchard_bundle()
-            .expect("the orchard payment and change produce an orchard bundle");
+        // The sapling bundle carries the spends and the change output;
+        // the payment to the orchard receiver lands in the ironwood
+        // bundle, and no legacy orchard bundle exists.
+        assert!(
+            transaction.orchard_bundle().is_none(),
+            "no orchard flow, no orchard bundle"
+        );
+        let ironwood_bundle = transaction
+            .ironwood_bundle()
+            .expect("the payment to the orchard receiver produces an ironwood bundle");
         assert_eq!(
-            orchard_bundle.actions().len(),
+            ironwood_bundle.actions().len(),
             2,
-            "payment plus change, the orchard minimum"
+            "payment plus dummy padding, the bundle minimum"
         );
     }
 
@@ -841,7 +900,7 @@ mod test {
     /// waits up to five blocks for confirmation per transaction. see [`zingolib/src/testutils/chain_generics/live_chain.rs`]
     /// as of now, average block time is supposedly about 75 seconds
     mod testnet {
-        use zcash_protocol::{PoolType, ShieldedProtocol};
+        use zcash_protocol::{PoolType, ShieldedPool};
 
         use crate::testutils::lightclient::get_base_address;
 
@@ -858,7 +917,7 @@ mod test {
             let mut client = sync_example_wallet(case).await;
 
             let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+                get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
             with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut NetworkedTestEnvironment::setup().await,
@@ -881,7 +940,7 @@ mod test {
             let mut client = sync_example_wallet(case).await;
 
             let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+                get_base_address(&client, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
             with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut NetworkedTestEnvironment::setup().await,
@@ -934,7 +993,7 @@ mod test {
             let environment = &mut NetworkedTestEnvironment::setup().await;
 
             let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+                get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
             with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut NetworkedTestEnvironment::setup().await,
                 &mut client,
@@ -946,7 +1005,7 @@ mod test {
             .unwrap();
 
             let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+                get_base_address(&client, PoolType::Shielded(ShieldedPool::Sapling)).await;
             with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut NetworkedTestEnvironment::setup().await,
                 &mut client,

@@ -3,7 +3,7 @@
 use chrono::DateTime;
 use json::JsonValue;
 
-use zcash_protocol::{TxId, consensus::BlockHeight};
+use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -121,6 +121,37 @@ impl std::fmt::Display for ValueTransferKind {
     }
 }
 
+/// Names of the given pools, e.g. `["Orchard", "Ironwood"]`.
+fn pool_names(pools: &[PoolType]) -> Vec<String> {
+    pools.iter().map(ToString::to_string).collect()
+}
+
+/// Formats a list of pools for display, e.g. "Orchard, Ironwood".
+fn display_pools(pools: &[PoolType]) -> String {
+    pool_names(pools).join(", ")
+}
+
+/// Converts a list of pools to a JSON array of pool names.
+fn pools_to_json(pools: &[PoolType]) -> JsonValue {
+    JsonValue::from(pool_names(pools))
+}
+
+/// The pools flagged present, in protocol order. `present` indices are
+/// (transparent, sapling, orchard, ironwood); this function is the single
+/// definition of that order for pool lists exposed by summaries.
+pub(crate) fn pools_present(present: [bool; 4]) -> Vec<PoolType> {
+    let [transparent, sapling, orchard, ironwood] = present;
+    [
+        (transparent, PoolType::TRANSPARENT),
+        (sapling, PoolType::SAPLING),
+        (orchard, PoolType::ORCHARD),
+        (ironwood, PoolType::IRONWOOD),
+    ]
+    .into_iter()
+    .filter_map(|(present, pool)| present.then_some(pool))
+    .collect()
+}
+
 /// Transaction summary.
 #[derive(Clone, PartialEq, Debug)]
 pub struct TransactionSummary {
@@ -132,15 +163,51 @@ pub struct TransactionSummary {
     pub value: u64,
     pub fee: Option<u64>,
     pub zec_price: Option<f32>,
+    /// Pools of this wallet's outputs spent to fund this transaction.
+    /// Empty for received transactions.
+    pub pools_sent_from: Vec<PoolType>,
+    pub ironwood_notes: Vec<BasicNoteSummary>,
     pub orchard_notes: Vec<BasicNoteSummary>,
     pub sapling_notes: Vec<BasicNoteSummary>,
     pub transparent_coins: Vec<BasicCoinSummary>,
+    pub outgoing_ironwood_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_transparent_coins: Vec<OutgoingCoinSummary>,
 }
 
 impl TransactionSummary {
+    /// Pools this transaction's wallet-received outputs arrived into, in protocol order
+    /// (transparent, sapling, orchard, ironwood).
+    #[must_use]
+    pub fn pools_received(&self) -> Vec<PoolType> {
+        pools_present([
+            !self.transparent_coins.is_empty(),
+            !self.sapling_notes.is_empty(),
+            !self.orchard_notes.is_empty(),
+            !self.ironwood_notes.is_empty(),
+        ])
+    }
+
+    /// The shielded note summaries paired with their pool, newest pool first
+    /// (ironwood, orchard, sapling) — the order value transfers are listed in.
+    pub(crate) fn shielded_notes_by_pool(&self) -> [(&[BasicNoteSummary], PoolType); 3] {
+        [
+            (self.ironwood_notes.as_slice(), PoolType::IRONWOOD),
+            (self.orchard_notes.as_slice(), PoolType::ORCHARD),
+            (self.sapling_notes.as_slice(), PoolType::SAPLING),
+        ]
+    }
+
+    /// All memos on this transaction's wallet-received shielded notes, in pool
+    /// order ironwood, orchard, sapling.
+    pub(crate) fn received_memos(&self) -> Vec<String> {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter().filter_map(|note| note.memo.clone()))
+            .collect()
+    }
+
     #[must_use]
     pub fn balance_delta(&self) -> Option<i64> {
         match self.kind {
@@ -163,7 +230,9 @@ impl TransactionSummary {
         String,
         BasicNoteSummaries,
         BasicNoteSummaries,
+        BasicNoteSummaries,
         BasicCoinSummaries,
+        OutgoingNoteSummaries,
         OutgoingNoteSummaries,
         OutgoingNoteSummaries,
         OutgoingCoinSummaries,
@@ -183,9 +252,11 @@ impl TransactionSummary {
         } else {
             "not available".to_string()
         };
+        let ironwood_notes = BasicNoteSummaries(self.ironwood_notes.clone());
         let orchard_notes = BasicNoteSummaries(self.orchard_notes.clone());
         let sapling_notes = BasicNoteSummaries(self.sapling_notes.clone());
         let transparent_coins = BasicCoinSummaries(self.transparent_coins.clone());
+        let outgoing_ironwood_notes = OutgoingNoteSummaries(self.outgoing_ironwood_notes.clone());
         let outgoing_orchard_notes = OutgoingNoteSummaries(self.outgoing_orchard_notes.clone());
         let outgoing_sapling_notes = OutgoingNoteSummaries(self.outgoing_sapling_notes.clone());
         let outgoing_transparent_coins =
@@ -195,9 +266,11 @@ impl TransactionSummary {
             datetime,
             fee,
             zec_price,
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
@@ -211,9 +284,11 @@ impl std::fmt::Display for TransactionSummary {
             datetime,
             fee,
             zec_price,
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
@@ -229,9 +304,12 @@ impl std::fmt::Display for TransactionSummary {
     value: {}
     fee: {}
     zec price: {}
+    pools sent from: {}
+    ironwood notes: {}
     orchard notes: {}
     sapling notes: {}
     transparent coins: {}
+    outgoing ironwood notes: {}
     outgoing orchard notes: {}
     outgoing sapling notes: {}
     outgoing transparent coins: {}
@@ -244,9 +322,12 @@ impl std::fmt::Display for TransactionSummary {
             self.value,
             fee,
             zec_price,
+            display_pools(&self.pools_sent_from),
+            ironwood_notes,
             orchard_notes,
             sapling_notes,
             transparent_coins,
+            outgoing_ironwood_notes,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
@@ -265,9 +346,12 @@ impl From<TransactionSummary> for JsonValue {
             "value" => transaction.value,
             "fee" => transaction.fee,
             "zec_price" => transaction.zec_price,
+            "pools_sent_from" => pools_to_json(&transaction.pools_sent_from),
+            "ironwood_notes" => JsonValue::from(transaction.ironwood_notes),
             "orchard_notes" => JsonValue::from(transaction.orchard_notes),
             "sapling_notes" => JsonValue::from(transaction.sapling_notes),
             "transparent_coins" => JsonValue::from(transaction.transparent_coins),
+            "outgoing_ironwood_notes" => JsonValue::from(transaction.outgoing_ironwood_notes),
             "outgoing_orchard_notes" => JsonValue::from(transaction.outgoing_orchard_notes),
             "outgoing_sapling_notes" => JsonValue::from(transaction.outgoing_sapling_notes),
             "outgoing_transparent_coins" => JsonValue::from(transaction.outgoing_transparent_coins),
@@ -345,8 +429,49 @@ pub struct ValueTransfer {
     pub kind: ValueTransferKind,
     pub value: u64,
     pub recipient_address: Option<String>,
-    pub pool_received: Option<String>,
+    /// Pools of this wallet's outputs spent to fund the transaction this value transfer
+    /// belongs to. Transaction-level: the same for every value transfer of a txid, and
+    /// empty for received transactions.
+    ///
+    /// Together with [`Self::pools_received`] this exposes pool movement, e.g. a
+    /// send-to-self with `pools_sent_from: [Orchard]` and `pools_received: [Ironwood]`
+    /// is an orchard -> ironwood migration. Interpreting such movements is left to
+    /// the consumer.
+    pub pools_sent_from: Vec<PoolType>,
+    /// Pools this value transfer's value arrived into: the pool of the grouped notes for
+    /// received and shielding transfers, the pools of the recipient's outputs for sent
+    /// transfers, and the pools of all self-received outputs for send-to-self transfers.
+    pub pools_received: Vec<PoolType>,
     pub memos: Vec<String>,
+}
+
+impl ValueTransfer {
+    /// Builds a value transfer, carrying over the transaction-level fields
+    /// (txid, datetime, status, blockheight, fee, price, pools sent from)
+    /// from `transaction`.
+    pub(crate) fn from_summary(
+        transaction: &TransactionSummary,
+        kind: ValueTransferKind,
+        value: u64,
+        recipient_address: Option<String>,
+        pools_received: Vec<PoolType>,
+        memos: Vec<String>,
+    ) -> Self {
+        Self {
+            txid: transaction.txid,
+            datetime: transaction.datetime,
+            status: transaction.status,
+            blockheight: transaction.blockheight,
+            transaction_fee: transaction.fee,
+            zec_price: transaction.zec_price,
+            kind,
+            value,
+            recipient_address,
+            pools_sent_from: transaction.pools_sent_from.clone(),
+            pools_received,
+            memos,
+        }
+    }
 }
 
 impl std::fmt::Debug for ValueTransfer {
@@ -361,7 +486,8 @@ impl std::fmt::Debug for ValueTransfer {
             .field("kind", &self.kind)
             .field("value", &self.value)
             .field("recipient_address", &self.recipient_address)
-            .field("pool_received", &self.pool_received)
+            .field("pools_sent_from", &self.pools_sent_from)
+            .field("pools_received", &self.pools_received)
             .field("memos", &self.memos)
             .finish()
     }
@@ -389,11 +515,6 @@ impl std::fmt::Display for ValueTransfer {
         } else {
             "not available".to_string()
         };
-        let pool_received = if let Some(pool) = self.pool_received.as_ref() {
-            pool.clone()
-        } else {
-            "not available".to_string()
-        };
         let mut memos = String::new();
         for (index, memo) in self.memos.iter().enumerate() {
             memos.push_str(&format!("\n\tmemo {}: {}", (index + 1), memo));
@@ -410,7 +531,8 @@ impl std::fmt::Display for ValueTransfer {
     kind: {}
     value: {}
     recipient_address: {}
-    pool_received: {}
+    pools_sent_from: {}
+    pools_received: {}
     memos: {}
 }}",
             self.txid,
@@ -422,7 +544,8 @@ impl std::fmt::Display for ValueTransfer {
             self.kind,
             self.value,
             recipient_address,
-            pool_received,
+            display_pools(&self.pools_sent_from),
+            display_pools(&self.pools_received),
             memos
         )
     }
@@ -440,7 +563,8 @@ impl From<ValueTransfer> for JsonValue {
             "kind" => value_transfer.kind.to_string(),
             "value" => value_transfer.value,
             "recipient_address" => value_transfer.recipient_address,
-            "pool_received" => value_transfer.pool_received,
+            "pools_sent_from" => pools_to_json(&value_transfer.pools_sent_from),
+            "pools_received" => pools_to_json(&value_transfer.pools_received),
             "memos" => value_transfer.memos
         }
     }

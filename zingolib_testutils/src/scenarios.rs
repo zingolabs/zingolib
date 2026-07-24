@@ -16,11 +16,11 @@ use std::path::PathBuf;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_local_net::ProcessId;
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use zcash_local_net::LocalNet;
 use zcash_local_net::MinerPool;
-use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
 use zcash_local_net::process::Process;
@@ -28,6 +28,7 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
+use zingo_test_vectors::FUND_OFFLOAD_ORCHARD_ONLY;
 
 use crate::chain_cache::{self, CacheManifest, CachedStage, Disposition};
 use crate::observability::FrontRecord;
@@ -35,7 +36,7 @@ use crate::setup_metrics::MeteredNet;
 
 pub use crate::chain_cache::ChainCachePolicy;
 use zingo_common_components::protocol::ActivationHeights;
-use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, block_rewards, seeds};
+use zingo_test_vectors::{block_rewards, seeds};
 use zingolib::config::WalletConfig;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::get_base_address_macro;
@@ -84,8 +85,10 @@ where
 fn miner_pool(mine_to_pool: PoolType) -> MinerPool {
     match mine_to_pool {
         PoolType::Transparent => MinerPool::Transparent,
-        PoolType::Shielded(ShieldedProtocol::Sapling) => MinerPool::Sapling,
-        PoolType::Shielded(ShieldedProtocol::Orchard) => MinerPool::Orchard,
+        PoolType::Shielded(ShieldedPool::Sapling) => MinerPool::Sapling,
+        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::Shielded(ShieldedPool::Ironwood) => {
+            MinerPool::Orchard
+        }
     }
 }
 
@@ -143,12 +146,44 @@ pub fn wallet_activation_heights(
 /// funding-stream fixtures pair with — zebrad rejects NU6.x activation
 /// blocks whose subsidy config doesn't match, so e.g. the all-at-1
 /// `ActivationHeights::default()` stalls the chain at genesis), with one
-/// amendment: NU6.3 stays unactivated. This branch's wallet builds against
-/// released librustzcash, which tops out at the NU6.2 branch id; activating
-/// NU6.3 makes zebrad reject every wallet transaction ("incorrect consensus
-/// branch id"). Re-enable NU6.3 (drop the `set_nu6_3(None)`) when the
-/// ironwood wallet feature branch lands here.
+/// amendment: NU7 stays off. NU6.3 activates at the fixture's height 5,
+/// so wallet activity is Ironwood-era by default (ADR 0009) while
+/// coinbase blocks 2..=4 still yield legacy Orchard notes — a mixed
+/// chain by design, since behavior *relative to* Ironwood is a primary
+/// test subject during the migration window.
 pub fn default_test_activation_heights() -> ActivationHeights {
+    let fixture =
+        wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());
+    ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(fixture.nu6_3())
+        .set_nu7(None)
+        .build()
+}
+
+/// The activation-height schedule of the externally consumed
+/// `*_mobileclient` scenarios: [`default_test_activation_heights`] with
+/// NU6.3 deferred (never activating).
+///
+/// zingo-mobile pins these scenarios (and their port, 20_000) outside
+/// this workspace and expects pre-ironwood semantics: funding lands in
+/// the orchard pool on a chain that never crosses the NU6.3 activation.
+/// The workspace default flipped to ironwood-era (ADR 0009), which
+/// silently changed the mobileclient scenarios' behavior with no diff
+/// line in their own functions — the drift issue zingolabs/zingolib#2493
+/// records. Deferring NU6.3 here restores the external contract: V5
+/// transactions, orchard-pool funding, and
+/// `normalize_shielded_faucet_balance` structurally inert (its
+/// offload-and-drain step is gated on activation proximity).
+pub fn mobileclient_activation_heights() -> ActivationHeights {
     let fixture =
         wallet_activation_heights(&zcash_local_net::validator::regtest_test_activation_heights());
     ActivationHeights::builder()
@@ -198,6 +233,11 @@ pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 /// flip this to 3 and nothing else.
 pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
 
+/// HYPOTHESIS (server-run adjudicated): with an Ironwood miner pool the
+/// coinbase pays the orchard receiver from the NU6_3 activation block (height
+/// 5 under [`default_test_activation_heights`]) onward.
+pub const IRONWOOD_COINBASE_START_HEIGHT: u32 = 5;
+
 /// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
 /// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
 /// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
@@ -211,12 +251,12 @@ pub const fn orchard_coinbase_total(tip: u32) -> u64 {
     (tip - ORCHARD_COINBASE_START_HEIGHT + 1) as u64 * POST_STREAM_BLOCK_REWARD
 }
 
-/// The faucet's orchard balance right after a `PoolType::ORCHARD` scenario
-/// finishes setting up: orchard coinbase through
+/// The faucet's ironwood balance right after a `PoolType::IRONWOOD` scenario
+/// finishes setting up ironwood coinbase through
 /// [`FUNDED_FAUCET_SETUP_HEIGHT`], less the offload amount. The offload's
 /// fee cancels out: the faucet pays it, then collects it right back in the
 /// coinbase of the confirming block it mines.
-pub const fn funded_faucet_orchard_balance() -> u64 {
+pub const fn funded_faucet_ironwood_balance() -> u64 {
     orchard_coinbase_total(FUNDED_FAUCET_SETUP_HEIGHT) - FUND_OFFLOAD_AMOUNT
 }
 
@@ -362,6 +402,17 @@ where
 /// Mining two extra blocks first clears the upgrade ladder (tip 5, so
 /// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
 /// four pre-tip notes so oldest-first selection never reaches the tip note.
+///
+/// The orchard-to-ironwood normalization uses the migration drain rather
+/// than a self-send: 731b2b761 taught note selection to lead with the
+/// payment's own pool, so a send to an ironwood receiver no longer drains
+/// orchard (it left one orchard note un-migrated, observed as balance
+/// assertions failing exactly one block reward short on freshly mined
+/// chains while cached replays of pre-731b2b761 wallet-built blocks kept
+/// passing). The drain spends only orchard by construction, which also
+/// satisfies constraint 2 structurally. Its fee cancels the same way the
+/// offload's does — the faucet collects it back in the confirming block's
+/// coinbase — so [`funded_faucet_ironwood_balance`] is fee-invariant.
 async fn normalize_shielded_faucet_balance<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -373,8 +424,14 @@ async fn normalize_shielded_faucet_balance<V, I>(
     <V as Process>::Config: Send,
     LocalNet<V, I>: IndexerConvergence,
 {
-    if !matches!(mine_to_pool, PoolType::Transparent) {
-        local_net.validator().generate_blocks(2).await.unwrap();
+    let chain_height = local_net.validator().get_chain_height().await;
+    let activation_heights = local_net.validator().get_activation_heights().await;
+    if !matches!(mine_to_pool, PoolType::Transparent)
+        && activation_heights
+            .nu6_3()
+            .is_some_and(|ironwood_height| chain_height >= ironwood_height - 2)
+    {
+        local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
         quick_send(
             faucet,
@@ -382,6 +439,16 @@ async fn normalize_shielded_faucet_balance<V, I>(
         )
         .await
         .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        sync_client_to_validator_tip(local_net, faucet).await;
+        let drain_summary = faucet
+            .drain_orchard_to_ironwood(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            drain_summary.stranded, 0,
+            "normalization must leave no orchard value behind"
+        );
         local_net.validator().generate_blocks(1).await.unwrap();
     }
 }
@@ -490,13 +557,13 @@ pub async fn unfunded_client(
     cache: ChainCachePolicy,
 ) -> (MeteredNet, LightClient) {
     let (replay, export) = resolve_cache(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         &configured_activation_heights,
         cache,
         CachedStage::Bare,
     );
     let (mut local_net, mut client_builder) =
-        custom_clients_raw(PoolType::ORCHARD, configured_activation_heights, replay).await;
+        custom_clients_raw(PoolType::IRONWOOD, configured_activation_heights, replay).await;
 
     let mut lightclient = client_builder
         .build_client(
@@ -524,7 +591,7 @@ pub async fn unfunded_client_default() -> (MeteredNet, LightClient) {
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
-/// 3 blocks worth of coinbase to a preregistered spend capability.
+/// 3 blocks worth of coinbase to a preregistered spend capability (5 blocks for zebrad).
 ///
 /// This key is registered to receive block rewards by corresponding to the
 /// address the regtest Validator mines to.
@@ -558,6 +625,29 @@ pub async fn faucet(
 
     sync_client_to_validator_tip(&local_net, &mut faucet).await;
 
+    // Replay-time twin of the fresh-build invariant inside the
+    // normalization: a cache whose chain shape predates the current setup
+    // semantics otherwise replays cleanly and fails blocks later at some
+    // unrelated balance assert (2026-07-17: pre-drain caches did exactly
+    // that for a day). The manifest's setup_semantics key should discard
+    // such caches before this fires; this assert is the backstop that
+    // names the cache instead of the downstream test.
+    if replayed && matches!(mine_to_pool, PoolType::Shielded(ShieldedPool::Ironwood)) {
+        let ironwood_confirmed = faucet
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .expect("the freshly synced faucet reports a balance")
+            .confirmed_ironwood_balance
+            .map(zcash_protocol::value::Zatoshis::into_u64)
+            .unwrap_or(0);
+        assert_eq!(
+            ironwood_confirmed,
+            funded_faucet_ironwood_balance(),
+            "replayed chain does not satisfy current setup semantics — stale chain cache? \
+             (the manifest's schema/setup_semantics should have discarded it)"
+        );
+    }
+
     if let Some((dir, manifest)) = export {
         chain_cache::export(&local_net, &dir, &manifest).await;
     }
@@ -568,7 +658,7 @@ pub async fn faucet(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (MeteredNet, LightClient) {
     faucet(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )
@@ -623,7 +713,7 @@ pub async fn faucet_recipient(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient) {
     faucet_recipient(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )
@@ -636,6 +726,8 @@ pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient
 /// `outputs.json` — a warm run replays the chain and returns the
 /// recorded identifiers, which name transactions that are literally in
 /// the replayed blocks.
+///
+/// If nu6.3 is activated, `orchard_funds` will be sent to the ironwood pool.
 pub async fn faucet_funded_recipient(
     orchard_funds: Option<u64>,
     sapling_funds: Option<u64>,
@@ -798,7 +890,7 @@ pub async fn faucet_funded_recipient_default(
             Some(orchard_funds),
             None,
             None,
-            PoolType::ORCHARD,
+            PoolType::IRONWOOD,
             default_test_activation_heights(),
             ChainCachePolicy::PerTest,
         )
@@ -938,7 +1030,7 @@ pub async fn custom_clients(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     let (local_net, client_builder) = custom_clients(
-        PoolType::ORCHARD,
+        PoolType::IRONWOOD,
         default_test_activation_heights(),
         ChainCachePolicy::PerTest,
     )
@@ -961,7 +1053,10 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
         // would panic at its first send. (zebrad cannot mine to Sapling,
         // so Orchard is the only immediately-spendable pool.)
         PoolType::ORCHARD,
-        default_test_activation_heights(),
+        // NOT the workspace default: zingo-mobile pins pre-ironwood
+        // semantics for these scenarios (see
+        // [`mobileclient_activation_heights`]).
+        mobileclient_activation_heights(),
         None,
     )
     .await
@@ -987,10 +1082,10 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
             true,
         )
         .await;
-    // Fund the faucet with spendable Orchard coinbase, exactly as
-    // faucet()/faucet_recipient() do: normalize_shielded_faucet_balance
-    // mines the NU6.1/NU6.2 ladder-clearing blocks, offloads the excess and
-    // confirms, leaving a spendable orchard balance.
+    // The mobileclient chain defers NU6.3, so this normalization call is
+    // structurally inert (its offload-and-drain step is gated on
+    // activation proximity); it stays for parity with faucet() should the
+    // mobileclient schedule ever change.
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -1340,4 +1435,26 @@ where
     assert_eq!(local_net.validator().get_chain_height().await, target);
 
     target
+}
+
+#[cfg(test)]
+mod tests {
+    /// The externally consumed mobileclient scenarios must never cross
+    /// the NU6.3 activation: zingo-mobile pins pre-ironwood semantics
+    /// (orchard-pool funding, V5 transactions) outside this workspace,
+    /// and the workspace default flipping to ironwood-era must not leak
+    /// into them again (zingolabs/zingolib#2493).
+    #[test]
+    fn mobileclient_heights_defer_ironwood() {
+        let mobileclient = super::mobileclient_activation_heights();
+        assert_eq!(mobileclient.nu6_3(), None);
+
+        // Everything below NU6.3 stays aligned with the workspace
+        // default, so only the ironwood flip is pinned out.
+        let default = super::default_test_activation_heights();
+        assert_eq!(mobileclient.nu5(), default.nu5());
+        assert_eq!(mobileclient.nu6(), default.nu6());
+        assert_eq!(mobileclient.nu6_1(), default.nu6_1());
+        assert_eq!(mobileclient.nu6_2(), default.nu6_2());
+    }
 }

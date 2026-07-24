@@ -6,7 +6,7 @@ use pepper_sync::{error::ScanError, wallet::OutputId};
 use shardtree::error::ShardTreeError;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{PoolType, ShieldedProtocol, consensus::BlockHeight};
+use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
 use super::output::OutputRef;
 
@@ -61,12 +61,48 @@ pub enum WalletError {
     /// Shard store checkpoint not found.
     #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
     CheckpointNotFound {
-        shielded_protocol: ShieldedProtocol,
+        shielded_protocol: ShieldedPool,
         height: BlockHeight,
     },
     /// Shard tree error.
     #[error("Shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// No spendable Orchard note of the exact value required by the migration plan.
+    #[error("Migration: no spendable Orchard note of value {0} zatoshis.")]
+    MigrationNoteNotFound(u64),
+    /// Failed to build a migration transaction.
+    #[error("Migration transaction build failed: {0}")]
+    MigrationBuild(String),
+    /// A migration part's bound note is not in the wallet.
+    #[error("Migration: bound note {0:?} not found in the wallet.")]
+    MigrationBoundNoteMissing(pepper_sync::wallet::OutputId),
+    /// A built part deviated from the canonical migration-transaction
+    /// predicate of ZIP 318. Deviating parts are never sent: they would
+    /// fingerprint the wallet.
+    #[error("Migration part deviates from the canonical predicate: {0}")]
+    MigrationDeviation(String),
+    /// A part was asked to make a transition its state does not permit.
+    #[error("Migration part cannot transition from {from} to {to}.")]
+    MigrationInvalidTransition {
+        /// The part's current state.
+        from: &'static str,
+        /// The requested state.
+        to: &'static str,
+    },
+    /// Persisted migration state failed an integrity check.
+    #[error("Migration state corrupt: {0}")]
+    MigrationStateCorrupt(String),
+    /// A drain was requested but the account holds no spendable Orchard note
+    /// worth more than it would cost to spend.
+    #[error("No spendable Orchard notes to migrate.")]
+    NothingToMigrate,
+    /// `TargetValue::AllFunds(MaxSpendMode::Everything)` was requested. Its
+    /// contract — fail if ANY unspendable funds exist — requires a
+    /// whole-wallet audit this selector does not yet perform, and a wrong
+    /// success would silently strand funds, so the request is refused with
+    /// this typed error instead.
+    #[error("AllFunds(Everything) is not supported: the unspendable-funds audit is unimplemented.")]
+    AllFundsEverythingUnsupported,
     /// Conversion failed
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]

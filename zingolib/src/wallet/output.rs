@@ -5,7 +5,7 @@ use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
@@ -204,6 +204,13 @@ impl LightWallet {
                 }
             }
         }
+        if query.ironwood() {
+            for output in transaction.ironwood_notes() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
         sum
     }
 
@@ -249,6 +256,19 @@ impl LightWallet {
         };
         if self
             .shard_trees
+            .ironwood
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(WalletError::CheckpointNotFound {
+                shielded_protocol: ShieldedPool::Ironwood,
+                height: anchor_height,
+            });
+        }
+        if self
+            .shard_trees
             .orchard
             .store()
             .get_checkpoint(&anchor_height)
@@ -256,7 +276,7 @@ impl LightWallet {
             .is_none()
         {
             return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedProtocol::Orchard,
+                shielded_protocol: ShieldedPool::Orchard,
                 height: anchor_height,
             });
         }
@@ -269,7 +289,7 @@ impl LightWallet {
             .is_none()
         {
             return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedProtocol::Sapling,
+                shielded_protocol: ShieldedPool::Sapling,
                 height: anchor_height,
             });
         }
@@ -403,11 +423,12 @@ impl LightWallet {
         let mut total_selected_note_value: Zatoshis;
 
         loop {
-            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
-            if unselected_notes.is_empty() {
-                break;
-            }
-            // update target value for further note selection
+            // The remaining need must be recomputed before any exit from the
+            // loop: breaking on an emptied note list without updating it
+            // hands the caller a stale positive remainder even when the last
+            // selected note covered the target, and the caller then selects
+            // further notes (from other pools, or from the withheld
+            // migration reserve) against a target already met.
             total_selected_note_value = Zatoshis::from_u64(
                 selected_notes
                     .iter()
@@ -423,6 +444,12 @@ impl LightWallet {
                     break;
                 }
             };
+
+            // if no unselected notes are available, return the currently
+            // selected notes even though the target value has not been reached
+            if unselected_notes.is_empty() {
+                break;
+            }
 
             if let Some(&smallest_unselected) = unselected_notes.get(unselected_note_index) {
                 // select a note to test if it has enough value to complete the transaction without creating dust as change
@@ -479,7 +506,7 @@ fn calculate_remaining_needed(target_value: Zatoshis, selected_value: Zatoshis) 
 #[cfg(test)]
 pub mod mocks {
     //! Mock version of the struct for testing
-    use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
+    use zcash_client_backend::{wallet::NoteId, ShieldedPool};
     use zcash_primitives::transaction::TxId;
 
     use crate::{mocks::default_txid, testutils::build_method};
@@ -487,7 +514,7 @@ pub mod mocks {
     /// to build a mock NoteRecordIdentifier
     pub struct NoteIdBuilder {
         txid: Option<TxId>,
-        shpool: Option<ShieldedProtocol>,
+        shpool: Option<ShieldedPool>,
         index: Option<u16>,
     }
     impl NoteIdBuilder {
@@ -501,7 +528,7 @@ pub mod mocks {
         }
         // Methods to set each field
         build_method!(txid, TxId);
-        build_method!(shpool, ShieldedProtocol);
+        build_method!(shpool, ShieldedPool);
         build_method!(index, u16);
 
         /// selects a random probablistically unique txid
@@ -524,7 +551,7 @@ pub mod mocks {
             let mut builder = Self::new();
             builder
                 .txid(default_txid())
-                .shpool(zcash_client_backend::ShieldedProtocol::Orchard)
+                .shpool(zcash_client_backend::ShieldedPool::Orchard)
                 .index(0);
             builder
         }

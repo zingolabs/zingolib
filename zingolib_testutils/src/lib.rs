@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod attribution;
 pub mod chain_cache;
 pub mod observability;
 pub mod scenarios;

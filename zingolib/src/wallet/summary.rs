@@ -21,10 +21,41 @@ use data::{
     BasicCoinSummary, BasicNoteSummary, CoinSummary, NoteSummaries, NoteSummary,
     OutgoingCoinSummary, OutgoingNoteSummary, Scope, SelfSendValueTransfer, SendType,
     SentValueTransfer, TransactionKind, TransactionSummaries, TransactionSummary, ValueTransfer,
-    ValueTransferKind, ValueTransfers,
+    ValueTransferKind, ValueTransfers, pools_present,
 };
 
 pub mod data;
+
+/// Creates one value transfer of `kind` for each shielded pool the transaction
+/// received notes into, newest pool first (ironwood, orchard, sapling).
+fn shielded_pool_value_transfers(
+    transaction: &TransactionSummary,
+    kind: ValueTransferKind,
+) -> Vec<ValueTransfer> {
+    transaction
+        .shielded_notes_by_pool()
+        .into_iter()
+        .filter(|(notes, _)| !notes.is_empty())
+        .map(|(notes, pool)| {
+            ValueTransfer::from_summary(
+                transaction,
+                kind,
+                notes.iter().map(|output| output.value).sum(),
+                None,
+                vec![pool],
+                notes.iter().filter_map(|note| note.memo.clone()).collect(),
+            )
+        })
+        .collect()
+}
+
+/// Pairs each note with `pool`, for chaining outgoing notes across pools.
+fn tag_pool(
+    notes: &[OutgoingNoteSummary],
+    pool: PoolType,
+) -> impl Iterator<Item = (&OutgoingNoteSummary, PoolType)> {
+    notes.iter().map(move |note| (note, pool))
+}
 
 impl LightWallet {
     /// Returns summaries of all transactions in the wallet, sorted by confirmation status (confirmed first) and then
@@ -39,7 +70,8 @@ impl LightWallet {
             .wallet_transactions
             .values()
             .map(|transaction| {
-                let kind = self.transaction_kind(transaction)?;
+                let spends = self.find_spends_by_pool(transaction)?;
+                let kind = self.transaction_kind(transaction, &spends);
                 let value = match kind {
                     TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
                         transaction.total_value_received()
@@ -52,6 +84,27 @@ impl LightWallet {
                     .calculate_transaction_fee(transaction)
                     .ok()
                     .map(zcash_protocol::value::Zatoshis::into_u64);
+                let pools_sent_from = spends.pools();
+                let ironwood_notes = transaction
+                    .ironwood_notes()
+                    .iter()
+                    .map(|output| {
+                        let spend_status = self.output_spend_status(output);
+
+                        let memo = if let Memo::Text(memo_text) = output.memo() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        };
+
+                        BasicNoteSummary::from_parts(
+                            output.value(),
+                            spend_status,
+                            output.output_id().output_index(),
+                            memo,
+                        )
+                    })
+                    .collect::<Vec<_>>();
                 let orchard_notes = transaction
                     .orchard_notes()
                     .iter()
@@ -106,6 +159,30 @@ impl LightWallet {
                     })
                     .collect::<Vec<_>>();
 
+                let outgoing_ironwood_notes = transaction
+                    .outgoing_ironwood_notes()
+                    .iter()
+                    .map(|note| {
+                        let memo = if let Memo::Text(memo_text) = note.memo() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        };
+
+                        Ok(OutgoingNoteSummary {
+                            memo,
+                            value: note.value(),
+                            recipient: note
+                                .encoded_recipient(&self.chain_type)
+                                .map_err(zcash_address::ParseError::Unified)?,
+                            recipient_unified_address: note
+                                .encoded_recipient_full_unified_address(&self.chain_type),
+                            output_index: note.output_id().output_index(),
+                            account_id: note.key_id().account_id,
+                            scope: Scope::from(note.key_id().scope),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SummaryError>>()?;
                 let outgoing_orchard_notes = transaction
                     .outgoing_orchard_notes()
                     .iter()
@@ -154,6 +231,7 @@ impl LightWallet {
                         }
                     })
                     .collect::<Vec<_>>();
+
                 let outgoing_transparent_coins = if kind == TransactionKind::Received {
                     Vec::new()
                 } else {
@@ -216,9 +294,12 @@ impl LightWallet {
                     value,
                     fee,
                     zec_price: None,
+                    pools_sent_from,
+                    ironwood_notes,
                     orchard_notes,
                     sapling_notes,
                     transparent_coins,
+                    outgoing_ironwood_notes,
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
                     outgoing_transparent_coins,
@@ -260,231 +341,71 @@ impl LightWallet {
                     value_transfers.append(&mut self.create_send_value_transfers(&transaction)?);
 
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
-                    if transaction
-                        .orchard_notes
-                        .iter()
-                        .any(|note| note.memo.is_some())
-                        || transaction
-                            .sapling_notes
-                            .iter()
-                            .any(|note| note.memo.is_some())
-                    {
-                        let memos: Vec<String> = transaction
-                            .orchard_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .chain(
-                                transaction
-                                    .sapling_notes
-                                    .iter()
-                                    .filter_map(|note| note.memo.clone()),
-                            )
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                    let memos = transaction.received_memos();
+                    if !memos.is_empty() {
+                        value_transfers.push(ValueTransfer::from_summary(
+                            &transaction,
+                            ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                 SelfSendValueTransfer::MemoToSelf,
                             )),
-                            value: 0,
-                            recipient_address: None,
-                            pool_received: None,
+                            0,
+                            None,
+                            transaction.pools_received(),
                             memos,
-                        });
+                        ));
                     }
                 }
                 TransactionKind::Sent(SendType::Shield) => {
                     // create 1 shielding value transfer for each pool shielded to
-                    if !transaction.orchard_notes.is_empty() {
-                        let value: u64 = transaction
-                            .orchard_notes
-                            .iter()
-                            .map(|output| output.value)
-                            .sum();
-                        let memos: Vec<String> = transaction
-                            .orchard_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::Shield,
-                            )),
-                            value,
-                            recipient_address: None,
-                            pool_received: Some(PoolType::ORCHARD.to_string()),
-                            memos,
-                        });
-                    }
-                    if !transaction.sapling_notes.is_empty() {
-                        let value: u64 = transaction
-                            .sapling_notes
-                            .iter()
-                            .map(|output| output.value)
-                            .sum();
-                        let memos: Vec<String> = transaction
-                            .sapling_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::Shield,
-                            )),
-                            value,
-                            recipient_address: None,
-                            pool_received: Some(PoolType::SAPLING.to_string()),
-                            memos,
-                        });
-                    }
+                    value_transfers.extend(shielded_pool_value_transfers(
+                        &transaction,
+                        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                            SelfSendValueTransfer::Shield,
+                        )),
+                    ));
                 }
                 TransactionKind::Sent(SendType::SendToSelf) => {
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
                     // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
-                    if transaction
-                        .orchard_notes
-                        .iter()
-                        .any(|note| note.memo.is_some())
-                        || transaction
-                            .sapling_notes
-                            .iter()
-                            .any(|note| note.memo.is_some())
-                    {
-                        let memos: Vec<String> = transaction
-                            .orchard_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .chain(
-                                transaction
-                                    .sapling_notes
-                                    .iter()
-                                    .filter_map(|note| note.memo.clone()),
-                            )
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::MemoToSelf,
-                            )),
-                            value: 0,
-                            recipient_address: None,
-                            pool_received: None,
-                            memos,
-                        });
+                    let memos = transaction.received_memos();
+                    let self_send_kind = if memos.is_empty() {
+                        SelfSendValueTransfer::Basic
                     } else {
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::Basic,
-                            )),
-                            value: 0,
-                            recipient_address: None,
-                            pool_received: None,
-                            memos: Vec::new(),
-                        });
-                    }
+                        SelfSendValueTransfer::MemoToSelf
+                    };
+                    value_transfers.push(ValueTransfer::from_summary(
+                        &transaction,
+                        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(self_send_kind)),
+                        0,
+                        None,
+                        transaction.pools_received(),
+                        memos,
+                    ));
 
                     // in the case Zennies For Zingo! is active
                     value_transfers.append(&mut self.create_send_value_transfers(&transaction)?);
                 }
                 TransactionKind::Received => {
                     // create 1 received value transfer for each pool received to
-                    if !transaction.orchard_notes.is_empty() {
-                        let value: u64 = transaction
-                            .orchard_notes
-                            .iter()
-                            .map(|output| output.value)
-                            .sum();
-                        let memos: Vec<String> = transaction
-                            .orchard_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Received,
-                            value,
-                            recipient_address: None,
-                            pool_received: Some(PoolType::ORCHARD.to_string()),
-                            memos,
-                        });
-                    }
-                    if !transaction.sapling_notes.is_empty() {
-                        let value: u64 = transaction
-                            .sapling_notes
-                            .iter()
-                            .map(|output| output.value)
-                            .sum();
-                        let memos: Vec<String> = transaction
-                            .sapling_notes
-                            .iter()
-                            .filter_map(|note| note.memo.clone())
-                            .collect();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Received,
-                            value,
-                            recipient_address: None,
-                            pool_received: Some(PoolType::SAPLING.to_string()),
-                            memos,
-                        });
-                    }
+                    value_transfers.extend(shielded_pool_value_transfers(
+                        &transaction,
+                        ValueTransferKind::Received,
+                    ));
                     if !transaction.transparent_coins.is_empty() {
                         let value: u64 = transaction
                             .transparent_coins
                             .iter()
                             .map(|output| output.value)
                             .sum();
-                        value_transfers.push(ValueTransfer {
-                            txid: transaction.txid,
-                            datetime: transaction.datetime,
-                            status: transaction.status,
-                            blockheight: transaction.blockheight,
-                            transaction_fee: transaction.fee,
-                            zec_price: transaction.zec_price,
-                            kind: ValueTransferKind::Received,
+                        value_transfers.push(ValueTransfer::from_summary(
+                            &transaction,
+                            ValueTransferKind::Received,
                             value,
-                            recipient_address: None,
-                            pool_received: Some(PoolType::TRANSPARENT.to_string()),
-                            memos: Vec::new(),
-                        });
+                            None,
+                            vec![PoolType::TRANSPARENT],
+                            Vec::new(),
+                        ));
                     }
                 }
             }
@@ -673,15 +594,20 @@ impl LightWallet {
         transaction: &TransactionSummary,
     ) -> Result<Vec<ValueTransfer>, KeyError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let outgoing_notes = transaction
-            .outgoing_orchard_notes
-            .iter()
-            .chain(transaction.outgoing_sapling_notes.iter())
+        let outgoing_notes = tag_pool(&transaction.outgoing_ironwood_notes, PoolType::IRONWOOD)
+            .chain(tag_pool(
+                &transaction.outgoing_orchard_notes,
+                PoolType::ORCHARD,
+            ))
+            .chain(tag_pool(
+                &transaction.outgoing_sapling_notes,
+                PoolType::SAPLING,
+            ))
             .collect::<Vec<_>>();
         let outgoing_coins = &transaction.outgoing_transparent_coins;
         let mut addresses = HashSet::new();
 
-        outgoing_notes.iter().try_for_each(|&note| {
+        outgoing_notes.iter().try_for_each(|&(note, _)| {
             if note.scope == Scope::External && self.is_wallet_address(&note.recipient)?.is_none() {
                 let encoded_address = note
                     .recipient_unified_address
@@ -702,9 +628,9 @@ impl LightWallet {
         let mut addresses = addresses.into_iter().collect::<Vec<_>>();
         addresses.sort();
         for address in addresses {
-            let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
+            let outgoing_notes_to_address: Vec<(&OutgoingNoteSummary, PoolType)> = outgoing_notes
                 .iter()
-                .filter(|&&note| {
+                .filter(|&&(note, _)| {
                     let query_address = if let Some(ua) = note.recipient_unified_address.clone() {
                         ua
                     } else {
@@ -720,26 +646,32 @@ impl LightWallet {
                 .collect();
             let value: u64 = outgoing_notes_to_address
                 .iter()
-                .map(|&note| note.value)
+                .map(|&(note, _)| note.value)
                 .chain(outgoing_coins_to_address.iter().map(|&coin| coin.value))
                 .sum();
             let memos: Vec<String> = outgoing_notes_to_address
                 .iter()
-                .filter_map(|&note| note.memo.clone())
+                .filter_map(|&(note, _)| note.memo.clone())
                 .collect();
-            value_transfers.push(ValueTransfer {
-                txid: transaction.txid,
-                datetime: transaction.datetime,
-                status: transaction.status,
-                blockheight: transaction.blockheight,
-                transaction_fee: transaction.fee,
-                zec_price: transaction.zec_price,
-                kind: ValueTransferKind::Sent(SentValueTransfer::Send),
+            let has_notes_in = |pool: PoolType| {
+                outgoing_notes_to_address
+                    .iter()
+                    .any(|&(_, note_pool)| note_pool == pool)
+            };
+            let pools_received = pools_present([
+                !outgoing_coins_to_address.is_empty(),
+                has_notes_in(PoolType::SAPLING),
+                has_notes_in(PoolType::ORCHARD),
+                has_notes_in(PoolType::IRONWOOD),
+            ]);
+            value_transfers.push(ValueTransfer::from_summary(
+                transaction,
+                ValueTransferKind::Sent(SentValueTransfer::Send),
                 value,
-                recipient_address: Some(address),
-                pool_received: None,
+                Some(address),
+                pools_received,
                 memos,
-            });
+            ));
         }
 
         Ok(value_transfers)
@@ -750,7 +682,9 @@ impl LightWallet {
 mod tests {
     use std::str::FromStr as _;
 
-    use pepper_sync::wallet::{OrchardNote, OutgoingOrchardNote, OutputId, WalletTransaction};
+    use pepper_sync::wallet::{
+        IronwoodNote, OrchardNote, OutgoingIronwoodNote, OutputId, WalletTransaction,
+    };
     use zcash_primitives::transaction::TxId;
     use zcash_protocol::memo::Memo;
     use zingo_common_components::protocol::ActivationHeights;
@@ -786,14 +720,14 @@ mod tests {
 
     fn received(txid_byte: u8, height: u32, memos: &[&str]) -> WalletTransaction {
         let txid = TxId::from_bytes([txid_byte; 32]);
-        WalletTransaction::new_for_test_with_orchard_notes(
+        WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(height.into()),
             memos
                 .iter()
                 .enumerate()
                 .map(|(index, memo)| {
-                    OrchardNote::new_for_test(
+                    IronwoodNote::new_for_test(
                         OutputId::new(txid, index as u32),
                         zip32::AccountId::ZERO,
                         zip32::Scope::External,
@@ -814,11 +748,11 @@ mod tests {
         memo: &str,
     ) -> WalletTransaction {
         let txid = TxId::from_bytes([txid_byte; 32]);
-        WalletTransaction::new_for_test_with_orchard_notes(
+        WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(height.into()),
             vec![],
-            vec![OutgoingOrchardNote::new_for_test(
+            vec![OutgoingIronwoodNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
@@ -950,14 +884,14 @@ mod tests {
         };
 
         let txid = TxId::from_bytes([1; 32]);
-        let transaction = WalletTransaction::new_for_test_with_orchard_notes(
+        let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(10.into()),
             vec![],
             vec![
                 // The send-to-self output: recipient is one of the wallet's
                 // own orchard receivers.
-                OutgoingOrchardNote::new_for_test(
+                OutgoingIronwoodNote::new_for_test(
                     OutputId::new(txid, 0),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -968,7 +902,7 @@ mod tests {
                     None,
                 ),
                 // The Zennies-for-Zingo output.
-                OutgoingOrchardNote::new_for_test(
+                OutgoingIronwoodNote::new_for_test(
                     OutputId::new(txid, 1),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -991,6 +925,96 @@ mod tests {
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
+    /// A send value transfer exposes the pools the recipient's outputs
+    /// landed in, letting consumers label which pool a payment was
+    /// delivered to. The funding side (`pools_sent_from`) needs real spend
+    /// links, so it is pinned by the chain-bound tests in libtonode.
+    #[tokio::test]
+    async fn send_exposes_recipient_pools_received() {
+        use zcash_protocol::PoolType;
+
+        let mut alice_wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let mut other_wallet = regtest_wallet(seeds::ABANDON_ART_SEED);
+        let (_, bob) = other_wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+
+        alice_wallet
+            .wallet_transactions
+            .insert(TxId::from_bytes([1; 32]), sent(1, 10, &bob, "hi Bob"));
+
+        let value_transfers = alice_wallet.value_transfers(true).await.unwrap();
+
+        let send = value_transfers
+            .iter()
+            .find(|vt| vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send))
+            .unwrap();
+        assert_eq!(send.pools_received, [PoolType::IRONWOOD]);
+        assert!(send.pools_sent_from.is_empty());
+    }
+
+    /// A send-to-self value transfer exposes the pools its value arrived
+    /// into (here: ironwood), letting consumers label pool movements such
+    /// as an orchard -> ironwood migration outside zingolib. The funding
+    /// side (`pools_sent_from`) needs real spend links, so it is pinned by
+    /// the chain-bound shield tests in libtonode instead.
+    #[tokio::test]
+    async fn send_to_self_exposes_pools_received() {
+        use zcash_protocol::PoolType;
+
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+        let own_orchard_receiver = *wallet
+            .unified_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .orchard()
+            .unwrap();
+
+        let txid = TxId::from_bytes([1; 32]);
+        let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
+            txid,
+            ConfirmationStatus::Confirmed(10.into()),
+            // The self-received output, landing in the ironwood pool.
+            vec![IronwoodNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::Internal,
+                OrchardCryptoNoteBuilder::default().build(),
+                Memo::Empty,
+                None,
+            )],
+            // The outgoing view of the same output: recipient is one of
+            // the wallet's own receivers, making the transaction a
+            // send-to-self.
+            vec![OutgoingIronwoodNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                OrchardCryptoNoteBuilder::default()
+                    .recipient(own_orchard_receiver)
+                    .build(),
+                Memo::Empty,
+                None,
+            )],
+        );
+        wallet.wallet_transactions.insert(txid, transaction);
+
+        let value_transfers = wallet.value_transfers(true).await.unwrap();
+
+        let self_send = value_transfers
+            .iter()
+            .find(|vt| {
+                vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Basic,
+                    ))
+            })
+            .unwrap();
+        assert_eq!(self_send.pools_received, [PoolType::IRONWOOD]);
+        assert!(self_send.pools_sent_from.is_empty());
+    }
+
     /// Migrated from libtonode
     /// `fast::spendable_balance_includes_notes_in_incomplete_shards`: the
     /// property is spendable-balance composition over wallet state — a
@@ -1006,7 +1030,7 @@ mod tests {
         use incrementalmerkletree::Position;
         use orchard::value::NoteValue;
         use pepper_sync::sync::{ScanPriority, ScanRange};
-        use pepper_sync::wallet::{OrchardNote as OrchardWalletNote, SyncState};
+        use pepper_sync::wallet::SyncState;
         use zcash_protocol::consensus::BlockHeight;
 
         let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
@@ -1033,10 +1057,10 @@ mod tests {
         let txid = TxId::from_bytes([1; 32]);
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            WalletTransaction::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(10.into()),
-                vec![OrchardWalletNote::new_for_test(
+                vec![IronwoodNote::new_for_test(
                     OutputId::new(txid, 0),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1052,7 +1076,7 @@ mod tests {
 
         assert_eq!(
             wallet
-                .spendable_balance::<pepper_sync::wallet::OrchardNote>(
+                .spendable_balance::<pepper_sync::wallet::IronwoodNote>(
                     zip32::AccountId::ZERO,
                     false
                 )
@@ -1326,7 +1350,11 @@ mod tests {
                 .wallet_transactions
                 .get_mut(&sent_txid)
                 .unwrap()
-                .update_status(ConfirmationStatus::Confirmed(5.into()), crate::utils::now());
+                .update_status(
+                    ConfirmationStatus::Confirmed(5.into()),
+                    crate::utils::now(),
+                    false,
+                );
         }
         {
             let wallet = client.wallet().read().await;
@@ -1353,11 +1381,12 @@ mod tests {
         let value = 100_000;
         let wallet = SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(value)
+            .ironwood_note(value)
             .sapling_note(value)
             .transparent_coin(value)
             .build();
         let client = LightClient::new_for_test(wallet).await;
-        check_client_balances!(client, o: value s: value t: value);
+        check_client_balances!(client, i: value o: value s: value t: value);
     }
 
     /// Migrated from libtonode `slow::by_address_finsight`: the
@@ -1406,7 +1435,7 @@ mod tests {
     async fn value_transfers_aggregation_and_ordering() {
         use incrementalmerkletree::Position;
         use orchard::value::NoteValue;
-        use pepper_sync::wallet::{OrchardNote, OutputId};
+        use pepper_sync::wallet::OutputId;
         use std::str::FromStr as _;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
@@ -1417,7 +1446,7 @@ mod tests {
         let txid = TxId::from_bytes([1; 32]);
         let notes = (0..4u64)
             .map(|index| {
-                OrchardNote::new_for_test(
+                IronwoodNote::new_for_test(
                     OutputId::new(txid, u32::try_from(index).unwrap()),
                     zip32::AccountId::ZERO,
                     zip32::Scope::External,
@@ -1431,7 +1460,7 @@ mod tests {
             .collect::<Vec<_>>();
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            WalletTransaction::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(4.into()),
                 notes,
@@ -1442,7 +1471,7 @@ mod tests {
         // ordering assertions exercise a non-trivial sort.
         for (txid_byte, height) in [(2u8, 5u32), (3, 6)] {
             let txid = TxId::from_bytes([txid_byte; 32]);
-            let note = OrchardNote::new_for_test(
+            let note = IronwoodNote::new_for_test(
                 OutputId::new(txid, 0),
                 zip32::AccountId::ZERO,
                 zip32::Scope::External,
@@ -1454,7 +1483,7 @@ mod tests {
             );
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_orchard_notes(
+                WalletTransaction::new_for_test_with_ironwood_notes(
                     txid,
                     ConfirmationStatus::Confirmed(height.into()),
                     vec![note],

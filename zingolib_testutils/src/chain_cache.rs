@@ -131,7 +131,15 @@ impl CacheManifest {
         stage: CachedStage,
     ) -> Self {
         CacheManifest(serde_json::json!({
-            "schema": 2,
+            // Schema 3 (2026-07-17): the drain rewrite changed cached-chain
+            // SEMANTICS (self-send → orchard drain) without changing any
+            // manifest key, and pre-drain caches replayed as green-shaped
+            // chains against post-drain expectations for a full day of
+            // misdiagnosis. Any change to what setup writes into the chain
+            // must bump `setup_semantics` (or the schema), so stale caches
+            // self-discard instead of impersonating current behavior.
+            "schema": 3,
+            "setup_semantics": "offload+drain-v1",
             "validator": std::any::type_name::<crate::scenarios::network_combo::DefaultValidator>(),
             "indexer": std::any::type_name::<crate::scenarios::network_combo::DefaultIndexer>(),
             "stage": format!("{stage:?}"),

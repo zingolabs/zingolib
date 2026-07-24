@@ -45,9 +45,18 @@ use pepper_sync::{
 impl LightWallet {
     /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
+    ///
+    /// Changes in version 42:
+    /// Optional Orchard→Ironwood migration section appended (see
+    /// [`crate::wallet::migration::store`]; the section carries its own inner
+    /// version). (A pre-release revision of 42 also wrote an
+    /// `allow_v6_transactions` bool after `min_confirmations`; the setting
+    /// was removed before any release carried it, so version 42 is defined
+    /// without the byte and files from those testing builds are not
+    /// readable.)
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        41
+        42
     }
 
     /// Serialize into `writer`
@@ -123,7 +132,10 @@ impl LightWallet {
         self.sync_state.write(&mut writer)?;
         self.wallet_settings.sync_config.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
-        self.price_list.write(&mut writer)
+        self.price_list.write(&mut writer)?;
+        Optional::write(&mut writer, self.migration.as_ref(), |w, migration| {
+            crate::wallet::migration::store::write(w, migration)
+        })
     }
 
     /// Deserialize into `reader`
@@ -133,7 +145,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=41 => Self::read_v32(reader, chain_type, version),
+            32..=42 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -346,6 +358,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             chain_type,
+            migration: None,
             send_proposal: None,
             save_required: false,
             wallet_settings: WalletSettings {
@@ -571,14 +584,16 @@ impl LightWallet {
         let sync_state = SyncState::read(&mut reader)?;
 
         let wallet_settings = if version >= 33 {
+            let sync_config = SyncConfig::read(&mut reader)?;
+            let min_confirmations = if version >= 38 {
+                NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
+                    .expect("only valid non-zero u32s stored")
+            } else {
+                NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
+            };
             WalletSettings {
-                sync_config: SyncConfig::read(&mut reader)?,
-                min_confirmations: if version >= 38 {
-                    NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
-                        .expect("only valid non-zero u32s stored")
-                } else {
-                    NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
-                },
+                sync_config,
+                min_confirmations,
             }
         } else {
             WalletSettings {
@@ -594,6 +609,12 @@ impl LightWallet {
             PriceList::read(&mut reader)?
         } else {
             PriceList::new()
+        };
+
+        let migration = if version >= 42 {
+            Optional::read(&mut reader, crate::wallet::migration::store::read)?
+        } else {
+            None
         };
 
         Ok(Self {
@@ -613,6 +634,7 @@ impl LightWallet {
             sync_state,
             wallet_settings,
             price_list,
+            migration,
             send_proposal: None,
             save_required: false,
         })

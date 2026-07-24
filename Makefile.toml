@@ -59,7 +59,7 @@ Common usage:
   cargo make container-test
 
 The container-test task runs tests inside a reproducible container image:
-  cargo nextest run --verbose --workspace --profile ci --retries 0
+  cargo nextest run --workspace --profile ci --retries 0
 
 Build or refresh the local image:
   makers build-image
@@ -68,7 +68,7 @@ Run the same nextest command on the host:
   makers local-run
 
 The local-run task mirrors the PR test defaults:
-  cargo nextest run --verbose --workspace --profile ci --retries 0
+  cargo nextest run --workspace --profile ci --retries 0
 
 Forward extra nextest flags after the task name:
   makers container-test -p zingo-memo
@@ -154,7 +154,6 @@ append_workspace_default() {
 nextest_args() {
   local -a extra_args=("$@")
   local -a args=(
-    --verbose
     --profile "${ZINGOLIB_NEXTEST_PROFILE}"
     --retries "${ZINGOLIB_NEXTEST_RETRIES}"
   )
@@ -179,6 +178,20 @@ container_nextest_run() {
   local -a args
   mapfile -t args < <(nextest_args "$@")
 
+  # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
+  # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
+  # a set-but-empty variable in the container — and never forward an
+  # empty value either: an empty (or restrictive) RUST_LOG silences
+  # zainod's "Syncing block" markers, hanging the harness's
+  # log-contract convergence barrier (2026-07-20 stall forensics).
+  local -a forwarded_env=()
+  if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
+    forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
+  fi
+  if [[ -n "${RUST_LOG:-}" ]]; then
+    forwarded_env+=(-e RUST_LOG)
+  fi
+
   "${runtime}" run --rm --init \
     --pids-limit -1 \
     -v "${PWD}:/workspace" \
@@ -187,6 +200,7 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
+    "${forwarded_env[@]}" \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
@@ -240,7 +254,9 @@ echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "ZAINO_IMAGE_DIGEST=${ZAINO_IMAGE_DIGEST}" \
   --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
+  --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
@@ -300,11 +316,18 @@ container_nextest_run "$@"
 #   makers test packages       every workspace package EXCEPT the live ones
 #   makers test live            ONLY the live packages
 #
-# The live-package list is defined once (live_packages, below); `packages`
-# derives its exclusions from it and `live` derives its selections from it,
-# so the partition cannot drift. Explicit package-selection args replace a
-# set's scope entirely — cargo silently ignores `-p` when `--workspace` is
-# present, so merging them would swallow the user's selection.
+# The live-package list is defined once (live_packages, below); both reserved
+# words derive nextest FILTERSETS from it, so the partition cannot drift.
+# Filtersets rather than package selections, deliberately: every invocation
+# keeps the same `--workspace` build scope, cargo unifies features
+# identically, and every phase of `makers hierarchy-test` reuses ONE
+# compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
+# features per selection and compiles a distinct zingolib variant per phase.
+# Explicit package-selection args still replace a set's scope entirely —
+# cargo silently ignores `-p` when `--workspace` is present, so merging
+# them would swallow the user's selection. Caveat: combining a reserved
+# word with your own `-E` unions the two filtersets (nextest semantics);
+# for intersection, pass one full expression to plain `makers test -E`.
 # ===================================================================
 
 [tasks.test]
@@ -319,16 +342,22 @@ script.main = '''
 # for the packages/live partition.
 live_packages=(libtonode-tests zingo-cli)
 
+# The filterset matching every live package's tests; its negation is the
+# hermetic remainder. Space-free, so each expression rides as one argv token.
+live_filter=""
+for pkg in "${live_packages[@]}"; do
+  live_filter+="${live_filter:+|}package(${pkg})"
+done
+
 set_args=()
 if [[ "$#" -gt 0 ]]; then
   case "$1" in
     packages)
       shift
-      set_args+=(--workspace)
-      for pkg in "${live_packages[@]}"; do set_args+=(--exclude "${pkg}"); done ;;
+      set_args+=(--workspace -E "!(${live_filter})") ;;
     live)
       shift
-      for pkg in "${live_packages[@]}"; do set_args+=(--package "${pkg}"); done ;;
+      set_args+=(--workspace -E "${live_filter}") ;;
   esac
 fi
 

@@ -41,9 +41,74 @@ pub enum LightClientError {
     /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// Ironwood migration error.
+    #[error("Ironwood migration error. {0}")]
+    MigrationError(#[from] MigrationError),
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
+}
+
+/// Errors from the Orchard→Ironwood migration entry points
+/// ([`crate::lightclient::LightClient`] methods backed by
+/// [`crate::wallet::migration`]). Plain-data payloads so an FFI layer can
+/// map each variant mechanically.
+#[derive(Debug, thiserror::Error)]
+pub enum MigrationError {
+    /// An operation needed a migration and none is in progress.
+    #[error("No migration in progress.")]
+    NoMigration,
+    /// A second migration was started while one is in progress.
+    #[error("A migration is already in progress.")]
+    AlreadyInProgress,
+    /// ZIP 244 folds the anchor into the signature hash, so a transaction
+    /// signed ahead of its boundary commits to the wrong anchor.
+    #[error(
+        "The pre-signed strategy is unavailable until the Ironwood transaction digest excludes the anchor from the signature hash."
+    )]
+    PreSignedUnavailable,
+    /// The wallet's notes changed between planning and consent, so the
+    /// consented plan no longer describes what would be sent.
+    #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
+    ConsentStale,
+    /// Note splitting kept producing new rounds past the round bound.
+    #[error("Migration did not converge within {0} rounds.")]
+    SplitDidNotConverge(usize),
+    /// A note-splitting transaction failed or disappeared from the wallet.
+    #[error("Note-splitting transaction {0} failed or disappeared.")]
+    SplitTransactionFailed(TxId),
+    /// Note-splitting transactions were not confirmed within the polling
+    /// window.
+    #[error("Timed out waiting for note-splitting transactions to confirm.")]
+    SplitConfirmationTimeout,
+    /// The scheduled flow was asked to start over a plan that still needs
+    /// note splitting, which no scheduled-flow driver executes yet.
+    #[error(
+        "The wallet's notes need splitting before a scheduled migration, and the scheduled flow \
+         does not drive note splitting yet. Run the immediate migration instead."
+    )]
+    NoteSplittingRequired,
+    /// The one-call immediate path found a consented scheduled migration
+    /// and must not collapse its schedule.
+    #[error(
+        "A consented scheduled migration is in progress. Let it run (auto broadcasting), advance \
+         it with catch-up, or cancel it before an immediate migration."
+    )]
+    ScheduledMigrationExists,
+    /// The migration in progress belongs to a different account.
+    #[error("The migration in progress belongs to a different account.")]
+    DifferentAccount,
+    /// An immediate migration part anchors at the current bucket's
+    /// boundary, and the first boundary at or above the NU6.3 activation
+    /// has not opened yet: no anchor exists for the part to commit to.
+    #[error(
+        "The first post-activation bucket boundary (height {retry_after}) has not opened yet. \
+         Retry after it."
+    )]
+    ActivationBoundaryPending {
+        /// The first bucket boundary an Ironwood part can anchor to.
+        retry_after: zcash_protocol::consensus::BlockHeight,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]

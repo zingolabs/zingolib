@@ -200,7 +200,12 @@ impl SyncBlocks for MockWallet {
         &self,
         block_height: BlockHeight,
     ) -> Result<crate::wallet::WalletBlock, Self::Error> {
-        todo!()
+        self.wallet_blocks
+            .get(&block_height)
+            .cloned()
+            .ok_or_else(|| {
+                MockWalletError::AnErrorVariant(format!("no wallet block at {block_height}"))
+            })
     }
 
     fn get_wallet_blocks_mut(
