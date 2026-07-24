@@ -34,6 +34,7 @@ jobs:
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -150,6 +151,7 @@ jobs:
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings

@@ -21,6 +21,7 @@ jobs:
     container:
       image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
@@ -59,6 +60,7 @@ jobs:
   run-tests:
     name: Run normal tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     if: github.event.pull_request.draft == false
     needs: [build-test-artifacts, compute-image-tag]
     env:
