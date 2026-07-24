@@ -37,6 +37,48 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
+/// The cadence of the transmit heartbeat. A transmission can legitimately run
+/// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
+/// rounds, queued-verdict probes), so every transmitting command prints the
+/// transmission's latest progress line at this interval while it waits. A send
+/// that completes before the first tick stays silent.
+const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Awaits `operation`, emitting a heartbeat every
+/// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` — the
+/// transmit-progress side channel `operation` narrates into — plus the elapsed
+/// seconds. `emit` is injected so tests capture the lines; production prints
+/// them to STDERR, never stdout — command results own stdout, so a scripted
+/// `zingo-cli ... quicksend | jq` stays parseable however slow the send
+/// (PR #2470 review, M5). Grab the progress handle *before* building
+/// `operation`, which borrows the client mutably.
+async fn with_transmit_heartbeat<T>(
+    label: &str,
+    latest: impl Fn() -> Option<String>,
+    mut emit: impl FnMut(String),
+    operation: impl Future<Output = T>,
+) -> T {
+    let started = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval_at(
+        started + TRANSMIT_HEARTBEAT_INTERVAL,
+        TRANSMIT_HEARTBEAT_INTERVAL,
+    );
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut operation = std::pin::pin!(operation);
+    loop {
+        tokio::select! {
+            output = &mut operation => return output,
+            _ = ticker.tick() => {
+                let detail = latest().unwrap_or_else(|| "transmitting".to_string());
+                emit(format!(
+                    "{label}: {detail} ({}s elapsed)",
+                    started.elapsed().as_secs()
+                ));
+            }
+        }
+    }
+}
+
 /// Typed failure of a CLI command. `do_user_command` remains the single
 /// site that renders these to prose for string frontends; typed
 /// frontends consume them directly via `do_user_command_result`.
@@ -44,6 +86,8 @@ pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new
 pub enum CommandError {
     #[error(transparent)]
     Migration(#[from] MigrationCommandError),
+    #[error(transparent)]
+    Nym(#[from] NymCommandError),
     /// Transitional quarantine for commands whose failure prose is not
     /// yet typed: the message is stored WITHOUT the "Error: " prefix
     /// (the renderer adds it). Every construction site is a candidate
@@ -638,8 +682,11 @@ impl Command for CurrentPriceCommand {
             Updates and returns current price of ZEC.
             Currently only supports USD.
 
-            To fetch prices via tor, it must be enabled with the `--tor` flag on startup.
-            Tor is used to protect the user's IP address but may be unlawful in some countries. Use at your own discretion.
+            The price fetch has no clearnet tier: it travels ONLY over the Nym
+            mixnet, which hides the client IP from the price source. It requires
+            a build with the `nym` feature and Mixnet Mode ready (see the `nym`
+            command); while the mixnet bootstraps, or when Mixnet Mode is off,
+            the fetch is refused rather than sent over clearnet.
 
             Usage:
             current_price
@@ -653,18 +700,399 @@ impl Command for CurrentPriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
-            match lightclient
-                .wallet()
-                .write()
-                .await
-                .update_current_price()
-                .await
-            {
+            match lightclient.update_current_price().await {
                 Ok(price) => format!("current price: {price}"),
                 Err(e) => format!("error: {e}"),
             }
         }))
     }
+}
+
+struct NymCommand {}
+impl Command for NymCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Control the Nym mixnet transport for send and price-fetch.
+
+            Usage:
+            nym status            Report whether the mixnet is off, bootstrapping, or ready.
+            nym on [binary_path]  Start the bundled nym-proxy child and enable Mixnet Mode.
+                                  With no path: $ZINGO_NYM_PROXY, else a nym-proxy
+                                  bundled beside this binary, else `nym-proxy` on PATH.
+            nym off               Disable Mixnet Mode; send and price-fetch use clearnet.
+            nym probe [uri]       Diagnostic: run GetLightdInfo against every Broadcast
+                                  Indexer (or just the given uri) over BOTH clearnet and
+                                  the mixnet, side by side, to discern whether a failure
+                                  is mixnet-specific. The clearnet leg contacts indexers
+                                  from your real IP.
+            nym history           Per-indexer attempt history accumulated across
+                                  sessions: sends and probes, per route. Recording
+                                  needs the nym-diary build feature plus the
+                                  per-session --indexer-diary opt-in; the diary
+                                  stores hosts, timings, and a failure category,
+                                  never server text, and is capped.
+
+            When Mixnet Mode is on, send and price-fetch route over the mixnet and
+            fail closed while it is still bootstrapping, never falling back to
+            clearnet silently. Disabling is a deliberate, per-session choice to
+            transmit over clearnet.
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Control the Nym mixnet transport (on/off/status/probe/history)."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(nym_command(args, lightclient)?)
+    }
+}
+
+/// Resolve the `nym-proxy` binary path, in precedence order: an explicit value,
+/// then `$ZINGO_NYM_PROXY`, then a `nym-proxy` bundled beside the running
+/// executable (the `bundle-nym-proxy` workbench tool puts it there, so a
+/// packaged wallet needs no configuration), then the bare name `nym-proxy`
+/// resolved on PATH. Shared by the `nym on` command and the forced-on-at-startup
+/// policy.
+#[cfg(feature = "nym")]
+pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
+    choose_proxy_path(
+        explicit,
+        std::env::var("ZINGO_NYM_PROXY").ok(),
+        bundled_proxy_path(),
+    )
+}
+
+/// The pure precedence core of [`resolve_proxy_path`]: given the three
+/// candidate sources already gathered from the environment, pick the path.
+/// An empty explicit or environment value counts as absent.
+#[cfg(feature = "nym")]
+fn choose_proxy_path(
+    explicit: Option<&str>,
+    env_value: Option<String>,
+    bundled: Option<String>,
+) -> String {
+    if let Some(path) = explicit.filter(|p| !p.is_empty()) {
+        return path.to_string();
+    }
+    if let Some(path) = env_value.filter(|p| !p.is_empty()) {
+        return path;
+    }
+    if let Some(bundled) = bundled {
+        return bundled;
+    }
+    "nym-proxy".to_string()
+}
+
+/// The `nym-proxy` binary sitting next to the running executable, if present.
+/// This is where the `bundle-nym-proxy` workbench tool places it.
+#[cfg(feature = "nym")]
+fn bundled_proxy_path() -> Option<String> {
+    let executable = std::env::current_exe().ok()?;
+    let candidate = executable
+        .parent()?
+        .join(format!("nym-proxy{}", std::env::consts::EXE_SUFFIX));
+    candidate
+        .is_file()
+        .then(|| candidate.to_string_lossy().into_owned())
+}
+
+/// Typed failure of the `nym` command family. Each variant exists only in
+/// the build that can produce it, so the enum's shape follows the feature.
+#[derive(Debug, thiserror::Error)]
+pub enum NymCommandError {
+    #[cfg(feature = "nym")]
+    #[error(
+        "unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off | \
+         nym probe [uri] | nym history"
+    )]
+    UnknownSubCommand(String),
+    #[cfg(feature = "nym")]
+    #[error("'{0}' is not a valid indexer uri to probe")]
+    InvalidProbeTarget(String),
+    #[cfg(not(feature = "nym"))]
+    #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
+    FeatureAbsent,
+    #[cfg(feature = "nym")]
+    #[error("failed to start the nym proxy at '{path}': {source}")]
+    ProxyStart {
+        path: String,
+        source: zingolib::nym::MixnetProxyError,
+    },
+}
+
+/// The nym family's typed request: arguments parse completely into this
+/// enum before any wallet access.
+#[cfg(feature = "nym")]
+#[derive(Debug, PartialEq, Eq)]
+enum NymSubCommand {
+    Status,
+    On { path: Option<String> },
+    Off,
+    Probe { target: Option<http::Uri> },
+    History,
+}
+
+#[cfg(feature = "nym")]
+fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
+    match args.first().copied() {
+        None | Some("status") => Ok(NymSubCommand::Status),
+        Some("on") => Ok(NymSubCommand::On {
+            path: args.get(1).map(|path| path.to_string()),
+        }),
+        Some("off") => Ok(NymSubCommand::Off),
+        Some("probe") => {
+            let target = args
+                .get(1)
+                .map(|raw| {
+                    let uri = raw
+                        .parse::<http::Uri>()
+                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))?;
+                    // https-only: the mixnet leg refuses a plaintext target at
+                    // dial time, so reject it up front with a clear message.
+                    if uri.scheme_str() != Some("https") {
+                        return Err(NymCommandError::InvalidProbeTarget(format!(
+                            "{raw} (indexers must be https)"
+                        )));
+                    }
+                    Ok(uri)
+                })
+                .transpose()?;
+            Ok(NymSubCommand::Probe { target })
+        }
+        Some("history") => Ok(NymSubCommand::History),
+        Some(other) => Err(NymCommandError::UnknownSubCommand(other.to_string())),
+    }
+}
+
+/// How long each probe leg may take. Generous for the mixnet leg's tunnel
+/// establishment; a hanging exit is reported as a timeout, not waited out.
+#[cfg(feature = "nym")]
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Render one paired probe: the two legs side by side, so a mixnet-specific
+/// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
+/// unit tests.
+#[cfg(feature = "nym")]
+fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
+    let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
+        Ok(summary) => format!("ok in {}ms — {summary}", leg.millis),
+        Err(detail) => format!("FAILED after {}ms — {detail}", leg.millis),
+    };
+    let mixnet = match &probe.mixnet {
+        Some(mixnet_leg) => leg(mixnet_leg),
+        None => "skipped (mixnet proxy not ready)".to_string(),
+    };
+    format!(
+        "{}\n  clearnet: {}\n  mixnet:   {}",
+        probe.host,
+        leg(&probe.clearnet),
+        mixnet
+    )
+}
+
+/// The `nym history` body when the indexer diary is compiled in: render the
+/// accumulated record, and remind an opted-out session how recording starts.
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
+fn nym_history_command(lightclient: &LightClient) -> String {
+    let handle = lightclient.indexer_history_handle();
+    let mut rendered = render_history(
+        &handle.load(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0),
+    );
+    if !handle.is_recording() {
+        rendered.push_str("\n(recording is off this session; start with --indexer-diary)");
+    }
+    rendered
+}
+
+/// The `nym history` body when the indexer diary is not compiled in.
+#[cfg(all(feature = "nym", not(feature = "nym-diary")))]
+fn nym_history_command(_lightclient: &LightClient) -> String {
+    "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
+     opt a session in with --indexer-diary to record per-indexer history."
+        .to_string()
+}
+
+/// Render the accumulated per-indexer history as per-host, per-route
+/// aggregates, most-attempted hosts first. Pure over the loaded attempts and
+/// a caller-supplied "now" so tests pin the ages.
+#[cfg(all(feature = "nym", feature = "nym-diary"))]
+fn render_history(
+    attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
+    now_unix_secs: u64,
+) -> String {
+    use std::collections::BTreeMap;
+
+    use zingolib::lightclient::indexer_history::AttemptRoute;
+
+    if attempts.is_empty() {
+        return "No indexer history recorded yet.".to_string();
+    }
+
+    struct RouteStats {
+        attempts: usize,
+        ok: usize,
+        last_unix_secs: u64,
+        last_ok: bool,
+    }
+    let mut hosts: BTreeMap<String, BTreeMap<&'static str, RouteStats>> = BTreeMap::new();
+    for attempt in attempts {
+        let route = match attempt.route {
+            AttemptRoute::Clearnet => "clearnet",
+            AttemptRoute::Mixnet => "mixnet",
+        };
+        let stats = hosts
+            .entry(attempt.host.clone())
+            .or_default()
+            .entry(route)
+            .or_insert(RouteStats {
+                attempts: 0,
+                ok: 0,
+                last_unix_secs: 0,
+                last_ok: false,
+            });
+        stats.attempts += 1;
+        if attempt.outcome.is_ok() {
+            stats.ok += 1;
+        }
+        if attempt.unix_secs >= stats.last_unix_secs {
+            stats.last_unix_secs = attempt.unix_secs;
+            stats.last_ok = attempt.outcome.is_ok();
+        }
+    }
+
+    let age = |unix_secs: u64| -> String {
+        let elapsed = now_unix_secs.saturating_sub(unix_secs);
+        match elapsed {
+            0..60 => format!("{elapsed}s"),
+            60..3600 => format!("{}m", elapsed / 60),
+            3600..86400 => format!("{}h", elapsed / 3600),
+            _ => format!("{}d", elapsed / 86400),
+        }
+    };
+
+    let mut lines = vec!["Indexer history (all sessions):".to_string()];
+    for (host, routes) in &hosts {
+        let mut summaries: Vec<String> = Vec::new();
+        for (route, stats) in routes {
+            summaries.push(format!(
+                "{route} {}/{} ok, last {} {} ago",
+                stats.ok,
+                stats.attempts,
+                if stats.last_ok { "ok" } else { "failed" },
+                age(stats.last_unix_secs),
+            ));
+        }
+        lines.push(format!("  {host}: {}", summaries.join("; ")));
+    }
+    lines.join("\n")
+}
+
+/// Render the `nym status` line for a Mixnet Mode, the live bootstrap
+/// progress while bootstrapping, and the local SOCKS5 address when ready.
+/// Pure, so the user-facing tri-state strings are pinned by unit tests and
+/// reusable by any other frontend.
+#[cfg(feature = "nym")]
+fn render_status(
+    mode: zingolib::nym::MixnetMode,
+    socks5_addr: Option<&str>,
+    bootstrap_detail: Option<&str>,
+) -> String {
+    use zingolib::nym::MixnetMode;
+
+    match mode {
+        MixnetMode::Off => "Mixnet Mode: off (send and price-fetch use clearnet)".to_string(),
+        MixnetMode::Bootstrapping => match bootstrap_detail {
+            Some(detail) => format!(
+                "Mixnet Mode: bootstrapping — {detail} (send and price-fetch are unavailable \
+                 until ready)"
+            ),
+            None => "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
+                .to_string(),
+        },
+        MixnetMode::Ready => match socks5_addr {
+            Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
+            None => "Mixnet Mode: ready".to_string(),
+        },
+        MixnetMode::Died => "Mixnet Mode: died — the proxy exited unexpectedly. Send and \
+             price-fetch refuse (they will not fall back to clearnet); run `nym on` to \
+             restart the proxy."
+            .to_string(),
+    }
+}
+
+/// The complete `nym status` output: the Mixnet Mode line followed by the
+/// IP-correlation disclaimer. The disclaimer always accompanies the status
+/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
+/// synchronization stays on the ordinary connector — so a bare "ready" must
+/// never be read as end-to-end IP protection. The canonical text lives in
+/// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
+/// wording.
+#[cfg(feature = "nym")]
+fn render_status_with_disclaimer(
+    mode: zingolib::nym::MixnetMode,
+    socks5_addr: Option<&str>,
+    bootstrap_detail: Option<&str>,
+) -> String {
+    format!(
+        "{}\n\n{}",
+        render_status(mode, socks5_addr, bootstrap_detail),
+        zingolib::nym::IP_CORRELATION_DISCLAIMER,
+    )
+}
+
+/// The body of the `nym` command when the mixnet transport is compiled in.
+#[cfg(feature = "nym")]
+fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
+    let subcommand = parse_nym_args(args)?;
+    RT.block_on(async move {
+        match subcommand {
+            NymSubCommand::Status => Ok(render_status_with_disclaimer(
+                lightclient.mixnet_mode(),
+                lightclient.mixnet_socks5_addr().as_deref(),
+                lightclient.mixnet_bootstrap_detail().as_deref(),
+            )),
+            NymSubCommand::On { path } => {
+                let path = resolve_proxy_path(path.as_deref());
+                lightclient
+                    .enable_mixnet(std::path::Path::new(&path))
+                    .await
+                    .map_err(|source| NymCommandError::ProxyStart {
+                        path: path.clone(),
+                        source,
+                    })?;
+                Ok(format!(
+                    "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
+                     Run `nym status` to check readiness."
+                ))
+            }
+            NymSubCommand::Off => {
+                lightclient.disable_mixnet().await;
+                Ok("Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string())
+            }
+            NymSubCommand::Probe { target } => {
+                let probes = lightclient
+                    .probe_broadcast_indexers(target, PROBE_TIMEOUT)
+                    .await;
+                Ok(probes
+                    .iter()
+                    .map(render_paired_probe)
+                    .collect::<Vec<_>>()
+                    .join("\n"))
+            }
+            NymSubCommand::History => Ok(nym_history_command(lightclient)),
+        }
+    })
+}
+
+/// The body of the `nym` command when the mixnet transport is not compiled in.
+#[cfg(not(feature = "nym"))]
+fn nym_command(_args: &[&str], _lightclient: &mut LightClient) -> Result<String, NymCommandError> {
+    Err(NymCommandError::FeatureAbsent)
 }
 
 struct BalanceCommand {}
@@ -1277,7 +1705,15 @@ impl Command for QuickSendCommand {
             }
         };
         Ok(RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "quicksend",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.quick_send(request, zip32::AccountId::ZERO, true),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1376,9 +1812,15 @@ impl Command for QuickShieldCommand {
         }
 
         Ok(RT.block_on(async move {
-            match lightclient
-                .quick_shield(zip32::AccountId::ZERO)
-                .await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "quickshield",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.quick_shield(zip32::AccountId::ZERO),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1426,9 +1868,15 @@ impl Command for ConfirmCommand {
         }
 
         Ok(RT.block_on(async move {
-            match lightclient
-                .send_stored_proposal(true)
-                .await {
+            let progress = lightclient.transmit_progress_handle();
+            match with_transmit_heartbeat(
+                "confirm",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.send_stored_proposal(true),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1568,7 +2016,15 @@ impl Command for TransmitCommand {
                 );
             };
 
-            Ok(match lightclient.transmit_calculated(txids).await {
+            let progress = lightclient.transmit_progress_handle();
+            Ok(match with_transmit_heartbeat(
+                "transmit",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.transmit_calculated(txids),
+            )
+            .await
+            {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -2250,7 +2706,13 @@ fn run_migrate(
     if !args.is_empty() {
         return Err(MigrationCommandError::UnexpectedArguments);
     }
-    let summary = RT.block_on(lightclient.migrate_to_ironwood(zip32::AccountId::ZERO))?;
+    let progress = lightclient.transmit_progress_handle();
+    let summary = RT.block_on(with_transmit_heartbeat(
+        "migrate",
+        move || progress.latest(),
+        |line| eprintln!("{line}"),
+        lightclient.migrate_to_ironwood(zip32::AccountId::ZERO),
+    ))?;
     Ok(object! {
         "split_txids" => txids_json(&summary.split_txids),
         "part_txids" => txids_json(&summary.part_txids),
@@ -2394,7 +2856,13 @@ fn run_migration(
             .pretty(2)
         }
         MigrationSubCommand::Catchup => {
-            let txids = RT.block_on(lightclient.catch_up_migration())?;
+            let progress = lightclient.transmit_progress_handle();
+            let txids = RT.block_on(with_transmit_heartbeat(
+                "migration catchup",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.catch_up_migration(),
+            ))?;
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
@@ -2539,6 +3007,7 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("migration", Box::new(MigrationCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
+        ("nym", Box::new(NymCommand {})),
         (
             "new_taddress_allow_gap",
             Box::new(NewTransparentAddressAllowGapCommand {}),
@@ -2602,6 +3071,83 @@ pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) 
     match do_user_command_result(cmd, args, lightclient) {
         Ok(output) => output,
         Err(e) => format!("Error: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod transmit_heartbeat {
+    //! Paused-clock falsifiers for the transmit heartbeat's contract: silence
+    //! for fast transmissions, a narrated line on the ratified 20-40s cadence
+    //! for slow ones, always carrying the side channel's latest detail.
+
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use super::*;
+
+    /// HYPOTHESIS: a transmission finishing before the first tick emits
+    /// nothing — the heartbeat must not add noise to a normal fast send.
+    #[tokio::test(start_paused = true)]
+    async fn a_fast_transmission_stays_silent() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        let out = with_transmit_heartbeat(
+            "confirm",
+            || Some("submitting".to_string()),
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(5)),
+        )
+        .await;
+        let () = out;
+        assert!(
+            lines.lock().expect("line sink poisoned").is_empty(),
+            "no heartbeat before the first interval"
+        );
+    }
+
+    /// HYPOTHESIS: a slow transmission is narrated on the interval cadence,
+    /// each line carrying the label, the side channel's latest detail, and
+    /// the elapsed seconds. Falsified if the wait stays silent or drops the
+    /// detail.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_transmission_heartbeats_the_latest_detail() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        with_transmit_heartbeat(
+            "confirm",
+            || Some("witness zec.rocks: submitting".to_string()),
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(95)),
+        )
+        .await;
+        let lines = lines.lock().expect("line sink poisoned").clone();
+        assert_eq!(
+            lines,
+            vec![
+                "confirm: witness zec.rocks: submitting (30s elapsed)".to_string(),
+                "confirm: witness zec.rocks: submitting (60s elapsed)".to_string(),
+                "confirm: witness zec.rocks: submitting (90s elapsed)".to_string(),
+            ]
+        );
+    }
+
+    /// An empty side channel still heartbeats, falling back to a generic
+    /// line rather than skipping the tick.
+    #[tokio::test(start_paused = true)]
+    async fn an_empty_side_channel_still_heartbeats() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        with_transmit_heartbeat(
+            "transmit",
+            || None,
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(35)),
+        )
+        .await;
+        assert_eq!(
+            lines.lock().expect("line sink poisoned").clone(),
+            vec!["transmit: transmitting (30s elapsed)".to_string()]
+        );
     }
 }
 
@@ -2685,5 +3231,309 @@ mod migration_command_parsing {
             format!("Error: {}", MigrationCommandError::MalformedSpacing),
             "Error: spacing must be a number of seconds."
         );
+    }
+}
+
+#[cfg(test)]
+mod nym_command_parsing {
+    //! Pins the pure argument parser and the byte-identity of the typed
+    //! errors' rendering with the in-band strings they replaced.
+
+    use super::*;
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn bare_and_status_both_parse_to_status() {
+        assert_eq!(
+            parse_nym_args(&[]).expect("a bare nym parses"),
+            NymSubCommand::Status
+        );
+        assert_eq!(
+            parse_nym_args(&["status"]).expect("nym status parses"),
+            NymSubCommand::Status
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn on_captures_the_optional_path() {
+        assert_eq!(
+            parse_nym_args(&["on"]).expect("bare nym on parses"),
+            NymSubCommand::On { path: None }
+        );
+        assert_eq!(
+            parse_nym_args(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
+            NymSubCommand::On {
+                path: Some("/opt/nym-proxy".to_string()),
+            }
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn unknown_subcommand_renders_byte_identically_to_the_replaced_string() {
+        assert_eq!(
+            parse_nym_args(&["bogus"])
+                .expect_err("an unknown subcommand is typed")
+                .to_string(),
+            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off | \
+             nym probe [uri] | nym history"
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn probe_parses_its_optional_target_and_rejects_junk() {
+        assert_eq!(
+            parse_nym_args(&["probe"]).expect("bare probe parses"),
+            NymSubCommand::Probe { target: None }
+        );
+        assert_eq!(
+            parse_nym_args(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
+            NymSubCommand::Probe {
+                target: Some("https://zec.rocks:443".parse().expect("static uri")),
+            }
+        );
+        assert!(matches!(
+            parse_nym_args(&["probe", "not a uri"]),
+            Err(NymCommandError::InvalidProbeTarget(_))
+        ));
+        assert!(
+            matches!(
+                parse_nym_args(&["probe", "http://zec.rocks:9067"]),
+                Err(NymCommandError::InvalidProbeTarget(_))
+            ),
+            "a plaintext http target is refused: mixnet transmission is https-only"
+        );
+        assert_eq!(
+            parse_nym_args(&["history"]).expect("history parses"),
+            NymSubCommand::History
+        );
+    }
+
+    /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
+    /// legible at a glance — clearnet ok beside mixnet FAILED. Falsified if
+    /// either leg's outcome, timing, or the not-ready skip is dropped.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn paired_probe_renders_both_legs_side_by_side() {
+        use zingolib::nym::probe::{PairedProbe, ProbeLeg};
+
+        let mixnet_specific = PairedProbe {
+            host: "carover0.xyz".to_string(),
+            clearnet: ProbeLeg {
+                outcome: Ok("chain main, height 3420400".to_string()),
+                millis: 210,
+            },
+            mixnet: Some(ProbeLeg {
+                outcome: Err(
+                    "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+                        .to_string(),
+                ),
+                millis: 20_000,
+            }),
+        };
+        assert_eq!(
+            render_paired_probe(&mixnet_specific),
+            "carover0.xyz\n  clearnet: ok in 210ms — chain main, height 3420400\n  mixnet:   FAILED after 20000ms — the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+        );
+
+        let proxy_not_ready = PairedProbe {
+            host: "zec.rocks".to_string(),
+            clearnet: ProbeLeg {
+                outcome: Ok("chain main, height 3420400".to_string()),
+                millis: 180,
+            },
+            mixnet: None,
+        };
+        assert_eq!(
+            render_paired_probe(&proxy_not_ready),
+            "zec.rocks\n  clearnet: ok in 180ms — chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+        );
+    }
+
+    /// HYPOTHESIS: the history rendering aggregates per host and route with
+    /// the most recent outcome and its age. Falsified if counts mix routes
+    /// or the last outcome reflects file order rather than timestamps.
+    #[cfg(all(feature = "nym", feature = "nym-diary"))]
+    #[test]
+    fn history_aggregates_per_host_and_route() {
+        use zingolib::lightclient::indexer_history::{
+            AttemptKind, AttemptRoute, FailureKind, IndexerAttempt,
+        };
+
+        let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
+            unix_secs,
+            host: host.to_string(),
+            route,
+            kind: AttemptKind::Send,
+            millis: 10,
+            outcome,
+        };
+        let tunnel = Err(FailureKind::Unreachable);
+        let attempts = vec![
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
+            attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
+            attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
+        ];
+
+        assert_eq!(
+            render_history(&attempts, 2_060),
+            "Indexer history (all sessions):\n  \
+             carover0.xyz: mixnet 0/1 ok, last failed 4m ago\n  \
+             zec.rocks: clearnet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
+        );
+        assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
+    }
+
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn feature_absent_renders_byte_identically_to_the_replaced_string() {
+        assert_eq!(
+            NymCommandError::FeatureAbsent.to_string(),
+            "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
+        );
+    }
+
+    /// Pins the proxy-path precedence chain: explicit, then environment,
+    /// then bundled, then the bare name on PATH — with empty explicit and
+    /// environment values counting as absent.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn proxy_path_precedence_is_explicit_env_bundled_bare() {
+        let env = || Some("/env/nym-proxy".to_string());
+        let bundled = || Some("/bundled/nym-proxy".to_string());
+
+        assert_eq!(
+            choose_proxy_path(Some("/explicit"), env(), bundled()),
+            "/explicit",
+            "an explicit path wins over everything"
+        );
+        assert_eq!(
+            choose_proxy_path(None, env(), bundled()),
+            "/env/nym-proxy",
+            "the environment wins once there is no explicit path"
+        );
+        assert_eq!(
+            choose_proxy_path(None, None, bundled()),
+            "/bundled/nym-proxy",
+            "the bundled binary wins once explicit and environment are absent"
+        );
+        assert_eq!(
+            choose_proxy_path(None, None, None),
+            "nym-proxy",
+            "with nothing configured, fall back to the bare name on PATH"
+        );
+    }
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn empty_explicit_and_env_values_count_as_absent() {
+        assert_eq!(
+            choose_proxy_path(Some(""), Some("/env/nym-proxy".to_string()), None),
+            "/env/nym-proxy",
+            "an empty explicit path falls through to the environment"
+        );
+        assert_eq!(
+            choose_proxy_path(None, Some(String::new()), None),
+            "nym-proxy",
+            "an empty environment value falls through"
+        );
+    }
+
+    /// Pins the `nym status` tri-state strings via the pure renderer.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn status_lines_render_byte_identically_to_the_replaced_strings() {
+        use zingolib::nym::MixnetMode;
+
+        assert_eq!(
+            render_status(MixnetMode::Off, None, None),
+            "Mixnet Mode: off (send and price-fetch use clearnet)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Bootstrapping, None, None),
+            "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Ready, Some("127.0.0.1:43210"), None),
+            "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Ready, None, None),
+            "Mixnet Mode: ready",
+            "ready with no address yet still renders (the route resolver, \
+             not the renderer, refuses that state)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Died, None, None),
+            "Mixnet Mode: died — the proxy exited unexpectedly. Send and price-fetch \
+             refuse (they will not fall back to clearnet); run `nym on` to restart the proxy.",
+            "a died proxy is reported distinctly from off, and tells the user how to recover"
+        );
+    }
+
+    /// HYPOTHESIS: live bootstrap progress reaches the `nym status` line, so
+    /// the connect race is narrated rather than an opaque wait. Falsified if
+    /// the detail is dropped by the renderer. The detail is shown only while
+    /// bootstrapping: a ready proxy has no bootstrap left to narrate.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
+        use zingolib::nym::MixnetMode;
+
+        assert_eq!(
+            render_status(
+                MixnetMode::Bootstrapping,
+                None,
+                Some("attempt 2/10: 2 in flight, 0 failed")
+            ),
+            "Mixnet Mode: bootstrapping — attempt 2/10: 2 in flight, 0 failed \
+             (send and price-fetch are unavailable until ready)"
+        );
+        assert_eq!(
+            render_status(MixnetMode::Ready, Some("127.0.0.1:1"), Some("stale")),
+            "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
+            "a stale detail must not leak into the ready line"
+        );
+    }
+
+    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
+    /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
+    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
+    /// line is preserved verbatim as the first line. Falsified if the
+    /// disclaimer is dropped in any mode, no longer leads with the mode line,
+    /// or omits the sync/IP/indexer/balance risk it must name.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn status_always_carries_the_ip_correlation_disclaimer() {
+        use zingolib::nym::MixnetMode;
+
+        for mode in [
+            MixnetMode::Off,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Ready,
+            MixnetMode::Died,
+        ] {
+            let addr = Some("127.0.0.1:43210");
+            let out = render_status_with_disclaimer(mode, addr, None);
+            assert!(
+                out.starts_with(&render_status(mode, addr, None)),
+                "the mode line must lead the status output: {out}"
+            );
+            for phrase in [
+                "IP-correlation risk",
+                "synchronization",
+                "sync indexer",
+                "total balance",
+                "ZIP-0318",
+            ] {
+                assert!(
+                    out.contains(phrase),
+                    "the disclaimer must name {phrase:?} in mode {mode:?}: {out}"
+                );
+            }
+        }
     }
 }

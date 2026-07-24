@@ -42,12 +42,16 @@ use crate::{
 use error::LightClientError;
 
 pub mod error;
+pub mod indexer_history;
 pub mod migrate;
 pub mod offline;
 pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
+pub(crate) mod transmit;
+
+pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
 mod darkside;
@@ -125,6 +129,20 @@ pub struct LightClient {
     /// Live progress of a running migration execute batch
     /// ([`Self::execute_due_parts`]), the same side-channel pattern.
     batch_progress: migrate::BatchProgressHandle,
+    /// The latest progress line of an in-flight Transmission, or `None` when
+    /// idle. A side channel like `drain_progress`, updated by
+    /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
+    /// and cleared when the transmission ends.
+    transmit_progress: transmit::TransmitProgressHandle,
+    /// The cross-session per-indexer attempt history (the indexer diary).
+    /// Disk-backed only under the `nym-diary` feature, and recording only
+    /// after the session opts in via `set_indexer_diary`; otherwise the
+    /// handle is inert.
+    indexer_history: indexer_history::IndexerHistoryHandle,
+    /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
+    /// `None` means Mixnet Mode is off.
+    #[cfg(feature = "nym")]
+    mixnet_proxy: Option<crate::nym::MixnetProxy>,
 }
 
 impl LightClient {
@@ -185,6 +203,15 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 
@@ -212,6 +239,12 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            // Synthetic test wallets have no durable directory; the default
+            // handle records nowhere and loads empty.
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         }
     }
 
@@ -257,6 +290,15 @@ impl LightClient {
             proposal_pause_guard: None,
             drain_progress: migrate::DrainProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_proxy: None,
         })
     }
 
@@ -268,6 +310,37 @@ impl LightClient {
     /// Returns the wallet birthday height for lock-free access.
     pub fn birthday(&self) -> u32 {
         u32::from(self.wallet.birthday)
+    }
+
+    /// A cloneable handle to the in-flight Transmission's latest progress
+    /// line, or `None` while no transmission runs. Grab it *before* invoking a
+    /// transmitting call (send, shield, transmit, migrate) — those borrow
+    /// `&mut self` — then poll [`transmit::TransmitProgressHandle::latest`]
+    /// concurrently, the same side-channel pattern as
+    /// [`Self::drain_progress_handle`]. The line narrates submissions,
+    /// retries, queued probes, and mixnet fan-out rounds.
+    pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
+        self.transmit_progress.clone()
+    }
+
+    /// A cloneable handle to the cross-session per-indexer attempt history
+    /// (the indexer diary) —
+    /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
+    /// record for display or scoring. Transmission arms and diagnostic probes
+    /// append to it only in a `nym-diary` build whose session has opted in
+    /// via `set_indexer_diary`; in every other configuration the handle is
+    /// inert and loads empty.
+    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
+        self.indexer_history.clone()
+    }
+
+    /// Opt this session in to (or back out of) recording the indexer diary:
+    /// one sanitized line per transmission arm or probe leg, appended to
+    /// `indexer-history.tsv` beside the wallet. The choice is never
+    /// persisted — every session starts with recording off.
+    #[cfg(feature = "nym-diary")]
+    pub fn set_indexer_diary(&self, record: bool) {
+        self.indexer_history.set_recording(record);
     }
 
     /// A snapshot of the in-progress immediate drain
@@ -521,6 +594,37 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
+    /// mixnet when Mixnet Mode is ready, fails closed while the mode
+    /// bootstraps or after the proxy dies, and is refused — never routed over
+    /// clearnet — while the mode is toggled off.
+    #[cfg(feature = "nym")]
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        let socks5_addr = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
+            crate::nym::MixnetRoute::Clearnet => {
+                return Err(LightClientError::PriceFetchRequiresMixnet);
+            }
+        };
+
+        Ok(self
+            .wallet()
+            .write()
+            .await
+            .update_current_price(&socks5_addr)
+            .await?)
+    }
+
+    /// Update and return the current ZEC price in USD. The price fetch has no
+    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
+    /// the Nym mixnet, so a build without the `nym` feature refuses: the
+    /// fetch code is not compiled in at all.
+    #[cfg(not(feature = "nym"))]
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Err(LightClientError::PriceFetchUnsupported)
+    }
+
     /// Creates an additional ZIP-32 account derived from the wallet seed.
     ///
     /// Returns an error if the wallet has no mnemonic (view-only wallets cannot create accounts
@@ -571,6 +675,92 @@ impl LightClient {
             .map_err(LightClientError::FileError)?;
 
         Ok(())
+    }
+}
+
+/// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
+/// bundled `nym-proxy` child process; disabling shuts it down. The tri-state
+/// reflects the child's lifecycle, and clearnet is reachable only by a
+/// deliberate disable, never as a silent fallback.
+#[cfg(feature = "nym")]
+impl LightClient {
+    /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
+    /// `binary_path`. Returns immediately; [`Self::mixnet_mode`] reports
+    /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
+    /// `Ready`. Enabling while already enabled replaces the running proxy.
+    pub async fn enable_mixnet(
+        &mut self,
+        binary_path: &std::path::Path,
+    ) -> Result<(), crate::nym::MixnetProxyError> {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+        self.mixnet_proxy = Some(crate::nym::MixnetProxy::spawn(binary_path)?);
+        Ok(())
+    }
+
+    /// Disable Mixnet Mode. This is a deliberate, per-session choice: the
+    /// mixnet-only surfaces then route over clearnet as informed consent, and
+    /// the proxy child is shut down.
+    pub async fn disable_mixnet(&mut self) {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+    }
+
+    /// The current Mixnet Mode: [`MixnetMode::Off`](crate::nym::MixnetMode)
+    /// when disabled, otherwise the proxy's tri-state (bootstrapping or ready).
+    pub fn mixnet_mode(&self) -> crate::nym::MixnetMode {
+        self.mixnet_proxy
+            .as_ref()
+            .map_or(crate::nym::MixnetMode::Off, |proxy| proxy.mode())
+    }
+
+    /// The local SOCKS5 address while Mixnet Mode is ready.
+    pub fn mixnet_socks5_addr(&self) -> Option<String> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.socks5_addr())
+    }
+
+    /// The proxy's latest bootstrap progress line while Mixnet Mode is
+    /// bootstrapping, so a user interface can narrate the connect race.
+    pub fn mixnet_bootstrap_detail(&self) -> Option<String> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.bootstrap_detail())
+    }
+
+    /// Resolve the fail-closed route every mixnet-only surface must obey: the
+    /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
+    /// clearnet when off (a deliberate toggle-off), and a refusal while
+    /// bootstrapping. Send and price-fetch share this single resolver.
+    pub fn mixnet_route(&self) -> Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady> {
+        crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
+    }
+
+    /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
+    /// against every Broadcast Indexer when `target` is `None`. Indexers are
+    /// probed concurrently; each probe runs `GetLightdInfo` over both routes
+    /// (the mixnet leg is skipped when the proxy is not ready) and appends
+    /// its outcomes to the cross-session indexer history. The clearnet leg
+    /// contacts indexers from the real IP — this is a user-invoked
+    /// diagnostic, never an automatic path.
+    pub async fn probe_broadcast_indexers(
+        &self,
+        target: Option<http::Uri>,
+        timeout: std::time::Duration,
+    ) -> Vec<crate::nym::probe::PairedProbe> {
+        let targets = target
+            .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
+                vec![uri]
+            });
+        let socks5_addr = self.mixnet_socks5_addr();
+        let history = self.indexer_history.clone();
+        futures::future::join_all(targets.iter().map(|indexer| {
+            crate::nym::probe::probe_indexer(indexer, socks5_addr.as_deref(), timeout, &history)
+        }))
+        .await
     }
 }
 

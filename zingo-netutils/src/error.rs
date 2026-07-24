@@ -31,6 +31,42 @@ pub enum GetClientError {
     Transport(#[from] tonic::transport::Error),
 }
 
+/// Error from [`NymProxy`](crate::NymProxy) lifecycle operations. Gated on
+/// the `nym` feature, whose dependencies resolve only in this crate's own
+/// lockfile (ADR 0011).
+#[cfg(feature = "nym")]
+#[derive(Debug, thiserror::Error)]
+pub enum NymProxyError {
+    /// Failed to build the Nym mixnet client.
+    #[error("failed to build Nym client: {0}")]
+    Build(Box<nym_sdk::Error>),
+
+    /// Failed to connect to the Nym mixnet.
+    #[error("failed to connect to Nym mixnet: {0}")]
+    Connect(Box<nym_sdk::Error>),
+
+    /// Failed to query the Nym API for service providers.
+    #[error("Nym API query failed: {0}")]
+    DiscoveryApi(String),
+
+    /// No public exit gateway could be discovered.
+    #[error("no public Nym exit gateway found")]
+    NoProvider,
+
+    /// End-to-end connectivity check through the SOCKS5 tunnel failed.
+    #[error("connectivity check failed: {0}")]
+    ConnectivityCheck(String),
+
+    /// A single provider connect attempt exceeded its per-attempt timeout.
+    #[error("provider connect attempt timed out after {0}s")]
+    AttemptTimeout(u64),
+
+    /// Every raced connect attempt failed; the message accounts for each
+    /// attempted provider and its failure.
+    #[error("no provider connected: {0}")]
+    AttemptsExhausted(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
