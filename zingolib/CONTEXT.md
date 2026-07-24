@@ -215,6 +215,16 @@
 
 **Dirty Flag** — An internal boolean on `LightWallet` that records whether unsaved changes exist. Set automatically by all mutating operations; cleared after a successful write. Exposed to external code via `LightWallet::mark_dirty()`.
 
+**Sealed Wallet** — A Wallet File stored encrypted at rest. The seal covers the whole file: without the Unlock Key, no wallet data — keys, notes, or history — is readable from disk. See `docs/adr/0012-sealed-wallet-at-rest-encryption.md`.
+
+**Unlock Key** — The caller-supplied 32-byte symmetric key that opens a Sealed Wallet. zingolib accepts exactly this key; producing and releasing it is the consumer's concern (zingo-mobile guards it with the platform keystore behind a biometric prompt; zingo-cli derives it from a passphrase). The library never sees a passphrase or a biometric.
+
+**Unlock** — The act of presenting the Unlock Key to open a Sealed Wallet for a session. An unlocked wallet lives decrypted in memory only; every save re-seals. There is no mid-session locked state: a client is either open or dropped.
+
+**Seal / Unseal** — The deliberate transitions between at-rest states. Sealing adopts encryption for a plaintext Wallet File; once sealed, every save re-seals, and only an explicit Unseal returns to plaintext. Plaintext remains a legitimate at-rest state for wallets that never opt in.
+
+**Rekey** — Replacing the Unlock Key of a Sealed Wallet without rewriting the wallet data. Serves consumer key rotation: a new device's keystore, a changed passphrase.
+
 ---
 
 ## Consumers
