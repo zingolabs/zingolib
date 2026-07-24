@@ -15,7 +15,7 @@ use pepper_sync::wallet::OutputId;
 
 use super::params::MigrationParams;
 use super::parts::{BoundNote, BoundaryWitness, PartId, PartRecord, PartState, SigningStrategy};
-use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
+use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState, QueuedSplitTx};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
@@ -56,10 +56,21 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
         MigrationPhase::NoteSplitting {
             round,
             pending_txids,
+            queued,
         } => {
             writer.write_u8(1)?;
             writer.write_u32::<LittleEndian>(*round)?;
             Vector::write(&mut writer, pending_txids, |w, txid| txid.write(w))?;
+            // Version 3: the drawn preparation schedule of the round.
+            Vector::write(&mut writer, queued, |mut w, tx| {
+                Vector::write(&mut w, &tx.inputs, |w, value| {
+                    w.write_u64::<LittleEndian>(*value)
+                })?;
+                Vector::write(&mut w, &tx.outputs, |w, value| {
+                    w.write_u64::<LittleEndian>(*value)
+                })?;
+                w.write_u32::<LittleEndian>(tx.due_height.into())
+            })?;
         }
         MigrationPhase::PartsScheduled => writer.write_u8(2)?,
         MigrationPhase::Complete { residual } => {
@@ -164,9 +175,26 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         1 => {
             let round = reader.read_u32::<LittleEndian>()?;
             let pending_txids = Vector::read(&mut reader, |r| TxId::read(r))?;
+            // Version 2 predates the drawn preparation schedule; an empty
+            // queue makes the driver replan the remaining round.
+            let queued = if inner_version <= 2 {
+                Vec::new()
+            } else {
+                Vector::read(&mut reader, |mut r| {
+                    let inputs = Vector::read(&mut r, |r| r.read_u64::<LittleEndian>())?;
+                    let outputs = Vector::read(&mut r, |r| r.read_u64::<LittleEndian>())?;
+                    let due_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                    Ok(QueuedSplitTx {
+                        inputs,
+                        outputs,
+                        due_height,
+                    })
+                })?
+            };
             MigrationPhase::NoteSplitting {
                 round,
                 pending_txids,
+                queued,
             }
         }
         2 => MigrationPhase::PartsScheduled,
@@ -497,7 +525,12 @@ mod tests {
             )
                 .prop_map(|(round, pending_txids)| MigrationPhase::NoteSplitting {
                     round,
-                    pending_txids
+                    pending_txids,
+                    queued: vec![QueuedSplitTx {
+                        inputs: vec![1_020_000, 300_000],
+                        outputs: vec![1_020_000],
+                        due_height: BlockHeight::from_u32(3_500_000),
+                    }],
                 }),
             Just(MigrationPhase::PartsScheduled),
             any::<u64>().prop_map(|residual| MigrationPhase::Complete { residual }),

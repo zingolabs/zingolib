@@ -35,9 +35,9 @@ use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
     BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationMode, MigrationParams,
-    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
+    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult, QueuedSplitTx,
     RecommendedAction, ReconcileReport, SigningStrategy, WakePoint, plan_hash, plan_migration,
-    plan_schedule, reconcile, schedule,
+    plan_schedule, reconcile, schedule, split::NoteSplitTx,
 };
 
 pub mod broadcast_grpc;
@@ -335,6 +335,14 @@ pub enum SplitStep {
         /// Its transactions.
         txids: Vec<TxId>,
     },
+    /// The round's next queued preparation transaction is not yet due:
+    /// its drawn broadcast height lies ahead (ZIP 318 note-preparation
+    /// spacing). Sync and call again around `next_due`. Nothing was
+    /// written.
+    AwaitingSchedule {
+        /// The earliest queued transaction's drawn due height.
+        next_due: BlockHeight,
+    },
     /// The pending round is not replannable yet. `pending` lists its
     /// unconfirmed transactions; an empty list means every transaction
     /// confirmed but the anchor has not reached the round's outputs.
@@ -494,6 +502,7 @@ impl LightClient {
         // landing in between would surface as a spurious build failure.
         let sync = self.pause_sync_scoped()?;
 
+        let mut queued_work: Option<(u32, Vec<QueuedSplitTx>, Vec<TxId>)> = None;
         let (account, consented_plan_hash, next_round) = {
             let wallet = self.wallet().read().await;
             let state = wallet
@@ -508,39 +517,55 @@ impl LightClient {
                 MigrationPhase::NoteSplitting {
                     round,
                     pending_txids,
+                    queued,
                 } => {
-                    let pending: Vec<TxId> = pending_txids
-                        .iter()
-                        .filter(|txid| {
-                            !wallet.transaction_failed(txid)
-                                && wallet.transaction_confirmed_height(txid).is_none()
-                        })
-                        .copied()
-                        .collect();
-                    if !pending.is_empty() {
-                        return Ok(SplitStep::AwaitingConfirmation { pending });
-                    }
-                    // The round's outputs enter planning once the anchor
-                    // reaches their confirmation heights; replanning earlier
-                    // would read a note set with the round half-applied.
-                    let (_, anchor_height) = wallet
-                        .get_migration_heights()?
-                        .ok_or(WalletError::NoSyncData)?;
-                    let unanchored = pending_txids.iter().any(|txid| {
-                        wallet
-                            .transaction_confirmed_height(txid)
-                            .is_some_and(|height| height > anchor_height)
-                    });
-                    if unanchored {
-                        return Ok(SplitStep::AwaitingConfirmation {
-                            pending: Vec::new(),
+                    // A drawn preparation schedule still in flight: act on
+                    // its due transactions, never replan around it.
+                    if !queued.is_empty() {
+                        queued_work = Some((*round, queued.clone(), pending_txids.clone()));
+                        *round
+                    } else {
+                        let pending: Vec<TxId> = pending_txids
+                            .iter()
+                            .filter(|txid| {
+                                !wallet.transaction_failed(txid)
+                                    && wallet.transaction_confirmed_height(txid).is_none()
+                            })
+                            .copied()
+                            .collect();
+                        if !pending.is_empty() {
+                            return Ok(SplitStep::AwaitingConfirmation { pending });
+                        }
+                        // The round's outputs enter planning once the anchor
+                        // reaches their confirmation heights; replanning earlier
+                        // would read a note set with the round half-applied.
+                        let (_, anchor_height) = wallet
+                            .get_migration_heights()?
+                            .ok_or(WalletError::NoSyncData)?;
+                        let unanchored = pending_txids.iter().any(|txid| {
+                            wallet
+                                .transaction_confirmed_height(txid)
+                                .is_some_and(|height| height > anchor_height)
                         });
+                        if unanchored {
+                            return Ok(SplitStep::AwaitingConfirmation {
+                                pending: Vec::new(),
+                            });
+                        }
+                        round + 1
                     }
-                    round + 1
                 }
             };
             (state.account, state.consent.plan_hash, next_round)
         };
+
+        if let Some((round, queued, pending)) = queued_work {
+            let step = self
+                .transmit_due_queued(account, round, queued, pending)
+                .await;
+            drop(sync);
+            return step;
+        }
 
         if next_round as usize >= MAX_ROUNDS {
             return Err(MigrationError::SplitDidNotConverge(MAX_ROUNDS).into());
@@ -581,23 +606,113 @@ impl LightClient {
             .into_iter()
             .next()
             .expect("unsplit plan has at least one round");
-        let txids = self
-            .build_transactions(&round, |wallet, planned| {
-                wallet.build_note_split_transaction(account, planned)
-            })
-            .await?;
-
-        // Persist the attempt before transmitting, so a transmit failure
-        // (partial or total) leaves a reconcilable round: the failed
-        // transactions are marked in the wallet, and the next call replans
-        // over their released notes.
+        // Draw the round's preparation schedule: cumulative exponential
+        // inter-arrival delays from the present height, so successive
+        // preparations are temporally decoupled instead of bursting (ZIP
+        // 318 note-preparation spacing; issue #2519, deviation 1). The
+        // previous round confirmed before this replan, so starting from the
+        // present height stands past its last transaction plus the mining
+        // margin. Each transaction is built at its due wake, never held
+        // signed across a delay.
+        //
+        // Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
+        let queued: Vec<QueuedSplitTx> = {
+            let wallet = self.wallet().read().await;
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .ok_or(WalletError::NoSyncData)?;
+            let mut running = u32::from(now_height);
+            round
+                .iter()
+                .map(|tx| {
+                    running =
+                        running.saturating_add(schedule::draw_prep_delay(&mut rand::rngs::OsRng));
+                    QueuedSplitTx {
+                        inputs: tx.inputs.clone(),
+                        outputs: tx.outputs.clone(),
+                        due_height: BlockHeight::from_u32(running),
+                    }
+                })
+                .collect()
+        };
         {
             let mut wallet = self.wallet().write().await;
             wallet
                 .with_migration_state(|wallet, state| {
                     state.phase = MigrationPhase::NoteSplitting {
                         round: next_round,
-                        pending_txids: txids.clone(),
+                        pending_txids: Vec::new(),
+                        queued: queued.clone(),
+                    };
+                    wallet.save_required = true;
+                })
+                .ok_or(MigrationError::NoMigration)?;
+        }
+
+        let step = self
+            .transmit_due_queued(account, next_round, queued, Vec::new())
+            .await;
+        drop(sync);
+        step
+    }
+
+    /// Builds and transmits the round's queued preparation transactions
+    /// that are due at the wallet's known height, keeping the rest queued
+    /// for their drawn heights. With nothing due, reports when the next
+    /// transaction will be. The persisted phase is updated before
+    /// transmission, so a transmit failure leaves a reconcilable round:
+    /// failed transactions are marked, the queue is dropped, and the next
+    /// call replans over the released notes.
+    async fn transmit_due_queued(
+        &mut self,
+        account: zip32::AccountId,
+        round: u32,
+        queued: Vec<QueuedSplitTx>,
+        pending: Vec<TxId>,
+    ) -> Result<SplitStep, LightClientError> {
+        let now_height = {
+            let wallet = self.wallet().read().await;
+            wallet
+                .sync_state
+                .last_known_chain_height()
+                .ok_or(WalletError::NoSyncData)?
+        };
+        let (due, rest): (Vec<QueuedSplitTx>, Vec<QueuedSplitTx>) = queued
+            .into_iter()
+            .partition(|tx| tx.due_height <= now_height);
+        if due.is_empty() {
+            let next_due = rest
+                .iter()
+                .map(|tx| tx.due_height)
+                .min()
+                .expect("a non-empty queue has a minimum");
+            return Ok(SplitStep::AwaitingSchedule { next_due });
+        }
+
+        let planned: Vec<NoteSplitTx> = due
+            .iter()
+            .map(|tx| NoteSplitTx {
+                inputs: tx.inputs.clone(),
+                outputs: tx.outputs.clone(),
+            })
+            .collect();
+        let txids = self
+            .build_transactions(&planned, |wallet, planned| {
+                wallet.build_note_split_transaction(account, planned)
+            })
+            .await?;
+
+        let mut pending_txids = pending;
+        pending_txids.extend(txids.iter().copied());
+        {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .with_migration_state(|wallet, state| {
+                    state.phase = MigrationPhase::NoteSplitting {
+                        round,
+                        pending_txids: pending_txids.clone(),
+                        queued: rest.clone(),
                     };
                     wallet.save_required = true;
                 })
@@ -606,19 +721,26 @@ impl LightClient {
 
         let transmitted = self
             .transmit_transactions(
-                NonEmpty::from_vec(txids.clone()).expect("planned rounds are never empty"),
+                NonEmpty::from_vec(txids.clone()).expect("the due set is non-empty"),
             )
             .await;
-        drop(sync);
         if let Err(e) = transmitted {
             self.fail_unsent_transactions(&txids).await;
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .with_migration_state(|wallet, state| {
+                    state.phase = MigrationPhase::NoteSplitting {
+                        round,
+                        pending_txids: pending_txids.clone(),
+                        queued: Vec::new(),
+                    };
+                    wallet.save_required = true;
+                })
+                .ok_or(MigrationError::NoMigration)?;
             return Err(e);
         }
 
-        Ok(SplitStep::RoundBroadcast {
-            round: next_round,
-            txids,
-        })
+        Ok(SplitStep::RoundBroadcast { round, txids })
     }
 
     /// The broadcast-only client parts are submitted through: the dedicated
@@ -2895,6 +3017,7 @@ mod tests {
             let phase = MigrationPhase::NoteSplitting {
                 round: 0,
                 pending_txids: vec![in_flight],
+                queued: Vec::new(),
             };
             wallet.migration = Some(splitting_state(params, phase.clone()));
 
@@ -2935,6 +3058,7 @@ mod tests {
                 MigrationPhase::NoteSplitting {
                     round: 0,
                     pending_txids: vec![confirmed],
+                    queued: Vec::new(),
                 },
             ));
 
@@ -2959,6 +3083,7 @@ mod tests {
                 MigrationPhase::NoteSplitting {
                     round: u32::try_from(MAX_ROUNDS - 1).expect("bound fits u32"),
                     pending_txids: vec![confirmed],
+                    queued: Vec::new(),
                 },
             ));
 
@@ -2994,6 +3119,7 @@ mod tests {
                 MigrationPhase::NoteSplitting {
                     round: 0,
                     pending_txids: vec![confirmed],
+                    queued: Vec::new(),
                 },
             ));
 

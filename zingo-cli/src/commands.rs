@@ -2294,6 +2294,12 @@ fn run_migration(
                     "split_txids" => txids_json(&txids),
                 }
                 .pretty(2),
+                SplitStep::AwaitingSchedule { next_due } => {
+                    format!(
+                        "Next preparation transaction is due at height {}; sync and retry then.",
+                        u32::from(next_due)
+                    )
+                }
                 SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
                     "Round confirmed; waiting for the anchor to reach its outputs. \
                      Sync and retry."

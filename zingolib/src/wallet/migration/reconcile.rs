@@ -704,6 +704,7 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![split_txid],
+            queued: Vec::new(),
         };
         let mut chain = MockChainView::default();
 
@@ -777,6 +778,7 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![in_flight_txid],
+            queued: Vec::new(),
         };
         let report = reconcile(&state, &wallet);
         assert_eq!(
