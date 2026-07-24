@@ -305,7 +305,9 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
         .await
         .unwrap();
     let recipient_address = get_base_address_macro!(recipient, "unified");
-    from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 100_000, None)])
+    // A part's funding note is sized denomination + part fee exactly, and
+    // proving revalidates that before resolving any anchor.
+    from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 120_000, None)])
         .await
         .unwrap();
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
@@ -345,7 +347,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     );
 
     let notes = orchard_note_records(&recipient).await;
-    let bound = note_by_value(&notes, 100_000);
+    let bound = note_by_value(&notes, 120_000);
     inject_scheduled_migration(
         &recipient,
         vec![(100_000, bound.output_id, bound.nullifier)],
@@ -365,7 +367,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     let part = &wallet.migration.as_ref().unwrap().parts[0];
     assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
     assert_eq!(part.attempts, 0, "a skip records no attempt");
-    assert!(part.anchor_witness.is_none());
+    assert!(part.boundary_witnesses.is_empty());
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),

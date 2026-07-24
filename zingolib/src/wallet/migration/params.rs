@@ -13,15 +13,30 @@ pub(crate) const COIN: u64 = 100_000_000;
 /// until the ZIP is ratified. Changing one only touches [`MigrationParams::provisional`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationParams {
-    /// Bumped when ratified constants replace the provisional ones.
+    /// Bumped whenever this parameter set changes — a provisional revision
+    /// or the final ratified values — so a stored consent names the exact
+    /// set it approved.
     pub version: u32,
-    /// Canonical denominations in zatoshis, ordered largest first so a greedy
-    /// decomposition walks it directly.
+    /// Canonical denominations in zatoshis: the values `n × 10^k` ZEC with
+    /// `n ∈ {1, 2, 5}`, from the largest pool-crossing denomination
+    /// (10000 ZEC) down to `MAX_RESIDUAL_VALUE` (0.01 ZEC), ordered largest
+    /// first. Greedy decomposition over this ladder reproduces the ZIP's
+    /// decimal digit expansion exactly (see [`super::quantize::decompose`]).
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#amount-selection-canonical-quantization>
     pub denominations: Vec<u64>,
-    /// `DENOM_CAP`: the largest permitted denomination.
+    /// The largest permitted pool-crossing denomination (10000 ZEC). The
+    /// ZIP's named `DENOM_CAP` is this value plus the canonical fee, because
+    /// it bounds the funding-note values (denomination plus fee) produced by
+    /// note preparation; this field carries the denomination itself.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#amount-selection-canonical-quantization>
     pub denom_cap: u64,
-    /// `DUST_FLOOR`: the smallest permitted denomination. Leftover value
-    /// strictly below this cannot be migrated as a standard note.
+    /// `MAX_RESIDUAL_VALUE`: the smallest permitted denomination (0.01 ZEC).
+    /// The balance modulo this value is left unmigrated as the residual
+    /// rather than crossing as a non-standard note.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#amount-selection-canonical-quantization>
     pub dust_floor: u64,
     /// Notes worth at most this are stranded rather than selected for
     /// migration. Provisionally twice the ZIP-317 marginal fee: a deliberate
@@ -32,28 +47,37 @@ pub struct MigrationParams {
     /// `M`: bucket boundaries are the block heights ≡ 0 (mod `M`).
     /// Invariant: nonzero. `provisional` never produces zero and the
     /// store rejects one at read, so bucket arithmetic may divide by it.
+    ///
+    /// A network-correctness parameter, not a tuning choice: anchor heights
+    /// only collide across the migrating population if every wallet shares
+    /// one modulus. ZIP 318 provisionally fixes `M = 144` (about three hours
+    /// at the 75-second target spacing), equal to the reference
+    /// implementation's `MEAN_DELAY`.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
+    /// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L95>
     pub bucket_modulus: u32,
-    /// `K_MAX`: the per-cohort multiplicity bound.
-    pub k_max: u32,
-    /// The signing-session target the schedule aims at for typical balances.
-    pub target_sessions: u32,
     /// Bounds the notes merged (spends) or created (outputs) by one
     /// note-splitting transaction. This caps the Orchard action count at this
     /// value before NU6.3 (spends and outputs share actions) and at twice it
     /// afterwards (cross-address transfers disabled, one action each).
     pub max_actions_per_split_tx: usize,
-    /// Canonical expiry: a part expires this many blocks past its boundary.
+    /// `EXPIRY_MODULUS`: block-height modulus of the canonical rolling
+    /// expiry window (34 560 blocks, about 30 days at the 75-second target
+    /// spacing).
     ///
-    /// The builder's tip-relative default
-    /// ([`zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA`])
-    /// cannot be used here: ZIP 318 lists the expiry among the values that
-    /// group otherwise uniform migration transactions, so it must be
-    /// computed from the shared boundary, and a boundary-relative delta of
-    /// only 40 would expire a part before most of its bucket's broadcast
-    /// window. The ZIP leaves the constant "to be specified". Provisionally
-    /// the bucket length plus the standard 40-block margin, so a part
-    /// broadcast anywhere in its bucket outlives the bucket.
-    pub expiry_delta: u32,
+    /// A part's expiry is a pure function of its scheduled broadcast height:
+    /// the most recent multiple of this modulus at or below it, plus twice
+    /// this modulus (see [`super::schedule::canonical_expiry_height`]).
+    /// Every migration transaction scheduled in the same 30-day period —
+    /// from any wallet — commits the identical expiry height, so the expiry
+    /// carries no per-wallet information. This field replaced the
+    /// boundary-relative `expiry_delta` of params version 0 in the same
+    /// serialized slot.
+    ///
+    /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#canonical-migration-transaction-structure>
+    /// Reference implementation: <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L106-L112>
+    pub expiry_modulus: u32,
     /// The canonical ZIP-317 fee of one part. Every split note is sized
     /// `denomination + part_fee` so the part balances exactly.
     pub part_fee: u64,
@@ -65,23 +89,47 @@ impl MigrationParams {
     /// signature change.
     pub fn provisional(_chain: ChainType) -> Self {
         MigrationParams {
-            version: 0,
+            // Version 1: `bucket_modulus` matched to the ZIP's network-wide
+            // `M = 144`, the boundary-relative `expiry_delta` replaced by
+            // the canonical rolling `expiry_modulus` (issue #2519,
+            // deviations 3 and 4), and the denomination set widened to the
+            // ZIP's full `{1, 2, 5} × 10^k` ladder between 0.01 and
+            // 10000 ZEC (previously powers of ten between 0.001 and 100).
+            // The former `k_max` per-cohort multiplicity bound is gone
+            // (issue #2519, deviation 5): ZIP 318 deliberately places no
+            // cap on per-wallet multiplicity, since truncating the outcome
+            // of random draws with an arbitrary bound would only distort
+            // the distribution.
+            // <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#a-note-on-cohort-size-vs-per-wallet-multiplicity>
+            // <https://github.com/zcash/librustzcash/blob/eb25d234d272ab6e83b1ea10e578b92139f75725/zcash_pool_migration_backend/src/scheduling.rs#L40-L45>
+            version: 1,
             denominations: vec![
-                100 * COIN,  // 100 ZEC
-                10 * COIN,   //  10 ZEC
-                COIN,        //   1 ZEC
-                COIN / 10,   //   0.1 ZEC
-                COIN / 100,  //   0.01 ZEC
-                COIN / 1000, //   0.001 ZEC
+                10_000 * COIN, // 10000 ZEC, the largest crossing denomination
+                5_000 * COIN,
+                2_000 * COIN,
+                1_000 * COIN,
+                500 * COIN,
+                200 * COIN,
+                100 * COIN,
+                50 * COIN,
+                20 * COIN,
+                10 * COIN,
+                5 * COIN,
+                2 * COIN,
+                COIN,       // 1 ZEC
+                COIN / 2,   // 0.5 ZEC
+                COIN / 5,   // 0.2 ZEC
+                COIN / 10,  // 0.1 ZEC
+                COIN / 20,  // 0.05 ZEC
+                COIN / 50,  // 0.02 ZEC
+                COIN / 100, // 0.01 ZEC = MAX_RESIDUAL_VALUE
             ],
-            denom_cap: 100 * COIN,
-            dust_floor: COIN / 1000,
+            denom_cap: 10_000 * COIN,
+            dust_floor: COIN / 100,
             sweep_min: 2 * MARGINAL_FEE,
-            bucket_modulus: 256,
-            k_max: 8,
-            target_sessions: 6,
+            bucket_modulus: 144,
             max_actions_per_split_tx: 32,
-            expiry_delta: 256 + 40,
+            expiry_modulus: 34_560,
             part_fee: CANONICAL_PART_FEE,
         }
     }
@@ -102,10 +150,8 @@ impl MigrationParams {
         hasher.update(&self.dust_floor.to_le_bytes());
         hasher.update(&self.sweep_min.to_le_bytes());
         hasher.update(&self.bucket_modulus.to_le_bytes());
-        hasher.update(&self.k_max.to_le_bytes());
-        hasher.update(&self.target_sessions.to_le_bytes());
         hasher.update(&(self.max_actions_per_split_tx as u64).to_le_bytes());
-        hasher.update(&self.expiry_delta.to_le_bytes());
+        hasher.update(&self.expiry_modulus.to_le_bytes());
         hasher.update(&self.part_fee.to_le_bytes());
         hasher
             .finalize()

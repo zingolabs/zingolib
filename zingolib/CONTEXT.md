@@ -40,11 +40,11 @@
 
 **Part** — One canonical pool-crossing migration transfer: a transaction with exactly one Orchard spend and one Ironwood output worth a single Denomination, no change output, and the canonical fee. A migration is a set of Parts, each pre-funded by an exactly-sized note so no Part waits on another's change.
 
-**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window and anchors to the tree state at the Bucket's opening Boundary. Buckets are windows in chain time, never value quanta (see Denomination).
+**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window; its anchor is not the Bucket's — it is drawn at proving time from recent Boundaries (see Cohort). Buckets are windows in chain time, never value quanta (see Denomination).
 
 **Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it.
 
-**Cohort** — The Parts assigned to the same Bucket, and therefore sharing its anchor and broadcast window.
+**Cohort** — The migration transactions, across all wallets, that prove against the same Boundary anchor. Since each transfer's anchor is drawn at proving time from recent Boundaries, a Cohort is "transfers sharing an anchor", not "Parts sharing a Bucket"; a Bucket groups a wallet's own broadcast timing only.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 

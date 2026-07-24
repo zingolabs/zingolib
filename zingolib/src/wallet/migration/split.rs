@@ -447,7 +447,7 @@ impl crate::wallet::LightWallet {
         )
     }
 
-    pub(in crate::wallet::migration) fn get_migration_heights(
+    pub(crate) fn get_migration_heights(
         &self,
     ) -> Result<
         Option<(
@@ -757,13 +757,15 @@ mod tests {
     fn part_denomination_requires_exact_sizing() {
         let params = params();
         let fee = params.part_fee;
-        assert_eq!(part_denomination(100_000 + fee, &params), Some(100_000));
+        assert_eq!(part_denomination(1_000_000 + fee, &params), Some(1_000_000));
         assert_eq!(
             part_denomination(100 * COIN + fee, &params),
             Some(100 * COIN)
         );
-        assert_eq!(part_denomination(100_000, &params), None); // fee missing
-        assert_eq!(part_denomination(100_000 + fee + 1, &params), None);
+        assert_eq!(part_denomination(1_000_000, &params), None); // fee missing
+        assert_eq!(part_denomination(1_000_000 + fee + 1, &params), None);
+        // 0.001 ZEC sits below MAX_RESIDUAL_VALUE and is not a denomination.
+        assert_eq!(part_denomination(100_000 + fee, &params), None);
         assert_eq!(part_denomination(0, &params), None);
     }
 
@@ -872,7 +874,9 @@ mod tests {
         let params = params();
         let dust = [1, MARGINAL_FEE, params.sweep_min - 1, params.sweep_min];
         let mut notes = dust.to_vec();
-        notes.extend([params.sweep_min + 1, 200_000, 300_000]);
+        // The selectable notes together fund at least one smallest part
+        // (denomination + part fee = 1_020_000 zatoshis).
+        notes.extend([params.sweep_min + 1, 700_000, 400_000]);
         for post_activation in [false, true] {
             let plan = plan_migration(&notes, post_activation, &params);
             assert_planned_inputs_exceed_sweep_min(&plan, &params);
@@ -900,24 +904,29 @@ mod tests {
     #[test]
     fn reduction_never_creates_a_sub_sweep_min_intermediate() {
         let params = params();
-        // One full reduction group plus a trailing pair that would merge to
-        // 6_000 zatoshis, below the sweep minimum.
-        let notes = vec![10_500u64; params.max_actions_per_split_tx + 2];
+        // Five full reduction groups of near-floor notes plus a trailing
+        // pair. The pool sorts ascending before chunking, so the trailing
+        // chunk is two 12_400-zatoshi notes whose post-activation merge
+        // (24_800 - 15_000 = 9_800) sits at or below `sweep_min`; five full
+        // groups are needed so the pool still funds the smallest part
+        // (1_020_000 zatoshis) after reduction fees.
+        let mut notes = vec![12_400u64; 5 * params.max_actions_per_split_tx];
+        notes.extend([10_500u64, 10_500u64]);
         for post_activation in [false, true] {
             let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
             assert_planned_inputs_exceed_sweep_min(&plan, &params);
         }
 
         // Post-activation the pair is carried unmerged: the reduction round
-        // merges only the full group, and the sizing round spends the pair
+        // merges only the full groups, and the sizing round spends the pair
         // directly.
         let plan = plan_migration(&notes, true, &params);
-        assert_eq!(plan.split_rounds[0].len(), 1);
+        assert_eq!(plan.split_rounds[0].len(), 5);
         assert_eq!(
             plan.split_rounds[1][0]
                 .inputs
                 .iter()
-                .filter(|&&value| value == 10_500)
+                .filter(|&&value| value == 12_400)
                 .count(),
             2
         );
@@ -928,10 +937,10 @@ mod tests {
         // Notes already sized denomination + fee: no splitting needed.
         let params = params();
         let fee = params.part_fee;
-        let notes = vec![COIN + fee, COIN / 10 + fee, 100_000 + fee];
+        let notes = vec![COIN + fee, COIN / 10 + fee, COIN / 100 + fee];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.is_split());
-        assert_eq!(plan.parts, vec![COIN, COIN / 10, 100_000]);
+        assert_eq!(plan.parts, vec![COIN, COIN / 10, COIN / 100]);
         assert_eq!(plan.stranded, 0);
     }
 
@@ -996,9 +1005,9 @@ mod tests {
 
     #[test]
     fn whale_balance_splits_through_intermediates() {
-        // 5000 ZEC in one note: ~50 denominations of 100 ZEC.
+        // 500000 ZEC in one note: ~50 denominations of 10000 ZEC.
         let params = params();
-        let notes = vec![5_000 * COIN];
+        let notes = vec![500_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.parts.len() >= 49);
         for round in &plan.split_rounds {
@@ -1010,10 +1019,10 @@ mod tests {
 
     #[test]
     fn very_large_balance_recurses_splitting() {
-        // 2,000,000 ZEC: ~20,000 targets of 100 ZEC → recursive splitting
+        // 20,000,000 ZEC: ~2,000 targets of 10000 ZEC → recursive splitting
         // through intermediate levels, within the budget throughout.
         let params = params();
-        let notes = vec![2_000_000 * COIN];
+        let notes = vec![20_000_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.parts.len() > params.max_actions_per_split_tx);
         assert!(plan.split_rounds.len() >= 3);

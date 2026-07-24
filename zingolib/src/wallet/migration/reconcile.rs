@@ -85,17 +85,21 @@ pub enum PartClass {
 pub enum RecommendedAction {
     /// A note-splitting round is still confirming. Keep waiting.
     AwaitSplitConfirmation,
-    /// A note-splitting transaction failed or expired. Rebuild it against a
-    /// fresh anchor.
+    /// A note-splitting transaction failed or expired. The failure released
+    /// its notes, so the retry is a replan: drive
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] once the
+    /// round's remaining transactions resolve.
     RetrySplit {
         /// The failed transaction.
         txid: TxId,
     },
-    /// Every split confirmed: bind parts to notes and schedule them. Safe
-    /// unattended (the schedule was already consented to as part of the
-    /// plan).
-    BindAndSchedule,
-    /// Note splitting has not started yet. Drive the next round.
+    /// Note splitting needs driving: it has not started, or the pending
+    /// round fully confirmed.
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] replans
+    /// from the wallet's notes and either executes the next round or, once
+    /// every note is part-ready, binds the parts and schedules them.
+    /// Whether the confirmed round was the last one is only decidable by
+    /// that replan, which pure reconciliation cannot perform.
     ContinueNoteSplitting,
     /// The part's own transaction mined but the record lagged (for example a
     /// crash between submit and record). Safe unattended.
@@ -182,7 +186,9 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
                 }
             }
             if all_confirmed {
-                report.actions.push(RecommendedAction::BindAndSchedule);
+                report
+                    .actions
+                    .push(RecommendedAction::ContinueNoteSplitting);
             } else if report.actions.is_empty() {
                 report
                     .actions
@@ -504,9 +510,17 @@ mod tests {
         part
     }
 
-    /// Bucket arithmetic for the provisional M = 256 and tip 10_000: the tip
-    /// sits in bucket 39.
-    const TIP_BUCKET: u64 = 10_000 / 256;
+    /// The provisional bucket modulus, read from the one authoritative
+    /// source so these fixtures track parameter revisions.
+    fn modulus() -> u32 {
+        params().bucket_modulus
+    }
+
+    /// The bucket containing the default tip 10_000 under the provisional
+    /// modulus.
+    fn tip_bucket() -> u64 {
+        u64::from(10_000 / modulus())
+    }
 
     /// Issue #2493, finding 8: a migration whose every part is terminal
     /// and whose replannable balance is zero must reach a terminal
@@ -518,11 +532,11 @@ mod tests {
     /// `cancel`.
     #[test]
     fn terminal_parts_with_nothing_replannable_reach_complete() {
-        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
+        let mut confirmed = assigned_part(0, tip_bucket() - 2);
         confirmed
             .mark_confirmed(BlockHeight::from_u32(9_000))
             .unwrap();
-        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
+        let mut invalidated = assigned_part(1, tip_bucket() - 2);
         invalidated.mark_invalidated().unwrap();
         let state = scheduled_state(vec![confirmed, invalidated]);
 
@@ -544,8 +558,8 @@ mod tests {
     #[test]
     fn future_and_open_windows_are_on_track() {
         let state = scheduled_state(vec![
-            assigned_part(0, TIP_BUCKET),     // window open
-            assigned_part(1, TIP_BUCKET + 3), // future
+            assigned_part(0, tip_bucket()),     // window open
+            assigned_part(1, tip_bucket() + 3), // future
         ]);
         let report = reconcile(&state, &MockChainView::default());
         assert!(
@@ -559,12 +573,12 @@ mod tests {
 
     #[test]
     fn recent_slips_are_silent_and_older_ones_prompt_catch_up() {
-        // Bucket TIP_BUCKET - 1's window closed at the tip's own boundary,
+        // Bucket tip_bucket() - 1's window closed at the tip's own boundary,
         // so a tip just past that boundary is within the slip tolerance.
-        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
+        let state = scheduled_state(vec![assigned_part(0, tip_bucket() - 1)]);
         let mut chain = MockChainView {
             tip: Some(BlockHeight::from_u32(
-                (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS,
+                (tip_bucket() as u32) * modulus() + SLIP_TOLERANCE_BLOCKS,
             )),
             ..Default::default()
         };
@@ -576,7 +590,7 @@ mod tests {
         assert!(report.actions.is_empty(), "slips are not surfaced");
 
         chain.tip = Some(BlockHeight::from_u32(
-            (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS + 1,
+            (tip_bucket() as u32) * modulus() + SLIP_TOLERANCE_BLOCKS + 1,
         ));
         let report = reconcile(&state, &chain);
         assert_eq!(report.assessments[0].class, PartClass::Overdue);
@@ -591,7 +605,7 @@ mod tests {
 
     #[test]
     fn expired_transactions_are_rebuilt() {
-        let mut part = assigned_part(0, TIP_BUCKET - 2);
+        let mut part = assigned_part(0, tip_bucket() - 2);
         part.mark_signed(
             TxId::from_bytes([9; 32]),
             BlockHeight::from_u32(9_000),
@@ -611,7 +625,7 @@ mod tests {
 
     #[test]
     fn external_spend_invalidates_and_replans() {
-        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET + 1)]);
+        let state = scheduled_state(vec![assigned_part(0, tip_bucket() + 1)]);
         let mut chain = MockChainView::default();
         chain.note_spends.insert(
             output_id(0),
@@ -636,7 +650,7 @@ mod tests {
         // The part is persisted as Signed (the crash lost the Broadcast
         // record), but its own transaction spent the bound note on-chain.
         let own_txid = TxId::from_bytes([9; 32]);
-        let mut part = assigned_part(0, TIP_BUCKET - 1);
+        let mut part = assigned_part(0, tip_bucket() - 1);
         part.mark_signed(own_txid, BlockHeight::from_u32(20_000), None)
             .unwrap();
         let state = scheduled_state(vec![part]);
@@ -657,7 +671,7 @@ mod tests {
 
     #[test]
     fn all_confirmed_with_dust_residual_completes() {
-        let mut part = assigned_part(0, TIP_BUCKET - 2);
+        let mut part = assigned_part(0, tip_bucket() - 2);
         part.mark_signed(
             TxId::from_bytes([9; 32]),
             BlockHeight::from_u32(20_000),
@@ -690,6 +704,7 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![split_txid],
+            queued: Vec::new(),
         };
         let mut chain = MockChainView::default();
 
@@ -711,7 +726,12 @@ mod tests {
             .confirmed
             .insert(split_txid, BlockHeight::from_u32(9_000));
         let report = reconcile(&state, &chain);
-        assert_eq!(report.actions, vec![RecommendedAction::BindAndSchedule]);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::ContinueNoteSplitting],
+            "a fully confirmed round hands back to the splitting driver, \
+             which alone can tell a finished split from one needing more rounds"
+        );
     }
 
     #[test]
@@ -758,6 +778,7 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![in_flight_txid],
+            queued: Vec::new(),
         };
         let report = reconcile(&state, &wallet);
         assert_eq!(

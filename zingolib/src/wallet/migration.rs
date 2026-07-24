@@ -54,13 +54,14 @@ pub use parts::{
 };
 pub use quantize::{Denominations, decompose};
 pub use reconcile::{ChainView, PartClass, RecommendedAction, ReconcileReport, reconcile};
-pub use schedule::{WakePoint, next_wakes, plan_schedule};
+pub use schedule::{WakePoint, estimated_unix_at, next_wakes, plan_schedule};
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
     plan_migration,
 };
 
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 
 /// The consent captured when the user confirmed the migration schedule
 /// (ZIP 318 requires the whole schedule to be confirmed before any transfer
@@ -100,10 +101,18 @@ pub enum MigrationPhase {
     Planned,
     /// Executing note-splitting rounds.
     NoteSplitting {
-        /// The round currently awaiting confirmation, counted from zero.
+        /// The round currently in flight, counted from zero.
         round: u32,
-        /// Txids of that round's transactions.
+        /// Txids of the round's transactions already broadcast.
         pending_txids: Vec<TxId>,
+        /// The round's transactions not yet built, each held until its
+        /// drawn due height so successive preparations are temporally
+        /// decoupled (ZIP 318 note-preparation spacing; issue #2519,
+        /// deviation 1). Values only: the transaction is built at its due
+        /// wake with a near-tip anchor, never held signed across a delay.
+        ///
+        /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
+        queued: Vec<QueuedSplitTx>,
     },
     /// Splitting complete, parts bound and scheduled.
     PartsScheduled,
@@ -112,6 +121,20 @@ pub enum MigrationPhase {
         /// Unmigrated value left in the Orchard pool, in zatoshis.
         residual: u64,
     },
+}
+
+/// One planned note-splitting transaction awaiting its drawn broadcast
+/// height: the input and output values of the plan, plus the height at
+/// which it becomes due. Building waits for the due wake so the
+/// transaction carries a near-tip anchor and a live expiry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedSplitTx {
+    /// Values of the notes the transaction will spend.
+    pub inputs: Vec<u64>,
+    /// Values of the self-notes the transaction will create.
+    pub outputs: Vec<u64>,
+    /// The block height at (and after) which the transaction is due.
+    pub due_height: BlockHeight,
 }
 
 /// Everything the migration persists in the wallet file. Deliberately
