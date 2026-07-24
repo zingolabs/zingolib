@@ -365,7 +365,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     let part = &wallet.migration.as_ref().unwrap().parts[0];
     assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
     assert_eq!(part.attempts, 0, "a skip records no attempt");
-    assert!(part.anchor_witness.is_none());
+    assert!(part.boundary_witnesses.is_empty());
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),

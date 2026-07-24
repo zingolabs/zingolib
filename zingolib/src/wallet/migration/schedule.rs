@@ -168,7 +168,7 @@ fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
 /// (the funding note must already be in the tree at the anchor), and
 /// strictly below the most recent boundary at or below `chain_tip_height`
 /// (age is always at least one). A recency-weighted age in
-/// `[1, ANCHOR_AGE_CAP]` is drawn ([`draw_anchor_age`]) and the candidate
+/// `[1, ANCHOR_AGE_CAP]` is drawn (`draw_anchor_age`, private) and the candidate
 /// is `previous_boundary(chain_tip) - age * M`; a draw exceeding the cap or
 /// landing outside the candidate set is discarded and redrawn.
 ///
