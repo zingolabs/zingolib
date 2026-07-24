@@ -49,15 +49,20 @@ impl LightWallet {
     /// Changes in version 42:
     /// Optional Orchard→Ironwood migration section appended (see
     /// [`crate::wallet::migration::store`]; the section carries its own inner
-    /// version). (A pre-release revision of 42 also wrote an
+    /// version). (An earlier revision of 42 also wrote an
     /// `allow_v6_transactions` bool after `min_confirmations`; the setting
-    /// was removed before any release carried it, so version 42 is defined
-    /// without the byte. Files from those testing builds are read by
-    /// disambiguating the tail — see [`Self::read_price_and_migration`].)
+    /// was later removed and version 42 redefined without the byte, leaving
+    /// two shipped layouts under one number. Both are read, disambiguated
+    /// via [`Self::read_price_and_migration`].)
     ///
-    /// Version 43 is retired: pre-release builds briefly wrote it with the
-    /// final version 42 layout, so it is accepted at read as 42 and must
-    /// never be assigned to a new layout. The next format bump is 44.
+    /// Version 43 is burned: builds between the two revisions of 42 wrote
+    /// it with the final version 42 layout, so it is accepted at read as 42
+    /// and must never be assigned to a new layout. The next format bump is
+    /// 44.
+    ///
+    /// Landing in dev ships a format: every layout that has landed in dev
+    /// must remain readable, and the wallet writable, forever after (ADR
+    /// 0015, docs/adr/0015-landing-in-dev-ships-the-wallet-file-format.md).
     #[must_use]
     pub const fn serialized_version() -> u64 {
         42
@@ -149,8 +154,8 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            // 43 is a retired pre-release version with the final 42 layout;
-            // see the `serialized_version` docs.
+            // 43 is a burned version number with the final 42 layout; see
+            // the `serialized_version` docs and ADR 0015.
             32..=43 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
