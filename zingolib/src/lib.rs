@@ -11,6 +11,9 @@ pub mod lightclient;
 pub mod utils;
 pub mod wallet;
 
+#[cfg(feature = "nym")]
+pub mod nym;
+
 #[cfg(any(test, feature = "testutils"))]
 pub mod mocks;
 #[cfg(any(test, feature = "testutils"))]

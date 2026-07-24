@@ -309,10 +309,14 @@ pub struct ClientConfig {
     indexer_uri: Option<http::Uri>,
     /// URI the Ironwood migration parts are broadcast to. Broadcasting to a
     /// different server than the one used for synchronization reduces the
-    /// correlation between the two (ZIP 318). Falls back to `indexer_uri`
-    /// with a logged warning when unset; when both are `None` the client
-    /// emits no network traffic and broadcasting fails with
-    /// [`crate::lightclient::error::LightClientError::Offline`].
+    /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
+    /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
+    /// must be https on a host distinct from the synchronization endpoint's
+    /// (a shared host is refused); unset, parts go to one Broadcast Indexer
+    /// drawn at random per submission. On the clearnet opt-out path it falls
+    /// back to `indexer_uri` with a logged warning when unset; when both are
+    /// `None` the client emits no network traffic and broadcasting fails
+    /// with [`crate::lightclient::error::LightClientError::Offline`].
     migration_broadcast_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
