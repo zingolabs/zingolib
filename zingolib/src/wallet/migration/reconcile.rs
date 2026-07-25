@@ -186,7 +186,9 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
                 }
             }
             if all_confirmed {
-                report.actions.push(RecommendedAction::ContinueNoteSplitting);
+                report
+                    .actions
+                    .push(RecommendedAction::ContinueNoteSplitting);
             } else if report.actions.is_empty() {
                 report
                     .actions

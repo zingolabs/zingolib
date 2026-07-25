@@ -2212,9 +2212,7 @@ mod tests {
         PartId, PartRecord, PartState, SigningStrategy, schedule,
     };
 
-    use super::{
-        DrainPhase, DrainProgressHandle, SplitOutcome, SplitPhase, SplitProgressHandle,
-    };
+    use super::{DrainPhase, DrainProgressHandle, SplitOutcome, SplitPhase, SplitProgressHandle};
 
     /// The value of the one fabricated note every scenario here binds a
     /// migration part to.

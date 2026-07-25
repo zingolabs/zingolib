@@ -106,9 +106,8 @@ const MAX_DRAIN_INPUTS: usize = 32;
 pub fn plan_drain(note_values: &[u64]) -> DrainPlan {
     let mut plan = DrainPlan::default();
 
-    let (spendable, dust): (Vec<u64>, Vec<u64>) = note_values
-        .iter()
-        .partition(|&&value| value > SWEEP_MIN);
+    let (spendable, dust): (Vec<u64>, Vec<u64>) =
+        note_values.iter().partition(|&&value| value > SWEEP_MIN);
     plan.stranded = dust.iter().sum();
 
     for chunk in spendable.chunks(MAX_DRAIN_INPUTS) {
@@ -195,7 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn plan_conserves_value() {        let cases: [&[u64]; 5] = [
+    fn plan_conserves_value() {
+        let cases: [&[u64]; 5] = [
             &[],
             &[100_000],
             &[100_000, 200_000, 300_000],
@@ -219,7 +219,8 @@ mod tests {
     }
 
     #[test]
-    fn chunks_at_the_action_bound() {        let max = MAX_DRAIN_INPUTS;
+    fn chunks_at_the_action_bound() {
+        let max = MAX_DRAIN_INPUTS;
         for (note_count, expected_txs) in [
             (0, 0),
             (1, 1),
@@ -245,7 +246,8 @@ mod tests {
     }
 
     #[test]
-    fn all_dust_strands_everything() {        let note_values = vec![SWEEP_MIN, SWEEP_MIN - 1, 1];
+    fn all_dust_strands_everything() {
+        let note_values = vec![SWEEP_MIN, SWEEP_MIN - 1, 1];
         let plan = plan_drain(&note_values);
 
         assert!(plan.is_empty());
@@ -258,7 +260,8 @@ mod tests {
     /// stranded, one zatoshi more is drained. Fails whenever the drain's
     /// stranding filter admits a note at or below the threshold.
     #[test]
-    fn notes_at_or_below_sweep_min_are_never_drained() {        let dust = [1, SWEEP_MIN - 1, SWEEP_MIN];
+    fn notes_at_or_below_sweep_min_are_never_drained() {
+        let dust = [1, SWEEP_MIN - 1, SWEEP_MIN];
         let mut note_values = dust.to_vec();
         note_values.extend([SWEEP_MIN + 1, 1_000_000]);
 
@@ -343,7 +346,8 @@ mod tests {
     /// the notes that are still free. This is what makes re-calling the drain
     /// the recovery path after a partial broadcast.
     #[test]
-    fn replanning_covers_only_the_remaining_notes() {        let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
+    fn replanning_covers_only_the_remaining_notes() {
+        let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
         let full = plan_drain(&all);
 
         // The first two notes were spent by a drain that did broadcast.

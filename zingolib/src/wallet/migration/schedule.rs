@@ -542,7 +542,10 @@ mod tests {
         let current_bucket = bucket_index(now, params.bucket_modulus);
         let future_parts = parts
             .iter()
-            .filter(|part| part.bucket_index.is_some_and(|bucket| bucket > current_bucket))
+            .filter(|part| {
+                part.bucket_index
+                    .is_some_and(|bucket| bucket > current_bucket)
+            })
             .count();
         assert!(
             future_parts > 0 && future_parts < parts.len(),
