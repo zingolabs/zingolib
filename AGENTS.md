@@ -55,6 +55,16 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Don't pitch benefits at the reader ("you'll love how fast it is", "say goodbye to X", "no more Y"). State what the thing does and let it stand.
 - Avoid the staccato rhythm of short fragments stacked for impact, exclamatory energy, and calls to action. That cadence is built to persuade, not to inform.
 
+#### Durable documents
+
+ADRs, CONTEXT.md, docs/, commit messages, and PR bodies follow Strunk and
+White's *The Elements of Style*: full grammatical sentences, active voice,
+definite assertions, omit needless words. The punctuation and construction
+rules above still apply (no semicolons, no em dashes). The vocabulary list
+yields to established domain terms: a word that names a documented concept
+("send-shaped", a CONTEXT.md entry, an API name) stays, in narration and
+titles alike.
+
 ### Code (all languages)
 
 - Comment why, not what. No line-by-line narration of obvious operations.
