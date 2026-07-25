@@ -597,7 +597,7 @@ async fn migrate_all_orchard_to_ironwood() {
     // Three modest notes fit one transaction: no chunking here.
     assert_eq!(plan.transactions.len(), 1);
     assert_eq!(
-        plan.migrated + plan.fee + plan.stranded,
+        plan.migrated + plan.fee + plan.residual,
         orchard_before,
         "the plan must account for every zatoshi"
     );
@@ -624,7 +624,7 @@ async fn migrate_all_orchard_to_ironwood() {
             .confirmed_orchard_balance
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
-        summary.stranded,
+        summary.residual,
         "the Orchard pool must be empty but for the disclosed dust"
     );
     assert_eq!(
@@ -698,7 +698,7 @@ async fn immediate_migration_chunks_a_fragmented_wallet() {
             .confirmed_orchard_balance
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
-        summary.stranded
+        summary.residual
     );
     assert_eq!(
         balance
