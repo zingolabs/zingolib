@@ -244,12 +244,21 @@ namespace zingo {
   string continue_note_splitting();
 
   [Throws=ZingolibError]
+  string quick_split();
+
+  [Throws=ZingolibError]
+  string split_status();
+
+  [Throws=ZingolibError]
   string reschedule_parts(
     u32 per_bucket
   );
 
   [Throws=ZingolibError]
   string migration_status();
+
+  [Throws=ZingolibError]
+  string window_timeline();
 
   [Throws=ZingolibError]
   string reconcile_migration();
