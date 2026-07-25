@@ -71,18 +71,24 @@ early snapshot had preserved.
 The mechanism as first implemented copied the Validator's data directory via
 `zcash_local_net`'s `cache_chain`/`load_chain` primitives, with the building
 run relaunching from its own snapshot. The first cold run (2026-07-08)
-refuted that design for this stack: zebra holds every block within 100 of
-the tip in its in-memory non-finalized state, so a copied data dir of a
-4-6-block setup chain contains essentially genesis, and `Zebrad::stop()` is
-a SIGKILL, so even the finalized portion is copied without a graceful flush.
-The relaunched Validator served a chain zainod could not index ("could not
-determine best chain"). The infrastructure repo's own zebrad cache generator
-corroborates the boundary: it mines 150 blocks (past the finalization depth)
-before calling `cache_chain`. State-directory caches are therefore viable
-only for 100+-block chains, and we adopted block replay in their place. We
-dropped the builder-relaunch property with them: replay is ordinary
-`submitblock` plus standard convergence rather than a state transplant, so
-warm-run exercise suffices.
+refuted that design for this stack: zebra holds every block within its
+finalization depth of the tip in its in-memory non-finalized state (zebra's
+`MAX_BLOCK_REORG_HEIGHT`, mirrored in this workspace as
+`pepper_sync::sync::MAX_REORG_ALLOWANCE`, 100 as this record was written),
+so a copied data dir of a 4-6-block setup chain contains essentially
+genesis, and `Zebrad::stop()` is a SIGKILL, so even the finalized portion is
+copied without a graceful flush. The relaunched Validator served a chain
+zainod could not index ("could not determine best chain"). The
+infrastructure repo's own zebrad cache generator corroborates the boundary:
+it mines 150 blocks (past the depth as then understood) before calling
+`cache_chain`. State-directory caches are therefore viable only for chains
+longer than the finalization depth, and we adopted block replay in their
+place. We dropped the builder-relaunch property with them: replay is
+ordinary `submitblock` plus standard convergence rather than a state
+transplant, so warm-run exercise suffices. A 2026-07-25 check of the zebra
+6.0.0 tag found `MAX_BLOCK_REORG_HEIGHT` raised to 1000. The wider window
+only strengthens this conclusion, and `MAX_REORG_ALLOWANCE` still reads
+100, so the workspace mirror awaits reconciliation.
 
 We rejected moving a superseded cache aside instead of discarding it: chain
 generation is not byte-deterministic, so a kept copy serves only speculative
