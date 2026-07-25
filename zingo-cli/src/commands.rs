@@ -3040,9 +3040,12 @@ fn split_progress_line(status: &SplitStatus) -> String {
     }
 }
 
-/// The drain command's typed core: parse first, then act. Both sub-commands
-/// wrap exactly the calls zingo-mobile drives (`plan_immediate_migration`,
-/// `quick_immediate_migration`), so the CLI exercises the mobile surface.
+/// Runs `drain plan` or `drain now`.
+///
+/// `plan` previews from wallet state and sends nothing. `now` broadcasts, and
+/// writes progress lines to stderr while it runs.
+///
+/// Returns the summary as JSON.
 fn run_drain(
     args: &[&str],
     lightclient: &mut LightClient,
@@ -3077,9 +3080,11 @@ fn run_drain(
     })
 }
 
-/// The split command's typed core: parse first, then act. Both sub-commands
-/// wrap exactly the calls zingo-mobile drives (`plan_note_split`,
-/// `quick_split`), so the CLI exercises the mobile surface.
+/// Runs `split plan` or `split now`.
+///
+/// `plan` previews the remaining rounds and sends nothing. `now` runs one
+/// round, writing progress lines to stderr while it runs; it returns the
+/// round's txids, or a message explaining why nothing was sent.
 fn run_split(
     args: &[&str],
     lightclient: &mut LightClient,
