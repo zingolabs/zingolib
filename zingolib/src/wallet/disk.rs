@@ -42,6 +42,10 @@ use pepper_sync::{
     },
 };
 
+/// The two trailing sections of a version 42 wallet file: the price list and
+/// the optional Orchard→Ironwood migration section.
+type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
+
 impl LightWallet {
     /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
@@ -620,20 +624,20 @@ impl LightWallet {
             // Version 42 exists in two layouts: pre-release builds wrote an
             // `allow_v6_transactions` byte here, before the price list (see
             // the `serialized_version` docs). Disambiguate by parsing the
-            // buffered tail anchored at end of file: the canonical layout
-            // first, then the pre-release layout with its leading bool
-            // skipped.
+            // buffered tail anchored at end of file, both ways.
             let mut tail = Vec::new();
             reader.read_to_end(&mut tail)?;
-            match Self::read_price_and_migration(&tail) {
-                Ok(parsed) => parsed,
-                Err(canonical_error) => match tail.first() {
-                    Some(0 | 1) => {
-                        Self::read_price_and_migration(&tail[1..]).map_err(|_| canonical_error)?
-                    }
-                    _ => return Err(canonical_error),
-                },
-            }
+
+            let canonical = Self::read_price_and_migration(&tail);
+            // The extra byte of the pre-release layout is a bool, so only 0
+            // or 1 can begin one; any other leading byte rules that layout
+            // out without a second parse.
+            let pre_release = match tail.first() {
+                Some(0 | 1) => Some(Self::read_price_and_migration(&tail[1..])),
+                _ => None,
+            };
+
+            Self::resolve_v42_tail(canonical, pre_release)?
         } else {
             let price_list = if version >= 34 {
                 PriceList::read(&mut reader)?
@@ -673,15 +677,45 @@ impl LightWallet {
         })
     }
 
+    /// Chooses between the two readings of a version 42 file tail.
+    ///
+    /// The canonical layout wins whenever it parses, so a file written by
+    /// current code never depends on the pre-release fallback. When both
+    /// readings parse cleanly the file is genuinely ambiguous and the load
+    /// fails rather than guessing: a wrong guess here would silently
+    /// substitute a different price list and migration state, and the
+    /// seed remains recoverable through [`Self::read_recovery_info`].
+    ///
+    /// Ambiguity cannot arise for a tail carrying no migration section: such
+    /// a tail is 5 bytes plus a sum of even-sized optional fields (4- and
+    /// 8-byte values, and `CompactSize` widths that grow by 2, 4, or 8), so
+    /// its length is always odd, and the two readings differ in length by
+    /// exactly one. The refusal below therefore guards only the
+    /// migration-bearing case, where no such parity argument holds.
+    fn resolve_v42_tail(
+        canonical: io::Result<WalletTail>,
+        pre_release: Option<io::Result<WalletTail>>,
+    ) -> io::Result<WalletTail> {
+        match (canonical, pre_release) {
+            (Ok(_), Some(Ok(_))) => Err(Error::new(
+                ErrorKind::InvalidData,
+                "ambiguous version 42 wallet file: its tail parses as both the \
+                 canonical and the pre-release layout, so which build wrote it \
+                 cannot be determined; recover the seed with recovery_info",
+            )),
+            (Ok(parsed), _) => Ok(parsed),
+            (Err(_), Some(Ok(parsed))) => Ok(parsed),
+            (Err(canonical_error), _) => Err(canonical_error),
+        }
+    }
+
     /// Parses the final section of a version 42 wallet file — the price list
     /// followed by the optional migration section — anchored at end of file.
-    /// Trailing bytes are an error, so the two revisions of version 42
-    /// cannot be confused: the pre-release revision carries exactly one
-    /// extra leading byte, which makes exactly one of the two anchored
-    /// parses consume the whole tail.
-    fn read_price_and_migration(
-        mut tail: &[u8],
-    ) -> io::Result<(PriceList, Option<crate::wallet::migration::MigrationState>)> {
+    /// Trailing bytes are an error, which is what lets the two revisions of
+    /// version 42 be told apart: the pre-release revision carries exactly one
+    /// extra leading byte, so the two readings end one byte apart and a
+    /// misaligned parse must consume the tail exactly to be accepted.
+    fn read_price_and_migration(mut tail: &[u8]) -> io::Result<WalletTail> {
         let price_list = PriceList::read(&mut tail)?;
         let migration = Optional::read(&mut tail, crate::wallet::migration::store::read)?;
         if !tail.is_empty() {

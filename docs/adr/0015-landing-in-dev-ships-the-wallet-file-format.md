@@ -19,9 +19,13 @@ reassigned; and a format change may land in dev only together with the
 read-side compatibility that keeps every previously shipped file
 loading, proven by regression tests in the same change. Version 42's
 two layouts are both read, disambiguated by an end-of-file-anchored
-dual parse of the file tail, which is deterministic because the
-revisions differ by exactly one byte. Version 43 is burned; the next
-format bump is 44.
+dual parse of the file tail: the canonical layout is preferred, so a
+file written by current code never depends on the fallback, and a tail
+that parses cleanly *both* ways is refused rather than guessed. The
+refusal covers a case that cannot arise for a migration-free tail,
+whose length is always odd while the two readings differ by exactly
+one byte, but for which no such parity argument holds once a migration
+section is present. Version 43 is burned; the next format bump is 44.
 
 Beneath the compatibility guarantee sits a salvage floor for files
 outside it — corrupt files, files from abandoned side branches, files
@@ -55,5 +59,9 @@ corpus — the example wallets, the orphaned-layout tests, and the
 local `data_wallets` sweep — is the enforcement mechanism. Retiring a
 version number is documented in `LightWallet::serialized_version`'s
 docs, which name the next free number. The dual parse for version 42
-is permanent; its cost is one buffered read of the small file tail on
-load.
+is permanent; it costs one buffered read of the small file tail and a
+second parse of it on every load. Tests that exercise a format layout
+must assert on the region the layout governs: a wallet-file test that
+checks only recovery info proves nothing about the tail, because
+recovery info is read from the file prefix and survives a misparsed
+tail intact.
