@@ -304,13 +304,13 @@ pub fn due_now_parts(
                 // a rebuild against a fresh boundary and is not sent this batch.
                 part.state == PartState::Assigned
             } else {
-                // A natively-current part goes out once the chain reaches its
-                // random target. Gating on OnTrack drops the parts
-                // reconciliation will confirm, invalidate or expire instead of
-                // sending — they would otherwise leak through the state/bucket
-                // check while still Assigned or Signed.
+                // A natively-current part goes out as soon as its window is
+                // open. Gating on OnTrack drops the parts reconciliation will
+                // confirm, invalidate or expire instead of sending — they
+                // would otherwise leak through the state/bucket check while
+                // still Assigned or Signed.
                 on_track.contains(&part.id)
-                    && super::schedule::part_due_in_current_bucket(part, now_height, current_bucket)
+                    && super::schedule::part_in_current_bucket(part, current_bucket)
             }
         })
         .map(|part| part.id)
@@ -653,29 +653,29 @@ mod tests {
     }
 
     #[test]
-    fn due_now_reports_the_current_window_only_once_the_target_is_reached() {
+    fn due_now_reports_the_current_window_regardless_of_the_target() {
         // Tip 10_000 sits in bucket TIP_BUCKET; its window is
         // [TIP_BUCKET*256, (TIP_BUCKET+1)*256) = [9984, 10240).
         let mut part = assigned_part(0, TIP_BUCKET);
-        part.target_height = Some(BlockHeight::from_u32(10_100));
+        part.target_height = Some(BlockHeight::from_u32(10_100)); // advisory only
         let state = scheduled_state(vec![part]);
 
-        // Target ahead of the tip: nothing due — the stale-tip bounce case,
-        // where the status must not advertise a batch a tap would not send.
+        // The tip is below the random target, yet the window is open: the part
+        // is due, because the target no longer gates sendability.
         let chain = MockChainView::default();
         let report = reconcile(&state, &chain);
-        assert!(
+        assert_eq!(
             due_now_parts(
                 &state.parts,
                 &report,
                 chain.chain_tip().unwrap(),
                 &state.params,
-            )
-            .is_empty(),
-            "a current part whose random target is ahead is not due",
+            ),
+            vec![PartId(0)],
+            "a current-window part is due even with its target ahead",
         );
 
-        // The chain reaches the target (still inside the window): due now.
+        // And it stays due later in the window, past the target.
         let chain = MockChainView {
             tip: Some(BlockHeight::from_u32(10_100)),
             ..Default::default()

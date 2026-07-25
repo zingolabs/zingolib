@@ -960,6 +960,129 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
+/// A confirmed Orchard→Ironwood drain transaction must surface in the
+/// history as a `migration` value transfer — not `memo-to-self` and not
+/// `basic`. Its self-received Ironwood output carries the canonical empty
+/// memo (`MemoBytes::empty()`), so this pins the self-send classification
+/// order in `value_transfers()`: the migration predicate must win over the
+/// received-memo check regardless of how that memo decodes.
+#[tokio::test]
+async fn drain_transaction_is_a_migration_value_transfer() {
+    use zip32::AccountId;
+
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+    use crate::wallet::summary::data::{
+        SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+    };
+
+    const NOTE_VALUE: u64 = 1_000_000;
+    const TIP: u32 = 41;
+
+    // A real mock-net client, synced over an empty chain, handed one
+    // spendable legacy-Orchard note whose nullifier is really derived, so
+    // pepper-sync's spend detection marks it when the drain spends it and
+    // the summary sees the transaction as Orchard-funded.
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(TIP);
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    client
+        .sync_and_await()
+        .await
+        .expect("initial sync succeeds");
+    {
+        let wallet_lock = client.wallet().clone();
+        let mut wallet = wallet_lock.write().await;
+        inject_confirmed_orchard_notes(&mut wallet, 1, NOTE_VALUE, TIP);
+    }
+
+    let summary = client
+        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .await
+        .expect("the drain builds and broadcasts");
+    assert_eq!(summary.txids.len(), 1, "one note drains in one transaction");
+
+    net.chain.write().await.mine_mempool();
+    client.sync_and_await().await.unwrap();
+
+    let value_transfers = client.value_transfers(false).await.unwrap();
+    let kinds: Vec<_> = value_transfers.iter().map(|vt| vt.kind).collect();
+    assert!(
+        kinds.contains(&ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+            SelfSendValueTransfer::Migration,
+        ))),
+        "the drain transaction must classify as a migration value transfer; got {kinds:?}",
+    );
+}
+
+/// An Orchard-funded self-send that lands in the Ironwood pool AND carries a
+/// received memo must still classify as `migration`, not `memo-to-self`: the
+/// migration predicate wins the self-send classification regardless of
+/// memos, and the memo itself stays on the value transfer. This is the
+/// ordering pin for `value_transfers()` — before the reorder the memo check
+/// fired first and relabeled the migration `memo-to-self`.
+#[tokio::test]
+async fn migration_with_memo_is_still_a_migration_value_transfer() {
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+    use crate::wallet::summary::data::{
+        SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+    };
+
+    const NOTE_VALUE: u64 = 1_000_000;
+    const TIP: u32 = 41;
+    const MEMO: &str = "moving my own funds";
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(TIP);
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    client
+        .sync_and_await()
+        .await
+        .expect("initial sync succeeds");
+    {
+        let wallet_lock = client.wallet().clone();
+        let mut wallet = wallet_lock.write().await;
+        inject_confirmed_orchard_notes(&mut wallet, 1, NOTE_VALUE, TIP);
+    }
+
+    // A send to the wallet's own orchard receiver lands in the Ironwood pool
+    // post-NU6.3, funded from the legacy Orchard note: an Orchard→Ironwood
+    // self-send carrying a real memo. Asserted on the pending (transmitted)
+    // record — the state the history shows right after broadcast, and the
+    // same classification path as a confirmed transaction. (Mining it would
+    // conflict the injected note's fabricated orchard tree leaf with the
+    // send's real orchard commitments at the same positions.)
+    let own_ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    from_inputs::quick_send(&mut client, vec![(&own_ua, 50_000, Some(MEMO))])
+        .await
+        .unwrap();
+
+    let value_transfers = client.value_transfers(false).await.unwrap();
+    let migration = value_transfers
+        .iter()
+        .find(|vt| {
+            vt.kind
+                == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                    SelfSendValueTransfer::Migration,
+                ))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "the memo-carrying Orchard→Ironwood self-send must classify as a \
+                 migration value transfer; got {:?}",
+                value_transfers.iter().map(|vt| vt.kind).collect::<Vec<_>>(),
+            )
+        });
+    assert!(
+        migration.memos.iter().any(|memo| memo == MEMO),
+        "the migration value transfer must keep its memo; got {:?}",
+        migration.memos,
+    );
+}
+
 /// A failed transmit inside a note-splitting round must not leave any
 /// transaction stranded in `Calculated`. The drain sibling
 /// (`drain_orchard_to_ironwood`) fails every unsent transaction so the

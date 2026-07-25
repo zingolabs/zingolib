@@ -14,3 +14,4 @@ libtonode-tests/store_all_checkpoints_test
 
 # Local corpus of real wallet files (live seed material — never commit)
 /data_wallets/
+.agent-plans/

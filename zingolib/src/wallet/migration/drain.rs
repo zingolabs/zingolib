@@ -23,8 +23,7 @@
 use orchard::bundle::BundleVersion;
 use zcash_primitives::transaction::TxId;
 
-use super::params::MigrationParams;
-use super::split::{MigrationOutputs, bundle_actions, zip317_fee};
+use super::split::{MigrationOutputs, SWEEP_MIN, bundle_actions, zip317_fee};
 use crate::wallet::error::WalletError;
 
 /// The ZIP-317 conventional fee of a drain transaction with `n_in` Orchard
@@ -88,29 +87,35 @@ impl DrainPlan {
     }
 }
 
-/// Plans a drain of the Orchard notes with the given values (zatoshis).
+/// The most Orchard notes one drain transaction spends. A drain's Orchard
+/// bundle is spend-only, so `n` inputs cost `n` actions; this caps a single
+/// drain's proving cost and transaction size. A drain is not a note split, so
+/// it carries its own bound rather than borrowing the splitter's.
+const MAX_DRAIN_INPUTS: usize = 32;
+
+/// Plans a drain of the Orchard notes with the given values (zatoshis): spend
+/// every note worth more than the [`SWEEP_MIN`] Sweep Minimum into one Ironwood
+/// output, chunked so no transaction exceeds [`MAX_DRAIN_INPUTS`] inputs.
 /// Deterministic and pure.
 ///
-/// Notes worth at most [`MigrationParams::sweep_min`] are stranded rather
-/// than selected (see that field's safety-factor policy). The rest are
-/// chunked into groups of at most
-/// [`MigrationParams::max_actions_per_split_tx`], one transaction each. The
-/// same floor applies to what a drain creates: a chunk whose output would
-/// not exceed `sweep_min` is stranded whole, so a drain never manufactures a
-/// note the policy refuses to spend.
-pub fn plan_drain(note_values: &[u64], params: &MigrationParams) -> DrainPlan {
+/// Notes worth at most `SWEEP_MIN` are stranded rather than selected (see the
+/// Sweep Minimum's safety-factor policy). The same floor applies to what a
+/// drain creates: a chunk whose output would not exceed `SWEEP_MIN` is
+/// stranded whole, so a drain never manufactures a note the policy refuses to
+/// spend.
+pub fn plan_drain(note_values: &[u64]) -> DrainPlan {
     let mut plan = DrainPlan::default();
 
     let (spendable, dust): (Vec<u64>, Vec<u64>) = note_values
         .iter()
-        .partition(|&&value| value > params.sweep_min);
+        .partition(|&&value| value > SWEEP_MIN);
     plan.stranded = dust.iter().sum();
 
-    for chunk in spendable.chunks(params.max_actions_per_split_tx.max(1)) {
+    for chunk in spendable.chunks(MAX_DRAIN_INPUTS) {
         let total: u64 = chunk.iter().sum();
         let fee = drain_fee(chunk.len());
         match total.checked_sub(fee) {
-            Some(output) if output > params.sweep_min => {
+            Some(output) if output > SWEEP_MIN => {
                 plan.migrated += output;
                 plan.fee += fee;
                 plan.transactions.push(DrainTx {
@@ -120,8 +125,8 @@ pub fn plan_drain(note_values: &[u64], params: &MigrationParams) -> DrainPlan {
             }
             // A chunk that cannot fund both its fee and an output worth
             // spending is stranded whole: an Ironwood note at or below
-            // `sweep_min` is one the stranding policy itself refuses. Only
-            // reachable when a chunk holds at most three near-`sweep_min`
+            // `SWEEP_MIN` is one the stranding policy itself refuses. Only
+            // reachable when a chunk holds at most three near-`SWEEP_MIN`
             // notes, which the entry filter cannot rule out for small
             // chunks.
             _ => plan.stranded += total,
@@ -136,12 +141,8 @@ impl crate::wallet::LightWallet {
     /// notes. Pure and deterministic: nothing is signed or sent, so the plan
     /// can be shown to the user for consent first.
     #[allow(clippy::result_large_err)]
-    pub fn plan_drain(
-        &self,
-        account: zip32::AccountId,
-        params: &MigrationParams,
-    ) -> Result<DrainPlan, WalletError> {
-        Ok(plan_drain(&self.migration_note_values(account)?, params))
+    pub fn plan_drain(&self, account: zip32::AccountId) -> Result<DrainPlan, WalletError> {
+        Ok(plan_drain(&self.migration_note_values(account)?))
     }
 
     /// Builds, proves, signs and records one planned drain transaction
@@ -166,12 +167,7 @@ impl crate::wallet::LightWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ChainType;
     use crate::wallet::migration::split::{CANONICAL_PART_FEE, MARGINAL_FEE};
-
-    fn params() -> MigrationParams {
-        MigrationParams::provisional(ChainType::Mainnet)
-    }
 
     /// A drain's Orchard bundle has no outputs, so `orchard_v3`'s ban on
     /// cross-address transfers cannot change its action count. That is what
@@ -199,9 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_conserves_value() {
-        let params = params();
-        let cases: [&[u64]; 5] = [
+    fn plan_conserves_value() {        let cases: [&[u64]; 5] = [
             &[],
             &[100_000],
             &[100_000, 200_000, 300_000],
@@ -211,7 +205,7 @@ mod tests {
             &[1, 2, 3],
         ];
         for note_values in cases {
-            let plan = plan_drain(note_values, &params);
+            let plan = plan_drain(note_values);
             let total: u64 = note_values.iter().sum();
             assert_eq!(
                 plan.migrated + plan.fee + plan.stranded,
@@ -225,9 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn chunks_at_the_action_bound() {
-        let params = params();
-        let max = params.max_actions_per_split_tx;
+    fn chunks_at_the_action_bound() {        let max = MAX_DRAIN_INPUTS;
         for (note_count, expected_txs) in [
             (0, 0),
             (1, 1),
@@ -237,7 +229,7 @@ mod tests {
             (max * 2 + 1, 3),
         ] {
             let note_values = vec![1_000_000u64; note_count];
-            let plan = plan_drain(&note_values, &params);
+            let plan = plan_drain(&note_values);
             assert_eq!(
                 plan.transactions.len(),
                 expected_txs,
@@ -253,10 +245,8 @@ mod tests {
     }
 
     #[test]
-    fn all_dust_strands_everything() {
-        let params = params();
-        let note_values = vec![params.sweep_min, params.sweep_min - 1, 1];
-        let plan = plan_drain(&note_values, &params);
+    fn all_dust_strands_everything() {        let note_values = vec![SWEEP_MIN, SWEEP_MIN - 1, 1];
+        let plan = plan_drain(&note_values);
 
         assert!(plan.is_empty());
         assert_eq!(plan.migrated, 0);
@@ -268,20 +258,18 @@ mod tests {
     /// stranded, one zatoshi more is drained. Fails whenever the drain's
     /// stranding filter admits a note at or below the threshold.
     #[test]
-    fn notes_at_or_below_sweep_min_are_never_drained() {
-        let params = params();
-        let dust = [1, params.sweep_min - 1, params.sweep_min];
+    fn notes_at_or_below_sweep_min_are_never_drained() {        let dust = [1, SWEEP_MIN - 1, SWEEP_MIN];
         let mut note_values = dust.to_vec();
-        note_values.extend([params.sweep_min + 1, 1_000_000]);
+        note_values.extend([SWEEP_MIN + 1, 1_000_000]);
 
-        let plan = plan_drain(&note_values, &params);
+        let plan = plan_drain(&note_values);
         assert_eq!(plan.stranded, dust.iter().sum::<u64>());
         for transaction in &plan.transactions {
             for &input in &transaction.inputs {
                 assert!(
-                    input > params.sweep_min,
+                    input > SWEEP_MIN,
                     "drain spends a {input}-zatoshi note, at or below sweep_min ({})",
-                    params.sweep_min
+                    SWEEP_MIN
                 );
             }
         }
@@ -289,7 +277,7 @@ mod tests {
         assert!(
             plan.transactions
                 .iter()
-                .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
+                .any(|tx| tx.inputs.contains(&(SWEEP_MIN + 1)))
         );
     }
 
@@ -303,25 +291,23 @@ mod tests {
     /// outruns its fee by more than the floor.
     #[test]
     fn output_at_or_below_sweep_min_strands_the_chunk() {
-        let params = params();
-
         // One 25_000-zatoshi note: the fee is 20_000, so the output would be
         // 5_000, at most the sweep minimum.
-        let plan = plan_drain(&[25_000], &params);
+        let plan = plan_drain(&[25_000]);
         assert!(plan.is_empty());
         assert_eq!(plan.stranded, 25_000);
         assert_eq!(plan.fee, 0);
 
         // An output of exactly `sweep_min` still strands its chunk.
-        let boundary = drain_fee(1) + params.sweep_min;
-        let plan = plan_drain(&[boundary], &params);
+        let boundary = drain_fee(1) + SWEEP_MIN;
+        let plan = plan_drain(&[boundary]);
         assert!(plan.is_empty());
         assert_eq!(plan.stranded, boundary);
 
         // One zatoshi above the boundary drains.
-        let plan = plan_drain(&[boundary + 1], &params);
+        let plan = plan_drain(&[boundary + 1]);
         assert_eq!(plan.transactions.len(), 1);
-        assert_eq!(plan.transactions[0].output, params.sweep_min + 1);
+        assert_eq!(plan.transactions[0].output, SWEEP_MIN + 1);
         assert_eq!(plan.stranded, 0);
     }
 
@@ -332,12 +318,10 @@ mod tests {
         #[test]
         fn drained_inputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {
-            let params = params();
-            let plan = plan_drain(&note_values, &params);
+        ) {            let plan = plan_drain(&note_values);
             for transaction in &plan.transactions {
                 for &input in &transaction.inputs {
-                    proptest::prop_assert!(input > params.sweep_min);
+                    proptest::prop_assert!(input > SWEEP_MIN);
                 }
             }
         }
@@ -348,11 +332,9 @@ mod tests {
         #[test]
         fn drain_outputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {
-            let params = params();
-            let plan = plan_drain(&note_values, &params);
+        ) {            let plan = plan_drain(&note_values);
             for transaction in &plan.transactions {
-                proptest::prop_assert!(transaction.output > params.sweep_min);
+                proptest::prop_assert!(transaction.output > SWEEP_MIN);
             }
         }
     }
@@ -361,14 +343,12 @@ mod tests {
     /// the notes that are still free. This is what makes re-calling the drain
     /// the recovery path after a partial broadcast.
     #[test]
-    fn replanning_covers_only_the_remaining_notes() {
-        let params = params();
-        let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
-        let full = plan_drain(&all, &params);
+    fn replanning_covers_only_the_remaining_notes() {        let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
+        let full = plan_drain(&all);
 
         // The first two notes were spent by a drain that did broadcast.
         let remaining = &all[2..];
-        let replan = plan_drain(remaining, &params);
+        let replan = plan_drain(remaining);
 
         assert_eq!(replan.transactions.len(), 1);
         assert_eq!(replan.transactions[0].inputs, remaining.to_vec());

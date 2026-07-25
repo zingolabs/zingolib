@@ -18,6 +18,15 @@ use super::quantize::decompose;
 /// to the crate constant by test.
 pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
+/// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
+/// at most this, and never manufactures an output worth at most this.
+/// Provisionally twice the marginal fee — a selected note must return strictly
+/// more than double the marginal action cost it adds, not merely break even.
+/// Shared by both migration paths: the private schedule reads it through
+/// [`MigrationParams`], and the immediate [`super::drain`] reads it directly,
+/// so the two strand identically.
+pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
+
 /// Orchard pads every non-empty bundle to at least this many actions
 /// (`orchard::builder`'s `MIN_ACTIONS`, which is private). Pinned to
 /// `BundleType::num_actions` by test.
@@ -429,6 +438,38 @@ impl crate::wallet::LightWallet {
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
             .map(|note| note.value())
             .collect())
+    }
+
+    /// True when a note-splitting round this account initiated is still
+    /// confirming: a pending (built, transmitted, or mempool — but not yet
+    /// confirmed) transaction holds account-owned pre-Ironwood (V2) Orchard
+    /// outputs. Those are the self-notes a round creates; while they are
+    /// unconfirmed the round's spent inputs have also left the spendable set,
+    /// so a replan sees an empty pool and would otherwise report the migration
+    /// falsely complete.
+    ///
+    /// This is the stateless, derived replacement for a round's stored
+    /// `pending_txids`: it lets [`crate::lightclient::LightClient::quick_split`]
+    /// tell "a round is still in flight, sync and retry" apart from "fully
+    /// split, done" without persisting any migration phase. It reads the
+    /// round's *outputs* rather than its inputs' spend marks, which a
+    /// not-yet-transmitted transaction does not carry. Under the flow's
+    /// sync-between-rounds contract there are no unrelated pending Orchard
+    /// receipts, so this is precise; were there, treating them as "wait" is
+    /// the safe reading.
+    pub(crate) fn note_split_in_flight(&self, account: zip32::AccountId) -> bool {
+        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
+
+        self.wallet_transactions
+            .values()
+            .filter(|transaction| transaction.status().is_pending())
+            .flat_map(|transaction| {
+                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
+            })
+            .any(|note| {
+                note.key_id().account_id() == account
+                    && note.note().version() == orchard::note::NoteVersion::V2
+            })
     }
 
     /// Builds, proves, signs and records one planned note-splitting
