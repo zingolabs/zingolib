@@ -33,7 +33,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
 /// holds `&mut LightClient`; the transmit path updates it as submissions,
 /// retries, probes, and fan-out rounds occur. Mirrors the
-/// `DrainProgressHandle` pattern.
+/// `ImmediateMigrationProgressHandle` pattern.
 #[derive(Clone, Debug, Default)]
 pub struct TransmitProgressHandle(Arc<Mutex<Option<String>>>);
 

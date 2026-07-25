@@ -19,7 +19,9 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
-const INNER_VERSION: u8 = 2;
+/// Version 3 drops the params `expiry_delta` field: the canonical expiry is
+/// the fixed ZIP 318 formula, not a parameter.
+const INNER_VERSION: u8 = 3;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -31,13 +33,12 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
         w.write_u64::<LittleEndian>(*denomination)
     })?;
     writer.write_u64::<LittleEndian>(params.denom_cap)?;
-    writer.write_u64::<LittleEndian>(params.dust_floor)?;
+    writer.write_u64::<LittleEndian>(params.max_residual_value)?;
     writer.write_u64::<LittleEndian>(params.sweep_min)?;
     writer.write_u32::<LittleEndian>(params.bucket_modulus)?;
     writer.write_u32::<LittleEndian>(params.k_max)?;
     writer.write_u32::<LittleEndian>(params.target_sessions)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
-    writer.write_u32::<LittleEndian>(params.expiry_delta)?;
     writer.write_u64::<LittleEndian>(params.part_fee)?;
 
     writer.write_all(&state.consent.params_hash)?;
@@ -88,7 +89,7 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
     let version = reader.read_u32::<LittleEndian>()?;
     let denominations = Vector::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
     let denom_cap = reader.read_u64::<LittleEndian>()?;
-    let dust_floor = reader.read_u64::<LittleEndian>()?;
+    let max_residual_value = reader.read_u64::<LittleEndian>()?;
     let sweep_min = reader.read_u64::<LittleEndian>()?;
     let bucket_modulus = reader.read_u32::<LittleEndian>()?;
     // Every bucket computation divides or multiplies by the modulus, so a
@@ -108,19 +109,21 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
                 "max_actions_per_split_tx does not fit in this platform's usize",
             )
         })?;
-    let expiry_delta = reader.read_u32::<LittleEndian>()?;
+    if inner_version <= 2 {
+        // Discarded: superseded by the fixed ZIP 318 expiry formula.
+        reader.read_u32::<LittleEndian>()?;
+    }
     let part_fee = reader.read_u64::<LittleEndian>()?;
     let params = MigrationParams {
         version,
         denominations,
         denom_cap,
-        dust_floor,
+        max_residual_value,
         sweep_min,
         bucket_modulus,
         k_max,
         target_sessions,
         max_actions_per_split_tx,
-        expiry_delta,
         part_fee,
     };
 
@@ -343,7 +346,6 @@ mod tests {
             any::<u32>(),
             any::<u32>(),
             1usize..=1000,
-            any::<u32>(),
             any::<u64>(),
         )
             .prop_map(
@@ -351,25 +353,23 @@ mod tests {
                     version,
                     denominations,
                     denom_cap,
-                    dust_floor,
+                    max_residual_value,
                     sweep_min,
                     bucket_modulus,
                     k_max,
                     target_sessions,
                     max_actions_per_split_tx,
-                    expiry_delta,
                     part_fee,
                 )| MigrationParams {
                     version,
                     denominations,
                     denom_cap,
-                    dust_floor,
+                    max_residual_value,
                     sweep_min,
                     bucket_modulus,
                     k_max,
                     target_sessions,
                     max_actions_per_split_tx,
-                    expiry_delta,
                     part_fee,
                 },
             )
@@ -550,9 +550,9 @@ mod tests {
         assert!(read(bytes.as_slice()).is_err());
     }
 
-    /// Version 2 only appended the mode byte, so a v1 blob is a v2 blob
-    /// with the version byte lowered and the trailing mode byte dropped.
-    /// Reading it must succeed and default the mode to `Scheduled`, the
+    /// Relative to v3, a v1 blob carries the retired `expiry_delta` u32
+    /// before `part_fee` and lacks the trailing mode byte. Reading it must
+    /// succeed, discard the delta, and default the mode to `Scheduled`, the
     /// conservative reading that makes the immediate path refuse to
     /// collapse an old persisted state.
     #[test]
@@ -563,6 +563,10 @@ mod tests {
         write(&mut bytes, &state).expect("writes");
         bytes[0] = 1;
         bytes.pop();
+        // Splice the legacy expiry_delta back in where v1 carried it: after
+        // the fixed-width params fields that follow the denominations vector.
+        let offset = 1 + 4 + 1 + 8 * state.params.denominations.len() + 3 * 8 + 3 * 4 + 8;
+        bytes.splice(offset..offset, 296u32.to_le_bytes());
 
         let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");
         assert_eq!(recovered.mode, MigrationMode::Scheduled);

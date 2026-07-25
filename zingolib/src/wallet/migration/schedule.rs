@@ -28,8 +28,24 @@ pub fn random_target_in_bucket(
     BlockHeight::from_u32(boundary + offset)
 }
 
-/// Zcash target block spacing in seconds, used to estimate wake times.
+/// Zcash target block spacing in seconds, used to estimate window times.
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
+
+/// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
+pub const EXPIRY_MODULUS: u32 = 34_560;
+
+/// The canonical validity window past an expiry bucket's opening.
+pub const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+
+/// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
+/// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
+/// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
+/// in the same 30-day period, so the committed expiry reveals only that
+/// coarse period.
+pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
+    let height = u32::from(broadcast_height);
+    BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
+}
 
 /// The bucket containing `height`.
 pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
@@ -187,7 +203,7 @@ pub fn plan_schedule(
 /// One future broadcast window: what a platform scheduler (for example
 /// `BGTaskScheduler` or `WorkManager`) feeds into its earliest-begin request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WakePoint {
+pub struct BroadcastWindow {
     /// The bucket the parts are assigned to.
     pub bucket_index: u64,
     /// The bucket's opening boundary, also the parts' anchor height.
@@ -198,11 +214,11 @@ pub struct WakePoint {
     /// from `now` at the target block spacing. Aim silent work here: the
     /// boundary's tree state is only witnessable for a finite retention
     /// after it, so a sync shortly after this moment secures the window.
-    pub estimated_unix_time: u64,
+    pub window_opens_unix_time: u64,
     /// Rough unix time the window's *latest* per-part random target is
     /// expected. Aim the user-facing wake here: at this moment every part
     /// of the window is due, so one visit sends the whole batch.
-    pub estimated_target_unix_time: u64,
+    pub latest_target_unix_time: u64,
 }
 
 /// Rough unix time `height` is expected to be mined, extrapolated from
@@ -217,7 +233,7 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
 /// it is assigned to `current_bucket`, whose boundary is at or below the tip
 /// by definition. The part's random `target_height` no longer gates
 /// sendability; it is advisory, exposed only as the reminder hint
-/// [`WakePoint::estimated_target_unix_time`], so a part is due for the whole
+/// [`BroadcastWindow::latest_target_unix_time`], so a part is due for the whole
 /// open window rather than only from its target onward.
 ///
 /// The single-part rule shared by the broadcast loop and the "due now" status
@@ -233,13 +249,13 @@ pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has
 /// already passed are reconciliation's business and are not listed here.
-pub fn next_wakes(
+pub fn upcoming_windows(
     parts: &[PartRecord],
     now_height: BlockHeight,
     now_unix: u64,
     horizon: u64,
     params: &MigrationParams,
-) -> Vec<WakePoint> {
+) -> Vec<BroadcastWindow> {
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
     let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
@@ -264,13 +280,87 @@ pub fn next_wakes(
             // A part without a target (a catch-up shift) is due at the
             // window opening, which every in-window target is at or past.
             let latest_target = latest_target.unwrap_or(boundary + 1);
-            WakePoint {
+            BroadcastWindow {
                 bucket_index: bucket,
                 boundary,
                 part_ids,
-                estimated_unix_time: estimated_unix_at(boundary, now_height, now_unix),
-                estimated_target_unix_time: estimated_unix_at(latest_target, now_height, now_unix),
+                window_opens_unix_time: estimated_unix_at(boundary, now_height, now_unix),
+                latest_target_unix_time: estimated_unix_at(latest_target, now_height, now_unix),
             }
+        })
+        .collect()
+}
+
+/// One window of the schedule's timeline: the bucket, its block range, and
+/// how far its parts have come. The rendering counterpart to
+/// [`BroadcastWindow`], which feeds platform schedulers strictly future
+/// windows; this reports every window the schedule touches, finished ones
+/// included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowReport {
+    /// The bucket this window is.
+    pub bucket_index: u64,
+    /// The window's opening boundary (inclusive).
+    pub boundary: BlockHeight,
+    /// The window's closing height (exclusive): the next boundary.
+    pub close: BlockHeight,
+    /// Whether the chain tip is inside this window.
+    pub is_current: bool,
+    /// Parts assigned to this window.
+    pub parts_total: u32,
+    /// Parts confirmed.
+    pub parts_confirmed: u32,
+    /// Total value assigned to this window, in zatoshis.
+    pub value_total: u64,
+    /// Value confirmed into Ironwood from this window, in zatoshis.
+    pub value_migrated: u64,
+}
+
+/// The window timeline, earliest first: one report per bucket holding at
+/// least one part, plus always the window the tip is inside — so the
+/// calendar exists (with zero tallies) before any migration is scheduled.
+/// Pure over the given parts and tip. Parts not yet assigned to a bucket
+/// have no window and are not listed.
+pub fn window_timeline(
+    parts: &[PartRecord],
+    now_height: BlockHeight,
+    params: &MigrationParams,
+) -> Vec<WindowReport> {
+    #[derive(Default)]
+    struct Tally {
+        parts_total: u32,
+        parts_confirmed: u32,
+        value_total: u64,
+        value_migrated: u64,
+    }
+
+    let current_bucket = bucket_index(now_height, params.bucket_modulus);
+    let mut buckets: std::collections::BTreeMap<u64, Tally> = std::collections::BTreeMap::new();
+    buckets.entry(current_bucket).or_default();
+    for part in parts {
+        let Some(bucket) = part.bucket_index else {
+            continue;
+        };
+        let tally = buckets.entry(bucket).or_default();
+        tally.parts_total += 1;
+        tally.value_total += part.denomination;
+        if matches!(part.state, PartState::Confirmed { .. }) {
+            tally.parts_confirmed += 1;
+            tally.value_migrated += part.denomination;
+        }
+    }
+
+    buckets
+        .into_iter()
+        .map(|(bucket, tally)| WindowReport {
+            bucket_index: bucket,
+            boundary: boundary_of(bucket, params.bucket_modulus),
+            close: boundary_of(bucket + 1, params.bucket_modulus),
+            is_current: bucket == current_bucket,
+            parts_total: tally.parts_total,
+            parts_confirmed: tally.parts_confirmed,
+            value_total: tally.value_total,
+            value_migrated: tally.value_migrated,
         })
         .collect()
 }
@@ -419,6 +509,71 @@ mod tests {
         assert_eq!(distinct.len(), 5);
     }
 
+    /// The timeline reports every bucket holding a part, earliest first,
+    /// with per-window confirmation tallies and the current-window marker.
+    /// Unassigned parts have no window and are not listed.
+    #[test]
+    fn window_timeline_tallies_windows_past_and_future() {
+        let params = params();
+        let mut done = bound_part(0, 2_000_000);
+        done.assign(3).unwrap();
+        done.mark_confirmed(BlockHeight::from_u32(3 * params.bucket_modulus + 5))
+            .unwrap();
+        let mut pending = bound_part(1, 1_000_000);
+        pending.assign(3).unwrap();
+        let mut ahead = bound_part(2, 5_000_000);
+        ahead.assign(5).unwrap();
+        let unassigned = bound_part(3, 1_000_000);
+
+        let now = boundary_of(3, params.bucket_modulus) + 10;
+        let timeline = window_timeline(&[done, pending, ahead, unassigned], now, &params);
+
+        assert_eq!(
+            timeline.len(),
+            2,
+            "assigned buckets plus the current window, which bucket 3 already is"
+        );
+        let current = &timeline[0];
+        assert_eq!(current.bucket_index, 3);
+        assert_eq!(current.boundary, boundary_of(3, params.bucket_modulus));
+        assert_eq!(current.close, boundary_of(4, params.bucket_modulus));
+        assert!(current.is_current);
+        assert_eq!((current.parts_confirmed, current.parts_total), (1, 2));
+        assert_eq!(current.value_migrated, 2_000_000);
+        assert_eq!(current.value_total, 3_000_000);
+
+        let future = &timeline[1];
+        assert_eq!(future.bucket_index, 5);
+        assert!(!future.is_current);
+        assert_eq!((future.parts_confirmed, future.parts_total), (0, 1));
+        assert_eq!(future.value_migrated, 0);
+    }
+
+    /// The calendar exists before any schedule: with no parts at all the
+    /// timeline still reports the window the tip is inside, zero tallies.
+    /// With parts elsewhere, the empty current window is still listed.
+    #[test]
+    fn window_timeline_always_reports_the_current_window() {
+        let params = params();
+        let now = boundary_of(7, params.bucket_modulus) + 100;
+
+        let bare = window_timeline(&[], now, &params);
+        assert_eq!(bare.len(), 1);
+        assert!(bare[0].is_current);
+        assert_eq!(bare[0].bucket_index, 7);
+        assert_eq!(bare[0].boundary, boundary_of(7, params.bucket_modulus));
+        assert_eq!(bare[0].close, boundary_of(8, params.bucket_modulus));
+        assert_eq!((bare[0].parts_total, bare[0].value_total), (0, 0));
+
+        let mut ahead = bound_part(0, 1_000_000);
+        ahead.assign(9).unwrap();
+        let timeline = window_timeline(&[ahead], now, &params);
+        assert_eq!(timeline.len(), 2);
+        assert!(timeline[0].is_current);
+        assert_eq!(timeline[0].parts_total, 0);
+        assert_eq!(timeline[1].bucket_index, 9);
+    }
+
     /// The random target no longer gates sendability: a current-bucket part
     /// awaiting broadcast is due for the whole open window, the exact case the
     /// old target-gated predicate rejected. Bucket membership plus
@@ -430,7 +585,7 @@ mod tests {
         let mut part = bound_part(0, 1_000_000);
         part.assign(current_bucket).unwrap();
         // A target high in the window — above where an early-window tip sits.
-        part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 200);
+        part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 100);
 
         assert!(
             part_in_current_bucket(&part, current_bucket),
@@ -526,23 +681,26 @@ mod tests {
     }
 
     #[test]
-    fn next_wakes_lists_future_windows_within_the_horizon() {
+    fn upcoming_windows_lists_future_windows_within_the_horizon() {
         let params = params();
         let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
         let now = BlockHeight::from_u32(10_000);
         let now_unix = 1_780_000_000;
         plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
 
-        let wakes = next_wakes(&parts, now, now_unix, u64::MAX, &params);
-        let listed: usize = wakes.iter().map(|w| w.part_ids.len()).sum();
+        let windows = upcoming_windows(&parts, now, now_unix, u64::MAX, &params);
+        let listed: usize = windows.iter().map(|w| w.part_ids.len()).sum();
 
-        // next_wakes lists strictly future windows. The first cohort now opens
+        // upcoming_windows lists strictly future windows. The first cohort now opens
         // in the current bucket and is surfaced through `due_now`, not here, so
         // every future-bucket part appears and no current-bucket one does.
         let current_bucket = bucket_index(now, params.bucket_modulus);
         let future_parts = parts
             .iter()
-            .filter(|part| part.bucket_index.is_some_and(|bucket| bucket > current_bucket))
+            .filter(|part| {
+                part.bucket_index
+                    .is_some_and(|bucket| bucket > current_bucket)
+            })
             .count();
         assert!(
             future_parts > 0 && future_parts < parts.len(),
@@ -550,42 +708,114 @@ mod tests {
         );
         assert_eq!(listed, future_parts, "every future-bucket part appears");
         assert!(
-            wakes.iter().all(|wake| wake.bucket_index > current_bucket),
-            "no wake is for the current bucket"
+            windows
+                .iter()
+                .all(|window| window.bucket_index > current_bucket),
+            "no window is for the current bucket"
         );
-        for pair in wakes.windows(2) {
+        for pair in windows.windows(2) {
             assert!(pair[0].bucket_index < pair[1].bucket_index, "soonest first");
         }
-        for wake in &wakes {
+        for window in &windows {
             assert_eq!(
-                wake.boundary,
-                boundary_of(wake.bucket_index, params.bucket_modulus)
+                window.boundary,
+                boundary_of(window.bucket_index, params.bucket_modulus)
             );
-            assert!(wake.estimated_unix_time > now_unix);
+            assert!(window.window_opens_unix_time > now_unix);
 
             // The user-facing wake time is the window's latest per-part
             // target, never earlier than the window opening.
             let latest_target = parts
                 .iter()
-                .filter(|part| part.bucket_index == Some(wake.bucket_index))
+                .filter(|part| part.bucket_index == Some(window.bucket_index))
                 .filter_map(|part| part.target_height)
                 .max()
                 .expect("scheduled parts carry targets");
             assert_eq!(
-                wake.estimated_target_unix_time,
+                window.latest_target_unix_time,
                 estimated_unix_at(latest_target, now, now_unix)
             );
-            assert!(wake.estimated_target_unix_time >= wake.estimated_unix_time);
+            assert!(window.latest_target_unix_time >= window.window_opens_unix_time);
         }
 
-        // A confirmed part never appears in a wake.
+        // A confirmed part never appears in a window.
         parts[0]
             .mark_confirmed(BlockHeight::from_u32(20_000))
             .unwrap();
-        let wakes = next_wakes(&parts, now, now_unix, u64::MAX, &params);
-        assert!(wakes.iter().all(|wake| !wake.part_ids.contains(&PartId(0))));
+        let windows = upcoming_windows(&parts, now, now_unix, u64::MAX, &params);
+        assert!(
+            windows
+                .iter()
+                .all(|window| !window.part_ids.contains(&PartId(0)))
+        );
 
         // The horizon bounds the listing.
-        assert!(next_wakes(&parts, now, now_unix, 0, &params).is_empty());
+        assert!(upcoming_windows(&parts, now, now_unix, 0, &params).is_empty());
+    }
+
+    /// Checks our locally defined ZIP 318 values against
+    /// `zcash_pool_migration`, the reference implementation. The constants
+    /// stay local so they can only move by an explicit commit (they feed the
+    /// consent hash), and this suite is what catches upstream ratifying
+    /// different ones: bump the pinned dev-dependency and red means adopt
+    /// deliberately, with a params version bump.
+    mod zip318_conformance {
+        use zcash_pool_migration::note_splitting::{
+            MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
+        };
+        use zcash_pool_migration::scheduling;
+
+        use super::*;
+        use crate::wallet::migration::params::COIN;
+
+        #[test]
+        fn expiry_constants_match_upstream() {
+            assert_eq!(EXPIRY_MODULUS, scheduling::EXPIRY_MODULUS);
+            assert_eq!(EXPIRY_WINDOW, scheduling::EXPIRY_WINDOW);
+        }
+
+        #[test]
+        fn expiry_heights_match_upstream() {
+            let sample = [
+                0,
+                1,
+                EXPIRY_MODULUS - 1,
+                EXPIRY_MODULUS,
+                EXPIRY_MODULUS + 1,
+                3_428_499,
+                100 * EXPIRY_MODULUS,
+                101 * EXPIRY_MODULUS - 1,
+            ];
+            for height in sample.map(BlockHeight::from_u32) {
+                assert_eq!(
+                    canonical_expiry_height(height),
+                    scheduling::expiry_height(height),
+                    "diverged at {height}"
+                );
+            }
+        }
+
+        #[test]
+        fn params_match_upstream() {
+            let params = MigrationParams::provisional(ChainType::Mainnet);
+            assert_eq!(params.bucket_modulus, scheduling::BOUNDARY_MODULUS);
+            assert_eq!(params.denom_cap, MIGRATION_MAX_DENOMINATION_ZEC * COIN);
+            assert_eq!(params.max_residual_value, u64::from(RESIDUAL_MIGRATION_MIN));
+        }
+
+        /// Every denomination is `n × 10^k` with `n ∈ {1, 2, 5}`.
+        #[test]
+        fn denominations_follow_the_one_two_five_rule() {
+            for denomination in MigrationParams::provisional(ChainType::Mainnet).denominations {
+                let mut mantissa = denomination;
+                while mantissa % 10 == 0 {
+                    mantissa /= 10;
+                }
+                assert!(
+                    matches!(mantissa, 1 | 2 | 5),
+                    "{denomination} is not a {{1, 2, 5}} × 10^k value"
+                );
+            }
+        }
     }
 }

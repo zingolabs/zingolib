@@ -16,7 +16,7 @@
 //! interactive one-call for CLI use, testing, and the user who prefers the
 //! immediate migration ZIP 318 permits with a disclosed privacy trade-off.
 //!
-//! [`LightClient::drain_orchard_to_ironwood`] is the other option ZIP 318
+//! [`LightClient::migrate_immediately`] is the other option ZIP 318
 //! offers the user: move everything at once, no note splitting and no
 //! schedule, accepting that the transfers are correlated and the amounts are
 //! the wallet's own.
@@ -40,10 +40,10 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
-    BroadcastClient, ChainView, ConsentBinding, DrainPlan, MigrationMode, MigrationParams,
-    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
-    RecommendedAction, ReconcileReport, SigningStrategy, WakePoint, due_now_parts, plan_hash,
-    plan_migration, plan_schedule, reconcile, schedule,
+    BroadcastClient, BroadcastWindow, ChainView, ConsentBinding, ImmediateMigrationPlan,
+    MigrationMode, MigrationParams, MigrationPhase, MigrationPlan, MigrationState, PartId,
+    PartState, PrepareResult, RecommendedAction, ReconcileReport, SigningStrategy, WindowReport,
+    due_now_parts, plan_hash, plan_migration, plan_schedule, reconcile, schedule,
 };
 
 pub mod broadcast_grpc;
@@ -56,15 +56,15 @@ const MAX_CONFIRMATION_POLLS: usize = 720;
 /// A migration replans after every round. A real plan converges in
 /// `~log_K(N)` rounds, so far more than this means something is wrong.
 const MAX_ROUNDS: usize = 64;
-/// How many buckets ahead [`LightClient::migration_status`] reports wakes
+/// How many buckets ahead [`LightClient::migration_status`] reports windows
 /// for.
 const WAKE_HORIZON_BUCKETS: u64 = 32;
 
-/// The transactions of a completed drain
-/// ([`LightClient::drain_orchard_to_ironwood`]).
+/// The transactions of a completed immediate migration
+/// ([`LightClient::migrate_immediately`]).
 #[derive(Debug, Clone)]
-pub struct DrainSummary {
-    /// The drain transactions, in broadcast order. More than one only when the
+pub struct ImmediateMigrationSummary {
+    /// The immediate migration transactions, in broadcast order. More than one only when the
     /// account held more notes than fit in a single transaction.
     pub txids: Vec<TxId>,
     /// Value (zatoshis) sent into the Ironwood pool.
@@ -72,64 +72,68 @@ pub struct DrainSummary {
     /// Total fees paid, in zatoshis.
     pub fee: u64,
     /// Dust value (zatoshis) left unmigrated in the Orchard pool.
-    pub stranded: u64,
+    pub residual: u64,
 }
 
-/// The coarse stage an in-progress immediate drain is in.
+/// The coarse stage an in-progress immediate migration is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrainPhase {
+pub enum ImmediateMigrationPhase {
     /// Proving and signing the planned transactions.
     Building,
     /// Broadcasting the built transactions.
     Transmitting,
 }
 
-/// A snapshot of an in-progress immediate Orchard→Ironwood drain, for rendering
-/// "built i/N, sent i/N". The immediate-drain counterpart to [`MigrationStatus`].
-/// `None` from [`LightClient::drain_status`] means no drain is running.
+/// A snapshot of an in-progress immediate Orchard→Ironwood migration, for rendering
+/// "built i/N, sent i/N". The immediate-migration counterpart to [`MigrationStatus`].
+/// `None` from [`LightClient::immediate_migration_status`] means no immediate migration is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DrainStatus {
-    /// Total transactions in the plan (N), fixed when the drain begins.
+pub struct ImmediateMigrationStatus {
+    /// Total transactions in the plan (N), fixed when the immediate migration begins.
     pub total: u32,
     /// Transactions built (proved + signed) so far, `0..=total`.
     pub built: u32,
     /// Transactions broadcast so far, `0..=total`.
     pub sent: u32,
-    /// Which phase the drain is in.
-    pub phase: DrainPhase,
+    /// Which phase the immediate migration is in.
+    pub phase: ImmediateMigrationPhase,
 }
 
-/// A cloneable handle to an immediate drain's live progress, readable without
-/// touching the wallet lock. A consumer that runs the drain (which borrows the
-/// client `&mut self`) grabs this via [`LightClient::drain_progress_handle`]
-/// *before* starting the drain, then polls [`Self::status`] concurrently.
+/// A cloneable handle to an immediate migration's live progress, readable without
+/// touching the wallet lock. A consumer that runs the immediate migration (which borrows the
+/// client `&mut self`) grabs this via [`LightClient::immediate_migration_progress_handle`]
+/// *before* starting the immediate migration, then polls [`Self::status`] concurrently.
 ///
-/// The drain holds the wallet write lock across its whole build and transmit
+/// The immediate migration holds the wallet write lock across its whole build and transmit
 /// loops, so progress lives in this side channel instead of in wallet state:
-/// a poll never contends with the drain for the wallet lock.
+/// a poll never contends with the immediate migration for the wallet lock.
 #[derive(Debug, Clone, Default)]
-pub struct DrainProgressHandle(Arc<Mutex<Option<DrainStatus>>>);
+pub struct ImmediateMigrationProgressHandle(Arc<Mutex<Option<ImmediateMigrationStatus>>>);
 
-impl DrainProgressHandle {
-    /// The current drain snapshot, or `None` when no drain is running.
-    pub fn status(&self) -> Option<DrainStatus> {
+impl ImmediateMigrationProgressHandle {
+    /// The current migration snapshot, or `None` when no immediate migration is running.
+    pub fn status(&self) -> Option<ImmediateMigrationStatus> {
         self.0
             .lock()
-            .expect("drain progress mutex poisoned")
+            .expect("immediate-migration progress mutex poisoned")
             .clone()
     }
 
-    /// Arms a fresh drain of `total` transactions. Every other mutator is a
+    /// Arms a fresh migration of `total` transactions. Every other mutator is a
     /// no-op until this has been called, which is what scopes progress to the
-    /// immediate drain and leaves the shared build/transmit primitives
+    /// immediate migration and leaves the shared build/transmit primitives
     /// untouched for every other caller.
     pub(crate) fn begin(&self, total: u32) {
-        *self.0.lock().expect("drain progress mutex poisoned") = Some(DrainStatus {
-            total,
-            built: 0,
-            sent: 0,
-            phase: DrainPhase::Building,
-        });
+        *self
+            .0
+            .lock()
+            .expect("immediate-migration progress mutex poisoned") =
+            Some(ImmediateMigrationStatus {
+                total,
+                built: 0,
+                sent: 0,
+                phase: ImmediateMigrationPhase::Building,
+            });
     }
 
     /// Publishes the number of transactions built so far. No-op when idle.
@@ -137,22 +141,22 @@ impl DrainProgressHandle {
         if let Some(status) = self
             .0
             .lock()
-            .expect("drain progress mutex poisoned")
+            .expect("immediate-migration progress mutex poisoned")
             .as_mut()
         {
             status.built = built;
         }
     }
 
-    /// Advances the phase to [`DrainPhase::Transmitting`]. No-op when idle.
+    /// Advances the phase to [`ImmediateMigrationPhase::Transmitting`]. No-op when idle.
     pub(crate) fn enter_transmit(&self) {
         if let Some(status) = self
             .0
             .lock()
-            .expect("drain progress mutex poisoned")
+            .expect("immediate-migration progress mutex poisoned")
             .as_mut()
         {
-            status.phase = DrainPhase::Transmitting;
+            status.phase = ImmediateMigrationPhase::Transmitting;
         }
     }
 
@@ -161,7 +165,7 @@ impl DrainProgressHandle {
         if let Some(status) = self
             .0
             .lock()
-            .expect("drain progress mutex poisoned")
+            .expect("immediate-migration progress mutex poisoned")
             .as_mut()
         {
             status.sent = sent;
@@ -170,17 +174,20 @@ impl DrainProgressHandle {
 
     /// Returns to the idle state, so a poll reports `None` once more.
     pub(crate) fn clear(&self) {
-        *self.0.lock().expect("drain progress mutex poisoned") = None;
+        *self
+            .0
+            .lock()
+            .expect("immediate-migration progress mutex poisoned") = None;
     }
 }
 
-/// Clears the drain progress on drop, so a failed or early-returning drain never
+/// Clears the immediate-migration progress on drop, so a failed or early-returning migration never
 /// leaves a stale snapshot behind. Owns an `Arc` clone (not a borrow of the
 /// client) so it can live across the `&mut self` [`LightClient::build_and_transmit`]
 /// call.
-struct DrainProgressScope(DrainProgressHandle);
+struct ImmediateMigrationProgressScope(ImmediateMigrationProgressHandle);
 
-impl Drop for DrainProgressScope {
+impl Drop for ImmediateMigrationProgressScope {
     fn drop(&mut self) {
         self.0.clear();
     }
@@ -204,7 +211,7 @@ pub enum SplitOutcome {
 }
 
 /// The coarse stage a running note-splitting round is in, mirroring
-/// [`DrainPhase`].
+/// [`ImmediateMigrationPhase`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitPhase {
     /// Proving and signing the round's transactions.
@@ -215,7 +222,7 @@ pub enum SplitPhase {
 
 /// A snapshot of the note-splitting round a [`LightClient::quick_split`] call
 /// is building, for rendering "built i/N, sent i/N" within that call. The
-/// Phase 1 counterpart to [`DrainStatus`]. `None` from
+/// Phase 1 counterpart to [`ImmediateMigrationStatus`]. `None` from
 /// [`LightClient::split_status`] means no round is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitStatus {
@@ -231,7 +238,7 @@ pub struct SplitStatus {
 
 /// A cloneable handle to a note-splitting round's live progress, readable
 /// without touching the wallet lock — the side-channel pattern of
-/// [`DrainProgressHandle`]. Grab it via [`LightClient::split_progress_handle`]
+/// [`ImmediateMigrationProgressHandle`]. Grab it via [`LightClient::split_progress_handle`]
 /// before calling [`LightClient::quick_split`], then poll [`Self::status`]
 /// concurrently while the round holds the wallet write lock.
 #[derive(Debug, Clone, Default)]
@@ -312,7 +319,7 @@ impl Drop for SplitProgressScope {
 }
 
 /// The progress side channel one shared build/transmit batch reports into.
-/// Both the immediate drain and a note-splitting round drive the shared
+/// Both the immediate migration and a note-splitting round drive the shared
 /// [`LightClient::build_and_transmit`] primitive; each arms its own handle so
 /// a poll reads the right batch. The internal drivers (the scheduled
 /// note-splitting loop, `migrate_to_ironwood`) pass `()` to report nowhere.
@@ -328,7 +335,7 @@ impl BuildProgressSink for () {
     fn on_transmit(&self) {}
 }
 
-impl BuildProgressSink for DrainProgressHandle {
+impl BuildProgressSink for ImmediateMigrationProgressHandle {
     fn on_built(&self, built: u32) {
         self.set_built(built);
     }
@@ -348,7 +355,7 @@ impl BuildProgressSink for SplitProgressHandle {
 
 /// A cloneable handle to an execute batch's live progress
 /// ([`LightClient::execute_due_parts`]), readable without touching the
-/// wallet lock — the side-channel pattern of [`DrainProgressHandle`].
+/// wallet lock — the side-channel pattern of [`ImmediateMigrationProgressHandle`].
 /// Grab it via [`LightClient::batch_progress_handle`] before starting the
 /// batch, poll [`Self::status`] concurrently.
 #[derive(Debug, Clone, Default)]
@@ -461,7 +468,7 @@ pub enum PartSendResult {
     /// Its random target is still ahead. Come back around the estimate.
     NotDue {
         /// Rough unix time the target block is expected.
-        estimated_unix_time: u64,
+        window_opens_unix_time: u64,
     },
     /// Submission failed and the batch halted here.
     Failed {
@@ -488,7 +495,7 @@ pub struct MigrationSummary {
     /// Parts (Orchard→Ironwood), one per denomination.
     pub part_txids: Vec<TxId>,
     /// Dust value (zatoshis) left unmigrated in the Orchard pool.
-    pub stranded: u64,
+    pub residual: u64,
 }
 
 /// What one [`LightClient::continue_note_splitting`] call did.
@@ -545,23 +552,26 @@ pub struct MigrationStatus {
     pub orchard_confirmed_spendable: u64,
     /// Where the migration is, `None` when none is in progress.
     pub phase: Option<MigrationPhase>,
-    /// Scheduled parts in total.
+    /// Scheduled parts in total. During Phase 1 (planned or note splitting)
+    /// no part records exist yet, so this is the projected plan's part
+    /// count; the two agree at the moment parts bind.
     pub parts_total: u32,
     /// Parts confirmed so far.
     pub parts_confirmed: u32,
-    /// Total value across all parts, in zatoshis.
+    /// Total value across all parts, in zatoshis. Projected from the plan
+    /// during Phase 1, like [`Self::parts_total`].
     pub value_total: u64,
     /// Value already confirmed into the Ironwood pool, in zatoshis.
     pub value_migrated: u64,
     /// Coming broadcast windows, what a platform scheduler feeds into its
     /// earliest-begin requests. Strictly *future* windows: the window the
     /// chain is currently inside is reported by [`Self::due_now`], not here.
-    pub next_wakes: Vec<WakePoint>,
+    pub upcoming_windows: Vec<BroadcastWindow>,
     /// The batch the client can broadcast right now, or `None` when a send
     /// this instant would build nothing (no migration, wrong phase, every
     /// part still ahead of its random target, or all parts confirmed).
-    /// Unlike [`Self::next_wakes`] this reports the window the chain is
-    /// currently *inside*, which `next_wakes` structurally cannot carry.
+    /// Unlike [`Self::upcoming_windows`] this reports the window the chain is
+    /// currently *inside*, which `upcoming_windows` structurally cannot carry.
     pub due_now: Option<DueBatch>,
 }
 
@@ -569,7 +579,7 @@ impl LightClient {
     /// Plans a migration from the wallet's current spendable Orchard notes.
     ///
     /// Pure and deterministic: nothing is signed or sent, so the plan (its
-    /// transaction count, fees and stranded dust) can be shown to the user
+    /// transaction count, fees and residual dust) can be shown to the user
     /// for consent before [`Self::migrate_to_ironwood`] executes it.
     pub async fn plan_ironwood_migration(
         &self,
@@ -845,7 +855,7 @@ impl LightClient {
     /// broadcast, confirmed, or otherwise past `Assigned`: the cadence the
     /// remaining parts were consented under is then already partly executed.
     /// Afterwards, re-read [`Self::migration_status`] and re-arm platform
-    /// wakes from `next_wakes` — the old schedule's times are void.
+    /// windows from `upcoming_windows` — the old schedule's times are void.
     pub async fn reschedule_parts(&mut self, per_bucket: u32) -> Result<(), LightClientError> {
         let mut wallet = self.wallet().write().await;
         wallet
@@ -1086,7 +1096,7 @@ impl LightClient {
                         .expect("assigned parts carry a bucket");
                     let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
                     let target_height = boundary + 1;
-                    let expiry_height = boundary + state.params.expiry_delta;
+                    let expiry_height = schedule::canonical_expiry_height(target_height);
                     wallet.record_part_result(
                         &mut state.parts[index],
                         txid,
@@ -1439,7 +1449,7 @@ impl LightClient {
             parts_confirmed,
             value_total,
             value_migrated,
-            wakes,
+            windows,
             due_now,
             account,
         ) = match &wallet.migration {
@@ -1450,8 +1460,8 @@ impl LightClient {
                     .filter(|part| matches!(part.state, PartState::Confirmed { .. }))
                     .collect();
                 let now_height = wallet.sync_state.last_known_chain_height();
-                let wakes = now_height.map_or_else(Vec::new, |height| {
-                    crate::wallet::migration::next_wakes(
+                let windows = now_height.map_or_else(Vec::new, |height| {
+                    crate::wallet::migration::upcoming_windows(
                         &state.parts,
                         height,
                         u64::from(crate::utils::now()),
@@ -1492,13 +1502,31 @@ impl LightClient {
                 // holds shields and ordinary receives, which are not migration
                 // progress (issue #2493, finding 10).
                 let value_migrated = confirmed.iter().map(|part| part.denomination).sum();
+                // Phase 1 has no part records yet, so the totals project the
+                // plan over every live V2 note — a round in flight counts as
+                // its pending outputs. The progress denominator exists from
+                // consent onward instead of appearing when parts bind.
+                let (parts_total, value_total) = match &state.phase {
+                    MigrationPhase::Planned | MigrationPhase::NoteSplitting { .. } => {
+                        let plan = crate::wallet::migration::plan_migration(
+                            &wallet.live_v2_note_values(state.account),
+                            wallet.splits_confirm_post_activation(),
+                            &state.params,
+                        );
+                        (plan.parts.len() as u32, plan.parts.iter().sum())
+                    }
+                    _ => (
+                        state.parts.len() as u32,
+                        state.parts.iter().map(|part| part.denomination).sum(),
+                    ),
+                };
                 (
                     Some(state.phase.clone()),
-                    state.parts.len() as u32,
+                    parts_total,
                     confirmed.len() as u32,
-                    state.parts.iter().map(|part| part.denomination).sum(),
+                    value_total,
                     value_migrated,
-                    wakes,
+                    windows,
                     due_now,
                     state.account,
                 )
@@ -1513,21 +1541,45 @@ impl LightClient {
             parts_confirmed,
             value_total,
             value_migrated,
-            next_wakes: wakes,
+            upcoming_windows: windows,
             due_now,
         })
     }
 
-    /// Plans an immediate drain of the account's Orchard pool into Ironwood.
+    /// The window timeline around the chain tip: always the window the tip
+    /// is inside, plus one entry per scheduled window (past and future
+    /// alike) when a migration is in progress. With no migration the
+    /// current window reports zero tallies against the provisional
+    /// parameters, so a client can render the ZIP 318 calendar before the
+    /// user has consented to anything. `None` only when the wallet has no
+    /// chain height yet.
+    pub async fn window_timeline(&self) -> Result<Option<Vec<WindowReport>>, LightClientError> {
+        let wallet = self.wallet().read().await;
+        let Some(now_height) = wallet.sync_state.last_known_chain_height() else {
+            return Ok(None);
+        };
+        Ok(Some(match &wallet.migration {
+            Some(state) => {
+                crate::wallet::migration::window_timeline(&state.parts, now_height, &state.params)
+            }
+            None => crate::wallet::migration::window_timeline(
+                &[],
+                now_height,
+                &MigrationParams::provisional(wallet.chain_type()),
+            ),
+        }))
+    }
+
+    /// Plans an immediate migration of the account's Orchard pool into Ironwood.
     ///
     /// Pure and deterministic, nothing is signed or sent, so the plan
-    /// can be shown to the user for consent before [`Self::drain_orchard_to_ironwood`] executes it.
-    pub async fn plan_orchard_drain(
+    /// can be shown to the user for consent before [`Self::migrate_immediately`] executes it.
+    pub async fn plan_immediate_migration(
         &self,
         account: zip32::AccountId,
-    ) -> Result<DrainPlan, LightClientError> {
+    ) -> Result<ImmediateMigrationPlan, LightClientError> {
         let wallet = self.wallet().read().await;
-        Ok(wallet.plan_drain(account)?)
+        Ok(wallet.plan_immediate_migration(account)?)
     }
 
     /// Spends every spendable Orchard note in `account` into the Ironwood pool,
@@ -1541,21 +1593,21 @@ impl LightClient {
     ///
     /// Notes worth at most [`MigrationParams::sweep_min`] are left behind.
     /// Spending one costs more than it carries, and their total is reported as
-    /// [`DrainSummary::stranded`].
+    /// [`ImmediateMigrationSummary::residual`].
     ///
     /// This function is idempotent over wallet state: a call that fails partway leaves the notes
     /// of every unsent transaction spendable. Calling it again re-plans and
     /// sends the remainder.
     ///
-    /// Syncs the wallet before draining. Consumers that own the sync
+    /// Syncs the wallet before migrating. Consumers that own the sync
     /// lifecycle and keep a background sync running should call
-    /// [`Self::drain_orchard_to_ironwood_presynced`] instead, which drains
+    /// [`Self::migrate_immediately_presynced`] instead, which migrates
     /// against current wallet state without launching its own sync.
-    pub async fn drain_orchard_to_ironwood(
+    pub async fn migrate_immediately(
         &mut self,
         account: zip32::AccountId,
-    ) -> Result<DrainSummary, LightClientError> {
-        // A scheduled migration rejects the drain regardless of chain state,
+    ) -> Result<ImmediateMigrationSummary, LightClientError> {
+        // A scheduled migration rejects the immediate migration regardless of chain state,
         // so check before paying for a sync. The presynced body re-checks
         // after the sync lands.
         if self.wallet().read().await.migration.is_some() {
@@ -1564,14 +1616,13 @@ impl LightClient {
 
         self.sync_and_await().await?;
         let sync = self.pause_sync_scoped()?;
-        self.drain_orchard_to_ironwood_presynced(account, &sync)
-            .await
+        self.migrate_immediately_presynced(account, &sync).await
     }
 
-    /// Broadcasts the immediate Orchard→Ironwood drain against the wallet's
+    /// Broadcasts the immediate Orchard→Ironwood migration against the wallet's
     /// *current* state, without syncing first.
     ///
-    /// This is [`Self::drain_orchard_to_ironwood`] minus the leading
+    /// This is [`Self::migrate_immediately`] minus the leading
     /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
     /// background sync running continuously (e.g. zingo-mobile). Calling the
     /// syncing variant from such a consumer collides with the running sync
@@ -1595,22 +1646,22 @@ impl LightClient {
     /// ```compile_fail
     /// # async fn caller(client: &mut zingolib::lightclient::LightClient) {
     /// let _ = client
-    ///     .drain_orchard_to_ironwood_presynced(zip32::AccountId::ZERO)
+    ///     .migrate_immediately_presynced(zip32::AccountId::ZERO)
     ///     .await;
     /// # }
     /// ```
-    pub async fn drain_orchard_to_ironwood_presynced(
+    pub async fn migrate_immediately_presynced(
         &mut self,
         account: zip32::AccountId,
         sync: &SyncPauseGuard,
-    ) -> Result<DrainSummary, LightClientError> {
+    ) -> Result<ImmediateMigrationSummary, LightClientError> {
         // A scheduled migration soft-reserves the notes its parts are bound to.
-        // Draining them would invalidate those parts behind its back.
+        // Migrating them immediately would invalidate those parts behind its back.
         if self.wallet().read().await.migration.is_some() {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        let plan = self.plan_orchard_drain(account).await?;
+        let plan = self.plan_immediate_migration(account).await?;
         if plan.is_empty() {
             return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
         }
@@ -1619,29 +1670,30 @@ impl LightClient {
         // guard owns an `Arc` clone (not a borrow of `self`), so it survives the
         // `&mut self` `build_and_transmit` call and clears the snapshot on every
         // exit — success, `?`-propagated error, or panic.
-        self.drain_progress.begin(plan.transactions.len() as u32);
-        let _scope = DrainProgressScope(self.drain_progress.clone());
-        let progress = self.drain_progress.clone();
+        self.immediate_migration_progress
+            .begin(plan.transactions.len() as u32);
+        let _scope = ImmediateMigrationProgressScope(self.immediate_migration_progress.clone());
+        let progress = self.immediate_migration_progress.clone();
 
         let txids = self
             .build_and_transmit(&plan.transactions, sync, &progress, |wallet, planned| {
-                wallet.build_drain_transaction(account, planned)
+                wallet.build_immediate_migration_transaction(account, planned)
             })
             .await?;
 
-        Ok(DrainSummary {
+        Ok(ImmediateMigrationSummary {
             txids,
             migrated: plan.migrated,
             fee: plan.fee,
-            stranded: plan.stranded,
+            residual: plan.residual,
         })
     }
 
-    /// The immediate Orchard→Ironwood drain as a single send-shaped call, the
+    /// The immediate Orchard→Ironwood migration as a single send-shaped call, the
     /// mobile-facing counterpart to [`Self::quick_send`].
     ///
     /// Pauses sync internally — like [`Self::quick_send`] and
-    /// [`Self::quick_shield`], and a no-op when no engine is running — drains
+    /// [`Self::quick_shield`], and a no-op when no engine is running — migrates
     /// the account's spendable Orchard notes into Ironwood against the wallet's
     /// *current* state without synchronizing, and restores the prior sync mode
     /// on return unless `resume_sync` is `false`, in which case the pause is
@@ -1649,34 +1701,32 @@ impl LightClient {
     /// paths).
     ///
     /// This is the send-family entry point for the immediate migration, and
-    /// the only drain that crosses the UniFFI boundary:
-    /// [`Self::drain_orchard_to_ironwood`] self-syncs and so collides with a
+    /// the only immediate-migration entry point that crosses the UniFFI boundary:
+    /// [`Self::migrate_immediately`] self-syncs and so collides with a
     /// consumer's continuous background sync, and
-    /// [`Self::drain_orchard_to_ironwood_presynced`] takes a
+    /// [`Self::migrate_immediately_presynced`] takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
     ///
-    /// Preview the plan first with [`Self::plan_orchard_drain`] (its
-    /// transaction count, fee, and stranded value), and observe live progress
-    /// through [`Self::drain_progress_handle`]. Like every immediate path it
+    /// Preview the plan first with [`Self::plan_immediate_migration`] (its
+    /// transaction count, fee, and residual value), and observe live progress
+    /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity; the caller must disclose this (ZIP 318). See
     /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
-    pub async fn quick_drain(
+    pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
         resume_sync: bool,
-    ) -> Result<DrainSummary, LightClientError> {
+    ) -> Result<ImmediateMigrationSummary, LightClientError> {
         // Establish the stable-state pause ourselves — quick_send's idiom —
         // rather than demanding it as a `SyncPauseGuard` parameter the FFI
         // boundary cannot express. The guard owns an `Arc` clone of the
         // sync-mode handle, not a borrow of `self`, so it lives across the
-        // `&mut self` drain call, and `?` refuses rather than draining under a
+        // `&mut self` migration call, and `?` refuses rather than migrating under a
         // state the pause could not stabilize.
         let guard = self.pause_sync_scoped()?;
-        let result = self
-            .drain_orchard_to_ironwood_presynced(account, &guard)
-            .await;
+        let result = self.migrate_immediately_presynced(account, &guard).await;
         if !resume_sync {
             guard.disarm();
         }
@@ -1686,7 +1736,7 @@ impl LightClient {
     /// Previews Phase 1 note splitting from the wallet's current confirmed
     /// notes: the [`MigrationPlan`] whose `split_rounds` are the Orchard
     /// self-sends that will run, alongside the resulting part denominations,
-    /// the fees, and any stranded dust. Pure and deterministic — nothing is
+    /// the fees, and any residual dust. Pure and deterministic — nothing is
     /// signed or sent — so it is the disclosure surface for
     /// [`Self::quick_split`]. `plan.is_split()` (empty `split_rounds`) means
     /// nothing needs splitting.
@@ -1703,7 +1753,7 @@ impl LightClient {
 
     /// Executes one round of Phase 1 note splitting as a send-shaped call —
     /// the mobile-facing entry point for the *private* migration path's
-    /// splitting, the counterpart to [`Self::quick_drain`] for the immediate
+    /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
     /// path. See `docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`.
     ///
     /// Like [`Self::quick_send`] it pauses sync internally, plans against the
@@ -1790,7 +1840,7 @@ impl LightClient {
     /// contract: a build failure fails the transactions already built, and a
     /// transmit failure fails every transaction still unsent, so no note
     /// stays spent by a transaction that will never reach the network. Both
-    /// the drain flow and the note-splitting rounds send through here. The
+    /// the immediate migration flow and the note-splitting rounds send through here. The
     /// guard parameter is pure proof — the caller's guard performs the
     /// pause and its drop the resume, on every exit path.
     async fn build_and_transmit<T>(
@@ -1803,7 +1853,7 @@ impl LightClient {
         let txids = self.build_transactions(planned, progress, build).await?;
 
         // Build is done; the transmit loop below publishes "sent i/N". No-op
-        // unless the caller (an immediate drain or a note-splitting round)
+        // unless the caller (an immediate migration or a note-splitting round)
         // armed its side channel.
         progress.on_transmit();
 
@@ -2016,7 +2066,7 @@ impl LightClient {
             };
 
             if plan.is_split() {
-                let stranded = plan.stranded;
+                let residual = plan.residual;
                 let client = self.migration_broadcast_client()?;
                 let sent = self.broadcast_due_parts_with(&client).await?;
                 self.await_migration_confirmations(&sent).await?;
@@ -2042,7 +2092,7 @@ impl LightClient {
                     return Ok(MigrationSummary {
                         split_txids,
                         part_txids,
-                        stranded,
+                        residual,
                     });
                 }
                 // Some parts skipped (their boundary's tree state was not
@@ -2129,10 +2179,18 @@ impl crate::wallet::LightWallet {
         account: zip32::AccountId,
     ) -> Result<MigrationPlan, crate::wallet::error::WalletError> {
         let params = MigrationParams::provisional(self.chain_type());
-        // Note-splitting fees depend on whether the transactions confirm at
-        // or after NU6.3 activation (the Orchard bundle's cross-address rules
-        // change the action count).
-        let post_activation = match (
+        Ok(plan_migration(
+            &self.migration_note_values(account)?,
+            self.splits_confirm_post_activation(),
+            &params,
+        ))
+    }
+
+    /// Whether a transaction built now confirms at or after NU6.3
+    /// activation. Note-splitting fees depend on it (the Orchard bundle's
+    /// cross-address rules change the action count).
+    pub(crate) fn splits_confirm_post_activation(&self) -> bool {
+        match (
             self.sync_state.last_known_chain_height(),
             pepper_sync::wallet::PoolActivation::of(
                 &self.chain_type(),
@@ -2141,12 +2199,7 @@ impl crate::wallet::LightWallet {
         ) {
             (Some(chain_height), Some(activation)) => chain_height + 1 >= activation.height(),
             _ => false,
-        };
-        Ok(plan_migration(
-            &self.migration_note_values(account)?,
-            post_activation,
-            &params,
-        ))
+        }
     }
 
     /// The Ironwood Pool Activation, or the migration-build error every
@@ -2213,24 +2266,29 @@ mod tests {
     };
 
     use super::{
-        DrainPhase, DrainProgressHandle, SplitOutcome, SplitPhase, SplitProgressHandle,
+        ImmediateMigrationPhase, ImmediateMigrationProgressHandle, SplitOutcome, SplitPhase,
+        SplitProgressHandle,
     };
 
     /// The value of the one fabricated note every scenario here binds a
-    /// migration part to.
-    const NOTE_VALUE: u64 = 100_000;
+    /// migration part to: the smallest canonical denomination.
+    const NOTE_VALUE: u64 = 1_000_000;
 
-    /// The drain-progress side channel: a fresh handle is idle, `begin` arms it,
+    /// The immediate-migration progress side channel: a fresh handle is idle, `begin` arms it,
     /// the per-transaction mutators advance a clone the same way a mobile poll
     /// thread would observe, and every mutator is a no-op once idle — the
-    /// property that scopes progress to the immediate drain and leaves the
+    /// property that scopes progress to the immediate migration and leaves the
     /// shared build/transmit primitives untouched for every other caller.
     #[test]
-    fn drain_progress_handle_tracks_a_drain() {
-        let handle = DrainProgressHandle::default();
-        assert_eq!(handle.status(), None, "idle until a drain arms it");
+    fn immediate_migration_progress_handle_tracks_a_migration() {
+        let handle = ImmediateMigrationProgressHandle::default();
+        assert_eq!(
+            handle.status(),
+            None,
+            "idle until an immediate migration arms it"
+        );
 
-        // A consumer grabs its own clone before the drain starts and must see
+        // A consumer grabs its own clone before the immediate migration starts and must see
         // the same updates (mobile polls this clone on another thread).
         let observer = handle.clone();
 
@@ -2239,7 +2297,7 @@ mod tests {
         assert_eq!(armed.total, 4);
         assert_eq!(armed.built, 0);
         assert_eq!(armed.sent, 0);
-        assert_eq!(armed.phase, DrainPhase::Building);
+        assert_eq!(armed.phase, ImmediateMigrationPhase::Building);
 
         handle.set_built(2);
         assert_eq!(observer.status().expect("armed").built, 2);
@@ -2247,7 +2305,7 @@ mod tests {
         handle.enter_transmit();
         assert_eq!(
             observer.status().expect("armed").phase,
-            DrainPhase::Transmitting
+            ImmediateMigrationPhase::Transmitting
         );
 
         handle.set_sent(3);
@@ -2264,7 +2322,7 @@ mod tests {
         assert_eq!(observer.status(), None, "mutators are inert while idle");
     }
 
-    /// The split-progress side channel behaves exactly like the drain's: a
+    /// The split-progress side channel behaves exactly like the migration's: a
     /// fresh handle is idle, `begin` arms one round, the per-transaction
     /// mutators advance a clone a mobile poll thread would observe, and every
     /// mutator is inert once idle — the property that scopes progress to the
@@ -2345,6 +2403,14 @@ mod tests {
             phase: MigrationPhase::PartsScheduled,
             parts,
         }
+    }
+
+    /// A consented migration with no bound parts, in `phase`. The
+    /// consent hash is all zeros, which no real plan hashes to.
+    fn splitting_state(params: MigrationParams, phase: MigrationPhase) -> MigrationState {
+        let mut state = scheduled_state(params, Vec::new());
+        state.phase = phase;
+        state
     }
 
     /// An error raised after the migration state is taken out of the wallet
@@ -2443,9 +2509,10 @@ mod tests {
     /// reach.
     #[tokio::test]
     async fn boundary_tree_state_unavailable_skips_the_part() {
-        // Past the provisional first bucket boundary (256) by more than
-        // pepper-sync's 100-block checkpoint retention.
-        const TIP: u32 = 360;
+        // Past the current bucket's boundary (288 under the provisional
+        // M = 144) by more than pepper-sync's 100-block checkpoint
+        // retention.
+        const TIP: u32 = 400;
 
         let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
         let params = MigrationParams::provisional(wallet.chain_type());
@@ -2746,7 +2813,7 @@ mod tests {
         let (mut wallet, bound_note) = wallet_with_migration_note(700);
         let params = MigrationParams::provisional(wallet.chain_type());
         let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
-        // Bucket 1's window [256, 512) closed at tip 700, beyond the slip
+        // Bucket 1's window [144, 288) closed at tip 700, beyond the slip
         // tolerance: overdue. The expiry lies far ahead, so the signed
         // transaction is still valid.
         part.assign(1).expect("fresh parts are bound");
@@ -2876,10 +2943,135 @@ mod tests {
         );
     }
 
+    /// Between consent and the first part binding no part records exist,
+    /// yet the user has already confirmed a concrete plan. The status must
+    /// project that plan's totals instead of reporting an empty migration
+    /// for the whole of Phase 1.
+    #[tokio::test]
+    async fn planned_phase_status_projects_the_plan() {
+        use crate::wallet::migration::plan_hash;
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(1_234_567_890)
+            .tip(360)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let plan = client
+            .plan_ironwood_migration(AccountId::ZERO)
+            .await
+            .expect("planning is pure");
+        assert!(!plan.is_split(), "premise: the wallet needs splitting");
+        client
+            .start_ironwood_migration(
+                AccountId::ZERO,
+                SigningStrategy::LazyAtBoundary,
+                plan_hash(&plan),
+                None,
+            )
+            .await
+            .expect("the unsplit plan starts in Planned");
+
+        let status = client.migration_status().await.expect("status reads");
+        assert_eq!(status.phase, Some(MigrationPhase::Planned));
+        assert_eq!(
+            status.parts_total,
+            u32::try_from(plan.parts.len()).expect("part count fits u32"),
+            "Planned status must carry the consented plan's part count"
+        );
+        assert_eq!(
+            status.value_total,
+            plan.parts.iter().sum::<u64>(),
+            "Planned status must carry the consented plan's value"
+        );
+        assert_eq!(status.parts_confirmed, 0);
+        assert_eq!(status.value_migrated, 0);
+    }
+
+    /// While a splitting round is in flight its inputs are pending-spent
+    /// and its outputs unconfirmed, so a plan over the anchored spendable
+    /// set reads as empty (the trap `note_split_in_flight` documents). The
+    /// status projection must count the round's pending outputs instead of
+    /// reporting the migration vanished mid-split.
+    #[tokio::test]
+    async fn mid_round_status_projects_over_pending_outputs() {
+        use pepper_sync::wallet::{OutputId, WalletTransaction};
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::memo::Memo;
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+
+        // Every confirmed note is gone (spent into the round); the round's
+        // outputs live only in a transmitted, unconfirmed transaction.
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .tip(360)
+                .build();
+        let round_txid = TxId::from_bytes([7; 32]);
+        let outputs = [600_000_000u64, 600_000_000]
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let crypto_note = OrchardCryptoNoteBuilder::default()
+                    .value(orchard::value::NoteValue::from_raw(*value))
+                    .note_version(orchard::NoteVersion::V2)
+                    .build();
+                OrchardNote::new_for_test(
+                    OutputId::new(round_txid, u32::try_from(index).expect("two outputs")),
+                    AccountId::ZERO,
+                    zip32::Scope::External,
+                    crypto_note,
+                    Memo::Empty,
+                    None,
+                )
+            })
+            .collect();
+        wallet.wallet_transactions.insert(
+            round_txid,
+            WalletTransaction::new_for_test_with_orchard_notes(
+                round_txid,
+                ConfirmationStatus::Transmitted(BlockHeight::from_u32(361)),
+                outputs,
+                vec![],
+            ),
+        );
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let expected = crate::wallet::migration::plan_migration(
+            &[600_000_000, 600_000_000],
+            wallet.splits_confirm_post_activation(),
+            &params,
+        );
+        assert!(
+            !expected.parts.is_empty(),
+            "premise: the pending outputs plan to real parts"
+        );
+        wallet.migration = Some(splitting_state(
+            params,
+            MigrationPhase::NoteSplitting {
+                round: 0,
+                pending_txids: vec![round_txid],
+            },
+        ));
+
+        let client = LightClient::new_for_test(wallet).await;
+        let status = client.migration_status().await.expect("status reads");
+        assert_eq!(
+            status.value_total,
+            expected.parts.iter().sum::<u64>(),
+            "a round in flight must count as its pending outputs"
+        );
+        assert_eq!(
+            status.parts_total,
+            u32::try_from(expected.parts.len()).expect("part count fits u32"),
+        );
+    }
+
     /// Open windows at relaunch: a part whose bucket window is *currently
     /// open* (opened before now, not yet closed) is reachable immediately
     /// after a process relaunch, without waiting to become Overdue.
-    /// `next_wakes` lists only future buckets and `reconcile` classifies the
+    /// `upcoming_windows` lists only future buckets and `reconcile` classifies the
     /// open window as OnTrack with no action; the open window belongs to the
     /// third leg, `broadcast_due_parts` (driven at startup or after sync by
     /// `auto_broadcast_if_due`), whose due predicate selects
@@ -2888,10 +3080,10 @@ mod tests {
     async fn open_window_part_is_broadcast_at_relaunch() {
         use zcash_primitives::transaction::TxId;
 
-        use crate::wallet::migration::{PartClass, next_wakes, reconcile};
+        use crate::wallet::migration::{PartClass, reconcile, upcoming_windows};
 
-        // Tip 300 sits mid-window in bucket 1 of the provisional M = 256:
-        // the window [256, 512) opened before "now" and has not closed.
+        // Tip 300 sits mid-window in bucket 2 of the provisional M = 144:
+        // the window [288, 432) opened before "now" and has not closed.
         const TIP: u32 = 300;
 
         let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
@@ -2918,14 +3110,14 @@ mod tests {
             .expect("assigned parts sign");
         wallet.migration = Some(scheduled_state(params.clone(), vec![part]));
 
-        // The two true premises of #2419 review finding 5: the wake listing
+        // The two true premises of #2419 review finding 5: the window listing
         // omits the open window and reconciliation classifies it OnTrack
         // with no action.
         {
             let state = wallet.migration.as_ref().expect("just set");
             assert!(
-                next_wakes(&state.parts, now_height, 0, u64::MAX, &params).is_empty(),
-                "next_wakes lists future buckets only"
+                upcoming_windows(&state.parts, now_height, 0, u64::MAX, &params).is_empty(),
+                "upcoming_windows lists future buckets only"
             );
             let report = reconcile(state, &wallet);
             assert_eq!(report.assessments[0].class, PartClass::OnTrack);
@@ -2961,7 +3153,7 @@ mod tests {
         assert_eq!(part.attempts, 1, "the attempt was recorded before submit");
     }
 
-    /// A scheduled migration rejects the syncing drain *before* the drain
+    /// A scheduled migration rejects the syncing immediate migration *before* the immediate migration
     /// pays for a sync. The client here is offline, so any attempt to sync
     /// first surfaces as [`LightClientError::Offline`] instead of the
     /// pre-condition's [`MigrationError::AlreadyInProgress`] — which is
@@ -2969,7 +3161,7 @@ mod tests {
     /// checking, and green once the check runs first. The presynced body
     /// keeps its own post-sync check; this pins the wrapper's early one.
     #[tokio::test]
-    async fn scheduled_migration_rejects_drain_before_syncing() {
+    async fn scheduled_migration_rejects_migrate_before_syncing() {
         let (mut wallet, bound_note) = wallet_with_migration_note(360);
         let params = MigrationParams::provisional(wallet.chain_type());
         let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -2977,7 +3169,7 @@ mod tests {
         wallet.migration = Some(scheduled_state(params, vec![part]));
 
         let mut client = LightClient::new_for_test(wallet).await;
-        let result = client.drain_orchard_to_ironwood(AccountId::ZERO).await;
+        let result = client.migrate_immediately(AccountId::ZERO).await;
         assert!(
             matches!(
                 result,
@@ -2985,7 +3177,7 @@ mod tests {
                     crate::lightclient::error::MigrationError::AlreadyInProgress
                 ))
             ),
-            "the drain must reject a scheduled migration without syncing, got {result:?}"
+            "the immediate migration must reject a scheduled migration without syncing, got {result:?}"
         );
     }
 
@@ -3228,8 +3420,8 @@ mod tests {
             assert_eq!(part.state, PartState::Assigned);
             assert_eq!(
                 part.bucket_index,
-                Some(1),
-                "re-bucketed into the current bucket (tip 360 sits in bucket 1): \
+                Some(2),
+                "re-bucketed into the current bucket (tip 360 sits in bucket 2): \
                  rescheduling before any send re-runs the schedule, so the first \
                  cohort is again immediately due"
             );
@@ -3416,14 +3608,6 @@ mod tests {
                 })
                 .map(|(txid, _)| *txid)
                 .expect("the fabricated note has a creating transaction")
-        }
-
-        /// A consented migration with no bound parts, in `phase`. The
-        /// consent hash is all zeros, which no real plan hashes to.
-        fn splitting_state(params: MigrationParams, phase: MigrationPhase) -> MigrationState {
-            let mut state = scheduled_state(params, Vec::new());
-            state.phase = phase;
-            state
         }
 
         #[tokio::test]

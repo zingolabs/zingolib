@@ -186,7 +186,9 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
                 }
             }
             if all_confirmed {
-                report.actions.push(RecommendedAction::ContinueNoteSplitting);
+                report
+                    .actions
+                    .push(RecommendedAction::ContinueNoteSplitting);
             } else if report.actions.is_empty() {
                 report
                     .actions
@@ -234,7 +236,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
         // The ZIP 318 invalidation predicate: a worthwhile
         // confirmed-spendable Orchard balance remains while a scheduled
         // part is invalid. At or below the Sweep Minimum a replan would
-        // strand everything it planned, so no replan is offered.
+        // leave everything it planned as residual, so no replan is offered.
         report.actions.push(RecommendedAction::ReplanRemainder);
     }
     // The completion rule: when every part is terminal, the migration
@@ -567,9 +569,10 @@ mod tests {
         part
     }
 
-    /// Bucket arithmetic for the provisional M = 256 and tip 10_000: the tip
-    /// sits in bucket 39.
-    const TIP_BUCKET: u64 = 10_000 / 256;
+    /// Bucket arithmetic for the provisional M = 144 and tip 10_000: the tip
+    /// sits in bucket 69.
+    const M: u32 = 144;
+    const TIP_BUCKET: u64 = 10_000 / M as u64;
 
     /// Issue #2493, finding 8: a migration whose every part is terminal
     /// and whose replannable balance is zero must reach a terminal
@@ -577,7 +580,7 @@ mod tests {
     /// currently satisfies neither `MarkComplete` (not every part is
     /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
     /// reconcile recommends nothing forever and the stuck state blocks
-    /// both the immediate migration and the drain until the user finds
+    /// both the immediate migration and the immediate migration until the user finds
     /// `cancel`.
     #[test]
     fn terminal_parts_with_nothing_replannable_reach_complete() {
@@ -627,7 +630,7 @@ mod tests {
         let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
         let mut chain = MockChainView {
             tip: Some(BlockHeight::from_u32(
-                (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS,
+                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS,
             )),
             ..Default::default()
         };
@@ -639,7 +642,7 @@ mod tests {
         assert!(report.actions.is_empty(), "slips are not surfaced");
 
         chain.tip = Some(BlockHeight::from_u32(
-            (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS + 1,
+            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS + 1,
         ));
         let report = reconcile(&state, &chain);
         assert_eq!(report.assessments[0].class, PartClass::Overdue);
@@ -655,9 +658,9 @@ mod tests {
     #[test]
     fn due_now_reports_the_current_window_regardless_of_the_target() {
         // Tip 10_000 sits in bucket TIP_BUCKET; its window is
-        // [TIP_BUCKET*256, (TIP_BUCKET+1)*256) = [9984, 10240).
+        // [TIP_BUCKET*144, (TIP_BUCKET+1)*144) = [9936, 10080).
         let mut part = assigned_part(0, TIP_BUCKET);
-        part.target_height = Some(BlockHeight::from_u32(10_100)); // advisory only
+        part.target_height = Some(BlockHeight::from_u32(10_040)); // advisory only
         let state = scheduled_state(vec![part]);
 
         // The tip is below the random target, yet the window is open: the part
@@ -677,7 +680,7 @@ mod tests {
 
         // And it stays due later in the window, past the target.
         let chain = MockChainView {
-            tip: Some(BlockHeight::from_u32(10_100)),
+            tip: Some(BlockHeight::from_u32(10_060)),
             ..Default::default()
         };
         let report = reconcile(&state, &chain);
@@ -685,7 +688,7 @@ mod tests {
             due_now_parts(
                 &state.parts,
                 &report,
-                BlockHeight::from_u32(10_100),
+                BlockHeight::from_u32(10_060),
                 &state.params,
             ),
             vec![PartId(0)],
@@ -756,7 +759,7 @@ mod tests {
                 &state.params,
             )
             .is_empty(),
-            "a part whose window has not opened is a future wake, not a due batch",
+            "a part whose window has not opened is a future window, not a due batch",
         );
     }
 

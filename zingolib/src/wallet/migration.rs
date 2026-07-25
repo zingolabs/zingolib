@@ -32,11 +32,11 @@
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`drain`], which shares nothing with
+//! over the private path above. That is [`immediate`], which shares nothing with
 //! this two-phase design but the transaction builder.
 
 pub mod broadcast;
-pub mod drain;
+pub mod immediate;
 pub mod params;
 pub mod parts;
 pub mod quantize;
@@ -46,7 +46,7 @@ pub mod split;
 pub mod store;
 
 pub use broadcast::{BroadcastClient, BroadcastError};
-pub use drain::{DrainPlan, DrainTx, drain_fee};
+pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx, immediate_migration_fee};
 pub use params::MigrationParams;
 pub use parts::{
     BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
@@ -57,7 +57,8 @@ pub use reconcile::{
     ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
 };
 pub use schedule::{
-    WakePoint, estimated_unix_at, next_wakes, part_in_current_bucket, plan_schedule,
+    BroadcastWindow, WindowReport, estimated_unix_at, part_in_current_bucket, plan_schedule,
+    upcoming_windows, window_timeline,
 };
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,

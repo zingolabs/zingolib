@@ -403,13 +403,13 @@ where
 /// tip+1 and the inclusion block share the NU6.2 branch id) and accumulates
 /// four pre-tip notes so oldest-first selection never reaches the tip note.
 ///
-/// The orchard-to-ironwood normalization uses the migration drain rather
+/// The orchard-to-ironwood normalization uses the immediate migration rather
 /// than a self-send: 731b2b761 taught note selection to lead with the
 /// payment's own pool, so a send to an ironwood receiver no longer drains
 /// orchard (it left one orchard note un-migrated, observed as balance
 /// assertions failing exactly one block reward short on freshly mined
 /// chains while cached replays of pre-731b2b761 wallet-built blocks kept
-/// passing). The drain spends only orchard by construction, which also
+/// passing). The immediate migration spends only orchard by construction, which also
 /// satisfies constraint 2 structurally. Its fee cancels the same way the
 /// offload's does — the faucet collects it back in the confirming block's
 /// coinbase — so [`funded_faucet_ironwood_balance`] is fee-invariant.
@@ -441,12 +441,12 @@ async fn normalize_shielded_faucet_balance<V, I>(
         .unwrap();
         local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
-        let drain_summary = faucet
-            .drain_orchard_to_ironwood(zip32::AccountId::ZERO)
+        let migration_summary = faucet
+            .migrate_immediately(zip32::AccountId::ZERO)
             .await
             .unwrap();
         assert_eq!(
-            drain_summary.stranded, 0,
+            migration_summary.residual, 0,
             "normalization must leave no orchard value behind"
         );
         local_net.validator().generate_blocks(1).await.unwrap();

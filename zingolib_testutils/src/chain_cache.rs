@@ -131,7 +131,7 @@ impl CacheManifest {
         stage: CachedStage,
     ) -> Self {
         CacheManifest(serde_json::json!({
-            // Schema 3 (2026-07-17): the drain rewrite changed cached-chain
+            // Schema 3 (2026-07-17): the immediate migration rewrite changed cached-chain
             // SEMANTICS (self-send → orchard drain) without changing any
             // manifest key, and pre-drain caches replayed as green-shaped
             // chains against post-drain expectations for a full day of

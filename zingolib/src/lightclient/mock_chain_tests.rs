@@ -960,14 +960,14 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
-/// A confirmed Orchard→Ironwood drain transaction must surface in the
+/// A confirmed Orchard→Ironwood immediate migration transaction must surface in the
 /// history as a `migration` value transfer — not `memo-to-self` and not
 /// `basic`. Its self-received Ironwood output carries the canonical empty
 /// memo (`MemoBytes::empty()`), so this pins the self-send classification
 /// order in `value_transfers()`: the migration predicate must win over the
 /// received-memo check regardless of how that memo decodes.
 #[tokio::test]
-async fn drain_transaction_is_a_migration_value_transfer() {
+async fn immediate_migration_is_a_migration_value_transfer() {
     use zip32::AccountId;
 
     use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
@@ -980,7 +980,7 @@ async fn drain_transaction_is_a_migration_value_transfer() {
 
     // A real mock-net client, synced over an empty chain, handed one
     // spendable legacy-Orchard note whose nullifier is really derived, so
-    // pepper-sync's spend detection marks it when the drain spends it and
+    // pepper-sync's spend detection marks it when the immediate migration spends it and
     // the summary sees the transaction as Orchard-funded.
     let mut net = MockNet::launch().await;
     net.chain.write().await.mine_empty_blocks(TIP);
@@ -998,10 +998,14 @@ async fn drain_transaction_is_a_migration_value_transfer() {
     }
 
     let summary = client
-        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO)
         .await
-        .expect("the drain builds and broadcasts");
-    assert_eq!(summary.txids.len(), 1, "one note drains in one transaction");
+        .expect("the immediate migration builds and broadcasts");
+    assert_eq!(
+        summary.txids.len(),
+        1,
+        "one note migrates in one transaction"
+    );
 
     net.chain.write().await.mine_mempool();
     client.sync_and_await().await.unwrap();
@@ -1012,7 +1016,7 @@ async fn drain_transaction_is_a_migration_value_transfer() {
         kinds.contains(&ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
             SelfSendValueTransfer::Migration,
         ))),
-        "the drain transaction must classify as a migration value transfer; got {kinds:?}",
+        "the immediate migration transaction must classify as a migration value transfer; got {kinds:?}",
     );
 }
 
@@ -1084,8 +1088,8 @@ async fn migration_with_memo_is_still_a_migration_value_transfer() {
 }
 
 /// A failed transmit inside a note-splitting round must not leave any
-/// transaction stranded in `Calculated`. The drain sibling
-/// (`drain_orchard_to_ironwood`) fails every unsent transaction so the
+/// transaction stranded in `Calculated`. The immediate migration sibling
+/// (`migrate_immediately`) fails every unsent transaction so the
 /// notes it reserved become spendable again; the split round in
 /// `migrate_to_ironwood` must enforce the same invariant, or the
 /// transactions queued behind the failing one keep their notes marked
@@ -1184,7 +1188,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
          transaction (otherwise this test failed before transmit)"
     );
 
-    // The invariant the drain path enforces (fail_unsent_transactions) and
+    // The invariant the immediate migration path enforces (fail_unsent_transactions) and
     // the split path must too: after a failed round, nothing may remain
     // Calculated — its notes would stay spent by transactions that will
     // never broadcast, and a replan silently excludes them.

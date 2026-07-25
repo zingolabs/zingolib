@@ -92,7 +92,7 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
-    /// A drain was requested but the account holds no spendable Orchard note
+    /// An immediate migration was requested but the account holds no spendable Orchard note
     /// worth more than it would cost to spend.
     #[error("No spendable Orchard notes to migrate.")]
     NothingToMigrate,

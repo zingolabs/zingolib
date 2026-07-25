@@ -545,8 +545,8 @@ async fn pre_ironwood_funded_recipient(
 }
 
 /// Mines the chain across the deferred NU6.3 activation boundary and syncs
-/// the recipient past it, so the Ironwood pool is live. The drains need
-/// this before building: a drain sends into Ironwood, which does not exist
+/// the recipient past it, so the Ironwood pool is live. The immediate migrations need
+/// this before building: an immediate migration sends into Ironwood, which does not exist
 /// below the activation height.
 async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut LightClient) {
     let tip = u32::from(
@@ -567,13 +567,13 @@ async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut Light
         .unwrap();
 }
 
-/// The immediate drain: every spendable Orchard note is spent into Ironwood in
+/// The immediate migration: every spendable Orchard note is spent into Ironwood in
 /// one pass, with no note splitting and no schedule. The Orchard pool empties
 /// down to the disclosed dust, and the same value less fees appears in the
 /// Ironwood pool. That second half is what proves the funds actually crossed.
 #[tokio::test]
-async fn drain_all_orchard_to_ironwood() {
-    // Several notes of unequal value: a drain must sweep all of them, and
+async fn migrate_all_orchard_to_ironwood() {
+    // Several notes of unequal value: an immediate migration must sweep all of them, and
     // nothing here is a canonical denomination.
     let (local_net, _faucet, mut recipient) =
         pre_ironwood_funded_recipient(|_| vec![317_000, 1_250_000, 88_000]).await;
@@ -590,7 +590,10 @@ async fn drain_all_orchard_to_ironwood() {
         .into_u64();
     assert_eq!(orchard_before, 317_000 + 1_250_000 + 88_000);
 
-    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    let plan = recipient
+        .plan_immediate_migration(AccountId::ZERO)
+        .await
+        .unwrap();
     // Three modest notes fit one transaction: no chunking here.
     assert_eq!(plan.transactions.len(), 1);
     assert_eq!(
@@ -600,7 +603,7 @@ async fn drain_all_orchard_to_ironwood() {
     );
 
     let summary = recipient
-        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO)
         .await
         .unwrap();
     assert_eq!(summary.txids.len(), plan.transactions.len());
@@ -630,29 +633,29 @@ async fn drain_all_orchard_to_ironwood() {
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
         summary.migrated,
-        "the drained value must appear in the Ironwood pool"
+        "the immediate migrationed value must appear in the Ironwood pool"
     );
 
-    // The drain moves Orchard funds into the wallet's own Ironwood pool, so
-    // each drain transaction must be classified as a migration value transfer,
+    // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
+    // each immediate migration transaction must be classified as a migration value transfer,
     // not a plain send-to-self.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for drain_txid in &summary.txids {
+    for migration_txid in &summary.txids {
         assert!(
-            value_transfers.iter().any(|vt| vt.txid == *drain_txid
+            value_transfers.iter().any(|vt| vt.txid == *migration_txid
                 && vt.kind
                     == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                         SelfSendValueTransfer::Migration,
                     ))),
-            "drain {drain_txid:?} must be classified as a migration value transfer"
+            "immediate migration {migration_txid:?} must be classified as a migration value transfer"
         );
     }
 }
 
-/// A drain of a fragmented wallet chunks into several independent transactions,
+/// An immediate migration of a fragmented wallet chunks into several independent transactions,
 /// all built and broadcast in the same pass, and still empties the pool.
 #[tokio::test]
-async fn drain_chunks_a_fragmented_wallet() {
+async fn immediate_migration_chunks_a_fragmented_wallet() {
     // More notes than fit one transaction's action budget, funded in one
     // transaction. Distinct values keep every payment in the ZIP-321
     // request unique.
@@ -664,7 +667,10 @@ async fn drain_chunks_a_fragmented_wallet() {
     .await;
     cross_ironwood_activation(&local_net, &mut recipient).await;
 
-    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    let plan = recipient
+        .plan_immediate_migration(AccountId::ZERO)
+        .await
+        .unwrap();
     assert_eq!(
         plan.transactions.len(),
         2,
@@ -672,7 +678,7 @@ async fn drain_chunks_a_fragmented_wallet() {
     );
 
     let summary = recipient
-        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO)
         .await
         .unwrap();
     assert_eq!(summary.txids.len(), 2);

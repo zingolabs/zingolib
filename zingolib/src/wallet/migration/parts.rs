@@ -586,7 +586,7 @@ impl crate::wallet::LightWallet {
         let denomination = part.denomination;
         let part_fee = params.part_fee;
         let target_height = boundary + 1;
-        let expiry_height = boundary + params.expiry_delta;
+        let expiry_height = super::schedule::canonical_expiry_height(target_height);
         let params_clone = params.clone();
 
         let prove: ProveOnce = Box::new(move || {

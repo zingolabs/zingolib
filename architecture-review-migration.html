@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — zingolib migration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 6 5; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .band { transition: none; }
+      .lbl { letter-spacing: .12em; }
+      .hatch-priv { background-image: repeating-linear-gradient(45deg, #ecfdf5, #ecfdf5 7px, #d1fae5 7px, #d1fae5 14px); }
+      .hatch-imm  { background-image: repeating-linear-gradient(45deg, #fff7ed, #fff7ed 7px, #ffedd5 7px, #ffedd5 14px); }
+      .hatch-drain{ background-image: repeating-linear-gradient(45deg, #eff6ff, #eff6ff 7px, #dbeafe 7px, #dbeafe 14px); }
+      pre.mermaid { line-height: 1.2; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+      <!-- ───────────────────────── header ───────────────────────── -->
+      <header class="space-y-5">
+        <p class="text-xs uppercase lbl text-slate-500">Architecture review · deepening opportunities</p>
+        <h1 class="font-serif text-4xl text-slate-900 leading-tight">
+          The Orchard→Ironwood migration:<br />differentiating the private path from the immediate paths
+        </h1>
+        <p class="text-slate-600 max-w-3xl">
+          Scope: the migration orchestrator <code class="text-sm bg-stone-200 px-1 rounded">lightclient/migrate.rs</code>
+          (3362&nbsp;lines, 27 methods) and the <code class="text-sm bg-stone-200 px-1 rounded">wallet/migration/</code>
+          backend. The friction is that three flows — the private <em>Scheduled</em> machinery, the non-private
+          one-call <em>Immediate</em>, and the <em>Drain</em> — share one <span class="whitespace-nowrap"><code class="text-sm bg-stone-200 px-1 rounded">MigrationState</code></span>
+          slot and one <code class="text-sm bg-stone-200 px-1 rounded">impl</code> block, differentiated at runtime rather than
+          by a seam. The privacy distinction is real and consent-bearing; today it is enforced by scattered checks.
+        </p>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-600 pt-2 border-t border-stone-200">
+          <span class="flex items-center gap-2"><span class="inline-block w-6 h-3 border-2 border-slate-700 rounded-sm"></span> module</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" class="seam" stroke="#475569" stroke-width="2"/></svg> seam</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" class="leak" stroke-width="2"/></svg> leak / scattered enforcement</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-6 h-3 deep rounded-sm"></span> deep module</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-3 h-3 hatch-priv border border-emerald-300"></span> private / scheduled</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-3 h-3 hatch-imm border border-orange-300"></span> immediate</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-3 h-3 hatch-drain border border-blue-300"></span> drain</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-16">
+
+        <!-- ══════════════════ Candidate 2 (lead) ══════════════════ -->
+        <article id="c-placement" class="scroll-mt-6">
+          <div class="flex items-center gap-3 mb-1">
+            <span class="text-xs font-mono text-slate-400">01</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+          </div>
+          <h2 class="font-serif text-2xl mb-3">Give the mode one consent-and-placement seam</h2>
+
+          <div class="grid md:grid-cols-2 gap-4 mb-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">Before — the fork is re-decided everywhere</p>
+              <pre class="mermaid">
+flowchart TB
+  A["start_ironwood_migration<br/>(Scheduled)"] --> B["inline: hash · bind_parts_to_notes<br/>· place · PartsScheduled"]
+  C["migrate_to_ironwood<br/>(Immediate)"] --> D["inline: hash · bind_parts_to_notes<br/>· place · PartsScheduled"]
+  B --> PS["plan_schedule (jittered) :489"]
+  D --> PI["place_immediate :1681"]
+  G1["mode guard :1609"] -.-> C
+  G2["entry_gate :1873"] -.-> C
+  R["reconcile Rebuild"] --> PL["place :998"]
+  F["fold_in_overdue"] --> PI2["place_immediate :1098"]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#7f1d1d;
+  classDef dup stroke:#b45309,stroke-width:2px,stroke-dasharray:5 4;
+  class G1,G2 leak
+  class B,D dup
+              </pre>
+              <p class="text-xs text-slate-500 mt-2">Two near-identical critical sections (dashed amber); six placement sites; two runtime guards (red) carry the whole privacy rule.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">After — the mode owns placement</p>
+              <div class="deep rounded-lg p-4 text-slate-100 h-[236px] flex flex-col justify-between">
+                <div>
+                  <p class="text-xs uppercase lbl text-emerald-300 mb-1">deep operation</p>
+                  <p class="font-mono text-sm text-white">MigrationState::schedule_parts(<br/>&nbsp;&nbsp;plan, now, activation, rng)</p>
+                  <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">binds the plan, then places every part —<br/>jittered when <span class="text-emerald-300">Scheduled</span>, immediate when <span class="text-orange-300">Immediate</span>. The choice is made <em>once</em>, by the mode it is stored beside.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-center text-xs">
+                  <div class="bg-emerald-900/40 border border-emerald-700 rounded py-1.5 text-emerald-200">start → calls it</div>
+                  <div class="bg-orange-900/40 border border-orange-700 rounded py-1.5 text-orange-200">migrate → calls it</div>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">One interface. The guards collapse into “which constructor set the mode.”</p>
+            </div>
+          </div>
+
+          <dl class="space-y-2.5 text-sm">
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Files</dt>
+              <dd class="font-mono text-xs text-slate-600 leading-relaxed">lightclient/migrate.rs — start_ironwood_migration :432, migrate_to_ironwood :1662, fold_in_overdue_parts :1098, reconcile Rebuild :998 · wallet/migration/schedule.rs — place / place_immediate</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Problem</dt>
+              <dd class="text-slate-700"><code class="text-xs bg-stone-200 px-1 rounded">start</code> and <code class="text-xs bg-stone-200 px-1 rounded">migrate_to_ironwood</code> inline the same “hash → bind → place → <code class="text-xs bg-stone-200 px-1 rounded">PartsScheduled</code>” critical section, differing only in which of six placement calls they reach, and the privacy rule rests on two remembered runtime <code class="text-xs bg-stone-200 px-1 rounded">mode ==</code> guards. The seam is asymmetric: <code class="text-xs bg-stone-200 px-1 rounded">plan_schedule</code> is a batch planner for the private path, but there is no immediate counterpart, so <code class="text-xs bg-stone-200 px-1 rounded">migrate_to_ironwood</code> hand-rolls its own <code class="text-xs bg-stone-200 px-1 rounded">place_immediate</code> loop (:1678–1685), as does catch-up (:1090–1100).</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Solution</dt>
+              <dd class="text-slate-700">One deep operation on <code class="text-xs bg-stone-200 px-1 rounded">MigrationState</code> that binds and places, choosing jittered vs immediate by the stored <code class="text-xs bg-stone-200 px-1 rounded">MigrationMode</code>. Both entry points call it; the placement monopoly in <code class="text-xs bg-stone-200 px-1 rounded">schedule.rs</code> gains a single caller.</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Wins</dt>
+              <dd class="text-slate-700">
+                <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-1 list-disc pl-4 marker:text-emerald-500">
+                  <li>locality: the private/immediate fork behind one interface</li>
+                  <li>leverage: one place to test consent + placement + activation floor</li>
+                  <li>deletion test: the immediate inline section concentrates, not moves</li>
+                  <li>six placement sites drop to one policy</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </article>
+
+        <!-- ══════════════════ Candidate 1 ══════════════════ -->
+        <article id="c-split" class="scroll-mt-6">
+          <div class="flex items-center gap-3 mb-1">
+            <span class="text-xs font-mono text-slate-400">02</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Strong</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+          </div>
+          <h2 class="font-serif text-2xl mb-3">Split the orchestrator by flow</h2>
+
+          <div class="grid md:grid-cols-2 gap-4 mb-5">
+            <!-- before: one interleaved slab -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">Before — one impl, three flows interleaved</p>
+              <div class="border-2 border-slate-700 rounded-md overflow-hidden text-[11px] font-mono text-slate-700">
+                <div class="text-center text-[10px] uppercase lbl bg-slate-700 text-white py-0.5">impl LightClient · migrate.rs · 402–1796</div>
+                <div class="hatch-priv px-2 py-1 border-b border-white/60">plan · start · continue_note_splitting</div>
+                <div class="hatch-priv px-2 py-1 border-b border-white/60">reschedule_parts · broadcast_due_parts×3</div>
+                <div class="hatch-drain px-2 py-1 border-b border-white/60">plan_orchard_drain · drain×2</div>
+                <div class="hatch-priv px-2 py-1 border-b border-white/60">reconcile · catch_up · fold_in_overdue</div>
+                <div class="hatch-drain px-2 py-1 border-b border-white/60">build_and_transmit · build_transactions</div>
+                <div class="hatch-priv px-2 py-1 border-b border-white/60">execute_due_parts · capture_witnesses</div>
+                <div class="hatch-imm px-2 py-1 border-b border-white/60">migrate_to_ironwood · await_confirmations</div>
+                <div class="hatch-priv px-2 py-1">auto_broadcast_if_due · migration_status</div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">Read all 3362 lines to learn which method serves which flow, and in which mode it is legal.</p>
+            </div>
+            <!-- after: three bands -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">After — three deep modules, one facade</p>
+              <div class="space-y-2 text-[11px] font-mono">
+                <div class="hatch-priv border-2 border-emerald-600 rounded-md px-3 py-3 text-emerald-900">
+                  <div class="uppercase lbl text-[10px] text-emerald-700 mb-0.5">migrate/scheduled.rs</div>
+                  plan · start · split · reschedule · reconcile · broadcast · execute · catch_up · status
+                </div>
+                <div class="hatch-imm border-2 border-orange-500 rounded-md px-3 py-3 text-orange-900">
+                  <div class="uppercase lbl text-[10px] text-orange-700 mb-0.5">migrate/immediate.rs</div>
+                  migrate_to_ironwood · await_confirmations
+                </div>
+                <div class="hatch-drain border-2 border-blue-500 rounded-md px-3 py-3 text-blue-900">
+                  <div class="uppercase lbl text-[10px] text-blue-700 mb-0.5">migrate/drain.rs</div>
+                  plan_orchard_drain · drain×2 · DrainProgress
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">LightClient keeps thin passthroughs — the repo’s stated access convention.</p>
+            </div>
+          </div>
+
+          <dl class="space-y-2.5 text-sm">
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Files</dt>
+              <dd class="font-mono text-xs text-slate-600">lightclient/migrate.rs (3362 lines, 27 methods) → migrate/{scheduled,immediate,drain}.rs + thin mod.rs</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Problem</dt>
+              <dd class="text-slate-700">One <code class="text-xs bg-stone-200 px-1 rounded">impl LightClient</code> block interleaves all three flows; membership is invisible, so understanding any one flow means paging past the other two.</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Solution</dt>
+              <dd class="text-slate-700">Three modules, one per flow, behind the LightClient facade. The <code class="text-xs bg-stone-200 px-1 rounded">broadcast_path_has_no_sync_dependency</code> lint gets a natural home on the scheduled module.</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Wins</dt>
+              <dd class="text-slate-700">
+                <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-1 list-disc pl-4 marker:text-emerald-500">
+                  <li>locality: each flow’s bugs concentrate in one module</li>
+                  <li>interface unchanged; implementation regroups</li>
+                  <li>enables candidates 01, 03, 04 to land cleanly</li>
+                  <li>the mode’s legality reads off the module you are in</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </article>
+
+        <!-- ══════════════════ Candidate 3 ══════════════════ -->
+        <article id="c-broadcast" class="scroll-mt-6">
+          <div class="flex items-center gap-3 mb-1">
+            <span class="text-xs font-mono text-slate-400">03</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+          </div>
+          <h2 class="font-serif text-2xl mb-3">Collapse the broadcast entry-point family</h2>
+
+          <div class="grid md:grid-cols-2 gap-4 mb-5">
+            <!-- before: mass diagram, interface ~ implementation -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">Before — interface ≈ implementation</p>
+              <div class="flex items-end gap-3 h-[232px]">
+                <div class="flex-1 flex flex-col justify-end gap-1">
+                  <div class="text-[10px] uppercase lbl text-slate-400 text-center mb-1">5 entry wrappers</div>
+                  <div class="bg-slate-200 border border-slate-300 rounded text-[10px] text-center py-1 font-mono">broadcast_due_parts</div>
+                  <div class="bg-slate-200 border border-slate-300 rounded text-[10px] text-center py-1 font-mono">_with</div>
+                  <div class="bg-slate-200 border border-slate-300 rounded text-[10px] text-center py-1 font-mono">auto_broadcast_if_due</div>
+                  <div class="bg-slate-200 border border-slate-300 rounded text-[10px] text-center py-1 font-mono">execute_due_parts</div>
+                  <div class="bg-slate-200 border border-slate-300 rounded text-[10px] text-center py-1 font-mono">catch_up_migration</div>
+                </div>
+                <div class="flex-1 flex flex-col justify-end">
+                  <div class="text-[10px] uppercase lbl text-slate-400 text-center mb-1">1 core loop</div>
+                  <div class="deep rounded text-[10px] text-center text-slate-100 py-2 font-mono flex items-center justify-center" style="height:96px">broadcast_due_parts_selected</div>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">Each wrapper adds one adjustment: a <code class="text-[11px] bg-stone-200 px-1 rounded">None</code>/<code class="text-[11px] bg-stone-200 px-1 rounded">Some(part)</code> filter, <code class="text-[11px] bg-stone-200 px-1 rounded">spacing</code>, an overdue fold, a witness refresh, a return-shape swap.</p>
+            </div>
+            <!-- after: short interface, tall implementation -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">After — short interface, deep loop</p>
+              <div class="flex items-end gap-3 h-[232px]">
+                <div class="flex-1 flex flex-col justify-end gap-1">
+                  <div class="text-[10px] uppercase lbl text-slate-400 text-center mb-1">2 faces (adapters)</div>
+                  <div class="bg-emerald-100 border border-emerald-300 rounded text-[10px] text-center py-1 font-mono text-emerald-900">auto → Vec&lt;TxId&gt;</div>
+                  <div class="bg-emerald-100 border border-emerald-300 rounded text-[10px] text-center py-1 font-mono text-emerald-900">manual → BatchReport</div>
+                </div>
+                <div class="flex-1 flex flex-col justify-end">
+                  <div class="text-[10px] uppercase lbl text-slate-400 text-center mb-1">1 deep loop</div>
+                  <div class="deep rounded text-[10px] text-center text-slate-100 py-2 font-mono flex items-center justify-center" style="height:168px">broadcast(selection, pacing)</div>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">Selection + pacing become arguments; the two genuine return shapes stay as thin adapters.</p>
+            </div>
+          </div>
+
+          <dl class="space-y-2.5 text-sm">
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Files</dt>
+              <dd class="font-mono text-xs text-slate-600 leading-relaxed">lightclient/migrate.rs — broadcast_due_parts :760, _with :767, _selected :790, auto_broadcast_if_due :1246, execute_due_parts :1127, catch_up_migration :1037, fold_in_overdue_parts :1065</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Problem</dt>
+              <dd class="text-slate-700">Five production entry points wrap one loop; the interface surface is nearly as wide as the loop it guards — shallow.</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Solution</dt>
+              <dd class="text-slate-700">One broadcast module whose interface names selection + pacing; the wrappers become call-site config. Keep <code class="text-xs bg-stone-200 px-1 rounded">Vec&lt;TxId&gt;</code> (auto) and <code class="text-xs bg-stone-200 px-1 rounded">BatchReport</code> (manual) as two adapters on the deep loop.</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Wins</dt>
+              <dd class="text-slate-700">
+                <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-1 list-disc pl-4 marker:text-amber-500">
+                  <li>interface shrinks; implementation absorbs the wrappers</li>
+                  <li>leverage: one place to test due-selection</li>
+                  <li>two adapters justify the remaining faces</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </article>
+
+        <!-- ══════════════════ Candidate 4 ══════════════════ -->
+        <article id="c-builder" class="scroll-mt-6">
+          <div class="flex items-center gap-3 mb-1">
+            <span class="text-xs font-mono text-slate-400">04</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+          </div>
+          <h2 class="font-serif text-2xl mb-3">Make the shared transaction-builder the one explicit seam</h2>
+
+          <div class="grid md:grid-cols-2 gap-4 mb-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">Before — coupling hidden in private helpers</p>
+              <pre class="mermaid">
+flowchart TB
+  DR["drain_presynced"] --> BT["build_and_transmit :1478"]
+  MR["migrate_to_ironwood<br/>split round :1739"] --> BT
+  BT --> BX["build_transactions :1511"]
+  BT --> FT["fail_unsent :1545"]
+  DR -. also .-> RC["reconcile / broadcast"]
+  MR -. also .-> RC
+  classDef mid stroke:#b45309,stroke-width:2px;
+  class BT mid
+              </pre>
+              <p class="text-xs text-slate-500 mt-2"><code class="text-[11px] bg-stone-200 px-1 rounded">drain.rs</code> says it “shares nothing but the transaction builder” — yet the sharing is two private methods buried in the orchestrator, not a named seam.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="text-xs uppercase lbl text-slate-400 mb-3">After — one dashed seam between two modules</p>
+              <div class="relative h-[232px]">
+                <div class="hatch-drain border-2 border-blue-500 rounded-md p-3 absolute left-0 top-4 w-40">
+                  <div class="text-[10px] uppercase lbl text-blue-700">immediate / drain</div>
+                  <div class="text-[11px] font-mono text-blue-900 mt-1">drain · split rounds</div>
+                </div>
+                <div class="hatch-priv border-2 border-emerald-600 rounded-md p-3 absolute right-0 top-4 w-40">
+                  <div class="text-[10px] uppercase lbl text-emerald-700">scheduled</div>
+                  <div class="text-[11px] font-mono text-emerald-900 mt-1">parts · broadcast</div>
+                </div>
+                <div class="deep rounded-md p-3 absolute left-1/2 -translate-x-1/2 bottom-3 w-56 text-center">
+                  <div class="text-[10px] uppercase lbl text-slate-300">shared seam</div>
+                  <div class="text-[11px] font-mono text-white mt-1">build_and_transmit</div>
+                  <div class="text-[10px] text-slate-400">batch build · transmit · cleanup</div>
+                </div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 232" preserveAspectRatio="none">
+                  <line x1="80" y1="70" x2="150" y2="180" class="seam" stroke="#475569" stroke-width="2"/>
+                  <line x1="320" y1="70" x2="250" y2="180" class="seam" stroke="#475569" stroke-width="2"/>
+                </svg>
+              </div>
+              <p class="text-xs text-slate-500 mt-2">The one legitimate contact point becomes a named, testable seam — the claim in the doc becomes checkable.</p>
+            </div>
+          </div>
+
+          <dl class="space-y-2.5 text-sm">
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Files</dt>
+              <dd class="font-mono text-xs text-slate-600 leading-relaxed">wallet/migration/drain.rs (doc claim) · lightclient/migrate.rs — build_and_transmit :1478, build_transactions :1511, shared call sites :1457 (drain) & :1739 (split round)</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Problem</dt>
+              <dd class="text-slate-700">The one honest coupling between the flows is a pair of private orchestrator methods, invisible as a seam and easy to widen by accident. <code class="text-xs bg-stone-200 px-1 rounded">build_transactions</code> is in fact reached by all three flows (drain, the immediate split round, and the scheduled <code class="text-xs bg-stone-200 px-1 rounded">continue_note_splitting</code> :624 directly), and in the backend the drain↔scheduled coupling concentrates at <code class="text-xs bg-stone-200 px-1 rounded">split.rs</code>’s bundle/fee/output primitives — the real referent of “shares nothing but the builder.”</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Solution</dt>
+              <dd class="text-slate-700">Lift <code class="text-xs bg-stone-200 px-1 rounded">build_and_transmit</code> into a named shared batch-builder both the drain and the split rounds call — the single visible point of contact (pairs with candidate 02).</dd>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] gap-3">
+              <dt class="text-slate-400 uppercase text-xs pt-0.5 lbl">Wins</dt>
+              <dd class="text-slate-700">
+                <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-1 list-disc pl-4 marker:text-amber-500">
+                  <li>two callers justify the seam (drain, split rounds)</li>
+                  <li>“shares only the builder” becomes checkable, not prose</li>
+                  <li>the shared cleanup contract tested once</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <!-- ───────────────────── top recommendation ───────────────────── -->
+      <section id="top-recommendation" class="scroll-mt-6">
+        <div class="deep rounded-2xl p-8 text-slate-100">
+          <p class="text-xs uppercase lbl text-emerald-300 mb-2">Top recommendation</p>
+          <h2 class="font-serif text-2xl text-white mb-3">Start with 01 — give the mode one consent-and-placement seam.</h2>
+          <p class="text-slate-300 max-w-3xl text-sm leading-relaxed">
+            It is the heart of the ask: the private↔immediate distinction is exactly the private/non-private line you want
+            sharpened, and today it is enforced by two remembered runtime guards plus two duplicated critical sections. Folding
+            the fork into a single <code class="text-xs bg-white/10 px-1 rounded">MigrationMode</code>-owned placement operation
+            makes the privacy rule structural instead of vigilant, and it is the smallest change with the highest leverage —
+            one interface, one test surface for consent, binding, and the activation floor.
+          </p>
+          <p class="text-slate-400 max-w-3xl text-sm leading-relaxed mt-3">
+            Pair it with <a href="#c-split" class="text-emerald-300 underline decoration-dotted">02, split by flow</a>, which
+            gives 01 (and 03, 04) a clean home: once each flow is its own deep module, the mode’s legality reads off the module
+            you are in rather than a scattered check.
+          </p>
+        </div>
+      </section>
+
+      <footer class="text-xs text-slate-400 pt-6 border-t border-stone-200">
+        Read-only architecture review · no code changed · vocabulary from <code>/codebase-design</code> · domain terms from <code>zingolib/CONTEXT.md</code>
+      </footer>
+    </main>
+  </body>
+</html>

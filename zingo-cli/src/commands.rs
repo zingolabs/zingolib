@@ -29,7 +29,10 @@ use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
-use zingolib::lightclient::migrate::{PartSendResult, SplitStep};
+use zingolib::lightclient::migrate::{
+    ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
+    SplitStatus, SplitStep,
+};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -2635,6 +2638,10 @@ pub enum MigrationCommandError {
     MalformedCadence,
     #[error("spacing must be a number of seconds.")]
     MalformedSpacing,
+    #[error("drain expects a sub-command: plan | now. Type \"help drain\" for usage.")]
+    DrainUsage,
+    #[error("split expects a sub-command: plan | now. Type \"help split\" for usage.")]
+    SplitUsage,
     #[error("sync failed: {0}")]
     Sync(zingolib::lightclient::error::LightClientError),
     #[error("{0}")]
@@ -2659,6 +2666,7 @@ enum MigrationSubCommand {
     },
     Auto,
     Status,
+    Windows,
     Reconcile,
     Catchup {
         spacing: std::time::Duration,
@@ -2717,6 +2725,7 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
         }
         "auto" => Ok(MigrationSubCommand::Auto),
         "status" => Ok(MigrationSubCommand::Status),
+        "windows" => Ok(MigrationSubCommand::Windows),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
         "catchup" => {
             let spacing = match args.get(1) {
@@ -2762,7 +2771,7 @@ fn run_migrate(
     Ok(object! {
         "split_txids" => txids_json(&summary.split_txids),
         "part_txids" => txids_json(&summary.part_txids),
-        "stranded" => summary.stranded,
+        "residual" => summary.residual,
     }
     .pretty(2))
 }
@@ -2780,7 +2789,7 @@ fn run_migration(
                 "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
                 "split_fee" => plan.split_fee(),
                 "parts" => plan.parts.clone(),
-                "stranded" => plan.stranded,
+                "residual" => plan.residual,
                 "plan_hash" => hex::encode(migration::plan_hash(&plan)),
             }
             .pretty(2)
@@ -2833,7 +2842,13 @@ fn run_migration(
         MigrationSubCommand::Execute { spacing } => {
             RT.block_on(lightclient.sync_and_await())
                 .map_err(MigrationCommandError::Sync)?;
-            let report = RT.block_on(lightclient.execute_due_parts(spacing))?;
+            let progress = lightclient.batch_progress_handle();
+            let report = RT.block_on(with_transmit_heartbeat(
+                "migration execute",
+                move || progress.status().as_ref().map(batch_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.execute_due_parts(spacing),
+            ))?;
             object! {
                 "outcomes" => report
                     .outcomes
@@ -2844,8 +2859,8 @@ fn run_migration(
                         "result" => match &outcome.result {
                             PartSendResult::Sent(txid) => object! { "sent" => txid.to_string() },
                             PartSendResult::Slid => object! { "slid" => true },
-                            PartSendResult::NotDue { estimated_unix_time } => {
-                                object! { "not_due_until" => *estimated_unix_time }
+                            PartSendResult::NotDue { window_opens_unix_time } => {
+                                object! { "not_due_until" => *window_opens_unix_time }
                             }
                             PartSendResult::Failed { error } => {
                                 object! { "failed" => error.clone() }
@@ -2876,15 +2891,15 @@ fn run_migration(
                 "parts_confirmed" => status.parts_confirmed,
                 "value_total" => status.value_total,
                 "value_migrated" => status.value_migrated,
-                "next_wakes" => status
-                    .next_wakes
+                "upcoming_windows" => status
+                    .upcoming_windows
                     .iter()
-                    .map(|wake| object! {
-                        "bucket_index" => wake.bucket_index,
-                        "boundary" => u32::from(wake.boundary),
-                        "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
-                        "estimated_unix_time" => wake.estimated_unix_time,
-                        "estimated_target_unix_time" => wake.estimated_target_unix_time,
+                    .map(|window| object! {
+                        "bucket_index" => window.bucket_index,
+                        "boundary" => u32::from(window.boundary),
+                        "part_ids" => window.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                        "window_opens_unix_time" => window.window_opens_unix_time,
+                        "latest_target_unix_time" => window.latest_target_unix_time,
                     })
                     .collect::<Vec<_>>(),
                 "due_now" => status.due_now.as_ref().map(|batch| object! {
@@ -2894,6 +2909,28 @@ fn run_migration(
                 }),
             }
             .pretty(2)
+        }
+        MigrationSubCommand::Windows => {
+            let timeline = RT.block_on(lightclient.window_timeline())?;
+            match timeline {
+                None => "Wallet has no chain height yet; sync first.".to_string(),
+                Some(windows) => object! {
+                    "windows" => windows
+                        .iter()
+                        .map(|window| object! {
+                            "bucket_index" => window.bucket_index,
+                            "opens" => u32::from(window.boundary),
+                            "closes" => u32::from(window.close),
+                            "is_current" => window.is_current,
+                            "parts_confirmed" => window.parts_confirmed,
+                            "parts_total" => window.parts_total,
+                            "value_migrated" => window.value_migrated,
+                            "value_total" => window.value_total,
+                        })
+                        .collect::<Vec<_>>(),
+                }
+                .pretty(2),
+            }
         }
         MigrationSubCommand::Reconcile => {
             let report = RT.block_on(lightclient.reconcile_migration())?;
@@ -2935,6 +2972,227 @@ fn run_migration(
     })
 }
 
+/// The drain command's typed request.
+#[derive(Debug, PartialEq, Eq)]
+enum DrainSubCommand {
+    Plan,
+    Now,
+}
+
+/// Pure parser for the drain command's arguments.
+fn parse_drain_args(args: &[&str]) -> Result<DrainSubCommand, MigrationCommandError> {
+    match args {
+        ["plan"] => Ok(DrainSubCommand::Plan),
+        ["now"] => Ok(DrainSubCommand::Now),
+        _ => Err(MigrationCommandError::DrainUsage),
+    }
+}
+
+/// The split command's typed request.
+#[derive(Debug, PartialEq, Eq)]
+enum SplitSubCommand {
+    Plan,
+    Now,
+}
+
+/// Pure parser for the split command's arguments.
+fn parse_split_args(args: &[&str]) -> Result<SplitSubCommand, MigrationCommandError> {
+    match args {
+        ["plan"] => Ok(SplitSubCommand::Plan),
+        ["now"] => Ok(SplitSubCommand::Now),
+        _ => Err(MigrationCommandError::SplitUsage),
+    }
+}
+
+/// Renders an in-flight execute batch snapshot as the heartbeat's detail
+/// line — the same [`zingolib::lightclient::migrate::BatchStatus`] a mobile
+/// progress screen polls during `execute_due_parts`.
+fn batch_progress_line(status: &zingolib::lightclient::migrate::BatchStatus) -> String {
+    use zingolib::lightclient::migrate::BatchPhase;
+    match status.phase {
+        BatchPhase::Sending => format!(
+            "resolved {}/{} (sent {})",
+            status.resolved, status.total, status.sent
+        ),
+        BatchPhase::Spacing => format!(
+            "resolved {}/{} (sent {}), waiting out the spacing",
+            status.resolved, status.total, status.sent
+        ),
+    }
+}
+
+/// Renders an in-flight drain snapshot as the heartbeat's detail line —
+/// "built i/N" while proving and signing, "sent i/N" while broadcasting,
+/// the rendering the mobile integration guide prescribes for this handle.
+fn drain_progress_line(status: &ImmediateMigrationStatus) -> String {
+    match status.phase {
+        ImmediateMigrationPhase::Building => format!("built {}/{}", status.built, status.total),
+        ImmediateMigrationPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
+    }
+}
+
+/// Renders an in-flight note-splitting round snapshot as the heartbeat's
+/// detail line, mirroring [`drain_progress_line`].
+fn split_progress_line(status: &SplitStatus) -> String {
+    match status.phase {
+        SplitPhase::Building => format!("built {}/{}", status.built, status.total),
+        SplitPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
+    }
+}
+
+/// The drain command's typed core: parse first, then act. Both sub-commands
+/// wrap exactly the calls zingo-mobile drives (`plan_immediate_migration`,
+/// `quick_immediate_migration`), so the CLI exercises the mobile surface.
+fn run_drain(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    Ok(match parse_drain_args(args)? {
+        DrainSubCommand::Plan => {
+            let plan = RT.block_on(lightclient.plan_immediate_migration(zip32::AccountId::ZERO))?;
+            object! {
+                "transactions" => plan.transactions.len(),
+                "migrated" => plan.migrated,
+                "fee" => plan.fee,
+                "residual" => plan.residual,
+            }
+            .pretty(2)
+        }
+        DrainSubCommand::Now => {
+            let progress = lightclient.immediate_migration_progress_handle();
+            let summary = RT.block_on(with_transmit_heartbeat(
+                "drain",
+                move || progress.status().as_ref().map(drain_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.quick_immediate_migration(zip32::AccountId::ZERO, true),
+            ))?;
+            object! {
+                "txids" => txids_json(&summary.txids),
+                "migrated" => summary.migrated,
+                "fee" => summary.fee,
+                "residual" => summary.residual,
+            }
+            .pretty(2)
+        }
+    })
+}
+
+/// The split command's typed core: parse first, then act. Both sub-commands
+/// wrap exactly the calls zingo-mobile drives (`plan_note_split`,
+/// `quick_split`), so the CLI exercises the mobile surface.
+fn run_split(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    Ok(match parse_split_args(args)? {
+        SplitSubCommand::Plan => {
+            let plan = RT.block_on(lightclient.plan_note_split(zip32::AccountId::ZERO))?;
+            object! {
+                "split_rounds" => plan.split_rounds.len(),
+                "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
+                "split_fee" => plan.split_fee(),
+                "parts" => plan.parts.clone(),
+                "residual" => plan.residual,
+            }
+            .pretty(2)
+        }
+        SplitSubCommand::Now => {
+            let progress = lightclient.split_progress_handle();
+            match RT.block_on(with_transmit_heartbeat(
+                "split",
+                move || progress.status().as_ref().map(split_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.quick_split(zip32::AccountId::ZERO, true),
+            ))? {
+                SplitOutcome::Round { txids } => {
+                    object! { "split_txids" => txids_json(&txids) }.pretty(2)
+                }
+                SplitOutcome::AwaitingConfirmation => {
+                    "A previous round has not confirmed yet; nothing was sent. Sync and retry."
+                        .to_string()
+                }
+                SplitOutcome::Complete => {
+                    "Every note is part-ready; splitting is complete.".to_string()
+                }
+            }
+        }
+    })
+}
+
+struct DrainCommand {}
+impl Command for DrainCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Send every spendable Orchard note straight into the Ironwood pool now —
+            ZIP 318's immediate path, wrapping the same `quick_immediate_migration` call zingo-mobile
+            drives.
+
+            Privacy disclosure (ZIP 318): the drain puts the wallet's real amounts
+            on-chain at once, correlated with each other and with this wallet's
+            activity. The scheduled flow (see the migration command) is the private
+            alternative.
+
+            Sub-commands:
+            `plan` previews the drain from current wallet state: how many transactions
+            go out, the total that will land in Ironwood, the fees, and the residual
+            dust (notes worth at most the sweep minimum, left behind because moving
+            them costs more than they carry). Pure - nothing is signed or sent.
+            `now` builds, signs, and broadcasts the drain against current wallet state.
+            Sync first: like any send, the drain does not synchronize. Idempotent: if
+            it fails partway, every unsent transaction's notes stay spendable and
+            running it again sends only the remainder.
+
+            Usage:
+            drain plan
+            drain now
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send all Orchard funds straight into the Ironwood pool now (immediate ZIP 318 path)"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(run_drain(args, lightclient)?)
+    }
+}
+
+struct SplitCommand {}
+impl Command for SplitCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Resize the wallet's Orchard notes for ZIP 318 migration parts, one round
+            of Orchard self-sends per call - wrapping the same `quick_split` call
+            zingo-mobile drives (the fused, stateless Phase 1).
+
+            The rounds reveal no value and may run before NU6.3 activation. Each call
+            re-plans from the wallet's confirmed notes and persists no migration
+            state. Refuses while a scheduled migration is active: that flow drives
+            its own splitting.
+
+            Sub-commands:
+            `plan` previews the remaining splitting: rounds, transactions, fees, the
+            resulting part denominations, and residual dust. Pure - nothing is signed
+            or sent. Zero rounds means every note is already part-ready.
+            `now` executes one round. Sync first, and sync between rounds until each
+            round's self-sends confirm; the command reports when a prior round is
+            still confirming and when splitting is complete.
+
+            Usage:
+            split plan
+            split now
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Split Orchard notes into ZIP 318 part sizes, one round per call"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(run_split(args, lightclient)?)
+    }
+}
+
 struct MigrateCommand {}
 impl Command for MigrateCommand {
     fn help(&self) -> &'static str {
@@ -2972,7 +3230,7 @@ impl Command for MigrationCommand {
 
             Sub-commands:
             `plan` computes the migration plan (note-splitting rounds, parts, fees,
-            stranded dust) from the wallet's spendable Orchard notes and prints its plan
+            residual dust) from the wallet's spendable Orchard notes and prints its plan
             hash. Nothing is signed or sent.
             `start <plan_hash> [--per-bucket N]` records consent to the plan with that
             hash and begins the migration. --per-bucket N caps how many parts share each
@@ -2995,6 +3253,10 @@ impl Command for MigrationCommand {
             to drive the migration without manual steps.
             `status` reports progress: the Orchard-pool confirmed-spendable balance, the
             phase, part counts and values, and the coming broadcast windows.
+            `windows` lists the window timeline: each window's block range, whether the
+            chain is currently inside it, and how many of its parts (and how much value)
+            have confirmed. Works with no migration in progress too: the current window
+            is always reported, with zero tallies when nothing is scheduled in it.
             `reconcile` checks the persisted schedule against the chain and applies the
             actions that are safe unattended. Run it after every sync.
             `catchup [spacing_seconds]` sends overdue parts now, in sequence with the
@@ -3011,6 +3273,7 @@ impl Command for MigrationCommand {
             migration execute [spacing_seconds]
             migration auto
             migration status
+            migration windows
             migration reconcile
             migration catchup [spacing_seconds]
             migration cancel
@@ -3056,6 +3319,7 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("transmit", Box::new(TransmitCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("delete", Box::new(DeleteCommand {})),
+        ("drain", Box::new(DrainCommand {})),
         ("export_ufvk", Box::new(ExportUfvkCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("info", Box::new(InfoCommand {})),
@@ -3088,6 +3352,7 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("settings", Box::new(SettingsCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("spendable_balance", Box::new(SpendableBalanceCommand {})),
+        ("split", Box::new(SplitCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
@@ -3251,6 +3516,14 @@ mod migration_command_parsing {
     }
 
     #[test]
+    fn windows_parses_bare() {
+        assert_eq!(
+            parse_migration_args(&["windows"]).expect("bare windows parses"),
+            MigrationSubCommand::Windows
+        );
+    }
+
+    #[test]
     fn cadence_requires_a_count() {
         assert_eq!(
             parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
@@ -3297,6 +3570,62 @@ mod migration_command_parsing {
         assert_eq!(
             format!("Error: {}", MigrationCommandError::MalformedPerBucket),
             "Error: --per-bucket expects a positive integer."
+        );
+    }
+}
+
+#[cfg(test)]
+mod drain_and_split_command_parsing {
+    //! Pins the pure argument parsers of the mobile-parity migration
+    //! commands: `drain` and `split` accept exactly `plan` or `now`.
+
+    use super::*;
+
+    #[test]
+    fn drain_accepts_exactly_plan_or_now() {
+        assert_eq!(
+            parse_drain_args(&["plan"]).expect("drain plan parses"),
+            DrainSubCommand::Plan
+        );
+        assert_eq!(
+            parse_drain_args(&["now"]).expect("drain now parses"),
+            DrainSubCommand::Now
+        );
+        for junk in [&[][..], &["bogus"][..], &["now", "extra"][..]] {
+            assert!(matches!(
+                parse_drain_args(junk),
+                Err(MigrationCommandError::DrainUsage)
+            ));
+        }
+    }
+
+    #[test]
+    fn split_accepts_exactly_plan_or_now() {
+        assert_eq!(
+            parse_split_args(&["plan"]).expect("split plan parses"),
+            SplitSubCommand::Plan
+        );
+        assert_eq!(
+            parse_split_args(&["now"]).expect("split now parses"),
+            SplitSubCommand::Now
+        );
+        for junk in [&[][..], &["bogus"][..], &["plan", "extra"][..]] {
+            assert!(matches!(
+                parse_split_args(junk),
+                Err(MigrationCommandError::SplitUsage)
+            ));
+        }
+    }
+
+    #[test]
+    fn usage_errors_render_with_help_pointers() {
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::DrainUsage),
+            "Error: drain expects a sub-command: plan | now. Type \"help drain\" for usage."
+        );
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::SplitUsage),
+            "Error: split expects a sub-command: plan | now. Type \"help split\" for usage."
         );
     }
 }

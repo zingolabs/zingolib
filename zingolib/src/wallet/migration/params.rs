@@ -20,10 +20,10 @@ pub struct MigrationParams {
     pub denominations: Vec<u64>,
     /// `DENOM_CAP`: the largest permitted denomination.
     pub denom_cap: u64,
-    /// `DUST_FLOOR`: the smallest permitted denomination. Leftover value
-    /// strictly below this cannot be migrated as a standard note.
-    pub dust_floor: u64,
-    /// Notes worth at most this are stranded rather than selected for
+    /// `MAX_RESIDUAL_VALUE`: the smallest permitted denomination. Leftover
+    /// value strictly below this cannot be migrated as a standard note.
+    pub max_residual_value: u64,
+    /// Notes worth at most this are left as residual rather than selected for
     /// migration. Provisionally twice the ZIP-317 marginal fee: a deliberate
     /// safety factor, requiring a selected note to return strictly more than
     /// double the marginal action cost it adds, rather than merely break even
@@ -42,18 +42,6 @@ pub struct MigrationParams {
     /// value before NU6.3 (spends and outputs share actions) and at twice it
     /// afterwards (cross-address transfers disabled, one action each).
     pub max_actions_per_split_tx: usize,
-    /// Canonical expiry: a part expires this many blocks past its boundary.
-    ///
-    /// The builder's tip-relative default
-    /// ([`zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA`])
-    /// cannot be used here: ZIP 318 lists the expiry among the values that
-    /// group otherwise uniform migration transactions, so it must be
-    /// computed from the shared boundary, and a boundary-relative delta of
-    /// only 40 would expire a part before most of its bucket's broadcast
-    /// window. The ZIP leaves the constant "to be specified". Provisionally
-    /// the bucket length plus the standard 40-block margin, so a part
-    /// broadcast anywhere in its bucket outlives the bucket.
-    pub expiry_delta: u32,
     /// The canonical ZIP-317 fee of one part. Every split note is sized
     /// `denomination + part_fee` so the part balances exactly.
     pub part_fee: u64,
@@ -64,24 +52,37 @@ impl MigrationParams {
     /// accepted now so ratified per-network values slot in without a
     /// signature change.
     pub fn provisional(_chain: ChainType) -> Self {
+        // The `{1, 2, 5} × 10^k` set from 10 000 ZEC down to 0.01 ZEC.
         MigrationParams {
-            version: 0,
+            version: 1,
             denominations: vec![
-                100 * COIN,  // 100 ZEC
-                10 * COIN,   //  10 ZEC
-                COIN,        //   1 ZEC
-                COIN / 10,   //   0.1 ZEC
-                COIN / 100,  //   0.01 ZEC
-                COIN / 1000, //   0.001 ZEC
+                10_000 * COIN,
+                5_000 * COIN,
+                2_000 * COIN,
+                1_000 * COIN,
+                500 * COIN,
+                200 * COIN,
+                100 * COIN,
+                50 * COIN,
+                20 * COIN,
+                10 * COIN,
+                5 * COIN,
+                2 * COIN,
+                COIN,
+                COIN / 2,
+                COIN / 5,
+                COIN / 10,
+                COIN / 20,
+                COIN / 50,
+                COIN / 100,
             ],
-            denom_cap: 100 * COIN,
-            dust_floor: COIN / 1000,
+            denom_cap: 10_000 * COIN,
+            max_residual_value: COIN / 100,
             sweep_min: SWEEP_MIN,
-            bucket_modulus: 256,
+            bucket_modulus: 144,
             k_max: 8,
             target_sessions: 6,
             max_actions_per_split_tx: 32,
-            expiry_delta: 256 + 40,
             part_fee: CANONICAL_PART_FEE,
         }
     }
@@ -99,13 +100,12 @@ impl MigrationParams {
             hasher.update(&denomination.to_le_bytes());
         }
         hasher.update(&self.denom_cap.to_le_bytes());
-        hasher.update(&self.dust_floor.to_le_bytes());
+        hasher.update(&self.max_residual_value.to_le_bytes());
         hasher.update(&self.sweep_min.to_le_bytes());
         hasher.update(&self.bucket_modulus.to_le_bytes());
         hasher.update(&self.k_max.to_le_bytes());
         hasher.update(&self.target_sessions.to_le_bytes());
         hasher.update(&(self.max_actions_per_split_tx as u64).to_le_bytes());
-        hasher.update(&self.expiry_delta.to_le_bytes());
         hasher.update(&self.part_fee.to_le_bytes());
         hasher
             .finalize()
@@ -123,7 +123,10 @@ mod tests {
     fn provisional_denominations_are_capped_and_floored() {
         let params = MigrationParams::provisional(ChainType::Mainnet);
         assert_eq!(params.denominations.first(), Some(&params.denom_cap));
-        assert_eq!(params.denominations.last(), Some(&params.dust_floor));
+        assert_eq!(
+            params.denominations.last(),
+            Some(&params.max_residual_value)
+        );
         assert!(params.denominations.windows(2).all(|w| w[0] > w[1]));
     }
 
