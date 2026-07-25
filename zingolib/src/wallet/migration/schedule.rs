@@ -2,9 +2,17 @@
 //!
 //! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
 //! Bucket `i` spans heights `[i·M, (i+1)·M)`. A part assigned to bucket `i`
-//! broadcasts while the chain is inside it, anchored to the tree state at the
-//! boundary `i·M`. Because that anchor is identical for every wallet sending
-//! into the same bucket, it carries no per-wallet timing information.
+//! broadcasts while the chain is inside it.
+//!
+//! A part's *anchor* is a separate bucket from its broadcast window. The
+//! anchor sits at [`draw_anchor_age`] buckets below the window, never zero
+//! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
+//! boundary the chain has already left. Because that boundary is identical
+//! for every wallet anchoring there, it carries no per-wallet timing
+//! information, and because its window has closed, its ZIP 318 *cohort* (the
+//! transfers network-wide sharing it) has had time to accumulate. Anchoring
+//! at the window's own boundary, which the chain is still inside, would be
+//! age zero: the newest tree state, whose cohort is empty. See ADR 0018.
 
 use pepper_sync::wallet::PoolActivation;
 use rand::Rng;
@@ -52,8 +60,9 @@ pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
     u64::from(u32::from(height)) / u64::from(bucket_modulus)
 }
 
-/// The boundary that opens `bucket_index`, and the anchor height of every
-/// part assigned to it.
+/// The boundary that opens `bucket_index`. It is the anchor height of every
+/// part whose *anchor bucket* this is, which is never the same bucket the
+/// part broadcasts in.
 pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
     BlockHeight::from_u32(
         u32::try_from(bucket_index * u64::from(bucket_modulus))
@@ -66,56 +75,194 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
 
+/// `ANCHOR_AGE_CAP`: the greatest anchor age the draw accepts, in buckets.
+/// A draw above it is discarded and redrawn, bounding how stale a part's
+/// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
+/// not a [`MigrationParams`] field: it does not feed the consent hash, so
+/// adopting it costs no existing consent.
+pub const ANCHOR_AGE_CAP: u32 = 16;
+
+/// The two floors a part's candidate anchor bucket must clear, resolved for
+/// one part.
+///
+/// The *era floor* is network-wide: an anchor must sit strictly above the
+/// Pool Activation's bucket. The *anchorability floor* is per part: an
+/// anchor must sit at or above the boundary covering the part's own bound
+/// note, because a note has no Merkle path under a root that predates it.
+/// Both are ZIP 318 candidate-set conditions (a) and (b).
+#[derive(Debug, Clone, Copy)]
+pub struct AnchorFloor {
+    activation: PoolActivation,
+    note_confirmed_at: Option<BlockHeight>,
+}
+
+impl AnchorFloor {
+    /// The floors for a part whose bound note confirmed at
+    /// `note_confirmed_at`. `None` (still unconfirmed) floors nothing: an
+    /// unconfirmed note has no tree position to anchor at any boundary, and
+    /// [`crate::wallet::LightWallet::prepare_part`] declines it on that
+    /// ground rather than this one.
+    #[must_use]
+    pub fn new(activation: PoolActivation, note_confirmed_at: Option<BlockHeight>) -> Self {
+        AnchorFloor {
+            activation,
+            note_confirmed_at,
+        }
+    }
+
+    /// The lowest bucket this part may anchor at: the higher of the two
+    /// floors.
+    #[must_use]
+    pub fn lowest_anchor_bucket(&self, bucket_modulus: u32) -> u64 {
+        let era = bucket_index(self.activation.height(), bucket_modulus) + 1;
+        let anchorability = self
+            .note_confirmed_at
+            .map_or(0, |height| bucket_at_or_after(height, bucket_modulus));
+        era.max(anchorability)
+    }
+
+    /// The earliest broadcast window this part may be scheduled into: one
+    /// bucket above its lowest legal anchor, because an anchor always sits
+    /// at least one bucket below its window.
+    ///
+    /// This is why the era floor no longer needs restating on the window.
+    /// Every legal anchor is above the activation bucket and every window is
+    /// above its anchor, so a scheduled window clears the activation by two
+    /// buckets without being asked to.
+    #[must_use]
+    pub fn earliest_window(&self, bucket_modulus: u32) -> u64 {
+        self.lowest_anchor_bucket(bucket_modulus) + 1
+    }
+}
+
+/// Draws an anchor age `a ≥ 1` from the recency-weighted `Geometric(1/2)`
+/// distribution: the number of failed fair coin flips plus one, so
+/// `P(a = 1) = 1/2`, `P(a = 2) = 1/4`, and the mean age is two buckets.
+///
+/// Age zero is never produced. That is the whole point: an age-zero anchor
+/// is the boundary of the window the chain is still inside, the newest tree
+/// state there is, whose cohort has not accumulated yet.
+///
+/// Counting stops one past [`ANCHOR_AGE_CAP`], which the caller rejects
+/// anyway, so a single 64-bit draw always suffices and the loop is bounded.
+pub fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
+    // Each bit of one fresh word is one fair coin flip, as upstream's
+    // `draw_anchor_age` does it. The cap is far below 64, so one word is
+    // always enough and the loop needs no refill.
+    let mut bits = rng.next_u64();
+    let mut age: u32 = 1;
+    while age <= ANCHOR_AGE_CAP {
+        if bits & 1 == 1 {
+            return age;
+        }
+        bits >>= 1;
+        age += 1;
+    }
+    age
+}
+
+/// The anchor bucket for a part broadcasting in `window`: `window − a` for a
+/// drawn age, redrawn until it clears `floor` and [`ANCHOR_AGE_CAP`].
+///
+/// `None` when the candidate set is empty, which is the caller's signal that
+/// `window` is too early for this part rather than a transient condition.
+/// Age one always yields `window − 1`, the highest candidate, so whenever the
+/// set is non-empty the rejection loop terminates with probability one half
+/// per draw.
+pub fn draw_anchor_bucket(
+    window: u64,
+    floor: &AnchorFloor,
+    rng: &mut impl Rng,
+    bucket_modulus: u32,
+) -> Option<u64> {
+    // The highest candidate is one full bucket below the window, since the
+    // age is never zero. An empty set means the floors reach the window.
+    let highest = window.checked_sub(1)?;
+    let lowest = floor.lowest_anchor_bucket(bucket_modulus);
+    if lowest > highest {
+        return None;
+    }
+    loop {
+        let age = draw_anchor_age(rng);
+        if age > ANCHOR_AGE_CAP {
+            continue;
+        }
+        // An age reaching past bucket zero is a too-old anchor: redraw.
+        if let Some(candidate) = window.checked_sub(u64::from(age))
+            && candidate >= lowest
+        {
+            return Some(candidate);
+        }
+    }
+}
+
 /// The first bucket a part may be scheduled into: strictly after
-/// `now_height`'s bucket, and never below the pool's activation floor,
-/// the first bucket whose boundary sits at or above the Pool Activation,
-/// since a pre-activation boundary can anchor no Ironwood output (issue
-/// #2493, finding 6).
+/// `now_height`'s bucket, and never below the earliest window its anchor
+/// floors permit.
 ///
 /// This is the single bucket chooser: every site that schedules a part
 /// into a future bucket derives the bucket from here, never from raw
 /// arithmetic.
 pub fn first_permitted_bucket(
     now_height: BlockHeight,
-    activation: PoolActivation,
+    floor: &AnchorFloor,
     params: &MigrationParams,
 ) -> u64 {
     (bucket_index(now_height, params.bucket_modulus) + 1)
-        .max(activation_bucket(activation, params.bucket_modulus))
+        .max(floor.earliest_window(params.bucket_modulus))
 }
 
-/// The first bucket boundary at or above the Pool Activation: the
-/// earliest height an Ironwood part can anchor to.
-pub fn first_anchorable_boundary(activation: PoolActivation, bucket_modulus: u32) -> BlockHeight {
+/// The first broadcast window boundary that can hold an Ironwood part at
+/// all: two buckets above the Pool Activation's bucket, since the lowest
+/// legal anchor is the bucket above the activation's and a window sits a
+/// further bucket above its anchor.
+///
+/// Below this height the Ironwood era is too young to hold both, whatever
+/// the wallet's notes look like. Named for the era, not for anchorability:
+/// the constraint is which consensus branch the window's implied target
+/// commits to, not whether a Merkle path exists (issue #2493, finding 6,
+/// and ADR 0014's corrected reason).
+pub fn first_ironwood_era_window_boundary(
+    activation: PoolActivation,
+    bucket_modulus: u32,
+) -> BlockHeight {
     boundary_of(
-        activation_bucket(activation, bucket_modulus),
+        bucket_index(activation.height(), bucket_modulus) + 2,
         bucket_modulus,
     )
 }
 
-/// The first bucket whose boundary sits at or above the Pool Activation.
-/// The modulus is nonzero by the [`MigrationParams::bucket_modulus`]
-/// invariant (enforced at store read), as in every bucket computation.
-fn activation_bucket(activation: PoolActivation, bucket_modulus: u32) -> u64 {
-    u64::from(u32::from(activation.height())).div_ceil(u64::from(bucket_modulus))
+/// The first bucket whose boundary sits at or above `height`. The modulus
+/// is nonzero by the [`MigrationParams::bucket_modulus`] invariant
+/// (enforced at store read), as in every bucket computation.
+pub fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
+    u64::from(u32::from(height)).div_ceil(u64::from(bucket_modulus))
 }
 
 /// Places a part in `bucket` with a fresh random target inside the
-/// bucket's window.
+/// bucket's window and a freshly drawn anchor below it.
 ///
 /// This and [`place_immediate`] are the only placement operations: every
 /// move of a part between buckets (initial scheduling, rebuild after
 /// expiry) passes through one of them, so a part can never carry a
-/// target left over from a previous bucket (issue #2493, finding 7), and
-/// every placement chooses, by name, between jittered and immediate.
+/// target or an anchor left over from a previous bucket (issue #2493,
+/// finding 7), and every placement chooses, by name, between jittered and
+/// immediate.
+///
+/// Re-drawing the anchor here is what keeps the age honest. A part shifted
+/// into a later window while keeping an old anchor would silently age past
+/// [`ANCHOR_AGE_CAP`]; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
 pub fn place(
     part: &mut PartRecord,
     bucket: u64,
+    floor: &AnchorFloor,
     rng: &mut impl Rng,
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
+    let anchor = anchor_for(bucket, floor, rng, params)?;
     transition_to_bucket(part, bucket)?;
+    part.anchor_bucket = Some(anchor);
     part.target_height = Some(random_target_in_bucket(bucket, rng, params));
     Ok(())
 }
@@ -123,11 +270,41 @@ pub fn place(
 /// Places a part in `bucket` due the moment the window is open, the
 /// catch-up and immediate-mode operation, where firing now is the
 /// disclosed intent. See [`place`] for the placement monopoly.
+///
+/// Immediate is about *when the part fires*, not what it proves against:
+/// the anchor is drawn at age one or more here exactly as in [`place`].
+/// Disclosing the send time is the accepted cost of catch-up; handing the
+/// part an empty cohort as well is not.
 #[allow(clippy::result_large_err)]
-pub fn place_immediate(part: &mut PartRecord, bucket: u64) -> Result<(), WalletError> {
+pub fn place_immediate(
+    part: &mut PartRecord,
+    bucket: u64,
+    floor: &AnchorFloor,
+    rng: &mut impl Rng,
+    params: &MigrationParams,
+) -> Result<(), WalletError> {
+    let anchor = anchor_for(bucket, floor, rng, params)?;
     transition_to_bucket(part, bucket)?;
+    part.anchor_bucket = Some(anchor);
     part.target_height = None;
     Ok(())
+}
+
+/// Draws the anchor both placements need, turning an empty candidate set
+/// into the typed refusal rather than a silent age-zero fallback.
+#[allow(clippy::result_large_err)]
+fn anchor_for(
+    bucket: u64,
+    floor: &AnchorFloor,
+    rng: &mut impl Rng,
+    params: &MigrationParams,
+) -> Result<u64, WalletError> {
+    draw_anchor_bucket(bucket, floor, rng, params.bucket_modulus).ok_or(
+        WalletError::MigrationNoLegalAnchor {
+            window: bucket,
+            lowest_anchor: floor.lowest_anchor_bucket(params.bucket_modulus),
+        },
+    )
 }
 
 /// Routes a placement through the part's legal state transition: fresh
@@ -142,20 +319,29 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
     }
 }
 
-/// Assigns every [`PartState::Bound`] part to an anchor-height bucket and
-/// picks a random broadcast target within that bucket's window.
+/// Assigns every [`PartState::Bound`] part to a broadcast window, draws its
+/// anchor below that window, and picks a random broadcast target inside it.
 ///
 /// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
-/// share each cohort. Cohorts fill consecutive future buckets starting at
-/// [`first_permitted_bucket`] (after `now_height`'s bucket and at or above
-/// the pool's activation floor), largest denominations first. Bucket
-/// assignments are deterministic, and target heights within each window are
-/// randomized so parts do not cluster at the boundary.
+/// share each *batch*. Batches fill consecutive buckets, largest
+/// denominations first. Bucket assignments are deterministic; target heights
+/// and anchor ages within each window are randomized.
+///
+/// A batch is this wallet's own parts sharing one window, and is not a ZIP
+/// 318 *cohort*: with per-part anchor ages the parts of one batch no longer
+/// share an anchor, and a cohort is the set of parts network-wide that do.
+///
+/// `note_confirmed_at` resolves each part's bound note's confirmation
+/// height, the per-part half of [`AnchorFloor`]. The first window is floored
+/// cohort-wide at the highest [`AnchorFloor::earliest_window`] across the
+/// parts, because windows are shared even though anchors are not: a window
+/// no part could anchor under would strand the whole batch.
 #[allow(clippy::result_large_err)]
 pub fn plan_schedule(
     parts: &mut [PartRecord],
     now_height: BlockHeight,
     activation: PoolActivation,
+    note_confirmed_at: impl Fn(&PartRecord) -> Option<BlockHeight>,
     params: &MigrationParams,
     rng: &mut impl Rng,
 ) -> Result<(), WalletError> {
@@ -183,19 +369,31 @@ pub fn plan_schedule(
         )
     });
 
-    // The first cohort opens in the *current* bucket (floored at activation:
-    // a pre-activation boundary can anchor no Ironwood output, issue #2493
-    // finding 6), so the first batch is sendable the instant Phase 2 is
-    // scheduled. Its window is already open. Later cohorts fill consecutive
-    // buckets from there, each one window sooner than the old `+ 1` start.
+    // The first batch opens in the *current* bucket where the anchor floors
+    // allow it, so a wallet whose notes have been settled at least a bucket
+    // is sendable the instant Phase 2 is scheduled. Later batches fill
+    // consecutive buckets from there.
+    //
+    // A wallet that has just split pays one window. Its notes' own
+    // confirmation floors the anchor at the next boundary, and a window sits
+    // a bucket above its anchor, so the first batch opens one bucket further
+    // out than the pre-anchor-age schedule placed it. That is the cost ADR
+    // 0018 accepted for a non-empty cohort.
+    //
     // This is local to initial scheduling; `first_permitted_bucket` remains
     // the chooser for expiry rebuild and reassignment, which target a fresh
     // future window.
-    let first_bucket = bucket_index(now_height, params.bucket_modulus)
-        .max(activation_bucket(activation, params.bucket_modulus));
+    let first_bucket = ranked.iter().fold(
+        bucket_index(now_height, params.bucket_modulus),
+        |earliest, &index| {
+            let floor = AnchorFloor::new(activation, note_confirmed_at(&parts[index]));
+            earliest.max(floor.earliest_window(params.bucket_modulus))
+        },
+    );
     for (rank, index) in ranked.into_iter().enumerate() {
+        let floor = AnchorFloor::new(activation, note_confirmed_at(&parts[index]));
         let bucket = first_bucket + rank as u64 / k;
-        place(&mut parts[index], bucket, rng, params)?;
+        place(&mut parts[index], bucket, &floor, rng, params)?;
     }
     Ok(())
 }
@@ -378,10 +576,25 @@ mod tests {
         MigrationParams::provisional(ChainType::Mainnet)
     }
 
-    /// An inert activation floor for tests whose subject is the schedule
-    /// arithmetic itself: height zero never constrains a bucket.
+    /// The weakest activation floor available for tests whose subject is the
+    /// schedule arithmetic itself. Not fully inert: even a height-zero
+    /// activation puts the lowest legal anchor at bucket one, so the earliest
+    /// window is bucket two. Every test using it schedules far above that.
     fn no_floor() -> PoolActivation {
         PoolActivation::new_for_test(BlockHeight::from_u32(0))
+    }
+
+    /// The matching weakest anchorability floor: notes confirmed at height
+    /// zero exist under every boundary.
+    fn old_notes(_part: &PartRecord) -> Option<BlockHeight> {
+        Some(BlockHeight::from_u32(0))
+    }
+
+    /// The [`AnchorFloor`] matching [`no_floor`] and [`old_notes`], for the
+    /// placement operations, which take one part's floor rather than a
+    /// lookup.
+    fn weakest_floor() -> AnchorFloor {
+        AnchorFloor::new(no_floor(), Some(BlockHeight::from_u32(0)))
     }
 
     fn bound_part(id: u32, denomination: u64) -> PartRecord {
@@ -405,15 +618,15 @@ mod tests {
     }
 
     /// Issue #2493, finding 6: consent given before the NU6.3 activation
-    /// must not schedule any part into a bucket whose boundary predates
-    /// the activation. No ironwood output can anchor there, so every
-    /// broadcast attempt skips and the whole consented cohort slides into
-    /// the correlation-disclosed catch-up path. The schedule must respect
-    /// an activation floor. Note splitting is explicitly permitted before
-    /// activation (module doc), so a fully split wallet at a
+    /// must not schedule any part whose *anchor* predates the activation.
+    /// The window such an anchor belongs to would commit to a pre-NU6.3
+    /// consensus branch, in which no Ironwood bundle exists, so every
+    /// broadcast attempt skips and the whole consented batch slides into the
+    /// correlation-disclosed catch-up path. Note splitting is explicitly
+    /// permitted before activation (module doc), so a fully split wallet at a
     /// pre-activation consent height is a supported state.
     #[test]
-    fn schedule_respects_the_activation_floor() {
+    fn schedule_respects_the_era_floor() {
         let params = params();
         let mut parts = parts_with_denominations(&[1_000_000, 2_000_000]);
         // Consent at height 10; the activation lies far above it.
@@ -424,20 +637,110 @@ mod tests {
             &mut parts,
             now,
             PoolActivation::new_for_test(activation),
+            old_notes,
             &params,
             &mut rand::rngs::OsRng,
         )
         .unwrap();
 
         for part in &parts {
-            let boundary = boundary_of(part.bucket_index.unwrap(), params.bucket_modulus);
+            let anchor = boundary_of(part.anchor_bucket.unwrap(), params.bucket_modulus);
             assert!(
-                boundary >= activation,
-                "part {:?} scheduled at boundary {boundary:?}, below the \
+                anchor > activation,
+                "part {:?} anchors at {anchor:?}, not strictly above the \
                  NU6.3 activation {activation:?}",
                 part.id,
             );
+            // And the window is strictly above the anchor, so it clears the
+            // activation without the floor being restated on it.
+            assert!(
+                part.bucket_index.unwrap() > part.anchor_bucket.unwrap(),
+                "part {:?} must broadcast above the bucket it anchors in",
+                part.id,
+            );
         }
+    }
+
+    /// The anchor age is never zero: a part must never prove against the
+    /// boundary of the window it is broadcasting in. That boundary is the
+    /// newest tree state at broadcast time, so its ZIP 318 cohort has not
+    /// accumulated and the anonymity set the anchor draw exists to build is
+    /// empty. Upstream states it as a MUST ("age 0 is NEVER produced").
+    #[test]
+    fn anchor_age_is_never_zero() {
+        for _ in 0..2_000 {
+            let age = draw_anchor_age(&mut rand::rngs::OsRng);
+            assert!(age >= 1, "drew age {age}, which is the open window itself");
+        }
+    }
+
+    /// Every accepted anchor sits inside the candidate set: at least one
+    /// bucket below the window, at or above both floors, and within the age
+    /// cap. The rejection loop, not the raw geometric draw, is what enforces
+    /// the lower end.
+    #[test]
+    fn drawn_anchors_land_inside_the_candidate_set() {
+        let params = params();
+        let activation = PoolActivation::new_for_test(BlockHeight::from_u32(1_000));
+        let note = BlockHeight::from_u32(2_000);
+        let floor = AnchorFloor::new(activation, Some(note));
+        let lowest = floor.lowest_anchor_bucket(params.bucket_modulus);
+        let window = lowest + 40;
+
+        for _ in 0..2_000 {
+            let anchor = draw_anchor_bucket(
+                window,
+                &floor,
+                &mut rand::rngs::OsRng,
+                params.bucket_modulus,
+            )
+            .expect("the set is non-empty forty buckets above the floor");
+            assert!(anchor < window, "the anchor is below the open window");
+            assert!(anchor >= lowest, "the anchor clears both floors");
+            assert!(
+                window - anchor <= u64::from(ANCHOR_AGE_CAP),
+                "the age {} exceeds the cap",
+                window - anchor
+            );
+            let boundary = boundary_of(anchor, params.bucket_modulus);
+            assert!(boundary > activation.height(), "anchor above activation");
+            assert!(boundary >= note, "anchor at or above its own note");
+        }
+    }
+
+    /// A window with no legal anchor below it is refused, not silently given
+    /// an age-zero anchor. This is the state a hand-computed window can reach
+    /// and `first_permitted_bucket` cannot.
+    #[test]
+    fn a_window_with_no_legal_anchor_is_refused() {
+        let params = params();
+        let floor = AnchorFloor::new(
+            PoolActivation::new_for_test(BlockHeight::from_u32(0)),
+            Some(BlockHeight::from_u32(0)),
+        );
+        let lowest = floor.lowest_anchor_bucket(params.bucket_modulus);
+
+        assert!(
+            draw_anchor_bucket(
+                lowest,
+                &floor,
+                &mut rand::rngs::OsRng,
+                params.bucket_modulus
+            )
+            .is_none(),
+            "the lowest legal anchor cannot also be the window"
+        );
+        assert_eq!(
+            floor.earliest_window(params.bucket_modulus),
+            lowest + 1,
+            "the earliest window is one bucket above the lowest anchor"
+        );
+
+        let mut part = bound_part(0, 1_000_000);
+        assert!(matches!(
+            place(&mut part, lowest, &floor, &mut rand::rngs::OsRng, &params),
+            Err(WalletError::MigrationNoLegalAnchor { .. })
+        ));
     }
 
     /// Issue #2493, finding 7 (ratified form): every move of a part
@@ -460,7 +763,14 @@ mod tests {
             .unwrap();
         part.mark_expired().unwrap();
 
-        place(&mut part, 5, &mut rand::rngs::OsRng, &params).unwrap();
+        place(
+            &mut part,
+            5,
+            &weakest_floor(),
+            &mut rand::rngs::OsRng,
+            &params,
+        )
+        .unwrap();
 
         assert_eq!(part.state, PartState::Assigned);
         let boundary = u32::from(boundary_of(5, params.bucket_modulus));
@@ -483,9 +793,17 @@ mod tests {
         let denominations: Vec<u64> = (1..=13).map(|i| i * 1_000_000).collect();
         let mut parts = parts_with_denominations(&denominations);
         let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+        plan_schedule(
+            &mut parts,
+            now,
+            no_floor(),
+            old_notes,
+            &params,
+            &mut rand::rngs::OsRng,
+        )
+        .unwrap();
 
-        // The first cohort opens in the current bucket now, not the next.
+        // The first batch opens in the current bucket, not the next.
         let first_bucket = bucket_index(now, params.bucket_modulus);
         for part in &parts {
             assert_eq!(part.state, PartState::Assigned);
@@ -603,21 +921,75 @@ mod tests {
         );
     }
 
-    /// The first cohort is placed in the bucket the chain is currently in, so
-    /// its window is already open and the first batch is immediately sendable.
+    /// The first batch is placed in the bucket the chain is currently in, so
+    /// its window is already open and the batch is immediately sendable, which
+    /// the anchor age permits whenever the notes have been settled a bucket.
     #[test]
-    fn first_cohort_opens_in_the_current_bucket() {
+    fn first_batch_opens_in_the_current_bucket_when_the_notes_are_settled() {
         let params = params();
         let mut parts = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
         let now = BlockHeight::from_u32(10_000);
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+        plan_schedule(
+            &mut parts,
+            now,
+            no_floor(),
+            old_notes,
+            &params,
+            &mut rand::rngs::OsRng,
+        )
+        .unwrap();
 
         let current_bucket = bucket_index(now, params.bucket_modulus);
         let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
         assert_eq!(
             earliest, current_bucket,
-            "the first cohort opens in the current bucket"
+            "notes settled a bucket or more ago pay nothing for the anchor age: \
+             the current bucket still has legal anchors below it"
         );
+        for part in &parts {
+            assert!(
+                part.anchor_bucket.unwrap() < part.bucket_index.unwrap(),
+                "even in the open window the anchor is a closed bucket"
+            );
+        }
+    }
+
+    /// The current bucket opened up to `M - 1` blocks ago, and a split's
+    /// outputs confirm at the tip. Anchoring them at a boundary older than
+    /// they are is impossible: the note has no Merkle path under it. The
+    /// anchor therefore moves up to the boundary that covers the notes, and
+    /// the window moves a further bucket above the anchor, so a freshly split
+    /// wallet waits one window longer than a settled one. That is the cost
+    /// ADR 0018 accepted in exchange for a non-empty cohort.
+    #[test]
+    fn a_fresh_split_costs_one_window() {
+        let params = params();
+        let mut parts = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
+        let now = BlockHeight::from_u32(10_000);
+        let split_confirmed = now - 3;
+        plan_schedule(
+            &mut parts,
+            now,
+            no_floor(),
+            |_| Some(split_confirmed),
+            &params,
+            &mut rand::rngs::OsRng,
+        )
+        .unwrap();
+
+        let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
+        assert_eq!(
+            earliest,
+            bucket_index(now, params.bucket_modulus) + 2,
+            "the anchor clears the fresh notes and the window clears the anchor"
+        );
+        for part in &parts {
+            let anchor = boundary_of(part.anchor_bucket.unwrap(), params.bucket_modulus);
+            assert!(
+                anchor >= split_confirmed,
+                "every part must anchor at or above its own notes"
+            );
+        }
     }
 
     proptest! {
@@ -637,7 +1009,14 @@ mod tests {
             let now = BlockHeight::from_u32(now);
 
             let mut parts = parts_with_denominations(&denominations);
-            plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+            plan_schedule(
+            &mut parts,
+            now,
+            no_floor(),
+            old_notes,
+            &params,
+            &mut rand::rngs::OsRng,
+        ).unwrap();
 
             let k = (denominations.len() as u64)
                 .div_ceil(u64::from(target_sessions))
@@ -686,12 +1065,20 @@ mod tests {
         let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
         let now = BlockHeight::from_u32(10_000);
         let now_unix = 1_780_000_000;
-        plan_schedule(&mut parts, now, no_floor(), &params, &mut rand::rngs::OsRng).unwrap();
+        plan_schedule(
+            &mut parts,
+            now,
+            no_floor(),
+            old_notes,
+            &params,
+            &mut rand::rngs::OsRng,
+        )
+        .unwrap();
 
         let windows = upcoming_windows(&parts, now, now_unix, u64::MAX, &params);
         let listed: usize = windows.iter().map(|w| w.part_ids.len()).sum();
 
-        // upcoming_windows lists strictly future windows. The first cohort now opens
+        // upcoming_windows lists strictly future windows. The first batch opens
         // in the current bucket and is surfaced through `due_now`, not here, so
         // every future-bucket part appears and no current-bucket one does.
         let current_bucket = bucket_index(now, params.bucket_modulus);

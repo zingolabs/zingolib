@@ -46,13 +46,17 @@
 
 **Note splitting** — Phase 1 of the private Migration: Orchard→Orchard self-sends that reshape a wallet's arbitrary Orchard notes into notes worth exactly one Denomination plus a Part fee, so each later Part spends one note with no change. Both ends are shielded, so it reveals no value and may run before NU6.3 activation; it is *transmitted* over the ordinary connection, never broadcast over the Migration Broadcast Endpoint. It both merges fragments and divides large notes (see Round). *Avoid*: "splitting" for the fan-out alone.
 
-**Round** — One batch of independent Note-splitting transactions built and broadcast together. Rounds are sequential: a Round's shielded outputs must confirm and be witnessed before the next Round can spend them, because a later Round's inputs are an earlier Round's outputs. A wallet needs about log₃₂(N) Rounds and most need one. A consumer drives Phase 1 one Round per call. Distinct from a Bucket, which is a Phase 2 broadcast window, not a splitting step.
+**Round** — One group of independent Note-splitting transactions built and transmitted together. Rounds are sequential: a Round's shielded outputs must confirm and be witnessed before the next Round can spend them, because a later Round's inputs are an earlier Round's outputs. A wallet needs about log₃₂(N) Rounds and most need one. A consumer drives Phase 1 one Round per call. Distinct from a Batch, which is a group of Phase 2 Parts, and from a Bucket, which is the window a Batch broadcasts in; neither is a splitting step.
 
-**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window and anchors to the tree state at the Bucket's opening Boundary. Buckets are windows in chain time, never value quanta (see Denomination).
+**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window. A Bucket says only when a Part is sent, never what it proves against: the anchor comes from a separate draw (see Anchor age). Buckets are windows in chain time, never value quanta (see Denomination).
 
-**Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it.
+**Batch** — The Parts assigned to one Bucket: the group a user signs and broadcasts together in a single visit, since one visit while the window is open sends all of them. The schedule sizes Batches so a typical balance migrates in a target number of visits, which is what bounds how often a user must be brought back. Distinct from a Round, which is a Phase 1 splitting step, and from a Cohort, which spans wallets instead of collecting one wallet's own Parts.
 
-**Cohort** — The Parts assigned to the same Bucket, and therefore sharing its anchor and broadcast window.
+**Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it. Every Part's anchor is a Boundary, but never the one that opens the Bucket it broadcasts in (see Anchor age).
+
+**Anchor age** — How many Buckets below its broadcast Bucket a Part's anchor Boundary sits. Drawn per Part and never zero, so a Part's anchor is always a Boundary the chain has already passed and whose Cohort has had time to accumulate before the Part proves against it. Small ages are the likeliest and the draw is capped, so anchors stay recent without ever being the newest tree state in existence.
+
+**Cohort** — The Parts, across all wallets on the network, that prove against the same anchor Boundary. A Cohort is the anonymity set the anchor draw exists to build: the more Parts have accumulated at a Boundary, the less a Part's anchor distinguishes the wallet that sent it. *Avoid*: Cohort for one wallet's own Parts sharing a broadcast window — that is a Batch.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 

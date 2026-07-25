@@ -465,6 +465,40 @@ impl crate::wallet::LightWallet {
             .collect()
     }
 
+    /// Given an account, returns whether any wallet transaction confirmed
+    /// above the migration anchor holds an unspent V2 (pre-Ironwood) Orchard
+    /// note that account owns, a note that is mined but not yet spendable.
+    /// Errors when the wallet holds no sync data to take the anchor from.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn unanchored_v2_outputs(
+        &self,
+        account: zip32::AccountId,
+    ) -> Result<bool, crate::wallet::error::WalletError> {
+        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
+
+        let (_, anchor_height) = self
+            .get_migration_heights()?
+            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        // A failed transaction carries no confirmed height
+        Ok(self
+            .wallet_transactions
+            .values()
+            .filter(|transaction| {
+                transaction
+                    .status()
+                    .get_confirmed_height()
+                    .is_some_and(|height| height > anchor_height)
+            })
+            .flat_map(|transaction| {
+                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
+            })
+            .any(|note| {
+                note.key_id().account_id() == account
+                    && note.note().version() == orchard::note::NoteVersion::V2
+                    && note.spending_transaction().is_none()
+            }))
+    }
+
     /// True when a note-splitting round this account initiated is still
     /// confirming: a pending (built, transmitted, or mempool, but not yet
     /// confirmed) transaction holds account-owned pre-Ironwood (V2) Orchard

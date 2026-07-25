@@ -33,7 +33,8 @@ pub struct MigrationParams {
     /// Invariant: nonzero. `provisional` never produces zero and the
     /// store rejects one at read, so bucket arithmetic may divide by it.
     pub bucket_modulus: u32,
-    /// `K_MAX`: the per-cohort multiplicity bound.
+    /// `K_MAX`: the per-batch multiplicity bound: how many parts may share one
+    /// broadcast window.
     pub k_max: u32,
     /// The signing-session target the schedule aims at for typical balances.
     pub target_sessions: u32,

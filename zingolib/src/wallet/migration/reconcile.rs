@@ -64,7 +64,7 @@ pub enum PartClass {
     /// (the cleartext expiry and the stale anchor single the part out
     /// within its denomination cohort), so it waits out its expiry and
     /// rebuilds fresh, on-chain indistinguishable from an on-schedule
-    /// part. Not part of the catch-up cohort. Surfaced so status can say
+    /// part. Not part of the catch-up batch. Surfaced so status can say
     /// why nothing was sent and when the rebuild comes.
     AwaitingExpiry {
         /// The expiry height being waited out.
@@ -700,7 +700,7 @@ mod tests {
         // Bucket TIP_BUCKET - 2 closed well beyond the slip tolerance. The
         // Assigned part is Overdue and folds into the batch; the Signed one is
         // classified AwaitingExpiry (it waits out its expiry and rebuilds
-        // rather than broadcasting late), so it is outside the catch-up cohort
+        // rather than broadcasting late), so it is outside the catch-up batch
         // and never folds.
         let assigned = assigned_part(0, TIP_BUCKET - 2);
         let mut signed = assigned_part(1, TIP_BUCKET - 2);

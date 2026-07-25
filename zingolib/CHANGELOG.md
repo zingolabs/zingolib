@@ -26,6 +26,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reporting: `migration_status`, `window_timeline`, and the
     `split_progress_handle` / `batch_progress_handle` progress handles.
 - `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
+  - A Part carries two independent buckets: `bucket_index`, the window it is
+    broadcast in, and `anchor_bucket`, the lower bucket whose boundary it proves
+    against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
+    must clear (strictly above the NU6.3 activation bucket; at or above the
+    boundary covering the Part's own bound note), and `draw_anchor_bucket`
+    reject-samples an age from `draw_anchor_age` against them.
+  - The anchor age is drawn per Part, `Geometric(1/2)` capped at
+    `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
+    the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
+    ADR 0018). The builder's target height, and so the consensus branch the Part
+    commits to, comes from the broadcast window instead.
+  - Consequence for consumers: a wallet that schedules immediately after note
+    splitting waits one extra window (~3h at `M` = 144) before its first Batch is
+    due, because a fresh note floors the anchor at the next boundary and a legal
+    window sits a bucket above its anchor. A wallet whose notes confirmed at least
+    one bucket earlier has its first Batch due the moment it is scheduled. Read the
+    wait from `MigrationStatus::upcoming_windows`, whose `BroadcastWindow`s carry
+    `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
+  - The migration section of the wallet file carries its own version, independent
+    of the wallet format version, and ships at 4.
 - `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
   Migration-part broadcasts route by Mixnet Mode and never at the sync host.
 - `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.

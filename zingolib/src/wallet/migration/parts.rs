@@ -73,7 +73,7 @@ pub enum SigningStrategy {
 pub enum PartState {
     /// Note bound, no bucket assigned yet.
     Bound,
-    /// Assigned to an anchor-height bucket.
+    /// Assigned to a broadcast window, with an anchor drawn below it.
     Assigned,
     /// Built and signed (txid and expiry recorded). Transient under
     /// [`SigningStrategy::LazyAtBoundary`], durable under
@@ -118,9 +118,21 @@ pub struct PartRecord {
     /// The split note this part spends. Set at binding time and kept through
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
-    /// The anchor-height bucket this part broadcasts in
-    /// (boundary = `bucket_index * M`).
+    /// The bucket this part broadcasts in: it is due while the chain tip is
+    /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
+    /// builder's target height comes from here. Distinct from
+    /// [`Self::anchor_bucket`], which is where the part *proves*.
     pub bucket_index: Option<u64>,
+    /// The bucket whose opening boundary this part anchors its Orchard spend
+    /// to, always at least one bucket below [`Self::bucket_index`] (see
+    /// [`super::schedule::draw_anchor_age`]). Drawn per part at placement
+    /// time, so two parts of one batch usually carry different anchors.
+    ///
+    /// `None` on a part read from a migration section written before anchors
+    /// were drawn separately (inner version 3 and below) whose transaction is
+    /// not yet signed; the next placement, or
+    /// [`crate::wallet::LightWallet::refresh_part_witnesses`], draws one.
+    pub anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
     /// prevents the server from seeing all parts cluster at the boundary.
@@ -136,9 +148,11 @@ pub struct PartRecord {
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub signed_blob: Option<Vec<u8>>,
-    /// The boundary anchor and witness, cached while the boundary checkpoint
-    /// is retained. Cleared on reassignment (a fresh bucket means a fresh
-    /// boundary).
+    /// The anchor root and witness at [`Self::anchor_bucket`]'s boundary,
+    /// cached while that checkpoint is retained. Cleared on every bucket
+    /// transition, since a fresh anchor bucket means a fresh boundary, and
+    /// discarded when a pre-anchor-age schedule is read, where it proves the
+    /// note under the *window's* boundary instead.
     pub anchor_witness: Option<BoundaryWitness>,
     /// Broadcast attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
@@ -153,6 +167,7 @@ impl PartRecord {
             denomination,
             note: Some(note),
             bucket_index: None,
+            anchor_bucket: None,
             target_height: None,
             state: PartState::Bound,
             txid: None,
@@ -176,11 +191,19 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Bound → Assigned`: the schedule placed this part in a bucket.
+    /// `Bound → Assigned`: the schedule placed this part in a broadcast
+    /// window.
+    ///
+    /// Clears [`Self::anchor_bucket`], as every bucket transition does: the
+    /// placement operations in [`super::schedule`] are the only writers of an
+    /// anchor, and they set it immediately after transitioning. A caller that
+    /// assigns directly leaves the part anchorless rather than carrying an
+    /// anchor drawn against a different window.
     #[allow(clippy::result_large_err)]
     pub fn assign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Bound"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
         Ok(())
     }
 
@@ -192,6 +215,7 @@ impl PartRecord {
     pub fn unassign(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned"], PartState::Bound)?;
         self.bucket_index = None;
+        self.anchor_bucket = None;
         self.target_height = None;
         self.anchor_witness = None;
         Ok(())
@@ -204,6 +228,7 @@ impl PartRecord {
     pub fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Expired"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
         self.txid = None;
         self.expiry_height = None;
         self.signed_blob = None;
@@ -280,6 +305,7 @@ impl PartRecord {
             });
         }
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
         self.target_height = None;
         self.anchor_witness = None;
         Ok(())
@@ -328,24 +354,26 @@ pub enum MaterializeOutcome {
 /// Why a part was skipped instead of materialized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
-    /// The wallet's Orchard tree has not reached the part's boundary yet.
+    /// The wallet has not scanned as far as the part's boundary, so the
+    /// tree state that anchors it is not yet known.
     StaleTreeState {
-        /// The tree's highest checkpoint, if any.
-        tree_tip: Option<BlockHeight>,
+        /// The height every block at or below which is scanned, if any.
+        scanned_to: Option<BlockHeight>,
         /// The boundary the part anchors to.
         boundary: BlockHeight,
     },
-    /// The tree passed the boundary but its checkpoint was never captured
-    /// (the wallet synced past it in one leap). Reconciliation reassigns the
+    /// Every checkpoint at or below the boundary has been pruned, so the
+    /// boundary's tree state is unrecoverable. Reconciliation reassigns the
     /// part to a coming bucket.
     MissedBoundary {
         /// The boundary whose tree state is unavailable.
         boundary: BlockHeight,
     },
-    /// The part's boundary predates the NU6.3 activation height, so no
-    /// ironwood output can anchor there. The schedule's activation floor
-    /// keeps new placements out of this state and the immediate path
-    /// refuses pre-anchorable rounds up front, so it survives only in a
+    /// The part's anchor boundary predates the NU6.3 activation height. The
+    /// window such an anchor belongs to would commit to a pre-NU6.3
+    /// consensus branch, in which no Ironwood bundle exists. The schedule's
+    /// era floor keeps new placements out of this state and the immediate
+    /// path refuses too-young eras up front, so it survives only in a
     /// schedule persisted before the floor existed. Such a part heals
     /// through the overdue classification and the consented catch-up.
     BoundaryBeforeActivation {
@@ -354,6 +382,14 @@ pub enum SkipReason {
         /// The NU6.3 activation height it fails to reach.
         activation: BlockHeight,
     },
+    /// The part carries no anchor bucket: a schedule persisted before
+    /// anchors were drawn separately from broadcast windows (migration
+    /// section inner version 3 and below). Proving cannot invent one,
+    /// because the age draw is what keeps the anchor out of the open window.
+    /// [`crate::wallet::LightWallet::refresh_part_witnesses`] draws it at
+    /// the next synchronization, which is also when its witness becomes
+    /// capturable, so this reason clears itself.
+    AnchorNotDrawn,
     /// The bound note is already spent (the user insistently spent it, or a
     /// restart raced an earlier broadcast). Reconciliation invalidates the
     /// part and recommends a remainder replan.
@@ -389,9 +425,65 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::MigrationBoundNoteMissing(output_id))
     }
 
+    /// The confirmation height of one part's bound note, or `None` while it
+    /// is unconfirmed or unknown to the wallet.
+    ///
+    /// This is the lowest boundary *this part* can anchor at: a note has no
+    /// Merkle path under an anchor that predates it. It is the per-part half
+    /// of [`super::schedule::AnchorFloor`], matching ZIP 318's per-transfer
+    /// funding-creation condition. The floor was previously taken as a
+    /// maximum across every part, which forced the whole schedule up to the
+    /// newest note's boundary; each part now clears only its own.
+    #[must_use]
+    pub fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
+        let bound = part.note?;
+        self.wallet_transactions
+            .get(&bound.output_id.txid())?
+            .status()
+            .get_confirmed_height()
+    }
+
+    /// The checkpoint whose tree state is the tree state at `boundary`: the
+    /// greatest one at or below it, or `None` once they are all pruned.
+    ///
+    /// A bucket boundary is an arbitrary height, and pepper-sync checkpoints
+    /// a block only when it carries an Orchard output, so the boundary
+    /// usually has no checkpoint of its own. The greatest checkpoint below it
+    /// still holds the boundary's tree: had any block in between carried an
+    /// Orchard output, that block would itself be a checkpoint. The anchor
+    /// this yields is therefore the same value every wallet sending into the
+    /// bucket computes, which is what anchoring at the boundary is for.
+    ///
+    /// Yields nothing until the wallet has scanned past `boundary`: above
+    /// the fully scanned height an intervening block's outputs may simply be
+    /// missing, and the tree would be short rather than merely older.
+    fn boundary_anchor_checkpoint(&self, boundary: BlockHeight) -> Option<BlockHeight> {
+        use shardtree::store::ShardStore as _;
+
+        if self
+            .sync_state
+            .fully_scanned_height()
+            .is_none_or(|scanned| scanned < boundary)
+        {
+            return None;
+        }
+
+        let store = self.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        // Depth counts back from the newest, so the first id at or below the
+        // boundary is the greatest one.
+        (0..count).find_map(|depth| {
+            store
+                .get_checkpoint_at_depth(depth)
+                .expect("infallible")
+                .map(|(id, _)| id)
+                .filter(|id| *id <= boundary)
+        })
+    }
+
     /// Captures the boundary anchor and witness for one part from the local
-    /// shard tree, if the boundary's checkpoint is retained. Local-only:
-    /// never touches the network.
+    /// shard tree, if a checkpoint holding the boundary's tree survives.
+    /// Local-only: never touches the network.
     #[allow(clippy::result_large_err)]
     fn capture_boundary_witness(
         &mut self,
@@ -407,14 +499,32 @@ impl crate::wallet::LightWallet {
             WalletError::MigrationStateCorrupt("bound note has no tree position".to_string()),
         )?;
 
-        let Some(root) = self.shard_trees.orchard.root_at_checkpoint_id(&boundary)? else {
+        let Some(checkpoint) = self.boundary_anchor_checkpoint(boundary) else {
             return Ok(None);
         };
-        let Some(witness) = self
+        let Some(root) = self
             .shard_trees
             .orchard
-            .witness_at_checkpoint_id_caching(position, &boundary)?
+            .root_at_checkpoint_id(&checkpoint)?
         else {
+            return Ok(None);
+        };
+        let witness = match self
+            .shard_trees
+            .orchard
+            .witness_at_checkpoint_id_caching(position, &checkpoint)
+        {
+            Ok(witness) => witness,
+            // The checkpoint predates the note, which no anchor there can
+            // contain. The same dead end as a pruned checkpoint, and
+            // [`super::schedule::AnchorFloor`]'s anchorability floor is what
+            // keeps a freshly split batch out of it.
+            Err(shardtree::error::ShardTreeError::Query(
+                shardtree::error::QueryError::NotContained(_),
+            )) => None,
+            Err(e) => return Err(e.into()),
+        };
+        let Some(witness) = witness else {
             return Ok(None);
         };
 
@@ -429,11 +539,28 @@ impl crate::wallet::LightWallet {
         }))
     }
 
-    /// Caches the boundary anchor and witness of every part whose boundary
+    /// Caches the boundary anchor and witness of every part whose anchor
     /// checkpoint is currently retained. Call after synchronization: the
     /// retention window is finite and a captured witness is good forever.
+    ///
+    /// Because a part's anchor sits at least one full bucket below its
+    /// broadcast window, every part gets a whole window's worth of
+    /// synchronizations in which to capture its witness before it is due.
+    /// That runway is what makes it survivable that pepper-sync checkpoints
+    /// wherever Orchard outputs happen to land rather than on the boundary
+    /// grid (ADR 0018).
+    ///
+    /// Also draws the anchor of any part that has none: a schedule persisted
+    /// before anchors were drawn separately from windows. Drawing it here
+    /// rather than at proving time keeps the placement and the capture in the
+    /// same pass, so the part is ready before its window opens.
     #[allow(clippy::result_large_err)]
     pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+        let activation = pepper_sync::wallet::PoolActivation::of(
+            &self.chain_type,
+            zcash_protocol::ShieldedPool::Ironwood,
+        )
+        .ok_or_else(|| WalletError::MigrationBuild("NU6.3 has no activation height".to_string()))?;
         self.with_migration_state(|wallet, state| {
             for part in state
                 .parts
@@ -443,7 +570,32 @@ impl crate::wallet::LightWallet {
                 let Some(bucket) = part.bucket_index else {
                     continue;
                 };
-                let boundary = super::schedule::boundary_of(bucket, state.params.bucket_modulus);
+                if part.anchor_bucket.is_none() {
+                    let floor = super::schedule::AnchorFloor::new(
+                        activation,
+                        wallet.bound_note_confirmed_at(part),
+                    );
+                    // A legacy part whose window is now too close for any
+                    // legal anchor is left alone: reconciliation classifies
+                    // it overdue and catch-up re-places it into a window
+                    // that has room.
+                    if let Some(anchor) = super::schedule::draw_anchor_bucket(
+                        bucket,
+                        &floor,
+                        &mut rand::rngs::OsRng,
+                        state.params.bucket_modulus,
+                    ) {
+                        part.anchor_bucket = Some(anchor);
+                        wallet.save_required = true;
+                    } else {
+                        continue;
+                    }
+                }
+                let anchor_bucket = part
+                    .anchor_bucket
+                    .expect("just drawn or already present above");
+                let boundary =
+                    super::schedule::boundary_of(anchor_bucket, state.params.bucket_modulus);
                 if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
                     part.anchor_witness = Some(witness);
                     wallet.save_required = true;
@@ -473,7 +625,6 @@ impl crate::wallet::LightWallet {
         params: &super::MigrationParams,
     ) -> Result<PrepareResult, WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-        use shardtree::store::ShardStore as _;
 
         if part.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
@@ -481,10 +632,16 @@ impl crate::wallet::LightWallet {
                 to: "Signed",
             });
         }
-        let bucket = part
+        let window = part
             .bucket_index
             .expect("assigned parts always carry a bucket");
-        let boundary = super::schedule::boundary_of(bucket, params.bucket_modulus);
+        // The anchor is where the part proves; the window is where it fires
+        // and what its target height (and so its consensus branch) comes
+        // from. They are different buckets, the anchor always the lower.
+        let Some(anchor_bucket) = part.anchor_bucket else {
+            return Ok(PrepareResult::Skip(SkipReason::AnchorNotDrawn));
+        };
+        let boundary = super::schedule::boundary_of(anchor_bucket, params.bucket_modulus);
 
         let activation = pepper_sync::wallet::PoolActivation::of(
             &self.chain_type,
@@ -499,15 +656,14 @@ impl crate::wallet::LightWallet {
             }));
         }
 
-        let tree_tip = self
-            .shard_trees
-            .orchard
-            .store()
-            .max_checkpoint_id()
-            .expect("infallible");
-        if tree_tip.is_none_or(|tip| tip < boundary) {
+        // The scanned height, not the tree's newest checkpoint: on a chain
+        // whose recent blocks carry no Orchard output the tree checkpoints
+        // well below a boundary the wallet has long since scanned past, and
+        // the boundary's tree state is known all the same.
+        let scanned_to = self.sync_state.fully_scanned_height();
+        if scanned_to.is_none_or(|scanned| scanned < boundary) {
             return Ok(PrepareResult::Skip(SkipReason::StaleTreeState {
-                tree_tip,
+                scanned_to,
                 boundary,
             }));
         }
@@ -585,7 +741,13 @@ impl crate::wallet::LightWallet {
         let chain_type = self.chain_type;
         let denomination = part.denomination;
         let part_fee = params.part_fee;
-        let target_height = boundary + 1;
+        // The target comes from the broadcast window, not the anchor. It
+        // selects the consensus branch the transaction commits to, so it must
+        // sit in the Ironwood era; the anchor is a historical Orchard root
+        // and is legal at any retained boundary above the part's own note.
+        // Deriving the target from the anchor was what made a pre-activation
+        // anchor look like a consensus problem (ADR 0014, ADR 0018).
+        let target_height = super::schedule::boundary_of(window, params.bucket_modulus) + 1;
         let expiry_height = super::schedule::canonical_expiry_height(target_height);
         let params_clone = params.clone();
 
