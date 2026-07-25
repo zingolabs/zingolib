@@ -53,7 +53,7 @@ impl LightWallet {
     /// `allow_v6_transactions` bool after `min_confirmations`; the setting
     /// was later removed and version 42 redefined without the byte, leaving
     /// two shipped layouts under one number. Both are read, disambiguated
-    /// via [`Self::read_price_and_migration`].)
+    /// via `Self::read_price_and_migration`.)
     ///
     /// Version 43 is burned: builds between the two revisions of 42 wrote
     /// it with the final version 42 layout, so it is accepted at read as 42
