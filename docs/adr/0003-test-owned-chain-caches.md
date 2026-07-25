@@ -96,13 +96,15 @@ freshly launched regtest Validator is at height 1 rather than 0, because
 service. Replay therefore works by competition rather than by appending:
 the cached branch (always at least 3 blocks) forks around or duplicates the
 launch block and wins the reorg. We fixed three points of the design on
-that evidence. `submitblock`'s "duplicate" verdict counts as acceptance,
-because transparent-pool regtest blocks are byte-deterministic, so the
-cached and launch-mined block 1 can be the same block. The replay preflight
-expects height at most 1. And replay barriers on Indexer convergence to the
-replayed tip before any wallet syncs, because the Indexer starts ingesting
-within milliseconds of launch and would otherwise briefly serve the
-orphaned launch block, which is exactly how the matrix_young pair failed.
+that evidence. First, `submitblock`'s "duplicate" verdict counts as
+acceptance, because transparent-pool regtest blocks are byte-deterministic,
+so the cached and launch-mined block 1 can be the same block. Second, the
+replay preflight expects a height of at most 1. Third, after submitting the
+blocks the replay waits until the Indexer has converged to the replayed
+tip, and only then may a wallet sync. The Indexer starts ingesting within
+milliseconds of launch, so without that wait it would briefly serve the
+orphaned launch block to any wallet that synced early, which is exactly how
+the matrix_young pair failed.
 
 ## Consequences
 
