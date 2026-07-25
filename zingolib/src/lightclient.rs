@@ -108,6 +108,21 @@ impl WalletMeta {
 /// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
 /// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
 /// Call [`Self::set_indexer_uri`] to connect.
+/// A successfully fetched ZEC price, attested with the route it traveled.
+///
+/// The attestation is the mixnet tunnel's local SOCKS5 endpoint the fetch
+/// went through. It rides the success value — not a log — so every consumer
+/// holds per-fetch evidence that no clearnet path ran (ADR 0011,
+/// amendment 2026-07-23).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixnetPriceFetch {
+    /// The current ZEC price in USD.
+    pub usd: f32,
+    /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
+    /// through.
+    pub via_socks5: String,
+}
+
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
     migration_broadcast_uri: Option<http::Uri>,
@@ -623,9 +638,12 @@ impl LightClient {
     /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
     /// mixnet when Mixnet Mode is ready, fails closed while the mode
     /// bootstraps or after the proxy dies, and is refused — never routed over
-    /// clearnet — while the mode is toggled off.
+    /// clearnet — while the mode is toggled off. The returned fetch carries
+    /// the tunnel endpoint it traveled through, so every consumer holds
+    /// per-fetch evidence of the route rather than trusting the static
+    /// argument alone.
     #[cfg(feature = "nym")]
-    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+    pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
             crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
             crate::nym::MixnetRoute::Clearnet => {
@@ -633,12 +651,16 @@ impl LightClient {
             }
         };
 
-        Ok(self
+        let usd = self
             .wallet()
             .write()
             .await
             .update_current_price(&socks5_addr)
-            .await?)
+            .await?;
+        Ok(MixnetPriceFetch {
+            usd,
+            via_socks5: socks5_addr,
+        })
     }
 
     /// Update and return the current ZEC price in USD. The price fetch has no
@@ -646,7 +668,7 @@ impl LightClient {
     /// the Nym mixnet, so a build without the `nym` feature refuses: the
     /// fetch code is not compiled in at all.
     #[cfg(not(feature = "nym"))]
-    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+    pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         Err(LightClientError::PriceFetchUnsupported)
     }
 

@@ -701,7 +701,10 @@ impl Command for CurrentPriceCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
             match lightclient.update_current_price().await {
-                Ok(price) => format!("current price: {price}"),
+                Ok(fetch) => format!(
+                    "current price: {} (via mixnet socks5 {})",
+                    fetch.usd, fetch.via_socks5
+                ),
                 Err(e) => format!("error: {e}"),
             }
         }))
