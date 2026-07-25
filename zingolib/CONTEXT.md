@@ -223,6 +223,12 @@
 
 **Dirty Flag** — An internal boolean on `LightWallet` that records whether unsaved changes exist. Set automatically by all mutating operations; cleared after a successful write. Exposed to external code via `LightWallet::mark_dirty()`.
 
+**Wallet Version** — The number leading a Wallet File that identifies its layout. A Wallet Version, once used by any revision that reached users, is burned: it is never reassigned to a different layout. (Version 43 is burned; version 42 names two layouts that the reader tells apart.)
+
+**Shipped Format** — A Wallet File layout that has landed in dev. Landing in dev is the shipping event — there is no later release gate protecting dev builders — and every Shipped Format remains readable, and the wallet writable, forever after. See ADR 0015.
+
+**Recovery Salvage** — The last-resort read that recovers the seed phrase, birthday, and account count from the stable prefix of a Wallet File whose full parse fails. A backstop beneath the Shipped Format guarantee, not a substitute for it: restoring from seed forfeits local transaction metadata and forces a rescan.
+
 ---
 
 ## Consumers

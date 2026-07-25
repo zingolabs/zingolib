@@ -15,3 +15,6 @@ libtonode-tests/store_all_checkpoints_test
 # them from the cdylib); the wire contract is pinned by test-data/golden instead.
 zingo-netutils/nym-proxy-ffi/bindings/
 .agent-plans/
+
+# Local corpus of real wallet files (live seed material — never commit)
+/data_wallets/
