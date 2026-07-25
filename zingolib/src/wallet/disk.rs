@@ -679,19 +679,20 @@ impl LightWallet {
 
     /// Chooses between the two readings of a version 42 file tail.
     ///
-    /// The canonical layout wins whenever it parses, so a file written by
-    /// current code never depends on the pre-release fallback. When both
-    /// readings parse cleanly the file is genuinely ambiguous and the load
-    /// fails rather than guessing: a wrong guess here would silently
-    /// substitute a different price list and migration state, and the
-    /// seed remains recoverable through [`Self::read_recovery_info`].
+    /// The pre-release reading is consulted only when the canonical reading
+    /// fails to parse, so a file written by current code never loads through
+    /// the fallback. When both readings parse cleanly the file is genuinely
+    /// ambiguous and the load fails rather than guessing: a wrong guess here
+    /// would silently substitute a different price list and migration state,
+    /// and the seed remains recoverable through [`Self::read_recovery_info`].
     ///
-    /// Ambiguity cannot arise for a tail carrying no migration section: such
-    /// a tail is 5 bytes plus a sum of even-sized optional fields (4- and
-    /// 8-byte values, and `CompactSize` widths that grow by 2, 4, or 8), so
-    /// its length is always odd, and the two readings differ in length by
-    /// exactly one. The refusal below therefore guards only the
-    /// migration-bearing case, where no such parity argument holds.
+    /// Parity rules out the readings both being migration-free, not the
+    /// refusal itself: a migration-free tail is 5 bytes plus a sum of
+    /// even-sized optional fields (4- and 8-byte values, and `CompactSize`
+    /// widths that grow by 2, 4, or 8), so its length is always odd, while
+    /// the two readings differ in length by exactly one. The refusal below
+    /// is therefore reachable only when at least one reading carries a
+    /// migration section, whose length parity is unconstrained.
     fn resolve_v42_tail(
         canonical: io::Result<WalletTail>,
         pre_release: Option<io::Result<WalletTail>>,
@@ -713,8 +714,8 @@ impl LightWallet {
     /// followed by the optional migration section — anchored at end of file.
     /// Trailing bytes are an error, which is what lets the two revisions of
     /// version 42 be told apart: the pre-release revision carries exactly one
-    /// extra leading byte, so the two readings end one byte apart and a
-    /// misaligned parse must consume the tail exactly to be accepted.
+    /// extra leading byte, so the two readings start one byte apart while
+    /// both must consume the tail exactly to EOF to be accepted.
     fn read_price_and_migration(mut tail: &[u8]) -> io::Result<WalletTail> {
         let price_list = PriceList::read(&mut tail)?;
         let migration = Optional::read(&mut tail, crate::wallet::migration::store::read)?;
