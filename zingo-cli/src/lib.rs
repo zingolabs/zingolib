@@ -793,8 +793,44 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     ))
 }
 
+/// Falls back to the prefix-only salvage reader when the user asked for
+/// `recovery_info` but the wallet file cannot be fully parsed — the whole
+/// point of that command is to escape a wallet no current build can read.
+fn print_salvaged_recovery_info(
+    cli_config: &ConfigTemplate,
+    startup_error: &std::io::Error,
+) -> std::io::Result<()> {
+    let wallet_path = cli_config.data_dir.clone().join(DEFAULT_WALLET_NAME);
+    let wallet_file = std::fs::File::open(&wallet_path)?;
+    let recovery_info =
+        zingolib::wallet::LightWallet::read_recovery_info(std::io::BufReader::new(wallet_file))
+            .map_err(|salvage_error| {
+                std::io::Error::other(format!(
+                    "failed to load the wallet ({startup_error}), \
+                     and salvaging recovery info from the file prefix also failed: \
+                     {salvage_error}"
+                ))
+            })?;
+    eprintln!(
+        "The wallet file could not be fully loaded ({startup_error}); \
+         showing recovery info salvaged from its prefix."
+    );
+    println!("{recovery_info}");
+    Ok(())
+}
+
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
-    let ch = startup(cli_config)?;
+    let ch = match startup(cli_config) {
+        Ok(ch) => ch,
+        Err(startup_error) => {
+            if let ModeOfOperation::Command { name, .. } = &cli_config.mode
+                && name == "recovery_info"
+            {
+                return print_salvaged_recovery_info(cli_config, &startup_error);
+            }
+            return Err(startup_error);
+        }
+    };
     match &cli_config.mode {
         ModeOfOperation::Interactive => start_interactive(cli_config, ch),
         ModeOfOperation::Command { name, args } => {
