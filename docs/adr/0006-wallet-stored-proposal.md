@@ -8,7 +8,7 @@ We implemented and then withdrew a pure-core alternative in which shells
 (the zingo-cli session, zingo-mobile's FFI bridge) held a `ZingoProposal`
 value and the library stored nothing: the stored slot won because it
 minimizes divergence from `dev` and leaves every consumer's two-call send
-protocol — zingo-mobile's `send` then `confirm` in particular — untouched.
+protocol (zingo-mobile's `send` then `confirm` in particular) untouched.
 The slot is process-lifetime state only: wallet reads reset it, and
 persisting proposals across restarts remains an explicit non-goal, because
 a proposal's target height and note selection both decay, so reviving a
@@ -25,7 +25,7 @@ fails before consuming the slot. Typed errors remain a co-requisite
 (issue #2446): an Indexerless client makes network-operation failure the
 routine path, so those failures must be distinguishable by type. The
 expiry of offline-calculated transactions (issue #2455) is resolved by
-proposal retargeting — see ADR 0008.
+proposal retargeting (see ADR 0008).
 
 ## Considered Options
 

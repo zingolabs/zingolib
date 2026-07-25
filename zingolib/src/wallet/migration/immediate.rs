@@ -88,7 +88,7 @@ impl ImmediateMigrationPlan {
 }
 
 /// The most Orchard notes one immediate migration transaction spends. An immediate migration's Orchard
-/// bundle is spend-only, so `n` inputs cost `n` actions; this caps a single
+/// bundle is spend-only, so `n` inputs cost `n` actions. This caps a single
 /// migration transaction's proving cost and size. An immediate migration is not a note split, so
 /// it carries its own bound rather than borrowing the splitter's.
 const MAX_DRAIN_INPUTS: usize = 32;
@@ -295,13 +295,13 @@ mod tests {
         );
     }
 
-    /// The floor applies to what an immediate migration creates, not only what it spends: a
+    /// The floor applies to what an immediate migration creates as well as what it spends: a
     /// chunk whose output would land at or below `sweep_min` is residual
     /// whole, because the immediate migration would pay its fee to manufacture an Ironwood
     /// note the residual policy itself refuses to spend. The boundary is
     /// strict: an output of exactly `sweep_min` leaves its chunk as residual, one
     /// zatoshi more migrates. The window only opens for chunks of at most
-    /// three near-`sweep_min` notes; from four notes up, a chunk's value
+    /// three near-`sweep_min` notes. From four notes up, a chunk's value
     /// outruns its fee by more than the floor.
     #[test]
     fn output_at_or_below_sweep_min_leaves_the_chunk_residual() {
@@ -326,8 +326,8 @@ mod tests {
     }
 
     proptest::proptest! {
-        /// An immediate migration has no intermediates — every planned input is a wallet
-        /// note — so the selection invariant is exact: whatever the wallet
+        /// An immediate migration has no intermediates (every planned input is a wallet
+        /// note), so the selection invariant is exact: whatever the wallet
         /// shape, no migrated input is worth at most `sweep_min`.
         #[test]
         fn immediate_migration_inputs_always_exceed_sweep_min(

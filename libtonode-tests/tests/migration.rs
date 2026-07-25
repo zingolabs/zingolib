@@ -67,7 +67,7 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
 /// Persists a hand-built [`MigrationState`] whose parts are bound to real
 /// wallet notes, standing in for the completed note-splitting phase so the
 /// Phase 2 machinery can be exercised before Ironwood lands on the node
-/// path. `bucket_index` assigns every part to that bucket; `None` leaves
+/// path. `bucket_index` assigns every part to that bucket. `None` leaves
 /// them bound but unscheduled. `bucket_modulus` overrides the provisional
 /// bucket geometry: every consumer of the schedule reads it from the
 /// injected state, so a test can shrink the chain it must mine.
@@ -123,7 +123,7 @@ async fn inject_scheduled_migration(
 /// nothing else can, and the external spend then invalidates the part on
 /// reconciliation. The remainder left behind sits exactly at the Sweep
 /// Minimum, so under the ratified completion rule (#2493 finding 8) no
-/// replan is offered — a replan would strand everything it planned — and
+/// replan is offered (a replan would strand everything it planned), and
 /// the next reconciliation concludes the migration with the remainder
 /// disclosed as its residual.
 #[tokio::test]
@@ -256,7 +256,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // The smallest bucket modulus of the provisional value's power-of-two
     // family that exceeds shardtree's checkpoint retention
     // (`MAX_REORG_ALLOWANCE`, 100 blocks, mirroring zebra's finalization
-    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`) — the premise needs
+    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`). The premise needs
     // the boundary checkpoint pruned while the tip is still inside the
     // bucket. Shrinking the modulus shrinks the chain: under the
     // provisional 256 this test leapt 450 blocks, and mining that many
@@ -288,7 +288,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
 
     // A transparent miner keeps this test's long chain cheap: transparent
     // coinbase carries no halo2 proof, where a shielded miner pool costs
-    // roughly 2.7 seconds of block assembly per block — the cost that
+    // roughly 2.7 seconds of block assembly per block, the cost that
     // previously pushed this test past even a 1200-second budget.
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
         PoolType::Transparent,
@@ -298,7 +298,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // Mature the faucet's coinbase, shield it into pre-Ironwood Orchard,
-    // and fund the recipient with the note the part will bind — all below
+    // and fund the recipient with the note the part will bind, all below
     // the activation height.
     increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
         .await
@@ -489,8 +489,8 @@ fn deferred_activation_heights(nu6_3: u32) -> zingolib::ActivationHeights {
 
 /// Launches a chain whose NU6.3 activation still lies ahead
 /// ([`DEFERRED_NU6_3_HEIGHT`]) and funds the recipient with one
-/// multi-output send — one pre-Ironwood (V2) Orchard note per value
-/// produced by `values`. The chain is left below the activation height;
+/// multi-output send, one pre-Ironwood (V2) Orchard note per value
+/// produced by `values`. The chain is left below the activation height, so
 /// tests that need the Ironwood pool live call
 /// [`cross_ironwood_activation`] afterwards.
 ///

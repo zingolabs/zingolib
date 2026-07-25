@@ -64,7 +64,7 @@ pub mod network_combo {
 /// where the indexer has one and fall back to a no-op where it does not.
 pub trait IndexerConvergence {
     /// Blocks until the indexer's own chain index reports `target`, where
-    /// observable; a no-op otherwise.
+    /// observable. A no-op otherwise.
     fn converge(&self, target: u32) -> impl std::future::Future<Output = ()> + Send;
 }
 
@@ -143,12 +143,12 @@ pub fn wallet_activation_heights(
 
 /// The default activation heights for scenario tests: the harness's regtest
 /// fixture shape (the only shape its default lockbox-disbursement and
-/// funding-stream fixtures pair with — zebrad rejects NU6.x activation
+/// funding-stream fixtures pair with, since zebrad rejects NU6.x activation
 /// blocks whose subsidy config doesn't match, so e.g. the all-at-1
 /// `ActivationHeights::default()` stalls the chain at genesis), with one
 /// amendment: NU7 stays off. NU6.3 activates at the fixture's height 5,
 /// so wallet activity is Ironwood-era by default (ADR 0009) while
-/// coinbase blocks 2..=4 still yield legacy Orchard notes — a mixed
+/// coinbase blocks 2..=4 still yield legacy Orchard notes, a mixed
 /// chain by design, since behavior *relative to* Ironwood is a primary
 /// test subject during the migration window.
 pub fn default_test_activation_heights() -> ActivationHeights {
@@ -178,7 +178,7 @@ pub fn default_test_activation_heights() -> ActivationHeights {
 /// the orchard pool on a chain that never crosses the NU6.3 activation.
 /// The workspace default flipped to ironwood-era (ADR 0009), which
 /// silently changed the mobileclient scenarios' behavior with no diff
-/// line in their own functions — the drift issue zingolabs/zingolib#2493
+/// line in their own functions, the drift issue zingolabs/zingolib#2493
 /// records. Deferring NU6.3 here restores the external contract: V5
 /// transactions, orchard-pool funding, and
 /// `normalize_shielded_faucet_balance` structurally inert (its
@@ -213,7 +213,7 @@ pub const POST_STREAM_BLOCK_REWARD: u64 = block_rewards::CANOPY - DEFERRED_STREA
 pub const FUND_OFFLOAD_AMOUNT: u64 = 624_960_000;
 
 /// Total miner rewards for blocks 1..=`count` under
-/// [`default_test_activation_heights`]: block 1 pays the full subsidy;
+/// [`default_test_activation_heights`]: block 1 pays the full subsidy, and
 /// every later block pays the post-funding-stream reward.
 pub const fn mined_block_rewards_total(count: u64) -> u64 {
     block_rewards::CANOPY + POST_STREAM_BLOCK_REWARD * (count - 1)
@@ -229,8 +229,8 @@ pub const FUNDED_FAUCET_SETUP_HEIGHT: u32 = 6;
 /// coinbase pays the orchard receiver from the NU5 activation block (height
 /// 2 under [`default_test_activation_heights`]) onward. If orchard coinbase
 /// actually starts one block later, every orchard expectation derived from
-/// this constant fails high by exactly one [`POST_STREAM_BLOCK_REWARD`] —
-/// flip this to 3 and nothing else.
+/// this constant fails high by exactly one [`POST_STREAM_BLOCK_REWARD`].
+/// Flip this to 3 and nothing else.
 pub const ORCHARD_COINBASE_START_HEIGHT: u32 = 2;
 
 /// HYPOTHESIS (server-run adjudicated): with an Ironwood miner pool the
@@ -240,7 +240,7 @@ pub const IRONWOOD_COINBASE_START_HEIGHT: u32 = 5;
 
 /// HYPOTHESIS (server-run adjudicated): block 1 predates NU5, so an Orchard
 /// miner pool pays block 1's full pre-funding-stream subsidy to the miner's
-/// SAPLING receiver — observed as `s_balance: 625000000` in orchard-mined
+/// SAPLING receiver, observed as `s_balance: 625000000` in orchard-mined
 /// scenarios. If refuted, s-balance expectations fail by exactly this value.
 pub const BLOCK_ONE_SAPLING_COINBASE: u64 = block_rewards::CANOPY;
 
@@ -292,7 +292,7 @@ where
 /// Sync `client` until it has fully scanned the Validator's current chain
 /// tip. A bare `sync_and_await` only reaches whatever the Indexer has
 /// ingested at that instant, which races behind the Validator right after
-/// `generate_blocks` — the cause of nondeterministic stale-balance test
+/// `generate_blocks`, the cause of nondeterministic stale-balance test
 /// failures.
 pub async fn sync_client_to_validator_tip<V, I>(
     local_net: &LocalNet<V, I>,
@@ -310,8 +310,8 @@ pub async fn sync_client_to_validator_tip<V, I>(
 }
 
 /// The single lag-safe send primitive: sends `receivers` from `sender` in
-/// one transaction, then mines one block at a time — waiting for `sender`'s
-/// wallet to reach each new height — until the transaction is confirmed.
+/// one transaction, then mines one block at a time (waiting for `sender`'s
+/// wallet to reach each new height) until the transaction is confirmed.
 ///
 /// Owns both send hazards discovered on the zainod+zebrad stack, so callers
 /// need no choreography:
@@ -385,14 +385,14 @@ where
 /// When mining to a shielded pool, dump the excess faucet funds and generate
 /// a block to confirm the send. Coinbase lands directly in the mined-to pool
 /// (zebrad mines to Orchard natively), and shielded coinbase has no
-/// `COINBASE_MATURITY_BLOCKS` rule — the wallet spends blocks-old orchard coinbase
+/// `COINBASE_MATURITY_BLOCKS` rule, so the wallet spends blocks-old orchard coinbase
 /// fine (server-verified by `value_transfers`).
 ///
 /// Two constraints govern when the offload can be sent (both observed as
 /// zebra mempool rejections):
 ///
-/// 1. The wallet must be synced to the REAL tip when it builds the send —
-///    it signs for tip+1's consensus branch id, and the fixture ladder
+/// 1. The wallet must be synced to the REAL tip when it builds the send.
+///    It signs for tip+1's consensus branch id, and the fixture ladder
 ///    activates NU6.1/NU6.2 at height 5, right where this setup operates
 ///    ("transaction uses an incorrect consensus branch id" when the wallet
 ///    was held a block behind).
@@ -411,8 +411,8 @@ where
 /// chains while cached replays of pre-731b2b761 wallet-built blocks kept
 /// passing). The immediate migration spends only orchard by construction, which also
 /// satisfies constraint 2 structurally. Its fee cancels the same way the
-/// offload's does — the faucet collects it back in the confirming block's
-/// coinbase — so [`funded_faucet_ironwood_balance`] is fee-invariant.
+/// offload's does (the faucet collects it back in the confirming block's
+/// coinbase), so [`funded_faucet_ironwood_balance`] is fee-invariant.
 async fn normalize_shielded_faucet_balance<V, I>(
     local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
@@ -461,7 +461,7 @@ pub struct ClientBuilder {
     pub zingo_datadir: TempDir,
     /// The activation-height schedule every built wallet is configured
     /// with. On a managed stack this is derived from the running validator
-    /// (the sole source of activation-height truth, infras ADR 0003); an
+    /// (the sole source of activation-height truth, infras ADR 0003). An
     /// unmanaged stack (darkside) asserts its own schedule here, once.
     activation_heights: ActivationHeights,
     client_number: u8,
@@ -643,7 +643,7 @@ pub async fn faucet(
         assert_eq!(
             ironwood_confirmed,
             funded_faucet_ironwood_balance(),
-            "replayed chain does not satisfy current setup semantics — stale chain cache? \
+            "replayed chain does not satisfy current setup semantics. Stale chain cache? \
              (the manifest's schema/setup_semantics should have discarded it)"
         );
     }
@@ -723,7 +723,7 @@ pub async fn faucet_recipient_default() -> (MeteredNet, LightClient, LightClient
 /// Like every other scenario, snapshots at full setup completion
 /// (ADR 0003): the funding sends are embedded in the cache, and the
 /// txids they minted at build time are recorded in the cache's
-/// `outputs.json` — a warm run replays the chain and returns the
+/// `outputs.json`, so a warm run replays the chain and returns the
 /// recorded identifiers, which name transactions that are literally in
 /// the replayed blocks.
 ///
@@ -756,7 +756,7 @@ pub async fn faucet_funded_recipient(
 
     if let Disposition::Replay(blocks_file) = disposition {
         // The warm path is exactly a faucet_recipient over the cached
-        // chain — the funding transactions are in the replayed blocks,
+        // chain, since the funding transactions are in the replayed blocks,
         // and the freshly built wallets recover them by sync.
         let (mut local_net, faucet, recipient) = faucet_recipient(
             mine_to_pool,
@@ -767,8 +767,8 @@ pub async fn faucet_funded_recipient(
         let outputs = chain_cache::load_outputs(&blocks_file).unwrap_or_else(|| {
             panic!(
                 "cache for this test lacks outputs.json ({}); a PerTest cache writes it \
-                 atomically with the blocks, so this cache is corrupt or hand-rolled — \
-                 discard it (or craft the outputs) and rerun",
+                 atomically with the blocks, so this cache is corrupt or hand-rolled. \
+                 Discard it (or craft the outputs) and rerun",
                 blocks_file.display()
             )
         });
@@ -795,7 +795,7 @@ pub async fn faucet_funded_recipient(
     }
 
     // Live run or cache build: generate everything, then export the
-    // completed setup — blocks and minted txids together — if building.
+    // completed setup (blocks and minted txids together) if building.
     let (mut local_net, mut faucet, mut recipient) = faucet_recipient(
         mine_to_pool,
         configured_activation_heights,
@@ -900,11 +900,11 @@ pub async fn faucet_funded_recipient_default(
 }
 
 /// Resolve the cache policy for a scenario whose chain the given stage
-/// determines; on a miss, live-build that stage's chain, snapshot it
+/// determines. On a miss, live-build that stage's chain, snapshot it
 /// Resolve the cache policy into what the launch needs: a blocks file
 /// to replay instead of live generation, and/or a pending export for
 /// the constructor to perform at its snapshot point. A build run is a
-/// live run plus the export — it keeps its net and continues, and the
+/// live run plus the export: it keeps its net and continues, and the
 /// warm runs exercise the replay path (ADR 0003).
 fn resolve_cache(
     mine_to_pool: PoolType,
@@ -925,7 +925,7 @@ fn resolve_cache(
 
 /// Launch the network combo with the zainod→zebrad hop interposed: the
 /// Validator first, then a recording link tap in front of its JSON-RPC
-/// port, then the Indexer dialing the tap — assembled via
+/// port, then the Indexer dialing the tap, assembled via
 /// `LocalNet::from_parts`. `launch_from_two_configs` wires the two
 /// processes directly and leaves no seam, which is why the seam was
 /// added upstream (infrastructure commit 63b31a0).
@@ -942,7 +942,7 @@ async fn launch_observed(
     zingolib::ensure_default_crypto_provider();
 
     // Connected before launch, the fronts see every client of each
-    // process — including the launch-mine, which no post-launch tap
+    // process, including the launch-mine, which no post-launch tap
     // could reach.
     let zebrad_front = FrontRecord::prime("zebrad front");
     let zainod_front = FrontRecord::prime("zainod front");
@@ -967,8 +967,8 @@ async fn launch_observed(
 }
 
 /// The uncached launch primitive under every scenario constructor:
-/// start the network combo, establish the initial chain — by replaying
-/// `replay_from` when given, by mining otherwise — and hand back a
+/// start the network combo, establish the initial chain (by replaying
+/// `replay_from` when given, by mining otherwise), and hand back a
 /// client builder.
 async fn custom_clients_raw(
     mine_to_pool: PoolType,
@@ -1048,7 +1048,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
         // not Transparent: zebrad mines Orchard natively, and shielded
         // coinbase is exempt from the transparent COINBASE_MATURITY_BLOCKS
         // rule, so the faucet can spend it immediately. A transparent
-        // coinbase would be unspendable until ~100 maturity blocks — the
+        // coinbase would be unspendable until ~100 maturity blocks, and the
         // faucet would report `available: 0` and every funded scenario
         // would panic at its first send. (zebrad cannot mine to Sapling,
         // so Orchard is the only immediately-spendable pool.)

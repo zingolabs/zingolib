@@ -53,9 +53,9 @@ pub trait ConductChain {
     async fn increase_chain_height(&mut self);
 
     /// Syncs `client` far enough to act on the environment's current chain
-    /// tip. The default is a bare sync (sufficient for mocked chains);
+    /// tip. The default is a bare sync (sufficient for mocked chains), and
     /// environments with a real Validator behind a lagging Indexer must
-    /// override this to sync deterministically to the Validator's tip —
+    /// override this to sync deterministically to the Validator's tip, since
     /// a client that signs from a stale tip produces transactions the
     /// Validator rejects (wrong consensus branch id near upgrade
     /// activations).

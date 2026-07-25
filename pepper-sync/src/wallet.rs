@@ -821,7 +821,7 @@ impl<N, Nf: Copy, P> WalletNote<N, Nf, P> {
         }
     }
 
-    /// Attaches a nullifier, for tests exercising spend paths — the
+    /// Attaches a nullifier, for tests exercising spend paths, since the
     /// spendable-note filter requires a known nullifier.
     #[must_use]
     pub fn with_nullifier_for_test(mut self, nullifier: Nf) -> Self {
@@ -1123,7 +1123,7 @@ impl OutputInterface for TransparentCoin {
 /// workspace root): upstream `zcash_protocol` deliberately ships
 /// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
 /// is defined exactly once, here. Every height clamp involving a pool's
-/// existence derives from it; a second mapping anywhere in the workspace
+/// existence derives from it. A second mapping anywhere in the workspace
 /// is a defect.
 #[must_use]
 pub fn pool_upgrade(pool: ShieldedPool) -> consensus::NetworkUpgrade {
@@ -1149,7 +1149,7 @@ pub struct PoolActivation(BlockHeight);
 impl PoolActivation {
     /// Derives the pool's activation height from the chain's consensus
     /// parameters. `None` when the chain never activates the pool's
-    /// upgrade — a real state (regtest schedules may defer an upgrade
+    /// upgrade, a real state (regtest schedules may defer an upgrade
     /// indefinitely), in which the pool simply cannot be scheduled
     /// against.
     pub fn of(
@@ -1170,7 +1170,7 @@ impl PoolActivation {
     /// The later of the activation and `height`: the effective floor for
     /// heights that must not precede the pool's existence (a wallet
     /// Birthday clamped to the pool's activation, the lower bound of a
-    /// scan range). Birthday remains a wallet property throughout; the
+    /// scan range). Birthday remains a wallet property throughout. The
     /// pool contributes only its activation height.
     #[must_use]
     pub fn max_with(&self, height: BlockHeight) -> BlockHeight {

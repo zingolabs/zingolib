@@ -60,11 +60,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
     /// integrity failures are not.
     pub fn recommend_same_server(&self) -> bool {
         match self {
-            // Network/server issues — retry may help, especially with a different server.
+            // Network/server issues. Retrying may help, especially with a different server.
             SyncError::ServerError(e) => e.recommend_same_server(),
             SyncError::MempoolError(_) => true,
 
-            // Local or configuration errors — retrying won't help.
+            // Local or configuration errors. Retrying won't help.
             SyncError::ScanError(_)
             | SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
@@ -85,14 +85,14 @@ impl ServerError {
     /// avoided rather than retried.
     pub fn recommend_same_server(&self) -> bool {
         match self {
-            // Internal channel issue — retry may help after restart.
+            // Internal channel issue. Retrying may help after restart.
             ServerError::FetcherDropped => true,
 
-            // gRPC request failure — the server may be down or overloaded.
+            // gRPC request failure. The server may be down or overloaded.
             // Switch to a different server rather than retrying the same one.
             ServerError::RequestFailed(_) => false,
 
-            // Bad data from server — retrying the same server won't help.
+            // Bad data from server. Retrying the same server won't help.
             ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
@@ -148,15 +148,15 @@ impl ServerError {
     /// Returns the recommended recovery action for this server error.
     pub fn recovery_recommendation(&self) -> SyncRecoveryObservables {
         match self {
-            // Internal channel issue — same server may work after restart.
+            // Internal channel issue. The same server may work after restart.
             ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
-            // gRPC request failure or bad data — try a different server.
+            // gRPC request failure or bad data. Try a different server.
             ServerError::RequestFailed(_)
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
-            // Empty chain — no point retrying anywhere.
+            // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
     }

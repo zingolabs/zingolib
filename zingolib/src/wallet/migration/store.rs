@@ -578,7 +578,7 @@ mod tests {
     /// truncates on 32-bit targets. This test patches a serialized stream so
     /// the persisted value exceeds `u32::MAX`: the read must either reject
     /// the stream (the desired `usize::try_from` + `InvalidData` behavior)
-    /// or preserve the value. It passes vacuously on 64-bit hosts; run under
+    /// or preserve the value. It passes vacuously on 64-bit hosts. Run under
     /// a 32-bit target (e.g. i686-unknown-linux-gnu) to observe the failure.
     /// Every bucket computation divides or multiplies by the modulus, so a
     /// zero arriving from a corrupt wallet file must fail the read typed

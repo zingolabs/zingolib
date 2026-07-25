@@ -13,7 +13,7 @@ chain_generic_tests = []
 unit_test_twins = []
 # Sentinel tests pin environment contracts (zebrad behavior and the
 # zcash_local_net launch contract), not this repository's code. Off by
-# default: run them when the environment moves — infra pin bumps,
+# default: run them when the environment moves, such as infra pin bumps,
 # container-image bumps, activation-height changes.
 sentinels = []
 # Repo-wide policy gate (docs/testing/slow-gate-policy.md): a test whose

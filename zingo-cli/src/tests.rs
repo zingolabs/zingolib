@@ -497,8 +497,8 @@ mod config_template {
         }
 
         /// A new wallet's birthday normally comes from the server's chain
-        /// tip; Offline mode has no server, so the Library Birthday — a
-        /// release-stamped height no new seed can predate — stands in
+        /// tip. Offline mode has no server, so the Library Birthday (a
+        /// release-stamped height no new seed can predate) stands in
         /// (ADR 0007). No --birthday is demanded.
         #[test]
         fn new_wallet_without_birthday_uses_library_birthday() {

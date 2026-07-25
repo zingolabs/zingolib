@@ -6,16 +6,16 @@
 //! bootstrap hedges (a new arm after a silence interval, or immediately when
 //! an arm fails) and the send fan-out escalates in serially gated rounds
 //! (ADR 0011). This module captures the shared skeleton as a pure state
-//! machine — [`RaceState::start`] and [`RaceState::on_event`] map events to
-//! [`RaceAction`]s with no I/O, no clock, and no randomness — and takes the
+//! machine ([`RaceState::start`] and [`RaceState::on_event`] map events to
+//! [`RaceAction`]s with no I/O, no clock, and no randomness) and takes the
 //! escalation style as data ([`LaunchPolicy`]). Effectful drivers execute
 //! the actions: `NymProxy` drives a hedged race over tokio tasks, and
 //! zingolib's `fanout_broadcast` drives escalating rounds over borrowed
 //! futures. Deliberately NOT feature-gated, so the planner's tests run in
 //! the default build without the nym-sdk stack.
 //!
-//! Every arm's outcome is retained ([`RaceState::failures`]), not just the
-//! last: failures trigger immediate replacement launches, feed live
+//! Every arm's outcome is retained ([`RaceState::failures`]), down to the
+//! first: failures trigger immediate replacement launches, feed live
 //! progress ([`RaceState::progress`]), and compose the terminal error
 //! summary ([`RaceState::failure_summary`]).
 #![forbid(unsafe_code)]
@@ -112,7 +112,7 @@ pub struct RaceState {
     policy: LaunchPolicy,
     /// The most candidates this race may contact: `cap.min(candidates)`.
     limit: usize,
-    /// The next unlaunched candidate index; also the count launched so far.
+    /// The next unlaunched candidate index. Also the count launched so far.
     next: usize,
     in_flight: usize,
     /// The current round size under [`LaunchPolicy::EscalatingRounds`].

@@ -97,7 +97,7 @@ pub enum WalletError {
     #[error("No spendable Orchard notes to migrate.")]
     NothingToMigrate,
     /// `TargetValue::AllFunds(MaxSpendMode::Everything)` was requested. Its
-    /// contract — fail if ANY unspendable funds exist — requires a
+    /// contract (fail if ANY unspendable funds exist) requires a
     /// whole-wallet audit this selector does not yet perform, and a wrong
     /// success would silently strand funds, so the request is refused with
     /// this typed error instead.

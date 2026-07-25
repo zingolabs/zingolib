@@ -33,7 +33,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// Any wallet created by this release necessarily post-dates the release, so
 /// this height is a safe [`WalletConfig::NewSeed`] `chain_height` for a
 /// wallet created while Indexerless, where no Indexer can report the chain
-/// tip. The invariant is that the block has been mined, not merely named — a
+/// tip. The invariant is that the block has been mined, not merely named: a
 /// scheduled-but-future network-upgrade activation height does not qualify.
 /// Bumping this constant to a recently observed height is a release-checklist
 /// step. See `docs/adr/0007-library-birthday.md`.
@@ -42,7 +42,7 @@ pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 /// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
 ///
 /// NU6.3's testnet activation height. An activation height qualifies only
-/// once it has actually been mined — this one has: NU6.3 is already live on
+/// once it has actually been mined, and this one has. NU6.3 is already live on
 /// testnet (unlike mainnet, where its activation is still scheduled).
 pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 
@@ -51,7 +51,7 @@ pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 /// [`WalletConfig::NewSeed`] `chain_height` for a wallet created while
 /// Indexerless.
 ///
-/// Restores must not use this — a restored seed or viewing key may predate
+/// Restores must not use this, since a restored seed or viewing key may predate
 /// the library and always requires a caller-supplied birthday. See
 /// `docs/adr/0007-library-birthday.md`.
 pub fn lib_birthday(chain: ChainType) -> u32 {
@@ -312,9 +312,9 @@ pub struct ClientConfig {
     /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
     /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
     /// must be https on a host distinct from the synchronization endpoint's
-    /// (a shared host is refused); unset, parts go to one Broadcast Indexer
+    /// (a shared host is refused). Unset, parts go to one Broadcast Indexer
     /// drawn at random per submission. On the clearnet opt-out path it falls
-    /// back to `indexer_uri` with a logged warning when unset; when both are
+    /// back to `indexer_uri` with a logged warning when unset. When both are
     /// `None` the client emits no network traffic and broadcasting fails
     /// with [`crate::lightclient::error::LightClientError::Offline`].
     migration_broadcast_uri: Option<http::Uri>,
@@ -442,7 +442,7 @@ impl ClientConfigBuilder {
 
     /// Build a [`ClientConfig`] from the builder.
     ///
-    /// The default indexer is `None` — the resulting [`crate::lightclient::LightClient`] starts
+    /// The default indexer is `None`, so the resulting [`crate::lightclient::LightClient`] starts
     /// in offline mode. All local operations (balance, addresses, proposals) work immediately.
     /// Call [`crate::lightclient::LightClient::set_indexer_uri`] to connect when the network
     /// is available, then [`crate::lightclient::LightClient::sync`] to fetch blocks.

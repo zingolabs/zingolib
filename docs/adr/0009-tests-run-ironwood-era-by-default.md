@@ -22,8 +22,8 @@ yet enforce the turnstile routing. Live server runs (2026-07-14) adjudicated
 the open hypotheses: coinbase to a shielded miner pool lands as legacy
 Orchard notes even for blocks past NU6.3 activation, and ordinary sends on
 an NU6.3-active chain still produce Orchard outputs with V5-era ZIP 317
-fees. Live-suite assertions therefore pin this present behavior — `i: 0`
-with Orchard-era arithmetic — and each such assertion is a canary: when the
+fees. Live-suite assertions therefore pin this present behavior (`i: 0`
+with Orchard-era arithmetic), and each such assertion is a canary: when the
 pinned stack begins enforcing the turnstile, these assertions fail loudly,
 and the failure means "flip the pin to the spec-target expectation," not
 "the wallet regressed."
@@ -32,7 +32,7 @@ Source pools stay literal in either layer: a test named `orchard_sends_*`
 still funds the wallet with a real Orchard note and asserts it is spent,
 because spending legacy Orchard notes is exactly what migration-era wallets
 do (ZIP 318). Mixed-note wallets (legacy Orchard alongside Ironwood) are
-legitimate fixtures, not accidents — behavior *relative to* Ironwood is a
+legitimate fixtures, not accidents. Behavior *relative to* Ironwood is a
 primary test subject during the migration window.
 
 Pre-Ironwood behavior appears in exactly two forms: tests that configure a

@@ -31,8 +31,8 @@ barrier).
 | libtonode chain_generics | 21 | 2 |
 | libtonode sync | 1 | 2 |
 | libtonode wallet | 1 | 1 |
-| libtonode tip_spend_rejection | — | 8 |
-| libtonode mempool_attribution | — | 2 |
+| libtonode tip_spend_rejection | n/a | 8 |
+| libtonode mempool_attribution | n/a | 2 |
 | darkside | 6 | 6 |
 | zingo-netutils / memo / status | 12 | 12 |
 
@@ -69,16 +69,17 @@ between the two revisions.
   reworked with_assertions path: the mempool wait became a condition-poll
   with the same six-second ceiling, spends were separated from the chain
   tip, and a transient Transmitted status is tolerated within the existing
-  patience bound instead of panicking immediately — the terminal
+  patience bound instead of panicking immediately. The terminal
   assertions (recorded fees == confirmed fees, recorded outputs ==
   confirmed outputs, recipient Confirmed at send-height + 1) are intact,
   so nothing terminal was lost.
 - **Same (the remainder of the 198):** byte-identical bodies, or purely
-  mechanical changes — the ClientBuilder activation-heights constructor
-  move (all 9 darkside tests), rustls-provider helper swaps, and
-  sleep-to-poll conversions in zingo-cli's log_file tests whose decisive
-  assertions are byte-identical. All 36 pre-existing pepper-sync unit
-  tests and all pre-existing zingolib/zingo-cli unit tests are unchanged.
+  mechanical changes. The mechanical ones are the ClientBuilder
+  activation-heights constructor move (all 9 darkside tests),
+  rustls-provider helper swaps, and sleep-to-poll conversions in
+  zingo-cli's log_file tests whose decisive assertions are byte-identical.
+  All 36 pre-existing pepper-sync unit tests and all pre-existing
+  zingolib/zingo-cli unit tests are unchanged.
 
 ### Migrated libtonode → unit (43 census originals → 56 unit replacements)
 
@@ -88,8 +89,8 @@ notes with real trees/witnesses) and the record-fabrication rig (fabricated
 
 Verdicts: **PRESERVED** (every asserted property carried), **PRESERVED+**
 (replacement asserts strictly more), **NARROWED** (offline core carried;
-a live half was dropped — named, with its surviving live cover where one
-exists). No migration lost its asserted core.
+a live half was dropped, named below with its surviving live cover where
+one exists). No migration lost its asserted core.
 
 Summary/record rig (→ wallet/summary.rs): filter_empty_messages
 PRESERVED (both message counts); message_thread PRESERVED (thread counts
@@ -103,12 +104,13 @@ PRESERVED (four-memo aggregation, idempotence and reverse-order
 equalities, over a deliberately harder ordering input).
 NARROWED in this family: create_send_to_self_with_zfz_active (both
 kind-classification assertions carried, but the live pipeline's actual
-injection of the ZFZ output is no longer exercised anywhere — see gaps);
-sapling_incoming_sapling_outgoing (three record states carried; the
-post-mine change-note bookkeeping dropped, covered by pepper-sync's
-spend-status rig); send_funds_to_all_pools (the tri-pool balance assert
-carried over fabricated notes; confirmed-balances-via-real-scan is
-covered by the two surviving chain_generics fixtures).
+injection of the ZFZ output is no longer exercised anywhere, as noted
+under gaps); sapling_incoming_sapling_outgoing (three record states
+carried; the post-mine change-note bookkeeping dropped, covered by
+pepper-sync's spend-status rig); send_funds_to_all_pools (the tri-pool
+balance assert carried over fabricated notes;
+confirmed-balances-via-real-scan is covered by the two surviving
+chain_generics fixtures).
 
 Keys (→ wallet/keys.rs): address_generation_deterministic_and_coherent
 and taddrs_from_old_seeds_stay_stable (renamed from
@@ -127,7 +129,7 @@ inputs, 30_000 fee, sum-minus-fee change); t_incoming_t_outgoing_disallowed PRES
 (summary surfacing + refusal error chain).
 PRESERVED+: dust_sends_change_correctly (original asserted only Ok; the
 port adds fee-table and change arithmetic) and shield_transparent
-(original was #[ignore]d and assertion-free — everything here is
+(original was #[ignore]d and assertion-free, so everything here is
 net-new).
 NARROWED: ptfm_general (drain contract sharpened to exact selection
 [50_000, 100_000], dust line, zero change; live confirmed-drain covered
@@ -137,8 +139,8 @@ proposal_targets_best_pool_per_unified_address (from
 diversified_addresses_receive_funds_in_best_pool; best-pool routing now
 asserted directly on payment_pools; live scan-delivery dropped);
 send_to_tex (two-step shape plus new ZIP-320 prior_step_inputs wiring;
-the live broadcast is gone — see gaps); zero_value_change and
-zero_value_change_to_orchard_created (zero-value change asserted at
+the live broadcast is gone, as noted under gaps); zero_value_change
+and zero_value_change_to_orchard_created (zero-value change asserted at
 proposal time with explicit arithmetic; post-mine bookkeeping covered by
 pepper-sync); dust_inputs_are_ignored and
 note_selection_covers_target_with_minimal_change (from the chain_generics
@@ -146,10 +148,10 @@ fixtures ignore_dust_inputs and note_selection_order; dust exclusion and
 minimal-change selection sharpened; the fixtures' recorded-fee round
 trips covered by the surviving fixtures).
 
-Simpool (15): PRESERVED as a family — same fee tables, same funding
-arithmetic, identical error-message strings ("Insufficient balance (have
-…, need … including fee)"); three of fifteen spot-checked in full, the
-helper is shared by all.
+Simpool (15): PRESERVED as a family, with the same fee tables, the same
+funding arithmetic, and identical error-message strings ("Insufficient
+balance (have …, need … including fee)"); three of fifteen spot-checked
+in full, the helper is shared by all.
 
 Pool matrix (2 degenerate proptests → 14 deterministic offline cases):
 NARROWED-but-broadened. Each dev proptest ran ONE random case
@@ -157,7 +159,7 @@ NARROWED-but-broadened. Each dev proptest ran ONE random case
 asserts the same fee/value/change arithmetic deterministically across
 both shielded sources × three receiver pools × change/no-change, plus
 the 546-zat transparent minimum and boundary rows. Dropped live half:
-the per-case mempool transition and recipient scan round trip — that
+the per-case mempool transition and recipient scan round trip. That
 class survives in send_shield_cycle and
 generate_a_range_of_value_transfers, which drive the same
 follow_proposal machinery live.
@@ -175,7 +177,7 @@ follow_proposal machinery live.
 3. **Live TEX broadcast**: the ZIP-320 two-step is asserted in proposal
    shape only; no live TEX round trip remains (verified likewise).
 4. **Behind-tip broadcast**: preserved, but by exactly one test
-   (verify_old_wallet_uses_server_height_in_send) — see the caveat
+   (verify_old_wallet_uses_server_height_in_send). See the caveat
    under deletions.
 
 ### Renamed or retargeted within libtonode (3)
@@ -187,8 +189,8 @@ follow_proposal machinery live.
 | fast::sync_all_epochs_from_heartwood | fast::sync_all_expressible_epochs | 90f73b3e9 |
 
 - **send_mined_sapling_to_orchard → send_mined_orchard_to_orchard**: the
-  observed invariant is preserved identically — a confirmation moves the
-  mined-coinbase self-send from unverified to verified orchard balance —
+  observed invariant is preserved identically (a confirmation moves the
+  mined-coinbase self-send from unverified to verified orchard balance),
   with only the coinbase source pool changed, because zebrad mines to
   orchard but not to the sapling pool. Justified retarget; the sapling-source
   aspect is inexpressible.
@@ -199,8 +201,8 @@ follow_proposal machinery live.
   Platform-constrained, justified.
 - **note_selection_order → multi_input_sapling_send_with_orchard_change_no_panic**:
   the original's nine assertions had been commented out for years (stale fee
-  model, removed APIs); the live body's real contract — a two-input sapling
-  spend with orchard change that zebra accepts — is now the test's name and
+  model, removed APIs); the live body's real contract (a two-input sapling
+  spend with orchard change that zebra accepts) is now the test's name and
   doc comment. Selection ordering is asserted offline by
   note_selection_covers_target_with_minimal_change. No live protection lost;
   dead text removed.
@@ -226,12 +228,12 @@ from reading the dev bodies:
    including the 546-zat dust minimum). Protection lost: none.
 3. **slow::send_heartwood_sapling_funds** (fc4f77c9a). Mined coinbase
    directly into sapling and spent 3.5 ZEC of it into orchard on a live
-   chain. The funding premise is inexpressible on the Core stack — zebrad mines
-   to orchard (mine_to_orchard is live again) but not to the sapling
-   pool — so the deletion is forced. The
-   arithmetic is pinned offline by the sapling-source pool-matrix and
-   simpool tests. **Correction (2026-07-08):** the first edition of this
-   audit claimed no surviving test spends a sapling note on a live chain;
+   chain. The funding premise is inexpressible on the Core stack, since
+   zebrad mines to orchard (mine_to_orchard is live again) but not to the
+   sapling pool, so the deletion is forced. The arithmetic is pinned
+   offline by the sapling-source pool-matrix and simpool tests.
+   **Correction (2026-07-08):** the first edition of this audit claimed
+   no surviving test spends a sapling note on a live chain;
    that was wrong. `multi_input_sapling_send_with_orchard_change_no_panic`
    funds its recipient exclusively through its sapling address and spends
    two of those notes live. The accurate residual: that test asserts
@@ -240,14 +242,15 @@ from reading the dev bodies:
 
 Two dev-side #[ignore]d tests (never census members) were also deleted by
 fc4f77c9a: mine_to_sapling (mining to the sapling pool specifically is
-unsupported — the dev ignore-reason's blanket "shielded pools" claim was
-stale, as the revived mine_to_orchard shows — so the test can never run) and sync_all_epochs
-(required pre-Canopy staggered activations zebrad cannot express, and hung
-on shutdown; superseded by sync_all_expressible_epochs).
+unsupported, so the test can never run, and the dev ignore-reason's
+blanket "shielded pools" claim was stale, as the revived mine_to_orchard
+shows) and sync_all_epochs (required pre-Canopy staggered activations
+zebrad cannot express, and hung on shutdown; superseded by
+sync_all_expressible_epochs).
 
 **Behind-tip broadcast caveat.** send_not_fully_synced's distinctive live
-protection — zebra accepting a broadcast from a wallet behind the chain
-tip — is NOT carried by its named migration target
+protection (zebra accepting a broadcast from a wallet behind the chain
+tip) is NOT carried by its named migration target
 (send_all_to_own_sapling_proposes, which is propose-only). It survives
 solely in load_wallet::verify_old_wallet_uses_server_height_in_send, which
 broadcasts from a wallet two blocks behind tip. That test is now
@@ -261,8 +264,8 @@ substitute.
   new protection pinning zebra's boundary-adjacent orchard-output rejection
   and the indexer/wallet mempool-visibility lag.
 - 3 pepper-sync spend_reset_lifecycle tests (b07a49673): regression fence for
-  the silent-spend bug — a failed confirmed transaction must not destroy the
-  spend observation.
+  the silent-spend bug. A failed confirmed transaction must not destroy
+  the spend observation.
 - libtonode-tests::sync indexer_converges_with_validator_after_block_generation
   (c38089571): replaced the red-by-design lag diagnostic with a ten-round
   convergence-barrier assertion.
@@ -271,7 +274,7 @@ substitute.
   across pools at height 4).
 - zingolib propose_100_000_to_self and send_all_to_own_sapling_proposes:
   net-new offline proposal coverage.
-- proposal_shape::shield_transparent: net-new — the dev original was
+- proposal_shape::shield_transparent: net-new. The dev original was
   #[ignore]d (asserting nothing when it did run), so its census weight was
   zero; the offline port asserts step, input, and change shape.
 
@@ -294,25 +297,25 @@ rocksdb 8.x).
 ## Gap remediation plan (unit-first, 2026-07-08)
 
 One cross-cutting investment unlocks most of the unit-level coverage: a
-**build-without-broadcast seam** in zingolib's send path — calculate the
+**build-without-broadcast seam** in zingolib's send path (calculate the
 `Transaction` from a proposal and return it instead of broadcasting,
-under a test-features flag. The mempool-attribution work already wants
+under a test-features flag). The mempool-attribution work already wants
 this seam for its rejection-side cells, so it pays twice. Orchard-only
 builds need no proving parameters; sapling spend proofs require the
 sapling proving parameters in the unit environment, which is the one
 named precondition below.
 
-**Gap 1 — sapling-source spend post-state.** Live acceptance already
-exists (see correction above). Two steps: (a) now — observe-and-pin a
+**Gap 1: sapling-source spend post-state.** Live acceptance already
+exists (see correction above). Two steps: (a) now, observe-and-pin a
 closing balance assert on
 `multi_input_sapling_send_with_orchard_change_no_panic`, upgrading it
 the same way the multi-note orchard test was upgraded, at zero new
-runtime; (b) after the seam and with sapling parameters available — a
+runtime; (b) after the seam and with sapling parameters available, a
 unit test that builds (proves) a two-input sapling spend over fabricated
 notes and asserts the bundle shape: two spend descriptions, one orchard
 change output.
 
-**Gap 2 — ZFZ output injection.** No seam needed; fully unit-coverable
+**Gap 2: ZFZ output injection.** No seam needed; fully unit-coverable
 today. Injection happens at propose time
 (`lightclient/propose.rs` appends the Zennies payment to the
 transaction request), so a proposal-shape unit test over
@@ -324,21 +327,22 @@ carries the payment, propose-to-broadcast fidelity is the same generic
 pipeline the chain_generics fixtures exercise live; a dedicated live
 ZFZ send adds little.
 
-**Gap 3 — TEX two-step.** `zcash_client_backend` constructs both steps
+**Gap 3: TEX two-step.** `zcash_client_backend` constructs both steps
 at build time, feeding step 1's ephemeral transparent output into step
 2 before anything touches a network, so behind the seam a unit test can
 build the entire ZIP-320 pair offline: assert step 2's transparent
 input spends step 1's ephemeral output and the final output pays the
 TEX-decoded address. The orchard-source variant keeps it
 parameter-free. The only class left live is zebra's mempool accepting
-the chained unmined pair — generic mempool chaining, worth at most one
-thin smoke on the mempool_attribution harness if we want it pinned.
+the chained unmined pair. That is generic mempool chaining, worth at
+most one thin smoke on the mempool_attribution harness if we want it
+pinned.
 
-**Gap 4 — behind-tip broadcast.** The live singleton
+**Gap 4: behind-tip broadcast.** The live singleton
 (`verify_old_wallet_uses_server_height_in_send`) stays, but the
 property's failure mode is unit-pinnable behind the seam: build from a
 synthetic wallet whose sync state sits at height H and assert the built
-transaction's expiry and consensus branch id derive from H + 1 —
+transaction's expiry and consensus branch id derive from H + 1,
 including the cell at H = activation boundary − 1, which is exactly the
 wallet-side builder bug the boundary-rejection attribution isolated.
 That turns the branch-id fix, when it lands, into a permanent unit
@@ -366,10 +370,10 @@ the sapling proving parameters are embedded in the zingolib crate.
   `multi_input_sapling_send_with_orchard_change_no_panic` (o: 0,
   s: 10_000; observed green solo, 72.6s).
 - Gaps 4, 3, 1b: `mod built_transaction_shape`
-  (zingolib/src/lightclient/send.rs) — expiry/branch-id derivation from
-  synced height + 1, the activation-boundary-minus-one branch-id fence,
-  the offline ZIP-320 pair with ephemeral-output wiring, and the proved
-  two-input sapling spend with orchard change.
+  (zingolib/src/lightclient/send.rs), covering expiry/branch-id
+  derivation from synced height + 1, the activation-boundary-minus-one
+  branch-id fence, the offline ZIP-320 pair with ephemeral-output
+  wiring, and the proved two-input sapling spend with orchard change.
 
 Residual live classes, unchanged by design: zebra's mempool accepting
 the chained unmined TEX pair, the behind-tip live singleton, and the

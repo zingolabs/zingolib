@@ -32,7 +32,7 @@ _Avoid_: reduction
 
 **Denomination**:
 A canonical migration amount, {1, 2, 5} × 10^k ZEC. What the Shielded Labs
-document calls amount "buckets" — never use bucket for amounts here.
+document calls amount "buckets". Never use bucket for amounts here.
 
 **Part**:
 One scheduled pool-crossing transaction carrying exactly one denomination.

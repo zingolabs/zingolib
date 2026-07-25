@@ -167,15 +167,15 @@ impl MigrationState {
 impl crate::wallet::LightWallet {
     /// The take/use/restore bracket for the wallet's [`MigrationState`],
     /// made total. `f` receives the wallet and the state as two independent
-    /// `&mut` borrows — the reason the state must leave the wallet at all —
+    /// `&mut` borrows (the reason the state must leave the wallet at all),
     /// and the state is restored on every exit path before `f`'s result is
     /// returned: an early `?`-return inside `f` cannot skip the restore,
     /// and because `f` is synchronous the state is never out of the wallet
     /// across an `.await` point, so a cancelled future cannot strand it.
-    /// The bracket itself is unobservable — the migration slot is `Some`
+    /// The bracket itself is unobservable: the migration slot is `Some`
     /// after exactly when it was `Some` before, and every mutation belongs
     /// to `f`. Returns `None`, without calling `f`, when no migration is
-    /// active; the caller chooses what a missing migration means.
+    /// active. The caller chooses what a missing migration means.
     pub(crate) fn with_migration_state<R>(
         &mut self,
         f: impl FnOnce(&mut Self, &mut MigrationState) -> R,

@@ -213,9 +213,9 @@ impl LightClient {
     ///
     /// A running engine is paused and resumes when the guard drops. A
     /// paused or not-running engine needs no pause, so the guard
-    /// changes nothing — in particular, dropping it never resumes a pause
+    /// changes nothing. In particular, dropping it never resumes a pause
     /// somebody else established. A shutting-down engine still scans its
-    /// final batch, so it is *not* paused; the call fails with
+    /// final batch, so it is *not* paused. The call fails with
     /// [`SyncModeError::SyncAlreadyRunning`] and the caller should await
     /// shutdown first.
     pub fn pause_sync_scoped(&self) -> Result<SyncPauseGuard, SyncModeError> {
@@ -254,7 +254,7 @@ impl LightClient {
     /// whether this call minted the guard, so a proposing call's error
     /// path can release exactly what it took while an already-held guard
     /// keeps guarding the proposal it was minted for. A shutting-down
-    /// engine cannot be paused; the proposal then proceeds unguarded,
+    /// engine cannot be paused. The proposal then proceeds unguarded,
     /// exactly as the imperative pause discipline did.
     pub(crate) fn hold_proposal_pause(&mut self) -> bool {
         if self.proposal_pause_guard.is_none()
@@ -268,8 +268,8 @@ impl LightClient {
 
     /// Releases the stored proposal's pause guard, if one is held.
     /// `restore: true` drops the guard, returning the engine to the mode
-    /// it held before the proposal was created; `restore: false` disarms
-    /// it, leaving the engine paused for the caller to resume — the
+    /// it held before the proposal was created. `restore: false` disarms
+    /// it, leaving the engine paused for the caller to resume, the
     /// shipped `resume_sync: false` semantics.
     pub(crate) fn release_proposal_pause(&mut self, restore: bool) {
         if let Some(guard) = self.proposal_pause_guard.take()
@@ -300,17 +300,17 @@ impl LightClient {
     }
 }
 
-/// A guard proving the sync engine is paused — actively paused or not running
-/// — for as long as this value lives.
+/// A guard proving the sync engine is paused (actively paused or not running)
+/// for as long as this value lives.
 ///
 /// [`LightClient::pause_sync_scoped`] is the only constructor: it performs the
 /// one side effect (pausing a running engine) up front and undoes it on drop. A
 /// function that takes `&SyncPauseGuard` performs no sync-mode transitions of
-/// its own — the parameter is pure proof that the caller already paused
+/// its own. The parameter is pure proof that the caller already paused
 /// sync, so wallet state cannot shift under the callee between its reads and
 /// its writes. That turns the requirement into a compile-time contract: the
-/// racy call shape — planning against a wallet a running sync is still
-/// mutating — has no well-typed spelling.
+/// racy call shape (planning against a wallet a running sync is still
+/// mutating) has no well-typed spelling.
 pub struct SyncPauseGuard {
     sync_mode: Arc<atomic::AtomicU8>,
     resume_on_drop: bool,
@@ -319,8 +319,8 @@ pub struct SyncPauseGuard {
 impl SyncPauseGuard {
     /// Cancels the restore-on-drop: the engine stays exactly as the guard
     /// held it, so a pause taken by [`LightClient::pause_sync_scoped`] persists
-    /// past the guard. Crate-internal on purpose — the public contract
-    /// remains "drop restores the prior mode"; only the shipped
+    /// past the guard. Crate-internal on purpose, since the public contract
+    /// remains "drop restores the prior mode". Only the shipped
     /// `resume_sync: false` protocol needs to keep an engine paused for the
     /// caller to resume later.
     pub(crate) fn disarm(mut self) {
@@ -351,8 +351,8 @@ mod tests {
     use crate::lightclient::LightClient;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    /// An offline client whose sync-mode atomic the tests drive directly;
-    /// no engine runs, so every observed transition is the guard's own.
+    /// An offline client whose sync-mode atomic the tests drive directly.
+    /// No engine runs, so every observed transition is the guard's own.
     async fn offline_client(mode: SyncMode) -> LightClient {
         let wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();

@@ -2,7 +2,7 @@
 //! behavior.
 //!
 //! Until this file, no test separated the indexer's mempool view from the
-//! validator's; the nearest discriminator in the corpus is the block-height
+//! validator's. The nearest discriminator in the corpus is the block-height
 //! tip-lag probe in sync.rs. The distinction matters for attribution: every
 //! wallet-facing mempool observation flows through zainod, so a wallet test
 //! alone cannot say whether surprising behavior originates in zebra or in
@@ -29,10 +29,10 @@
 //! # Round-one verdict (2026-07-06, host stack)
 //!
 //! Observed indexer ingestion lag: ~50 MILLISECONDS. H-LAG as stated is
-//! FALSIFIED — the indexer is not the source of the multi-second waits
+//! FALSIFIED: the indexer is not the source of the multi-second waits
 //! the assured-send helper observes (and the poll-not-sleep commit's
 //! attribution of that wait to "zainod's mempool-polling cadence" was
-//! wrong; this measurement corrects the record). The surviving suspect
+//! wrong. This measurement corrects the record). The surviving suspect
 //! is the third leg of the pipeline, measured by the second cell below:
 //!
 //! - H-WALLET-MONITOR: the wallet's own mempool-monitor pipeline
@@ -43,7 +43,7 @@
 //!
 //! Round-two datum: with NO sync session running, the sender's record
 //! never reaches Mempool status at all (first version of the wallet
-//! cell timed out at 15 s) — pepper-sync's mempool monitor only exists
+//! cell timed out at 15 s), since pepper-sync's mempool monitor only exists
 //! within a sync session's lifecycle. That is why the assured-send
 //! helper syncs before its mempool cross-checks and still waits: the
 //! wait is monitor startup and processing after sync_and_await returns.
@@ -51,15 +51,15 @@
 //! and measures delivery from validator acceptance.
 //!
 //! Round-two verdict: wallet-record lag 2.503121 s with sync_and_await
-//! returning at 2.503124 s — IDENTICAL to the microsecond. The mempool
-//! transaction is processed inside the sync session itself; there is no
+//! returning at 2.503124 s, IDENTICAL to the microsecond. The mempool
+//! transaction is processed inside the sync session itself. There is no
 //! post-sync monitor delay at all. The full attribution triangle on the
 //! accept side: zebra accepts at t0, zainod shows the transaction at
 //! t0+50ms, and the wallet record is ready the moment its next sync
 //! session completes (~2.5 s, the cost of the sync itself). The
 //! assured-send helper's old fixed 6-second sleep was pure waste, and
 //! its poll replacement now exits immediately after the helper's own
-//! sync — consistent with the observed drop in per-case time.
+//! sync, consistent with the observed drop in per-case time.
 //!
 //! # Designed cells: one remaining
 //!
@@ -71,8 +71,8 @@
 //! record's retained Transaction and the validator's rpc_listen_port.
 //! The one cell still unbuilt is offline orchard-proof verification (a
 //! proof that verifies against the standard verifying key offline
-//! exonerates the wallet at the proof level); its input is recoverable
-//! from the same Failed record — an earlier note here claimed the wallet
+//! exonerates the wallet at the proof level). Its input is recoverable
+//! from the same Failed record. An earlier note here claimed the wallet
 //! does not retain the built bytes, which boundary_rejection_attribution
 //! disproves.
 //!

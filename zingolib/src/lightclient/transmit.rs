@@ -3,9 +3,9 @@
 //! target so the clearnet indexer path and the Nym broadcast path share a
 //! single implementation.
 //!
-//! [`resilient_transmit`] performs no wallet-state mutation — it interprets a
+//! [`resilient_transmit`] performs no wallet-state mutation: it interprets a
 //! target's responses and returns the server-reported txid or a
-//! [`TransmitFailed`]; the caller owns any wallet effects. The probe/retry
+//! [`TransmitFailed`]. The caller owns any wallet effects. The probe/retry
 //! cadence is injected as a `sleep` hook so the policy is unit-tested without
 //! real time.
 
@@ -21,7 +21,7 @@ pub(crate) const MAX_RETRIES: u8 = 3;
 /// A "queued for download" duplicate rejection proves delivery but not
 /// minability: zebra is still verifying the earlier submission (observed to
 /// lag it by seconds under load). Each resubmission is a free probe of zebra's
-/// own state; wait up to this many probes, on the retry loop's one-second
+/// own state. Wait up to this many probes, on the retry loop's one-second
 /// cadence, for the verdict to become storage-backed (issue #2450).
 pub(crate) const MAX_QUEUED_PROBES: u8 = 30;
 
@@ -31,7 +31,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// A shareable snapshot of the in-flight Transmission's latest progress line,
 /// or `None` when no transmission is running. A consumer holding a clone (the
 /// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
-/// holds `&mut LightClient`; the transmit path updates it as submissions,
+/// holds `&mut LightClient`. The transmit path updates it as submissions,
 /// retries, probes, and fan-out rounds occur. Mirrors the
 /// `ImmediateMigrationProgressHandle` pattern.
 #[derive(Clone, Debug, Default)]
@@ -51,14 +51,14 @@ impl TransmitProgressHandle {
         *self.0.lock().expect("transmit progress mutex poisoned") = Some(line);
     }
 
-    /// Clears the snapshot; polling consumers read "no transmission running".
+    /// Clears the snapshot. Polling consumers read "no transmission running".
     pub(crate) fn clear(&self) {
         *self.0.lock().expect("transmit progress mutex poisoned") = None;
     }
 }
 
-/// Clears the progress snapshot on every exit — success, `?`-propagated
-/// error, or panic — so a finished transmission never leaves a stale line.
+/// Clears the progress snapshot on every exit (success, `?`-propagated
+/// error, or panic) so a finished transmission never leaves a stale line.
 pub(crate) struct TransmitProgressScope(pub(crate) TransmitProgressHandle);
 
 impl Drop for TransmitProgressScope {
@@ -81,7 +81,7 @@ pub(crate) trait TransmitTarget {
         height: u64,
     ) -> impl Future<Output = Result<String, String>> + Send;
 
-    /// Whether the server knows `txid` — a delivery check run after the
+    /// Whether the server knows `txid`, a delivery check run after the
     /// retries are exhausted, since a lost response can mask a received
     /// transaction.
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send;
@@ -109,7 +109,7 @@ pub(crate) enum RejectionClass {
 
 /// Classify a server/transport failure message for the resilience policy.
 /// Substring matches because zainod surfaces the rejections untyped
-/// (zingolabs/zaino#1392); when that lands, typed checks replace this
+/// (zingolabs/zaino#1392). When that lands, typed checks replace this
 /// classifier and the policy loop is untouched.
 pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
     if message.contains("transaction already exists in mempool")
@@ -123,20 +123,20 @@ pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
     RejectionClass::Transient
 }
 
-/// Submit `raw_tx` to `target` under the shared resilience policy — the single
+/// Submit `raw_tx` to `target` under the shared resilience policy, the single
 /// definition of the retry / duplicate-in-mempool / queued-probe behavior.
 ///
 /// A duplicate already in the mempool or chain counts as success (an earlier
 /// submission is minable or mined). "Queued for download" is re-probed up to
 /// [`MAX_QUEUED_PROBES`] times until the verdict is storage-backed. Any other
-/// error retries up to [`MAX_RETRIES`] times; on exhaustion a delivery check
+/// error retries up to [`MAX_RETRIES`] times. On exhaustion a delivery check
 /// ([`TransmitTarget::knows_transaction`]) confirms whether an earlier attempt
 /// was in fact received. Returns the server-reported txid on success.
 ///
-/// `sleep` supplies the wait between probes/retries; production passes
+/// `sleep` supplies the wait between probes/retries. Production passes
 /// `tokio::time::sleep`, tests pass a no-op so the policy runs instantly.
 /// `report` receives a succinct line at each state change (submitting,
-/// retrying, probing, delivery-checking) for progress display; the caller
+/// retrying, probing, delivery-checking) for progress display. The caller
 /// prefixes it with the target's identity.
 pub(crate) async fn resilient_transmit<T, S, F, P>(
     target: &T,
@@ -433,7 +433,7 @@ mod tests {
 
     /// Falsifier for the progress narration: a transient failure followed by a
     /// queued rejection and a final acceptance must narrate each state change
-    /// in order — submit, retry, probe — so a heartbeat consumer always holds
+    /// in order (submit, retry, probe) so a heartbeat consumer always holds
     /// a line describing what the policy is actually doing.
     #[tokio::test]
     async fn narrates_each_state_change_in_order() {

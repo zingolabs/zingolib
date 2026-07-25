@@ -1,7 +1,7 @@
 //! Bucket math and schedule assignment (ZIP 318 Phase 2).
 //!
 //! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
-//! Bucket `i` spans heights `[i·M, (i+1)·M)`; a part assigned to bucket `i`
+//! Bucket `i` spans heights `[i·M, (i+1)·M)`. A part assigned to bucket `i`
 //! broadcasts while the chain is inside it, anchored to the tree state at the
 //! boundary `i·M`. Because that anchor is identical for every wallet sending
 //! into the same bucket, it carries no per-wallet timing information.
@@ -67,7 +67,7 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
 }
 
 /// The first bucket a part may be scheduled into: strictly after
-/// `now_height`'s bucket, and never below the pool's activation floor —
+/// `now_height`'s bucket, and never below the pool's activation floor,
 /// the first bucket whose boundary sits at or above the Pool Activation,
 /// since a pre-activation boundary can anchor no Ironwood output (issue
 /// #2493, finding 6).
@@ -104,8 +104,8 @@ fn activation_bucket(activation: PoolActivation, bucket_modulus: u32) -> u64 {
 /// bucket's window.
 ///
 /// This and [`place_immediate`] are the only placement operations: every
-/// move of a part between buckets — initial scheduling, rebuild after
-/// expiry — passes through one of them, so a part can never carry a
+/// move of a part between buckets (initial scheduling, rebuild after
+/// expiry) passes through one of them, so a part can never carry a
 /// target left over from a previous bucket (issue #2493, finding 7), and
 /// every placement chooses, by name, between jittered and immediate.
 #[allow(clippy::result_large_err)]
@@ -120,7 +120,7 @@ pub fn place(
     Ok(())
 }
 
-/// Places a part in `bucket` due the moment the window is open — the
+/// Places a part in `bucket` due the moment the window is open, the
 /// catch-up and immediate-mode operation, where firing now is the
 /// disclosed intent. See [`place`] for the placement monopoly.
 #[allow(clippy::result_large_err)]
@@ -131,7 +131,7 @@ pub fn place_immediate(part: &mut PartRecord, bucket: u64) -> Result<(), WalletE
 }
 
 /// Routes a placement through the part's legal state transition: fresh
-/// parts assign, expired parts reassign, assigned parts shift; any other
+/// parts assign, expired parts reassign, assigned parts shift. Any other
 /// state yields the state machine's own transition error.
 #[allow(clippy::result_large_err)]
 fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), WalletError> {
@@ -147,9 +147,9 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
 ///
 /// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
 /// share each cohort. Cohorts fill consecutive future buckets starting at
-/// [`first_permitted_bucket`] — after `now_height`'s bucket and at or above
-/// the pool's activation floor — largest denominations first. Bucket
-/// assignments are deterministic; target heights within each window are
+/// [`first_permitted_bucket`] (after `now_height`'s bucket and at or above
+/// the pool's activation floor), largest denominations first. Bucket
+/// assignments are deterministic, and target heights within each window are
 /// randomized so parts do not cluster at the boundary.
 #[allow(clippy::result_large_err)]
 pub fn plan_schedule(
@@ -186,7 +186,7 @@ pub fn plan_schedule(
     // The first cohort opens in the *current* bucket (floored at activation:
     // a pre-activation boundary can anchor no Ironwood output, issue #2493
     // finding 6), so the first batch is sendable the instant Phase 2 is
-    // scheduled — its window is already open. Later cohorts fill consecutive
+    // scheduled. Its window is already open. Later cohorts fill consecutive
     // buckets from there, each one window sooner than the old `+ 1` start.
     // This is local to initial scheduling; `first_permitted_bucket` remains
     // the chooser for expiry rebuild and reassignment, which target a fresh
@@ -229,10 +229,10 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
 }
 
 /// Whether a part is due to broadcast right now: it still awaits broadcast
-/// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open —
-/// it is assigned to `current_bucket`, whose boundary is at or below the tip
+/// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open,
+/// meaning it is assigned to `current_bucket`, whose boundary is at or below the tip
 /// by definition. The part's random `target_height` no longer gates
-/// sendability; it is advisory, exposed only as the reminder hint
+/// sendability. It is advisory, exposed only as the reminder hint
 /// [`BroadcastWindow::latest_target_unix_time`], so a part is due for the whole
 /// open window rather than only from its target onward.
 ///
@@ -294,7 +294,7 @@ pub fn upcoming_windows(
 /// One window of the schedule's timeline: the bucket, its block range, and
 /// how far its parts have come. The rendering counterpart to
 /// [`BroadcastWindow`], which feeds platform schedulers strictly future
-/// windows; this reports every window the schedule touches, finished ones
+/// windows. This reports every window the schedule touches, finished ones
 /// included.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowReport {
@@ -317,7 +317,7 @@ pub struct WindowReport {
 }
 
 /// The window timeline, earliest first: one report per bucket holding at
-/// least one part, plus always the window the tip is inside — so the
+/// least one part, plus always the window the tip is inside, so the
 /// calendar exists (with zero tallies) before any migration is scheduled.
 /// Pure over the given parts and tip. Parts not yet assigned to a bucket
 /// have no window and are not listed.
@@ -406,7 +406,7 @@ mod tests {
 
     /// Issue #2493, finding 6: consent given before the NU6.3 activation
     /// must not schedule any part into a bucket whose boundary predates
-    /// the activation — no ironwood output can anchor there, so every
+    /// the activation. No ironwood output can anchor there, so every
     /// broadcast attempt skips and the whole consented cohort slides into
     /// the correlation-disclosed catch-up path. The schedule must respect
     /// an activation floor. Note splitting is explicitly permitted before
@@ -443,8 +443,8 @@ mod tests {
     /// Issue #2493, finding 7 (ratified form): every move of a part
     /// between buckets goes through a placement operation, and the
     /// jittered one draws a fresh random target inside the new bucket's
-    /// window. A stale target from the old bucket — or a cleared-to-None
-    /// target treated as immediately due — would fire the rebuilt part at
+    /// window. A stale target from the old bucket (or a cleared-to-None
+    /// target treated as immediately due) would fire the rebuilt part at
     /// its window's first block: the boundary clustering the jitter
     /// exists to prevent, correlated across every wallet that rebuilds
     /// after an expiry.
@@ -584,7 +584,7 @@ mod tests {
         let current_bucket = 40;
         let mut part = bound_part(0, 1_000_000);
         part.assign(current_bucket).unwrap();
-        // A target high in the window — above where an early-window tip sits.
+        // A target high in the window, above where an early-window tip sits.
         part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 100);
 
         assert!(

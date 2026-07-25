@@ -26,7 +26,7 @@ pub struct MigrationParams {
     /// Notes worth at most this are left as residual rather than selected for
     /// migration. Provisionally twice the ZIP-317 marginal fee: a deliberate
     /// safety factor, requiring a selected note to return strictly more than
-    /// double the marginal action cost it adds, rather than merely break even
+    /// double the marginal action cost it adds, instead of breaking even
     /// against `MARGINAL_FEE` itself.
     pub sweep_min: u64,
     /// `M`: bucket boundaries are the block heights ≡ 0 (mod `M`).

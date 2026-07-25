@@ -1,4 +1,4 @@
-//! `test-summary` — run the three test phases and print a combined summary.
+//! `test-summary` runs the three test phases and prints a combined summary.
 //!
 //! Invoked as `makers hierarchy-test`, which runs
 //! `cargo run --bin test-summary -- <nextest args>`.
@@ -13,7 +13,7 @@
 //! prevented from running.
 //!
 //! Adapted from zaino's `tools/test-runner` `live-summary` binary, which
-//! instead runs all partitions unconditionally; the gating is deliberate
+//! instead runs all partitions unconditionally. The gating is deliberate
 //! divergence.
 
 #![forbid(unsafe_code)]
@@ -288,7 +288,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // own tests (one compiled variant, no per-phase feature re-unification),
     // so nextest counts the other phases' tests as skipped in each row.
     println!(
-        "  note: skipped counts include the other phases' tests — phases share one \
+        "  note: skipped counts include the other phases' tests, since phases share one \
          --workspace build scope, filtered per phase."
     );
 
@@ -312,7 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // as "all clear".
             if *exit_code != 0 && summary.run == 0 {
                 println!(
-                    "  warning: {phase} produced no nextest summary (build failure?) — see output above."
+                    "  warning: {phase} produced no nextest summary (build failure?). See output above."
                 );
             }
             // Tests counted as run but carrying a status this parser does
@@ -320,7 +320,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if summary.unaccounted() > 0 {
                 println!(
                     "  warning: {phase}: {} of {} run tests carry a status test-summary does not \
-                     recognize — see the nextest summary line above.",
+                     recognize. See the nextest summary line above.",
                     summary.unaccounted(),
                     summary.run,
                 );
@@ -478,7 +478,7 @@ mod parse_failures {
 
     /// Real lines from the 2026-07-15 container run: streamed FAIL and
     /// TIMEOUT statuses, the end-of-run recap re-printing one of them, a
-    /// retry line, and a PASS line — only final non-passing statuses
+    /// retry line, and a PASS line. Only final non-passing statuses
     /// survive, once each.
     #[test]
     fn collects_and_deduplicates_terminal_statuses() {

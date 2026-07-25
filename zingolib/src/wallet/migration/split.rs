@@ -20,7 +20,7 @@ pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
 /// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
 /// at most this, and never manufactures an output worth at most this.
-/// Provisionally twice the marginal fee — a selected note must return strictly
+/// Provisionally twice the marginal fee: a selected note must return strictly
 /// more than double the marginal action cost it adds, not merely break even.
 /// Shared by both migration paths: the private schedule reads it through
 /// [`MigrationParams`], and the immediate [`super::immediate`] reads it directly,
@@ -283,7 +283,7 @@ pub fn plan_migration(
             // Post-activation, a trailing pair of near-floor notes can merge
             // to at most `sweep_min`: a note the residual policy refuses to
             // spend, and one a replan after an interruption would leave as residual.
-            // Carry such a group unmerged — each note exceeds `sweep_min` on
+            // Carry such a group unmerged: each note exceeds `sweep_min` on
             // its own, and the skipped merge fee outweighs the marginal
             // inputs it would have saved. Only a partial group may carry:
             // full groups always merge (at three or more notes their merge
@@ -444,7 +444,7 @@ impl crate::wallet::LightWallet {
     /// unspent, whether anchored, freshly confirmed, or still pending. The
     /// Phase 1 status projection plans over this set, so a note-splitting
     /// round in flight reads as its pending outputs instead of as vanished
-    /// value — the trap [`Self::note_split_in_flight`] documents rules the
+    /// value, the trap [`Self::note_split_in_flight`] documents rules the
     /// anchored [`Self::migration_note_values`] out for status use. Failed
     /// transactions' outputs never existed on chain and are excluded.
     pub(crate) fn live_v2_note_values(&self, account: zip32::AccountId) -> Vec<u64> {
@@ -466,9 +466,9 @@ impl crate::wallet::LightWallet {
     }
 
     /// True when a note-splitting round this account initiated is still
-    /// confirming: a pending (built, transmitted, or mempool — but not yet
+    /// confirming: a pending (built, transmitted, or mempool, but not yet
     /// confirmed) transaction holds account-owned pre-Ironwood (V2) Orchard
-    /// outputs. Those are the self-notes a round creates; while they are
+    /// outputs. Those are the self-notes a round creates. While they are
     /// unconfirmed the round's spent inputs have also left the spendable set,
     /// so a replan sees an empty pool and would otherwise report the migration
     /// falsely complete.
@@ -480,7 +480,7 @@ impl crate::wallet::LightWallet {
     /// round's *outputs* rather than its inputs' spend marks, which a
     /// not-yet-transmitted transaction does not carry. Under the flow's
     /// sync-between-rounds contract there are no unrelated pending Orchard
-    /// receipts, so this is precise; were there, treating them as "wait" is
+    /// receipts, so this is precise. Were there, treating them as "wait" is
     /// the safe reading.
     pub(crate) fn note_split_in_flight(&self, account: zip32::AccountId) -> bool {
         use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
@@ -783,7 +783,7 @@ mod tests {
 
     /// Economic pin for the residual policy: `sweep_min` may carry any
     /// safety factor above the ZIP-317 marginal fee, but must never sit
-    /// below it — below that line a selected note could cost more to spend
+    /// below it: below that line a selected note could cost more to spend
     /// than the value it provides.
     #[test]
     fn sweep_min_covers_the_marginal_input_cost() {
@@ -956,7 +956,7 @@ mod tests {
     /// invariant. Post-activation, a trailing group of exactly two notes,
     /// each at most 12_500 zatoshis, would merge to `sum - 15_000`: between
     /// 5_002 and 10_000 zatoshis, at or below `sweep_min`. The sizing round
-    /// would then spend a note the residual policy refuses — and a replan
+    /// would then spend a note the residual policy refuses, and a replan
     /// after an interruption would leave it as residual, abandoning the pair's value
     /// after fees were paid to create it. The planner instead carries such
     /// a group into the next pool unmerged. Every other shape merges clear

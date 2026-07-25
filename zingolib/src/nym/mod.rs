@@ -1,5 +1,5 @@
 //! Nym mixnet IP-obfuscation transport for the Transmission and price-fetch
-//! surfaces — seam B of `docs/adr/0011-nym-mixnet-transmission.md`.
+//! surfaces, seam B of `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
 //! This module holds the mixnet control and policy logic: the [`MixnetMode`]
 //! tri-state, the fail-closed [`route`] resolver shared by every mixnet-only

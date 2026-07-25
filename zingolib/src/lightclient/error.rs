@@ -58,7 +58,7 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error(
         "the price fetch travels only over the Nym mixnet and has no clearnet fallback; \
-         Mixnet Mode is off — enable it (`nym on`) to fetch the price"
+         Mixnet Mode is off. Enable it (`nym on`) to fetch the price"
     )]
     PriceFetchRequiresMixnet,
     /// The price fetch was attempted in a build without the `nym` feature,

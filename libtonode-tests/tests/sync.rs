@@ -343,13 +343,13 @@ fn checkpoint_window_blocks_path() -> std::path::PathBuf {
 /// Build the ~112-block send-dense chain the checkpoint-window assertion
 /// replays, and export it to [`checkpoint_window_blocks_path`]. Runs on
 /// the first execution per machine and under
-/// [`zingolib_testutils::chain_cache::REGENERATE_ENV`]; every other run
+/// [`zingolib_testutils::chain_cache::REGENERATE_ENV`]. Every other run
 /// replays the exported artifact.
 async fn build_checkpoint_window_chain() {
     // ChainCachePolicy::Disabled, not PerTest: under PerTest the inner
     // scenario would claim this test's chain_caches/<binary>/<test>/
-    // directory for its own mined-setup cache — colliding with the raw
-    // artifact this builder exports there — and a mined-setup replay
+    // directory for its own mined-setup cache, colliding with the raw
+    // artifact this builder exports there, and a mined-setup replay
     // would not shorten the build anyway, since the expensive part is
     // the post-boundary sends.
     let (local_net, mut faucet, recipient) = scenarios::faucet_recipient(
@@ -395,7 +395,7 @@ async fn build_checkpoint_window_chain() {
     // Dense head, bulk-mined empty middle, dense tail. Proved sends are
     // ~95% of the build's wall clock, and checkpoint presence is
     // per-scanned-block regardless of commitments (adjudicated
-    // empirically against the fully dense 27-cycle chain, 2026-07-08) —
+    // empirically against the fully dense 27-cycle chain, 2026-07-08),
     // so the dense regions exist to bracket the verification window
     // with genuinely mutating trees, not to fill it: the head cycles
     // straddle the window's start (the pruning boundary crosses a
@@ -490,15 +490,15 @@ async fn store_all_checkpoints_in_verification_window() {
 /// 1128).
 ///
 /// Reproduction record (issue #2440): the failures occurred only in
-/// container runs — twice, the wallet at exactly 1096 both times, under
-/// `makers container-test` (podman on the originating machine) — while
+/// container runs (twice, the wallet at exactly 1096 both times, under
+/// `makers container-test`, podman on the originating machine) while
 /// host runs of the same commit passed. "Container-only" records where
 /// it happened, not a mechanism: in the same failing container process
 /// a parallel fresh connection to the same URI saw all 1128 roots, so
 /// the healthy backend was reachable from inside the container, and a
 /// backend's state is client-independent. What pinned the wallet's
 /// channel to the stuck backend in exactly the container runs is
-/// unresolved — logging the resolved backend identity (the issue's open
+/// unresolved, though logging the resolved backend identity (the issue's open
 /// question) would make a recurrence attributable. Note the
 /// stream-resume defense of 9d40495b9 converts mid-flight cuts into
 /// completions but cannot conjure shards a stuck backend does not have,
@@ -506,10 +506,10 @@ async fn store_all_checkpoints_in_verification_window() {
 /// (a day-later container run pulled 1128 cleanly), not a client fix.
 ///
 /// Prints, for three fresh connections, how many sapling subtree roots the
-/// stream yields and the chain height at which it ends — then the count
+/// stream yields and the chain height at which it ends, then the count
 /// pepper-sync's own fetch path lands in the wallet. If a short stream's last
 /// completing height is months old, the connection reached a lagging backend
-/// behind the load balancer; if counts differ between connections to a
+/// behind the load balancer. If counts differ between connections to a
 /// current backend, the stream is being cut mid-flight.
 ///
 /// Run in the environment under investigation with output visible, e.g.:

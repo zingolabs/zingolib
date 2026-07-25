@@ -533,7 +533,7 @@ mod tests {
     use crate::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
 
     /// Key derivation needs no network: these were libtonode integration
-    /// tests whose only assertions are derivations against fixed vectors;
+    /// tests whose only assertions are derivations against fixed vectors, and
     /// each spent ~12s launching zebrad+zainod for scaffolding it never used.
     fn regtest_wallet(mnemonic_phrase: String) -> LightWallet {
         LightWallet::new(

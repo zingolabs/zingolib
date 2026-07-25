@@ -1,19 +1,19 @@
 //! Wallet-side SOCKS5-dialing transmission (ADR 0011, consumption model A).
 //!
-//! Routes a raw transaction to an indexer through a local SOCKS5 proxy — the
-//! `nym-proxy` child process the wallet spawns — and returns the
+//! Routes a raw transaction to an indexer through a local SOCKS5 proxy (the
+//! `nym-proxy` child process the wallet spawns) and returns the
 //! server-reported txid. This path is deliberately light: it needs only a
 //! SOCKS5 client and the tonic machinery already present, no nym-sdk, so it
 //! resolves and builds in the main workspace's lockfile. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
-//! Failures are typed by the connection phase that produced them —
-//! proxy-dial, tunnel establishment, post-tunnel transport, the RPC's own
-//! status, server rejection — and each variant carries that phase's complete
+//! Failures are typed by the connection phase that produced them (proxy-dial,
+//! tunnel establishment, post-tunnel transport, the RPC's own status, server
+//! rejection), and each variant carries that phase's complete
 //! data (source errors, elapsed times, the whole `tonic::Status`, the
 //! rejection code and message), so a failed send distinguishes "the proxy
 //! child is dead" from "the mixnet exit refused this destination" from "the
-//! indexer itself said no". The caller decides what to do with a failure;
+//! indexer itself said no". The caller decides what to do with a failure.
 //! [`Socks5TransmitError::is_failover_candidate`] offers the fan-out's
 //! reading without discarding anything. [`get_lightd_info_via_socks5`]
 //! mirrors the clearnet probe through the same tunnel, pairing the two
@@ -33,10 +33,10 @@ use crate::crypto::ensure_default_crypto_provider;
 use lightwallet_protocol::{CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
-/// phase that failed and carrying that phase's complete underlying data —
-/// sources, elapsed times, codes, and messages — so the caller decides what
+/// phase that failed and carrying that phase's complete underlying data
+/// (sources, elapsed times, codes, and messages), so the caller decides what
 /// to make of a failure. One reading, whether another Broadcast Indexer is
-/// worth trying, is offered as [`Self::is_failover_candidate`]; nothing is
+/// worth trying, is offered as [`Self::is_failover_candidate`]. Nothing is
 /// flattened away to support it.
 #[derive(Debug, thiserror::Error)]
 pub enum Socks5TransmitError {
@@ -57,7 +57,7 @@ pub enum Socks5TransmitError {
     },
     /// The proxy accepted the dial but the SOCKS5 tunnel to the destination
     /// could not be established: the mixnet exit refused, could not reach, or
-    /// timed out on the destination — including a provider whose exit policy
+    /// timed out on the destination, including a provider whose exit policy
     /// blocks the destination host or port.
     #[error("the mixnet exit could not reach {destination} ({source} after {elapsed:.1?})")]
     TunnelRefused {
@@ -83,8 +83,8 @@ pub enum Socks5TransmitError {
         source: Option<tonic::transport::Error>,
     },
     /// The tunnel and channel were established but the RPC ended in a status
-    /// rather than a response. The status is carried whole — code, message,
-    /// and any transport source chain — and
+    /// rather than a response. The status is carried whole (code, message,
+    /// and any transport source chain), and
     /// [`Self::is_failover_candidate`] reads its code as either a transport
     /// failure worth another witness or a server verdict that is not.
     #[error(
@@ -101,12 +101,12 @@ pub enum Socks5TransmitError {
     },
     /// The indexer heard the submission and rejected it on its merits: a
     /// lightwalletd `SendResponse` with a nonzero error code, carried with
-    /// both its fields. Never a failover candidate — another witness would
+    /// both its fields. Never a failover candidate, since another witness would
     /// hear the same transaction and say the same.
     #[error("indexer rejected the transaction: {0}")]
     Rejected(#[from] SendRejection),
     /// The indexer URI is not https. Mixnet transmission is TLS-only so the
-    /// exit gateway cannot read or tamper with the traffic; a plaintext
+    /// exit gateway cannot read or tamper with the traffic. A plaintext
     /// indexer is refused rather than dialed.
     #[error("refusing to transmit to a non-https indexer: {indexer}")]
     InsecureScheme {
@@ -141,9 +141,9 @@ impl Socks5TransmitError {
     /// The failover policy's reading of this failure: whether submitting to
     /// another Broadcast Indexer could plausibly succeed. A server verdict on
     /// the transaction ([`Self::Rejected`], or an [`Self::Rpc`] status whose
-    /// code is a verdict) is final — every other witness would answer the
-    /// same — while every phase or transport failure is worth another arm.
-    /// This is one interpretation of the complete data above; the caller
+    /// code is a verdict) is final, because every other witness would answer the
+    /// same, while every phase or transport failure is worth another arm.
+    /// This is one interpretation of the complete data above. The caller
     /// decides what to do with it.
     pub fn is_failover_candidate(&self) -> bool {
         match self {
@@ -175,10 +175,10 @@ fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
 /// How a post-tunnel RPC status reads for the failover policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StatusDisposition {
-    /// The RPC ended without a server verdict — the tunnel, channel, or
-    /// deadline gave out — so another witness is worth trying.
+    /// The RPC ended without a server verdict (the tunnel, channel, or
+    /// deadline gave out), so another witness is worth trying.
     Transport,
-    /// The server judged the request and said no; another witness would
+    /// The server judged the request and said no. Another witness would
     /// hear the same request and say the same.
     Verdict,
 }
@@ -188,7 +188,7 @@ enum StatusDisposition {
 /// redundant arm (a duplicate submission already counts as success), while
 /// transport misread as a verdict suppresses exactly the failover the
 /// escalating fan-out exists for. Codes that are not clearly server verdicts
-/// therefore read as transport — including `Unknown`, which tonic uses for
+/// therefore read as transport, including `Unknown`, which tonic uses for
 /// mid-RPC connection failures (server-side rejections arrive as a
 /// `SendResponse` error code over this path, not as a status).
 fn status_disposition(code: tonic::Code) -> StatusDisposition {
@@ -220,7 +220,7 @@ fn destination_of(indexer: &Uri) -> String {
 /// height field.
 ///
 /// A phase-typed connection failure (see [`Socks5TransmitError`]) lets the
-/// caller fail over to a different indexer; a server-side rejection yields
+/// caller fail over to a different indexer. A server-side rejection yields
 /// [`Socks5TransmitError::Rejected`].
 pub async fn send_transaction_via_socks5(
     socks5_addr: &str,
@@ -254,7 +254,7 @@ pub async fn send_transaction_via_socks5(
     )?)
 }
 
-/// Fetches the indexer's `GetLightdInfo` through the local SOCKS5 proxy —
+/// Fetches the indexer's `GetLightdInfo` through the local SOCKS5 proxy,
 /// the mixnet leg of a paired clearnet/mixnet probe. The same phase-typed
 /// failures as the send path, so a probe diagnoses exactly what a send
 /// would hit.
@@ -279,7 +279,7 @@ pub async fn get_lightd_info_via_socks5(
 /// Build a gRPC client to `indexer` dialed through the local SOCKS5 proxy at
 /// `socks5_addr`. Shared by the send, delivery-check, and probe paths so the
 /// dialing plumbing lives in one place. Each RPC opens its own SOCKS5 tunnel
-/// with TLS layered on top; the indexer must be https (a plaintext scheme is
+/// with TLS layered on top. The indexer must be https (a plaintext scheme is
 /// refused) so the exit gateway cannot read or tamper with the traffic.
 ///
 /// The proxy dial and the tunnel establishment each run under `timeout` and
@@ -409,7 +409,7 @@ async fn connect_via_socks5(
 }
 
 /// Whether the indexer, reached through the SOCKS5 proxy, knows the
-/// transaction identified by `txid_hash` — the SOCKS5 mirror of the clearnet
+/// transaction identified by `txid_hash`, the SOCKS5 mirror of the clearnet
 /// `get_transaction` delivery check the resilient transmit policy runs after
 /// its retries. A transport failure or an error status both read as "not
 /// known", so the result is a plain bool the caller treats as not-yet-delivered.
@@ -446,8 +446,8 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: an RPC status whose code is transport-shaped — the tunnel,
-    /// channel, or deadline gave out without a server verdict — is a failover
+    /// HYPOTHESIS: an RPC status whose code is transport-shaped (the tunnel,
+    /// channel, or deadline gave out without a server verdict) is a failover
     /// candidate. Falsified if any such code reads as final, which would
     /// suppress exactly the failover the escalating fan-out exists for
     /// (the PR #2470 review's finding M2).
@@ -469,7 +469,7 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: an RPC status whose code is a server verdict is final —
+    /// HYPOTHESIS: an RPC status whose code is a server verdict is final, since
     /// another witness would hear the same request and say the same.
     /// Falsified if a verdict code triggers pointless failover arms.
     #[test]
@@ -492,7 +492,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: a `SendResponse` rejection is never a failover candidate,
-    /// and the error carries the server's complete data — code and message —
+    /// and the error carries the server's complete data (code and message)
     /// as its typed source. Falsified if either field is flattened away.
     #[test]
     fn a_send_rejection_is_final_and_carries_its_data() {
@@ -533,7 +533,7 @@ mod tests {
     }
 
     /// Every phase failure (proxy, tunnel, transport, scheme) stays a
-    /// failover candidate — the contract the fan-out relies on.
+    /// failover candidate, the contract the fan-out relies on.
     #[test]
     fn phase_failures_are_failover_candidates() {
         let phases = [
@@ -599,7 +599,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: a proxy that accepts the dial but breaks the SOCKS5
-    /// handshake is reported as the tunnel phase — the "exit could not reach
+    /// handshake is reported as the tunnel phase, the "exit could not reach
     /// the destination" signature. Falsified if it reads as a proxy or
     /// transport failure.
     #[tokio::test]

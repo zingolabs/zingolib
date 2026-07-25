@@ -194,7 +194,7 @@ impl Drop for ImmediateMigrationProgressScope {
 }
 
 /// What one [`LightClient::quick_split`] call did. Phase 1 note splitting is
-/// driven one round per call; the consumer loops on this until `Complete`.
+/// driven one round per call. The consumer loops on this until `Complete`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitOutcome {
     /// A round of Orchard self-sends was built and transmitted. Sync until
@@ -203,7 +203,7 @@ pub enum SplitOutcome {
         /// The round's transactions.
         txids: Vec<TxId>,
     },
-    /// A previously transmitted round has not confirmed yet; nothing was
+    /// A previously transmitted round has not confirmed yet. Nothing was
     /// built or sent this call. Sync and retry.
     AwaitingConfirmation,
     /// Every note is part-ready. Phase 1 is complete.
@@ -237,7 +237,7 @@ pub struct SplitStatus {
 }
 
 /// A cloneable handle to a note-splitting round's live progress, readable
-/// without touching the wallet lock — the side-channel pattern of
+/// without touching the wallet lock, the side-channel pattern of
 /// [`ImmediateMigrationProgressHandle`]. Grab it via [`LightClient::split_progress_handle`]
 /// before calling [`LightClient::quick_split`], then poll [`Self::status`]
 /// concurrently while the round holds the wallet write lock.
@@ -320,7 +320,7 @@ impl Drop for SplitProgressScope {
 
 /// The progress side channel one shared build/transmit batch reports into.
 /// Both the immediate migration and a note-splitting round drive the shared
-/// [`LightClient::build_and_transmit`] primitive; each arms its own handle so
+/// [`LightClient::build_and_transmit`] primitive. Each arms its own handle so
 /// a poll reads the right batch. The internal drivers (the scheduled
 /// note-splitting loop, `migrate_to_ironwood`) pass `()` to report nowhere.
 trait BuildProgressSink {
@@ -355,7 +355,7 @@ impl BuildProgressSink for SplitProgressHandle {
 
 /// A cloneable handle to an execute batch's live progress
 /// ([`LightClient::execute_due_parts`]), readable without touching the
-/// wallet lock — the side-channel pattern of [`ImmediateMigrationProgressHandle`].
+/// wallet lock, the side-channel pattern of [`ImmediateMigrationProgressHandle`].
 /// Grab it via [`LightClient::batch_progress_handle`] before starting the
 /// batch, poll [`Self::status`] concurrently.
 #[derive(Debug, Clone, Default)]
@@ -463,7 +463,7 @@ pub enum PartSendResult {
     Sent(TxId),
     /// Not sendable this session: its window boundary is no longer
     /// witnessable from the wallet's tree. Reconciliation carries it to a
-    /// coming window; nothing is lost.
+    /// coming window. Nothing is lost.
     Slid,
     /// Its random target is still ahead. Come back around the estimate.
     NotDue {
@@ -510,7 +510,7 @@ pub enum SplitStep {
         txids: Vec<TxId>,
     },
     /// The pending round is not replannable yet. `pending` lists its
-    /// unconfirmed transactions; an empty list means every transaction
+    /// unconfirmed transactions. An empty list means every transaction
     /// confirmed but the anchor has not reached the round's outputs.
     /// Either way: sync and call again. Nothing was written.
     AwaitingConfirmation {
@@ -528,9 +528,9 @@ pub enum SplitStep {
 ///
 /// A manual-execution client gates its "send batch" action on
 /// [`MigrationStatus::due_now`] being `Some`. It is computed to match
-/// `execute_due_parts` exactly — the current window's parts whose random
+/// `execute_due_parts` exactly (the current window's parts whose random
 /// target the chain has reached, plus any overdue parts catch-up folds into
-/// the current window — so the action never appears when a tap would build
+/// the current window), so the action never appears when a tap would build
 /// nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DueBatch {
@@ -554,7 +554,7 @@ pub struct MigrationStatus {
     pub phase: Option<MigrationPhase>,
     /// Scheduled parts in total. During Phase 1 (planned or note splitting)
     /// no part records exist yet, so this is the projected plan's part
-    /// count; the two agree at the moment parts bind.
+    /// count. The two agree at the moment parts bind.
     pub parts_total: u32,
     /// Parts confirmed so far.
     pub parts_confirmed: u32,
@@ -601,7 +601,7 @@ impl LightClient {
     /// [`Self::continue_note_splitting`] drives the rounds from there.
     /// `per_bucket` overrides `k_max` in the migration params, capping how
     /// many parts share each broadcast window. Lower values spread parts
-    /// across more sessions (better privacy, slower completion); higher values
+    /// across more sessions (better privacy, slower completion). Higher values
     /// concentrate them (faster, more correlated). `None` keeps the default,
     /// and the choice can be made or revised later through
     /// [`Self::reschedule_parts`], any time before the first part is signed.
@@ -618,7 +618,7 @@ impl LightClient {
 
         // One synchronous critical section under a single write guard:
         // plan, hash check, bind, schedule, persist. Every wallet mutation
-        // — including a sync commit — needs this same lock, so the notes
+        // (including a sync commit) needs this same lock, so the notes
         // hashed are the notes bound; no await point sits inside the
         // bracket, so a cancelled future cannot abandon it midway (issue
         // #2493, finding 11).
@@ -694,7 +694,7 @@ impl LightClient {
     ///
     /// Consent (ZIP 318 FR7): the first round refuses to execute when the
     /// wallet's notes no longer hash to the consented plan
-    /// ([`MigrationError::ConsentStale`]); each later round replans from
+    /// ([`MigrationError::ConsentStale`]). Each later round replans from
     /// where the notes actually are, the continuation semantics of
     /// [`Self::migrate_to_ironwood`].
     ///
@@ -839,8 +839,8 @@ impl LightClient {
     /// Chooses the Phase 2 cadence: `per_bucket` parts (at least one) share
     /// each broadcast window. Callable any time between consent and the
     /// first signed part, which lets a client defer the choice to the
-    /// Phase 1 → Phase 2 boundary — the natural place for a "how many
-    /// batches?" screen — instead of bundling it into the consent call.
+    /// Phase 1 → Phase 2 boundary (the natural place for a "how many
+    /// batches?" screen) instead of bundling it into the consent call.
     ///
     /// Before parts exist (the `Planned` and `NoteSplitting` phases) the
     /// choice is recorded and the terminal scheduling step uses it. Once
@@ -848,14 +848,14 @@ impl LightClient {
     /// cadence with fresh randomization, starting from the next bucket
     /// boundary. Either way the consent binding is re-recorded under the
     /// updated parameters: the cadence tap is itself the schedule consent
-    /// (ZIP 318 FR7 — `params_hash` covers `k_max`), and the schedule the
+    /// (ZIP 318 FR7, `params_hash` covers `k_max`), and the schedule the
     /// user last confirmed is the one Phase 2 executes.
     ///
     /// Fails with [`MigrationError::CadenceFixed`] once any part is signed,
     /// broadcast, confirmed, or otherwise past `Assigned`: the cadence the
     /// remaining parts were consented under is then already partly executed.
     /// Afterwards, re-read [`Self::migration_status`] and re-arm platform
-    /// windows from `upcoming_windows` — the old schedule's times are void.
+    /// windows from `upcoming_windows`. The old schedule's times are void.
     pub async fn reschedule_parts(&mut self, per_bucket: u32) -> Result<(), LightClientError> {
         let mut wallet = self.wallet().write().await;
         wallet
@@ -905,9 +905,9 @@ impl LightClient {
     /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
     /// transmitting surface.
     ///
-    /// While the mode is on, parts travel ONLY over the mixnet — this fails
-    /// closed ([`MixnetNotReady`](crate::nym::MixnetNotReady)) while the
-    /// proxy bootstraps or after it dies — to one Broadcast Indexer drawn at
+    /// While the mode is on, parts travel ONLY over the mixnet (failing
+    /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
+    /// proxy bootstraps or after it dies) to one Broadcast Indexer drawn at
     /// random per submission, with the synchronization endpoint's host
     /// forbidden as a target (a `migration_broadcast_uri` on that host is
     /// refused). Clearnet carries parts only when the user deliberately
@@ -1066,7 +1066,7 @@ impl LightClient {
                     Ok::<_, LightClientError>((prove_handles, pre_proven, state.strategy))
                 })
                 .ok_or(MigrationError::NoMigration)??
-        }; // wallet write lock released — Phase B runs without the lock
+        }; // wallet write lock released: Phase B runs without the lock
 
         // ── Phase B: parallel proving (no wallet lock held) ───────────────
         // All Halo2 + Groth16 work runs concurrently on the blocking thread
@@ -1291,7 +1291,7 @@ impl LightClient {
                     if part.state == PartState::Assigned {
                         // Catch-up fires now by disclosed intent:
                         // explicitly immediate placement. Overdue
-                        // signed parts never reach here — reconcile
+                        // signed parts never reach here. Reconcile
                         // classifies them AwaitingExpiry, outside the
                         // catch-up cohort.
                         schedule::place_immediate(part, current_bucket)?;
@@ -1313,8 +1313,8 @@ impl LightClient {
     ///
     /// This is the manual-execution entry point for a client whose user
     /// triggers each window from a wake-up notification: sync first, then
-    /// one call sends the whole batch. Every part of the open window is sent;
-    /// the random target height is advisory (the reminder hint), not a gate.
+    /// one call sends the whole batch. Every part of the open window is sent.
+    /// The random target height is advisory (the reminder hint), not a gate.
     /// Parts whose window boundary is no longer witnessable report
     /// [`PartSendResult::Slid`] and fall to reconciliation for a coming
     /// window.
@@ -1341,7 +1341,7 @@ impl LightClient {
         self.wallet().write().await.refresh_part_witnesses()?;
 
         // The owed set: every part of the current window, shifted or not.
-        // The window being open is the whole due condition now — a part's
+        // The window being open is the whole due condition now. A part's
         // random target no longer gates its send.
         let owed: Vec<(PartId, u64)> = {
             let wallet = self.wallet().read().await;
@@ -1412,7 +1412,7 @@ impl LightClient {
 
     /// Captures any still-missing migration boundary witnesses from the
     /// wallet's current tree state. [`Self::await_sync`] does this
-    /// automatically after every successful sync; a consumer driving sync
+    /// automatically after every successful sync. A consumer driving sync
     /// through [`Self::poll_sync`] calls it on completion instead, while
     /// the boundary checkpoint is still retained.
     pub async fn capture_migration_witnesses(&mut self) -> Result<(), LightClientError> {
@@ -1503,7 +1503,7 @@ impl LightClient {
                 // progress (issue #2493, finding 10).
                 let value_migrated = confirmed.iter().map(|part| part.denomination).sum();
                 // Phase 1 has no part records yet, so the totals project the
-                // plan over every live V2 note — a round in flight counts as
+                // plan over every live V2 note. A round in flight counts as
                 // its pending outputs. The progress denominator exists from
                 // consent onward instead of appearing when parts bind.
                 let (parts_total, value_total) = match &state.phase {
@@ -1626,20 +1626,19 @@ impl LightClient {
     /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
     /// background sync running continuously (e.g. zingo-mobile). Calling the
     /// syncing variant from such a consumer collides with the running sync
-    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`];
-    /// this entry point lets the caller drive sync itself.
+    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
+    /// This entry point lets the caller drive sync itself.
     ///
     /// The caller is responsible for keeping the wallet synced before
     /// calling, and proves it has paused its sync by presenting the
-    /// [`SyncPauseGuard`] — [`Self::pause_sync_scoped`] pauses a running
+    /// [`SyncPauseGuard`]. [`Self::pause_sync_scoped`] pauses a running
     /// engine and resumes it when the guard drops. Planning and building
     /// therefore observe one stable wallet state, the same
     /// pause-before-proposing invariant the `send`/`shield` mutation paths
-    /// establish. Everything else — the plan, the chunked broadcast, and the
-    /// idempotent cleanup on partial failure — is identical to the syncing
-    /// variant.
+    /// establish. The plan, the chunked broadcast, and the idempotent cleanup
+    /// on partial failure are identical to the syncing variant.
     ///
-    /// Calling without the guard does not compile — a stable wallet state
+    /// Calling without the guard does not compile. A stable wallet state
     /// across plan and build is a compile-time precondition, not a runtime
     /// courtesy:
     ///
@@ -1669,7 +1668,7 @@ impl LightClient {
         // Arm per-transaction progress for the poll side channel. The scope
         // guard owns an `Arc` clone (not a borrow of `self`), so it survives the
         // `&mut self` `build_and_transmit` call and clears the snapshot on every
-        // exit — success, `?`-propagated error, or panic.
+        // exit: success, `?`-propagated error, or panic.
         self.immediate_migration_progress
             .begin(plan.transactions.len() as u32);
         let _scope = ImmediateMigrationProgressScope(self.immediate_migration_progress.clone());
@@ -1692,8 +1691,8 @@ impl LightClient {
     /// The immediate Orchard→Ironwood migration as a single send-shaped call, the
     /// mobile-facing counterpart to [`Self::quick_send`].
     ///
-    /// Pauses sync internally — like [`Self::quick_send`] and
-    /// [`Self::quick_shield`], and a no-op when no engine is running — migrates
+    /// Pauses sync internally (like [`Self::quick_send`] and
+    /// [`Self::quick_shield`], and a no-op when no engine is running), migrates
     /// the account's spendable Orchard notes into Ironwood against the wallet's
     /// *current* state without synchronizing, and restores the prior sync mode
     /// on return unless `resume_sync` is `false`, in which case the pause is
@@ -1712,14 +1711,14 @@ impl LightClient {
     /// transaction count, fee, and residual value), and observe live progress
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
-    /// the caller's activity; the caller must disclose this (ZIP 318). See
+    /// the caller's activity. The caller must disclose this (ZIP 318). See
     /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<ImmediateMigrationSummary, LightClientError> {
-        // Establish the stable-state pause ourselves — quick_send's idiom —
+        // Establish the stable-state pause ourselves (quick_send's idiom)
         // rather than demanding it as a `SyncPauseGuard` parameter the FFI
         // boundary cannot express. The guard owns an `Arc` clone of the
         // sync-mode handle, not a borrow of `self`, so it lives across the
@@ -1736,8 +1735,8 @@ impl LightClient {
     /// Previews Phase 1 note splitting from the wallet's current confirmed
     /// notes: the [`MigrationPlan`] whose `split_rounds` are the Orchard
     /// self-sends that will run, alongside the resulting part denominations,
-    /// the fees, and any residual dust. Pure and deterministic — nothing is
-    /// signed or sent — so it is the disclosure surface for
+    /// the fees, and any residual dust. Pure and deterministic (nothing is
+    /// signed or sent), so a client can show it before calling
     /// [`Self::quick_split`]. `plan.is_split()` (empty `split_rounds`) means
     /// nothing needs splitting.
     ///
@@ -1751,7 +1750,7 @@ impl LightClient {
         self.plan_ironwood_migration(account).await
     }
 
-    /// Executes one round of Phase 1 note splitting as a send-shaped call —
+    /// Executes one round of Phase 1 note splitting as a send-shaped call,
     /// the mobile-facing entry point for the *private* migration path's
     /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
     /// path. See `docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`.
@@ -1764,10 +1763,10 @@ impl LightClient {
     /// a stored phase.
     ///
     /// **One call does one round.** Loop it: after [`SplitOutcome::Round`],
-    /// sync until its `txids` confirm, then call again; stop at
+    /// sync until its `txids` confirm, then call again. Stop at
     /// [`SplitOutcome::Complete`]. [`SplitOutcome::AwaitingConfirmation`] means
-    /// a previously broadcast round has not confirmed yet — sync and retry.
-    /// Preview with [`Self::plan_note_split`]; observe per-transaction progress
+    /// a previously broadcast round has not confirmed yet, so sync and retry.
+    /// Preview with [`Self::plan_note_split`]. Observe per-transaction progress
     /// through [`Self::split_progress_handle`].
     ///
     /// Refuses with [`MigrationError::AlreadyInProgress`] while a *scheduled*
@@ -1787,7 +1786,7 @@ impl LightClient {
     }
 
     /// One round of [`Self::quick_split`] under a caller-held pause: plan,
-    /// classify, and — when a round is due — build and transmit it.
+    /// classify, and, when a round is due, build and transmit it.
     async fn split_next_round(
         &mut self,
         account: zip32::AccountId,
@@ -1841,7 +1840,7 @@ impl LightClient {
     /// transmit failure fails every transaction still unsent, so no note
     /// stays spent by a transaction that will never reach the network. Both
     /// the immediate migration flow and the note-splitting rounds send through here. The
-    /// guard parameter is pure proof — the caller's guard performs the
+    /// guard parameter is pure proof. The caller's guard performs the
     /// pause and its drop the resume, on every exit path.
     async fn build_and_transmit<T>(
         &mut self,
@@ -1972,7 +1971,7 @@ impl LightClient {
                     // The entry gate ran once; the per-round resume
                     // re-verifies the state it is about to drive, so the
                     // consent guarantee lives in the state machine rather
-                    // than in receiver discipline at the API surface — a
+                    // than in receiver discipline at the API surface. A
                     // future scheduled-flow split driver or a second
                     // client handle must not reopen the consent collapse
                     // through this path.
@@ -1987,7 +1986,7 @@ impl LightClient {
                     // An immediate part anchors at the current bucket's
                     // boundary. Until the first post-activation boundary
                     // opens, no anchor exists and every broadcast pass
-                    // would skip every part — previously a MAX_ROUNDS
+                    // would skip every part, previously a MAX_ROUNDS
                     // spin ending in a misleading SplitDidNotConverge.
                     let bucket_modulus = wallet.migration.as_ref().map_or_else(
                         || MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
@@ -2169,7 +2168,7 @@ impl LightClient {
 impl crate::wallet::LightWallet {
     /// Plans the migration from the wallet's current state: pure over the
     /// wallet, no lock management of its own. The read-only public planner
-    /// calls it under a read guard; the consent brackets of
+    /// calls it under a read guard. The consent brackets of
     /// `start_ironwood_migration` and the immediate path call it under the
     /// same write guard that binds, so the plan hashed and the notes bound
     /// come from one uninterrupted wallet view (issue #2493, finding 11).
@@ -2220,12 +2219,12 @@ impl crate::wallet::LightWallet {
     }
 }
 
-/// The entry gate of the one-call immediate path: decides what an existing
-/// migration state means for a new immediate run.
+/// Decides what an existing migration state means for a new immediate run.
+/// This is the entry gate of the one-call immediate path.
 ///
 /// A consented scheduled migration must not be collapsed into an immediate
-/// one — its bucket windows are what the user confirmed — and a different
-/// account's migration must not be disturbed; both refuse. A completed
+/// one (its bucket windows are what the user confirmed), and a different
+/// account's migration must not be disturbed. Both refuse. A completed
 /// migration is history: the slot clears so the rerun migrates newly
 /// received funds instead of skipping binding against stale confirmed
 /// parts. An interrupted immediate migration passes through and resumes.
@@ -2276,7 +2275,7 @@ mod tests {
 
     /// The immediate-migration progress side channel: a fresh handle is idle, `begin` arms it,
     /// the per-transaction mutators advance a clone the same way a mobile poll
-    /// thread would observe, and every mutator is a no-op once idle — the
+    /// thread would observe, and every mutator is a no-op once idle, the
     /// property that scopes progress to the immediate migration and leaves the
     /// shared build/transmit primitives untouched for every other caller.
     #[test]
@@ -2325,7 +2324,7 @@ mod tests {
     /// The split-progress side channel behaves exactly like the migration's: a
     /// fresh handle is idle, `begin` arms one round, the per-transaction
     /// mutators advance a clone a mobile poll thread would observe, and every
-    /// mutator is inert once idle — the property that scopes progress to the
+    /// mutator is inert once idle, the property that scopes progress to the
     /// one running `quick_split` round and leaves the shared build/transmit
     /// primitives untouched for every other caller.
     #[test]
@@ -2416,9 +2415,9 @@ mod tests {
     /// An error raised after the migration state is taken out of the wallet
     /// must not destroy the state. [`SyncState::last_known_chain_height`] is
     /// the end of the last scan range, so it is `None` exactly when the scan
-    /// ranges are empty; the two tests here are identical except for the
+    /// ranges are empty. The two tests here are identical except for the
     /// route into that state, and the pair triangulates. `via_clear_all`
-    /// pins that a production path — a rescan — really produces the
+    /// pins that a production path (a rescan) really produces the
     /// dangerous combination of a live migration and no height, and its
     /// guard assertions fail loudly if [`LightWallet::clear_all`] ever
     /// cancels migrations or rebuilds scan ranges eagerly.
@@ -2435,7 +2434,7 @@ mod tests {
 
         /// The shared scenario, parameterized only by how the wallet's last
         /// known chain height becomes `None`. The resulting
-        /// [`WalletError::NoSyncData`] is correct and expected; the
+        /// [`WalletError::NoSyncData`] is correct and expected. The
         /// consented migration schedule surviving it is what the assertions
         /// pin, because the broadcast path's early `?`-return between take
         /// and restore silently discarded the state, and any later save
@@ -2499,11 +2498,11 @@ mod tests {
     /// broadcast.
     ///
     /// Limitation: the synthetic wallet FABRICATES the pruned-checkpoint
-    /// state — the builder checkpoints the shard trees only at the tip —
+    /// state (the builder checkpoints the shard trees only at the tip),
     /// so this twin proves the skip logic alone. It cannot prove that
     /// pepper-sync's real pruning produces the state, nor that the
     /// broadcast path performs no hidden synchronization while a reachable
-    /// Indexer exists; both belong to the live libtonode twin. The tip
+    /// Indexer exists. Both belong to the live libtonode twin. The tip
     /// still sits more than the checkpoint retention past the boundary, so
     /// the fabricated state matches one a synced wallet can genuinely
     /// reach.
@@ -2798,9 +2797,9 @@ mod tests {
     }
 
     /// Issue #2493, finding 9 (ratified form): an overdue *Signed* part is
-    /// not catch-up material — broadcasting its stale signature would mine
-    /// a permanent lateness fingerprint (cleartext expiry, old anchor)
-    /// into its denomination cohort — and it is never silently skipped
+    /// not catch-up material, because broadcasting its stale signature would
+    /// mine a permanent lateness fingerprint (cleartext expiry, old anchor)
+    /// into its denomination cohort. It is never silently skipped
     /// either: reconcile classifies it awaiting its expiry, visible to
     /// status, and the privacy-restoring rebuild follows once the
     /// Spend-Evidence Height passes the expiry.
@@ -2849,7 +2848,7 @@ mod tests {
 
     /// Issue #2493, finding 10: `value_migrated` reports the account's
     /// whole confirmed ironwood balance, so ironwood funds from any other
-    /// source — shields, ordinary receives — inflate migration progress,
+    /// source (shields, ordinary receives) inflate migration progress,
     /// potentially past 100%. The migrated value is the sum of confirmed
     /// part denominations, nothing else.
     #[tokio::test]
@@ -2898,7 +2897,7 @@ mod tests {
     /// The scheduled flow accepts a plan that still needs note splitting: it
     /// persists the consent in `Planned` so `continue_note_splitting` can drive
     /// Phase 1. (Issue #2493 finding 1 refused unsplit plans on the premise
-    /// that nothing drives the splitting phase; the mobile scheduled flow does,
+    /// that nothing drives the splitting phase. The mobile scheduled flow does,
     /// so refusing here strands Phase 1 before it can begin.)
     #[tokio::test]
     async fn unsplit_plan_starts_in_planned_for_splitting() {
@@ -3072,7 +3071,7 @@ mod tests {
     /// open* (opened before now, not yet closed) is reachable immediately
     /// after a process relaunch, without waiting to become Overdue.
     /// `upcoming_windows` lists only future buckets and `reconcile` classifies the
-    /// open window as OnTrack with no action; the open window belongs to the
+    /// open window as OnTrack with no action. The open window belongs to the
     /// third leg, `broadcast_due_parts` (driven at startup or after sync by
     /// `auto_broadcast_if_due`), whose due predicate selects
     /// `bucket_index == current_bucket`.
@@ -3156,10 +3155,10 @@ mod tests {
     /// A scheduled migration rejects the syncing immediate migration *before* the immediate migration
     /// pays for a sync. The client here is offline, so any attempt to sync
     /// first surfaces as [`LightClientError::Offline`] instead of the
-    /// pre-condition's [`MigrationError::AlreadyInProgress`] — which is
+    /// pre-condition's [`MigrationError::AlreadyInProgress`], which is
     /// exactly how this test stays red while the wrapper syncs before
     /// checking, and green once the check runs first. The presynced body
-    /// keeps its own post-sync check; this pins the wrapper's early one.
+    /// keeps its own post-sync check. This pins the wrapper's early one.
     #[tokio::test]
     async fn scheduled_migration_rejects_migrate_before_syncing() {
         let (mut wallet, bound_note) = wallet_with_migration_note(360);
@@ -3183,7 +3182,7 @@ mod tests {
 
     /// The user-triggered execute batch: one tap sends everything owed,
     /// with a per-part outcome for the screen. The mock endpoint pins what
-    /// reaches the network; the synthetic wallet's tip-only checkpointing
+    /// reaches the network. The synthetic wallet's tip-only checkpointing
     /// makes every unwitnessable-boundary path real rather than fabricated.
     mod execute_due_parts {
         use std::time::Duration;
@@ -3217,7 +3216,7 @@ mod tests {
         /// A part whose random target is still ahead is now attempted for the
         /// whole open window rather than deferred: the target is advisory (the
         /// reminder hint), not a send gate. Here the boundary is unwitnessable
-        /// in the synthetic wallet so the attempt slides — the point is that no
+        /// in the synthetic wallet so the attempt slides. The point is that no
         /// outcome is `NotDue`.
         #[tokio::test]
         async fn target_ahead_part_is_attempted_not_deferred() {
@@ -3496,10 +3495,10 @@ mod tests {
 
     /// The scheduled note-splitting driver. Round execution itself (build,
     /// prove, transmit) is shared with `migrate_to_ironwood` and exercised
-    /// end to end by the libtonode scenarios; the cells here pin the
-    /// driver's triage — what it refuses, what it defers untouched, and the
-    /// terminal bind-and-schedule step.
-    /// The fused, stateless Phase 1 surface (ADR 0016): one round per call,
+    /// end to end by the libtonode scenarios. The cells here pin the
+    /// driver's triage (what it refuses, what it defers untouched, and the
+    /// terminal bind-and-schedule step).
+    /// The fused, stateless Phase 1 path (ADR 0016): one round per call,
     /// classified from the wallet's live notes and pending transactions with
     /// no persisted migration state.
     mod quick_split {
@@ -3549,8 +3548,8 @@ mod tests {
 
         /// The distinguishing case: no confirmed note is left to split, but a
         /// round this account broadcast has not confirmed. The classification
-        /// is derived from the wallet's pending transactions — the stateless
-        /// replacement for a stored `pending_txids` — so it must report
+        /// is derived from the wallet's pending transactions (the stateless
+        /// replacement for a stored `pending_txids`), so it must report
         /// `AwaitingConfirmation`, never a false `Complete`.
         #[tokio::test]
         async fn awaits_confirmation_while_a_round_is_in_flight() {
@@ -3561,7 +3560,7 @@ mod tests {
                 .tip(360)
                 .build();
 
-            // Build — but do not transmit — the round: this marks the input
+            // Build (but do not transmit) the round: this marks the input
             // spent-pending and records a Calculated self-send, exactly the
             // state a caller leaves between broadcasting a round and its
             // confirmation.
@@ -3799,7 +3798,7 @@ mod tests {
 
     /// `MigrationStatus::due_now`: the batch a manual-execution client offers
     /// to send right now. The crux is that it names exactly what a tap would
-    /// broadcast — never the current-window parts still ahead of their random
+    /// broadcast, never the current-window parts still ahead of their random
     /// target (the stale-tip bounce), and never in-flight parts.
     mod migration_status_due_now {
         use std::time::Duration;
@@ -3812,7 +3811,7 @@ mod tests {
 
         /// The relaxed gate (Phase 2 privacy change): a current-window part
         /// whose random target the chain has not reached is now advertised as
-        /// due for the whole open window — the target is advisory, surfaced
+        /// due for the whole open window. The target is advisory, surfaced
         /// only as the reminder hint. This is the exact case the old target
         /// gate hid.
         #[tokio::test]
@@ -3843,7 +3842,7 @@ mod tests {
 
         /// End to end: scheduling a fresh cohort makes batch 1 immediately due.
         /// `plan_schedule` opens the first cohort in the current bucket, so
-        /// `due_now` is `Some` at the very tip it was scheduled at — no sync
+        /// `due_now` is `Some` at the very tip it was scheduled at, with no sync
         /// advance, no waiting for the next window.
         #[tokio::test]
         async fn first_batch_is_due_the_moment_it_is_scheduled() {
@@ -3930,7 +3929,7 @@ mod tests {
         }
 
         /// Anti-drift: the advertised batch equals the set a tap actually
-        /// attempts — every part of the open window, resolving to Sent, Slid
+        /// attempts, every part of the open window, resolving to Sent, Slid
         /// or Failed. A signed part alongside an assigned part whose random
         /// target is still ahead: both are due now, so both are attempted.
         #[tokio::test]
@@ -3990,7 +3989,7 @@ mod tests {
         }
 
         /// `due_now` is `None` outside the parts-scheduled phase and once every
-        /// part has confirmed — nothing is left to broadcast in either case.
+        /// part has confirmed, since nothing is left to broadcast in either case.
         #[tokio::test]
         async fn due_now_is_none_off_phase_and_when_all_confirmed() {
             let params = {

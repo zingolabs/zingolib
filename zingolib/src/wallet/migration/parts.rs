@@ -186,7 +186,7 @@ impl PartRecord {
 
     /// `Assigned → Bound`: return the part to the unscheduled pool so a
     /// fresh schedule can re-bucket it (a cadence change before Phase 2
-    /// begins). Clears every scheduling artifact; the binding to its note
+    /// begins). Clears every scheduling artifact. The binding to its note
     /// stands.
     #[allow(clippy::result_large_err)]
     pub fn unassign(&mut self) -> Result<(), WalletError> {
@@ -288,16 +288,16 @@ impl PartRecord {
 
 /// A part's proving closure: builds, proves, and signs the part's
 /// transaction, returning its txid and raw bytes. Takes ownership of all
-/// needed data; no wallet reference is captured. Safe to call on any thread.
+/// needed data. No wallet reference is captured. Safe to call on any thread.
 pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
 /// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
-    /// All wallet data was extracted; the closure does the CPU-intensive
+    /// All wallet data was extracted. The closure does the CPU-intensive
     /// proving on a background thread.
     Ready {
-        /// Proving closure. Takes ownership of all needed data; no wallet
+        /// Proving closure. Takes ownership of all needed data. No wallet
         /// reference is captured. Safe to call on any thread.
         prove: ProveOnce,
         /// First block of the part's bucket window (the builder's target).
@@ -346,7 +346,7 @@ pub enum SkipReason {
     /// ironwood output can anchor there. The schedule's activation floor
     /// keeps new placements out of this state and the immediate path
     /// refuses pre-anchorable rounds up front, so it survives only in a
-    /// schedule persisted before the floor existed; such a part heals
+    /// schedule persisted before the floor existed. Such a part heals
     /// through the overdue classification and the consented catch-up.
     BoundaryBeforeActivation {
         /// The boundary the part anchors to.
@@ -457,10 +457,10 @@ impl crate::wallet::LightWallet {
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
     /// [`PrepareResult::Skip`] when the part cannot be materialized in this
-    /// pass — the tree state is unavailable, the boundary predates the
+    /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
-    /// the part record — so one part's condition never aborts the whole
-    /// broadcast pass; skipped parts fall to reconciliation.
+    /// the part record), so one part's condition never aborts the whole
+    /// broadcast pass. Skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
@@ -575,7 +575,7 @@ impl crate::wallet::LightWallet {
             })?,
         );
 
-        // Extract owned keys from the key store — wallet access ends here.
+        // Extract owned keys from the key store. Wallet access ends here.
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&account)
@@ -884,10 +884,10 @@ mod tests {
 
     /// Issue #2493, finding 7 (ratified form): placement goes through the
     /// schedule module's operations, and the jittered one draws a fresh
-    /// target inside the new window — see
+    /// target inside the new window, see
     /// `schedule::tests::place_draws_a_fresh_target_inside_the_new_window`.
     /// The raw `reassign` transition deliberately does not manage the
-    /// target; placement does. Here, the full complement: every state
+    /// target. Placement does. Here, the full complement: every state
     /// except `Expired` refuses the transition.
     #[test]
     fn reassign_is_reachable_only_from_expired() {

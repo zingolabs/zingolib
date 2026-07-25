@@ -6,7 +6,7 @@ pauses sync internally, migrates against the wallet's current state without
 synchronizing, takes no `SyncPauseGuard`, and restores the prior sync mode on
 return unless `resume_sync` is `false`. The existing `migrate_immediately`
 (self-syncing) and `migrate_immediately_presynced` (guard parameter) remain as
-the Rust-internal forms; `quick_immediate_migration` is a thin wrapper over the
+the Rust-internal forms. `quick_immediate_migration` is a thin wrapper over the
 latter, and is what the CLI's `drain now` drives.
 
 ## Why
@@ -21,9 +21,9 @@ zingo-mobile, the primary consumer of the immediate path:
 
 `quick_immediate_migration` fills that gap in the idiom the codebase already
 uses for sends: `quick_send` and `quick_shield` also pause internally and do not
-self-sync. An immediate migration is send-shaped anyway — it is *transmitted*
-over the ordinary send connection, not *broadcast* over the decoupled Migration
-Broadcast Endpoint that the private path's Parts use.
+self-sync. An immediate migration is send-shaped anyway, being *transmitted*
+over the ordinary send connection rather than *broadcast* over the decoupled
+Migration Broadcast Endpoint that the private path's Parts use.
 
 ## Trade-off
 
@@ -39,8 +39,8 @@ guarded form stays available for Rust callers who want the stronger contract.
 
 - **A `target_pool`, an origin+destination pair, or renaming to `quick_migrate`.**
   Migration is a ZIP 318 consensus event that retires exactly one pool pair
-  (Orchard→Ironwood), not a generic movement of funds between pools; "migrate"
-  already names the private path (`migrate_to_ironwood`). Generic cross-pool
-  consolidation is a `send_all` to one's own address — a separate concern that
-  needs no migration machinery. See the **Migration** and **Drain** entries in
+  (Orchard→Ironwood) rather than a generic movement of funds between pools, and
+  "migrate" already names the private path (`migrate_to_ironwood`). Generic
+  cross-pool consolidation is a `send_all` to one's own address, a separate
+  concern that needs no migration machinery. See the **Migration** and **Drain** entries in
   `zingolib/CONTEXT.md`.

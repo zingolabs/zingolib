@@ -5,7 +5,7 @@
 //!
 //! The script registers its watch set explicitly. Without any
 //! `cargo:rerun-if-changed` directive cargo falls back to watching the
-//! whole package tree — and this script WRITES into that tree
+//! whole package tree, and this script WRITES into that tree
 //! (`zcash-params/`), so the fallback made every build dirty the next
 //! one: an unconditional rerun (network fetch included) plus a full
 //! recompile cascade through every dependent crate, on every run.
