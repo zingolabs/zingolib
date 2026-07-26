@@ -118,7 +118,7 @@ where
 ///
 /// Subtree roots are written with no checkpoint, so a bare root is the
 /// one shard-store state a reorg can invalidate without any checkpoint
-/// witnessing it — truncation planning cannot see it (its facts are
+/// witnessing it: truncation planning cannot see it (its facts are
 /// checkpoints), and a count-based resume would never refetch it. Each
 /// session therefore refetches the newest bare root and `put_shard`
 /// replaces it if the chain moved, making the resume self-healing. A

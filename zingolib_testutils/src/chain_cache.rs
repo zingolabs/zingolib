@@ -29,17 +29,17 @@ use crate::setup_metrics::{self, MeteredNet};
 use crate::validator_rpc;
 
 /// Environment variable that forces cache rebuilds. Scope it to specific
-/// tests with ordinary nextest selection; any non-empty value other than
+/// tests with ordinary nextest selection. Any non-empty value other than
 /// `0` counts.
 pub const REGENERATE_ENV: &str = "ZINGO_REGENERATE_CHAIN_CACHE";
 
 /// How a scenario constructor treats the chain cache. `PerTest` is the
-/// default regime of ADR 0003; `Disabled` is the explicit opt-out for
+/// default regime of ADR 0003. `Disabled` is the explicit opt-out for
 /// tests that must generate their chain live.
 pub enum ChainCachePolicy {
     /// Use (and on miss, build) this test's own cache.
     PerTest,
-    /// Always generate the chain live; never read or write a cache.
+    /// Always generate the chain live. Never read or write a cache.
     Disabled,
     /// Replay this blocks file verbatim, with no manifest check and no
     /// build-on-miss. For hand-managed caches like the ignored
@@ -49,7 +49,7 @@ pub enum ChainCachePolicy {
 
 /// The resolved fate of one scenario launch.
 pub(crate) enum Disposition {
-    /// Generate live; no cache involved.
+    /// Generate live. No cache involved.
     Live,
     /// Launch fresh, then replay this blocks file.
     Replay(PathBuf),
@@ -84,7 +84,7 @@ impl CacheDir {
     }
 
     /// Remove the cache entirely (discard-on-regenerate, ADR 0003).
-    /// Missing directories are fine; anything else is a real error.
+    /// Missing directories are fine. Anything else is a real error.
     fn discard(&self) {
         if let Err(e) = std::fs::remove_dir_all(&self.root)
             && e.kind() != std::io::ErrorKind::NotFound
@@ -99,15 +99,15 @@ impl CacheDir {
 /// the recipient-funded chain that additionally embeds
 /// `faucet_funded_recipient`'s funding sends (whose returned txids
 /// live in the cache's `outputs.json`). Recorded in the manifest so a
-/// test that switches scenario constructors — or changes its funding
-/// amounts — between runs cannot load a wrong chain past an
+/// test that switches scenario constructors (or changes its funding
+/// amounts) between runs cannot load a wrong chain past an
 /// otherwise-matching manifest.
 #[derive(Debug)]
 pub(crate) enum CachedStage {
     Bare,
     Funded,
     // The fields are consumed through the derived Debug impl, which
-    // serializes the stage — amounts included — into the manifest;
+    // serializes the stage (amounts included) into the manifest;
     // dead-code analysis ignores derive-only reads by design.
     #[allow(dead_code)]
     RecipientFunded {
@@ -131,7 +131,7 @@ impl CacheManifest {
         stage: CachedStage,
     ) -> Self {
         CacheManifest(serde_json::json!({
-            // Schema 3 (2026-07-17): the drain rewrite changed cached-chain
+            // Schema 3 (2026-07-17): the immediate migration rewrite changed cached-chain
             // SEMANTICS (self-send → orchard drain) without changing any
             // manifest key, and pre-drain caches replayed as green-shaped
             // chains against post-drain expectations for a full day of
@@ -194,7 +194,7 @@ pub(crate) fn resolve(policy: ChainCachePolicy, manifest: &CacheManifest) -> Dis
 }
 
 /// Read the chain out of the running Validator, block by block, as the
-/// replay record. Heights 1..=tip; genesis is the Validator's own. All
+/// replay record. Heights 1..=tip. Genesis is the Validator's own. All
 /// traffic crosses the monitored hop, so exports appear in the
 /// observability record.
 async fn read_chain(local_net: &MeteredNet) -> String {
@@ -211,7 +211,7 @@ async fn read_chain(local_net: &MeteredNet) -> String {
 }
 
 /// Export the live-generated chain into this test's cache. Called at
-/// the scenario's snapshot point; the net stays up and the building run
+/// the scenario's snapshot point. The net stays up and the building run
 /// simply continues. The record is assembled in a `.building` sibling
 /// and renamed into place so a crashed build never leaves a half-cache
 /// where a later run would load it.
@@ -264,8 +264,8 @@ async fn export_inner(
 }
 
 /// Read the recorded scenario outputs that live beside a blocks
-/// record. `None` when no `outputs.json` exists — legitimate only for
-/// hand-managed [`ChainCachePolicy::LoadRaw`] caches; a `PerTest`
+/// record. `None` when no `outputs.json` exists, legitimate only for
+/// hand-managed [`ChainCachePolicy::LoadRaw`] caches. A `PerTest`
 /// cache whose stage records outputs writes them atomically with the
 /// blocks, so absence there means a corrupt cache (discard it).
 pub(crate) fn load_outputs(blocks_file: &Path) -> Option<serde_json::Value> {
@@ -293,7 +293,7 @@ pub async fn export_raw(local_net: &MeteredNet, path: &Path) {
 /// `Zebrad::launch` mines one block to prove the mining service (the
 /// launch block). Replay therefore submits the cached chain as a
 /// competitor: the cached block 1 either IS the launch block
-/// (transparent chains are byte-deterministic — `submitblock` says
+/// (transparent chains are byte-deterministic, `submitblock` says
 /// "duplicate", which is acceptance) or forks around it, and the cached
 /// branch wins the reorg because every cache is at least three blocks
 /// long. The height-≤1 preflight still catches genuinely foreign
@@ -311,7 +311,7 @@ pub(crate) async fn replay(local_net: &MeteredNet, blocks_file: &Path) -> u32 {
     assert!(
         height <= 1,
         "freshly launched validator at height {height} (tip {hash}); at most the launch \
-         block is expected before this test submits anything — foreign chain-mutating \
+         block is expected before this test submits anything, so this is foreign chain-mutating \
          traffic!\nzebrad timeline:\n{}",
         local_net.zebrad_watch().render(),
     );

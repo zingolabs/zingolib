@@ -365,14 +365,19 @@ impl LightWallet {
                     ));
                 }
                 TransactionKind::Sent(SendType::SendToSelf) => {
-                    // create 1 memo-to-self if a sending transaction receives any number of memos
-                    // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
-                    // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
+                    // create 1 migration transfer if this moved Orchard funds into the Ironwood
+                    // pool (migration parts self-receive an empty Ironwood memo, so this must win
+                    // over the memo check), else 1 memo-to-self if a sending transaction receives
+                    // any number of memos, otherwise 1 basic send-to-self so every transaction
+                    // creates at least 1 value transfer.
+                    // (deshield and other pool-movement kinds may join this list later.)
                     let memos = transaction.received_memos();
-                    let self_send_kind = if memos.is_empty() {
-                        SelfSendValueTransfer::Basic
-                    } else {
+                    let self_send_kind = if transaction.is_orchard_to_ironwood_migration() {
+                        SelfSendValueTransfer::Migration
+                    } else if !memos.is_empty() {
                         SelfSendValueTransfer::MemoToSelf
+                    } else {
+                        SelfSendValueTransfer::Basic
                     };
                     value_transfers.push(ValueTransfer::from_summary(
                         &transaction,
@@ -857,7 +862,7 @@ mod tests {
 
     /// Migrated from libtonode `fast::create_send_to_self_with_zfz_active`:
     /// the assertions are value-transfer KIND classification (a self-send
-    /// yields SendToSelf(Basic); the Zennies-for-Zingo output yields a
+    /// yields SendToSelf(Basic). The Zennies-for-Zingo output yields a
     /// Sent(Send) addressed to the ZFZ address), which is pure summary
     /// derivation. The proposal/transmission pipeline the integration test
     /// drove incidentally remains covered by the chain-bound send tests.
@@ -1017,13 +1022,13 @@ mod tests {
 
     /// Migrated from libtonode
     /// `fast::spendable_balance_includes_notes_in_incomplete_shards`: the
-    /// property is spendable-balance composition over wallet state — a
+    /// property is spendable-balance composition over wallet state: a
     /// confirmed, positioned note whose block has no completed orchard
     /// shard (sync state carries no orchard shard ranges, so the note lives
     /// in the trailing incomplete shard) still counts as spendable. The
     /// integration version only produced that condition incidentally via
-    /// regtest's tiny tree; here it is constructed explicitly.
-    /// (Lives here to share this module's record-fabrication rig;
+    /// regtest's tiny tree. Here it is constructed explicitly.
+    /// (Lives here to share this module's record-fabrication rig, though
     /// `spendable_balance` itself is defined in wallet/balance.rs.)
     #[test]
     fn spendable_balance_includes_notes_in_incomplete_shards() {
@@ -1089,10 +1094,10 @@ mod tests {
     /// transaction summaries order a sapling funding receive and its
     /// subsequent spend by height, with correct txids and values, and the
     /// spend's outgoing sapling notes carry the recipient and value. The
-    /// original produced these records through a LocalNet round trip; here
+    /// original produced these records through a LocalNet round trip. Here
     /// they are fabricated directly. (The original name hints at
-    /// scan-batching, but its assertions only ever checked summary output;
-    /// scan-batching coverage belongs to pepper-sync's scan layer.)
+    /// scan-batching, but its assertions only ever checked summary output.
+    /// Scan-batching coverage belongs to pepper-sync's scan layer.)
     #[tokio::test]
     async fn sapling_to_sapling_scan_together() {
         use pepper_sync::wallet::OutgoingSaplingNote;
@@ -1190,9 +1195,9 @@ mod tests {
 
     /// Migrated from libtonode `slow::sapling_incoming_sapling_outgoing`:
     /// balances and note/transaction views across the three states of a
-    /// sapling note's life — received and confirmed, pending spent by a
+    /// sapling note's life: received and confirmed, pending spent by a
     /// transmitted transaction, and spent by a confirmed transaction. The
-    /// original walked a LocalNet chain through those states; here each
+    /// original walked a LocalNet chain through those states. Here each
     /// state is fabricated and asserted directly.
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
@@ -1369,7 +1374,7 @@ mod tests {
     /// Migrated from libtonode `slow::send_funds_to_all_pools`: per-pool
     /// balance aggregation over one confirmed note in each pool. The
     /// original asserted this balance check plus txid uniqueness across
-    /// its transaction summaries; its live funding round trips are covered
+    /// its transaction summaries. Its live funding round trips are covered
     /// by the two surviving chain_generics fixtures (the pool matrix
     /// itself is now offline in `lightclient::propose::pool_matrix`).
     #[tokio::test]

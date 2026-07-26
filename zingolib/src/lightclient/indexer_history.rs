@@ -4,8 +4,8 @@
 //! to a line-oriented file beside the wallet (`indexer-history.tsv`), so
 //! indexer reliability accumulates across sessions instead of dying with each
 //! error message: which hosts deliver, over which route, how fast, and which
-//! category of failure presented. The file is append-only and best-effort —
-//! recording must never fail a send — and the format is a tab-separated line
+//! category of failure presented. The file is append-only and best-effort
+//! (recording must never fail a send), and the format is a tab-separated line
 //! per attempt, parseable without any serialization dependency:
 //!
 //! ```text
@@ -23,9 +23,9 @@
 //! guards bound it (ratified in the PR #2470 review):
 //!
 //! 1. **Compile gate.** Only the `nym-diary` feature lets the wallet open a
-//!    disk-backed handle; the default build constructs an inert one.
+//!    disk-backed handle. The default build constructs an inert one.
 //! 2. **Runtime opt-in.** Even when compiled, a handle records nothing until
-//!    the session enables it ([`LightClient::set_indexer_diary`]); loading
+//!    the session enables it ([`LightClient::set_indexer_diary`]). Loading
 //!    for display works regardless.
 //! 3. **Sanitized and capped.** The outcome column holds a [`FailureKind`]
 //!    token, never raw server prose (which can embed txids), and the file is
@@ -98,8 +98,8 @@ impl AttemptKind {
 }
 
 /// The closed set of failure categories the diary may store. Raw server or
-/// transport prose never reaches disk — it can embed transaction ids (zebrad
-/// duplicate rejections quote them) — so every failure is classified down to
+/// transport prose never reaches disk, since it can embed transaction ids (zebrad
+/// duplicate rejections quote them), so every failure is classified down to
 /// one of these tokens at the recording boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FailureKind {
@@ -139,7 +139,7 @@ impl FailureKind {
 
     /// Classify a failure message into its diary category. Substring matches,
     /// like [`classify_rejection`], because the servers surface failures
-    /// untyped (zingolabs/zaino#1392); the message itself is then discarded.
+    /// untyped (zingolabs/zaino#1392). The message itself is then discarded.
     ///
     /// [`classify_rejection`]: crate::lightclient::transmit
     pub(crate) fn classify(detail: &str) -> Self {
@@ -249,7 +249,7 @@ pub(crate) fn now_unix_secs() -> u64 {
 /// A cloneable appender/loader for the per-indexer history file. `None` for
 /// path-less clients (synthetic test wallets, and every build without the
 /// `nym-diary` feature), which record nowhere and load empty. Recording is
-/// additionally off until the session opts in — clones share the switch.
+/// additionally off until the session opts in, and clones share the switch.
 #[derive(Clone, Debug, Default)]
 pub struct IndexerHistoryHandle {
     path: Option<PathBuf>,
@@ -258,7 +258,7 @@ pub struct IndexerHistoryHandle {
 
 impl IndexerHistoryHandle {
     /// A handle writing beside the wallet file: `wallet_dir/indexer-history.tsv`.
-    /// Starts with recording off; [`Self::set_recording`] opts the session in.
+    /// Starts with recording off. [`Self::set_recording`] opts the session in.
     #[cfg_attr(not(feature = "nym-diary"), allow(dead_code))]
     pub(crate) fn beside_wallet(wallet_path: &std::path::Path) -> Self {
         IndexerHistoryHandle {
@@ -304,7 +304,7 @@ impl IndexerHistoryHandle {
     }
 
     /// Loads every parseable attempt, oldest first. Malformed lines are
-    /// skipped; a missing file is an empty history. Loading works whether or
+    /// skipped. A missing file is an empty history. Loading works whether or
     /// not the session records, so past sessions' data stays displayable.
     pub fn load(&self) -> Vec<IndexerAttempt> {
         let Some(path) = &self.path else {
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(clone.load().len(), 1, "the opt-in reaches clones");
     }
 
-    /// HYPOTHESIS: no raw failure prose reaches disk — the outcome column is
+    /// HYPOTHESIS: no raw failure prose reaches disk, and the outcome column is
     /// a closed token. Falsified if the file contains anything but the token.
     #[test]
     fn failure_prose_never_reaches_disk() {
@@ -410,7 +410,7 @@ mod tests {
         );
     }
 
-    /// Legacy lines written before sanitization carried raw prose; they load
+    /// Legacy lines written before sanitization carried raw prose. They load
     /// as their classified category so counts survive without the prose.
     #[test]
     fn legacy_prose_lines_load_as_classified_categories() {
@@ -460,7 +460,7 @@ mod tests {
         );
     }
 
-    /// HYPOTHESIS: the diary is bounded — once past twice the cap it compacts
+    /// HYPOTHESIS: the diary is bounded, and once past twice the cap it compacts
     /// to the newest [`MAX_DIARY_ATTEMPTS`] records. Falsified if the file
     /// grows without bound or drops the newest entries.
     #[test]
@@ -522,8 +522,8 @@ mod tests {
         assert_eq!(handle.load().len(), 1);
     }
 
-    /// A path-less handle records nowhere and loads empty — the synthetic
-    /// wallet and diary-less build contract — even when told to record.
+    /// A path-less handle records nowhere and loads empty (the synthetic
+    /// wallet and diary-less build contract) even when told to record.
     #[test]
     fn a_pathless_handle_is_inert() {
         let handle = IndexerHistoryHandle::default();

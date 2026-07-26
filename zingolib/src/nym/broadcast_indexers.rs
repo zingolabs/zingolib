@@ -7,13 +7,13 @@
 //!
 //! # Provenance
 //!
-//! Populated 2026-07-21 from a three-way discovery sweep — the hosh.zec.rocks
-//! tracker (via its 2026-04-18 Internet Archive snapshot; the live site was
+//! Populated 2026-07-21 from a three-way discovery sweep: the hosh.zec.rocks
+//! tracker (via its 2026-04-18 Internet Archive snapshot. The live site was
 //! down), the hardcoded server lists of open-source Zcash wallets (Ywallet,
 //! Zashi, zingo-mobile, zingo-pc, Cake, Unstoppable, Nerdbank, zecwallet
-//! lineage), and a Zcash community-forum / ZecHub web sweep — yielding 130
+//! lineage), and a Zcash community-forum / ZecHub web sweep, yielding 130
 //! candidate endpoints. Every candidate was then probed live with a
-//! `GetLightdInfo` gRPC call; exactly 19 answered on mainnet, all lightwalletd
+//! `GetLightdInfo` gRPC call. Exactly 19 answered on mainnet, all lightwalletd
 //! instances synced to the same chain tip. Every zaino deployment and the
 //! entire `lightwalletd.com` and `zcash-infra.com` fleets were dead.
 //!
@@ -29,24 +29,24 @@
 //!   (`eu2.` and `jp.` were dead).
 //!
 //! Distinct-operator status is inferred from domains and confirmed as far as
-//! observable — the entries resolve to unrelated IPs — but operator identity
+//! observable (the entries resolve to unrelated IPs), but operator identity
 //! is ultimately self-asserted, and a sybil operator running several entries
 //! would weaken rotation. Operational vetting of this list (liveness over
-//! time, relay honesty, operator diversity) is a tracked follow-up; see
+//! time, relay honesty, operator diversity) is a tracked follow-up. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
 //! # Port-443 restriction
 //!
 //! This list carries only Transmission targets reached over the mixnet, so an
-//! endpoint the mixnet cannot reach is worse than useless — it wastes fan-out
+//! endpoint the mixnet cannot reach is worse than useless: it wastes fan-out
 //! rounds on a certain failure. A 2026-07-21 paired clearnet/mixnet probe (the
 //! `nym probe` diagnostic) found a clean split: every port-443 witness answered
 //! over the mixnet, while all three port-9067 witnesses
 //! (`lwd.zcashexplorer.app`, `zec.alexxiy.top`, `carover0.xyz`) completed the
-//! SOCKS5 tunnel but then failed the TLS handshake with an EOF — the mixnet
+//! SOCKS5 tunnel but then failed the TLS handshake with an EOF. The mixnet
 //! exit gateways relay the standard 443 but mishandle the non-standard
 //! lightwalletd port. Their clearnet TLS works, so this is a mixnet-reachability
-//! property, not a dead host; because the list is mixnet-only, they are
+//! property, not a dead host. Because the list is mixnet-only, they are
 //! excluded. Any future entry MUST be port 443 for the same reason, a rule the
 //! `every_entry_is_port_443` test enforces.
 

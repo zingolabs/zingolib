@@ -65,7 +65,7 @@ pub enum NymProxyError {
     #[error("provider connect attempt timed out after {0}s")]
     AttemptTimeout(u64),
 
-    /// Every raced connect attempt failed; the message accounts for each
+    /// Every raced connect attempt failed. The message accounts for each
     /// attempted provider and its failure.
     #[error("no provider connected: {0}")]
     AttemptsExhausted(String),

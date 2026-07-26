@@ -6,7 +6,7 @@
 //! is DISPROVEN and something other than RPC mutates regtest chains.
 //! The launch-contract falsification sentinels that grew out of the
 //! same investigation live in `tests/sentinels.rs` behind the
-//! non-default `sentinels` feature; this test stays in the default
+//! non-default `sentinels` feature. This test stays in the default
 //! suite because it exercises this repository's own scenario, replay,
 //! and isolation machinery under real suite concurrency.
 
@@ -19,7 +19,7 @@ use zingolib_testutils::validator_rpc;
 
 /// The strongest available evidence that a chain mutation did not come
 /// from the test itself: after setup completes, this test's code
-/// contains no chain-mutating call at all — the window between the two
+/// contains no chain-mutating call at all, so the window between the two
 /// tip samples is RPC-silent *by construction*, and the ledger assert
 /// proves the construction held at runtime. Uses the transparent-pool
 /// `faucet_recipient` shape: its chains are byte-identical across
@@ -53,7 +53,7 @@ async fn chain_mutates_only_via_owned_rpc() {
         .collect();
     assert!(
         writes_in_window.is_empty(),
-        "the RPC-silent window was not silent — this test's own harness issued writes: \
+        "the RPC-silent window was not silent. This test's own harness issued writes: \
          {writes_in_window:?}"
     );
 
@@ -64,7 +64,7 @@ async fn chain_mutates_only_via_owned_rpc() {
     assert_eq!(
         tip_before.fingerprint,
         tip_after.fingerprint,
-        "chain mutated during an RPC-silent window — foreign traffic, or a non-RPC \
+        "chain mutated during an RPC-silent window: foreign traffic, or a non-RPC \
          mutation channel (hypothesis disproven)!\n\
          zebrad timeline:\n{}\n\
          zainod timeline:\n{}\n\

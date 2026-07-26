@@ -10,8 +10,8 @@
 //! ```
 //!
 //! The address is not announced the instant the SOCKS5 listener is up. A
-//! gateway draw can bring the listener up yet carry no data end to end — the
-//! tunnel establishes but a TLS handshake over it stalls — and announcing then
+//! gateway draw can bring the listener up yet carry no data end to end (the
+//! tunnel establishes but a TLS handshake over it stalls), and announcing then
 //! would make the wallet mark Mixnet Mode ready against a dead path, so every
 //! send fails closed. Instead the binary health-gates readiness: it runs a real
 //! `GetLightdInfo` round trip through the mixnet, and only on success prints the
@@ -21,7 +21,7 @@
 //!
 //! The parent reads the announced line to learn where to dial, then routes send
 //! and price-fetch traffic through it. The process serves until either it is
-//! interrupted (`Ctrl-C` for a standalone run) or its stdin closes — the
+//! interrupted (`Ctrl-C` for a standalone run) or its stdin closes, the
 //! signal that the parent wallet has gone, since the supervisor holds that
 //! pipe open for the child's whole life. On either it disconnects from the
 //! mixnet cleanly. The stdin watchdog is what guarantees no orphaned proxy
@@ -45,7 +45,7 @@ use zingo_netutils::{
 /// The indexer contacted to prove the mixnet actually carries data before the
 /// proxy announces readiness. Reached only over the mixnet, and `GetLightdInfo`
 /// carries no wallet data, so this leaks nothing about the user. A widely
-/// deployed, reliable mainnet endpoint; contacting it is a health probe, not a
+/// deployed, reliable mainnet endpoint. Contacting it is a health probe, not a
 /// wallet operation. (A future refinement could rotate this across a set.)
 const HEALTH_CHECK_INDEXER: &str = "https://zec.rocks:443";
 
@@ -100,8 +100,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Prove the mixnet carries data end to end, redrawing gateways until it does
 /// or the attempts exhaust. Each attempt runs a real `GetLightdInfo` round trip
-/// through the local SOCKS5 tunnel — the exact path a send takes, and the one a
-/// dead draw stalls at the TLS handshake — rather than a bare tunnel-establish
+/// through the local SOCKS5 tunnel (the exact path a send takes, and the one a
+/// dead draw stalls at the TLS handshake) rather than a bare tunnel-establish
 /// check, which a dead-data-path draw would pass. Progress is narrated on
 /// stdout so `nym status` shows the verification. Returns an error only when
 /// every draw fails, which the caller turns into a non-zero exit.
@@ -142,7 +142,7 @@ fn report(line: String) {
 }
 
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
-/// end of the pipe — on a clean exit, a panic, or a SIGKILL. Any read error is
+/// end of the pipe, on a clean exit, a panic, or a SIGKILL. Any read error is
 /// also treated as "parent gone". Bytes on stdin are ignored: the pipe's
 /// openness, not its content, is the signal. For a standalone run stdin is the
 /// terminal, which never reaches EOF, so this simply never resolves and

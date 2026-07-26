@@ -314,7 +314,7 @@ impl GrpcIndexer {
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
-    /// construction time — including offline tests that never issue an RPC.
+    /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
         let scheme = uri
             .scheme_str()
@@ -355,8 +355,8 @@ impl GrpcIndexer {
 }
 
 /// A lightwalletd `SendResponse` rejection: the server heard the submission
-/// and said no, reported with its complete data — the numeric code and the
-/// message — so the caller decides what to make of it.
+/// and said no, reported with its complete data (the numeric code and the
+/// message), so the caller decides what to make of it.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("code {code}: {message}")]
 pub struct SendRejection {
@@ -368,7 +368,7 @@ pub struct SendRejection {
 
 /// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
 /// transaction was accepted and `error_message` carries the txid (sometimes
-/// quote-wrapped, which is stripped); any other code is a rejection carrying
+/// quote-wrapped, which is stripped). Any other code is a rejection carrying
 /// both fields. The single definition shared by the clearnet
 /// [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
 pub(crate) fn parse_send_response(

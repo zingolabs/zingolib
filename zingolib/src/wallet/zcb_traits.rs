@@ -1152,7 +1152,7 @@ impl InputSource for LightWallet {
 type SelectedPoolNotes = (Vec<SaplingNote>, Vec<OrchardNote>, Vec<IronwoodNote>);
 
 /// Pure all-funds selection over already-gathered spendable candidates:
-/// no wallet access, no mutation — the same candidates and mode always
+/// no wallet access, no mutation, so the same candidates and mode always
 /// produce the same selection, so the policy is testable without a
 /// wallet.
 ///
@@ -1160,8 +1160,8 @@ type SelectedPoolNotes = (Vec<SaplingNote>, Vec<OrchardNote>, Vec<IronwoodNote>)
 /// fee, the same dust discipline as budgeted selection: a note at or
 /// below [`MARGINAL_FEE`] costs more to spend than it contributes.
 ///
-/// `Everything` is refused with a typed error: its contract — fail if
-/// ANY unspendable funds exist — requires a whole-wallet audit this
+/// `Everything` is refused with a typed error: its contract (fail if
+/// ANY unspendable funds exist) requires a whole-wallet audit this
 /// selector does not yet perform, and a wrong success would silently
 /// strand funds. The typed refusal replaces a panic that aborted the
 /// process.
@@ -1275,7 +1275,7 @@ mod tests {
     /// above it is stale.
     ///
     /// The `OutputRef` pool label is never read by the upstream proposal
-    /// engine — pool-involvement accounting, bundle attribution, and fee
+    /// engine, since pool-involvement accounting, bundle attribution, and fee
     /// calculation all dispatch on the embedded `Note` enum (stamped by
     /// `ReceivedNotes::into_vec` from the vector the note occupies), not on
     /// the `NoteRef`. The label's one consumer is this wallet's own `exclude`
@@ -1285,7 +1285,7 @@ mod tests {
     /// and the split routes each ref to a pool bucket by `pool_type()`. An
     /// ironwood note labeled `ORCHARD` (as the stale comment mandates) would
     /// land in the orchard bucket, never be excluded from ironwood selection,
-    /// and be re-selected forever — the selector would then abort with
+    /// and be re-selected forever, so the selector would then abort with
     /// `InsufficientFunds` instead of pruning the dust.
     #[test]
     fn ironwood_noteref_pool_label_round_trips_through_exclude() {

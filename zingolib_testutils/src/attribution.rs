@@ -7,7 +7,7 @@
 //! generalizes the probe `boundary_rejection_attribution` prototyped:
 //! recover the exact rejected bytes from the wallet's Failed record,
 //! then judge the SAME bytes through the direct validator channel
-//! (bypassing the indexer) at two times — immediately, and again after
+//! (bypassing the indexer) at two times: immediately, and again after
 //! a few blocks of distance. The two direct verdicts separate the
 //! three suspects without trusting the indexer-path error string at
 //! all, which matters while zainod 0.6.0 masks validator rejections
@@ -96,7 +96,7 @@ impl std::fmt::Display for SendFailureAttribution {
 }
 
 /// Serializes the transaction retained by a Failed record in
-/// `client`'s wallet — the exact bytes the validator judged. Wallet
+/// `client`'s wallet, the exact bytes the validator judged. Wallet
 /// transactions live in a map with arbitrary iteration order, so with
 /// more than one Failed record the choice among them is arbitrary:
 /// probe immediately after the failure under study, while it is the
@@ -104,7 +104,7 @@ impl std::fmt::Display for SendFailureAttribution {
 ///
 /// # Panics
 ///
-/// Panics when no Failed record exists; call this only after a send
+/// Panics when no Failed record exists. Call this only after a send
 /// has failed.
 pub async fn failed_transaction_bytes(client: &LightClient) -> Vec<u8> {
     let wallet = client.wallet();

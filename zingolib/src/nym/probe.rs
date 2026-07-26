@@ -11,7 +11,7 @@
 //!
 //! Privacy note: the clearnet leg contacts the indexer directly from the
 //! client's real IP. `GetLightdInfo` carries no wallet data, but the contact
-//! itself is observable — this is a user-invoked diagnostic, never an
+//! itself is observable, so this is a user-invoked diagnostic, never an
 //! automatic path.
 #![forbid(unsafe_code)]
 
@@ -120,7 +120,7 @@ fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute,
 
 /// Runs the paired probe against one indexer: both legs concurrently, so a
 /// hanging mixnet tunnel does not serialize behind the clearnet answer.
-/// `socks5_addr` is `None` when the proxy is not ready — the mixnet leg is
+/// `socks5_addr` is `None` when the proxy is not ready, and the mixnet leg is
 /// then skipped and reported as absent.
 pub(crate) async fn probe_indexer(
     indexer: &Uri,

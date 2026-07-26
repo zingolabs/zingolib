@@ -11,23 +11,23 @@
 //! ## The full lifecycle
 //!
 //! ```text
-//! 1. CREATE  — ClientConfig::builder()
+//! 1. CREATE  : ClientConfig::builder()
 //!                .set_wallet_dir(dir)
 //!                .set_wallet_config(WalletConfig::MnemonicPhrase { … })
 //!                .build()
 //!              LightClient::new(config, overwrite)
 //!
-//! 2. SAVE    — client.save_task().await        ← background writer; runs every second
+//! 2. SAVE    : client.save_task().await        ← background writer, runs every second
 //!              client.wait_for_save().await    ← wait for first flush
 //!              client.shutdown_save_task()     ← clean shutdown
 //!
-//! 3. RELOAD  — ClientConfig::builder()
+//! 3. RELOAD  : ClientConfig::builder()
 //!                .set_wallet_dir(same_dir)
 //!                .set_wallet_config(WalletConfig::Read)
 //!                .build()
-//!              LightClient::new(config, false) ← offline; no network needed
+//!              LightClient::new(config, false) ← offline, no network needed
 //!
-//! 4. CONNECT — client.set_indexer_uri(uri).await   ← go online
+//! 4. CONNECT : client.set_indexer_uri(uri).await   ← go online
 //!              client.sync_and_await().await        ← fetch blocks
 //! ```
 //!
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.unified_addresses_json().await.pretty(2)
     );
 
-    // Recovery info contains the seed phrase, birthday, and account count —
+    // Recovery info contains the seed phrase, birthday, and account count,
     // everything needed to restore the wallet on a new device.
     if let Some(info) = client.recovery_info().await {
         println!("  Seed phrase: {} ... (truncated)", &info.seed_phrase[..20]);
@@ -124,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     client.shutdown_save_task().await?;
     println!("\nWallet saved to disk.");
 
-    // Drop the client — the wallet file now lives on disk.
+    // Drop the client. The wallet file now lives on disk.
     drop(client);
 
     // ── 4. RELOAD FROM FILE PATH ────────────────────────────────────────────
@@ -147,13 +147,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reloaded = LightClient::new(load_config, false).await?;
 
     println!("\nWallet reloaded from file.");
-    println!("  Indexer URI: {:?}", reloaded.indexer_uri()); // None — offline
+    println!("  Indexer URI: {:?}", reloaded.indexer_uri()); // None, offline
     println!("  Chain type : {:?}", reloaded.chain_type());
     println!("  Birthday   : {}", reloaded.birthday());
 
     // Offline operations work immediately, before any sync:
     let balance = reloaded.account_balance(zip32::AccountId::ZERO).await?;
-    println!("  Balance    : {balance}"); // zero — never synced
+    println!("  Balance    : {balance}"); // zero, never synced
 
     let addrs = reloaded.unified_addresses_json().await;
     println!("  Addresses  : {} (same as before)", addrs.len());

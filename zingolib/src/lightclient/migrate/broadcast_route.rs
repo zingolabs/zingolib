@@ -2,8 +2,8 @@
 //!
 //! Migration-part broadcasts obey the Mixnet Mode policy like every other
 //! transmitting surface: while the mode is on they travel ONLY over the
-//! mixnet — failing closed while it bootstraps or after the proxy dies,
-//! never falling back to clearnet — and clearnet carries them only when the
+//! mixnet (failing closed while it bootstraps or after the proxy dies,
+//! never falling back to clearnet), and clearnet carries them only when the
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 //!
@@ -26,8 +26,8 @@ use crate::lightclient::error::LightClientError;
 
 /// The [`BroadcastClient`] the Mixnet Mode policy resolved for this session:
 /// one concrete type for the callers, delegating to the wire the route chose.
-pub enum RoutedBroadcastClient {
-    /// Clearnet submission — the deliberate mixnet opt-out, or a build
+pub(super) enum RoutedBroadcastClient {
+    /// Clearnet submission, the deliberate mixnet opt-out, or a build
     /// without the `nym` feature.
     Clearnet(GrpcBroadcastClient),
     /// Mixnet submission through the local SOCKS5 proxy.
@@ -50,7 +50,7 @@ impl BroadcastClient for RoutedBroadcastClient {
 }
 
 /// Submits parts through the local SOCKS5 proxy, one randomly drawn
-/// Broadcast Indexer per submission, and can do nothing else — the ZIP 318
+/// Broadcast Indexer per submission, and can do nothing else. The ZIP 318
 /// no-synchronization guarantee holds structurally here exactly as it does
 /// for the clearnet client.
 #[cfg(feature = "nym")]
@@ -97,7 +97,7 @@ impl BroadcastClient for MixnetBroadcastClient {
         .map_err(|error| {
             // The taxonomy's own failover reading maps onto BroadcastError's
             // contract: a failover candidate was not consumed (Transport,
-            // retryable — the part falls to reconciliation), a verdict was.
+            // retryable: the part falls to reconciliation), a verdict was.
             let rendered = error.to_string();
             if error.is_failover_candidate() {
                 BroadcastError::Transport(rendered)
@@ -113,7 +113,7 @@ impl BroadcastClient for MixnetBroadcastClient {
 
 /// The mixnet targets migration parts may go to, pure over its inputs: the
 /// configured `migration_broadcast_uri` alone when set, otherwise the curated
-/// Broadcast Indexer pool — in both cases with the synchronization endpoint's
+/// Broadcast Indexer pool, in both cases with the synchronization endpoint's
 /// host forbidden, so no server correlates a wallet's sync stream with its
 /// migration cohort.
 #[cfg(feature = "nym")]
@@ -188,7 +188,7 @@ mod tests {
         ));
     }
 
-    /// A configured target on a different host is the sole candidate; the
+    /// A configured target on a different host is the sole candidate. The
     /// curated pool is not consulted.
     #[test]
     fn a_distinct_configured_target_is_the_sole_candidate() {

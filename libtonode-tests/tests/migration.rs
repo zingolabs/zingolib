@@ -16,7 +16,10 @@ use zingolib::lightclient::LightClient;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::migration::{
     BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
-    PartState, RecommendedAction, SigningStrategy, schedule,
+    PartState, RecommendedAction, SigningStrategy, bucket_index,
+};
+use zingolib::wallet::summary::data::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,
@@ -64,7 +67,7 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
 /// Persists a hand-built [`MigrationState`] whose parts are bound to real
 /// wallet notes, standing in for the completed note-splitting phase so the
 /// Phase 2 machinery can be exercised before Ironwood lands on the node
-/// path. `bucket_index` assigns every part to that bucket; `None` leaves
+/// path. `bucket_index` assigns every part to that bucket. `None` leaves
 /// them bound but unscheduled. `bucket_modulus` overrides the provisional
 /// bucket geometry: every consumer of the schedule reads it from the
 /// injected state, so a test can shrink the chain it must mine.
@@ -120,7 +123,7 @@ async fn inject_scheduled_migration(
 /// nothing else can, and the external spend then invalidates the part on
 /// reconciliation. The remainder left behind sits exactly at the Sweep
 /// Minimum, so under the ratified completion rule (#2493 finding 8) no
-/// replan is offered — a replan would strand everything it planned — and
+/// replan is offered (a replan would strand everything it planned), and
 /// the next reconciliation concludes the migration with the remainder
 /// disclosed as its residual.
 #[tokio::test]
@@ -253,7 +256,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // The smallest bucket modulus of the provisional value's power-of-two
     // family that exceeds shardtree's checkpoint retention
     // (`MAX_REORG_ALLOWANCE`, 100 blocks, mirroring zebra's finalization
-    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`) — the premise needs
+    // boundary `zebra_state::MAX_BLOCK_REORG_HEIGHT`). The premise needs
     // the boundary checkpoint pruned while the tip is still inside the
     // bucket. Shrinking the modulus shrinks the chain: under the
     // provisional 256 this test leapt 450 blocks, and mining that many
@@ -285,7 +288,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
 
     // A transparent miner keeps this test's long chain cheap: transparent
     // coinbase carries no halo2 proof, where a shielded miner pool costs
-    // roughly 2.7 seconds of block assembly per block — the cost that
+    // roughly 2.7 seconds of block assembly per block, the cost that
     // previously pushed this test past even a 1200-second budget.
     let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
         PoolType::Transparent,
@@ -295,7 +298,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // Mature the faucet's coinbase, shield it into pre-Ironwood Orchard,
-    // and fund the recipient with the note the part will bind — all below
+    // and fund the recipient with the note the part will bind, all below
     // the activation height.
     increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
         .await
@@ -338,7 +341,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
             .last_known_chain_height()
             .expect("the wallet has synced")
     };
-    let current_bucket = schedule::bucket_index(known_height, PRUNED_BUCKET_MODULUS);
+    let current_bucket = bucket_index(known_height, PRUNED_BUCKET_MODULUS);
     assert_eq!(
         current_bucket, 2,
         "the chain must sit inside the second bucket, past its boundary"
@@ -421,10 +424,38 @@ async fn two_phase_migration_end_to_end() {
         Some(MigrationPhase::Complete { .. })
     ));
     assert_eq!(status.parts_confirmed, status.parts_total);
-    // FIXME: assert the Ironwood pool balance directly once pepper-sync
-    // scans Ironwood notes. Until then the confirmed part denominations
-    // are the migrated value.
+
+    // The state machine's own accounting of the migrated value...
     assert_eq!(status.value_migrated, expected_migrated);
+    // ...and the same value scanned back out of the Ironwood pool.
+    let confirmed_ironwood = recipient
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap()
+        .confirmed_ironwood_balance
+        .map(|zats| zats.into_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        confirmed_ironwood, expected_migrated,
+        "the migrated value must appear in the Ironwood pool"
+    );
+
+    // Every confirmed part spends Orchard into the wallet's own Ironwood pool,
+    // so it must be classified as a migration value transfer, not a plain
+    // send-to-self.
+    let value_transfers = recipient.value_transfers(true).await.unwrap();
+    for part_txid in &summary.part_txids {
+        assert!(
+            value_transfers.iter().any(|vt| vt.txid == *part_txid
+                && vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Migration,
+                    ))),
+            "part {part_txid:?} must be classified as a migration value transfer"
+        );
+    }
 }
 
 /// The deferred NU6.3 activation height for scenarios that must fund the
@@ -458,8 +489,8 @@ fn deferred_activation_heights(nu6_3: u32) -> zingolib::ActivationHeights {
 
 /// Launches a chain whose NU6.3 activation still lies ahead
 /// ([`DEFERRED_NU6_3_HEIGHT`]) and funds the recipient with one
-/// multi-output send — one pre-Ironwood (V2) Orchard note per value
-/// produced by `values`. The chain is left below the activation height;
+/// multi-output send, one pre-Ironwood (V2) Orchard note per value
+/// produced by `values`. The chain is left below the activation height, so
 /// tests that need the Ironwood pool live call
 /// [`cross_ironwood_activation`] afterwards.
 ///
@@ -514,8 +545,8 @@ async fn pre_ironwood_funded_recipient(
 }
 
 /// Mines the chain across the deferred NU6.3 activation boundary and syncs
-/// the recipient past it, so the Ironwood pool is live. The drains need
-/// this before building: a drain sends into Ironwood, which does not exist
+/// the recipient past it, so the Ironwood pool is live. The immediate migrations need
+/// this before building: an immediate migration sends into Ironwood, which does not exist
 /// below the activation height.
 async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut LightClient) {
     let tip = u32::from(
@@ -536,13 +567,13 @@ async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut Light
         .unwrap();
 }
 
-/// The immediate drain: every spendable Orchard note is spent into Ironwood in
+/// The immediate migration: every spendable Orchard note is spent into Ironwood in
 /// one pass, with no note splitting and no schedule. The Orchard pool empties
 /// down to the disclosed dust, and the same value less fees appears in the
 /// Ironwood pool. That second half is what proves the funds actually crossed.
 #[tokio::test]
-async fn drain_all_orchard_to_ironwood() {
-    // Several notes of unequal value: a drain must sweep all of them, and
+async fn migrate_all_orchard_to_ironwood() {
+    // Several notes of unequal value: an immediate migration must sweep all of them, and
     // nothing here is a canonical denomination.
     let (local_net, _faucet, mut recipient) =
         pre_ironwood_funded_recipient(|_| vec![317_000, 1_250_000, 88_000]).await;
@@ -559,17 +590,20 @@ async fn drain_all_orchard_to_ironwood() {
         .into_u64();
     assert_eq!(orchard_before, 317_000 + 1_250_000 + 88_000);
 
-    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    let plan = recipient
+        .plan_immediate_migration(AccountId::ZERO)
+        .await
+        .unwrap();
     // Three modest notes fit one transaction: no chunking here.
     assert_eq!(plan.transactions.len(), 1);
     assert_eq!(
-        plan.migrated + plan.fee + plan.stranded,
+        plan.migrated + plan.fee + plan.residual,
         orchard_before,
         "the plan must account for every zatoshi"
     );
 
     let summary = recipient
-        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO)
         .await
         .unwrap();
     assert_eq!(summary.txids.len(), plan.transactions.len());
@@ -590,7 +624,7 @@ async fn drain_all_orchard_to_ironwood() {
             .confirmed_orchard_balance
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
-        summary.stranded,
+        summary.residual,
         "the Orchard pool must be empty but for the disclosed dust"
     );
     assert_eq!(
@@ -599,14 +633,29 @@ async fn drain_all_orchard_to_ironwood() {
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
         summary.migrated,
-        "the drained value must appear in the Ironwood pool"
+        "the immediate migrationed value must appear in the Ironwood pool"
     );
+
+    // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
+    // each immediate migration transaction must be classified as a migration value transfer,
+    // not a plain send-to-self.
+    let value_transfers = recipient.value_transfers(true).await.unwrap();
+    for migration_txid in &summary.txids {
+        assert!(
+            value_transfers.iter().any(|vt| vt.txid == *migration_txid
+                && vt.kind
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::Migration,
+                    ))),
+            "immediate migration {migration_txid:?} must be classified as a migration value transfer"
+        );
+    }
 }
 
-/// A drain of a fragmented wallet chunks into several independent transactions,
+/// An immediate migration of a fragmented wallet chunks into several independent transactions,
 /// all built and broadcast in the same pass, and still empties the pool.
 #[tokio::test]
-async fn drain_chunks_a_fragmented_wallet() {
+async fn immediate_migration_chunks_a_fragmented_wallet() {
     // More notes than fit one transaction's action budget, funded in one
     // transaction. Distinct values keep every payment in the ZIP-321
     // request unique.
@@ -618,7 +667,10 @@ async fn drain_chunks_a_fragmented_wallet() {
     .await;
     cross_ironwood_activation(&local_net, &mut recipient).await;
 
-    let plan = recipient.plan_orchard_drain(AccountId::ZERO).await.unwrap();
+    let plan = recipient
+        .plan_immediate_migration(AccountId::ZERO)
+        .await
+        .unwrap();
     assert_eq!(
         plan.transactions.len(),
         2,
@@ -626,7 +678,7 @@ async fn drain_chunks_a_fragmented_wallet() {
     );
 
     let summary = recipient
-        .drain_orchard_to_ironwood(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO)
         .await
         .unwrap();
     assert_eq!(summary.txids.len(), 2);
@@ -646,7 +698,7 @@ async fn drain_chunks_a_fragmented_wallet() {
             .confirmed_orchard_balance
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
-        summary.stranded
+        summary.residual
     );
     assert_eq!(
         balance

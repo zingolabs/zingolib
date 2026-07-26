@@ -2,9 +2,9 @@
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
 //! [`Ready`](crate::nym::MixnetMode::Ready) they route through the local
-//! SOCKS5 proxy; when it is [`Off`](crate::nym::MixnetMode::Off) — reachable
-//! only by the user's deliberate toggle-off — they route over clearnet as
-//! informed consent; and while
+//! SOCKS5 proxy. When it is [`Off`](crate::nym::MixnetMode::Off), reachable
+//! only by the user's deliberate toggle-off, they route over clearnet as
+//! informed consent. While
 //! [`Bootstrapping`](crate::nym::MixnetMode::Bootstrapping) or after
 //! [`Died`](crate::nym::MixnetMode::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
@@ -37,17 +37,17 @@ impl MixnetRoute {
 /// A mixnet-only surface was attempted while the mixnet was unavailable
 /// without the user's consent to clearnet. Fail-closed: the surface refuses
 /// rather than falling back to clearnet, and the refusal names the actual
-/// state so the user learns the right remedy — waiting out a bootstrap and
+/// state so the user learns the right remedy: waiting out a bootstrap and
 /// restarting a dead proxy are different actions.
 #[derive(Clone, Copy, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MixnetNotReady {
-    /// The mixnet is enabled but not yet reachable; readiness is coming.
+    /// The mixnet is enabled but not yet reachable. Readiness is coming.
     #[error("the Nym mixnet is bootstrapping; this operation requires it to be ready")]
     Bootstrapping,
-    /// The proxy died after being spawned; only re-enabling recovers.
+    /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet — run `nym on` to restart the proxy"
+         clearnet. Run `nym on` to restart the proxy"
     )]
     Died,
 }

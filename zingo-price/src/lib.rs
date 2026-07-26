@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
 
-//! Crate for ZEC price types, storage, and — behind the `socks5-fetch`
-//! feature — fetching.
+//! Crate for ZEC price types, storage, and, behind the `socks5-fetch`
+//! feature, fetching.
 //!
 //! Currently only supports USD. The fetch path is the crate's ONLY network
 //! surface, and it requires a local SOCKS5 proxy address (the Nym mixnet
@@ -122,7 +122,7 @@ impl PriceList {
     ///
     /// Currently only USD is supported. The request is routed through the
     /// local SOCKS5 proxy at `socks5_proxy` (the Nym mixnet transport) and
-    /// only through it — the price fetch has no clearnet tier.
+    /// only through it, since the price fetch has no clearnet tier.
     #[cfg(feature = "socks5-fetch")]
     pub async fn update_current_price(&mut self, socks5_proxy: &str) -> Result<Price, PriceError> {
         get_current_price(socks5_proxy).await
@@ -214,7 +214,7 @@ fn ensure_default_crypto_provider() {
 }
 
 /// Get current price of ZEC in USD through the local SOCKS5 proxy at
-/// `socks5_proxy` — the crate's only network path, so a price is never
+/// `socks5_proxy`, the crate's only network path, so a price is never
 /// fetched over clearnet. The request is proxied through `socks5h://addr`,
 /// so the destination hostname is resolved at the proxy and never leaked to
 /// the local clearnet resolver.

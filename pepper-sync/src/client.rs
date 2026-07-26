@@ -231,8 +231,8 @@ pub(crate) async fn get_subtree_roots(
         // cut mid-flight (proxy, flow control) also ends cleanly, and
         // accepting it here silently truncates the wallet's shard tree. The
         // confirmation costs one extra empty round-trip on the happy path.
-        // A bounded request (max_entries != 0) keeps single-pass semantics —
-        // resuming would fetch past the caller's cap.
+        // A bounded request (max_entries != 0) keeps single-pass semantics,
+        // because resuming would fetch past the caller's cap.
         if max_entries != 0 || subtree_roots.len() == roots_before_pass {
             break 'retry;
         }

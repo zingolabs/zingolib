@@ -1,14 +1,14 @@
 //! The truncation contract: two pure decision rules, applied where the
 //! data lives.
 //!
-//! [`plan_truncation`] routes the wallet-level decision — from the
+//! [`plan_truncation`] routes the wallet-level decision, from the
 //! wallet state ([`WalletTruncationState`]: birthday and highest
 //! scanned height) and the truncation target, it returns whether the
 //! truncation is a no-op, a full clear, or a rollback to the target.
 //! `plan_pool_truncation` is the per-tree rule: from one tree's
 //! checkpoint facts ([`TreeTruncationFacts`]) it returns that tree's
 //! outcome, and the shard-tree applier derives each tree's outcome
-//! through it at the point of application. Both rules are pure; all
+//! through it at the point of application. Both rules are pure. All
 //! mutation stays with the appliers.
 //!
 //! Every per-pool outcome carries the evidence that justifies it: a
@@ -28,7 +28,7 @@
 //!   tree a pre-ironwood (v0) wallet blob migrates to, whose only
 //!   checkpoint is the height-zero initialization checkpoint.
 //! - A shard tree holding state above the height with no checkpoint at
-//!   it cannot roll back; only the clear-and-rescan recovery restores
+//!   it cannot roll back. Only the clear-and-rescan recovery restores
 //!   integrity, and the plan says so explicitly.
 //!
 //! Decisions live here and nowhere else: the applying code performs no
@@ -57,13 +57,13 @@ pub struct WalletTruncationState {
 /// target.
 ///
 /// A checkpoint records every *scanned* chain state the tree has
-/// absorbed — frontier insertion and scanned-subtree insertion attach
-/// checkpoints — so the newest checkpoint bounds the scanned state.
+/// absorbed (frontier insertion and scanned-subtree insertion attach
+/// checkpoints), so the newest checkpoint bounds the scanned state.
 /// Server-fetched subtree roots are the exception: they enter the store
 /// with no checkpoint, so this planner cannot see them. They are kept
-/// safe by a different mechanism — each sync session refetches the
+/// safe by a different mechanism: each sync session refetches the
 /// newest still-bare root and replaces it if the chain moved (see
-/// `crate::witness::subtree_fetch_start_index`) — so a stale bare root
+/// `crate::witness::subtree_fetch_start_index`), so a stale bare root
 /// surviving an `Untouched` verdict is healed at the next session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TreeTruncationFacts {
@@ -109,7 +109,7 @@ pub enum PoolTruncation {
     /// it: rollback is impossible, and only a full clear and rescan
     /// restores integrity.
     RequiresRescan {
-        /// The newest checkpoint — above the target — that condemned
+        /// The newest checkpoint above the target that condemned
         /// the tree.
         newest_checkpoint: BlockHeight,
     },
@@ -122,16 +122,16 @@ pub enum TruncationPlan {
     /// already correct and nothing is removed.
     NoOp,
     /// The target lies below the wallet birthday (or is height zero):
-    /// no retained state can anchor the wallet, so every store —
-    /// blocks, transactions, nullifiers, outpoints, and all three shard
-    /// trees — resets to empty.
+    /// no retained state can anchor the wallet, so every store (blocks,
+    /// transactions, nullifiers, outpoints, and all three shard
+    /// trees) resets to empty.
     ClearAll,
     /// Roll the wallet back: blocks, transactions, nullifiers, and
     /// outpoints retain exactly the data at or below `height`, and each
     /// shard tree applies the per-pool outcome `plan_pool_truncation`
     /// derives at the point of application.
     Truncate {
-        /// The height retained; everything strictly above it goes.
+        /// The height retained. Everything strictly above it goes.
         height: BlockHeight,
     },
 }
@@ -198,7 +198,7 @@ mod test {
     /// The migrated pre-ironwood wallet: sapling and orchard roll back to
     /// their target checkpoints, and the empty ironwood tree whose only
     /// checkpoint is the height-zero initialization checkpoint records
-    /// nothing above the target, so it is untouched — never broken.
+    /// nothing above the target, so it is untouched, never broken.
     #[test]
     fn migrated_empty_tree_is_untouched() {
         assert_eq!(
@@ -297,7 +297,7 @@ mod test {
     /// satisfies the class-level safety property that motivated this
     /// module: a tree recording nothing above the target is never
     /// condemned to rescan. The facts-level inputs are small enough to
-    /// enumerate exhaustively, so no case is left to sampling; the
+    /// enumerate exhaustively, so no case is left to sampling. The
     /// `properties` module complements this with generated checkpoint
     /// sets.
     #[test]
@@ -495,7 +495,7 @@ mod properties {
         }
 
         /// Monotonicity in the target: once a tree is `Untouched` at a
-        /// target, every higher target leaves it untouched too — moving
+        /// target, every higher target leaves it untouched too, since moving
         /// the truncation point up can never invent state above it.
         #[test]
         fn untouched_is_upward_closed(

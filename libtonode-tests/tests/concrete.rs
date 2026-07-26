@@ -252,7 +252,7 @@ async fn unified_address_discovery() {
         panic!("ua should not be in fresh wallet yet!");
     }
 
-    // sync recipient (to the Validator's tip — a bare sync races the
+    // sync recipient (to the Validator's tip, since a bare sync races the
     // Indexer's ingestion of the block confirming the sends) and check
     // the UAs have been discovered
     scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
@@ -303,11 +303,11 @@ async fn unified_address_discovery() {
 /// Diagnostic probe for the Core-stack coinbase model. Each assert tests
 /// one hypothesis, and each failure mode has a distinct quantized delta:
 /// - orchard off by one POST_STREAM_BLOCK_REWARD (618_750_000):
-///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3);
+///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3)
 /// - sapling delta of BLOCK_ONE_SAPLING_COINBASE (625_000_000): the
-///   block-1-pays-the-sapling-receiver rule is wrong;
+///   block-1-pays-the-sapling-receiver rule is wrong
 /// - transparent nonzero: pre-NU5 or activation-block coinbase pays a
-///   transparent output instead;
+///   transparent output instead
 /// - balances short by whole blocks: the deterministic
 ///   sync_client_to_validator_tip is not actually deterministic.
 #[tokio::test]
@@ -531,7 +531,7 @@ async fn mine_to_transparent() {
 async fn sync_all_expressible_epochs() {
     // The zebrad config writer requires every upgrade through Canopy
     // active at height 1, and the harness subsidy fixtures pair only
-    // with the fixture shape — so the expressible epoch boundaries are
+    // with the fixture shape, so the expressible epoch boundaries are
     // NU5/NU6 at height 2 and NU6.1/NU6.2 at height 5. Sync across all
     // of them with room to spare.
     let (local_net, mut lightclient) = scenarios::unfunded_client(
@@ -963,7 +963,7 @@ async fn send_mined_ironwood_to_ironwood() {
         balance.unconfirmed_ironwood_balance,
         Some(0.try_into().unwrap())
     );
-    // The send is to self, so only the fee leaves the wallet — and the
+    // The send is to self, so only the fee leaves the wallet, and the
     // faucet mines the confirming block, collecting a fresh coinbase
     // reward plus that same fee back.
     assert_eq!(
@@ -1042,7 +1042,7 @@ mod rescan_still_have_outgoing_notes {
 /// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
 /// making this the suite's only live broadcast of a multi-input sapling
 /// spend with cross-pool (orchard) change. The unwraps assert proposal,
-/// proving, and the validator's acceptance of the bundle; the closing
+/// proving, and the validator's acceptance of the bundle. The closing
 /// balance check pins the spend's post-state (gap 1a of the audit's
 /// remediation plan). Note-selection ordering itself is asserted
 /// offline by `note_selection_covers_target_with_minimal_change` in
@@ -1156,12 +1156,12 @@ async fn assert_ironwood_note_statuses(
 /// `mempool_spends_correctly_marked_pending_spent`
 /// (protection-dominance analysis): one funded recipient walks two
 /// complete mempool-then-confirmed spend cycles, asserted at BOTH
-/// granularities — the three-way orchard balance split and per-note
-/// `SpendStatus` — at every phase, including the pre-spend steady
+/// granularities (the three-way orchard balance split and per-note
+/// `SpendStatus`) at every phase, including the pre-spend steady
 /// state and a post-confirmation stability window neither original
 /// covered at note level. Both former send amounts survive the
 /// merge deliberately: the 2_000-zat cycle preserves near-dust
-/// change arithmetic; the 100_000 cycle preserves the note-status
+/// change arithmetic. The 100_000 cycle preserves the note-status
 /// shape of the original per-note test.
 #[tokio::test]
 async fn mempool_spend_balance_and_note_status_accounting() {

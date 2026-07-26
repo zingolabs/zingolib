@@ -29,6 +29,10 @@ use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
+use zingolib::lightclient::migrate::{
+    ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
+    SplitStatus, SplitStep,
+};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -44,10 +48,10 @@ pub(crate) static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runti
 const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Awaits `operation`, emitting a heartbeat every
-/// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` — the
-/// transmit-progress side channel `operation` narrates into — plus the elapsed
-/// seconds. `emit` is injected so tests capture the lines; production prints
-/// them to STDERR, never stdout — command results own stdout, so a scripted
+/// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
+/// transmit-progress side channel `operation` narrates into) plus the elapsed
+/// seconds. `emit` is injected so tests capture the lines. Production prints
+/// them to STDERR, never stdout, because command results own stdout and a scripted
 /// `zingo-cli ... quicksend | jq` stays parseable however slow the send
 /// (PR #2470 review, M5). Grab the progress handle *before* building
 /// `operation`, which borrows the client mutably.
@@ -79,7 +83,7 @@ async fn with_transmit_heartbeat<T>(
 }
 
 /// Typed failure of a CLI command. `do_user_command` remains the single
-/// site that renders these to prose for string frontends; typed
+/// site that renders these to prose for string frontends. Typed
 /// frontends consume them directly via `do_user_command_result`.
 #[derive(Debug, thiserror::Error)]
 enum CommandError {
@@ -90,7 +94,7 @@ enum CommandError {
     /// Transitional quarantine for commands whose failure prose is not
     /// yet typed: the message is stored WITHOUT the "Error: " prefix
     /// (the renderer adds it). Every construction site is a candidate
-    /// for a dedicated variant; none may ever be string-matched.
+    /// for a dedicated variant, and none may ever be string-matched.
     #[error("{0}")]
     NotYetTyped(String),
 }
@@ -107,7 +111,7 @@ trait Command {
     /// consumers occasionally make assumptions about this
     /// e. expect it to be a json object
     ///
-    /// Failure crosses the boundary structurally as a [`CommandError`];
+    /// Failure crosses the boundary structurally as a [`CommandError`].
     /// [`do_user_command`] renders it to prose for string frontends.
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError>;
 }
@@ -115,7 +119,7 @@ trait Command {
 /// A command that can execute without an active [`LightClient`].
 ///
 /// This is used for commands like `help` that must run before the wallet
-/// is loaded — for example when the user passes `help` as the COMMAND
+/// is loaded, for example when the user passes `help` as the COMMAND
 /// argument on the command line.
 pub(crate) trait ShortCircuitedCommand {
     /// Execute the command without a [`LightClient`], returning the
@@ -127,7 +131,7 @@ struct GetVersionCommand {}
 impl Command for GetVersionCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Return the git describe --dirty of the repo at build time.
+            Print the build's git describe --dirty.
         "}
     }
 
@@ -144,10 +148,10 @@ struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Change the indexer server to receive blockchain data from\n",
+            "Change the indexer server.\n",
             "\n",
             "Usage:\n",
-            "change_server [server_uri]\n",
+            "change_server <server_uri>\n",
             "\n",
             "Example:\n",
             "change_server ",
@@ -190,7 +194,7 @@ struct BirthdayCommand {}
 impl Command for BirthdayCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Returns block height wallet was created.
+            Print the height the wallet was created at.
 
             Usage:
             birthday
@@ -210,9 +214,8 @@ struct WalletKindCommand {}
 impl Command for WalletKindCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Displays the kind of wallet currently loaded
-            If a Ufvk, displays what pools are supported.
-            Currently, spend-capable wallets will always have spend capability for all three pools
+            Print the loaded wallet's kind. For a UFVK, lists the supported pools.
+            Spend-capable wallets always spend from all three.
             "}
     }
 
@@ -269,7 +272,8 @@ struct ParseAddressCommand {}
 impl Command for ParseAddressCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Parse an address\n",
+            "Parse an address.\n",
+            "\n",
             "Usage:\n",
             "parse_address <address>\n",
             "\n",
@@ -375,9 +379,10 @@ struct ParseViewKeyCommand {}
 impl Command for ParseViewKeyCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Parse a View Key\n",
+            "Parse a viewing key.\n",
+            "\n",
             "Usage:\n",
-            "parse_viewkey viewing_key\n",
+            "parse_viewkey <viewing_key>\n",
             "\n",
             "Example\n",
             "parse_viewkey ",
@@ -441,23 +446,14 @@ struct SyncCommand {}
 impl Command for SyncCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Launches a task for syncing the wallet to the latest state of the block chain.
+            Sync the wallet to the chain tip.
 
-            Sub-commands:
-            `run` starts or resumes sync.
-            `pause` pauses scanning until sync is resumed.
-            `stop` shuts down sync before its complete.
-            `status` returns a report of the wallet's current sync status.
-            `poll` polls the sync task handle, returning a sync result if complete. If sync failed, returns the error
-            instead. Poll is not intended to be called manually for zingo-cli.
+            `run` starts or resumes. `pause` halts scanning. `stop` shuts sync down
+            early. `status` reports progress. `poll` returns the result once complete,
+            and is not meant to be called by hand.
 
             Usage:
-            sync run
-            sync pause
-            sync stop
-            sync status
-            sync poll
-
+            sync run | pause | stop | status | poll
         "}
     }
 
@@ -519,8 +515,7 @@ struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
-            birthday.
+            Clear all chain-derived wallet data and sync again from the birthday.
 
             Usage:
             rescan
@@ -528,7 +523,7 @@ impl Command for RescanCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet birthday."
+        "Clear all chain-derived wallet data and sync again from the birthday."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -551,11 +546,10 @@ struct ClearCommand {}
 impl Command for ClearCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Clear the wallet state, rolling back the wallet to an empty state.
+            Drop every note, coin and transaction, leaving the wallet to sync from scratch.
+
             Usage:
             clear
-
-            This command will clear all notes, utxos and transactions from the wallet, setting up the wallet to be synced from scratch.
         "}
     }
 
@@ -577,16 +571,12 @@ impl Command for ClearCommand {
 pub(crate) struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            List all available commands
+        indoc! {r"
+            List every command, or show one command's help.
+
             Usage:
-            help [command_name]
-
-            If no "command_name" is specified, a list of all available commands is returned
-            Example:
-            help send
-
-        "#}
+            help [command]
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -651,10 +641,10 @@ struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Get info about the indexer we're connected to
+            Print the connected indexer's info.
+
             Usage:
             info
-
         "}
     }
 
@@ -678,18 +668,13 @@ struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Updates and returns current price of ZEC.
-            Currently only supports USD.
+            Fetch the current ZEC price. USD only.
 
-            The price fetch has no clearnet tier: it travels ONLY over the Nym
-            mixnet, which hides the client IP from the price source. It requires
-            a build with the `nym` feature and Mixnet Mode ready (see the `nym`
-            command); while the mixnet bootstraps, or when Mixnet Mode is off,
-            the fetch is refused rather than sent over clearnet.
+            Travels over the Nym mixnet and nothing else, so it needs the `nym`
+            feature and Mixnet Mode ready. Refused rather than sent over clearnet.
 
             Usage:
             current_price
-
         "}
     }
 
@@ -713,28 +698,20 @@ impl Command for NymCommand {
         indoc! {r"
             Control the Nym mixnet transport for send and price-fetch.
 
-            Usage:
-            nym status            Report whether the mixnet is off, bootstrapping, or ready.
-            nym on [binary_path]  Start the bundled nym-proxy child and enable Mixnet Mode.
-                                  With no path: $ZINGO_NYM_PROXY, else a nym-proxy
-                                  bundled beside this binary, else `nym-proxy` on PATH.
-            nym off               Disable Mixnet Mode; send and price-fetch use clearnet.
-            nym probe [uri]       Diagnostic: run GetLightdInfo against every Broadcast
-                                  Indexer (or just the given uri) over BOTH clearnet and
-                                  the mixnet, side by side, to discern whether a failure
-                                  is mixnet-specific. The clearnet leg contacts indexers
-                                  from your real IP.
-            nym history           Per-indexer attempt history accumulated across
-                                  sessions: sends and probes, per route. Recording
-                                  needs the nym-diary build feature plus the
-                                  per-session --indexer-diary opt-in; the diary
-                                  stores hosts, timings, and a failure category,
-                                  never server text, and is capped.
+            With Mixnet Mode on, both route over the mixnet and fail closed while it
+            bootstraps, never falling back to clearnet. Turning it off is a deliberate
+            choice to transmit over clearnet.
 
-            When Mixnet Mode is on, send and price-fetch route over the mixnet and
-            fail closed while it is still bootstrapping, never falling back to
-            clearnet silently. Disabling is a deliberate, per-session choice to
-            transmit over clearnet.
+            `status` reports off, bootstrapping or ready. `on` starts the nym-proxy
+            child, taking the binary from the given path, else $ZINGO_NYM_PROXY, else
+            one bundled beside this binary, else PATH. `off` reverts to clearnet.
+            `probe` runs GetLightdInfo over both routes side by side to tell whether a
+            failure is mixnet-specific, and its clearnet leg uses your real IP.
+            `history` shows per-indexer attempts across sessions, and needs the
+            nym-diary feature plus --indexer-diary.
+
+            Usage:
+            nym status | on [binary_path] | off | probe [uri] | history
         "}
     }
 
@@ -762,8 +739,8 @@ pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     )
 }
 
-/// The pure precedence core of [`resolve_proxy_path`]: given the three
-/// candidate sources already gathered from the environment, pick the path.
+/// Picks the proxy path from the three candidate sources
+/// [`resolve_proxy_path`] gathers from the environment, with no I/O of its own.
 /// An empty explicit or environment value counts as absent.
 #[cfg(feature = "nym")]
 fn choose_proxy_path(
@@ -820,7 +797,7 @@ enum NymCommandError {
     },
 }
 
-/// The nym family's typed request: arguments parse completely into this
+/// A parsed `nym` command. Arguments parse completely into this
 /// enum before any wallet access.
 #[cfg(feature = "nym")]
 #[derive(Debug, PartialEq, Eq)]
@@ -865,7 +842,7 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
 }
 
 /// How long each probe leg may take. Generous for the mixnet leg's tunnel
-/// establishment; a hanging exit is reported as a timeout, not waited out.
+/// establishment. A hanging exit is reported as a timeout, not waited out.
 #[cfg(feature = "nym")]
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -875,8 +852,8 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 #[cfg(feature = "nym")]
 fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
-        Ok(summary) => format!("ok in {}ms — {summary}", leg.millis),
-        Err(detail) => format!("FAILED after {}ms — {detail}", leg.millis),
+        Ok(summary) => format!("ok in {}ms: {summary}", leg.millis),
+        Err(detail) => format!("FAILED after {}ms: {detail}", leg.millis),
     };
     let mixnet = match &probe.mixnet {
         Some(mixnet_leg) => leg(mixnet_leg),
@@ -890,8 +867,8 @@ fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     )
 }
 
-/// The `nym history` body when the indexer diary is compiled in: render the
-/// accumulated record, and remind an opted-out session how recording starts.
+/// Renders the accumulated record for `nym history` when the indexer diary is
+/// compiled in, reminding an opted-out session how recording starts.
 #[cfg(all(feature = "nym", feature = "nym-diary"))]
 fn nym_history_command(lightclient: &LightClient) -> String {
     let handle = lightclient.indexer_history_handle();
@@ -1007,7 +984,7 @@ fn render_status(
         MixnetMode::Off => "Mixnet Mode: off (send and price-fetch use clearnet)".to_string(),
         MixnetMode::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
-                "Mixnet Mode: bootstrapping — {detail} (send and price-fetch are unavailable \
+                "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
                  until ready)"
             ),
             None => "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
@@ -1017,8 +994,8 @@ fn render_status(
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
-        MixnetMode::Died => "Mixnet Mode: died — the proxy exited unexpectedly. Send and \
-             price-fetch refuse (they will not fall back to clearnet); run `nym on` to \
+        MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
+             price-fetch refuse and will not fall back to clearnet. Run `nym on` to \
              restart the proxy."
             .to_string(),
     }
@@ -1027,7 +1004,7 @@ fn render_status(
 /// The complete `nym status` output: the Mixnet Mode line followed by the
 /// IP-correlation disclaimer. The disclaimer always accompanies the status
 /// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
-/// synchronization stays on the ordinary connector — so a bare "ready" must
+/// synchronization stays on the ordinary connector, so a bare "ready" must
 /// never be read as end-to-end IP protection. The canonical text lives in
 /// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
 /// wording.
@@ -1120,11 +1097,10 @@ struct SpendableBalanceCommand {}
 impl Command for SpendableBalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Display the wallet's spendable balance.
+            Print the wallet's spendable balance.
 
             Usage:
             spendable_balance
-
         "}
     }
 
@@ -1152,25 +1128,19 @@ struct MaxSendValueCommand {}
 impl Command for MaxSendValueCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Display the maximum value the wallet can currently send to the given address.
-
-            This value is calculated from the shielded spendable balance minus any fees required to send those funds to
-            the given `address`. If the wallet is still syncing, the spendable balance may be less than the confirmed
-            balance - minus the fee - due to notes being above the minimum confirmation threshold or not being able to
-            construct a witness from the current state of the wallet's note commitment tree.
-            If `zennies_for_zingo` is set true, an additional payment of 1_000_000 ZAT to the ZingoLabs developer address
-            will be taken into account.
+            Print the most the wallet can send to an address: shielded spendable
+            balance less the fee. Mid-sync this can trail the confirmed balance.
+            `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
+            address.
 
             Usage:
             max_send_value <address>
-            OR
             max_send_value { "address": "<address>", "zennies_for_zingo": <true|false> }
-
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Display the maximum value the wallet can currently send to a given address."
+        "Print the most the wallet can send to a given address."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1205,23 +1175,11 @@ struct NewUnifiedAddressCommand {}
 impl Command for NewUnifiedAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Create a new unified address.
-
-            Transparent receivers not supported.
-            See `new_taddress` for creating transparent addresses.
+            Create a new unified address, with an orchard receiver, a sapling one, or
+            both. No transparent receivers: use `new_taddress` for those.
 
             Usage:
-            new_address [ o | z ]
-
-            Examples:
-             - orchard and sapling receivers
-            new_address oz
-
-            - orchard-only
-            new_address o
-
-            - sapling-only
-            new_address z
+            new_address o | z | oz
         "}
     }
 
@@ -1301,25 +1259,15 @@ struct NewTransparentAddressAllowGapCommand {}
 impl Command for NewTransparentAddressAllowGapCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Create a new transparent address even if the current one has not received funds.
+            Create a new transparent address even if the last one never received funds.
+
+            This bypasses the no-gap rule, which exists because recovery from seed may
+            not discover addresses beyond a gap. Funds sent to skipped addresses can go
+            missing after a restore unless you rescan or raise the gap limit, so you are
+            taking on tracking the unused ones yourself.
 
             Usage:
             new_taddress_allow_gap
-
-            Notes:
-            This command bypasses the built-in "no-gap" rule that normally prevents creating a new
-            transparent address until the last one has received funds. The rule exists to avoid
-            large gaps in address indices, which can cause problems when restoring a wallet from
-            seed, since all unused addresses beyond the gap may not be discovered automatically.
-
-            By using this command you take responsibility for:
-              - Tracking unused addresses yourself.
-              - Ensuring you do not create excessive gaps that make wallet recovery slow or incomplete.
-              - Understanding that funds sent to skipped addresses may not appear after recovery
-                unless you explicitly rescan or adjust the gap limit.
-
-           Use only if you know why you need consecutive empty transparent addresses and are
-           prepared to manage the risks of wallet recovery and scanning.
         "#}
     }
 
@@ -1353,11 +1301,10 @@ struct UnifiedAddressesCommand {}
 impl Command for UnifiedAddressesCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            List unified addresses in the wallet.
+            List the wallet's unified addresses.
 
             Usage:
             addresses
-
         "}
     }
 
@@ -1374,11 +1321,10 @@ struct TransparentAddressesCommand {}
 impl Command for TransparentAddressesCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            List transparent addresses in the wallet.
+            List the wallet's transparent addresses.
 
             Usage:
             t_addresses
-
         "}
     }
 
@@ -1395,13 +1341,10 @@ struct CheckAddressCommand {}
 impl Command for CheckAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Checks if the given encoded address is derived by the wallet's keys.
+            Check whether an encoded address derives from the wallet's keys.
 
             Usage:
             check_address <encoded_address>
-
-            Example:
-            check_address u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494
         "}
     }
 
@@ -1489,8 +1432,8 @@ struct ExportUfvkCommand {}
 impl Command for ExportUfvkCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Export unified full viewing key for the wallet.
-            Note: If you want to backup spend capability, use the 'recovery_info' command instead.
+            Export the wallet's unified full viewing key. To back up spend capability,
+            use `recovery_info` instead.
 
             Usage:
             export_ufvk
@@ -1528,14 +1471,11 @@ struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Propose a transfer of ZEC to the given address(es).\n",
-            "The fee required to send this transaction will be added to the proposal and displayed to the user.\n",
-            "The 'confirm' command must be called to complete and broadcast the proposed transaction(s).\n",
+            "Propose a transfer of ZEC. Shows the fee, then 'confirm' broadcasts it.\n",
             "\n",
             "Usage:\n",
-            "    send <address> <amount in zatoshis> \"<optional memo>\"\n",
-            "    OR\n",
-            "    send '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "    send <address> <zatoshis> \"<optional memo>\"\n",
+            "    send '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -1549,7 +1489,7 @@ impl Command for SendCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Propose a transfer of ZEC to the given address(es) and display a proposal for confirmation."
+        "Propose a transfer of ZEC, for 'confirm' to broadcast."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1595,17 +1535,14 @@ struct SendAllCommand {}
 impl Command for SendAllCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Propose to transfer all ZEC from shielded pools to a given address.\n",
-            "The fee required to send this transaction will be added to the proposal and displayed to the user.\n",
-            "The 'confirm' command must be called to complete and broadcast the proposed transaction(s).\n",
-            "If invoked with a JSON arg \"zennies_for_zingo\" must be specified, if set to 'true' 1_000_000 ZAT\n",
-            "will be sent to the zingolabs developer address with each transaction.\n",
+            "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
+            "then 'confirm' broadcasts it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
+            "zingolabs developer address per transaction.\n",
             "\n",
-            "Warning:\n",
-            "    Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.\n",
+            "Skips transparent funds: shield those first, see `help shield`.\n",
+            "\n",
             "Usage:\n",
             "    send_all <address> \"<optional memo>\"\n",
-            "    OR\n",
             "    send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'\n",
             "Example:\n",
             "    send_all ",
@@ -1618,7 +1555,7 @@ impl Command for SendAllCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Propose to transfer all ZEC from shielded pools to a given address and display a proposal for confirmation."
+        "Propose a transfer of all shielded ZEC to one address, for 'confirm' to broadcast."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1662,14 +1599,12 @@ struct QuickSendCommand {}
 impl Command for QuickSendCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Send ZEC to the given address(es). Combines `send` and `confirm` into a single command.\n",
-            "The fee required to send this transaction is additionally deducted from your balance.\n",
-            "Warning:\n",
-            "    Transaction(s) will be sent without the user being aware of the fee amount.\n",
+            "Send ZEC, fusing `send` and `confirm`. The fee comes out of your balance\n",
+            "and you never see it before the transaction goes out.\n",
+            "\n",
             "Usage:\n",
-            "    quicksend <address> <amount in zatoshis> \"<optional memo>\"\n",
-            "    OR\n",
-            "    quicksend '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "    quicksend <address> <zatoshis> \"<optional memo>\"\n",
+            "    quicksend '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    quicksend ",
             crate::examples::sapling_address!(),
@@ -1682,7 +1617,7 @@ impl Command for QuickSendCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Send ZEC to the given address(es). Combines `send` and `confirm` into a single command."
+        "Send ZEC, fusing `send` and `confirm`."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1729,21 +1664,16 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Propose a shield of transparent funds to the ironwood pool.
-            The fee required to send this transaction will be added to the proposal and displayed to the user.
-            The 'confirm' command must be called to complete and broadcast the proposed shield.
+            Propose a shield of transparent funds into the ironwood pool. Shows the
+            fee, then 'confirm' broadcasts it.
 
             Usage:
                 shield
-            Example:
-                shield
-                confirm
-
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Propose a shield of transparent funds to the ironwood pool and display a proposal for confirmation.."
+        "Propose a shield of transparent funds, for 'confirm' to broadcast."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1788,18 +1718,17 @@ struct QuickShieldCommand {}
 impl Command for QuickShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Shield transparent funds to the ironwood pool. Combines `shield` and `confirm` into a single command.
-            The fee required to send this transaction is additionally deducted from your balance.
-            Warning:
-                Transaction(s) will be sent without the user being aware of the fee amount.
+            Shield transparent funds into the ironwood pool, fusing `shield` and
+            `confirm`. The fee comes out of your balance and you never see it before
+            the transaction goes out.
+
             Usage:
                 quickshield
-
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Shield transparent funds to the ironwood pool. Combines `shield` and `confirm` into a single command."
+        "Shield transparent funds, fusing `shield` and `confirm`."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1836,9 +1765,8 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.\n",
-            "Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.\n",
-            "Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.\n",
+            "Build and transmit the latest proposal, then resume sync. Needs a proposal\n",
+            "from 'send', 'send_all' or 'shield' first.\n",
             "\n",
             "Usage:\n",
             "    confirm\n",
@@ -1855,7 +1783,7 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task."
+        "Build and transmit the latest proposal, then resume sync."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1892,20 +1820,14 @@ struct CalculateCommand {}
 impl Command for CalculateCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Calculates (signs) the latest proposal without transmitting it, for offline signing.\n",
-            "Consumes the stored proposal, builds and signs its transaction(s) with no Indexer\n",
-            "required, and stores them in the wallet with Calculated status. Transmit them later\n",
-            "with the 'transmit' command once an Indexer is available.\n",
-            "Fails if a proposal has not already been created with the 'send', 'send_all' or\n",
-            "'shield' commands.\n",
+            "Sign the latest proposal without transmitting it, for offline signing. No\n",
+            "Indexer needed. The transactions are stored Calculated, for 'transmit' to send\n",
+            "later. Needs a proposal from 'send', 'send_all' or 'shield' first.\n",
             "\n",
-            "EXPIRY: in Offline mode the transaction's expiry is retargeted to the last height\n",
-            "before the next scheduled network upgrade, so a stale offline chain view cannot\n",
-            "invalidate it before transmission. That is the longest life any pre-signed Zcash\n",
-            "transaction can have — its signature commits to the current consensus rules, which\n",
-            "the next upgrade replaces. Until then it remains valid to transmit, so treat a\n",
-            "Calculated transaction as live value in flight until it is transmitted, expires,\n",
-            "or its inputs are spent by another transaction.\n",
+            "In Offline mode the expiry is retargeted to the last height before the next\n",
+            "network upgrade, the longest life a pre-signed Zcash transaction can have.\n",
+            "Treat a Calculated transaction as live value in flight until it is transmitted,\n",
+            "expires, or another transaction spends its inputs.\n",
             "\n",
             "Usage:\n",
             "    calculate\n",
@@ -1923,7 +1845,7 @@ impl Command for CalculateCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Signs the latest proposal without transmitting it; in Offline mode it stays valid until the next network upgrade."
+        "Sign the latest proposal without transmitting it."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1954,15 +1876,13 @@ struct TransmitCommand {}
 impl Command for TransmitCommand {
     fn help(&self) -> &'static str {
         concat!(
-            "Transmits previously calculated transactions to the Indexer.\n",
-            "With no arguments, transmits every transaction in the wallet with Calculated\n",
-            "status, ordered by target height. To control the order explicitly — required for\n",
-            "multi-step proposals such as TEX sends, whose first step must be transmitted\n",
-            "first — pass the txids in the order the 'calculate' command printed them.\n",
+            "Transmit calculated transactions to the Indexer. With no arguments, sends\n",
+            "every Calculated transaction in target-height order. Pass txids in the order\n",
+            "'calculate' printed them to fix the order yourself, which multi-step proposals\n",
+            "such as TEX sends require.\n",
             "\n",
-            "Remember that transactions from an Offline-mode 'calculate' remain valid until\n",
-            "the next scheduled network upgrade: any that you do not transmit stay live value\n",
-            "in flight until they expire or their inputs are spent.\n",
+            "Anything you leave untransmitted stays live value in flight until it expires or\n",
+            "its inputs are spent.\n",
             "\n",
             "Usage:\n",
             "    transmit [txid ...]\n",
@@ -1972,7 +1892,7 @@ impl Command for TransmitCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Transmits previously calculated transactions to the Indexer."
+        "Transmit calculated transactions to the Indexer."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2042,12 +1962,10 @@ struct DeleteCommand {}
 impl Command for DeleteCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Delete the wallet from disk
+            Delete the wallet file from disk.
+
             Usage:
             delete
-
-            The wallet is deleted from disk. If you want to use another wallet first you need to remove the existing wallet file
-
         "}
     }
 
@@ -2079,18 +1997,18 @@ struct RecoveryInfoCommand {}
 impl Command for RecoveryInfoCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Display the wallet's seed phrase, birthday and number of accounts in use.
+            Print the wallet's seed phrase, birthday and account count.
 
-            Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone.
+            The seed phrase recovers the whole wallet. Save it carefully, share it with
+            nobody.
 
             Usage:
             recovery_info
-
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Display the wallet's seed phrase, birthday and number of accounts in use."
+        "Print the wallet's seed phrase, birthday and account count."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2107,8 +2025,8 @@ struct ValueTransfersCommand {}
 impl Command for ValueTransfersCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            List all value transfers for this wallet.
-            A value transfer is a group of all notes to a specific receiver in a transaction.
+            List the wallet's value transfers, each one a transaction's notes to a
+            single receiver.
 
             Usage:
             value_transfers
@@ -2133,14 +2051,13 @@ struct MessagesFilterCommand {}
 impl Command for MessagesFilterCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            List memo-containing value transfers sent to/from wallet. If an address is provided,
-            only messages to/from that address will be provided. If a string is provided,
-            messages containing that string are displayed. Otherwise, all memos are displayed.
-            Currently, for received messages, this relies on the reply-to address contained in the memo.
-            A value transfer is a group of all notes to a specific receiver in a transaction.
+            List the wallet's memo-bearing value transfers. An address filters to that
+            correspondent, any other string filters to memos containing it, and no
+            argument shows every memo. Received messages are matched on the memo's
+            reply-to address.
 
             Usage:
-            messages [address]/[string]
+            messages [address | string]
         "}
     }
 
@@ -2168,7 +2085,7 @@ struct TransactionsCommand {}
 impl Command for TransactionsCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Provides a list of transaction summaries related to this wallet in order of blockheight.
+            List the wallet's transaction summaries by block height.
 
             Usage:
             transactions
@@ -2176,7 +2093,7 @@ impl Command for TransactionsCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Provides a list of transaction summaries related to this wallet in order of blockheight."
+        "List the wallet's transaction summaries by block height."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2199,8 +2116,9 @@ struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Get an object where keys are addresses and values are total bytes of memo sent to that address.
-            usage:
+            Print total memo bytes sent, keyed by address.
+
+            Usage:
             memobytes_to_address
         "}
     }
@@ -2227,8 +2145,9 @@ struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Get an object where keys are addresses and values are total value sent to that address.
-            usage:
+            Print total value sent, keyed by address.
+
+            Usage:
             value_to_address
         "}
     }
@@ -2255,8 +2174,9 @@ struct SendsToAddressCommand {}
 impl Command for SendsToAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Get an object where keys are addresses and values are total value sent to that address.
-            usage:
+            Print the number of sends, keyed by address.
+
+            Usage:
             sends_to_address
         "}
     }
@@ -2283,21 +2203,15 @@ struct SettingsCommand {}
 impl Command for SettingsCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Show or set wallet settings.
+            Show or set wallet settings. With no argument, prints them all. To set one,
+            name it and give a value.
 
-            If there are no arguments the full list of current settings will be shown.
-            To set, pass the setting as an argument followed by the value.
-
-            Minimum confirmations must be 1 or greater.
-
-            Settings:
-            performance [ low | medium | high | maximum ]
-            min_confirmations 3
+            performance        low | medium | high | maximum
+            min_confirmations  1 or greater
 
             Usage:
             settings
             settings performance high
-
         "}
     }
 
@@ -2370,16 +2284,15 @@ struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Returns the blockchain height at the time the wallet last requested the latest block height from the server.
+            Print the chain height as of the wallet's last request to the server.
 
             Usage:
             height
-
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Returns the blockchain height at the time the wallet last requested the latest block height from the server."
+        "Print the chain height as of the wallet's last request to the server."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2392,16 +2305,16 @@ impl Command for HeightCommand {
 struct NotesCommand {}
 impl Command for NotesCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Show all notes (shielded outputs) in this wallet
+        indoc! {r"
+            Show the wallet's notes (shielded outputs). `all` includes spent ones.
+
             Usage:
             notes [all]
-            If you supply the "all" parameter, all spent notes are also included
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Show all notes (shielded outputs) in this wallet"
+        "Show the wallet's notes (shielded outputs)."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2440,16 +2353,16 @@ impl Command for NotesCommand {
 struct CoinsCommand {}
 impl Command for CoinsCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Show all coins (transparent outputs) in this wallet
+        indoc! {r"
+            Show the wallet's coins (transparent outputs). `all` includes spent ones.
+
             Usage:
-            notes [all]
-            If you supply the "all" parameter, all spent coins are also included
-        "#}
+            coins [all]
+        "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Show all coins (transparent outputs) in this wallet"
+        "Show the wallet's coins (transparent outputs)."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2484,19 +2397,17 @@ impl Command for CoinsCommand {
 struct RemoveTransactionCommand {}
 impl Command for RemoveTransactionCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Removes a failed transaction from the wallet with the given txid.
-            This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them.
+        indoc! {r"
+            Remove a failed transaction from the wallet. Manual on purpose, so a failed
+            send keeps its memos until you decide to drop them.
 
-            usage:
+            Usage:
             remove_transaction <txid>
-
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Removes a failed transaction from the wallet with the given txid."
+        "Remove a failed transaction from the wallet."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2529,19 +2440,16 @@ struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Launches a save task which saves the wallet to persistance when the wallet state changes.
-            Not intended to be called manually.
+            Launch the task that persists the wallet as its state changes. Not meant to
+            be called by hand.
 
-            usage:
-            save run
-            save check
-            save shutdown
-
+            Usage:
+            save run | check | shutdown
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Launches a save task. Not intended to be called manually."
+        "Launch the save task. Not meant to be called by hand."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2579,15 +2487,15 @@ struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Quit the light client
+            Quit the light client, saving state to disk.
+
             Usage:
             quit
-
         "}
     }
 
     fn short_help(&self) -> &'static str {
-        "Quit the lightwallet, saving state to disk"
+        "Quit the light client, saving state to disk."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2610,7 +2518,7 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
     }
 }
 
-/// Typed failure of the migration command family — the audit Issue-Q
+/// Typed failure of the migration command family, following the audit Issue-Q
 /// pattern PR #2464 established: the discriminant lives in the type,
 /// argument parsing happens before any wallet access, and prose is
 /// produced at exactly one rendering site per command. Each Display
@@ -2630,15 +2538,21 @@ enum MigrationCommandError {
     MalformedPlanHash,
     #[error("--per-bucket expects a positive integer.")]
     MalformedPerBucket,
+    #[error("cadence expects the number of parts per broadcast window.")]
+    MalformedCadence,
     #[error("spacing must be a number of seconds.")]
     MalformedSpacing,
+    #[error("drain expects a sub-command: plan | now. Type \"help drain\" for usage.")]
+    DrainUsage,
+    #[error("split expects a sub-command: plan | now. Type \"help split\" for usage.")]
+    SplitUsage,
     #[error("sync failed: {0}")]
     Sync(zingolib::lightclient::error::LightClientError),
     #[error("{0}")]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
-/// The migration family's typed request: arguments parse completely
+/// A parsed migration command. Arguments parse completely
 /// into this enum before any wallet access.
 #[derive(Debug, PartialEq, Eq)]
 enum MigrationSubCommand {
@@ -2647,8 +2561,16 @@ enum MigrationSubCommand {
         plan_hash: [u8; 32],
         per_bucket: Option<u32>,
     },
+    Continue,
+    Cadence {
+        per_bucket: u32,
+    },
+    Execute {
+        spacing: std::time::Duration,
+    },
     Auto,
     Status,
+    Windows,
     Reconcile,
     Catchup {
         spacing: std::time::Duration,
@@ -2686,8 +2608,28 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
                 per_bucket,
             })
         }
+        "continue" => Ok(MigrationSubCommand::Continue),
+        "cadence" => {
+            let per_bucket = args
+                .get(1)
+                .and_then(|value| value.parse::<u32>().ok())
+                .ok_or(MigrationCommandError::MalformedCadence)?;
+            Ok(MigrationSubCommand::Cadence { per_bucket })
+        }
+        "execute" => {
+            let spacing = match args.get(1) {
+                Some(seconds) => std::time::Duration::from_secs(
+                    seconds
+                        .parse::<u64>()
+                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
+                ),
+                None => std::time::Duration::from_secs(30),
+            };
+            Ok(MigrationSubCommand::Execute { spacing })
+        }
         "auto" => Ok(MigrationSubCommand::Auto),
         "status" => Ok(MigrationSubCommand::Status),
+        "windows" => Ok(MigrationSubCommand::Windows),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
         "catchup" => {
             let spacing = match args.get(1) {
@@ -2714,7 +2656,7 @@ fn txids_json<T: ToString>(txids: &[T]) -> json::JsonValue {
         .into()
 }
 
-/// The migrate command's typed core; its errors cross `exec` as
+/// Runs the `migrate` command. Its errors cross `exec` as
 /// [`CommandError::Migration`] and render at `do_user_command`.
 fn run_migrate(
     args: &[&str],
@@ -2733,12 +2675,12 @@ fn run_migrate(
     Ok(object! {
         "split_txids" => txids_json(&summary.split_txids),
         "part_txids" => txids_json(&summary.part_txids),
-        "stranded" => summary.stranded,
+        "residual" => summary.residual,
     }
     .pretty(2))
 }
 
-/// The migration command's typed core: parse first, then act.
+/// Runs one `migration` sub-command.
 fn run_migration(
     args: &[&str],
     lightclient: &mut LightClient,
@@ -2751,7 +2693,7 @@ fn run_migration(
                 "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
                 "split_fee" => plan.split_fee(),
                 "parts" => plan.parts.clone(),
-                "stranded" => plan.stranded,
+                "residual" => plan.residual,
                 "plan_hash" => hex::encode(migration::plan_hash(&plan)),
             }
             .pretty(2)
@@ -2774,6 +2716,66 @@ fn run_migration(
             ))?;
             "Migration started.".to_string()
         }
+        MigrationSubCommand::Continue => {
+            RT.block_on(lightclient.sync_and_await())
+                .map_err(MigrationCommandError::Sync)?;
+            match RT.block_on(lightclient.continue_note_splitting())? {
+                SplitStep::RoundBroadcast { round, txids } => object! {
+                    "round" => round,
+                    "split_txids" => txids_json(&txids),
+                }
+                .pretty(2),
+                SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
+                    "Round confirmed; waiting for the anchor to reach its outputs. \
+                     Sync and retry."
+                        .to_string()
+                }
+                SplitStep::AwaitingConfirmation { pending } => object! {
+                    "awaiting_confirmation" => txids_json(&pending),
+                }
+                .pretty(2),
+                SplitStep::SplittingComplete => {
+                    "Note splitting complete; parts are scheduled.".to_string()
+                }
+            }
+        }
+        MigrationSubCommand::Cadence { per_bucket } => {
+            RT.block_on(lightclient.reschedule_parts(per_bucket))?;
+            format!("Cadence set to {per_bucket} per window; the schedule was re-drawn.")
+        }
+        MigrationSubCommand::Execute { spacing } => {
+            RT.block_on(lightclient.sync_and_await())
+                .map_err(MigrationCommandError::Sync)?;
+            let progress = lightclient.batch_progress_handle();
+            let report = RT.block_on(with_transmit_heartbeat(
+                "migration execute",
+                move || progress.status().as_ref().map(batch_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.execute_due_parts(spacing),
+            ))?;
+            object! {
+                "outcomes" => report
+                    .outcomes
+                    .iter()
+                    .map(|outcome| object! {
+                        "part" => outcome.part.0,
+                        "denomination" => outcome.denomination,
+                        "result" => match &outcome.result {
+                            PartSendResult::Sent(txid) => object! { "sent" => txid.to_string() },
+                            PartSendResult::Slid => object! { "slid" => true },
+                            PartSendResult::NotDue { window_opens_unix_time } => {
+                                object! { "not_due_until" => *window_opens_unix_time }
+                            }
+                            PartSendResult::Failed { error } => {
+                                object! { "failed" => error.clone() }
+                            }
+                        },
+                    })
+                    .collect::<Vec<_>>(),
+                "halted" => report.halted,
+            }
+            .pretty(2)
+        }
         MigrationSubCommand::Auto => {
             RT.block_on(lightclient.sync_and_await())
                 .map_err(MigrationCommandError::Sync)?;
@@ -2793,18 +2795,46 @@ fn run_migration(
                 "parts_confirmed" => status.parts_confirmed,
                 "value_total" => status.value_total,
                 "value_migrated" => status.value_migrated,
-                "next_wakes" => status
-                    .next_wakes
+                "upcoming_windows" => status
+                    .upcoming_windows
                     .iter()
-                    .map(|wake| object! {
-                        "bucket_index" => wake.bucket_index,
-                        "boundary" => u32::from(wake.boundary),
-                        "part_ids" => wake.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
-                        "estimated_unix_time" => wake.estimated_unix_time,
+                    .map(|window| object! {
+                        "bucket_index" => window.bucket_index,
+                        "boundary" => u32::from(window.boundary),
+                        "part_ids" => window.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                        "window_opens_unix_time" => window.window_opens_unix_time,
+                        "latest_target_unix_time" => window.latest_target_unix_time,
                     })
                     .collect::<Vec<_>>(),
+                "due_now" => status.due_now.as_ref().map(|batch| object! {
+                    "boundary" => u32::from(batch.boundary),
+                    "part_ids" => batch.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    "denominations" => batch.denominations.clone(),
+                }),
             }
             .pretty(2)
+        }
+        MigrationSubCommand::Windows => {
+            let timeline = RT.block_on(lightclient.window_timeline())?;
+            match timeline {
+                None => "Wallet has no chain height yet; sync first.".to_string(),
+                Some(windows) => object! {
+                    "windows" => windows
+                        .iter()
+                        .map(|window| object! {
+                            "bucket_index" => window.bucket_index,
+                            "opens" => u32::from(window.boundary),
+                            "closes" => u32::from(window.close),
+                            "is_current" => window.is_current,
+                            "parts_confirmed" => window.parts_confirmed,
+                            "parts_total" => window.parts_total,
+                            "value_migrated" => window.value_migrated,
+                            "value_total" => window.value_total,
+                        })
+                        .collect::<Vec<_>>(),
+                }
+                .pretty(2),
+            }
         }
         MigrationSubCommand::Reconcile => {
             let report = RT.block_on(lightclient.reconcile_migration())?;
@@ -2846,20 +2876,236 @@ fn run_migration(
     })
 }
 
+/// A parsed `drain` sub-command.
+#[derive(Debug, PartialEq, Eq)]
+enum DrainSubCommand {
+    Plan,
+    Now,
+}
+
+/// Pure parser for the drain command's arguments.
+fn parse_drain_args(args: &[&str]) -> Result<DrainSubCommand, MigrationCommandError> {
+    match args {
+        ["plan"] => Ok(DrainSubCommand::Plan),
+        ["now"] => Ok(DrainSubCommand::Now),
+        _ => Err(MigrationCommandError::DrainUsage),
+    }
+}
+
+/// A parsed `split` sub-command.
+#[derive(Debug, PartialEq, Eq)]
+enum SplitSubCommand {
+    Plan,
+    Now,
+}
+
+/// Pure parser for the split command's arguments.
+fn parse_split_args(args: &[&str]) -> Result<SplitSubCommand, MigrationCommandError> {
+    match args {
+        ["plan"] => Ok(SplitSubCommand::Plan),
+        ["now"] => Ok(SplitSubCommand::Now),
+        _ => Err(MigrationCommandError::SplitUsage),
+    }
+}
+
+/// Renders an in-flight execute batch snapshot as the heartbeat's detail
+/// line, the same [`zingolib::lightclient::migrate::BatchStatus`] a mobile
+/// progress screen polls during `execute_due_parts`.
+fn batch_progress_line(status: &zingolib::lightclient::migrate::BatchStatus) -> String {
+    use zingolib::lightclient::migrate::BatchPhase;
+    match status.phase {
+        BatchPhase::Sending => format!(
+            "resolved {}/{} (sent {})",
+            status.resolved, status.total, status.sent
+        ),
+        BatchPhase::Spacing => format!(
+            "resolved {}/{} (sent {}), waiting out the spacing",
+            status.resolved, status.total, status.sent
+        ),
+    }
+}
+
+/// Renders an in-flight drain snapshot as the heartbeat's detail line:
+/// "built i/N" while proving and signing, "sent i/N" while broadcasting.
+fn drain_progress_line(status: &ImmediateMigrationStatus) -> String {
+    match status.phase {
+        ImmediateMigrationPhase::Building => format!("built {}/{}", status.built, status.total),
+        ImmediateMigrationPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
+    }
+}
+
+/// Renders an in-flight note-splitting round snapshot as the heartbeat's
+/// detail line, mirroring [`drain_progress_line`].
+fn split_progress_line(status: &SplitStatus) -> String {
+    match status.phase {
+        SplitPhase::Building => format!("built {}/{}", status.built, status.total),
+        SplitPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
+    }
+}
+
+/// Runs `drain plan` or `drain now`.
+///
+/// `plan` previews from wallet state and sends nothing. `now` broadcasts, and
+/// writes progress lines to stderr while it runs.
+///
+/// Returns the summary as JSON.
+fn run_drain(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    Ok(match parse_drain_args(args)? {
+        DrainSubCommand::Plan => {
+            let plan = RT.block_on(lightclient.plan_immediate_migration(zip32::AccountId::ZERO))?;
+            object! {
+                "transactions" => plan.transactions.len(),
+                "migrated" => plan.migrated,
+                "fee" => plan.fee,
+                "residual" => plan.residual,
+            }
+            .pretty(2)
+        }
+        DrainSubCommand::Now => {
+            let progress = lightclient.immediate_migration_progress_handle();
+            let summary = RT.block_on(with_transmit_heartbeat(
+                "drain",
+                move || progress.status().as_ref().map(drain_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.quick_immediate_migration(zip32::AccountId::ZERO, true),
+            ))?;
+            object! {
+                "txids" => txids_json(&summary.txids),
+                "migrated" => summary.migrated,
+                "fee" => summary.fee,
+                "residual" => summary.residual,
+            }
+            .pretty(2)
+        }
+    })
+}
+
+/// Runs `split plan` or `split now`.
+///
+/// `plan` previews the remaining rounds and sends nothing. `now` runs one
+/// round, writing progress lines to stderr while it runs. It returns the
+/// round's txids, or a message explaining why nothing was sent.
+fn run_split(
+    args: &[&str],
+    lightclient: &mut LightClient,
+) -> Result<String, MigrationCommandError> {
+    Ok(match parse_split_args(args)? {
+        SplitSubCommand::Plan => {
+            let plan = RT.block_on(lightclient.plan_note_split(zip32::AccountId::ZERO))?;
+            object! {
+                "split_rounds" => plan.split_rounds.len(),
+                "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
+                "split_fee" => plan.split_fee(),
+                "parts" => plan.parts.clone(),
+                "residual" => plan.residual,
+            }
+            .pretty(2)
+        }
+        SplitSubCommand::Now => {
+            let progress = lightclient.split_progress_handle();
+            match RT.block_on(with_transmit_heartbeat(
+                "split",
+                move || progress.status().as_ref().map(split_progress_line),
+                |line| eprintln!("{line}"),
+                lightclient.quick_split(zip32::AccountId::ZERO, true),
+            ))? {
+                SplitOutcome::Round { txids } => {
+                    object! { "split_txids" => txids_json(&txids) }.pretty(2)
+                }
+                SplitOutcome::AwaitingConfirmation => {
+                    "A previous round has not confirmed yet; nothing was sent. Sync and retry."
+                        .to_string()
+                }
+                SplitOutcome::Complete => {
+                    "Every note is part-ready; splitting is complete.".to_string()
+                }
+            }
+        }
+    })
+}
+
+struct DrainCommand {}
+impl Command for DrainCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Send every spendable Orchard note into the Ironwood pool now, ZIP 318's
+            immediate path.
+
+            Privacy disclosure (ZIP 318): this puts the wallet's real amounts on-chain
+            at once, correlated with each other and with this wallet's activity. The
+            `migration` command is the private alternative.
+
+            `plan` previews from current wallet state: transaction count, the total
+            landing in Ironwood, fees, and the residual dust left behind because moving
+            it costs more than it carries. Nothing is signed or sent.
+            `now` builds, signs and broadcasts. Sync first, since like any send this
+            does not synchronize. Safe to repeat: a partial failure leaves the unsent
+            notes spendable and a second run sends only the remainder.
+
+            Usage:
+            drain plan | now
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Send all Orchard funds into the Ironwood pool now (immediate ZIP 318 path)."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(run_drain(args, lightclient)?)
+    }
+}
+
+struct SplitCommand {}
+impl Command for SplitCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r"
+            Resize the wallet's Orchard notes into ZIP 318 part sizes, one round of
+            Orchard self-sends per call.
+
+            The rounds reveal no value and may run before NU6.3 activation. Each call
+            replans from the wallet's confirmed notes and persists no migration state.
+            Refused while a scheduled migration is active, since that flow does its own
+            splitting.
+
+            `plan` previews the remaining rounds, transactions, fees, resulting
+            denominations and residual dust. Nothing is signed or sent, and zero rounds
+            means every note is already part-ready.
+            `now` runs one round. Sync first, and again between rounds until each
+            round's self-sends confirm. It reports when a prior round is still
+            confirming and when splitting is done.
+
+            Usage:
+            split plan | now
+        "}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Split Orchard notes into ZIP 318 part sizes, one round per call."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(run_split(args, lightclient)?)
+    }
+}
+
 struct MigrateCommand {}
 impl Command for MigrateCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
             Migrate all Orchard funds to the Ironwood pool in one interactive run.
 
-            Executes ZIP 318's two phases back to back: note-splitting rounds (Orchard
-            self-sends, each awaited to confirmation), then one migration transaction per
+            Runs ZIP 318's two phases back to back: note-splitting rounds of Orchard
+            self-sends, each awaited to confirmation, then one migration transaction per
             part, broadcast immediately.
 
-            Privacy disclosure (ZIP 318): the immediate mode sends parts at the same time
-            as each other and as synchronization, so the server can correlate them with
-            this wallet's activity. The scheduled flow (see the migration command) spreads
-            parts across anchor-height buckets instead.
+            Privacy disclosure (ZIP 318): parts go out alongside each other and
+            alongside synchronization, so the server can correlate them with this
+            wallet's activity. The `migration` command spreads them across
+            anchor-height buckets instead.
 
             Usage:
             migrate
@@ -2867,7 +3113,7 @@ impl Command for MigrateCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Migrate all Orchard funds to the Ironwood pool in one interactive run"
+        "Migrate all Orchard funds to the Ironwood pool in one interactive run."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2881,35 +3127,43 @@ impl Command for MigrationCommand {
         indoc! {r"
             Drive the scheduled Orchard to Ironwood migration (ZIP 318).
 
-            Sub-commands:
-            `plan` computes the migration plan (note-splitting rounds, parts, fees,
-            stranded dust) from the wallet's spendable Orchard notes and prints its plan
-            hash. Nothing is signed or sent.
-            `start <plan_hash> [--per-bucket N]` records consent to the plan with that
-            hash and begins the migration. --per-bucket N caps how many parts share each
-            broadcast window (lower = more sessions, better privacy; higher = fewer
-            sessions, faster). Fails if the wallet's notes changed since planning.
-            `auto` syncs the wallet, then broadcasts any parts whose random target block
-            within the current bucket window has been reached. Run this periodically
-            to drive the migration without manual steps.
-            `status` reports progress: the Orchard-pool confirmed-spendable balance, the
-            phase, part counts and values, and the coming broadcast windows.
-            `reconcile` checks the persisted schedule against the chain and applies the
-            actions that are safe unattended. Run it after every sync.
-            `catchup [spacing_seconds]` sends overdue parts now, in sequence with the
-            given spacing (default 30 seconds). Disclosure (ZIP 318): sending at
-            catch-up time correlates the broadcasts with this wallet's activity.
-            `cancel` abandons the migration. Confirmed parts stand; pending parts are
+            `plan` computes the plan (rounds, parts, fees, residual dust) from the
+            wallet's spendable Orchard notes and prints its hash. Nothing is sent.
+            `start` records consent to the plan with that hash and begins. --per-bucket
+            caps how many parts share a broadcast window: lower is more private, higher
+            is faster. Fails if the notes changed since planning.
+            `continue` syncs, then drives one splitting step, broadcasting the next
+            round of self-sends or, once every note is part-ready, binding the parts and
+            scheduling them. Repeat, syncing between rounds, until it reports them
+            scheduled.
+            `cadence` resets parts-per-window and redraws the schedule. Usable until the
+            first part is signed, so the choice can wait for splitting to end.
+            `execute` syncs, then sends everything owed right now in one batch, the
+            current window's due parts plus any missed windows', spaced by the given
+            seconds (default 30). Reports each part's outcome. The manual counterpart
+            to `auto`.
+            `auto` syncs, then broadcasts whatever the current window has due. Run it
+            periodically to drive the migration hands-off.
+            `status` reports the Orchard confirmed-spendable balance, the phase, part
+            counts and values, and the coming windows.
+            `windows` lists each window's block range, whether the chain is inside it,
+            and how many parts and how much value confirmed. The current window is
+            reported even with no migration running.
+            `reconcile` checks the persisted schedule against the chain and applies what
+            is safe unattended. Run it after every sync.
+            `catchup` sends overdue parts now, spaced by the given seconds (default 30).
+            Disclosure (ZIP 318): sending at catch-up time correlates the broadcasts
+            with this wallet's activity.
+            `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
 
             Usage:
             migration plan
             migration start <plan_hash> [--per-bucket N]
-            migration auto
-            migration status
-            migration reconcile
+            migration cadence <N>
+            migration execute [spacing_seconds]
             migration catchup [spacing_seconds]
-            migration cancel
+            migration continue | auto | status | windows | reconcile | cancel
         "}
     }
 
@@ -2952,6 +3206,7 @@ fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("transmit", Box::new(TransmitCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("delete", Box::new(DeleteCommand {})),
+        ("drain", Box::new(DrainCommand {})),
         ("export_ufvk", Box::new(ExportUfvkCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("info", Box::new(InfoCommand {})),
@@ -2984,6 +3239,7 @@ fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("settings", Box::new(SettingsCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("spendable_balance", Box::new(SpendableBalanceCommand {})),
+        ("split", Box::new(SplitCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
@@ -3044,7 +3300,7 @@ mod transmit_heartbeat {
     use super::*;
 
     /// HYPOTHESIS: a transmission finishing before the first tick emits
-    /// nothing — the heartbeat must not add noise to a normal fast send.
+    /// nothing, because the heartbeat must not add noise to a normal fast send.
     #[tokio::test(start_paused = true)]
     async fn a_fast_transmission_stays_silent() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -3139,6 +3395,50 @@ mod migration_command_parsing {
     }
 
     #[test]
+    fn continue_parses_bare() {
+        assert_eq!(
+            parse_migration_args(&["continue"]).expect("bare continue parses"),
+            MigrationSubCommand::Continue
+        );
+    }
+
+    #[test]
+    fn windows_parses_bare() {
+        assert_eq!(
+            parse_migration_args(&["windows"]).expect("bare windows parses"),
+            MigrationSubCommand::Windows
+        );
+    }
+
+    #[test]
+    fn cadence_requires_a_count() {
+        assert_eq!(
+            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
+            MigrationSubCommand::Cadence { per_bucket: 4 }
+        );
+        assert!(matches!(
+            parse_migration_args(&["cadence"]),
+            Err(MigrationCommandError::MalformedCadence)
+        ));
+    }
+
+    #[test]
+    fn execute_defaults_spacing_to_thirty_seconds() {
+        assert_eq!(
+            parse_migration_args(&["execute"]).expect("bare execute parses"),
+            MigrationSubCommand::Execute {
+                spacing: std::time::Duration::from_secs(30),
+            }
+        );
+        assert_eq!(
+            parse_migration_args(&["execute", "5"]).expect("spaced execute parses"),
+            MigrationSubCommand::Execute {
+                spacing: std::time::Duration::from_secs(5),
+            }
+        );
+    }
+
+    #[test]
     fn catchup_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
             parse_migration_args(&["catchup"]).expect("bare catchup parses"),
@@ -3157,6 +3457,62 @@ mod migration_command_parsing {
         assert_eq!(
             format!("Error: {}", MigrationCommandError::MalformedPerBucket),
             "Error: --per-bucket expects a positive integer."
+        );
+    }
+}
+
+#[cfg(test)]
+mod drain_and_split_command_parsing {
+    //! Pins the pure argument parsers of the mobile-parity migration
+    //! commands: `drain` and `split` accept exactly `plan` or `now`.
+
+    use super::*;
+
+    #[test]
+    fn drain_accepts_exactly_plan_or_now() {
+        assert_eq!(
+            parse_drain_args(&["plan"]).expect("drain plan parses"),
+            DrainSubCommand::Plan
+        );
+        assert_eq!(
+            parse_drain_args(&["now"]).expect("drain now parses"),
+            DrainSubCommand::Now
+        );
+        for junk in [&[][..], &["bogus"][..], &["now", "extra"][..]] {
+            assert!(matches!(
+                parse_drain_args(junk),
+                Err(MigrationCommandError::DrainUsage)
+            ));
+        }
+    }
+
+    #[test]
+    fn split_accepts_exactly_plan_or_now() {
+        assert_eq!(
+            parse_split_args(&["plan"]).expect("split plan parses"),
+            SplitSubCommand::Plan
+        );
+        assert_eq!(
+            parse_split_args(&["now"]).expect("split now parses"),
+            SplitSubCommand::Now
+        );
+        for junk in [&[][..], &["bogus"][..], &["plan", "extra"][..]] {
+            assert!(matches!(
+                parse_split_args(junk),
+                Err(MigrationCommandError::SplitUsage)
+            ));
+        }
+    }
+
+    #[test]
+    fn usage_errors_render_with_help_pointers() {
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::DrainUsage),
+            "Error: drain expects a sub-command: plan | now. Type \"help drain\" for usage."
+        );
+        assert_eq!(
+            format!("Error: {}", MigrationCommandError::SplitUsage),
+            "Error: split expects a sub-command: plan | now. Type \"help split\" for usage."
         );
     }
 }
@@ -3239,7 +3595,7 @@ mod nym_command_parsing {
     }
 
     /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
-    /// legible at a glance — clearnet ok beside mixnet FAILED. Falsified if
+    /// legible at a glance: clearnet ok beside mixnet FAILED. Falsified if
     /// either leg's outcome, timing, or the not-ready skip is dropped.
     #[cfg(feature = "nym")]
     #[test]
@@ -3262,7 +3618,7 @@ mod nym_command_parsing {
         };
         assert_eq!(
             render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms — chain main, height 3420400\n  mixnet:   FAILED after 20000ms — the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
 
         let proxy_not_ready = PairedProbe {
@@ -3275,7 +3631,7 @@ mod nym_command_parsing {
         };
         assert_eq!(
             render_paired_probe(&proxy_not_ready),
-            "zec.rocks\n  clearnet: ok in 180ms — chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+            "zec.rocks\n  clearnet: ok in 180ms: chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
         );
     }
 
@@ -3324,7 +3680,7 @@ mod nym_command_parsing {
     }
 
     /// Pins the proxy-path precedence chain: explicit, then environment,
-    /// then bundled, then the bare name on PATH — with empty explicit and
+    /// then bundled, then the bare name on PATH, with empty explicit and
     /// environment values counting as absent.
     #[cfg(feature = "nym")]
     #[test]
@@ -3395,8 +3751,8 @@ mod nym_command_parsing {
         );
         assert_eq!(
             render_status(MixnetMode::Died, None, None),
-            "Mixnet Mode: died — the proxy exited unexpectedly. Send and price-fetch \
-             refuse (they will not fall back to clearnet); run `nym on` to restart the proxy.",
+            "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
+             refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
             "a died proxy is reported distinctly from off, and tells the user how to recover"
         );
     }
@@ -3416,7 +3772,7 @@ mod nym_command_parsing {
                 None,
                 Some("attempt 2/10: 2 in flight, 0 failed")
             ),
-            "Mixnet Mode: bootstrapping — attempt 2/10: 2 in flight, 0 failed \
+            "Mixnet Mode: bootstrapping, attempt 2/10: 2 in flight, 0 failed \
              (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(

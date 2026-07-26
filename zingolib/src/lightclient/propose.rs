@@ -381,7 +381,7 @@ mod send_all {
     /// wallet fragmented across both shielded pools drains every non-dust
     /// note and leaves the dust behind. The original assembled the
     /// fragmentation with five LocalNet sends and asserted zero
-    /// balances-excluding-dust after mining — which is this same contract,
+    /// balances-excluding-dust after mining, which is this same contract,
     /// one mined round trip later: send-all pays out the dust-excluded
     /// spendable balance minus the fee, so notes at or below the 5_000-zat
     /// `MARGINAL_FEE` dust line (which net nothing after paying for their
@@ -449,7 +449,7 @@ mod send_all {
     /// wallet's own sapling address while the validator ran five blocks
     /// ahead, asserting only that propose-and-send succeeded. Proposing
     /// never consults the server, so the offline half is exactly this
-    /// self-destination send-all; the behind-tip send half remains covered
+    /// self-destination send-all. The behind-tip send half remains covered
     /// by `load_wallet::verify_old_wallet_uses_server_height_in_send`.
     #[tokio::test]
     async fn send_all_to_own_sapling_proposes() {
@@ -484,7 +484,7 @@ mod send_all {
     /// Gap-2 remediation from the protection audit (§ Gap remediation
     /// plan): with Zennies for Zingo enabled, the proposal itself carries
     /// the injected zenny payment. toggle_zennies_for_zingo pins the
-    /// max-send arithmetic; this pins the injection mechanism — the
+    /// max-send arithmetic. This pins the injection mechanism: the
     /// request `propose_send_all` builds contains exactly one payment to
     /// the Zennies for Zingo address at `ZENNIES_FOR_ZINGO_AMOUNT`,
     /// alongside the send-all payment, and the step still balances.
@@ -719,7 +719,7 @@ mod simpool {
 /// the transparent minimum-value and boundary-value rows. The matrix's
 /// fee, value, and change assertions are pure proposer arithmetic, so a
 /// synthetic wallet funded with exactly `value + change + fee` replaces
-/// the LocalNet environment and its two-hop funding chain; each case
+/// the LocalNet environment and its two-hop funding chain. Each case
 /// asserts the proposal pays `value`, charges the `fee_tables::one_to_one`
 /// fee, and returns exactly `change`. The Transmitted-to-Confirmed round
 /// trip the matrix also exercised remains covered by the two surviving
@@ -918,7 +918,7 @@ mod pool_matrix {
     );
     // 546 zatoshis is the canonical transparent dust threshold. The
     // proposer permits it; whether a relay accepts it is the network's
-    // business — zebra's mempool dust rule was the reason this row's
+    // business, and zebra's mempool dust rule was the reason this row's
     // LocalNet ancestor sent 546 rather than 1.
     pool_matrix_case!(
         sapling_sends_to_transparent_minimum_value,
@@ -970,8 +970,8 @@ mod proposal_shape {
     /// the remaining-needed figure was recomputed, so the caller saw a
     /// stale positive remainder and the next pool selected against a
     /// target that was already met. The wallet holds the covering note in
-    /// Orchard and a larger note in Sapling — the two trailing pools of
-    /// the selector's preference order for an Ironwood payment — so the
+    /// Orchard and a larger note in Sapling (the two trailing pools of
+    /// the selector's preference order for an Ironwood payment), so the
     /// assertion is independent of that order's head.
     #[tokio::test]
     async fn exhausted_pool_does_not_over_select() {
@@ -1085,9 +1085,9 @@ mod proposal_shape {
     }
 
     /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
-    /// of less than the fee still proposes — the fee comes out of the
+    /// of less than the fee still proposes, since the fee comes out of the
     /// selected note and the remainder returns as change. The original
-    /// asserted nothing beyond the send call succeeding; the offline
+    /// asserted nothing beyond the send call succeeding. The offline
     /// proposal now asserts the shape the name always promised.
     #[tokio::test]
     async fn dust_sends_change_correctly() {
@@ -1123,8 +1123,8 @@ mod proposal_shape {
     /// Offline twin of libtonode
     /// `basic_transactions::send_and_sync_with_multiple_notes_no_panic`,
     /// which stays live as the pipeline control: a 50_000 payment from
-    /// two 40_000 notes must gather both — either alone is consumed by
-    /// the payment plus the 10_000 one-to-one fee — and return exactly
+    /// two 40_000 notes must gather both (either alone is consumed by
+    /// the payment plus the 10_000 one-to-one fee) and return exactly
     /// 20_000 change.
     #[tokio::test]
     async fn payment_no_single_note_covers_gathers_both_and_changes() {
@@ -1171,7 +1171,7 @@ mod proposal_shape {
     /// which stays live as the pipeline control: from 100_000 orchard
     /// plus a 1_000-zat sapling dust note, a 50_000 send selects only
     /// the orchard note (dust cannot pay for its own input), charges the
-    /// plain one-to-one fee, and leaves 40_000 change — the live test's
+    /// plain one-to-one fee, and leaves 40_000 change, the live test's
     /// closing balance, derived here at proposal time. The dust note
     /// stays behind untouched.
     #[tokio::test]
@@ -1247,7 +1247,7 @@ mod proposal_shape {
     /// a four-coin shield proposes as a single step spending all four
     /// coins into one change output, with the zip317 fee for four
     /// transparent inputs plus the orchard action pair. The original
-    /// mined the coins and waited out coinbase maturity; propose logic
+    /// mined the coins and waited out coinbase maturity. Propose logic
     /// detects coinbase through the stored transaction's transparent
     /// bundle (`spendable_transparent_coins` demands 100 extra
     /// confirmations for it), and fabricated records carry no transparent
@@ -1278,11 +1278,11 @@ mod proposal_shape {
 
     /// Migrated from libtonode `slow::zero_value_change`: a send that
     /// leaves exactly zero after the fee still proposes an orchard change
-    /// output — of value zero. The original mined the transaction and then
+    /// output of value zero. The original mined the transaction and then
     /// counted one unspent zero-value note and one confirmed-spent funding
-    /// note; the note-state bookkeeping it exercised is covered by the
-    /// pepper-sync spend-status rig, and the load-bearing claim — the
-    /// builder emits the zero-value change — is decided at proposal time.
+    /// note. The note-state bookkeeping it exercised is covered by the
+    /// pepper-sync spend-status rig, and the load-bearing claim (the
+    /// builder emits the zero-value change) is decided at proposal time.
     #[tokio::test]
     async fn zero_value_change() {
         let note_value = 100_000;
@@ -1310,7 +1310,7 @@ mod proposal_shape {
     }
 
     /// Migrated from libtonode `slow::zero_value_change_to_orchard_created`:
-    /// same zero-value-change arithmetic on a cross-pool send — an 80_000
+    /// same zero-value-change arithmetic on a cross-pool send. An 80_000
     /// payment to an external sapling address out of a 100_000 orchard note
     /// costs exactly the 20_000 cross-pool fee, so the ironwood change
     /// output is proposed at value zero.
@@ -1341,10 +1341,10 @@ mod proposal_shape {
     }
 
     /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
-    /// TEX address proposes as the ZIP-320 two-step — shield to an
+    /// TEX address proposes as the ZIP-320 two-step: shield to an
     /// ephemeral transparent output, then the transparent leg to the TEX
     /// destination funded entirely by step one. The original's only
-    /// proposal-level assertion was the step count; the offline version
+    /// proposal-level assertion was the step count. The offline version
     /// also pins the inter-step wiring. The broadcast half (both steps
     /// mined, three wallet records) retires with the LocalNet original.
     #[tokio::test]
@@ -1443,7 +1443,7 @@ mod proposal_shape {
     /// Migrated from the chain_generics `note_selection_order` fixture's
     /// load-bearing half: from notes of 10/20/30/40 thousand zats, a
     /// 40_000-zat send selects the two-note covering set that leaves the
-    /// least change — not more notes, and not a higher-value covering set.
+    /// least change, not more notes and not a higher-value covering set.
     #[tokio::test]
     async fn note_selection_covers_target_with_minimal_change() {
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
@@ -1486,9 +1486,9 @@ mod proposal_shape {
 }
 
 /// The propose/send family must never read wallet state a running engine
-/// could be mutating, and a pause it takes must serve a pending proposal —
-/// never outlive one. Each test here pins one way the imperative pause
-/// discipline violates that contract; all four run red until the stored
+/// could be mutating, and a pause it takes must serve a pending proposal,
+/// never outliving one. Each test here pins one way the imperative pause
+/// discipline violates that contract. All four run red until the stored
 /// pause discipline lands later on this branch.
 #[cfg(test)]
 mod sync_pause_contract {
@@ -1524,8 +1524,8 @@ mod sync_pause_contract {
 
     /// A synthetic-wallet client whose sync-mode atomic reads `Running`,
     /// simulating a consumer whose background sync engine is between
-    /// batches. No engine task exists, so every mode transition observed —
-    /// or leaked — is the code under test's own.
+    /// batches. No engine task exists, so every mode transition observed
+    /// (or leaked) is the code under test's own.
     async fn client_with_running_engine(wallet: LightWallet) -> LightClient {
         let client = LightClient::new_for_test(wallet).await;
         client
@@ -1564,7 +1564,7 @@ mod sync_pause_contract {
 
     /// A shield proposal must not come into existence while the engine is
     /// running: the proposal reads spendable coins the engine mutates.
-    /// `propose_send` pauses for exactly this reason; the shield path
+    /// `propose_send` pauses for exactly this reason. The shield path
     /// never did.
     #[tokio::test]
     async fn shield_proposal_is_never_created_under_a_running_engine() {
@@ -1684,8 +1684,8 @@ mod sync_pause_contract {
         );
     }
 
-    /// Clearing a stored proposal — the decline path of the two-phase
-    /// send — restores the engine to the mode it held before proposing.
+    /// Clearing a stored proposal (the decline path of the two-phase
+    /// send) restores the engine to the mode it held before proposing.
     /// Previously the pause outlived the declined proposal until some
     /// later send opted into resuming.
     #[tokio::test]
@@ -1702,8 +1702,8 @@ mod sync_pause_contract {
     }
 
     /// An Indexerless send attempt fails before consuming the stored
-    /// proposal (ADR 0006), so the proposal — and the pause guarding
-    /// it — survive for retry once an Indexer is configured.
+    /// proposal (ADR 0006), so the proposal and the pause guarding
+    /// it survive for retry once an Indexer is configured.
     #[tokio::test]
     async fn offline_send_failure_keeps_the_proposal_guarded() {
         let mut client = client_with_stored_proposal().await;

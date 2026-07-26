@@ -32,6 +32,10 @@
 
 **Turnstile** — The ZIP 318 consensus mechanism that, from NU6.3 activation, constrains old-Orchard-pool spends to spends-plus-change and disables ordinary payments into that pool. It makes the Orchard→Ironwood migration effectively mandatory and bounds circulating supply as value crosses pools.
 
+**Migration** — The ZIP 318 retirement of the Orchard pool into its Ironwood successor: the consensus event, enforced by the Turnstile from NU6.3, that disables ordinary payments into old-Orchard and forces its value across to Ironwood. It names a specific protocol event for one fixed pool pair (Orchard→Ironwood), not a generic movement of funds between pools — moving value between any other pools is an ordinary Send. A wallet migrates either by the private, scheduled two-phase flow (note splitting, then canonical Parts) or by the immediate, non-private Drain. *Avoid*: "migrate" for a user-chosen cross-pool sweep (that is a Send, not a Migration).
+
+**Drain** — The immediate, non-private migration path (ZIP 318's "migrate immediately" option): spend every Orchard note worth more than the Sweep Minimum straight into Ironwood in one round of no-change transactions, accepting that the on-chain amounts are the wallet's real values and so correlate. Unlike the private path's Parts, a Drain is *transmitted* over the ordinary send connection, never broadcast over the decoupled Migration Broadcast Endpoint. Its destination is fixed at Ironwood, because Migration retires exactly one pool. *Avoid*: "migrate" unqualified for this path (the private scheduled flow is equally a Migration; a Drain is specifically the immediate, non-private one).
+
 **Sweep Minimum** — The ZIP 318 migration policy threshold (provisionally twice the ZIP-317 marginal fee). Migration never selects a note worth at most the Sweep Minimum: the policy demands a note return strictly more than a safety factor over its true marginal spend cost, not merely break even. Distinct from Dust, which is a smaller, balance-level threshold.
 
 **Stranded** — Value a migration plan leaves behind in the Orchard pool because moving it is not worthwhile. This covers notes worth at most the Sweep Minimum, pooled balance too small to fund the smallest denomination, and balance that would arrive at or below the Sweep Minimum after fees. A plan reports its stranded value explicitly; value is never dropped silently.
@@ -40,11 +44,19 @@
 
 **Part** — One canonical pool-crossing migration transfer: a transaction with exactly one Orchard spend and one Ironwood output worth a single Denomination, no change output, and the canonical fee. A migration is a set of Parts, each pre-funded by an exactly-sized note so no Part waits on another's change.
 
-**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window and anchors to the tree state at the Bucket's opening Boundary. Buckets are windows in chain time, never value quanta (see Denomination).
+**Note splitting** — Phase 1 of the private Migration: Orchard→Orchard self-sends that reshape a wallet's arbitrary Orchard notes into notes worth exactly one Denomination plus a Part fee, so each later Part spends one note with no change. Both ends are shielded, so it reveals no value and may run before NU6.3 activation; it is *transmitted* over the ordinary connection, never broadcast over the Migration Broadcast Endpoint. It both merges fragments and divides large notes (see Round). *Avoid*: "splitting" for the fan-out alone.
 
-**Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it.
+**Round** — One group of independent Note-splitting transactions built and transmitted together. Rounds are sequential: a Round's shielded outputs must confirm and be witnessed before the next Round can spend them, because a later Round's inputs are an earlier Round's outputs. A wallet needs about log₃₂(N) Rounds and most need one. A consumer drives Phase 1 one Round per call. Distinct from a Batch, which is a group of Phase 2 Parts, and from a Bucket, which is the window a Batch broadcasts in; neither is a splitting step.
 
-**Cohort** — The Parts assigned to the same Bucket, and therefore sharing its anchor and broadcast window.
+**Bucket** — A migration scheduling window: the span of consecutive block heights between one Boundary and the next. A Part assigned to a Bucket is broadcast while the chain tip is inside that window. A Bucket says only when a Part is sent, never what it proves against: the anchor comes from a separate draw (see Anchor age). Buckets are windows in chain time, never value quanta (see Denomination).
+
+**Batch** — The Parts assigned to one Bucket: the group a user signs and broadcasts together in a single visit, since one visit while the window is open sends all of them. The schedule sizes Batches so a typical balance migrates in a target number of visits, which is what bounds how often a user must be brought back. Distinct from a Round, which is a Phase 1 splitting step, and from a Cohort, which spans wallets instead of collecting one wallet's own Parts.
+
+**Boundary** — A block height divisible by the ratified bucket modulus. Boundaries delimit Buckets and are identical for every wallet on the network, so a migration transaction anchored at a Boundary reveals nothing about when its wallet planned or signed it. Every Part's anchor is a Boundary, but never the one that opens the Bucket it broadcasts in (see Anchor age).
+
+**Anchor age** — How many Buckets below its broadcast Bucket a Part's anchor Boundary sits. Drawn per Part and never zero, so a Part's anchor is always a Boundary the chain has already passed and whose Cohort has had time to accumulate before the Part proves against it. Small ages are the likeliest and the draw is capped, so anchors stay recent without ever being the newest tree state in existence.
+
+**Cohort** — The Parts, across all wallets on the network, that prove against the same anchor Boundary. A Cohort is the anonymity set the anchor draw exists to build: the more Parts have accumulated at a Boundary, the less a Part's anchor distinguishes the wallet that sent it. *Avoid*: Cohort for one wallet's own Parts sharing a broadcast window — that is a Batch.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
 

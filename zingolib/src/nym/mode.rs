@@ -22,7 +22,7 @@ pub enum MixnetMode {
     Bootstrapping,
     /// The mixnet is up. Mixnet-only surfaces route through it.
     Ready,
-    /// The proxy exited unexpectedly after being spawned — during bootstrap or
+    /// The proxy exited unexpectedly after being spawned, during bootstrap or
     /// after reaching ready. Distinct from [`MixnetMode::Off`]: this is an
     /// unconsented loss of the transport, so mixnet-only surfaces refuse
     /// rather than fall back to clearnet. Recover by re-enabling the mixnet
@@ -42,7 +42,7 @@ impl MixnetMode {
 /// status, satisfying ZIP-0318's requirement that the wallet explain the
 /// IP-correlation risk.
 ///
-/// Mixnet Mode obfuscates only the Transmission and price-fetch surfaces;
+/// Mixnet Mode obfuscates only the Transmission and price-fetch surfaces, and
 /// synchronization stays on the ordinary connector (ADR 0011, "Per-surface
 /// transport tiers"). A bare "ready" status would let a user believe sync is
 /// protected too, so this text names the residual exposure: the sync indexer
@@ -53,7 +53,7 @@ impl MixnetMode {
 pub const IP_CORRELATION_DISCLAIMER: &str = "\
 IP-correlation risk: Mixnet Mode covers only transaction broadcast and \
 price-fetch. Wallet synchronization always uses the ordinary connection, so \
-the sync indexer — and any network operator on that path — sees your IP \
+the sync indexer (and any network operator on that path) sees your IP \
 address and can correlate it with the transactions you broadcast; reusing the \
 same IP across sessions can reveal your wallet's total balance to that \
 operator. To hide your IP during synchronization as well, route the wallet \

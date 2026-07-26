@@ -407,7 +407,7 @@ impl LightWallet {
     /// Update and return current price of ZEC.
     ///
     /// Currently only USD is supported. The fetch goes through the local
-    /// SOCKS5 proxy at `socks5_proxy` — the Nym mixnet transport — and only
+    /// SOCKS5 proxy at `socks5_proxy` (the Nym mixnet transport) and only
     /// through it: the price fetch has no clearnet tier (ADR 0011, amendment
     /// 2026-07-23), so builds without the `nym` feature have no fetch at all.
     #[cfg(feature = "nym")]

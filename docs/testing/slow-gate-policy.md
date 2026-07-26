@@ -13,7 +13,7 @@ The measure is **steady-state solo wall-clock** as recorded by nextest
 in the most recent full-suite run of that crate: the time a test takes
 alone on a warm machine, chain caches populated. One-time costs that
 the chain-cache framework amortizes (a first-run cache build, a
-`ZINGO_REGENERATE_CHAIN_CACHE` rebuild) are excluded — they are paid
+`ZINGO_REGENERATE_CHAIN_CACHE` rebuild) are excluded. They are paid
 once per machine, not per run, and have their own budget mechanism
 (per-test nextest `slow-timeout` overrides). Parallelism stretch under
 container contention is likewise excluded; it distorts every test
@@ -27,13 +27,13 @@ recorded):
 1. Take the per-test wall-clock times for the crate's default suite.
 2. Compute the median; the threshold is twice that.
 3. Move every test above the threshold behind the crate's `slow`
-   feature, and bring back any gated test that has fallen below it —
-   the gate reflects current measurements, not history.
+   feature, and bring back any gated test that has fallen below it.
+   The gate reflects current measurements, not history.
 4. Record the median, threshold, and resulting membership in this
    file's log below.
 
-A test whose slowness is *the point* — a sentinel pinning an
-environment contract, a cache builder — belongs behind its
+A test whose slowness is *the point* (a sentinel pinning an
+environment contract, a cache builder) belongs behind its
 purpose-specific gate (`sentinels`, ignore-with-reason), not the slow
 gate; the slow gate is for ordinary coverage that happens to be
 expensive.
@@ -53,5 +53,5 @@ their first outlier appears. Gate an entire file with
   in the container volume); the first classification executes against
   the next recorded full-suite run. Known solo datapoints for context:
   replayed chain-bound tests run ~17–30 s; the checkpoint-window test's
-  steady-state (replay) arm is ~24 s — likely within threshold, its
+  steady-state (replay) arm is ~24 s, likely within threshold, its
   8.5-minute first-run build arm being excluded as a one-time cost.

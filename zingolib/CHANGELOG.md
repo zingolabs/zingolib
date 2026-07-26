@@ -17,11 +17,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction path that was lost when `create_from_wallet` and `WalletBase` were removed
   in 5.0.0; the new path uses the `WalletConfig` enum and the existing
   `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
+- ZIP 318 Orchard to Ironwood migration, in `lightclient::migrate`:
+  - Immediate path: `plan_immediate_migration`, `quick_immediate_migration`.
+  - Note splitting, stateless and one round per call: `plan_note_split`, `quick_split`.
+  - Scheduled path: `plan_ironwood_migration`, `start_ironwood_migration`,
+    `execute_due_parts`, `auto_broadcast_if_due`, `reconcile_migration`,
+    `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`.
+  - Reporting: `migration_status`, `window_timeline`, and the
+    `split_progress_handle` / `batch_progress_handle` progress handles.
+- `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
+  - A Part carries two independent buckets: `bucket_index`, the window it is
+    broadcast in, and `anchor_bucket`, the lower bucket whose boundary it proves
+    against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
+    must clear (strictly above the NU6.3 activation bucket; at or above the
+    boundary covering the Part's own bound note), and `draw_anchor_bucket`
+    reject-samples an age from `draw_anchor_age` against them.
+  - The anchor age is drawn per Part, `Geometric(1/2)` capped at
+    `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
+    the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
+    ADR 0018). The builder's target height, and so the consensus branch the Part
+    commits to, comes from the broadcast window instead.
+  - Consequence for consumers: a wallet that schedules immediately after note
+    splitting waits one extra window (~3h at `M` = 144) before its first Batch is
+    due, because a fresh note floors the anchor at the next boundary and a legal
+    window sits a bucket above its anchor. A wallet whose notes confirmed at least
+    one bucket earlier has its first Batch due the moment it is scheduled. Read the
+    wait from `MigrationStatus::upcoming_windows`, whose `BroadcastWindow`s carry
+    `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
+  - The migration section of the wallet file carries its own version, independent
+    of the wallet format version, and ships at 4.
+- `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
+  Migration-part broadcasts route by Mixnet Mode and never at the sync host.
+- `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.
+- Ironwood pool in summaries: `ironwood_notes`, `outgoing_ironwood_notes`,
+  `is_orchard_to_ironwood_migration`.
 
 ### Changed
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
 - `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
   updated to include options for defaults.
+- BREAKING: the price fetch has no clearnet tier and compiles only with the `nym`
+  feature. Without it `zingo-price` is types-only.
+- Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
+  number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
+  a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
 

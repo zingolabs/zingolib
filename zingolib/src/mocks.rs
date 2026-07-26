@@ -559,7 +559,7 @@ pub mod proposal {
             );
             let mut payment_pools = BTreeMap::new();
             // Ironwood is active by default (see `ironwood_active(true)` below), and the
-            // backend routes every shielded payment to the Ironwood pool — directing one to
+            // backend routes every shielded payment to the Ironwood pool. Directing one to
             // Orchard trips the turnstile assertion in `Step::from_parts`.
             payment_pools.insert(0, PoolType::Shielded(ShieldedPool::Ironwood));
 
@@ -686,9 +686,9 @@ pub(crate) mod broadcast {
 
     use zcash_protocol::consensus::BlockHeight;
 
-    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+    use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
 
-    /// Records every submission; fails with a transport error while `fail`
+    /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real
     /// client's transient-failure contract).
     #[derive(Default)]

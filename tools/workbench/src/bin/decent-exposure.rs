@@ -12,7 +12,9 @@
 //! 3. `cargo public-api`: each package's public surface must match its
 //!    checked-in golden under `tools/workbench/goldens/public-api/`. A surface
 //!    change lands by regenerating the goldens with `--bless` and reviewing
-//!    the diff like any other code.
+//!    the diff like any other code. This layer alone runs under the pinned
+//!    nightly named by [`GOLDEN_NIGHTLY`], because the goldens record rustdoc's
+//!    rendering and that rendering is not stable across nightlies.
 //!
 //! The package list is derived rather than declared: the root workspace
 //! members are parsed from `<root>/Cargo.toml`, and the two standalone
@@ -33,6 +35,22 @@ use workbench::{read, repo_root, run};
 /// Workspaces that resolve outside the root lockfile. Their packages are
 /// gated exactly like root members but addressed by manifest path.
 const STANDALONE_WORKSPACES: &[&str] = &["zingo-netutils", "tools/workbench"];
+
+/// The nightly toolchain that rendered the checked-in goldens.
+///
+/// `cargo public-api` reads rustdoc's JSON, and rustdoc renders paths into the
+/// standard library differently from one nightly to the next. A nightly later
+/// than this one moved the `std::io` items to `core::io` and `alloc::io`, which
+/// rewrites a hundred golden lines across six packages without adding,
+/// removing, or changing a single item. Following an unpinned `nightly`
+/// therefore turns the gate into a calendar: it passes on the developer's
+/// machine and fails on CI's fresher toolchain. Pinning the toolchain here,
+/// beside the `cargo-public-api` version the CI workflow already pins, keeps a
+/// golden diff a real surface change.
+///
+/// Bumping this pin and re-blessing the goldens belong in one commit, and the
+/// CI workflow installs the same version by name.
+const GOLDEN_NIGHTLY: &str = "nightly-2026-04-23";
 
 fn main() {
     let bless = std::env::args().any(|arg| arg == "--bless");
@@ -176,13 +194,20 @@ fn rustc_lint_layer(root: &Path, packages: &[Package], lint: &str) -> Result<(),
 
 /// Diff every package's public API against its golden, or rewrite the goldens
 /// under `--bless`. Runs `cargo public-api -sss` (blanket, auto-trait, and
-/// auto-derived impls omitted) so a golden line is always a deliberate item.
+/// auto-derived impls omitted) so a golden line is always a deliberate item,
+/// under [`GOLDEN_NIGHTLY`] so a golden line always renders the same way.
 fn public_api_layer(root: &Path, packages: &[Package], bless: bool) -> Result<(), Vec<String>> {
     println!("== decent-exposure layer: public API goldens ==");
+    require_golden_nightly()?;
     let goldens_dir = root.join("tools/workbench/goldens/public-api");
     let mut diagnostics = Vec::new();
     for package in packages {
         let mut cmd = package.cargo(root, "public-api");
+        // Both the outer cargo and the rustdoc invocation cargo public-api
+        // spawns read RUSTUP_TOOLCHAIN, so this one variable puts the whole
+        // rendering on the pinned nightly. Only this layer takes the override;
+        // the lint layers stay on the toolchain the repository pins.
+        cmd.env("RUSTUP_TOOLCHAIN", GOLDEN_NIGHTLY);
         cmd.args(["--color", "never", "-sss"]);
         let output = cmd
             .output()
@@ -224,6 +249,24 @@ fn public_api_layer(root: &Path, packages: &[Package], bless: bool) -> Result<()
         Ok(())
     } else {
         Err(diagnostics)
+    }
+}
+
+/// Fail early and legibly when the pinned nightly is absent, rather than
+/// letting every package report the same rustup error in turn.
+fn require_golden_nightly() -> Result<(), Vec<String>> {
+    let listed = Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .map_err(|e| vec![format!("failed to run rustup: {e}")])?;
+    let listed = String::from_utf8_lossy(&listed.stdout);
+    if listed.lines().any(|line| line.starts_with(GOLDEN_NIGHTLY)) {
+        Ok(())
+    } else {
+        Err(vec![format!(
+            "the goldens are rendered by {GOLDEN_NIGHTLY}, which is not installed; \
+             run `rustup toolchain install {GOLDEN_NIGHTLY} --profile minimal`"
+        )])
     }
 }
 

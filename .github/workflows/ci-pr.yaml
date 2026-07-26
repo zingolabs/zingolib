@@ -50,8 +50,14 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       # cargo public-api builds rustdoc JSON, which only nightly rustdoc emits.
+      # The version is pinned because rustdoc's rendering of standard-library
+      # paths drifts between nightlies and the goldens record that rendering,
+      # so an unpinned `nightly` passes on a developer's machine and fails here
+      # on a fresher toolchain. The driver names the same version in its
+      # GOLDEN_NIGHTLY constant and runs the golden layer under it; keep this
+      # line in step with tools/workbench/src/bin/decent-exposure.rs.
       - name: Install nightly for rustdoc JSON
-        run: rustup toolchain install nightly --profile minimal
+        run: rustup toolchain install nightly-2026-04-23 --profile minimal
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

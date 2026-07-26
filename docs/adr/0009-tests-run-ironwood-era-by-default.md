@@ -22,8 +22,8 @@ yet enforce the turnstile routing. Live server runs (2026-07-14) adjudicated
 the open hypotheses: coinbase to a shielded miner pool lands as legacy
 Orchard notes even for blocks past NU6.3 activation, and ordinary sends on
 an NU6.3-active chain still produce Orchard outputs with V5-era ZIP 317
-fees. Live-suite assertions therefore pin this present behavior — `i: 0`
-with Orchard-era arithmetic — and each such assertion is a canary: when the
+fees. Live-suite assertions therefore pin this present behavior (`i: 0`
+with Orchard-era arithmetic), and each such assertion is a canary: when the
 pinned stack begins enforcing the turnstile, these assertions fail loudly,
 and the failure means "flip the pin to the spec-target expectation," not
 "the wallet regressed."
@@ -32,7 +32,7 @@ Source pools stay literal in either layer: a test named `orchard_sends_*`
 still funds the wallet with a real Orchard note and asserts it is spent,
 because spending legacy Orchard notes is exactly what migration-era wallets
 do (ZIP 318). Mixed-note wallets (legacy Orchard alongside Ironwood) are
-legitimate fixtures, not accidents — behavior *relative to* Ironwood is a
+legitimate fixtures, not accidents. Behavior *relative to* Ironwood is a
 primary test subject during the migration window.
 
 Pre-Ironwood behavior appears in exactly two forms: tests that configure a
@@ -41,9 +41,10 @@ builder derives a pre-V6 version from the branch id, and Orchard→Ironwood
 migration tests, which inherently straddle both eras. There is no per-wallet
 opt-out: the `allow_v6_transactions` setting was removed once the builder
 began deriving the transaction version from the chain's branch id at target
-height, leaving the setting with no behavioral reader. It vanished before
-any release carried it, so the wallet file format is unchanged (version 42
-is defined without the byte a pre-release revision wrote). We rejected
-splitting the pool matrix by era (V5-pinned
+height, leaving the setting with no behavioral reader. The removal's
+original "never shipped" framing did not survive: the byte-carrying
+revision landed in `dev`, which ships the wallet file format, so version
+42 names two on-disk layouts and the reader disambiguates them (ADR 0015).
+We rejected splitting the pool matrix by era (V5-pinned
 copies of every Orchard-destination row) because the duplication was largely
 redundant with the existing `ironwood_sends_*` rows.

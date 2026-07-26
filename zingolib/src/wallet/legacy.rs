@@ -1011,7 +1011,7 @@ pub(crate) const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub(crate) const MAX_SHARD_LEVEL: u8 = 16;
 /// Witness-tree checkpoint retention depth, derived from the
 /// repository's single max-reorg truth (which in turn mirrors zebra's
-/// finalization boundary — see the source constant's docs).
+/// finalization boundary, see the source constant's docs).
 const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
 
 /// TODO: Add Doc Comment Here!

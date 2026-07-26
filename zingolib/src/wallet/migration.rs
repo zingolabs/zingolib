@@ -25,41 +25,52 @@
 //!   [`MigrationParams::sweep_min`] are stranded (moving them costs more than
 //!   they are worth).
 //!
-//! [`plan_migration`] is the pure planning entry point. It is deterministic
+//! `plan_migration` is the pure planning entry point. It is deterministic
 //! and never touches the network, so callers (the one-call
 //! `migrate_to_ironwood` orchestration, or a mobile client scheduling steps
 //! itself) can present the whole plan for consent before anything is sent.
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`drain`], which shares nothing with
-//! this two-phase design but the transaction builder.
+//! over the private path above. That alternative is `ImmediateMigrationPlan`,
+//! which shares nothing with this two-phase design but the transaction builder.
 
-pub mod broadcast;
-pub mod drain;
-pub mod params;
-pub mod parts;
-pub mod quantize;
-pub mod reconcile;
-pub mod schedule;
-pub mod split;
-pub mod store;
+// The submodules carry a crate ceiling: the re-export block below is this
+// module's whole public surface, so a new public name is a deliberate act
+// here rather than a side effect of `pub` in a submodule.
+pub(crate) mod broadcast;
+pub(crate) mod immediate;
+pub(crate) mod params;
+pub(crate) mod parts;
+pub(crate) mod quantize;
+pub(crate) mod reconcile;
+pub(crate) mod schedule;
+pub(crate) mod split;
+pub(crate) mod store;
 
-pub use broadcast::{BroadcastClient, BroadcastError};
-pub use drain::{DrainPlan, DrainTx, drain_fee};
 pub use params::MigrationParams;
-pub use parts::{
-    BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
-    SigningStrategy, SkipReason,
-};
-pub use quantize::{Denominations, decompose};
-pub use reconcile::{ChainView, PartClass, RecommendedAction, ReconcileReport, reconcile};
-pub use schedule::{WakePoint, next_wakes, plan_schedule};
-pub use split::{
-    CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
-    plan_migration,
-};
+pub use parts::{BoundNote, PartId, PartRecord, PartState, SigningStrategy};
+pub use reconcile::RecommendedAction;
+pub use schedule::bucket_index;
+pub use split::plan_hash;
 
+pub(crate) use broadcast::BroadcastClient;
+pub(crate) use immediate::ImmediateMigrationPlan;
+pub(crate) use parts::PrepareResult;
+pub(crate) use reconcile::{ChainView, ReconcileReport, due_now_parts, reconcile};
+pub(crate) use schedule::{
+    BroadcastWindow, WindowReport, plan_schedule, upcoming_windows, window_timeline,
+};
+pub(crate) use split::{MigrationPlan, plan_migration};
+
+// The crate's own tests reach these through the facade as well, and nothing
+// else in the crate does, so they exist only under `cfg(test)`.
+#[cfg(test)]
+pub(crate) use parts::{BoundaryWitness, SkipReason};
+#[cfg(test)]
+pub(crate) use reconcile::PartClass;
+#[cfg(test)]
+pub(crate) use split::CANONICAL_PART_FEE;
 use zcash_primitives::transaction::TxId;
 
 /// The consent captured when the user confirmed the migration schedule
@@ -142,7 +153,7 @@ impl MigrationState {
     /// selection for ordinary sends, without ever blocking a spend the user
     /// insists on (an insistent spend consumes them and the affected parts
     /// are invalidated on the next reconciliation).
-    pub fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
+    pub(crate) fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
         self.parts
             .iter()
             .filter(|part| {
@@ -162,15 +173,15 @@ impl MigrationState {
 impl crate::wallet::LightWallet {
     /// The take/use/restore bracket for the wallet's [`MigrationState`],
     /// made total. `f` receives the wallet and the state as two independent
-    /// `&mut` borrows — the reason the state must leave the wallet at all —
+    /// `&mut` borrows (the reason the state must leave the wallet at all),
     /// and the state is restored on every exit path before `f`'s result is
     /// returned: an early `?`-return inside `f` cannot skip the restore,
     /// and because `f` is synchronous the state is never out of the wallet
     /// across an `.await` point, so a cancelled future cannot strand it.
-    /// The bracket itself is unobservable — the migration slot is `Some`
+    /// The bracket itself is unobservable: the migration slot is `Some`
     /// after exactly when it was `Some` before, and every mutation belongs
     /// to `f`. Returns `None`, without calling `f`, when no migration is
-    /// active; the caller chooses what a missing migration means.
+    /// active. The caller chooses what a missing migration means.
     pub(crate) fn with_migration_state<R>(
         &mut self,
         f: impl FnOnce(&mut Self, &mut MigrationState) -> R,
