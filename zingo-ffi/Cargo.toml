@@ -3,9 +3,9 @@ members = ["lib", "android", "ios", "zingomobile_utils", "workbench"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "feat/ironwood" }
+zingolib = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_beta_ironwood" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_beta_ironwood" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_beta_ironwood" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 

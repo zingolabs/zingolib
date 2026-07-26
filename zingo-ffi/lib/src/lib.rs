@@ -49,12 +49,17 @@ use zingolib::data::proposal::total_fee;
 use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
-use zingolib::lightclient::error::LightClientError;
+use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::lightclient::migrate::SplitStep;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::keys::{
     WalletAddressRef,
     unified::{ReceiverSelection, UnifiedKeyStore},
+};
+use zingolib::wallet::migration::{
+    MigrationParams, MigrationPhase, RecommendedAction, parts::PartState, parts::SigningStrategy,
+    split::plan_hash,
 };
 
 use zingo_common_components::protocol::ActivationHeights;
@@ -79,6 +84,32 @@ pub enum ZingolibError {
     Rescan(String),
     #[error("Error: read: {0}")]
     Read(String),
+    #[error("Error: send: {0}")]
+    Send(String),
+    #[error("Error: shield: {0}")]
+    Shield(String),
+    #[error("Error: invalid input: {0}")]
+    InvalidInput(String),
+    #[error("Error: wallet: {0}")]
+    Wallet(String),
+    #[error("Error: indexer: {0}")]
+    Indexer(String),
+    #[error("Error: offline: no indexer configured")]
+    Offline,
+    #[error("Error: progress side-channel lock poisoned")]
+    SideChannelPoisoned,
+    #[error("Error: no migration in progress")]
+    MigrationNotInProgress,
+    #[error("Error: a migration is already in progress")]
+    MigrationAlreadyInProgress,
+    #[error("Error: consent stale: {0}")]
+    MigrationConsentStale(String),
+    #[error("Error: cadence fixed: {0}")]
+    MigrationCadenceFixed(String),
+    #[error("Error: note splitting: {0}")]
+    MigrationSplit(String),
+    #[error("Error: migration: {0}")]
+    Migration(String),
 }
 
 impl ZingolibError {
@@ -92,6 +123,53 @@ impl ZingolibError {
 
     fn read(e: impl ToString) -> Self {
         Self::Read(e.to_string())
+    }
+}
+
+/// The one pure funnel from zingolib's error taxonomy to the FFI's typed
+/// variants. Exhaustive at every level on purpose: a new zingolib variant
+/// fails compilation here instead of degrading to prose in the data channel.
+fn ffi_error(e: LightClientError) -> ZingolibError {
+    use zingolib::lightclient::error::MigrationError;
+    let text = e.to_string();
+    match e {
+        LightClientError::SyncLaunchError
+        | LightClientError::SyncNotRunning
+        | LightClientError::SyncError(_)
+        | LightClientError::SyncModeError(_) => ZingolibError::Sync(text),
+        LightClientError::SendError(inner) => match inner {
+            SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
+                ZingolibError::Shield(text)
+            }
+            SendError::ProposeSendError(_)
+            | SendError::CalculateSendError(_)
+            | SendError::RetargetError(_)
+            | SendError::NoStoredProposal
+            | SendError::TransmissionError(_) => ZingolibError::Send(text),
+        },
+        LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
+            ZingolibError::Indexer(text)
+        }
+        LightClientError::FileError(_) => ZingolibError::Save(text),
+        LightClientError::WalletError(_) => ZingolibError::Wallet(text),
+        LightClientError::Offline => ZingolibError::Offline,
+        LightClientError::PriceError(_) | LightClientError::PriceFetchUnsupported => {
+            ZingolibError::Read(text)
+        }
+        LightClientError::MigrationError(inner) => match inner {
+            MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
+            MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
+            MigrationError::ConsentStale => ZingolibError::MigrationConsentStale(text),
+            MigrationError::CadenceFixed => ZingolibError::MigrationCadenceFixed(text),
+            MigrationError::ScheduledMigrationExists => ZingolibError::MigrationAlreadyInProgress,
+            MigrationError::PreSignedUnavailable
+            | MigrationError::NoteSplittingRequired
+            | MigrationError::DifferentAccount
+            | MigrationError::IronwoodEraTooYoung { .. } => ZingolibError::Migration(text),
+            MigrationError::SplitDidNotConverge(_)
+            | MigrationError::SplitTransactionFailed(_)
+            | MigrationError::SplitConfirmationTimeout => ZingolibError::MigrationSplit(text),
+        },
     }
 }
 
@@ -229,11 +307,33 @@ lazy_static! {
 // side channel *outside* the LIGHTCLIENT lock. `drain_orchard_to_ironwood`
 // holds LIGHTCLIENT.write() for its whole `block_on`, so a `drain_status` poll
 // that read the lightclient would deadlock behind it. Instead the drain stashes
-// a cloned `DrainProgressHandle` (an independent Arc<Mutex<Option<DrainStatus>>>)
-// here; the poller reads only this global and never contends for the drain's
-// wallet/lightclient lock. `None` between drains.
+// a cloned `ImmediateMigrationProgressHandle` (an independent
+// Arc<Mutex<Option<ImmediateMigrationStatus>>>) here; the poller reads only
+// this global and never contends for the drain's wallet/lightclient lock.
+// `None` between drains.
 lazy_static! {
-    static ref DRAIN_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::DrainProgressHandle>> =
+    static ref DRAIN_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::ImmediateMigrationProgressHandle>> =
+        RwLock::new(None);
+}
+
+// Live progress of the in-flight scheduled-parts execute batch (phase 2 of the
+// private migration), held in a side channel outside the LIGHTCLIENT lock for
+// the same reason as DRAIN_PROGRESS: `execute_due_parts` holds LIGHTCLIENT.write()
+// for its whole `block_on`, so an `execute_due_parts_status` poll reading the
+// lightclient would deadlock behind it. The batch stashes a cloned
+// `BatchProgressHandle` (an independent Arc) here. `None` between batches.
+lazy_static! {
+    static ref BATCH_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::BatchProgressHandle>> =
+        RwLock::new(None);
+}
+
+// Live progress of the in-flight Phase 1 note-splitting round, the split-path
+// counterpart to DRAIN_PROGRESS. `quick_split` holds LIGHTCLIENT.write() for
+// its whole `block_on`, so a `split_status` poll reads this cloned
+// `SplitProgressHandle` (an independent Arc) instead of the lightclient. `None`
+// between rounds.
+lazy_static! {
+    static ref SPLIT_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::SplitProgressHandle>> =
         RwLock::new(None);
 }
 
@@ -284,6 +384,23 @@ where
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         match &mut *guard {
+            Some(lightclient) => f(lightclient),
+            None => Err(ZingolibError::LightclientNotInitialized),
+        }
+    })
+}
+
+/// Read-lock sibling of [`with_initialized_lightclient`], for functions that
+/// must not block behind a long-held write lock (planning and status reads).
+fn with_initialized_lightclient_read<T, F>(f: F) -> Result<T, ZingolibError>
+where
+    F: FnOnce(&LightClient) -> Result<T, ZingolibError> + UnwindSafe,
+{
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .read()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        match &*guard {
             Some(lightclient) => f(lightclient),
             None => Err(ZingolibError::LightclientNotInitialized),
         }
@@ -1002,26 +1119,26 @@ mod read_error_channel_tests {
 
     // Reproduces the exact `From<ValueTransfers>` shape (array nested under
     // "value_transfers") to prove the migrated-amount splice targets the right
-    // field: only send-to-self transfers with a mapped txid are overwritten.
+    // field: only `migration` transfers with a mapped txid are overwritten.
     #[test]
-    fn splice_migrated_values_overwrites_only_mapped_self_sends() {
+    fn splice_migrated_values_overwrites_only_mapped_migrations() {
         let mut json_vts = json::object! {
             "value_transfers" => json::array![
-                json::object!{ "kind" => "send-to-self", "txid" => "aaa", "value" => 0 },
+                json::object!{ "kind" => "migration", "txid" => "aaa", "value" => 0 },
                 json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
-                json::object!{ "kind" => "send-to-self", "txid" => "ccc", "value" => 0 },
+                json::object!{ "kind" => "migration", "txid" => "ccc", "value" => 0 },
             ]
         };
         let mut migrated_by_txid = std::collections::HashMap::new();
-        migrated_by_txid.insert("aaa".to_string(), 500u64); // a migration
-        // "ccc" is a self-send but not a migration (no mapping) -> untouched.
+        migrated_by_txid.insert("aaa".to_string(), 500u64);
+        // "ccc" is a migration without a mapped amount -> untouched.
 
         splice_migrated_values(&mut json_vts, &migrated_by_txid);
 
         assert_eq!(
             json_vts["value_transfers"][0]["value"].as_u64(),
             Some(500),
-            "the mapped send-to-self must carry the migrated amount"
+            "the mapped migration must carry the migrated amount"
         );
         assert_eq!(
             json_vts["value_transfers"][1]["value"].as_u64(),
@@ -1031,8 +1148,262 @@ mod read_error_channel_tests {
         assert_eq!(
             json_vts["value_transfers"][2]["value"].as_u64(),
             Some(0),
-            "an unmapped self-send must be left alone"
+            "an unmapped migration must be left alone"
         );
+    }
+}
+
+/// Pins the behavior of [`ffi_error`], the one funnel from zingolib's error
+/// taxonomy to the FFI's typed variants. The match itself is exhaustive, so
+/// a new zingolib variant fails compilation; these tests pin which variant
+/// each input maps to, so a remapping (or a regression to prose in the data
+/// channel) turns the suite red rather than silently shifting the codes the
+/// bridges and TypeScript branch on. Inputs are limited to variants
+/// constructible without wallet or network state; the Shield and Indexer
+/// arms carry deeply nested foreign payloads and stay guarded by
+/// exhaustiveness alone.
+#[cfg(test)]
+mod error_funnel_tests {
+    use super::*;
+    use zcash_protocol::TxId;
+    use zingolib::lightclient::error::{MigrationError, TransmissionError};
+    use zingolib::wallet::error::WalletError;
+
+    /// (input, is-the-pinned-variant, the pinned variant's name).
+    type FunnelCase = (LightClientError, fn(&ZingolibError) -> bool, &'static str);
+
+    #[test]
+    fn the_funnel_maps_each_constructible_input_to_its_pinned_variant() {
+        let cases: Vec<FunnelCase> = vec![
+            (
+                LightClientError::SyncLaunchError,
+                |e| matches!(e, ZingolibError::Sync(_)),
+                "Sync",
+            ),
+            (
+                LightClientError::SyncNotRunning,
+                |e| matches!(e, ZingolibError::Sync(_)),
+                "Sync",
+            ),
+            (
+                LightClientError::SendError(SendError::NoStoredProposal),
+                |e| matches!(e, ZingolibError::Send(_)),
+                "Send",
+            ),
+            (
+                LightClientError::SendError(SendError::TransmissionError(
+                    TransmissionError::TransmissionFailed("node said no".to_string()),
+                )),
+                |e| matches!(e, ZingolibError::Send(_)),
+                "Send",
+            ),
+            (
+                LightClientError::FileError(std::io::Error::other("disk full")),
+                |e| matches!(e, ZingolibError::Save(_)),
+                "Save",
+            ),
+            (
+                LightClientError::WalletError(WalletError::MnemonicNotFound),
+                |e| matches!(e, ZingolibError::Wallet(_)),
+                "Wallet",
+            ),
+            (
+                LightClientError::Offline,
+                |e| matches!(e, ZingolibError::Offline),
+                "Offline",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::NoMigration),
+                |e| matches!(e, ZingolibError::MigrationNotInProgress),
+                "MigrationNotInProgress",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::AlreadyInProgress),
+                |e| matches!(e, ZingolibError::MigrationAlreadyInProgress),
+                "MigrationAlreadyInProgress",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::ConsentStale),
+                |e| matches!(e, ZingolibError::MigrationConsentStale(_)),
+                "MigrationConsentStale",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::CadenceFixed),
+                |e| matches!(e, ZingolibError::MigrationCadenceFixed(_)),
+                "MigrationCadenceFixed",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::PreSignedUnavailable),
+                |e| matches!(e, ZingolibError::Migration(_)),
+                "Migration",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitDidNotConverge(3)),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitTransactionFailed(
+                    TxId::from_bytes([0u8; 32]),
+                )),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+            (
+                LightClientError::MigrationError(MigrationError::SplitConfirmationTimeout),
+                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                "MigrationSplit",
+            ),
+        ];
+        for (input, is_expected, expected_name) in cases {
+            let input_text = input.to_string();
+            let mapped = ffi_error(input);
+            assert!(
+                is_expected(&mapped),
+                "{input_text:?} must map to the {expected_name} variant, got: {mapped}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_funnel_preserves_the_upstream_message_verbatim_in_the_variant() {
+        // The bridges forward the Display text as the rejection message, so
+        // the funnel must not paraphrase or truncate the upstream prose.
+        let upstream = LightClientError::SendError(SendError::TransmissionError(
+            TransmissionError::TransmissionFailed("node said no".to_string()),
+        ));
+        let upstream_text = upstream.to_string();
+        let mapped = ffi_error(upstream);
+        assert!(
+            mapped.to_string().contains(&upstream_text),
+            "the mapped error must carry the upstream text \"{upstream_text}\": {mapped}"
+        );
+    }
+}
+
+/// Pins [`hex_to_hash32`] and [`hash32_to_hex`], the consent-hash boundary
+/// that `start_ironwood_migration` trusts before anything is signed. The
+/// parser was rewritten from per-pair `from_str_radix` (which accepted
+/// `+`-signed pairs and could panic on multi-byte UTF-8 slicing) to
+/// `hex::decode`; the rejection cases pin that tightening as deliberate.
+#[cfg(test)]
+mod consent_hash_tests {
+    use super::*;
+
+    #[test]
+    fn a_hash_round_trips_through_hex_and_back() {
+        let hash: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let hex = hash32_to_hex(&hash);
+        assert_eq!(hex.len(), 64);
+        assert_eq!(hex_to_hash32(&hex), Some(hash));
+    }
+
+    #[test]
+    fn uppercase_hex_decodes_to_the_same_hash() {
+        let hash = [0xabu8; 32];
+        let hex = hash32_to_hex(&hash).to_uppercase();
+        assert_eq!(hex_to_hash32(&hex), Some(hash));
+    }
+
+    #[test]
+    fn anything_but_64_hex_digits_is_rejected() {
+        let valid = hash32_to_hex(&[0u8; 32]);
+        let rejected = [
+            String::new(),
+            valid[..62].to_string(),      // too short (even length)
+            valid[..63].to_string(),      // odd length
+            format!("{valid}00"),         // too long
+            format!("zz{}", &valid[2..]), // non-hex digits
+            format!("+a{}", &valid[2..]), // signed pair the old parser accepted
+            format!("é{}", &valid[2..]),  // multi-byte UTF-8: must not panic
+        ];
+        for input in rejected {
+            assert_eq!(
+                hex_to_hash32(&input),
+                None,
+                "{input:?} must be rejected, not coerced into a consent hash"
+            );
+        }
+    }
+}
+
+/// The migration read-path contract: with no initialized client, the
+/// read-lock entry points fail typed — never as prose in the data channel.
+/// These pin `with_initialized_lightclient_read`, which the migration
+/// getters introduced. nextest runs each test in its own process, so the
+/// LIGHTCLIENT global is reliably uninitialized.
+#[cfg(test)]
+mod migration_error_channel_tests {
+    use super::*;
+
+    fn assert_uninitialized(result: Result<String, ZingolibError>, ffi: &str) {
+        let error = result.expect_err("an uninitialized client must fail typed");
+        assert!(
+            matches!(error, ZingolibError::LightclientNotInitialized),
+            "{ffi} must fail with the typed uninitialized variant: {error}"
+        );
+    }
+
+    #[test]
+    fn plan_ironwood_migration_fails_typed_without_a_client() {
+        assert_uninitialized(plan_ironwood_migration(), "plan_ironwood_migration");
+    }
+
+    #[test]
+    fn migration_status_fails_typed_without_a_client() {
+        assert_uninitialized(migration_status(), "migration_status");
+    }
+}
+
+/// The parse/stub data/error channel contract: input the caller got wrong
+/// travels as the typed InvalidInput variant, and unimplemented endpoints
+/// fail typed — never `Ok("Error: ...")` prose in the data channel, which
+/// is exactly what these calls returned before the typed surface.
+#[cfg(test)]
+mod parse_and_stub_error_channel_tests {
+    use super::*;
+
+    #[test]
+    fn empty_address_travels_on_the_error_channel() {
+        let error = parse_address(String::new())
+            .expect_err("an empty address must be typed, not prose in the data channel");
+        assert!(
+            matches!(error, ZingolibError::InvalidInput(_)),
+            "the failure must be the typed InvalidInput variant: {error}"
+        );
+    }
+
+    #[test]
+    fn empty_ufvk_travels_on_the_error_channel() {
+        let error = parse_ufvk(String::new())
+            .expect_err("an empty viewkey must be typed, not prose in the data channel");
+        assert!(
+            matches!(error, ZingolibError::InvalidInput(_)),
+            "the failure must be the typed InvalidInput variant: {error}"
+        );
+    }
+
+    #[test]
+    fn unimplemented_option_stubs_fail_typed() {
+        for (result, ffi) in [
+            (set_option_wallet(), "set_option_wallet"),
+            (get_option_wallet(), "get_option_wallet"),
+        ] {
+            let error = result.expect_err("an unimplemented endpoint must fail typed");
+            assert!(
+                matches!(error, ZingolibError::Wallet(_)),
+                "{ffi} must fail with the typed Wallet variant: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn crypto_provider_install_succeeds_and_is_idempotent() {
+        for attempt in 1..=2 {
+            let value = set_crypto_default_provider_to_ring()
+                .expect("installing the ring provider must succeed");
+            assert_eq!(value, "true", "attempt {attempt} must resolve plain data");
+        }
     }
 }
 
@@ -1045,14 +1416,14 @@ pub fn get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError>
 }
 
 pub fn set_crypto_default_provider_to_ring() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        Ok(CryptoProvider::get_default().map_or_else(
-            || match default_provider().install_default() {
-                Ok(_) => "true".to_string(),
-                Err(_) => "Error: Failed to install crypto provider".to_string(),
-            },
-            |_| "true".to_string(),
-        ))
+    with_panic_guard(|| match CryptoProvider::get_default() {
+        Some(_) => Ok("true".to_string()),
+        None => match default_provider().install_default() {
+            Ok(_) => Ok("true".to_string()),
+            Err(_) => Err(ZingolibError::Init(
+                "failed to install the ring crypto provider".to_string(),
+            )),
+        },
     })
 }
 
@@ -1092,9 +1463,10 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
 
 /// Overwrites the `value` of each Orchard->Ironwood migration value transfer
 /// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
-/// object produced by `From<ValueTransfers>`; migrations are the send-to-self
-/// transfers keyed in `migrated_by_txid`. zingolib reports `value == 0` for
-/// self-sends, so without this the migrated amount is invisible.
+/// object produced by `From<ValueTransfers>`; zingolib classifies these
+/// transfers with `kind: "migration"` and the migrated amount lives in
+/// `migrated_by_txid`. zingolib reports `value == 0` for self-sends (a
+/// migration is one), so without this the migrated amount is invisible.
 ///
 /// Note the array is nested under `"value_transfers"` — `members_mut()` on the
 /// outer object yields an empty iterator, so we must index in first.
@@ -1103,7 +1475,7 @@ fn splice_migrated_values(
     migrated_by_txid: &std::collections::HashMap<String, u64>,
 ) {
     for vt in json_vts["value_transfers"].members_mut() {
-        if vt["kind"].as_str() != Some("send-to-self") {
+        if vt["kind"].as_str() != Some("migration") {
             continue;
         }
         let txid = vt["txid"].as_str().unwrap_or_default().to_string();
@@ -1122,18 +1494,15 @@ pub fn get_value_transfers() -> Result<String, ZingolibError> {
             // reports with `value == 0` because `total_value_sent` excludes
             // self-addressed value. To surface how much was migrated, recover it
             // from the transaction's self-received ironwood notes and splice it
-            // into the matching value transfer's `value`. Keyed by txid; only
-            // self-sends funded from Orchard that land ironwood notes qualify.
+            // into the matching value transfer's `value`. Keyed by txid, using
+            // zingolib's own migration predicate so the map stays in lockstep
+            // with the value transfers it classifies as `migration`.
             let migrated_by_txid: std::collections::HashMap<String, u64> =
                 match wallet.transaction_summaries(true).await {
                     Ok(summaries) => summaries
                         .0
                         .iter()
-                        .filter(|s| {
-                            s.kind.to_string() == "send-to-self"
-                                && s.pools_sent_from.iter().any(|p| p.to_string() == "Orchard")
-                                && !s.ironwood_notes.is_empty()
-                        })
+                        .filter(|s| s.is_orchard_to_ironwood_migration())
                         .map(|s| {
                             (
                                 s.txid.to_string(),
@@ -1161,10 +1530,19 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
         PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
         PollReport::Ready(result) => match result {
-            Ok(sync_result) => Ok(json::object! {
-                "sync_complete" => json::JsonValue::from(sync_result)
+            Ok(sync_result) => {
+                // A bucket boundary's tree state is witnessable only while its
+                // checkpoint is retained, so the witness has to be taken on the
+                // sync that crosses it. `await_sync` does this for its own
+                // callers; we drive sync through the poll, so it falls here.
+                // No-op without a scheduled migration.
+                RT.block_on(lightclient.capture_migration_witnesses())
+                    .map_err(ffi_error)?;
+                Ok(json::object! {
+                    "sync_complete" => json::JsonValue::from(sync_result)
+                }
+                .pretty(2))
             }
-            .pretty(2)),
             Err(e) => Err(ZingolibError::sync(e)),
         },
     })
@@ -1231,32 +1609,20 @@ pub fn run_rescan() -> Result<String, ZingolibError> {
 }
 
 pub fn info_server() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let info = lightclient.info().await;
-                // Read from the WALLET's chain rather than the server's, so it
-                // agrees with `chain_name_short` and stays right when the two
-                // disagree.
-                let ironwood_activation = ironwood_activation_height(lightclient.chain_type());
-                match info {
-                    Ok(info) => {
-                        let mut val = json::JsonValue::from(info);
-                        val["ironwood_activation_height"] = match ironwood_activation {
-                            Some(height) => height.into(),
-                            None => json::JsonValue::Null,
-                        };
-                        val.pretty(2)
-                    }
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let info = lightclient.info().await.map_err(ffi_error)?;
+            // Read from the WALLET's chain rather than the server's, so it
+            // agrees with `chain_name_short` and stays right when the two
+            // disagree.
+            let ironwood_activation = ironwood_activation_height(lightclient.chain_type());
+            let mut val = json::JsonValue::from(info);
+            val["ironwood_activation_height"] = match ironwood_activation {
+                Some(height) => height.into(),
+                None => json::JsonValue::Null,
+            };
+            Ok(val.pretty(2))
+        })
     })
 }
 
@@ -1286,106 +1652,74 @@ fn chain_name_short(chain: ChainType) -> &'static str {
 // TODO: rename "get_seed_phrase" or "get_mnemonic_phrase"
 // or if other recovery info is being used could rename "get_recovery_info" ?
 pub fn get_seed() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                match wallet.recovery_info() {
-                    Some(recovery_info) => {
-                        // Surface the wallet's own chain alongside the recovery
-                        // info so the JS layer can track it even Offline.
-                        let mut val =
-                            serde_json::to_value(&recovery_info).unwrap_or(serde_json::Value::Null);
-                        if let Some(obj) = val.as_object_mut() {
-                            obj.insert(
-                                "chain_name".to_string(),
-                                serde_json::Value::String(
-                                    chain_name_short(wallet.chain_type()).to_string(),
-                                ),
-                            );
-                        }
-                        serde_json::to_string_pretty(&val)
-                            .unwrap_or_else(|_| "Error: get seed. failed to serialize".to_string())
-                    }
-                    None => {
-                        "Error: get seed. no mnemonic found. wallet loaded from key.".to_string()
-                    }
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            let recovery_info = wallet.recovery_info().ok_or_else(|| {
+                ZingolibError::Read(
+                    "get seed. no mnemonic found. wallet loaded from key.".to_string(),
+                )
+            })?;
+            // Surface the wallet's own chain alongside the recovery
+            // info so the JS layer can track it even Offline.
+            let mut val = serde_json::to_value(&recovery_info).unwrap_or(serde_json::Value::Null);
+            if let Some(obj) = val.as_object_mut() {
+                obj.insert(
+                    "chain_name".to_string(),
+                    serde_json::Value::String(chain_name_short(wallet.chain_type()).to_string()),
+                );
+            }
+            serde_json::to_string_pretty(&val)
+                .map_err(|_| ZingolibError::Read("get seed. failed to serialize".to_string()))
+        })
     })
 }
 
 pub fn get_ufvk() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                let ufvk: UnifiedFullViewingKey = match wallet
-                    .unified_key_store
-                    .get(&AccountId::ZERO)
-                    .expect("account 0 must always exist")
-                    .try_into()
-                {
-                    Ok(ufvk) => ufvk,
-                    Err(e) => return format!("Error: {e}"),
-                };
-                object! {
-                    "ufvk" => ufvk.encode(&wallet.chain_type()),
-                    "birthday" => u32::from(wallet.birthday()),
-                    "chain_name" => chain_name_short(wallet.chain_type())
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            let ufvk: UnifiedFullViewingKey = wallet
+                .unified_key_store
+                .get(&AccountId::ZERO)
+                .expect("account 0 must always exist")
+                .try_into()
+                .map_err(|e| ZingolibError::Read(format!("{e}")))?;
+            Ok(object! {
+                "ufvk" => ufvk.encode(&wallet.chain_type()),
+                "birthday" => u32::from(wallet.birthday()),
+                "chain_name" => chain_name_short(wallet.chain_type())
+            }
+            .pretty(2))
+        })
     })
 }
 
 pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            let uri = if server_uri.is_empty() {
-                // Offline: no server. `http::Uri::default()` is scheme-less and
-                // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
-                // hand it the chain's default indexer URI instead —
-                // syntactically valid, and never actually dialed while offline.
-                let default = match lightclient.chain_type() {
-                    ChainType::Mainnet => DEFAULT_INDEXER_URI,
-                    ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
-                    ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
-                };
-                match construct_indexer_uri(Some(default.to_string())) {
-                    Ok(u) => u,
-                    Err(_) => return Ok("Error: invalid server uri".to_string()),
-                }
-            } else {
-                match construct_indexer_uri(Some(server_uri)) {
-                    Ok(u) => u,
-                    Err(_) => return Ok("Error: invalid server uri".to_string()),
-                }
+    with_initialized_lightclient(|lightclient| {
+        let uri = if server_uri.is_empty() {
+            // Offline: no server. `http::Uri::default()` is scheme-less and
+            // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
+            // hand it the chain's default indexer URI instead —
+            // syntactically valid, and never actually dialed while offline.
+            let default = match lightclient.chain_type() {
+                ChainType::Mainnet => DEFAULT_INDEXER_URI,
+                ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
+                ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
             };
-            Ok(RT.block_on(async move {
-                match lightclient.set_indexer_uri(uri).await {
-                    Ok(_) => "server set".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
+            construct_indexer_uri(Some(default.to_string()))
+                .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
         } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+            construct_indexer_uri(Some(server_uri))
+                .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
+        };
+        RT.block_on(async move {
+            lightclient
+                .set_indexer_uri(uri)
+                .await
+                .map_err(|e| ffi_error(e.into()))?;
+            Ok("server set".to_string())
+        })
     })
 }
 
@@ -1443,7 +1777,9 @@ pub fn wallet_kind() -> Result<String, ZingolibError> {
 pub fn parse_address(address: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if address.is_empty() {
-            Ok("Error: The address is empty".to_string())
+            Err(ZingolibError::InvalidInput(
+                "the address is empty".to_string(),
+            ))
         } else {
             fn make_decoded_chain_pair(
                 address: &str,
@@ -1525,7 +1861,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
 pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if ufvk.is_empty() {
-            Ok("Error: The ufvk is empty".to_string())
+            Err(ZingolibError::InvalidInput("the ufvk is empty".to_string()))
         } else {
             Ok(json::stringify_pretty(
                 match Ufvk::decode(&ufvk) {
@@ -1602,98 +1938,61 @@ pub fn get_balance() -> Result<String, ZingolibError> {
 }
 
 pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.do_total_memobytes_to_address().await {
-                    Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            match lightclient.do_total_memobytes_to_address().await {
+                Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
+                Err(e) => Err(ZingolibError::read(e)),
+            }
+        })
     })
 }
 
 pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.do_total_value_to_address().await {
-                    Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            match lightclient.do_total_value_to_address().await {
+                Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(2)),
+                Err(e) => Err(ZingolibError::read(e)),
+            }
+        })
     })
 }
 
 pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.do_total_spends_to_address().await {
-                    Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            match lightclient.do_total_spends_to_address().await {
+                Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
+                Err(e) => Err(ZingolibError::read(e)),
+            }
+        })
     })
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let mut wallet = lightclient.wallet().write().await;
-                match wallet.update_current_price().await {
-                    Ok(price) => object! { "current_price" => price }.pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let price = lightclient
+                .update_current_price()
+                .await
+                .map_err(ffi_error)?;
+            Ok(object! { "current_price" => price }.pretty(2))
+        })
     })
 }
 
 pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            let txid = match txid_from_hex_encoded_str(&txid) {
-                Ok(txid) => txid,
-                Err(e) => return Ok(format!("Error: {e}")),
-            };
-            Ok(RT.block_on(async move {
-                let mut wallet = lightclient.wallet().write().await;
-                match wallet.remove_failed_transaction(txid) {
-                    Ok(_) => "Successfully removed transaction.".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        let txid = txid_from_hex_encoded_str(&txid)
+            .map_err(|e| ZingolibError::InvalidInput(e.to_string()))?;
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet().write().await;
+            wallet
+                .remove_failed_transaction(txid)
+                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+            Ok("Successfully removed transaction.".to_string())
+        })
     })
 }
 
@@ -1702,29 +2001,19 @@ pub fn get_spendable_balance_with_address(
     address: String,
     zennies: String,
 ) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            let Ok(address) = address_from_str(&address) else {
-                return Ok("Error: unknown address format".to_string());
-            };
-            let Ok(zennies) = zennies.parse() else {
-                return Ok("Error: failed to parse zennies setting.".to_string());
-            };
-            Ok(RT.block_on(async move {
-                match lightclient
-                    .max_send_value(address, zennies, AccountId::ZERO)
-                    .await
-                {
-                    Ok(bal) => object! { "spendable_balance" => bal.into_u64() }.pretty(2),
-                    Err(e) => format!("error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        let address = address_from_str(&address)
+            .map_err(|_| ZingolibError::InvalidInput("unknown address format".to_string()))?;
+        let zennies = zennies.parse().map_err(|_| {
+            ZingolibError::InvalidInput("failed to parse zennies setting".to_string())
+        })?;
+        RT.block_on(async move {
+            let bal = lightclient
+                .max_send_value(address, zennies, AccountId::ZERO)
+                .await
+                .map_err(|e| ffi_error(SendError::from(e).into()))?;
+            Ok(object! { "spendable_balance" => bal.into_u64() }.pretty(2))
+        })
     })
 }
 
@@ -1744,11 +2033,11 @@ pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
 }
 
 pub fn set_option_wallet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| Ok("Error: unimplemented".to_string()))
+    with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
 }
 
 pub fn get_option_wallet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| Ok("Error: unimplemented".to_string()))
+    with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
 }
 
 pub fn get_unified_addresses() -> Result<String, ZingolibError> {
@@ -1782,136 +2071,116 @@ pub fn get_transparent_addresses() -> Result<String, ZingolibError> {
 }
 
 pub fn create_new_unified_address(receivers: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let mut wallet = lightclient.wallet().write().await;
-                let network = wallet.chain_type();
-                let receivers_available = ReceiverSelection {
-                    orchard: receivers.contains('o'),
-                    sapling: receivers.contains('z'),
-                };
-                match wallet.generate_unified_address(receivers_available, AccountId::ZERO) {
-                    Ok((id, unified_address)) => json::object! {
-                        "account" => u32::from(AccountId::ZERO),
-                        "address_index" => id.address_index,
-                        "has_orchard" => unified_address.has_orchard(),
-                        "has_sapling" => unified_address.has_sapling(),
-                        "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&network),
-                    }
-                    .pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet().write().await;
+            let network = wallet.chain_type();
+            let receivers_available = ReceiverSelection {
+                orchard: receivers.contains('o'),
+                sapling: receivers.contains('z'),
+            };
+            let (id, unified_address) = wallet
+                .generate_unified_address(receivers_available, AccountId::ZERO)
+                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+            Ok(json::object! {
+                "account" => u32::from(AccountId::ZERO),
+                "address_index" => id.address_index,
+                "has_orchard" => unified_address.has_orchard(),
+                "has_sapling" => unified_address.has_sapling(),
+                "has_transparent" => unified_address.has_transparent(),
+                "encoded_address" => unified_address.encode(&network),
+            }
+            .pretty(2))
+        })
     })
 }
 
 pub fn create_new_transparent_address() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let mut wallet = lightclient.wallet().write().await;
-                let network = wallet.chain_type();
-                match wallet.generate_transparent_address(AccountId::ZERO, true) {
-                    Ok((id, transparent_address)) => {
-                        json::object! {
-                            "account" => u32::from(id.account_id()),
-                            "address_index" => id.address_index().index(),
-                            "scope" => id.scope().to_string(),
-                            "encoded_address" => transparent::encode_address(&network,  transparent_address),
-                        }.pretty(2)
-                    }
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet().write().await;
+            let network = wallet.chain_type();
+            let (id, transparent_address) = wallet
+                .generate_transparent_address(AccountId::ZERO, true)
+                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+            Ok(json::object! {
+                "account" => u32::from(id.account_id()),
+                "address_index" => id.address_index().index(),
+                "scope" => id.scope().to_string(),
+                "encoded_address" => transparent::encode_address(&network,  transparent_address),
+            }
+            .pretty(2))
+        })
     })
 }
 
 pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                match wallet.is_address_derived_by_keys(&address) {
-                    Ok(address_ref) => address_ref.map_or(
-                        json::object! { "is_wallet_address" => false },
-                        |address_ref| match address_ref {
-                            WalletAddressRef::Unified {
-                                account_id,
-                                address_index,
-                                has_orchard,
-                                has_sapling,
-                                has_transparent,
-                                encoded_address,
-                            } => json::object! {
-                                "is_wallet_address" => true,
-                                "address_type" => "unified".to_string(),
-                                "address_index" => address_index,
-                                "account_id" => u32::from(account_id),
-                                "has_orchard" => has_orchard,
-                                "has_sapling" => has_sapling,
-                                "has_transparent" => has_transparent,
-                                "encoded_address" => encoded_address,
-                            },
-                            WalletAddressRef::OrchardInternal {
-                                account_id,
-                                diversifier_index,
-                                encoded_address,
-                            } => json::object! {
-                                "is_wallet_address" => true,
-                                "address_type" => "orchard_internal".to_string(),
-                                "account_id" => u32::from(account_id),
-                                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                                "encoded_address" => encoded_address,
-                            },
-                            WalletAddressRef::SaplingExternal {
-                                account_id,
-                                diversifier_index,
-                                encoded_address,
-                            } => json::object! {
-                                "is_wallet_address" => true,
-                                "address_type" => "sapling".to_string(),
-                                "account_id" => u32::from(account_id),
-                                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                                "encoded_address" => encoded_address,
-                            },
-                            WalletAddressRef::Transparent {
-                                account_id,
-                                scope,
-                                address_index,
-                                encoded_address,
-                            } => json::object! {
-                                "is_wallet_address" => true,
-                                "address_type" => "transparent".to_string(),
-                                "account_id" => u32::from(account_id),
-                                "scope" => scope.to_string(),
-                                "address_index" => address_index.index(),
-                                "encoded_address" => encoded_address,
-                            },
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            let address_ref = wallet
+                .is_address_derived_by_keys(&address)
+                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+            Ok(address_ref
+                .map_or(
+                    json::object! { "is_wallet_address" => false },
+                    |address_ref| match address_ref {
+                        WalletAddressRef::Unified {
+                            account_id,
+                            address_index,
+                            has_orchard,
+                            has_sapling,
+                            has_transparent,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "unified".to_string(),
+                            "address_index" => address_index,
+                            "account_id" => u32::from(account_id),
+                            "has_orchard" => has_orchard,
+                            "has_sapling" => has_sapling,
+                            "has_transparent" => has_transparent,
+                            "encoded_address" => encoded_address,
                         },
-                    ).pretty(2),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+                        WalletAddressRef::OrchardInternal {
+                            account_id,
+                            diversifier_index,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "orchard_internal".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "diversifier_index" => u128::from(diversifier_index).to_string(),
+                            "encoded_address" => encoded_address,
+                        },
+                        WalletAddressRef::SaplingExternal {
+                            account_id,
+                            diversifier_index,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "sapling".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "diversifier_index" => u128::from(diversifier_index).to_string(),
+                            "encoded_address" => encoded_address,
+                        },
+                        WalletAddressRef::Transparent {
+                            account_id,
+                            scope,
+                            address_index,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "transparent".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "scope" => scope.to_string(),
+                            "address_index" => address_index.index(),
+                            "encoded_address" => encoded_address,
+                        },
+                    },
+                )
+                .pretty(2))
+        })
     })
 }
 
@@ -1954,34 +2223,28 @@ pub fn set_config_wallet_to_prod(
     performance_level: String,
     min_confirmations: u32,
 ) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let performancetype = match performance_level.as_str() {
-                    "Maximum" => PerformanceLevel::Maximum,
-                    "High" => PerformanceLevel::High,
-                    "Medium" => PerformanceLevel::Medium,
-                    "Low" => PerformanceLevel::Low,
-                    _ => return "Error: Not a valid performance level!".to_string(),
-                };
-                let mut wallet = lightclient.wallet().write().await;
-                wallet.wallet_settings.min_confirmations =
-                    match NonZeroU32::try_from(min_confirmations) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            return "Error: min_confirmations must be greater than 0".to_string();
-                        }
-                    };
-                wallet.wallet_settings.sync_config.performance_level = performancetype;
-                wallet.mark_dirty();
-                "Successfully set config wallet to prod.".to_string()
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        let performancetype = match performance_level.as_str() {
+            "Maximum" => PerformanceLevel::Maximum,
+            "High" => PerformanceLevel::High,
+            "Medium" => PerformanceLevel::Medium,
+            "Low" => PerformanceLevel::Low,
+            _ => {
+                return Err(ZingolibError::InvalidInput(
+                    "not a valid performance level".to_string(),
+                ));
+            }
+        };
+        let min_confirmations = NonZeroU32::try_from(min_confirmations).map_err(|_| {
+            ZingolibError::InvalidInput("min_confirmations must be greater than 0".to_string())
+        })?;
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet().write().await;
+            wallet.wallet_settings.min_confirmations = min_confirmations;
+            wallet.wallet_settings.sync_config.performance_level = performancetype;
+            wallet.mark_dirty();
+            Ok("Successfully set config wallet to prod.".to_string())
+        })
     })
 }
 
@@ -2043,141 +2306,107 @@ fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     };
 
     MemoBytes::from_bytes(&s_bytes)
-        .map_err(|_| format!("Error: creating output. Memo '{:?}' is too long", memo_str))
+        .map_err(|_| format!("creating output. Memo '{:?}' is too long", memo_str))
 }
 
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let json_args = match json::parse(&send_json) {
-                    Ok(parsed) => parsed,
-                    Err(_) => return "Error: it is not a valid JSON".to_string(),
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let json_args = json::parse(&send_json)
+                .map_err(|_| ZingolibError::InvalidInput("it is not a valid JSON".to_string()))?;
+
+            let mut receivers = Receivers::new();
+            for j in json_args.members() {
+                let recipient_address = match j["address"].as_str() {
+                    Some(addr) => ZcashAddress::try_from_encoded(addr).map_err(|e| {
+                        ZingolibError::InvalidInput(format!("invalid address: {e}"))
+                    })?,
+                    None => {
+                        return Err(ZingolibError::InvalidInput("missing address".to_string()));
+                    }
                 };
 
-                let mut receivers = Receivers::new();
-                for j in json_args.members() {
-                    let recipient_address = match j["address"].as_str() {
-                        Some(addr) => match ZcashAddress::try_from_encoded(addr) {
-                            Ok(a) => a,
-                            Err(e) => return format!("Error: Invalid address: {e}"),
-                        },
-                        None => return "Error: Missing address".to_string(),
-                    };
-
-                    let amount = match j["amount"].as_u64() {
-                        Some(a) => match Zatoshis::from_u64(a) {
-                            Ok(a) => a,
-                            Err(e) => return format!("Error: Invalid amount: {e}"),
-                        },
-                        None => return "Missing amount".to_string(),
-                    };
-
-                    let memo = if let Some(m) = j["memo"].as_str() {
-                        match interpret_memo_string(m.to_string()) {
-                            Ok(memo_bytes) => Some(memo_bytes),
-                            Err(e) => return format!("Error: Invalid memo: {e}"),
-                        }
-                    } else {
-                        None
-                    };
-
-                    receivers.push(zingolib::data::receivers::Receiver {
-                        recipient_address,
-                        amount,
-                        memo,
-                    });
-                }
-
-                let request = match transaction_request_from_receivers(receivers) {
-                    Ok(request) => request,
-                    Err(e) => return format!("Error: Request Error: {e}"),
+                let amount = match j["amount"].as_u64() {
+                    Some(a) => Zatoshis::from_u64(a)
+                        .map_err(|e| ZingolibError::InvalidInput(format!("invalid amount: {e}")))?,
+                    None => {
+                        return Err(ZingolibError::InvalidInput("missing amount".to_string()));
+                    }
                 };
 
-                match lightclient.propose_send(request, AccountId::ZERO).await {
-                    Ok(proposal) => {
-                        let fee = match total_fee(&proposal) {
-                            Ok(fee) => fee,
-                            Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-                        };
-                        object! { "fee" => fee.into_u64() }
-                    }
-                    Err(e) => {
-                        object! { "error" => e.to_string() }
-                    }
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+                let memo =
+                    match j["memo"].as_str() {
+                        Some(m) => Some(interpret_memo_string(m.to_string()).map_err(|e| {
+                            ZingolibError::InvalidInput(format!("invalid memo: {e}"))
+                        })?),
+                        None => None,
+                    };
+
+                receivers.push(zingolib::data::receivers::Receiver {
+                    recipient_address,
+                    amount,
+                    memo,
+                });
+            }
+
+            let request = transaction_request_from_receivers(receivers)
+                .map_err(|e| ZingolibError::InvalidInput(format!("request error: {e}")))?;
+
+            let proposal = lightclient
+                .propose_send(request, AccountId::ZERO)
+                .await
+                .map_err(|e| ffi_error(SendError::from(e).into()))?;
+            let fee = total_fee(&proposal).map_err(|e| ZingolibError::Send(e.to_string()))?;
+            Ok(object! { "fee" => fee.into_u64() }.pretty(2))
+        })
     })
 }
 
 pub fn shield() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.propose_shield(AccountId::ZERO).await {
-                    Ok(proposal) => {
-                        if proposal.steps().len() != 1 {
-                            return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
-                        }
-                        let step = proposal.steps().first();
-                        let Some(value_to_shield) = step
-                            .balance()
-                            .proposed_change()
-                            .iter()
-                            .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
-                                return object! { "error" => "shield amount outside valid range of zatoshis" }
-                                    .pretty(2);
-                        };
-                        let fee = step.balance().fee_required();
-                        object! {
-                            "value_to_shield" => value_to_shield.into_u64(),
-                            "fee" => fee.into_u64(),
-                        }
-                    }
-                    Err(e) => {
-                        object! { "error" => e.to_string() }
-                    }
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let proposal = lightclient
+                .propose_shield(AccountId::ZERO)
+                .await
+                .map_err(|e| ffi_error(SendError::from(e).into()))?;
+            if proposal.steps().len() != 1 {
+                return Err(ZingolibError::InvalidInput(
+                    "shielding transactions should not have multiple proposal steps".to_string(),
+                ));
+            }
+            let step = proposal.steps().first();
+            let value_to_shield = step
+                .balance()
+                .proposed_change()
+                .iter()
+                .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
+                .ok_or_else(|| {
+                    ZingolibError::InvalidInput(
+                        "shield amount outside valid range of zatoshis".to_string(),
+                    )
+                })?;
+            let fee = step.balance().fee_required();
+            Ok(object! {
+                "value_to_shield" => value_to_shield.into_u64(),
+                "fee" => fee.into_u64(),
+            }
+            .pretty(2))
+        })
     })
 }
 
 pub fn confirm() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient
-                    .send_stored_proposal(true)
-                    .await {
-                    Ok(txids) => {
-                        object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
-                    }
-                    Err(e) => {
-                        object! { "error" => e.to_string() }
-                    }
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let txids = lightclient
+                .send_stored_proposal(true)
+                .await
+                .map_err(ffi_error)?;
+            Ok(
+                object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    .pretty(2),
+            )
+        })
     })
 }
 
@@ -2187,46 +2416,36 @@ pub fn confirm() -> Result<String, ZingolibError> {
 ///
 /// Returns, on success, the drain plan as JSON:
 /// `{ transactions: [{ inputs: [u64], output: u64, fee: u64 }], migrated,
-/// fee, stranded }` (all zatoshis). Each transaction spends its `inputs`
+/// fee, residual }` (all zatoshis). Each transaction spends its `inputs`
 /// Orchard notes into a single Ironwood `output`; the fee is `sum(inputs) -
 /// output`. An empty `transactions` array means there is nothing worth
 /// migrating.
 pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                match lightclient.plan_orchard_drain(AccountId::ZERO).await {
-                    Ok(plan) => {
-                        let transactions = plan
-                            .transactions
-                            .iter()
-                            .map(|tx| {
-                                object! {
-                                    "inputs" => tx.inputs.clone(),
-                                    "output" => tx.output,
-                                    "fee" => tx.fee(),
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        object! {
-                            "transactions" => transactions,
-                            "migrated" => plan.migrated,
-                            "fee" => plan.fee,
-                            "stranded" => plan.stranded,
-                        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let plan = lightclient
+                .plan_immediate_migration(AccountId::ZERO)
+                .await
+                .map_err(ffi_error)?;
+            let transactions = plan
+                .transactions
+                .iter()
+                .map(|tx| {
+                    object! {
+                        "inputs" => tx.inputs.clone(),
+                        "output" => tx.output,
+                        "fee" => tx.fee(),
                     }
-                    Err(e) => {
-                        object! { "error" => e.to_string() }
-                    }
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+                })
+                .collect::<Vec<_>>();
+            Ok(object! {
+                "transactions" => transactions,
+                "migrated" => plan.migrated,
+                "fee" => plan.fee,
+                "residual" => plan.residual,
+            }
+            .pretty(2))
+        })
     })
 }
 
@@ -2236,68 +2455,50 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
 /// crossing the pool boundary is visible on-chain, so the caller must have
 /// disclosed that. Mirror of `confirm`'s broadcast phase.
 ///
-/// Uses zingolib's `drain_orchard_to_ironwood_presynced`: this app owns the
-/// sync lifecycle (a background sync runs continuously), so the drain must NOT
-/// launch its own sync — the syncing variant `drain_orchard_to_ironwood`
-/// collides with the running sync and fails with `SyncAlreadyRunning`. It
-/// drains against current wallet state instead, matching `send`/`shield`.
+/// Uses zingolib's `quick_immediate_migration`, the send-shaped mobile entry
+/// point. It pauses our continuous background sync internally, plans against
+/// current wallet state, builds and transmits every drain transaction, then
+/// restores sync before it returns (`resume_sync: true`). No self-sync, no
+/// reconcile loop, matching `send`/`shield`. The older
+/// `migrate_immediately_presynced` (guard parameter) is a Rust-internal form
+/// and no longer crosses the FFI.
 ///
-/// Returns, on success, `{ txids: [..], migrated, fee, stranded }` (values in
+/// Returns, on success, `{ txids: [..], migrated, fee, residual }` (values in
 /// zatoshis). Notes worth at most the sweep minimum are left behind and
-/// reported as `stranded`.
+/// reported as `residual`.
 pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            // Publish this drain's progress handle to the DRAIN_PROGRESS side
-            // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
-            // whole drain, so a concurrent `drain_status` poll must read this
-            // handle (an independent Arc) rather than the lightclient. The handle
-            // reads idle (`null`) until the drain arms it after planning.
-            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
-                *progress = Some(lightclient.drain_progress_handle());
-            }
-            let out = RT.block_on(async move {
-                // Pause our continuous background sync before the drain plans:
-                // the presynced drain requires a SyncPauseGuard so the plan and
-                // the build observe one stable wallet state (dropping `sync` at
-                // the end of this block resumes the engine). Without it, planning
-                // could select notes the running sync then mutates underneath,
-                // between the plan and the build.
-                let sync = match lightclient.pause_sync_scoped() {
-                    Ok(sync) => sync,
-                    Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-                };
-                match lightclient
-                    .drain_orchard_to_ironwood_presynced(AccountId::ZERO, &sync)
-                    .await
-                {
-                    Ok(summary) => {
-                        object! {
-                            "txids" => summary.txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>(),
-                            "migrated" => summary.migrated,
-                            "fee" => summary.fee,
-                            "stranded" => summary.stranded,
-                        }
-                    }
-                    Err(e) => {
-                        object! { "error" => e.to_string() }
-                    }
-                }
-                .pretty(2)
-            });
-            // Drop the stale handle. The drain's own scope guard already reset
-            // the snapshot to idle on the way out, so a late poll reads `null`
-            // whether or not this clear has landed yet.
-            if let Ok(mut progress) = DRAIN_PROGRESS.write() {
-                *progress = None;
-            }
-            Ok(out)
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
+    with_initialized_lightclient(|lightclient| {
+        // Publish this drain's progress handle to the DRAIN_PROGRESS side
+        // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
+        // whole drain, so a concurrent `drain_status` poll must read this
+        // handle (an independent Arc) rather than the lightclient. The handle
+        // reads idle (`null`) until the drain arms it after planning.
+        if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+            *progress = Some(lightclient.immediate_migration_progress_handle());
         }
+        let out = RT.block_on(async move {
+            // quick_immediate_migration holds the pause internally: it plans,
+            // builds, and transmits under one stable wallet state, then resumes
+            // sync on return. resume_sync: true is the normal case.
+            let summary = lightclient
+                .quick_immediate_migration(AccountId::ZERO, true)
+                .await
+                .map_err(ffi_error)?;
+            Ok(object! {
+                "txids" => summary.txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>(),
+                "migrated" => summary.migrated,
+                "fee" => summary.fee,
+                "residual" => summary.residual,
+            }
+            .pretty(2))
+        });
+        // Drop the stale handle. The drain's own scope guard already reset
+        // the snapshot to idle on the way out, so a late poll reads `null`
+        // whether or not this clear has landed yet.
+        if let Ok(mut progress) = DRAIN_PROGRESS.write() {
+            *progress = None;
+        }
+        out
     })
 }
 
@@ -2319,24 +2520,661 @@ pub fn drain_status() -> Result<String, ZingolibError> {
         let status = {
             let progress = DRAIN_PROGRESS
                 .read()
-                .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+                .map_err(|_| ZingolibError::SideChannelPoisoned)?;
             progress.as_ref().and_then(|handle| handle.status())
         };
         Ok(match status {
             Some(s) => {
-                use zingolib::lightclient::migrate::DrainPhase;
+                use zingolib::lightclient::migrate::ImmediateMigrationPhase;
                 object! {
                     "total" => s.total,
                     "built" => s.built,
                     "sent" => s.sent,
                     "phase" => match s.phase {
-                        DrainPhase::Building => "building",
-                        DrainPhase::Transmitting => "transmitting",
+                        ImmediateMigrationPhase::Building => "building",
+                        ImmediateMigrationPhase::Transmitting => "transmitting",
                     },
                 }
                 .pretty(2)
             }
             None => json::JsonValue::Null.pretty(2),
+        })
+    })
+}
+
+// ----- ZIP 318 private migration (note splitting + scheduled parts) -----
+
+/// Lowercase-hex rendering of a consent hash, the form the plan JSON carries
+/// and `start_ironwood_migration` accepts back.
+fn hash32_to_hex(hash: &[u8; 32]) -> String {
+    hash.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Total inverse of [`hash32_to_hex`]: `None` for anything but 64 hex digits.
+fn hex_to_hash32(hex_str: &str) -> Option<[u8; 32]> {
+    hex::decode(hex_str).ok()?.try_into().ok()
+}
+
+fn migration_phase_json(phase: &MigrationPhase) -> json::JsonValue {
+    match phase {
+        MigrationPhase::Planned => object! { "kind" => "planned" },
+        MigrationPhase::NoteSplitting {
+            round,
+            pending_txids,
+        } => object! {
+            "kind" => "note_splitting",
+            "round" => *round,
+            "pending_txids" => pending_txids
+                .iter()
+                .map(|txid| txid.to_string())
+                .collect::<Vec<_>>(),
+        },
+        MigrationPhase::PartsScheduled => object! { "kind" => "parts_scheduled" },
+        MigrationPhase::Complete { residual } => object! {
+            "kind" => "complete",
+            "residual" => *residual,
+        },
+    }
+}
+
+/// Plans the ZIP 318 private migration from the account's current spendable
+/// Orchard notes. Pure and deterministic: nothing is signed or sent, so the
+/// plan can be rendered for consent. Mirror of `plan_orchard_drain` for the
+/// split path.
+///
+/// Returns, on success, the plan as JSON: `{ split_rounds:
+/// [[{ inputs: [u64], outputs: [u64], fee: u64 }]], parts: [u64], split_fee,
+/// parts_fee, residual, plan_hash }` (values in zatoshis, `plan_hash` in hex).
+/// Consent must disclose `residual`. Pass `plan_hash` back to
+/// `start_ironwood_migration` unchanged.
+pub fn plan_ironwood_migration() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        RT.block_on(async move {
+            let plan = lightclient
+                .plan_ironwood_migration(AccountId::ZERO)
+                .await
+                .map_err(ffi_error)?;
+            let params = {
+                let wallet = lightclient.wallet().read().await;
+                MigrationParams::provisional(wallet.chain_type())
+            };
+            let split_rounds = plan
+                .split_rounds
+                .iter()
+                .map(|round| {
+                    round
+                        .iter()
+                        .map(|tx| {
+                            object! {
+                                "inputs" => tx.inputs.clone(),
+                                "outputs" => tx.outputs.clone(),
+                                "fee" => tx.fee(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            Ok(object! {
+                "split_rounds" => split_rounds,
+                "parts" => plan.parts.clone(),
+                "split_fee" => plan.split_fee(),
+                "parts_fee" => plan.parts_fee(&params),
+                "residual" => plan.residual,
+                "plan_hash" => hash32_to_hex(&plan_hash(&plan)),
+            }
+            .pretty(2))
+        })
+    })
+}
+
+/// Records the user's consent to the exact plan they were shown (by its
+/// `plan_hash` from `plan_ironwood_migration`) and persists the migration
+/// state. Nothing is broadcast here; `continue_note_splitting` drives the
+/// rounds afterwards.
+///
+/// `per_bucket` caps how many parts share one broadcast window; `null` keeps
+/// zingolib's default, and `reschedule_parts` can change it any time before
+/// the first part is signed. Signing is always `LazyAtBoundary` (the only
+/// sound strategy while ZIP 244 commits the anchor into the signature hash).
+///
+/// Returns `{ started: true }`; failure throws typed — notably
+/// `MigrationConsentStale` when the wallet's notes changed since planning
+/// (replan and re-show).
+pub fn start_ironwood_migration(
+    plan_hash_hex: String,
+    per_bucket: Option<u32>,
+) -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        let hash = hex_to_hash32(&plan_hash_hex)
+            .ok_or_else(|| ZingolibError::InvalidInput("invalid plan hash".to_string()))?;
+        RT.block_on(async move {
+            lightclient
+                .start_ironwood_migration(
+                    AccountId::ZERO,
+                    SigningStrategy::LazyAtBoundary,
+                    hash,
+                    per_bucket,
+                )
+                .await
+                .map_err(ffi_error)?;
+            Ok(object! { "started" => true }.pretty(2))
+        })
+    })
+}
+
+/// Drives one step of note splitting: builds, proves and broadcasts the next
+/// round of Orchard self-sends, or reports what the round is waiting on.
+/// zingolib pauses the running sync itself for the critical section. Call
+/// after a sync tick and keep looping until `splitting_complete`.
+///
+/// Like the drain, this holds the lightclient for the whole prove+broadcast,
+/// so dispatch it on the concurrent native queue, never the main one.
+///
+/// Returns one of:
+/// `{ step: "round_broadcast", round, txids: [..] }` (sync until they
+/// confirm, then call again),
+/// `{ step: "awaiting_confirmation", pending: [..] }` (nothing written; an
+/// empty `pending` means confirmed but the anchor hasn't reached the outputs
+/// — sync and retry either way), or
+/// `{ step: "splitting_complete" }` (parts bound and scheduled).
+pub fn continue_note_splitting() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let step = lightclient
+                .continue_note_splitting()
+                .await
+                .map_err(ffi_error)?;
+            Ok(match step {
+                SplitStep::RoundBroadcast { round, txids } => object! {
+                    "step" => "round_broadcast",
+                    "round" => round,
+                    "txids" => txids
+                        .iter()
+                        .map(|txid| txid.to_string())
+                        .collect::<Vec<_>>(),
+                },
+                SplitStep::AwaitingConfirmation { pending } => object! {
+                    "step" => "awaiting_confirmation",
+                    "pending" => pending
+                        .iter()
+                        .map(|txid| txid.to_string())
+                        .collect::<Vec<_>>(),
+                },
+                SplitStep::SplittingComplete => object! {
+                    "step" => "splitting_complete",
+                },
+            }
+            .pretty(2))
+        })
+    })
+}
+
+/// Executes one round of Phase 1 note splitting as a send-shaped call — the
+/// mobile entry point for the private path's splitting, the counterpart to
+/// `quick_immediate_migration` for the immediate path (ADR 0016). Unlike the old
+/// `start_ironwood_migration` + `continue_note_splitting` driver it persists no
+/// migration state: it pauses sync internally, plans against current confirmed
+/// notes, builds and transmits one round, then restores sync before it returns
+/// (`resume_sync: true`). Each call re-plans, and "a round is still in flight"
+/// is derived from the wallet's pending transactions, not a stored phase.
+///
+/// One call does one round. Loop it — sync to confirmation between calls —
+/// until `complete`, then run `start_ironwood_migration` for Phase 2 (the notes
+/// are fully split by then, so it binds and schedules the parts at once).
+/// Refuses with `MigrationAlreadyInProgress` while a scheduled migration is
+/// active. Preview with `plan_ironwood_migration`; poll `split_status` for
+/// per-transaction progress.
+///
+/// Returns one of:
+/// `{ outcome: "round", txids: [..] }` (sync until they confirm, then call
+/// again), `{ outcome: "awaiting_confirmation" }` (a prior round has not
+/// confirmed yet — sync and retry, no double-broadcast), or
+/// `{ outcome: "complete" }` (every note is part-ready).
+pub fn quick_split() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        // Arm the SPLIT_PROGRESS side channel before the block_on: we hold
+        // LIGHTCLIENT.write() for the whole round, so a concurrent
+        // `split_status` poll must read this handle (an independent Arc). It
+        // reads idle (`null`) until the round arms it after planning.
+        if let Ok(mut progress) = SPLIT_PROGRESS.write() {
+            *progress = Some(lightclient.split_progress_handle());
+        }
+        let out = RT.block_on(async move {
+            let outcome = lightclient
+                .quick_split(AccountId::ZERO, true)
+                .await
+                .map_err(ffi_error)?;
+            use zingolib::lightclient::migrate::SplitOutcome;
+            Ok(match outcome {
+                SplitOutcome::Round { txids } => object! {
+                    "outcome" => "round",
+                    "txids" => txids
+                        .iter()
+                        .map(|txid| txid.to_string())
+                        .collect::<Vec<_>>(),
+                },
+                SplitOutcome::AwaitingConfirmation => object! {
+                    "outcome" => "awaiting_confirmation",
+                },
+                SplitOutcome::Complete => object! {
+                    "outcome" => "complete",
+                },
+            }
+            .pretty(2))
+        });
+        if let Ok(mut progress) = SPLIT_PROGRESS.write() {
+            *progress = None;
+        }
+        out
+    })
+}
+
+/// A snapshot of the in-flight splitting round's progress, for rendering
+/// "built i/N" then "sent i/N" within a `quick_split` call. The Phase 1 mirror
+/// of `drain_status`: reads the SPLIT_PROGRESS side channel only, never
+/// LIGHTCLIENT, so it stays responsive while `quick_split` holds the lock.
+///
+/// Returns, while a round runs: `{ total, built, sent, phase }` where `phase` is
+/// `"building"` or `"transmitting"` and the counts are `0..=total`. Returns JSON
+/// `null` when no round is in flight.
+pub fn split_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let status = {
+            let progress = SPLIT_PROGRESS
+                .read()
+                .map_err(|_| ZingolibError::SideChannelPoisoned)?;
+            progress.as_ref().and_then(|handle| handle.status())
+        };
+        Ok(match status {
+            Some(s) => {
+                use zingolib::lightclient::migrate::SplitPhase;
+                object! {
+                    "total" => s.total,
+                    "built" => s.built,
+                    "sent" => s.sent,
+                    "phase" => match s.phase {
+                        SplitPhase::Building => "building",
+                        SplitPhase::Transmitting => "transmitting",
+                    },
+                }
+                .pretty(2)
+            }
+            None => json::JsonValue::Null.pretty(2),
+        })
+    })
+}
+
+/// Sets how many parts share each broadcast window and re-buckets every part
+/// under the new cadence with fresh randomization. Callable any time between
+/// consent and the first signed part; afterwards it fails typed with
+/// `MigrationCadenceFixed`. After a successful call the old schedule is void:
+/// re-read `migration_status` and re-arm the platform scheduler.
+///
+/// Returns `{ rescheduled: true }`; failure throws typed.
+pub fn reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            lightclient
+                .reschedule_parts(per_bucket)
+                .await
+                .map_err(ffi_error)?;
+            Ok(object! { "rescheduled" => true }.pretty(2))
+        })
+    })
+}
+
+/// The migration's progress, arranged for direct rendering. ZIP 318 requires
+/// showing `orchard_confirmed_spendable` (the Orchard-pool figure
+/// specifically) while a migration is in flight.
+///
+/// Returns `{ orchard_confirmed_spendable, phase, parts_total,
+/// parts_confirmed, parts_broadcast, value_total, value_migrated,
+/// per_bucket, bucket_modulus,
+/// upcoming_windows: [{ bucket_index, boundary, part_ids, denominations,
+/// window_opens_unix_time, latest_target_unix_time }], due_now }`.
+/// `parts_broadcast` counts parts submitted but not yet mined (the sent,
+/// in-flight batch); they sit outside `upcoming_windows` and `due_now` and
+/// clear into the confirmed figures as parts mine. `phase` is `null`
+/// when no migration is in progress, else `{ kind }` with per-kind fields
+/// (`round`/`pending_txids` while note splitting, `residual` when complete).
+/// `denominations` (zatoshis) mirror `part_ids` element-for-element, so a
+/// schedule screen renders each window's batch without a second call.
+/// `due_now` is the batch the client can broadcast this instant (`{ boundary,
+/// part_ids, denominations }`) or `null` when a send would build nothing; it
+/// carries the current window, which `upcoming_windows` (future windows only)
+/// omits.
+pub fn migration_status() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        RT.block_on(async move {
+            let status = lightclient.migration_status().await.map_err(ffi_error)?;
+            // Join each window's part ids to their denominations (and
+            // pick up the effective cadence) from the persisted
+            // migration state; BroadcastWindow alone carries only ids.
+            let (denoms_by_id, per_bucket, bucket_modulus, parts_broadcast) = {
+                let wallet = lightclient.wallet().read().await;
+                match &wallet.migration {
+                    Some(state) => {
+                        // Parts submitted to the network but not yet mined: the
+                        // sent, in-flight batch. The confirmed figures gate on
+                        // mining, so without this a client cannot tell "batch
+                        // sent, confirming" from "batch never sent" (both leave
+                        // due_now null and parts_confirmed unchanged).
+                        let parts_broadcast = state
+                            .parts
+                            .iter()
+                            .filter(|part| matches!(part.state, PartState::Broadcast))
+                            .count() as u32;
+                        (
+                            state
+                                .parts
+                                .iter()
+                                .map(|part| (part.id.0, part.denomination))
+                                .collect::<std::collections::HashMap<_, _>>(),
+                            Some(state.params.k_max),
+                            state.params.bucket_modulus,
+                            parts_broadcast,
+                        )
+                    }
+                    None => (
+                        std::collections::HashMap::new(),
+                        None,
+                        MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
+                        0,
+                    ),
+                }
+            };
+            let upcoming_windows = status
+                .upcoming_windows
+                .iter()
+                .map(|window| {
+                    object! {
+                        "bucket_index" => window.bucket_index,
+                        "boundary" => u32::from(window.boundary),
+                        "part_ids" => window
+                            .part_ids
+                            .iter()
+                            .map(|id| id.0)
+                            .collect::<Vec<_>>(),
+                        "denominations" => window
+                            .part_ids
+                            .iter()
+                            .map(|id| denoms_by_id.get(&id.0).copied().unwrap_or(0))
+                            .collect::<Vec<_>>(),
+                        "window_opens_unix_time" => window.window_opens_unix_time,
+                        "latest_target_unix_time" => window.latest_target_unix_time,
+                    }
+                })
+                .collect::<Vec<_>>();
+            // The window the chain is currently inside, which upcoming_windows
+            // structurally omits (it lists future windows only). `null` when a
+            // send this instant would build nothing, so the client's Send
+            // action gates on it being present.
+            let due_now = match &status.due_now {
+                Some(batch) => object! {
+                    "boundary" => u32::from(batch.boundary),
+                    "part_ids" => batch
+                        .part_ids
+                        .iter()
+                        .map(|id| id.0)
+                        .collect::<Vec<_>>(),
+                    "denominations" => batch.denominations.clone(),
+                },
+                None => json::JsonValue::Null,
+            };
+            Ok(object! {
+                "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
+                "phase" => match &status.phase {
+                    Some(phase) => migration_phase_json(phase),
+                    None => json::JsonValue::Null,
+                },
+                "parts_total" => status.parts_total,
+                "parts_confirmed" => status.parts_confirmed,
+                "parts_broadcast" => parts_broadcast,
+                "value_total" => status.value_total,
+                "value_migrated" => status.value_migrated,
+                "per_bucket" => per_bucket,
+                "bucket_modulus" => bucket_modulus,
+                "upcoming_windows" => upcoming_windows,
+                "due_now" => due_now,
+            }
+            .pretty(2))
+        })
+    })
+}
+
+/// The window calendar, for a schedule screen's grid, independent of any
+/// migration. The window the chain tip sits in is always present (zero tallies
+/// when nothing is scheduled there); every scheduled window, past and future,
+/// carries its confirmation progress. So the grid and its "you are here" render
+/// before consent, and the same call fills per-window progress afterwards.
+///
+/// Returns a JSON array of `{ bucket_index, boundary, close, is_current,
+/// parts_total, parts_confirmed, value_total, value_migrated }` (heights in
+/// blocks with `close` exclusive, values in zatoshis), earliest first. Returns
+/// JSON `null` when the wallet has never synced.
+pub fn window_timeline() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        RT.block_on(async move {
+            let timeline = lightclient.window_timeline().await.map_err(ffi_error)?;
+            Ok(match timeline {
+                Some(windows) => {
+                    let reports = windows
+                        .iter()
+                        .map(|w| {
+                            object! {
+                                "bucket_index" => w.bucket_index,
+                                "boundary" => u32::from(w.boundary),
+                                "close" => u32::from(w.close),
+                                "is_current" => w.is_current,
+                                "parts_total" => w.parts_total,
+                                "parts_confirmed" => w.parts_confirmed,
+                                "value_total" => w.value_total,
+                                "value_migrated" => w.value_migrated,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    json::JsonValue::from(reports).pretty(2)
+                }
+                None => json::JsonValue::Null.pretty(2),
+            })
+        })
+    })
+}
+
+/// Classifies every part against the local chain view, applies what is safe
+/// unattended (promotions, expiries, rebuilds, completion) and returns what
+/// needs the app. Call on every launch; never syncs, offline-safe.
+///
+/// Returns `{ actions: [{ action, ... }] }`. The app-facing ones:
+/// `continue_note_splitting` / `retry_split { txid }` (drive the splitting
+/// loop), `await_split_confirmation` (sync first), `prompt_catch_up { parts }`
+/// (folded into the next execute tap in manual mode), `replan_remainder`
+/// (fresh consent required). The rest report what was applied unattended.
+pub fn reconcile_migration() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let report = lightclient.reconcile_migration().await.map_err(ffi_error)?;
+            let actions = report
+                .actions
+                .iter()
+                .map(|action| match action {
+                    RecommendedAction::AwaitSplitConfirmation => {
+                        object! { "action" => "await_split_confirmation" }
+                    }
+                    RecommendedAction::RetrySplit { txid } => object! {
+                        "action" => "retry_split",
+                        "txid" => txid.to_string(),
+                    },
+                    RecommendedAction::ContinueNoteSplitting => {
+                        object! { "action" => "continue_note_splitting" }
+                    }
+                    RecommendedAction::PromoteConfirmed { part, .. } => object! {
+                        "action" => "promote_confirmed",
+                        "part" => part.0,
+                    },
+                    RecommendedAction::Rebuild { part } => object! {
+                        "action" => "rebuild",
+                        "part" => part.0,
+                    },
+                    RecommendedAction::MarkInvalidated { part } => object! {
+                        "action" => "mark_invalidated",
+                        "part" => part.0,
+                    },
+                    RecommendedAction::ReplanRemainder => {
+                        object! { "action" => "replan_remainder" }
+                    }
+                    RecommendedAction::PromptCatchUp { parts, .. } => object! {
+                        "action" => "prompt_catch_up",
+                        "parts" => parts.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    },
+                    RecommendedAction::MarkComplete { residual } => object! {
+                        "action" => "mark_complete",
+                        "residual" => *residual,
+                    },
+                })
+                .collect::<Vec<_>>();
+            Ok(object! { "actions" => actions }.pretty(2))
+        })
+    })
+}
+
+/// Serializes a completed execute batch's report for the client.
+fn batch_report_json(report: &zingolib::lightclient::migrate::BatchReport) -> json::JsonValue {
+    use zingolib::lightclient::migrate::PartSendResult;
+    let outcomes = report
+        .outcomes
+        .iter()
+        .map(|o| {
+            let result = match &o.result {
+                PartSendResult::Sent(txid) => object! {
+                    "kind" => "sent",
+                    "txid" => txid.to_string(),
+                },
+                PartSendResult::Slid => object! { "kind" => "slid" },
+                PartSendResult::NotDue {
+                    window_opens_unix_time,
+                } => object! {
+                    "kind" => "not_due",
+                    "window_opens_unix_time" => *window_opens_unix_time,
+                },
+                PartSendResult::Failed { error } => object! {
+                    "kind" => "failed",
+                    "error" => error.clone(),
+                },
+            };
+            object! {
+                "part" => o.part.0,
+                "denomination" => o.denomination,
+                "result" => result,
+            }
+        })
+        .collect::<Vec<_>>();
+    object! {
+        "outcomes" => outcomes,
+        "halted" => match &report.halted {
+            Some(e) => json::JsonValue::from(e.clone()),
+            None => json::JsonValue::Null,
+        },
+    }
+}
+
+/// Sends everything the scheduled migration owes right now, in one
+/// user-triggered batch: the current window's due parts plus any missed
+/// windows', folded in. Sends are sequenced `spacing_ms` apart, never
+/// simultaneous. This is the phase-2 execute tap for the private path — the
+/// user opens the app from a window's reminder, the app syncs, then calls this
+/// once to send the whole batch.
+///
+/// zingolib pauses the running sync itself for the critical section. Like the
+/// drain, it holds the lightclient for the whole prove+broadcast, so dispatch
+/// it on the concurrent native queue, never the main one; poll
+/// `execute_due_parts_status` concurrently for progress.
+///
+/// Returns `{ outcomes: [{ part, denomination, result }], halted }`, where each
+/// `result` is `{ kind: "sent", txid }`, `{ kind: "slid" }`,
+/// `{ kind: "not_due", window_opens_unix_time }`, or `{ kind: "failed", error }`,
+/// and `halted` is the error that stopped the batch early or `null`. An empty
+/// `outcomes` with `halted` null means nothing was owed. An infrastructure
+/// failure (offline, no migration in progress) throws typed.
+pub fn execute_due_parts(spacing_ms: u64) -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        // Publish the batch progress handle to the BATCH_PROGRESS side
+        // channel *before* the block_on. We hold LIGHTCLIENT.write() for the
+        // whole batch, so a concurrent `execute_due_parts_status` poll must
+        // read this handle (an independent Arc) rather than the lightclient.
+        // The handle reads idle (`null`) until execute_due_parts arms it
+        // after folding in overdue parts.
+        if let Ok(mut progress) = BATCH_PROGRESS.write() {
+            *progress = Some(lightclient.batch_progress_handle());
+        }
+        let out = RT.block_on(async move {
+            let report = lightclient
+                .execute_due_parts(std::time::Duration::from_millis(spacing_ms))
+                .await
+                .map_err(ffi_error)?;
+            Ok(batch_report_json(&report).pretty(2))
+        });
+        // Drop the stale handle. The batch's own scope guard already reset
+        // the snapshot to idle on the way out, so a late poll reads `null`
+        // whether or not this clear has landed yet.
+        if let Ok(mut progress) = BATCH_PROGRESS.write() {
+            *progress = None;
+        }
+        out
+    })
+}
+
+/// A snapshot of the in-flight execute batch's progress, for rendering
+/// "Sending i/N". Reads the BATCH_PROGRESS side channel only, never LIGHTCLIENT,
+/// so it stays responsive while `execute_due_parts` holds the lightclient lock
+/// across its whole prove-and-broadcast loop.
+///
+/// Returns, while a batch runs: `{ total, resolved, sent, phase }` where `phase`
+/// is `"sending"` or `"spacing"` and the counts are `0..=total`. Returns JSON
+/// `null` when no batch is in flight (before it starts, or once it finishes).
+pub fn execute_due_parts_status() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        // Snapshot under a brief read lock, then drop it: the batch only touches
+        // BATCH_PROGRESS at its very start and end, so this never blocks on the
+        // long-running batch the way a LIGHTCLIENT read would.
+        let status = {
+            let progress = BATCH_PROGRESS
+                .read()
+                .map_err(|_| ZingolibError::SideChannelPoisoned)?;
+            progress.as_ref().and_then(|handle| handle.status())
+        };
+        Ok(match status {
+            Some(s) => {
+                use zingolib::lightclient::migrate::BatchPhase;
+                object! {
+                    "total" => s.total,
+                    "resolved" => s.resolved,
+                    "sent" => s.sent,
+                    "phase" => match s.phase {
+                        BatchPhase::Sending => "sending",
+                        BatchPhase::Spacing => "spacing",
+                    },
+                }
+                .pretty(2)
+            }
+            None => json::JsonValue::Null.pretty(2),
+        })
+    })
+}
+
+/// Abandons the in-progress migration: confirmed parts stand, pending ones
+/// are dropped and their notes released. The wallet then offers a fresh plan
+/// for whatever Orchard balance remains.
+///
+/// Returns `{ cancelled: true }`; failure throws typed.
+pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            lightclient
+                .cancel_ironwood_migration()
+                .await
+                .map_err(ffi_error)?;
+            Ok(object! { "cancelled" => true }.pretty(2))
         })
     })
 }
