@@ -20,7 +20,7 @@ const SLIP_TOLERANCE_BLOCKS: u32 = 96;
 
 /// Read-only chain facts, implemented by the wallet and by test mocks.
 /// Everything reconciliation knows about the chain flows through here.
-pub trait ChainView {
+pub(crate) trait ChainView {
     /// The highest block height the wallet knows of.
     fn chain_tip(&self) -> Option<BlockHeight>;
 
@@ -163,7 +163,7 @@ pub struct ReconcileReport {
 
 /// Classifies every part of `state` against the chain view and recommends
 /// actions. Pure: reads nothing but its arguments and writes nothing.
-pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileReport {
+pub(crate) fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileReport {
     let mut report = ReconcileReport::default();
 
     match &state.phase {
@@ -275,7 +275,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
 /// Mirrors `execute_due_parts` (which folds via the same reconcile pass) so a
 /// "batch due now" shown to the user can never name a part a send would not
 /// build. `report` must come from [`reconcile`] over the same `parts`.
-pub fn due_now_parts(
+pub(crate) fn due_now_parts(
     parts: &[PartRecord],
     report: &ReconcileReport,
     now_height: BlockHeight,

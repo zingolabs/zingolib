@@ -686,7 +686,7 @@ pub(crate) mod broadcast {
 
     use zcash_protocol::consensus::BlockHeight;
 
-    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+    use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
 
     /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real

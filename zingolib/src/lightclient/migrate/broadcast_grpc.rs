@@ -1,4 +1,4 @@
-//! The production [`BroadcastClient`]: a dedicated gRPC connection for part
+//! The production `BroadcastClient`: a dedicated gRPC connection for part
 //! submission.
 //!
 //! Lives outside `wallet::migration` on purpose: the migration modules must
@@ -17,14 +17,14 @@ use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
 pub(super) const SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Submits parts over gRPC and can do nothing else.
-pub struct GrpcBroadcastClient {
+pub(super) struct GrpcBroadcastClient {
     uri: http::Uri,
 }
 
 impl GrpcBroadcastClient {
     /// A client submitting to `uri`, ideally the dedicated
     /// `migration_broadcast_uri` rather than the synchronization endpoint.
-    pub fn new(uri: http::Uri) -> Self {
+    pub(super) fn new(uri: http::Uri) -> Self {
         GrpcBroadcastClient { uri }
     }
 }

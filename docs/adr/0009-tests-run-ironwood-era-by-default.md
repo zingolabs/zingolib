@@ -41,9 +41,10 @@ builder derives a pre-V6 version from the branch id, and Orchard→Ironwood
 migration tests, which inherently straddle both eras. There is no per-wallet
 opt-out: the `allow_v6_transactions` setting was removed once the builder
 began deriving the transaction version from the chain's branch id at target
-height, leaving the setting with no behavioral reader. It vanished before
-any release carried it, so the wallet file format is unchanged (version 42
-is defined without the byte a pre-release revision wrote). We rejected
-splitting the pool matrix by era (V5-pinned
+height, leaving the setting with no behavioral reader. The removal's
+original "never shipped" framing did not survive: the byte-carrying
+revision landed in `dev`, which ships the wallet file format, so version
+42 names two on-disk layouts and the reader disambiguates them (ADR 0015).
+We rejected splitting the pool matrix by era (V5-pinned
 copies of every Orchard-destination row) because the duplication was largely
 redundant with the existing `ironwood_sends_*` rows.

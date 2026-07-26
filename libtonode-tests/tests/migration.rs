@@ -16,7 +16,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::migration::{
     BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
-    PartState, RecommendedAction, SigningStrategy, schedule,
+    PartState, RecommendedAction, SigningStrategy, bucket_index,
 };
 use zingolib::wallet::summary::data::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
@@ -341,7 +341,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
             .last_known_chain_height()
             .expect("the wallet has synced")
     };
-    let current_bucket = schedule::bucket_index(known_height, PRUNED_BUCKET_MODULUS);
+    let current_bucket = bucket_index(known_height, PRUNED_BUCKET_MODULUS);
     assert_eq!(
         current_bucket, 2,
         "the chain must sit inside the second bucket, past its boundary"

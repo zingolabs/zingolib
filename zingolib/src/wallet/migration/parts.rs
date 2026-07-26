@@ -120,8 +120,8 @@ pub struct PartRecord {
     pub note: Option<BoundNote>,
     /// The bucket this part broadcasts in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
-    /// builder's target height comes from here. Distinct from
-    /// [`Self::anchor_bucket`], which is where the part *proves*.
+    /// builder's target height comes from here. Distinct from the part's
+    /// `anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
@@ -132,7 +132,7 @@ pub struct PartRecord {
     /// were drawn separately (inner version 3 and below) whose transaction is
     /// not yet signed; the next placement, or
     /// [`crate::wallet::LightWallet::refresh_part_witnesses`], draws one.
-    pub anchor_bucket: Option<u64>,
+    pub(crate) anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
     /// prevents the server from seeing all parts cluster at the boundary.
@@ -148,7 +148,7 @@ pub struct PartRecord {
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub signed_blob: Option<Vec<u8>>,
-    /// The anchor root and witness at [`Self::anchor_bucket`]'s boundary,
+    /// The anchor root and witness at the part's `anchor_bucket` boundary,
     /// cached while that checkpoint is retained. Cleared on every bucket
     /// transition, since a fresh anchor bucket means a fresh boundary, and
     /// discarded when a pre-anchor-age schedule is read, where it proves the
@@ -194,8 +194,8 @@ impl PartRecord {
     /// `Bound → Assigned`: the schedule placed this part in a broadcast
     /// window.
     ///
-    /// Clears [`Self::anchor_bucket`], as every bucket transition does: the
-    /// placement operations in [`super::schedule`] are the only writers of an
+    /// Clears the part's `anchor_bucket`, as every bucket transition does: the
+    /// placement operations in the `schedule` module are the only writers of an
     /// anchor, and they set it immediately after transitioning. A caller that
     /// assigns directly leaves the part anchorless rather than carrying an
     /// anchor drawn against a different window.
@@ -212,7 +212,7 @@ impl PartRecord {
     /// begins). Clears every scheduling artifact. The binding to its note
     /// stands.
     #[allow(clippy::result_large_err)]
-    pub fn unassign(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn unassign(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned"], PartState::Bound)?;
         self.bucket_index = None;
         self.anchor_bucket = None;
@@ -315,7 +315,7 @@ impl PartRecord {
 /// A part's proving closure: builds, proves, and signs the part's
 /// transaction, returning its txid and raw bytes. Takes ownership of all
 /// needed data. No wallet reference is captured. Safe to call on any thread.
-pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
 /// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
 /// proving closure or the reason the part must be skipped.
@@ -435,7 +435,7 @@ impl crate::wallet::LightWallet {
     /// maximum across every part, which forced the whole schedule up to the
     /// newest note's boundary; each part now clears only its own.
     #[must_use]
-    pub fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
+    pub(crate) fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
         let bound = part.note?;
         self.wallet_transactions
             .get(&bound.output_id.txid())?
@@ -608,7 +608,7 @@ impl crate::wallet::LightWallet {
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// `PrepareResult::Skip` when the part cannot be materialized in this
     /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
     /// the part record), so one part's condition never aborts the whole
@@ -865,7 +865,7 @@ impl crate::wallet::LightWallet {
     /// error, never a fallback.
     ///
     /// Never triggers a synchronization: when the required tree state is
-    /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
+    /// unavailable it returns `MaterializeOutcome::Skip` without writing
     /// anything.
     ///
     /// For parallel proving of multiple parts, see [`Self::prepare_part`] and

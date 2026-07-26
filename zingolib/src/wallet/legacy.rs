@@ -30,7 +30,7 @@ use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, PartialEq)]
-pub struct BlockData {
+pub(crate) struct BlockData {
     /// TODO: Add Doc Comment Here!
     pub(crate) ecb: Vec<u8>,
     /// TODO: Add Doc Comment Here!
@@ -53,7 +53,7 @@ impl BlockData {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let height = reader.read_i32::<LittleEndian>()? as u64;
 
         let mut hash_bytes = [0; 32];
@@ -84,19 +84,19 @@ impl BlockData {
 /// `HashMap` of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a `RwLock`, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct TxMap {
+pub(crate) struct TxMap {
     /// TODO: Doc-comment!
-    pub transaction_records_by_id: TransactionRecordsById,
+    pub(crate) transaction_records_by_id: TransactionRecordsById,
 }
 
 impl TxMap {
     /// TODO: Doc-comment!
-    pub fn serialized_version() -> u64 {
+    fn serialized_version() -> u64 {
         23
     }
 
     /// TODO: Doc-comment!
-    pub fn read_old<R: Read>(
+    pub(crate) fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
@@ -154,7 +154,10 @@ impl TxMap {
 
     /// TODO: Doc-comment!
     #[allow(unused_assignments)]
-    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(
+        mut reader: R,
+        wallet_capability: &WalletCapability,
+    ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(
@@ -226,18 +229,18 @@ impl TxMap {
 }
 
 /// A convenience wrapper, to impl behavior on.
-pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
+pub(crate) struct TransactionRecordsById(pub(crate) HashMap<TxId, TransactionRecord>);
 
 impl TransactionRecordsById {
     /// Constructs a `TransactionRecordsById` from a `HashMap`
-    pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
+    fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
 }
 
 ///  Everything (SOMETHING) about a transaction
 #[allow(dead_code)]
-pub struct TransactionRecord {
+pub(crate) struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: zingo_status::confirmation_status::ConfirmationStatus,
     /// Timestamp of Tx. Added in v4
@@ -270,7 +273,7 @@ pub struct TransactionRecord {
 impl TransactionRecord {
     /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
-    pub fn read<R: Read>(
+    fn read<R: Read>(
         mut reader: R,
         (wallet_capability, mut trees): (
             &WalletCapability,
@@ -475,7 +478,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, PartialEq)]
-pub struct TransparentOutput {
+pub(crate) struct TransparentOutput {
     /// TODO: Add Doc Comment Here!
     pub address: String,
     /// TODO: Add Doc Comment Here!
@@ -494,7 +497,7 @@ pub struct TransparentOutput {
 
 impl TransparentOutput {
     /// TODO: Add Doc Comment Here!
-    pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
+    fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u64::<byteorder::LittleEndian>()?;
 
         let address_len = reader.read_i32::<byteorder::LittleEndian>()?;
@@ -576,7 +579,7 @@ impl TransparentOutput {
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
 #[allow(dead_code)]
-pub struct SaplingNote {
+pub(crate) struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
     /// TODO: Add Doc Comment Here!
@@ -749,7 +752,7 @@ impl
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, PartialEq)]
-pub struct OrchardNote {
+pub(crate) struct OrchardNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,
     /// TODO: Add Doc Comment Here!
@@ -921,7 +924,7 @@ impl
 /// Only for `TransactionRecords` *from* "this" capability
 #[derive(Clone)]
 #[allow(dead_code)]
-pub struct OutgoingTxData {
+pub(crate) struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
     pub recipient_address: String,
     /// Amount to this receiver
@@ -937,7 +940,7 @@ pub struct OutgoingTxData {
 
 impl OutgoingTxData {
     /// Before version 0, `OutgoingTxData` didn't have a version field
-    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
+    fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
@@ -969,7 +972,7 @@ impl OutgoingTxData {
 
     /// Read an `OutgoingTxData` from its serialized
     /// representation
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _external_version = CompactSize::read(&mut reader)?;
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
@@ -1003,13 +1006,13 @@ impl OutgoingTxData {
 }
 
 /// TODO: Add Doc Comment Here!
-pub const COMMITMENT_TREE_LEVELS: u8 = 32;
+pub(crate) const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
-pub const MAX_SHARD_LEVEL: u8 = 16;
+pub(crate) const MAX_SHARD_LEVEL: u8 = 16;
 /// Witness-tree checkpoint retention depth, derived from the
 /// repository's single max-reorg truth (which in turn mirrors zebra's
 /// finalization boundary, see the source constant's docs).
-pub const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
+const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]
@@ -1102,16 +1105,16 @@ pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 /// TODO: Add Doc Comment Here!
 #[allow(dead_code)]
 #[derive(Clone)]
-pub struct WitnessCache<Node: Hashable> {
+struct WitnessCache<Node: Hashable> {
     /// TODO: Add Doc Comment Here!
-    pub(crate) witnesses: Vec<IncrementalWitness<Node, 32>>,
+    witnesses: Vec<IncrementalWitness<Node, 32>>,
     /// TODO: Add Doc Comment Here!
-    pub top_height: u64,
+    top_height: u64,
 }
 
 impl<Node: Hashable> WitnessCache<Node> {
     /// TODO: Add Doc Comment Here!
-    pub fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
+    fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
         Self {
             witnesses,
             top_height,
@@ -1119,7 +1122,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
+    fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.last()
     }
 }
@@ -1151,7 +1154,7 @@ impl ReadableWriteable for ConfirmationStatus {
 /// TODO: Add Doc Comment Here!
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemoDownloadOption {
+pub(crate) enum MemoDownloadOption {
     /// TODO: Add Doc Comment Here!
     NoMemos,
     /// TODO: Add Doc Comment Here!
@@ -1163,14 +1166,14 @@ pub enum MemoDownloadOption {
 /// TODO: Add Doc Comment Here!
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-pub struct WalletOptions {
+pub(crate) struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
     /// TODO: Add Doc Comment Here!
-    pub transaction_size_filter: Option<u32>,
+    pub(crate) transaction_size_filter: Option<u32>,
 }
 
 /// TODO: Add Doc Comment Here!
-pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
+const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
 
 impl Default for WalletOptions {
     fn default() -> Self {
@@ -1183,7 +1186,7 @@ impl Default for WalletOptions {
 
 impl WalletOptions {
     /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
 
         let download_memos = match reader.read_u8()? {
@@ -1214,7 +1217,7 @@ impl WalletOptions {
 /// Struct that tracks the latest and historical price of ZEC in the wallet
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub struct WalletZecPriceInfo {
+pub(crate) struct WalletZecPriceInfo {
     /// Latest price of ZEC and when it was fetched
     pub zec_price: Option<(u64, f64)>,
 
@@ -1241,12 +1244,12 @@ impl Default for WalletZecPriceInfo {
 
 impl WalletZecPriceInfo {
     /// TODO: Add Doc Comment Here!
-    pub fn serialized_version() -> u64 {
+    fn serialized_version() -> u64 {
         20
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(

@@ -36,7 +36,7 @@ use crate::wallet::error::WalletError;
 /// Unlike [`super::split::note_split_fee`] this is era-independent: the Orchard
 /// bundle has no outputs, so whether `orchard_v3` permits a spend and an output
 /// to share an action makes no difference to the count (pinned by test).
-pub fn immediate_migration_fee(n_in: usize) -> u64 {
+fn immediate_migration_fee(n_in: usize) -> u64 {
     zip317_fee(
         bundle_actions(BundleVersion::orchard_v3(), n_in, 0),
         bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
@@ -103,7 +103,7 @@ const MAX_DRAIN_INPUTS: usize = 32;
 /// migration creates: a chunk whose output would not exceed `SWEEP_MIN` is
 /// left whole as residual, so an immediate migration never manufactures a note the policy refuses to
 /// spend.
-pub fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
+fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
     let mut plan = ImmediateMigrationPlan::default();
 
     let (spendable, dust): (Vec<u64>, Vec<u64>) =

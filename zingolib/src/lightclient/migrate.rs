@@ -8,9 +8,6 @@
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
-//! The lifecycle wiring for that flow (which call belongs to which app
-//! moment, consent and disclosure UX, scheduling background wakes) is laid
-//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -1734,7 +1731,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1755,7 +1752,7 @@ impl LightClient {
     }
 
     /// Previews Phase 1 note splitting from the wallet's current confirmed
-    /// notes: the [`MigrationPlan`] whose `split_rounds` are the Orchard
+    /// notes: the `MigrationPlan` whose `split_rounds` are the Orchard
     /// self-sends that will run, alongside the resulting part denominations,
     /// the fees, and any residual dust. Pure and deterministic (nothing is
     /// signed or sent), so a client can show it before calling
@@ -1966,7 +1963,7 @@ impl LightClient {
     /// Runs a full Orchard→Ironwood migration in one call: executes
     /// note-splitting rounds (waiting for each round to confirm), then
     /// materializes and broadcasts every part immediately through the
-    /// [`BroadcastClient`].
+    /// `BroadcastClient`.
     ///
     /// This is the interactive path (CLI, testing, or a user who chose
     /// immediate migration over the scheduled flow): sends coincide with

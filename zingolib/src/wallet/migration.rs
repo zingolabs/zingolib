@@ -25,46 +25,52 @@
 //!   [`MigrationParams::sweep_min`] are stranded (moving them costs more than
 //!   they are worth).
 //!
-//! [`plan_migration`] is the pure planning entry point. It is deterministic
+//! `plan_migration` is the pure planning entry point. It is deterministic
 //! and never touches the network, so callers (the one-call
 //! `migrate_to_ironwood` orchestration, or a mobile client scheduling steps
 //! itself) can present the whole plan for consent before anything is sent.
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`immediate`], which shares nothing with
-//! this two-phase design but the transaction builder.
+//! over the private path above. That alternative is `ImmediateMigrationPlan`,
+//! which shares nothing with this two-phase design but the transaction builder.
 
-pub mod broadcast;
-pub mod immediate;
-pub mod params;
-pub mod parts;
-pub mod quantize;
-pub mod reconcile;
-pub mod schedule;
-pub mod split;
-pub mod store;
+// The submodules carry a crate ceiling: the re-export block below is this
+// module's whole public surface, so a new public name is a deliberate act
+// here rather than a side effect of `pub` in a submodule.
+pub(crate) mod broadcast;
+pub(crate) mod immediate;
+pub(crate) mod params;
+pub(crate) mod parts;
+pub(crate) mod quantize;
+pub(crate) mod reconcile;
+pub(crate) mod schedule;
+pub(crate) mod split;
+pub(crate) mod store;
 
-pub use broadcast::{BroadcastClient, BroadcastError};
-pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx, immediate_migration_fee};
 pub use params::MigrationParams;
-pub use parts::{
-    BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
-    SigningStrategy, SkipReason,
-};
-pub use quantize::{Denominations, decompose};
-pub use reconcile::{
-    ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
-};
-pub use schedule::{
-    BroadcastWindow, WindowReport, estimated_unix_at, part_in_current_bucket, plan_schedule,
-    upcoming_windows, window_timeline,
-};
-pub use split::{
-    CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
-    plan_migration,
-};
+pub use parts::{BoundNote, PartId, PartRecord, PartState, SigningStrategy};
+pub use reconcile::RecommendedAction;
+pub use schedule::bucket_index;
+pub use split::plan_hash;
 
+pub(crate) use broadcast::BroadcastClient;
+pub(crate) use immediate::ImmediateMigrationPlan;
+pub(crate) use parts::PrepareResult;
+pub(crate) use reconcile::{ChainView, ReconcileReport, due_now_parts, reconcile};
+pub(crate) use schedule::{
+    BroadcastWindow, WindowReport, plan_schedule, upcoming_windows, window_timeline,
+};
+pub(crate) use split::{MigrationPlan, plan_migration};
+
+// The crate's own tests reach these through the facade as well, and nothing
+// else in the crate does, so they exist only under `cfg(test)`.
+#[cfg(test)]
+pub(crate) use parts::{BoundaryWitness, SkipReason};
+#[cfg(test)]
+pub(crate) use reconcile::PartClass;
+#[cfg(test)]
+pub(crate) use split::CANONICAL_PART_FEE;
 use zcash_primitives::transaction::TxId;
 
 /// The consent captured when the user confirmed the migration schedule
@@ -147,7 +153,7 @@ impl MigrationState {
     /// selection for ordinary sends, without ever blocking a spend the user
     /// insists on (an insistent spend consumes them and the affected parts
     /// are invalidated on the next reconciliation).
-    pub fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
+    pub(crate) fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
         self.parts
             .iter()
             .filter(|part| {

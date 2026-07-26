@@ -26,7 +26,7 @@ use crate::lightclient::error::LightClientError;
 
 /// The [`BroadcastClient`] the Mixnet Mode policy resolved for this session:
 /// one concrete type for the callers, delegating to the wire the route chose.
-pub enum RoutedBroadcastClient {
+pub(super) enum RoutedBroadcastClient {
     /// Clearnet submission, the deliberate mixnet opt-out, or a build
     /// without the `nym` feature.
     Clearnet(GrpcBroadcastClient),

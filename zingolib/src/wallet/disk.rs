@@ -52,7 +52,7 @@ impl LightWallet {
     ///
     /// Changes in version 42:
     /// Optional Orchard→Ironwood migration section appended (see
-    /// [`crate::wallet::migration::store`]. The section carries its own inner
+    /// `crate::wallet::migration::store`; the section carries its own inner
     /// version). (An earlier revision of 42 also wrote an
     /// `allow_v6_transactions` bool after `min_confirmations`. The setting
     /// was later removed and version 42 redefined without the byte, leaving
