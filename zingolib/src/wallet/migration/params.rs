@@ -1,10 +1,8 @@
 //! Per-network migration constants, versioned so testnet and mainnet
 //! activations can carry different ratified values.
 
-use zcash_pool_migration::note_splitting::{
-    MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
-};
-use zcash_pool_migration::scheduling::BOUNDARY_MODULUS;
+use zcash_pool_migration::denomination::{MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN};
+use zcash_pool_migration::scheduling::AnchorBucketInterval;
 use zcash_protocol::value::COIN;
 
 use crate::config::ChainType;
@@ -106,7 +104,7 @@ impl MigrationParams {
             denom_cap,
             max_residual_value,
             sweep_min: SWEEP_MIN,
-            bucket_modulus: BOUNDARY_MODULUS,
+            bucket_modulus: AnchorBucketInterval::ZIP_318.block_count().get(),
             k_max: 8,
             target_sessions: 6,
             max_actions_per_split_tx: 32,

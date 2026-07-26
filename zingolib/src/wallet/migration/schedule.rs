@@ -1169,6 +1169,37 @@ mod tests {
             assert_eq!(ANCHOR_AGE_CAP, 16);
         }
 
+        /// The `zcash_pool_migration` revision this workspace has adjudicated.
+        /// The dependency floats on zcash/librustzcash's default branch (ADR
+        /// 0020), so an ordinary `cargo update` can move it. This tripwire
+        /// makes every move loud: when the resolved revision changes, this
+        /// test fails, and the adopting commit re-runs the value tripwires
+        /// above and bumps this literal deliberately.
+        const ADJUDICATED_UPSTREAM_REV: &str = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031";
+
+        /// Fails when the floating librustzcash dependency moves (ADR 0020's
+        /// branch-move tripwire). Reads the workspace lockfile rather than any
+        /// crate metadata, because the lockfile is where a float lands first.
+        #[test]
+        fn upstream_revision_is_the_adjudicated_one() {
+            let lockfile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("zingolib sits directly under the workspace root")
+                .join("Cargo.lock");
+            let lock = std::fs::read_to_string(lockfile).expect("workspace lockfile is readable");
+            let package_block = lock
+                .split("[[package]]")
+                .find(|block| block.contains("name = \"zcash_pool_migration\""))
+                .expect("the lockfile resolves zcash_pool_migration");
+            assert!(
+                package_block.contains(&format!("#{ADJUDICATED_UPSTREAM_REV}\"")),
+                "zcash_pool_migration moved off the adjudicated revision \
+                 {ADJUDICATED_UPSTREAM_REV}. Re-run the zip318 tripwires against \
+                 the new revision and bump ADJUDICATED_UPSTREAM_REV in the same \
+                 commit that adopts it."
+            );
+        }
+
         #[test]
         fn expiry_heights_match_upstream() {
             let sample = [
@@ -1181,10 +1212,14 @@ mod tests {
                 100 * EXPIRY_MODULUS,
                 101 * EXPIRY_MODULUS - 1,
             ];
-            for height in sample.map(BlockHeight::from_u32) {
+            // The git dependency carries its own zcash_protocol, so its
+            // BlockHeight is a distinct type from the workspace's; heights
+            // cross the boundary as u32, the same value-level insulation the
+            // imports rely on.
+            for height in sample {
                 assert_eq!(
-                    canonical_expiry_height(height),
-                    scheduling::expiry_height(height),
+                    u32::from(canonical_expiry_height(BlockHeight::from_u32(height))),
+                    u32::from(scheduling::expiry_height(height.into())),
                     "diverged at {height}"
                 );
             }
