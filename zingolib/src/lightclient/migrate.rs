@@ -1734,7 +1734,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0018-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
