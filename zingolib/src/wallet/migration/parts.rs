@@ -554,13 +554,16 @@ impl crate::wallet::LightWallet {
     /// before anchors were drawn separately from windows. Drawing it here
     /// rather than at proving time keeps the placement and the capture in the
     /// same pass, so the part is ready before its window opens.
+    ///
+    /// No-ops when the network does not have an activation height for NU6.3.
     #[allow(clippy::result_large_err)]
     pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
-        let activation = pepper_sync::wallet::PoolActivation::of(
+        let Some(activation) = pepper_sync::wallet::PoolActivation::of(
             &self.chain_type,
             zcash_protocol::ShieldedPool::Ironwood,
-        )
-        .ok_or_else(|| WalletError::MigrationBuild("NU6.3 has no activation height".to_string()))?;
+        ) else {
+            return Ok(());
+        };
         self.with_migration_state(|wallet, state| {
             for part in state
                 .parts
