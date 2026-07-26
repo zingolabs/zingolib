@@ -34,7 +34,7 @@ use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 use zingolib::wallet::migration::{self, MigrationPhase};
 
-pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
+pub(crate) static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
 /// The cadence of the transmit heartbeat. A transmission can legitimately run
 /// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
@@ -82,7 +82,7 @@ async fn with_transmit_heartbeat<T>(
 /// site that renders these to prose for string frontends; typed
 /// frontends consume them directly via `do_user_command_result`.
 #[derive(Debug, thiserror::Error)]
-pub enum CommandError {
+enum CommandError {
     #[error(transparent)]
     Migration(#[from] MigrationCommandError),
     #[error(transparent)]
@@ -96,7 +96,7 @@ pub enum CommandError {
 }
 
 /// This command interface is used both by cli and also consumers.
-pub trait Command {
+trait Command {
     /// display command help (in cli)
     fn help(&self) -> &'static str;
 
@@ -117,7 +117,7 @@ pub trait Command {
 /// This is used for commands like `help` that must run before the wallet
 /// is loaded — for example when the user passes `help` as the COMMAND
 /// argument on the command line.
-pub trait ShortCircuitedCommand {
+pub(crate) trait ShortCircuitedCommand {
     /// Execute the command without a [`LightClient`], returning the
     /// output string that will be printed to the console.
     fn exec_without_lc(args: Vec<String>) -> String;
@@ -574,7 +574,7 @@ impl Command for ClearCommand {
 }
 
 /// Lists all available commands or shows detailed help for a specific command.
-pub struct HelpCommand {}
+pub(crate) struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -799,7 +799,7 @@ fn bundled_proxy_path() -> Option<String> {
 /// Typed failure of the `nym` command family. Each variant exists only in
 /// the build that can produce it, so the enum's shape follows the feature.
 #[derive(Debug, thiserror::Error)]
-pub enum NymCommandError {
+enum NymCommandError {
     #[cfg(feature = "nym")]
     #[error(
         "unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off | \
@@ -2617,7 +2617,7 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 /// message is byte-identical to the in-band string it replaced, so no
 /// frontend observes the change.
 #[derive(Debug, thiserror::Error)]
-pub enum MigrationCommandError {
+enum MigrationCommandError {
     #[error("migrate command expects no arguments. Type \"help migrate\" for usage.")]
     UnexpectedArguments,
     #[error("migration command expects a sub-command. Type \"help migration\" for usage.")]
@@ -2923,7 +2923,7 @@ impl Command for MigrationCommand {
 }
 
 /// Commands that do not require a wallet connection.
-pub fn get_standalone_commands() -> HashMap<&'static str, Box<dyn Command>> {
+fn get_standalone_commands() -> HashMap<&'static str, Box<dyn Command>> {
     vec![
         ("help", Box::new(HelpCommand {}) as Box<dyn Command>),
         ("parse_address", Box::new(ParseAddressCommand {})),
@@ -2935,7 +2935,7 @@ pub fn get_standalone_commands() -> HashMap<&'static str, Box<dyn Command>> {
 }
 
 /// Commands that require a wallet connection.
-pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
+fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
     vec![
         (
             "addresses",
@@ -2996,7 +2996,7 @@ pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
 }
 
 /// All commands (standalone + wallet). Used for dispatch and `help <command>`.
-pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
+fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let mut all = get_standalone_commands();
     all.extend(get_wallet_commands());
     all
@@ -3007,7 +3007,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
 ///
 /// An unknown command returns its "Unknown command" prose via `Ok`, mirroring
 /// the string entry point's historical behavior of not treating it as an error.
-pub fn do_user_command_result(
+fn do_user_command_result(
     cmd: &str,
     args: &[&str],
     lightclient: &mut LightClient,
@@ -3025,7 +3025,7 @@ pub fn do_user_command_result(
 /// Returns the command's output string, or an "Unknown command" message
 /// if no command with the given name exists. This is the single site that
 /// renders [`CommandError`] to prose for string frontends.
-pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
+pub(crate) fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
     match do_user_command_result(cmd, args, lightclient) {
         Ok(output) => output,
         Err(e) => format!("Error: {e}"),
