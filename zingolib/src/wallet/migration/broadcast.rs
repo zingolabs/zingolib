@@ -12,7 +12,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 /// Submits raw transactions and does nothing else.
-pub trait BroadcastClient: Send + Sync {
+pub(crate) trait BroadcastClient: Send + Sync {
     /// Submits a raw transaction, returning its txid as reported by the
     /// endpoint.
     fn submit(
@@ -24,7 +24,7 @@ pub trait BroadcastClient: Send + Sync {
 
 /// Why a submission failed.
 #[derive(Debug, thiserror::Error)]
-pub enum BroadcastError {
+pub(crate) enum BroadcastError {
     /// The endpoint could not be reached. The transaction was not consumed
     /// and the attempt can be retried.
     #[error("broadcast transport failure: {0}")]

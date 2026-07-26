@@ -608,7 +608,7 @@ impl crate::wallet::LightWallet {
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// `PrepareResult::Skip` when the part cannot be materialized in this
     /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
     /// the part record), so one part's condition never aborts the whole
@@ -865,7 +865,7 @@ impl crate::wallet::LightWallet {
     /// error, never a fallback.
     ///
     /// Never triggers a synchronization: when the required tree state is
-    /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
+    /// unavailable it returns `MaterializeOutcome::Skip` without writing
     /// anything.
     ///
     /// For parallel proving of multiple parts, see [`Self::prepare_part`] and

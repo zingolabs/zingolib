@@ -1752,7 +1752,7 @@ impl LightClient {
     }
 
     /// Previews Phase 1 note splitting from the wallet's current confirmed
-    /// notes: the [`MigrationPlan`] whose `split_rounds` are the Orchard
+    /// notes: the `MigrationPlan` whose `split_rounds` are the Orchard
     /// self-sends that will run, alongside the resulting part denominations,
     /// the fees, and any residual dust. Pure and deterministic (nothing is
     /// signed or sent), so a client can show it before calling
@@ -1963,7 +1963,7 @@ impl LightClient {
     /// Runs a full Orchard→Ironwood migration in one call: executes
     /// note-splitting rounds (waiting for each round to confirm), then
     /// materializes and broadcasts every part immediately through the
-    /// [`BroadcastClient`].
+    /// `BroadcastClient`.
     ///
     /// This is the interactive path (CLI, testing, or a user who chose
     /// immediate migration over the scheduled flow): sends coincide with

@@ -20,7 +20,7 @@ const SLIP_TOLERANCE_BLOCKS: u32 = 96;
 
 /// Read-only chain facts, implemented by the wallet and by test mocks.
 /// Everything reconciliation knows about the chain flows through here.
-pub trait ChainView {
+pub(crate) trait ChainView {
     /// The highest block height the wallet knows of.
     fn chain_tip(&self) -> Option<BlockHeight>;
 
@@ -163,7 +163,7 @@ pub struct ReconcileReport {
 
 /// Classifies every part of `state` against the chain view and recommends
 /// actions. Pure: reads nothing but its arguments and writes nothing.
-pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileReport {
+pub(crate) fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileReport {
     let mut report = ReconcileReport::default();
 
     match &state.phase {

@@ -7,7 +7,7 @@ use super::params::MigrationParams;
 
 /// The result of decomposing a value into canonical denominations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Denominations {
+pub(crate) struct Denominations {
     /// One entry per Ironwood output to create. Every value is a member of
     /// [`MigrationParams::denominations`]. Ordered largest first.
     outputs: Vec<Zatoshis>,
@@ -20,17 +20,22 @@ pub struct Denominations {
 
 impl Denominations {
     /// The output notes to create, each a canonical denomination, largest first.
-    pub fn outputs(&self) -> &[Zatoshis] {
+    pub(crate) fn outputs(&self) -> &[Zatoshis] {
         &self.outputs
     }
 
-    /// The sub-denomination leftover to fold into the fee.
-    pub fn remainder(&self) -> Zatoshis {
+    /// The sub-denomination leftover to fold into the fee. Production callers
+    /// fold it by subtraction and never read it; the quantize tests assert on
+    /// it directly.
+    #[cfg(test)]
+    pub(crate) fn remainder(&self) -> Zatoshis {
         self.remainder
     }
 
-    /// Total value across all canonical outputs.
-    pub fn total(&self) -> Zatoshis {
+    /// Total value across all canonical outputs, asserted on by the quantize
+    /// tests; production callers sum inputs and outputs themselves.
+    #[cfg(test)]
+    pub(crate) fn total(&self) -> Zatoshis {
         // Bounded by the input value, itself a valid `Zatoshis`, so in range.
         Zatoshis::const_from_u64(self.outputs.iter().map(|z| u64::from(*z)).sum())
     }
@@ -47,7 +52,7 @@ impl Denominations {
 /// Pass the amount that will actually land in Ironwood, the spendable Orchard
 /// total minus the fee. The caller then folds the remainder into the fee, so
 /// the wallet empties the Orchard pool.
-pub fn decompose(value: Zatoshis, params: &MigrationParams) -> Denominations {
+pub(crate) fn decompose(value: Zatoshis, params: &MigrationParams) -> Denominations {
     let mut remaining = u64::from(value);
     let mut outputs = Vec::new();
 
