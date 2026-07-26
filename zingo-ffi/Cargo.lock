@@ -2151,7 +2151,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "bip32",
  "byteorder",
@@ -2181,7 +2181,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood)",
  "zingo-status",
  "zip32",
 ]
@@ -4716,7 +4716,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -4741,7 +4741,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "http",
  "lightwallet-protocol",
@@ -4755,7 +4755,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "byteorder",
  "thiserror 2.0.19",
@@ -4765,7 +4765,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -4788,7 +4788,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -4835,7 +4835,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood)",
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
@@ -4846,7 +4846,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood#f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d"
 dependencies = [
  "http",
  "nonempty",
@@ -4858,7 +4858,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?rev=f48b15c9ed5676fcce92ad51b1e2a7eecbc8e36d)",
+ "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?tag=zingolib_beta_ironwood)",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
