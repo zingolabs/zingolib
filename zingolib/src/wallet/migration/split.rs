@@ -25,6 +25,10 @@ pub(crate) const MARGINAL_FEE: u64 = 5_000;
 /// Shared by both migration paths: the private schedule reads it through
 /// [`MigrationParams`], and the immediate [`super::immediate`] reads it directly,
 /// so the two leave identical residuals.
+///
+/// A local policy, not a ZIP 318 value: the ZIP leaves whether consuming a
+/// small note is economic to ZIP 317's marginal fee
+/// (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
 pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
 
 /// Orchard pads every non-empty bundle to at least this many actions
@@ -37,6 +41,14 @@ const MIN_BUNDLE_ACTIONS: u64 = 2;
 /// (1 output, padded to 2 actions), so it pays for 4 logical actions. Every
 /// split note is sized `denomination + part_fee` so the part balances
 /// exactly.
+///
+/// ZIP 318 says only "the canonical fee (provisionally the ZIP 317 minimum
+/// fee)" at
+/// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>,
+/// and the reference crate models a 2-source-action, 1-unpadded-destination
+/// shape, so the three readings price a part at 10 000, 15 000, and (here)
+/// 20 000 zatoshis. The value feeds part sizing and the consent hash, so
+/// aligning it is a ratification decision, not an import.
 pub(crate) const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
 
 /// The number of logical actions the builder will produce for a bundle of
@@ -785,10 +797,10 @@ impl crate::wallet::LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::params::COIN;
     use super::*;
     use crate::config::ChainType;
     use proptest::prelude::*;
+    use zcash_protocol::value::COIN;
 
     fn params() -> MigrationParams {
         MigrationParams::provisional(ChainType::Mainnet)

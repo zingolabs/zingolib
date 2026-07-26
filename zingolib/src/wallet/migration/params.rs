@@ -1,12 +1,15 @@
 //! Per-network migration constants, versioned so testnet and mainnet
 //! activations can carry different ratified values.
 
+use zcash_pool_migration::note_splitting::{
+    MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
+};
+use zcash_pool_migration::scheduling::BOUNDARY_MODULUS;
+use zcash_protocol::value::COIN;
+
 use crate::config::ChainType;
 
 use super::split::{CANONICAL_PART_FEE, SWEEP_MIN};
-
-/// Number of zatoshis in one ZEC.
-pub(crate) const COIN: u64 = 100_000_000;
 
 /// The constants ZIP 318 leaves to ratification, gathered so the planner,
 /// schedule and part builders all read one source. Every value is provisional
@@ -48,39 +51,62 @@ pub struct MigrationParams {
     pub part_fee: u64,
 }
 
+/// The ZIP 318 canonical denomination set: every value `n × 10^k` zatoshis
+/// with `n ∈ {1, 2, 5}` lying within `[floor, cap]`, ordered largest first
+/// so a greedy decomposition walks it directly. The series itself is
+/// standardized at
+/// <https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>; the
+/// reference crate exports the bounds but not the enumerated set, so the
+/// ladder is derived here from the imported bounds.
+fn one_two_five_ladder(cap: u64, floor: u64) -> Vec<u64> {
+    let mut ladder = Vec::new();
+    let mut power = 1u64;
+    loop {
+        for n in [1u64, 2, 5] {
+            let Some(value) = n.checked_mul(power) else {
+                continue;
+            };
+            if (floor..=cap).contains(&value) {
+                ladder.push(value);
+            }
+        }
+        match power.checked_mul(10) {
+            Some(next) if power <= cap => power = next,
+            _ => break,
+        }
+    }
+    ladder.sort_unstable_by(|a, b| b.cmp(a));
+    ladder
+}
+
 impl MigrationParams {
     /// The provisional parameter set (ZIP 318 draft values). The chain is
     /// accepted now so ratified per-network values slot in without a
     /// signature change.
+    ///
+    /// Every ZIP-standardized value the canonical `zcash_pool_migration`
+    /// crate exports is imported from it, never restated: `DENOM_CAP`
+    /// (10 000 ZEC) and `MAX_RESIDUAL_VALUE` (0.01 ZEC) from
+    /// <https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>,
+    /// and `M` (the boundary modulus, 144) from
+    /// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>.
+    /// The `zip318_conformance_tripwires` tests in the schedule module pin
+    /// each imported value to the ZIP's literal number, so a dependency
+    /// bump cannot silently move the consent hash. `sweep_min` stays a local
+    /// policy: the ZIP leaves the economics of consuming a small note to
+    /// ZIP 317 and standardizes no sweep threshold. `k_max` stays local:
+    /// the ZIP names `K_MAX` at
+    /// <https://zips.z.cash/zip-0318#whalehandling> without fixing a value.
     pub fn provisional(_chain: ChainType) -> Self {
-        // The `{1, 2, 5} × 10^k` set from 10 000 ZEC down to 0.01 ZEC.
+        let denom_cap = MIGRATION_MAX_DENOMINATION_ZEC * COIN;
+        let max_residual_value = u64::from(RESIDUAL_MIGRATION_MIN);
         MigrationParams {
             version: 1,
-            denominations: vec![
-                10_000 * COIN,
-                5_000 * COIN,
-                2_000 * COIN,
-                1_000 * COIN,
-                500 * COIN,
-                200 * COIN,
-                100 * COIN,
-                50 * COIN,
-                20 * COIN,
-                10 * COIN,
-                5 * COIN,
-                2 * COIN,
-                COIN,
-                COIN / 2,
-                COIN / 5,
-                COIN / 10,
-                COIN / 20,
-                COIN / 50,
-                COIN / 100,
-            ],
-            denom_cap: 10_000 * COIN,
-            max_residual_value: COIN / 100,
+            denominations: one_two_five_ladder(denom_cap, max_residual_value),
+            denom_cap,
+            max_residual_value,
             sweep_min: SWEEP_MIN,
-            bucket_modulus: 144,
+            bucket_modulus: BOUNDARY_MODULUS,
             k_max: 8,
             target_sessions: 6,
             max_actions_per_split_tx: 32,

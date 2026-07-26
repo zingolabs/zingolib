@@ -37,19 +37,30 @@ fn random_target_in_bucket(
 }
 
 /// Zcash target block spacing in seconds, used to estimate window times.
+/// Matches the spacing ZIP 318's block-count constants assume; see
+/// <https://zips.z.cash/zip-0318#transferscheduling>.
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
-/// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
-const EXPIRY_MODULUS: u32 = 34_560;
-
-/// The canonical validity window past an expiry bucket's opening.
-const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+// The ZIP 318 expiry and anchor-age constants are imported from the
+// canonical reference crate, never restated. `EXPIRY_MODULUS` (34 560
+// blocks, 30 days) and `EXPIRY_WINDOW` (2x, about 60 days) are
+// standardized at
+// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>;
+// `ANCHOR_AGE_CAP` (16 boundaries, about two days) at
+// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>.
+// ANCHOR_AGE_CAP is deliberately not a `MigrationParams` field: it does
+// not feed the consent hash, so adopting it costs no existing consent.
+// The `zip318_conformance_tripwires` tests below pin every imported value to the
+// ZIP's literal number, so a dependency bump that moved one fails red
+// and is adopted deliberately, with a params version bump.
+use zcash_pool_migration::scheduling::{ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW};
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
 /// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
-/// coarse period.
+/// coarse period. See
+/// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
 pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
     let height = u32::from(broadcast_height);
     BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
@@ -75,13 +86,6 @@ pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
 fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
-
-/// `ANCHOR_AGE_CAP`: the greatest anchor age the draw accepts, in buckets.
-/// A draw above it is discarded and redrawn, bounding how stale a part's
-/// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
-/// not a [`MigrationParams`] field: it does not feed the consent hash, so
-/// adopting it costs no existing consent.
-const ANCHOR_AGE_CAP: u32 = 16;
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
 /// one part.
@@ -1141,25 +1145,28 @@ mod tests {
         assert!(upcoming_windows(&parts, now, now_unix, 0, &params).is_empty());
     }
 
-    /// Checks our locally defined ZIP 318 values against
-    /// `zcash_pool_migration`, the reference implementation. The constants
-    /// stay local so they can only move by an explicit commit (they feed the
-    /// consent hash), and this suite is what catches upstream ratifying
-    /// different ones: bump the pinned dev-dependency and red means adopt
-    /// deliberately, with a params version bump.
-    mod zip318_conformance {
-        use zcash_pool_migration::note_splitting::{
-            MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
-        };
+    /// Pins the ZIP 318 values imported from `zcash_pool_migration`, the
+    /// reference implementation, to the ZIP's literal numbers. The values
+    /// feed the consent hash, so they must move only by an explicit commit:
+    /// a dependency bump that changes one turns this suite red, and red
+    /// means adopt deliberately, with a params version bump.
+    mod zip318_conformance_tripwires {
         use zcash_pool_migration::scheduling;
 
         use super::*;
-        use crate::wallet::migration::params::COIN;
+        use zcash_protocol::value::COIN;
 
+        /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>
         #[test]
-        fn expiry_constants_match_upstream() {
-            assert_eq!(EXPIRY_MODULUS, scheduling::EXPIRY_MODULUS);
-            assert_eq!(EXPIRY_WINDOW, scheduling::EXPIRY_WINDOW);
+        fn expiry_constants_match_the_zip() {
+            assert_eq!(EXPIRY_MODULUS, 34_560);
+            assert_eq!(EXPIRY_WINDOW, 69_120);
+        }
+
+        /// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
+        #[test]
+        fn anchor_age_cap_matches_the_zip() {
+            assert_eq!(ANCHOR_AGE_CAP, 16);
         }
 
         #[test]
@@ -1184,11 +1191,46 @@ mod tests {
         }
 
         #[test]
-        fn params_match_upstream() {
+        fn params_match_the_zip() {
             let params = MigrationParams::provisional(ChainType::Mainnet);
-            assert_eq!(params.bucket_modulus, scheduling::BOUNDARY_MODULUS);
-            assert_eq!(params.denom_cap, MIGRATION_MAX_DENOMINATION_ZEC * COIN);
-            assert_eq!(params.max_residual_value, u64::from(RESIDUAL_MIGRATION_MIN));
+            // <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
+            assert_eq!(params.bucket_modulus, 144);
+            // <https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>
+            assert_eq!(params.denom_cap, 10_000 * COIN);
+            assert_eq!(params.max_residual_value, COIN / 100);
+        }
+
+        /// Pins the derived ladder to the ZIP 318 enumeration
+        /// (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
+        /// The denominations feed the consent hash, so a derivation bug or a
+        /// moved bound would silently invalidate every recorded consent; this
+        /// vector is the tripwire.
+        #[test]
+        fn ladder_matches_the_zip318_enumeration() {
+            assert_eq!(
+                MigrationParams::provisional(ChainType::Mainnet).denominations,
+                vec![
+                    10_000 * COIN,
+                    5_000 * COIN,
+                    2_000 * COIN,
+                    1_000 * COIN,
+                    500 * COIN,
+                    200 * COIN,
+                    100 * COIN,
+                    50 * COIN,
+                    20 * COIN,
+                    10 * COIN,
+                    5 * COIN,
+                    2 * COIN,
+                    COIN,
+                    COIN / 2,
+                    COIN / 5,
+                    COIN / 10,
+                    COIN / 20,
+                    COIN / 50,
+                    COIN / 100,
+                ],
+            );
         }
 
         /// Every denomination is `n × 10^k` with `n ∈ {1, 2, 5}`.
