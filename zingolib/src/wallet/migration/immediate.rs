@@ -36,7 +36,7 @@ use crate::wallet::error::WalletError;
 /// Unlike [`super::split::note_split_fee`] this is era-independent: the Orchard
 /// bundle has no outputs, so whether `orchard_v3` permits a spend and an output
 /// to share an action makes no difference to the count (pinned by test).
-pub fn immediate_migration_fee(n_in: usize) -> u64 {
+fn immediate_migration_fee(n_in: usize) -> u64 {
     zip317_fee(
         bundle_actions(BundleVersion::orchard_v3(), n_in, 0),
         bundle_actions(BundleVersion::ironwood_v3(), 0, 1),

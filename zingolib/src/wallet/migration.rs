@@ -35,31 +35,33 @@
 //! over the private path above. That is [`immediate`], which shares nothing with
 //! this two-phase design but the transaction builder.
 
-pub mod broadcast;
-pub mod immediate;
-pub mod params;
-pub mod parts;
-pub mod quantize;
-pub mod reconcile;
-pub mod schedule;
-pub mod split;
-pub mod store;
+// The submodules carry a crate ceiling: the re-export block below is this
+// module's whole public surface, so a new public name is a deliberate act
+// here rather than a side effect of `pub` in a submodule.
+pub(crate) mod broadcast;
+pub(crate) mod immediate;
+pub(crate) mod params;
+pub(crate) mod parts;
+pub(crate) mod quantize;
+pub(crate) mod reconcile;
+pub(crate) mod schedule;
+pub(crate) mod split;
+pub(crate) mod store;
 
 pub use broadcast::{BroadcastClient, BroadcastError};
-pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx, immediate_migration_fee};
+pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx};
 pub use params::MigrationParams;
 pub use parts::{
     BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
     SigningStrategy, SkipReason,
 };
 pub use quantize::{Denominations, decompose};
+pub(crate) use reconcile::due_now_parts;
 pub use reconcile::{
-    ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
+    ChainView, PartAssessment, PartClass, RecommendedAction, ReconcileReport, reconcile,
 };
-pub use schedule::{
-    BroadcastWindow, WindowReport, estimated_unix_at, part_in_current_bucket, plan_schedule,
-    upcoming_windows, window_timeline,
-};
+pub use schedule::{BroadcastWindow, WindowReport, bucket_index};
+pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
 pub use split::{
     CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
     plan_migration,
