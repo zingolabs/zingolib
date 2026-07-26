@@ -73,6 +73,7 @@ zcash_client_backend = { workspace = true, features = [
 ] }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
+zcash_pool_migration = { version = "=0.1.0-alpha.1", default-features = false }
 zcash_primitives = { workspace = true }
 # download-params (and its minreq/rustls-0.21/ring subtree) is build-time
 # only: build.rs fetches the sapling params; runtime code never downloads.
@@ -86,7 +87,9 @@ zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
-zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+], optional = true }
 tokio-stream = { workspace = true, optional = true }
 
 [build-dependencies]
@@ -99,10 +102,9 @@ proptest = { workspace = true }
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
-zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"] }
-# Conformance oracle only: the shipped constants are defined locally so they
-# can never move underneath the consent hash via a dependency bump.
-zcash_pool_migration = { version = "=0.1.0-alpha.1", default-features = false }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+] }
 zingo_test_vectors = { workspace = true }
 
 [badges]

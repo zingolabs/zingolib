@@ -40,10 +40,12 @@ pub fn random_target_in_bucket(
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
 /// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
-pub const EXPIRY_MODULUS: u32 = 34_560;
+/// Sourced from `zcash_pool_migration::scheduling`, the ZIP 318 reference
+/// implementation, so it can only move by an explicit, reviewed pin bump.
+pub const EXPIRY_MODULUS: u32 = zcash_pool_migration::scheduling::EXPIRY_MODULUS;
 
 /// The canonical validity window past an expiry bucket's opening.
-pub const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+pub const EXPIRY_WINDOW: u32 = zcash_pool_migration::scheduling::EXPIRY_WINDOW;
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
@@ -51,8 +53,7 @@ pub const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
 /// in the same 30-day period, so the committed expiry reveals only that
 /// coarse period.
 pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
-    let height = u32::from(broadcast_height);
-    BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
+    zcash_pool_migration::scheduling::expiry_height(broadcast_height)
 }
 
 /// The bucket containing `height`.
@@ -79,8 +80,9 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
 /// A draw above it is discarded and redrawn, bounding how stale a part's
 /// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
 /// not a [`MigrationParams`] field: it does not feed the consent hash, so
-/// adopting it costs no existing consent.
-pub const ANCHOR_AGE_CAP: u32 = 16;
+/// adopting it costs no existing consent. Sourced from
+/// `zcash_pool_migration::scheduling`, as above.
+pub const ANCHOR_AGE_CAP: u32 = zcash_pool_migration::scheduling::ANCHOR_AGE_CAP;
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
 /// one part.
@@ -1141,51 +1143,30 @@ mod tests {
     }
 
     /// Checks our locally defined ZIP 318 values against
-    /// `zcash_pool_migration`, the reference implementation. The constants
-    /// stay local so they can only move by an explicit commit (they feed the
-    /// consent hash), and this suite is what catches upstream ratifying
-    /// different ones: bump the pinned dev-dependency and red means adopt
-    /// deliberately, with a params version bump.
+    /// `zcash_pool_migration`, the reference implementation.
+    ///
+    /// The scheduling constants ([`EXPIRY_MODULUS`], [`EXPIRY_WINDOW`],
+    /// [`ANCHOR_AGE_CAP`], [`MigrationParams::bucket_modulus`]) and
+    /// [`canonical_expiry_height`] are sourced directly from
+    /// `zcash_pool_migration::scheduling` rather than reimplemented, so there
+    /// is nothing left to assert equal for those — a divergence is a compile
+    /// error, not a test failure. What remains local, and so still needs
+    /// conformance-testing here, are the note-splitting denomination
+    /// constants: they feed the consent hash and stay independently defined
+    /// so they can only move by an explicit commit. This suite is what
+    /// catches upstream ratifying different ones: bump the pinned dependency
+    /// and red means adopt deliberately, with a params version bump.
     mod zip318_conformance {
         use zcash_pool_migration::note_splitting::{
             MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
         };
-        use zcash_pool_migration::scheduling;
 
         use super::*;
         use crate::wallet::migration::params::COIN;
 
         #[test]
-        fn expiry_constants_match_upstream() {
-            assert_eq!(EXPIRY_MODULUS, scheduling::EXPIRY_MODULUS);
-            assert_eq!(EXPIRY_WINDOW, scheduling::EXPIRY_WINDOW);
-        }
-
-        #[test]
-        fn expiry_heights_match_upstream() {
-            let sample = [
-                0,
-                1,
-                EXPIRY_MODULUS - 1,
-                EXPIRY_MODULUS,
-                EXPIRY_MODULUS + 1,
-                3_428_499,
-                100 * EXPIRY_MODULUS,
-                101 * EXPIRY_MODULUS - 1,
-            ];
-            for height in sample.map(BlockHeight::from_u32) {
-                assert_eq!(
-                    canonical_expiry_height(height),
-                    scheduling::expiry_height(height),
-                    "diverged at {height}"
-                );
-            }
-        }
-
-        #[test]
         fn params_match_upstream() {
             let params = MigrationParams::provisional(ChainType::Mainnet);
-            assert_eq!(params.bucket_modulus, scheduling::BOUNDARY_MODULUS);
             assert_eq!(params.denom_cap, MIGRATION_MAX_DENOMINATION_ZEC * COIN);
             assert_eq!(params.max_residual_value, u64::from(RESIDUAL_MIGRATION_MIN));
         }

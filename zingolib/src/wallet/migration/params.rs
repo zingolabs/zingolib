@@ -80,7 +80,7 @@ impl MigrationParams {
             denom_cap: 10_000 * COIN,
             max_residual_value: COIN / 100,
             sweep_min: SWEEP_MIN,
-            bucket_modulus: 144,
+            bucket_modulus: zcash_pool_migration::scheduling::BOUNDARY_MODULUS,
             k_max: 8,
             target_sessions: 6,
             max_actions_per_split_tx: 32,
