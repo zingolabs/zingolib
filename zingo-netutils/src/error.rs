@@ -21,12 +21,16 @@
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetClientError {
+    /// The URI carries no scheme, or a scheme other than `http` or `https`.
     #[error("bad uri: invalid scheme")]
     InvalidScheme,
 
+    /// The URI carries no authority, so it names no host to connect to.
     #[error("bad uri: invalid authority")]
     InvalidAuthority,
 
+    /// The transport layer failed while building the endpoint, configuring
+    /// TLS, or connecting to the indexer.
     #[error(transparent)]
     Transport(#[from] tonic::transport::Error),
 }
