@@ -22,6 +22,17 @@ pub(crate) const MARGINAL_FEE: u64 = 5_000;
 /// at most this, and never manufactures an output worth at most this.
 /// Provisionally twice the marginal fee: a selected note must return strictly
 /// more than double the marginal action cost it adds, not merely break even.
+/// One side's per-transaction note budget, derived from the total budget
+/// ([`MigrationParams::max_actions_per_split_tx`], ZIP 318's 16-action
+/// preparation shape at
+/// <https://zips.z.cash/zip-0318#notepreparationtransactions>): a split
+/// transaction's spends and outputs together must fit the budget, so each
+/// side's chunk is the budget less the one note on the other side (15
+/// spends merging into one note, or one note dividing into 15).
+fn side_budget(params: &MigrationParams) -> usize {
+    params.max_actions_per_split_tx.saturating_sub(1).max(1)
+}
+
 /// Shared by both migration paths: the private schedule reads it through
 /// [`MigrationParams`], and the immediate [`super::immediate`] reads it directly,
 /// so the two leave identical residuals.
@@ -245,9 +256,9 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 /// replanned never re-splits finished notes. Everything else worth more than
 /// [`MigrationParams::sweep_min`] is split:
 ///
-/// 1. **Reduction**: while more than `max_actions_per_split_tx` notes remain,
-///    merge groups of at most that many notes into one note each (smallest
-///    first).
+/// 1. **Reduction**: while more notes remain than one transaction's spend
+///    budget, merge groups of at most that many notes into one note each
+///    (smallest first).
 /// 2. **Sizing**: spend the remaining notes into notes sized exactly
 ///    `denomination + part_fee`, where the denominations are the
 ///    [`decompose`]-ition of what is left after all fees. When the balance
@@ -265,7 +276,7 @@ pub fn plan_migration(
     let mut parts: Vec<u64> = Vec::new();
     let mut pool: Vec<u64> = Vec::new();
     let mut residual: u64 = 0;
-    let max_notes = params.max_actions_per_split_tx;
+    let max_notes = side_budget(params);
 
     for &value in note_values {
         if let Some(denomination) = part_denomination(value, params) {
@@ -373,7 +384,7 @@ pub fn plan_migration(
 /// recursing through intermediates when `m` exceeds the per-transaction
 /// budget.
 fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &MigrationParams) -> u64 {
-    let max_notes = params.max_actions_per_split_tx;
+    let max_notes = side_budget(params);
     if m <= max_notes {
         note_split_fee(n_in, m, post_activation)
     } else {
@@ -400,7 +411,7 @@ fn split_into(
     post_activation: bool,
     params: &MigrationParams,
 ) -> Vec<Vec<NoteSplitTx>> {
-    let max_notes = params.max_actions_per_split_tx;
+    let max_notes = side_budget(params);
     if targets.len() <= max_notes {
         return vec![vec![NoteSplitTx {
             inputs,
@@ -906,7 +917,7 @@ mod tests {
         params: &MigrationParams,
     ) -> MigrationPlan {
         use std::collections::HashMap;
-        let max_notes = params.max_actions_per_split_tx;
+        let max_notes = side_budget(params);
         let plan = plan_migration(notes, post_activation, params);
 
         let mut available: HashMap<u64, i64> = HashMap::new();
@@ -1000,8 +1011,8 @@ mod tests {
 
     /// Guards the one shape where consolidation could violate the selection
     /// invariant. Post-activation, a trailing group of exactly two notes,
-    /// each at most 12_500 zatoshis, would merge to `sum - 15_000`: between
-    /// 5_002 and 10_000 zatoshis, at or below `sweep_min`. The sizing round
+    /// each at most 12_500 zatoshis, would merge to `sum - 15_000` (a pair
+    /// of 12_000s to 9_000): at or below `sweep_min`. The sizing round
     /// would then spend a note the residual policy refuses, and a replan
     /// after an interruption would leave it as residual, abandoning the pair's value
     /// after fees were paid to create it. The planner instead carries such
@@ -1012,10 +1023,10 @@ mod tests {
     #[test]
     fn consolidation_never_creates_a_sub_sweep_min_intermediate() {
         let params = params();
-        // Seven full consolidation groups (enough to fund a 0.01-ZEC part) plus a
-        // trailing pair that would merge to 6_000 zatoshis, below the sweep
-        // minimum.
-        let notes = vec![10_500u64; 7 * params.max_actions_per_split_tx + 2];
+        // Twelve full consolidation groups (enough to fund a 0.01-ZEC part
+        // after the merge fees of the 16-action shape) plus a trailing pair
+        // that would merge to 9_000 zatoshis, below the sweep minimum.
+        let notes = vec![12_000u64; 12 * side_budget(&params) + 2];
         for post_activation in [false, true] {
             let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
             assert_planned_inputs_exceed_sweep_min(&plan, &params);
@@ -1025,12 +1036,12 @@ mod tests {
         // merges only the full groups, and the sizing round spends the pair
         // directly.
         let plan = plan_migration(&notes, true, &params);
-        assert_eq!(plan.split_rounds[0].len(), 7);
+        assert_eq!(plan.split_rounds[0].len(), 12);
         assert_eq!(
             plan.split_rounds[1][0]
                 .inputs
                 .iter()
-                .filter(|&&value| value == 10_500)
+                .filter(|&&value| value == 12_000)
                 .count(),
             2
         );
@@ -1097,8 +1108,8 @@ mod tests {
             plan.split_rounds.len() >= 2,
             "expected consolidation + sizing rounds"
         );
-        // First round: one merge per full-or-partial chunk of the budget.
-        let max_notes = params.max_actions_per_split_tx;
+        // First round: one merge per full-or-partial chunk of the spend budget.
+        let max_notes = side_budget(&params);
         assert_eq!(plan.split_rounds[0].len(), 500usize.div_ceil(max_notes));
         for tx in &plan.split_rounds[0] {
             assert!(tx.inputs.len() <= max_notes);
@@ -1116,7 +1127,7 @@ mod tests {
         assert!(plan.parts.len() >= 49);
         for round in &plan.split_rounds {
             for tx in round {
-                assert!(tx.outputs.len() <= params.max_actions_per_split_tx);
+                assert!(tx.outputs.len() <= side_budget(&params));
             }
         }
     }

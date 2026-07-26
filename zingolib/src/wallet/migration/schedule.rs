@@ -23,16 +23,22 @@ use crate::wallet::error::WalletError;
 use super::params::MigrationParams;
 use super::parts::{PartId, PartRecord, PartState};
 
-/// Picks a random block within `[boundary, boundary + M)` as the broadcast
-/// target for one part, spreading sends across the window instead of
-/// clustering them at the boundary.
+/// Draws the advisory broadcast target for one part from the canonical
+/// transfer-delay law: the ZIP 318 exponential inter-arrival distribution
+/// (mean 144 blocks, capped at 576), offset from the part's window boundary
+/// (<https://zips.z.cash/zip-0318#transferscheduling>). The draw can land
+/// past the window; the target is advisory (ADR 0017), so a late target
+/// only aims the reminder and never gates sendability. Chaining successive
+/// transfers (each delay drawn from the previous transfer rather than the
+/// boundary) arrives with the scheduling delegation; the divergence ledger
+/// records that gap.
 fn random_target_in_bucket(
     bucket: u64,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> BlockHeight {
     let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-    let offset = rng.gen_range(0..params.bucket_modulus);
+    let offset = SchedulingParams::ZIP_318.transfer_delay().draw(rng);
     BlockHeight::from_u32(boundary + offset)
 }
 
@@ -53,7 +59,10 @@ const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 // The `zip318_conformance_tripwires` tests below pin every imported value to the
 // ZIP's literal number, so a dependency bump that moved one fails red
 // and is adopted deliberately, with a params version bump.
-use zcash_pool_migration::scheduling::{ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW};
+use rand::CryptoRng;
+use zcash_pool_migration::scheduling::{
+    ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW, SchedulingParams,
+};
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
@@ -262,7 +271,7 @@ pub fn place(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -348,7 +357,7 @@ pub fn plan_schedule(
     activation: PoolActivation,
     note_confirmed_at: impl Fn(&PartRecord) -> Option<BlockHeight>,
     params: &MigrationParams,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
 ) -> Result<(), WalletError> {
     let unassigned: Vec<usize> = parts
         .iter()
@@ -757,7 +766,7 @@ mod tests {
     /// exists to prevent, correlated across every wallet that rebuilds
     /// after an expiry.
     #[test]
-    fn place_draws_a_fresh_target_inside_the_new_window() {
+    fn place_draws_a_fresh_target_from_the_new_boundary() {
         let params = params();
         let mut part = bound_part(0, 1_000_000);
         part.assign(1).unwrap();
@@ -783,11 +792,12 @@ mod tests {
             part.target_height
                 .expect("jittered placement draws a fresh target"),
         );
+        let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
         assert!(
-            target >= boundary && target < boundary + params.bucket_modulus,
-            "the fresh target {target} must lie inside bucket 5's window \
-             [{boundary}, {})",
-            boundary + params.bucket_modulus,
+            target >= boundary && target <= boundary + cap,
+            "the fresh target {target} must be drawn from bucket 5's boundary \
+             under the canonical delay law [{boundary}, {}]",
+            boundary + cap,
         );
     }
 
@@ -814,10 +824,13 @@ mod tests {
             assert_eq!(part.state, PartState::Assigned);
             let bucket = part.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
-            // Target is within the part's bucket window.
+            // Target is drawn from the part's boundary under the canonical
+            // delay law (mean 144, capped at 576; it may pass the window,
+            // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
-            assert!(target >= boundary && target < boundary + params.bucket_modulus);
+            let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
+            assert!(target >= boundary && target <= boundary + cap);
         }
         // Largest denominations land in the earliest buckets.
         for a in &parts {
@@ -1036,9 +1049,10 @@ mod tests {
                 // Target is within the bucket's window.
                 let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
                 let target = u32::from(part.target_height.unwrap());
+                let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
                 prop_assert!(
-                    target >= boundary && target < boundary + params.bucket_modulus,
-                    "target in window"
+                    target >= boundary && target <= boundary + cap,
+                    "target drawn from the boundary under the canonical delay law"
                 );
             }
             prop_assert!(cohort_sizes.values().all(|&size| size <= k), "k bound");
@@ -1233,6 +1247,16 @@ mod tests {
             // <https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>
             assert_eq!(params.denom_cap, 10_000 * COIN);
             assert_eq!(params.max_residual_value, COIN / 100);
+            // <https://zips.z.cash/zip-0318#notepreparationtransactions>
+            assert_eq!(params.max_actions_per_split_tx, 16);
+        }
+
+        /// <https://zips.z.cash/zip-0318#transferscheduling>
+        #[test]
+        fn transfer_delay_matches_the_zip() {
+            let delay = SchedulingParams::ZIP_318.transfer_delay();
+            assert_eq!(delay.mean().get(), 144);
+            assert_eq!(delay.cap().get(), 576);
         }
 
         /// Pins the derived ladder to the ZIP 318 enumeration

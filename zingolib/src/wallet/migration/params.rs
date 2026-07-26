@@ -39,10 +39,14 @@ pub struct MigrationParams {
     pub k_max: u32,
     /// The signing-session target the schedule aims at for typical balances.
     pub target_sessions: u32,
-    /// Bounds the notes merged (spends) or created (outputs) by one
-    /// note-splitting transaction. This caps the Orchard action count at this
-    /// value before NU6.3 (spends and outputs share actions) and at twice it
-    /// afterwards (cross-address transfers disabled, one action each).
+    /// The total note budget of one note-splitting transaction: its spends
+    /// and outputs together never exceed this. Post-NU6.3 every note is one
+    /// Orchard action (cross-address transfers disabled), so the budget is
+    /// the ZIP 318 preparation shape of 16 actions
+    /// (<https://zips.z.cash/zip-0318#notepreparationtransactions>); before
+    /// activation, shared actions make such a transaction at most 15
+    /// actions. Padding to exactly 16 arrives with the builder capability
+    /// the divergence ledger tracks.
     pub max_actions_per_split_tx: usize,
     /// The canonical ZIP-317 fee of one part. Every split note is sized
     /// `denomination + part_fee` so the part balances exactly.
@@ -99,7 +103,12 @@ impl MigrationParams {
         let denom_cap = MIGRATION_MAX_DENOMINATION_ZEC * COIN;
         let max_residual_value = u64::from(RESIDUAL_MIGRATION_MIN);
         MigrationParams {
-            version: 1,
+            // Version 2: the preparation bound moved to the ZIP's 16-action
+            // shape and the target-draw law moved to the canonical
+            // exponential distribution. The part fee still awaits the
+            // builder capability for the unpadded Ironwood action (the
+            // divergence ledger tracks it), and will carry its own bump.
+            version: 2,
             denominations: one_two_five_ladder(denom_cap, max_residual_value),
             denom_cap,
             max_residual_value,
@@ -107,7 +116,9 @@ impl MigrationParams {
             bucket_modulus: AnchorBucketInterval::ZIP_318.block_count().get(),
             k_max: 8,
             target_sessions: 6,
-            max_actions_per_split_tx: 32,
+            // ZIP 318 standardizes 16-action preparation transactions
+            // (<https://zips.z.cash/zip-0318#notepreparationtransactions>).
+            max_actions_per_split_tx: 16,
             part_fee: CANONICAL_PART_FEE,
         }
     }
