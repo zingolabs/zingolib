@@ -98,3 +98,41 @@ the no-silent-movement property at the dependency layer. The floating
 default branch was chosen deliberately: zingolib does not ship a crate,
 canonical logic is wanted at merge cadence, and the branch-move tripwire
 restores the loud-movement property at the test layer instead.
+
+## Amendment (2026-07-27): observability partition and three landings
+
+The implementation is resequenced to reduce churn, on two principles the
+original phasing left implicit. First, on-chain observability partitions
+the work: fee amounts, transaction action shapes, and the broadcast
+timing law are what the network sees and what fingerprints a wallet
+against the migrating population, so they must be canonical before
+migration starts, while wallet-internal structure (the state model and
+its serialization, the engine skeleton, which builder produced a
+canonically shaped transaction) carries no conformance exposure of its
+own and may follow. Second, tracking upstream is itself a conformance
+property: a mirrored function that equals upstream today is a frozen
+snapshot that diverges silently the day upstream's logic evolves, and
+the value tripwires cannot catch logic drift. Delegation is therefore
+the mechanism that makes conformance durable across upstream versions,
+and the floating dependency pays for itself only where the code calls
+upstream rather than mirrors it.
+
+Three landings replace the six phases. Landing A floats the dependency,
+adds the branch-move tripwire, reworks the value imports onto the
+current typed API, and confines oracles to the surfaces that stay
+bespoke in the interim (the transaction builders and the engine
+orchestration). Landing B closes the observable divergences inside the
+existing machinery: the part fee to the canonical
+two-source-one-unpadded-destination shape, the preparation bound from 32
+to 16 actions, and the target-draw law to the upstream draws, under one
+`MigrationParams` version bump and one divergence-ledger adjudication.
+Landing C delegates every provably equal mirrored function (the expiry
+computation, the anchor draw, the decomposition core) under strict
+equivalence tests and deletes the mirrors.
+
+The state traits, wallet format 44, the engine skeleton, and the PCZT
+builders remain the ratified end state, deferred under standing pull
+rather than scheduled: each upstream evolution that touches them
+surfaces as an oracle failure and argues for completing the delegation.
+No standing oracle guards a delegated surface, because delegation makes
+it redundant.
