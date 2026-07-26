@@ -1,0 +1,27 @@
+pub mod zingo_status
+pub mod zingo_status::confirmation_status
+pub enum zingo_status::confirmation_status::ConfirmationStatus
+pub zingo_status::confirmation_status::ConfirmationStatus::Calculated(zcash_protocol::consensus::BlockHeight)
+pub zingo_status::confirmation_status::ConfirmationStatus::Confirmed(zcash_protocol::consensus::BlockHeight)
+pub zingo_status::confirmation_status::ConfirmationStatus::Failed(zcash_protocol::consensus::BlockHeight)
+pub zingo_status::confirmation_status::ConfirmationStatus::Mempool(zcash_protocol::consensus::BlockHeight)
+pub zingo_status::confirmation_status::ConfirmationStatus::Transmitted(zcash_protocol::consensus::BlockHeight)
+impl zingo_status::confirmation_status::ConfirmationStatus
+pub fn zingo_status::confirmation_status::ConfirmationStatus::get_confirmed_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub fn zingo_status::confirmation_status::ConfirmationStatus::get_height(&self) -> zcash_protocol::consensus::BlockHeight
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_confirmed(&self) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_confirmed_after(&self, comparison_height: &zcash_protocol::consensus::BlockHeight) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_confirmed_after_or_at(&self, comparison_height: &zcash_protocol::consensus::BlockHeight) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_confirmed_before(&self, comparison_height: &zcash_protocol::consensus::BlockHeight) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_confirmed_before_or_at(&self, comparison_height: &zcash_protocol::consensus::BlockHeight) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_failed(&self) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_pending(&self) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::is_pending_before(&self, comparison_height: &zcash_protocol::consensus::BlockHeight) -> bool
+pub fn zingo_status::confirmation_status::ConfirmationStatus::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn zingo_status::confirmation_status::ConfirmationStatus::write<W: std::io::Write>(&self, writer: &mut W) -> std::io::error::Result<()>
+impl core::convert::From<zingo_status::confirmation_status::ConfirmationStatus> for alloc::string::String
+pub fn alloc::string::String::from(value: zingo_status::confirmation_status::ConfirmationStatus) -> Self
+impl core::fmt::Debug for zingo_status::confirmation_status::ConfirmationStatus
+pub fn zingo_status::confirmation_status::ConfirmationStatus::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for zingo_status::confirmation_status::ConfirmationStatus
+pub fn zingo_status::confirmation_status::ConfirmationStatus::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
