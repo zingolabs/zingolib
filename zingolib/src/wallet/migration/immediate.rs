@@ -103,7 +103,7 @@ const MAX_DRAIN_INPUTS: usize = 32;
 /// migration creates: a chunk whose output would not exceed `SWEEP_MIN` is
 /// left whole as residual, so an immediate migration never manufactures a note the policy refuses to
 /// spend.
-pub fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
+fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
     let mut plan = ImmediateMigrationPlan::default();
 
     let (spendable, dust): (Vec<u64>, Vec<u64>) =
