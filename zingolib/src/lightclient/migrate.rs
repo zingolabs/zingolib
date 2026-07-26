@@ -8,9 +8,6 @@
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
-//! The lifecycle wiring for that flow (which call belongs to which app
-//! moment, consent and disclosure UX, scheduling background wakes) is laid
-//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
