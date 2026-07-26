@@ -1,0 +1,642 @@
+pub mod pepper_sync
+pub mod pepper_sync::config
+pub enum pepper_sync::config::PerformanceLevel
+pub pepper_sync::config::PerformanceLevel::High
+pub pepper_sync::config::PerformanceLevel::Low
+pub pepper_sync::config::PerformanceLevel::Maximum
+pub pepper_sync::config::PerformanceLevel::Medium
+impl pepper_sync::config::PerformanceLevel
+pub fn pepper_sync::config::PerformanceLevel::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::config::PerformanceLevel::write<W: std::io::Write>(&mut self, writer: W) -> std::io::error::Result<()>
+impl core::fmt::Display for pepper_sync::config::PerformanceLevel
+pub fn pepper_sync::config::PerformanceLevel::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct pepper_sync::config::SyncConfig
+pub pepper_sync::config::SyncConfig::performance_level: pepper_sync::config::PerformanceLevel
+pub pepper_sync::config::SyncConfig::transparent_address_discovery: pepper_sync::config::TransparentAddressDiscovery
+impl pepper_sync::config::SyncConfig
+pub fn pepper_sync::config::SyncConfig::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::config::SyncConfig::write<W: std::io::Write>(&mut self, writer: W) -> std::io::error::Result<()>
+pub struct pepper_sync::config::TransparentAddressDiscovery
+pub pepper_sync::config::TransparentAddressDiscovery::gap_limit: u8
+pub pepper_sync::config::TransparentAddressDiscovery::scopes: pepper_sync::config::TransparentAddressDiscoveryScopes
+impl pepper_sync::config::TransparentAddressDiscovery
+pub fn pepper_sync::config::TransparentAddressDiscovery::disabled() -> Self
+pub fn pepper_sync::config::TransparentAddressDiscovery::minimal() -> Self
+pub fn pepper_sync::config::TransparentAddressDiscovery::recovery() -> Self
+impl core::default::Default for pepper_sync::config::TransparentAddressDiscovery
+pub fn pepper_sync::config::TransparentAddressDiscovery::default() -> Self
+pub struct pepper_sync::config::TransparentAddressDiscoveryScopes
+pub pepper_sync::config::TransparentAddressDiscoveryScopes::external: bool
+pub pepper_sync::config::TransparentAddressDiscoveryScopes::internal: bool
+pub pepper_sync::config::TransparentAddressDiscoveryScopes::refund: bool
+impl pepper_sync::config::TransparentAddressDiscoveryScopes
+pub fn pepper_sync::config::TransparentAddressDiscoveryScopes::recovery() -> Self
+impl core::default::Default for pepper_sync::config::TransparentAddressDiscoveryScopes
+pub fn pepper_sync::config::TransparentAddressDiscoveryScopes::default() -> Self
+pub mod pepper_sync::error
+pub enum pepper_sync::error::CompactFormatError
+pub pepper_sync::error::CompactFormatError::InvalidLength(core::array::TryFromSliceError)
+pub pepper_sync::error::CompactFormatError::InvalidValue
+impl core::fmt::Display for pepper_sync::error::CompactFormatError
+pub fn pepper_sync::error::CompactFormatError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum pepper_sync::error::ContinuityError
+pub pepper_sync::error::ContinuityError::HashDiscontinuity
+pub pepper_sync::error::ContinuityError::HashDiscontinuity::height: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::error::ContinuityError::HashDiscontinuity::prev_hash: zcash_primitives::block::BlockHash
+pub pepper_sync::error::ContinuityError::HashDiscontinuity::previous_block_hash: zcash_primitives::block::BlockHash
+pub pepper_sync::error::ContinuityError::HeightDiscontinuity
+pub pepper_sync::error::ContinuityError::HeightDiscontinuity::height: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::error::ContinuityError::HeightDiscontinuity::previous_block_height: zcash_protocol::consensus::BlockHeight
+pub enum pepper_sync::error::MempoolError
+pub pepper_sync::error::MempoolError::ServerError(pepper_sync::error::ServerError)
+pub pepper_sync::error::MempoolError::ShutdownWithoutStream
+pub enum pepper_sync::error::ScanError
+pub pepper_sync::error::ScanError::AddressParseError(zcash_address::kind::unified::ParseError)
+pub pepper_sync::error::ScanError::ContinuityError(pepper_sync::error::ContinuityError)
+pub pepper_sync::error::ScanError::DecryptedNoteDataNotFound(pepper_sync::wallet::OutputId)
+pub pepper_sync::error::ScanError::EncodingError(pepper_sync::error::EncodingInvalid)
+pub pepper_sync::error::ScanError::IncorrectTreeSize
+pub pepper_sync::error::ScanError::IncorrectTreeSize::block_metadata_size: u32
+pub pepper_sync::error::ScanError::IncorrectTreeSize::calculated_size: u32
+pub pepper_sync::error::ScanError::IncorrectTreeSize::shielded_protocol: zcash_protocol::PoolType
+pub pepper_sync::error::ScanError::IncorrectTxid
+pub pepper_sync::error::ScanError::IncorrectTxid::txid_requested: zcash_protocol::txid::TxId
+pub pepper_sync::error::ScanError::IncorrectTxid::txid_returned: zcash_protocol::txid::TxId
+pub pepper_sync::error::ScanError::InvalidMemoBytes(zcash_protocol::memo::Error)
+pub pepper_sync::error::ScanError::InvalidOrchardAction
+pub pepper_sync::error::ScanError::InvalidOrchardNullifier
+pub pepper_sync::error::ScanError::InvalidOrchardNullifierLength(usize)
+pub pepper_sync::error::ScanError::InvalidSaplingNullifier(core::array::TryFromSliceError)
+pub pepper_sync::error::ScanError::InvalidSaplingOutput
+pub pepper_sync::error::ScanError::ServerError(pepper_sync::error::ServerError)
+pub enum pepper_sync::error::ServerError
+pub pepper_sync::error::ServerError::ChainVerificationError
+pub pepper_sync::error::ServerError::FetcherDropped
+pub pepper_sync::error::ServerError::GenesisBlockOnly
+pub pepper_sync::error::ServerError::InvalidFrontier(std::io::error::Error)
+pub pepper_sync::error::ServerError::InvalidSubtreeRoot
+pub pepper_sync::error::ServerError::InvalidTransaction(std::io::error::Error)
+pub pepper_sync::error::ServerError::RequestFailed(tonic::status::Status)
+impl pepper_sync::error::ServerError
+pub fn pepper_sync::error::ServerError::recommend_same_server(&self) -> bool
+impl pepper_sync::error::ServerError
+pub fn pepper_sync::error::ServerError::recovery_recommendation(&self) -> pepper_sync::error::SyncRecoveryObservables
+pub enum pepper_sync::error::SyncError<E> where E: core::fmt::Debug + core::fmt::Display
+pub pepper_sync::error::SyncError::BirthdayBelowSapling(u32, u32)
+pub pepper_sync::error::SyncError::ChainError(u32, u32, u32)
+pub pepper_sync::error::SyncError::MempoolError(pepper_sync::error::MempoolError)
+pub pepper_sync::error::SyncError::ScanError(pepper_sync::error::ScanError)
+pub pepper_sync::error::SyncError::ServerError(pepper_sync::error::ServerError)
+pub pepper_sync::error::SyncError::ShardTreeError(shardtree::error::ShardTreeError<core::convert::Infallible>)
+pub pepper_sync::error::SyncError::SyncModeError(pepper_sync::error::SyncModeError)
+pub pepper_sync::error::SyncError::TransparentAddressDerivationError(bip32::error::Error)
+pub pepper_sync::error::SyncError::TruncationError(zcash_protocol::consensus::BlockHeight, zcash_protocol::PoolType)
+pub pepper_sync::error::SyncError::WalletError(E)
+impl<E: core::fmt::Debug + core::fmt::Display> pepper_sync::error::SyncError<E>
+pub fn pepper_sync::error::SyncError<E>::recommend_same_server(&self) -> bool
+impl<E: core::fmt::Debug + core::fmt::Display> pepper_sync::error::SyncError<E>
+pub fn pepper_sync::error::SyncError<E>::recovery_recommendation(&self) -> pepper_sync::error::SyncRecoveryObservables
+pub enum pepper_sync::error::SyncModeError
+pub pepper_sync::error::SyncModeError::InvalidSyncMode(u8)
+pub pepper_sync::error::SyncModeError::SyncAlreadyRunning
+pub pepper_sync::error::SyncModeError::SyncNotPaused
+pub pepper_sync::error::SyncModeError::SyncNotRunning
+pub enum pepper_sync::error::SyncRecoveryObservables
+pub pepper_sync::error::SyncRecoveryObservables::Abort
+pub pepper_sync::error::SyncRecoveryObservables::MaybeRecoverableServer
+pub pepper_sync::error::SyncRecoveryObservables::ServerUnavailable
+pub enum pepper_sync::error::SyncStatusError<E> where E: core::fmt::Debug + core::fmt::Display
+pub pepper_sync::error::SyncStatusError::NoSyncData
+pub pepper_sync::error::SyncStatusError::WalletError(E)
+pub struct pepper_sync::error::EncodingInvalid
+pub mod pepper_sync::keys
+pub mod pepper_sync::keys::transparent
+pub enum pepper_sync::keys::transparent::TransparentScope
+pub pepper_sync::keys::transparent::TransparentScope::External
+pub pepper_sync::keys::transparent::TransparentScope::Internal
+pub pepper_sync::keys::transparent::TransparentScope::Refund
+impl core::convert::From<pepper_sync::keys::transparent::TransparentScope> for zcash_transparent::keys::TransparentKeyScope
+pub fn zcash_transparent::keys::TransparentKeyScope::from(value: pepper_sync::keys::transparent::TransparentScope) -> Self
+impl core::convert::TryFrom<u8> for pepper_sync::keys::transparent::TransparentScope
+pub type pepper_sync::keys::transparent::TransparentScope::Error = std::io::error::Error
+pub fn pepper_sync::keys::transparent::TransparentScope::try_from(value: u8) -> std::io::error::Result<Self>
+impl core::fmt::Display for pepper_sync::keys::transparent::TransparentScope
+pub fn pepper_sync::keys::transparent::TransparentScope::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct pepper_sync::keys::transparent::TransparentAddressId
+impl pepper_sync::keys::transparent::TransparentAddressId
+pub fn pepper_sync::keys::transparent::TransparentAddressId::address_index(&self) -> zcash_transparent::keys::NonHardenedChildIndex
+pub fn pepper_sync::keys::transparent::TransparentAddressId::new(account_id: zip32::AccountId, scope: pepper_sync::keys::transparent::TransparentScope, address_index: zcash_transparent::keys::NonHardenedChildIndex) -> Self
+pub fn pepper_sync::keys::transparent::TransparentAddressId::scope(&self) -> pepper_sync::keys::transparent::TransparentScope
+impl pepper_sync::wallet::KeyIdInterface for pepper_sync::keys::transparent::TransparentAddressId
+pub fn pepper_sync::keys::transparent::TransparentAddressId::account_id(&self) -> zip32::AccountId
+pub fn pepper_sync::keys::transparent::encode_address(consensus_parameters: &impl zcash_protocol::consensus::Parameters, address: zcash_transparent::address::TransparentAddress) -> alloc::string::String
+pub struct pepper_sync::keys::KeyId
+pub pepper_sync::keys::KeyId::account_id: zip32::AccountId
+pub pepper_sync::keys::KeyId::scope: zip32::Scope
+impl memuse::DynamicUsage for pepper_sync::keys::KeyId
+pub fn pepper_sync::keys::KeyId::dynamic_usage(&self) -> usize
+pub fn pepper_sync::keys::KeyId::dynamic_usage_bounds(&self) -> (usize, core::option::Option<usize>)
+impl pepper_sync::wallet::KeyIdInterface for pepper_sync::keys::KeyId
+pub fn pepper_sync::keys::KeyId::account_id(&self) -> zip32::AccountId
+pub trait pepper_sync::keys::ScanningKeyOps<D: zcash_note_encryption::Domain, Nf>
+pub fn pepper_sync::keys::ScanningKeyOps::account_id(&self) -> &zip32::AccountId
+pub fn pepper_sync::keys::ScanningKeyOps::key_scope(&self) -> core::option::Option<zip32::Scope>
+pub fn pepper_sync::keys::ScanningKeyOps::nf(&self, note: &<D as zcash_note_encryption::Domain>::Note, note_position: incrementalmerkletree::Position) -> core::option::Option<Nf>
+pub fn pepper_sync::keys::ScanningKeyOps::prepare(&self) -> <D as zcash_note_encryption::Domain>::IncomingViewingKey
+impl<D: zcash_note_encryption::Domain, Nf, K: pepper_sync::keys::ScanningKeyOps<D, Nf>> pepper_sync::keys::ScanningKeyOps<D, Nf> for &K
+pub fn &K::account_id(&self) -> &zip32::AccountId
+pub fn &K::key_scope(&self) -> core::option::Option<zip32::Scope>
+pub fn &K::nf(&self, note: &<D as zcash_note_encryption::Domain>::Note, note_position: incrementalmerkletree::Position) -> core::option::Option<Nf>
+pub fn &K::prepare(&self) -> <D as zcash_note_encryption::Domain>::IncomingViewingKey
+pub fn pepper_sync::keys::decode_address(consensus_parameters: &impl zcash_protocol::consensus::Parameters, encoded_address: &str) -> std::io::error::Result<zcash_keys::address::Address>
+pub fn pepper_sync::keys::decode_unified_address(consensus_parameters: &impl zcash_protocol::consensus::Parameters, encoded_address: &str) -> std::io::error::Result<zcash_keys::address::UnifiedAddress>
+pub type pepper_sync::keys::AddressIndex = u32
+pub mod pepper_sync::shardtree_ext
+pub enum pepper_sync::shardtree_ext::CheckpointAppendOutcome
+pub pepper_sync::shardtree_ext::CheckpointAppendOutcome::Appended
+pub pepper_sync::shardtree_ext::CheckpointAppendOutcome::NotAboveNewest
+pub enum pepper_sync::shardtree_ext::RollbackOutcome
+pub pepper_sync::shardtree_ext::RollbackOutcome::NoSuchCheckpoint
+pub pepper_sync::shardtree_ext::RollbackOutcome::RolledBack
+pub trait pepper_sync::shardtree_ext::ShardTreeExt
+pub fn pepper_sync::shardtree_ext::ShardTreeExt::append_checkpoint(&mut self, checkpoint_id: zcash_protocol::consensus::BlockHeight) -> core::result::Result<pepper_sync::shardtree_ext::CheckpointAppendOutcome, shardtree::error::ShardTreeError<core::convert::Infallible>>
+pub fn pepper_sync::shardtree_ext::ShardTreeExt::rollback_to_checkpoint(&mut self, checkpoint_id: zcash_protocol::consensus::BlockHeight) -> core::result::Result<pepper_sync::shardtree_ext::RollbackOutcome, shardtree::error::ShardTreeError<core::convert::Infallible>>
+impl<H, const DEPTH: u8, const SHARD_HEIGHT: u8> pepper_sync::shardtree_ext::ShardTreeExt for shardtree::ShardTree<shardtree::store::memory::MemoryShardStore<H, zcash_protocol::consensus::BlockHeight>, DEPTH, SHARD_HEIGHT> where H: incrementalmerkletree::Hashable + core::clone::Clone + core::cmp::PartialEq
+pub fn shardtree::ShardTree<shardtree::store::memory::MemoryShardStore<H, zcash_protocol::consensus::BlockHeight>, DEPTH, SHARD_HEIGHT>::append_checkpoint(&mut self, checkpoint_id: zcash_protocol::consensus::BlockHeight) -> core::result::Result<pepper_sync::shardtree_ext::CheckpointAppendOutcome, shardtree::error::ShardTreeError<core::convert::Infallible>>
+pub fn shardtree::ShardTree<shardtree::store::memory::MemoryShardStore<H, zcash_protocol::consensus::BlockHeight>, DEPTH, SHARD_HEIGHT>::rollback_to_checkpoint(&mut self, checkpoint_id: zcash_protocol::consensus::BlockHeight) -> core::result::Result<pepper_sync::shardtree_ext::RollbackOutcome, shardtree::error::ShardTreeError<core::convert::Infallible>>
+pub mod pepper_sync::sync
+pub mod pepper_sync::sync::truncate
+pub enum pepper_sync::sync::truncate::PoolTruncation
+pub pepper_sync::sync::truncate::PoolTruncation::RequiresRescan
+pub pepper_sync::sync::truncate::PoolTruncation::RequiresRescan::newest_checkpoint: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::sync::truncate::PoolTruncation::ToCheckpoint
+pub pepper_sync::sync::truncate::PoolTruncation::ToCheckpoint::checkpoint: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::sync::truncate::PoolTruncation::Untouched
+pub enum pepper_sync::sync::truncate::TruncationPlan
+pub pepper_sync::sync::truncate::TruncationPlan::ClearAll
+pub pepper_sync::sync::truncate::TruncationPlan::NoOp
+pub pepper_sync::sync::truncate::TruncationPlan::Truncate
+pub pepper_sync::sync::truncate::TruncationPlan::Truncate::height: zcash_protocol::consensus::BlockHeight
+pub struct pepper_sync::sync::truncate::TreeTruncationFacts
+pub pepper_sync::sync::truncate::TreeTruncationFacts::checkpoint_at_target: core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub pepper_sync::sync::truncate::TreeTruncationFacts::newest_checkpoint: core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub struct pepper_sync::sync::truncate::WalletTruncationState
+pub pepper_sync::sync::truncate::WalletTruncationState::birthday: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::sync::truncate::WalletTruncationState::highest_scanned_height: zcash_protocol::consensus::BlockHeight
+pub fn pepper_sync::sync::truncate::plan_truncation(wallet_state: pepper_sync::sync::truncate::WalletTruncationState, truncate_height: zcash_protocol::consensus::BlockHeight) -> pepper_sync::sync::truncate::TruncationPlan
+pub enum pepper_sync::sync::ScanPriority
+pub pepper_sync::sync::ScanPriority::ChainTip
+pub pepper_sync::sync::ScanPriority::FoundNote
+pub pepper_sync::sync::ScanPriority::Historic
+pub pepper_sync::sync::ScanPriority::OpenAdjacent
+pub pepper_sync::sync::ScanPriority::RefetchingNullifiers
+pub pepper_sync::sync::ScanPriority::Scanned
+pub pepper_sync::sync::ScanPriority::ScannedWithoutMapping
+pub pepper_sync::sync::ScanPriority::Scanning
+pub pepper_sync::sync::ScanPriority::Verify
+impl pepper_sync::sync::ScanPriority
+pub fn pepper_sync::sync::ScanPriority::awaits_nullifier_retrieval(self) -> bool
+pub fn pepper_sync::sync::ScanPriority::is_scanned(self) -> bool
+pub struct pepper_sync::sync::ScanRange
+impl pepper_sync::sync::ScanRange
+pub fn pepper_sync::sync::ScanRange::block_range(&self) -> &core::ops::range::Range<zcash_protocol::consensus::BlockHeight>
+pub fn pepper_sync::sync::ScanRange::from_parts(block_range: core::ops::range::Range<zcash_protocol::consensus::BlockHeight>, priority: pepper_sync::sync::ScanPriority) -> Self
+pub fn pepper_sync::sync::ScanRange::is_empty(&self) -> bool
+pub fn pepper_sync::sync::ScanRange::len(&self) -> usize
+pub fn pepper_sync::sync::ScanRange::priority(&self) -> pepper_sync::sync::ScanPriority
+pub fn pepper_sync::sync::ScanRange::split_at(&self, p: zcash_protocol::consensus::BlockHeight) -> core::option::Option<(Self, Self)>
+pub fn pepper_sync::sync::ScanRange::truncate_end(&self, block_height: zcash_protocol::consensus::BlockHeight) -> core::option::Option<Self>
+pub fn pepper_sync::sync::ScanRange::truncate_start(&self, block_height: zcash_protocol::consensus::BlockHeight) -> core::option::Option<Self>
+impl core::fmt::Display for pepper_sync::sync::ScanRange
+pub fn pepper_sync::sync::ScanRange::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct pepper_sync::sync::SyncResult
+pub pepper_sync::sync::SyncResult::blocks_scanned: u32
+pub pepper_sync::sync::SyncResult::ironwood_outputs_scanned: u32
+pub pepper_sync::sync::SyncResult::orchard_outputs_scanned: u32
+pub pepper_sync::sync::SyncResult::percentage_total_outputs_scanned: f32
+pub pepper_sync::sync::SyncResult::sapling_outputs_scanned: u32
+pub pepper_sync::sync::SyncResult::sync_end_height: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::sync::SyncResult::sync_start_height: zcash_protocol::consensus::BlockHeight
+impl core::convert::From<pepper_sync::sync::SyncResult> for json::value::JsonValue
+pub fn json::value::JsonValue::from(value: pepper_sync::sync::SyncResult) -> Self
+impl core::fmt::Display for pepper_sync::sync::SyncResult
+pub fn pepper_sync::sync::SyncResult::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct pepper_sync::sync::SyncStatus
+pub pepper_sync::sync::SyncStatus::percentage_session_blocks_scanned: f32
+pub pepper_sync::sync::SyncStatus::percentage_session_outputs_scanned: f32
+pub pepper_sync::sync::SyncStatus::percentage_total_blocks_scanned: f32
+pub pepper_sync::sync::SyncStatus::percentage_total_outputs_scanned: f32
+pub pepper_sync::sync::SyncStatus::scan_ranges: alloc::vec::Vec<pepper_sync::sync::ScanRange>
+pub pepper_sync::sync::SyncStatus::session_blocks_scanned: u32
+pub pepper_sync::sync::SyncStatus::session_ironwood_outputs_scanned: u32
+pub pepper_sync::sync::SyncStatus::session_orchard_outputs_scanned: u32
+pub pepper_sync::sync::SyncStatus::session_sapling_outputs_scanned: u32
+pub pepper_sync::sync::SyncStatus::sync_start_height: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::sync::SyncStatus::total_blocks_scanned: u32
+pub pepper_sync::sync::SyncStatus::total_ironwood_outputs_scanned: u32
+pub pepper_sync::sync::SyncStatus::total_orchard_outputs_scanned: u32
+pub pepper_sync::sync::SyncStatus::total_outputs: u64
+pub pepper_sync::sync::SyncStatus::total_outputs_scanned: u64
+pub pepper_sync::sync::SyncStatus::total_sapling_outputs_scanned: u32
+impl pepper_sync::sync::SyncStatus
+pub fn pepper_sync::sync::SyncStatus::is_complete(&self) -> bool
+impl core::convert::From<pepper_sync::sync::SyncStatus> for json::value::JsonValue
+pub fn json::value::JsonValue::from(value: pepper_sync::sync::SyncStatus) -> Self
+impl core::fmt::Display for pepper_sync::sync::SyncStatus
+pub fn pepper_sync::sync::SyncStatus::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub const pepper_sync::sync::MAX_REORG_ALLOWANCE: u32
+pub fn pepper_sync::sync::add_scan_targets(sync_state: &mut pepper_sync::wallet::SyncState, scan_targets: &[pepper_sync::wallet::ScanTarget])
+pub fn pepper_sync::sync::reset_spends(wallet_transactions: &mut std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, invalid_txids: alloc::vec::Vec<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::sync::scan_pending_transaction<W>(consensus_parameters: &impl zcash_protocol::consensus::Parameters, ufvks: &std::collections::hash::map::HashMap<zip32::AccountId, zcash_keys::keys::UnifiedFullViewingKey>, wallet: &mut W, transaction: zcash_primitives::transaction::Transaction, status: zingo_status::confirmation_status::ConfirmationStatus, datetime: u32) -> core::result::Result<(), pepper_sync::error::SyncError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks + pepper_sync::wallet::traits::SyncTransactions + pepper_sync::wallet::traits::SyncNullifiers + pepper_sync::wallet::traits::SyncOutPoints + pepper_sync::wallet::traits::SyncShardTrees
+pub fn pepper_sync::sync::set_transactions_failed(wallet_transactions: &mut std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, failed_txids: alloc::vec::Vec<zcash_protocol::txid::TxId>)
+pub async fn pepper_sync::sync::sync<C, P, W>(client: C, consensus_parameters: &P, wallet: alloc::sync::Arc<tokio::sync::rwlock::RwLock<W>>, sync_mode: alloc::sync::Arc<core::sync::atomic::AtomicU8>, config: pepper_sync::config::SyncConfig) -> core::result::Result<pepper_sync::sync::SyncResult, pepper_sync::error::SyncError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where C: core::clone::Clone + zingo_netutils::Indexer + zingo_netutils::globally_public::TransparentIndexer + core::marker::Sync + core::marker::Send + 'static, P: zcash_protocol::consensus::Parameters + core::marker::Sync + core::marker::Send + 'static, W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks + pepper_sync::wallet::traits::SyncTransactions + pepper_sync::wallet::traits::SyncNullifiers + pepper_sync::wallet::traits::SyncOutPoints + pepper_sync::wallet::traits::SyncShardTrees + core::marker::Send
+pub async fn pepper_sync::sync::sync_status<W>(wallet: &W) -> core::result::Result<pepper_sync::sync::SyncStatus, pepper_sync::error::SyncStatusError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks
+pub mod pepper_sync::wallet
+pub mod pepper_sync::wallet::serialization
+pub mod pepper_sync::wallet::traits
+pub trait pepper_sync::wallet::traits::SyncBlocks: pepper_sync::wallet::traits::SyncWallet
+pub fn pepper_sync::wallet::traits::SyncBlocks::append_wallet_blocks(&mut self, wallet_blocks: alloc::collections::btree::map::BTreeMap<zcash_protocol::consensus::BlockHeight, pepper_sync::wallet::WalletBlock>) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncBlocks::get_wallet_block(&self, block_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<pepper_sync::wallet::WalletBlock, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncBlocks::get_wallet_blocks_mut(&mut self) -> core::result::Result<&mut alloc::collections::btree::map::BTreeMap<zcash_protocol::consensus::BlockHeight, pepper_sync::wallet::WalletBlock>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncBlocks::truncate_wallet_blocks(&mut self, truncate_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), Self::Error>
+pub trait pepper_sync::wallet::traits::SyncNullifiers: pepper_sync::wallet::traits::SyncWallet
+pub fn pepper_sync::wallet::traits::SyncNullifiers::append_nullifiers(&mut self, nullifiers: &mut pepper_sync::wallet::NullifierMap) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncNullifiers::get_nullifiers(&self) -> core::result::Result<&pepper_sync::wallet::NullifierMap, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncNullifiers::get_nullifiers_mut(&mut self) -> core::result::Result<&mut pepper_sync::wallet::NullifierMap, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncNullifiers::truncate_nullifiers(&mut self, truncate_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), Self::Error>
+pub trait pepper_sync::wallet::traits::SyncOutPoints: pepper_sync::wallet::traits::SyncWallet
+pub fn pepper_sync::wallet::traits::SyncOutPoints::append_outpoints(&mut self, outpoints: &mut alloc::collections::btree::map::BTreeMap<pepper_sync::wallet::OutputId, pepper_sync::wallet::ScanTarget>) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncOutPoints::get_outpoints(&self) -> core::result::Result<&alloc::collections::btree::map::BTreeMap<pepper_sync::wallet::OutputId, pepper_sync::wallet::ScanTarget>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncOutPoints::get_outpoints_mut(&mut self) -> core::result::Result<&mut alloc::collections::btree::map::BTreeMap<pepper_sync::wallet::OutputId, pepper_sync::wallet::ScanTarget>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncOutPoints::truncate_outpoints(&mut self, truncate_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), Self::Error>
+pub trait pepper_sync::wallet::traits::SyncShardTrees: pepper_sync::wallet::traits::SyncWallet
+pub fn pepper_sync::wallet::traits::SyncShardTrees::clear_shard_trees(&mut self) -> core::result::Result<(), pepper_sync::error::SyncError<Self::Error>>
+pub fn pepper_sync::wallet::traits::SyncShardTrees::get_shard_trees(&self) -> core::result::Result<&pepper_sync::wallet::ShardTrees, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncShardTrees::get_shard_trees_mut(&mut self) -> core::result::Result<&mut pepper_sync::wallet::ShardTrees, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncShardTrees::truncate_shard_trees(&mut self, truncate_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), pepper_sync::error::SyncError<Self::Error>>
+pub fn pepper_sync::wallet::traits::SyncShardTrees::update_shard_trees(&mut self, fetch_request_sender: tokio::sync::mpsc::unbounded::UnboundedSender<pepper_sync::client::FetchRequest>, scan_range: &pepper_sync::sync::ScanRange, highest_scanned_height: zcash_protocol::consensus::BlockHeight, sapling_located_trees: alloc::vec::Vec<pepper_sync::witness::LocatedTreeData<sapling_crypto::tree::Node>>, orchard_located_trees: alloc::vec::Vec<pepper_sync::witness::LocatedTreeData<orchard::tree::MerkleHashOrchard>>, ironwood_located_trees: alloc::vec::Vec<pepper_sync::witness::LocatedTreeData<orchard::tree::MerkleHashOrchard>>) -> impl core::future::future::Future<Output = core::result::Result<(), pepper_sync::error::SyncError<Self::Error>>> + core::marker::Send where Self: core::marker::Send
+pub trait pepper_sync::wallet::traits::SyncTransactions: pepper_sync::wallet::traits::SyncWallet
+pub fn pepper_sync::wallet::traits::SyncTransactions::extend_wallet_transactions(&mut self, wallet_transactions: std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncTransactions::get_wallet_transactions(&self) -> core::result::Result<&std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncTransactions::get_wallet_transactions_mut(&mut self) -> core::result::Result<&mut std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncTransactions::insert_wallet_transaction(&mut self, wallet_transaction: pepper_sync::wallet::WalletTransaction) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncTransactions::truncate_wallet_transactions(&mut self, truncate_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), Self::Error>
+pub trait pepper_sync::wallet::traits::SyncWallet
+pub type pepper_sync::wallet::traits::SyncWallet::Error: core::fmt::Debug + core::fmt::Display + core::error::Error
+pub fn pepper_sync::wallet::traits::SyncWallet::add_orchard_address(&mut self, account_id: zip32::AccountId, address: orchard::address::Address, diversifier_index: zip32::DiversifierIndex) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::add_sapling_address(&mut self, account_id: zip32::AccountId, address: sapling_crypto::address::PaymentAddress, diversifier_index: zip32::DiversifierIndex) -> core::result::Result<(), Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_birthday(&self) -> core::result::Result<zcash_protocol::consensus::BlockHeight, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_sync_state(&self) -> core::result::Result<&pepper_sync::wallet::SyncState, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_sync_state_mut(&mut self) -> core::result::Result<&mut pepper_sync::wallet::SyncState, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_transparent_addresses(&self) -> core::result::Result<&alloc::collections::btree::map::BTreeMap<pepper_sync::keys::transparent::TransparentAddressId, alloc::string::String>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_transparent_addresses_mut(&mut self) -> core::result::Result<&mut alloc::collections::btree::map::BTreeMap<pepper_sync::keys::transparent::TransparentAddressId, alloc::string::String>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::get_unified_full_viewing_keys(&self) -> core::result::Result<std::collections::hash::map::HashMap<zip32::AccountId, zcash_keys::keys::UnifiedFullViewingKey>, Self::Error>
+pub fn pepper_sync::wallet::traits::SyncWallet::set_save_flag(&mut self) -> core::result::Result<(), Self::Error>
+pub enum pepper_sync::wallet::SyncMode
+pub pepper_sync::wallet::SyncMode::NotRunning
+pub pepper_sync::wallet::SyncMode::Paused
+pub pepper_sync::wallet::SyncMode::Running
+pub pepper_sync::wallet::SyncMode::Shutdown
+impl pepper_sync::wallet::SyncMode
+pub fn pepper_sync::wallet::SyncMode::from_atomic_u8(atomic_sync_mode: alloc::sync::Arc<core::sync::atomic::AtomicU8>) -> core::result::Result<pepper_sync::wallet::SyncMode, pepper_sync::error::SyncModeError>
+pub fn pepper_sync::wallet::SyncMode::from_u8(mode: u8) -> core::result::Result<Self, pepper_sync::error::SyncModeError>
+pub struct pepper_sync::wallet::InitialSyncState
+impl pepper_sync::wallet::InitialSyncState
+pub fn pepper_sync::wallet::InitialSyncState::new() -> Self
+impl core::default::Default for pepper_sync::wallet::InitialSyncState
+pub fn pepper_sync::wallet::InitialSyncState::default() -> Self
+pub struct pepper_sync::wallet::Ironwood
+pub struct pepper_sync::wallet::NullifierMap
+pub pepper_sync::wallet::NullifierMap::ironwood: alloc::collections::btree::map::BTreeMap<orchard::note::nullifier::Nullifier, pepper_sync::wallet::ScanTarget>
+pub pepper_sync::wallet::NullifierMap::orchard: alloc::collections::btree::map::BTreeMap<orchard::note::nullifier::Nullifier, pepper_sync::wallet::ScanTarget>
+pub pepper_sync::wallet::NullifierMap::sapling: alloc::collections::btree::map::BTreeMap<sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::ScanTarget>
+impl pepper_sync::wallet::NullifierMap
+pub fn pepper_sync::wallet::NullifierMap::clear(&mut self)
+pub fn pepper_sync::wallet::NullifierMap::new() -> Self
+impl pepper_sync::wallet::NullifierMap
+pub fn pepper_sync::wallet::NullifierMap::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::NullifierMap::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+impl core::default::Default for pepper_sync::wallet::NullifierMap
+pub fn pepper_sync::wallet::NullifierMap::default() -> Self
+pub struct pepper_sync::wallet::Orchard
+pub struct pepper_sync::wallet::OutgoingNote<N, P>
+impl pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Ironwood>
+pub fn pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Ironwood>::read<R: std::io::Read>(reader: R, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Ironwood>::write<W: std::io::Write>(&self, writer: W, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<()>
+impl pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Orchard>
+pub fn pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Orchard>::read<R: std::io::Read>(reader: R, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Orchard>::write<W: std::io::Write>(&self, writer: W, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<()>
+impl pepper_sync::wallet::OutgoingNote<sapling_crypto::note::Note, pepper_sync::wallet::Sapling>
+pub fn pepper_sync::wallet::OutgoingNote<sapling_crypto::note::Note, pepper_sync::wallet::Sapling>::read<R: std::io::Read>(reader: R, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::OutgoingNote<sapling_crypto::note::Note, pepper_sync::wallet::Sapling>::write<W: std::io::Write>(&self, writer: W, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<()>
+pub struct pepper_sync::wallet::OutputId
+impl pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutputId::new(txid: zcash_protocol::txid::TxId, output_index: u32) -> Self
+pub fn pepper_sync::wallet::OutputId::output_index(&self) -> u32
+pub fn pepper_sync::wallet::OutputId::txid(&self) -> zcash_protocol::txid::TxId
+impl core::convert::From<&zcash_transparent::bundle::OutPoint> for pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutputId::from(value: &zcash_transparent::bundle::OutPoint) -> Self
+impl core::convert::From<pepper_sync::wallet::OutputId> for zcash_transparent::bundle::OutPoint
+pub fn zcash_transparent::bundle::OutPoint::from(value: pepper_sync::wallet::OutputId) -> Self
+impl core::fmt::Display for pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutputId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct pepper_sync::wallet::PoolActivation(_)
+impl pepper_sync::wallet::PoolActivation
+pub fn pepper_sync::wallet::PoolActivation::height(&self) -> zcash_protocol::consensus::BlockHeight
+pub fn pepper_sync::wallet::PoolActivation::max_with(&self, height: zcash_protocol::consensus::BlockHeight) -> zcash_protocol::consensus::BlockHeight
+pub fn pepper_sync::wallet::PoolActivation::of(consensus_parameters: &impl zcash_protocol::consensus::Parameters, pool: zcash_protocol::ShieldedPool) -> core::option::Option<Self>
+pub struct pepper_sync::wallet::Sapling
+pub struct pepper_sync::wallet::ScanTarget
+pub pepper_sync::wallet::ScanTarget::block_height: zcash_protocol::consensus::BlockHeight
+pub pepper_sync::wallet::ScanTarget::narrow_scan_area: bool
+pub pepper_sync::wallet::ScanTarget::txid: zcash_protocol::txid::TxId
+impl pepper_sync::wallet::ScanTarget
+pub fn pepper_sync::wallet::ScanTarget::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::ScanTarget::write<W: std::io::Write>(&self, writer: &mut W) -> std::io::error::Result<()>
+pub struct pepper_sync::wallet::ShardTrees
+pub pepper_sync::wallet::ShardTrees::ironwood: shardtree::ShardTree<pepper_sync::wallet::OrchardShardStore, { _ }, { witness::SHARD_HEIGHT }>
+pub pepper_sync::wallet::ShardTrees::orchard: shardtree::ShardTree<pepper_sync::wallet::OrchardShardStore, { _ }, { witness::SHARD_HEIGHT }>
+pub pepper_sync::wallet::ShardTrees::sapling: shardtree::ShardTree<pepper_sync::wallet::SaplingShardStore, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }, { witness::SHARD_HEIGHT }>
+impl pepper_sync::wallet::ShardTrees
+pub fn pepper_sync::wallet::ShardTrees::new() -> Self
+impl pepper_sync::wallet::ShardTrees
+pub fn pepper_sync::wallet::ShardTrees::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::ShardTrees::write<W: std::io::Write>(&mut self, writer: W) -> std::io::error::Result<()>
+impl core::default::Default for pepper_sync::wallet::ShardTrees
+pub fn pepper_sync::wallet::ShardTrees::default() -> Self
+pub struct pepper_sync::wallet::SyncState
+impl pepper_sync::wallet::SyncState
+pub fn pepper_sync::wallet::SyncState::fully_scanned_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub fn pepper_sync::wallet::SyncState::highest_scanned_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub fn pepper_sync::wallet::SyncState::ironwood_shard_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+pub fn pepper_sync::wallet::SyncState::last_known_chain_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
+pub fn pepper_sync::wallet::SyncState::new() -> Self
+pub fn pepper_sync::wallet::SyncState::orchard_shard_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+pub fn pepper_sync::wallet::SyncState::sapling_shard_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+pub fn pepper_sync::wallet::SyncState::scan_ranges(&self) -> &[pepper_sync::sync::ScanRange]
+pub fn pepper_sync::wallet::SyncState::wallet_birthday(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
+impl pepper_sync::wallet::SyncState
+pub fn pepper_sync::wallet::SyncState::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::SyncState::write<W: std::io::Write>(&mut self, writer: W) -> std::io::error::Result<()>
+impl core::default::Default for pepper_sync::wallet::SyncState
+pub fn pepper_sync::wallet::SyncState::default() -> Self
+pub struct pepper_sync::wallet::TransparentCoin
+impl pepper_sync::wallet::TransparentCoin
+pub fn pepper_sync::wallet::TransparentCoin::address(&self) -> &str
+pub fn pepper_sync::wallet::TransparentCoin::script(&self) -> &zcash_transparent::address::Script
+impl pepper_sync::wallet::TransparentCoin
+pub fn pepper_sync::wallet::TransparentCoin::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::TransparentCoin::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+impl pepper_sync::wallet::OutputInterface for pepper_sync::wallet::TransparentCoin
+pub type pepper_sync::wallet::TransparentCoin::Input = zcash_transparent::bundle::OutPoint
+pub type pepper_sync::wallet::TransparentCoin::KeyId = pepper_sync::keys::transparent::TransparentAddressId
+pub const pepper_sync::wallet::TransparentCoin::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::TransparentCoin::key_id(&self) -> Self::KeyId
+pub fn pepper_sync::wallet::TransparentCoin::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::TransparentCoin::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::TransparentCoin::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::TransparentCoin::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::TransparentCoin::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::TransparentCoin::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::TransparentCoin::value(&self) -> u64
+pub struct pepper_sync::wallet::TreeBounds
+pub pepper_sync::wallet::TreeBounds::ironwood_final_tree_size: u32
+pub pepper_sync::wallet::TreeBounds::ironwood_initial_tree_size: u32
+pub pepper_sync::wallet::TreeBounds::orchard_final_tree_size: u32
+pub pepper_sync::wallet::TreeBounds::orchard_initial_tree_size: u32
+pub pepper_sync::wallet::TreeBounds::sapling_final_tree_size: u32
+pub pepper_sync::wallet::TreeBounds::sapling_initial_tree_size: u32
+impl pepper_sync::wallet::TreeBounds
+pub fn pepper_sync::wallet::TreeBounds::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::TreeBounds::write<W: std::io::Write>(&self, writer: &mut W) -> std::io::error::Result<()>
+pub struct pepper_sync::wallet::WalletBlock
+impl pepper_sync::wallet::WalletBlock
+pub fn pepper_sync::wallet::WalletBlock::block_hash(&self) -> zcash_primitives::block::BlockHash
+pub fn pepper_sync::wallet::WalletBlock::block_height(&self) -> zcash_protocol::consensus::BlockHeight
+pub fn pepper_sync::wallet::WalletBlock::prev_hash(&self) -> zcash_primitives::block::BlockHash
+pub fn pepper_sync::wallet::WalletBlock::time(&self) -> u32
+pub fn pepper_sync::wallet::WalletBlock::tree_bounds(&self) -> pepper_sync::wallet::TreeBounds
+pub fn pepper_sync::wallet::WalletBlock::txids(&self) -> &[zcash_protocol::txid::TxId]
+impl pepper_sync::wallet::WalletBlock
+pub fn pepper_sync::wallet::WalletBlock::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::WalletBlock::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+pub struct pepper_sync::wallet::WalletNote<N, Nf: core::marker::Copy, P>
+impl pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Ironwood>
+pub fn pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Ironwood>::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Ironwood>::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+impl pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Orchard>
+pub fn pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Orchard>::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Orchard>::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+impl pepper_sync::wallet::WalletNote<sapling_crypto::note::Note, sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::Sapling>
+pub fn pepper_sync::wallet::WalletNote<sapling_crypto::note::Note, sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::Sapling>::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::WalletNote<sapling_crypto::note::Note, sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::Sapling>::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+pub struct pepper_sync::wallet::WalletTransaction
+impl pepper_sync::wallet::WalletTransaction
+pub fn pepper_sync::wallet::WalletTransaction::datetime(&self) -> u32
+pub fn pepper_sync::wallet::WalletTransaction::ironwood_notes(&self) -> &[pepper_sync::wallet::IronwoodNote]
+pub fn pepper_sync::wallet::WalletTransaction::ironwood_notes_mut(&mut self) -> alloc::vec::Vec<&mut pepper_sync::wallet::IronwoodNote>
+pub fn pepper_sync::wallet::WalletTransaction::ironwood_nullifiers(&self) -> alloc::vec::Vec<&orchard::note::nullifier::Nullifier>
+pub fn pepper_sync::wallet::WalletTransaction::orchard_notes(&self) -> &[pepper_sync::wallet::OrchardNote]
+pub fn pepper_sync::wallet::WalletTransaction::orchard_notes_mut(&mut self) -> alloc::vec::Vec<&mut pepper_sync::wallet::OrchardNote>
+pub fn pepper_sync::wallet::WalletTransaction::orchard_nullifiers(&self) -> alloc::vec::Vec<&orchard::note::nullifier::Nullifier>
+pub fn pepper_sync::wallet::WalletTransaction::outgoing_ironwood_notes(&self) -> &[pepper_sync::wallet::OutgoingIronwoodNote]
+pub fn pepper_sync::wallet::WalletTransaction::outgoing_orchard_notes(&self) -> &[pepper_sync::wallet::OutgoingOrchardNote]
+pub fn pepper_sync::wallet::WalletTransaction::outgoing_sapling_notes(&self) -> &[pepper_sync::wallet::OutgoingSaplingNote]
+pub fn pepper_sync::wallet::WalletTransaction::outpoints(&self) -> alloc::vec::Vec<&zcash_transparent::bundle::OutPoint>
+pub fn pepper_sync::wallet::WalletTransaction::sapling_notes(&self) -> &[pepper_sync::wallet::SaplingNote]
+pub fn pepper_sync::wallet::WalletTransaction::sapling_notes_mut(&mut self) -> alloc::vec::Vec<&mut pepper_sync::wallet::SaplingNote>
+pub fn pepper_sync::wallet::WalletTransaction::sapling_nullifiers(&self) -> alloc::vec::Vec<&sapling_crypto::note::nullifier::Nullifier>
+pub fn pepper_sync::wallet::WalletTransaction::status(&self) -> zingo_status::confirmation_status::ConfirmationStatus
+pub fn pepper_sync::wallet::WalletTransaction::transaction(&self) -> &zcash_primitives::transaction::Transaction
+pub fn pepper_sync::wallet::WalletTransaction::transparent_coins(&self) -> &[pepper_sync::wallet::TransparentCoin]
+pub fn pepper_sync::wallet::WalletTransaction::transparent_coins_mut(&mut self) -> alloc::vec::Vec<&mut pepper_sync::wallet::TransparentCoin>
+pub fn pepper_sync::wallet::WalletTransaction::txid(&self) -> zcash_protocol::txid::TxId
+pub fn pepper_sync::wallet::WalletTransaction::update_status(&mut self, status: zingo_status::confirmation_status::ConfirmationStatus, datetime: u32, fail_confirmed: bool)
+impl pepper_sync::wallet::WalletTransaction
+pub fn pepper_sync::wallet::WalletTransaction::read<R: std::io::Read>(reader: R, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<Self>
+pub fn pepper_sync::wallet::WalletTransaction::write<W: std::io::Write>(&self, writer: W, consensus_parameters: &impl zcash_protocol::consensus::Parameters) -> std::io::error::Result<()>
+impl pepper_sync::wallet::WalletTransaction
+pub fn pepper_sync::wallet::WalletTransaction::total_external_outgoing_note_value<Outgoing, Incoming>(&self) -> u64 where Outgoing: pepper_sync::wallet::OutgoingNoteInterface, Incoming: pepper_sync::wallet::OutputInterface
+pub fn pepper_sync::wallet::WalletTransaction::total_outgoing_note_value<Op: pepper_sync::wallet::OutgoingNoteInterface>(&self) -> u64
+pub fn pepper_sync::wallet::WalletTransaction::total_output_value<Op: pepper_sync::wallet::OutputInterface>(&self) -> u64
+pub fn pepper_sync::wallet::WalletTransaction::total_value_received(&self) -> u64
+pub fn pepper_sync::wallet::WalletTransaction::total_value_sent(&self) -> u64
+impl core::fmt::Debug for pepper_sync::wallet::WalletTransaction
+pub fn pepper_sync::wallet::WalletTransaction::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait pepper_sync::wallet::KeyIdInterface
+pub fn pepper_sync::wallet::KeyIdInterface::account_id(&self) -> zip32::AccountId
+impl pepper_sync::wallet::KeyIdInterface for pepper_sync::keys::KeyId
+pub fn pepper_sync::keys::KeyId::account_id(&self) -> zip32::AccountId
+impl pepper_sync::wallet::KeyIdInterface for pepper_sync::keys::transparent::TransparentAddressId
+pub fn pepper_sync::keys::transparent::TransparentAddressId::account_id(&self) -> zip32::AccountId
+pub trait pepper_sync::wallet::NoteInterface: pepper_sync::wallet::OutputInterface
+pub type pepper_sync::wallet::NoteInterface::Nullifier: core::marker::Copy + core::clone::Clone + core::cmp::PartialEq + core::cmp::Eq + core::cmp::PartialOrd + core::cmp::Ord
+pub type pepper_sync::wallet::NoteInterface::ZcashNote
+pub const pepper_sync::wallet::NoteInterface::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::NoteInterface::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::NoteInterface::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::NoteInterface::nullifier(&self) -> core::option::Option<Self::Nullifier>
+pub fn pepper_sync::wallet::NoteInterface::position(&self) -> core::option::Option<incrementalmerkletree::Position>
+pub fn pepper_sync::wallet::NoteInterface::refetch_nullifier_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+impl pepper_sync::wallet::NoteInterface for pepper_sync::wallet::IronwoodNote
+pub type pepper_sync::wallet::IronwoodNote::Nullifier = <pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Ironwood> as pepper_sync::wallet::OutputInterface>::Input
+pub type pepper_sync::wallet::IronwoodNote::ZcashNote = orchard::note::Note
+pub const pepper_sync::wallet::IronwoodNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::IronwoodNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::IronwoodNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::IronwoodNote::nullifier(&self) -> core::option::Option<Self::Nullifier>
+pub fn pepper_sync::wallet::IronwoodNote::position(&self) -> core::option::Option<incrementalmerkletree::Position>
+pub fn pepper_sync::wallet::IronwoodNote::refetch_nullifier_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+impl pepper_sync::wallet::NoteInterface for pepper_sync::wallet::OrchardNote
+pub type pepper_sync::wallet::OrchardNote::Nullifier = <pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Orchard> as pepper_sync::wallet::OutputInterface>::Input
+pub type pepper_sync::wallet::OrchardNote::ZcashNote = orchard::note::Note
+pub const pepper_sync::wallet::OrchardNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::OrchardNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::OrchardNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::OrchardNote::nullifier(&self) -> core::option::Option<Self::Nullifier>
+pub fn pepper_sync::wallet::OrchardNote::position(&self) -> core::option::Option<incrementalmerkletree::Position>
+pub fn pepper_sync::wallet::OrchardNote::refetch_nullifier_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+impl pepper_sync::wallet::NoteInterface for pepper_sync::wallet::SaplingNote
+pub type pepper_sync::wallet::SaplingNote::Nullifier = <pepper_sync::wallet::WalletNote<sapling_crypto::note::Note, sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::Sapling> as pepper_sync::wallet::OutputInterface>::Input
+pub type pepper_sync::wallet::SaplingNote::ZcashNote = sapling_crypto::note::Note
+pub const pepper_sync::wallet::SaplingNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::SaplingNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::SaplingNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::SaplingNote::nullifier(&self) -> core::option::Option<Self::Nullifier>
+pub fn pepper_sync::wallet::SaplingNote::position(&self) -> core::option::Option<incrementalmerkletree::Position>
+pub fn pepper_sync::wallet::SaplingNote::refetch_nullifier_ranges(&self) -> &[core::ops::range::Range<zcash_protocol::consensus::BlockHeight>]
+pub trait pepper_sync::wallet::OutgoingNoteInterface: core::marker::Sized
+pub type pepper_sync::wallet::OutgoingNoteInterface::Address: core::clone::Clone + core::marker::Copy + core::fmt::Debug + core::cmp::PartialEq + core::cmp::Eq
+pub type pepper_sync::wallet::OutgoingNoteInterface::Error: core::fmt::Debug + core::error::Error
+pub type pepper_sync::wallet::OutgoingNoteInterface::ZcashNote
+pub const pepper_sync::wallet::OutgoingNoteInterface::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::OutgoingNoteInterface::encoded_recipient<P>(&self, parameters: &P) -> core::result::Result<alloc::string::String, Self::Error> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingNoteInterface::encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> core::option::Option<alloc::string::String> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingNoteInterface::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::OutgoingNoteInterface::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::OutgoingNoteInterface::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::OutgoingNoteInterface::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutgoingNoteInterface::recipient(&self) -> Self::Address
+pub fn pepper_sync::wallet::OutgoingNoteInterface::recipient_full_unified_address(&self) -> core::option::Option<&zcash_keys::address::UnifiedAddress>
+pub fn pepper_sync::wallet::OutgoingNoteInterface::transaction_outgoing_notes(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OutgoingNoteInterface::value(&self) -> u64
+impl pepper_sync::wallet::OutgoingNoteInterface for pepper_sync::wallet::OutgoingIronwoodNote
+pub type pepper_sync::wallet::OutgoingIronwoodNote::Address = orchard::address::Address
+pub type pepper_sync::wallet::OutgoingIronwoodNote::Error = zcash_address::kind::unified::ParseError
+pub type pepper_sync::wallet::OutgoingIronwoodNote::ZcashNote = orchard::note::Note
+pub const pepper_sync::wallet::OutgoingIronwoodNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::encoded_recipient<P>(&self, parameters: &P) -> core::result::Result<alloc::string::String, Self::Error> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> core::option::Option<alloc::string::String> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::recipient(&self) -> Self::Address
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::recipient_full_unified_address(&self) -> core::option::Option<&zcash_keys::address::UnifiedAddress>
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::transaction_outgoing_notes(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OutgoingIronwoodNote::value(&self) -> u64
+impl pepper_sync::wallet::OutgoingNoteInterface for pepper_sync::wallet::OutgoingOrchardNote
+pub type pepper_sync::wallet::OutgoingOrchardNote::Address = orchard::address::Address
+pub type pepper_sync::wallet::OutgoingOrchardNote::Error = zcash_address::kind::unified::ParseError
+pub type pepper_sync::wallet::OutgoingOrchardNote::ZcashNote = orchard::note::Note
+pub const pepper_sync::wallet::OutgoingOrchardNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::OutgoingOrchardNote::encoded_recipient<P>(&self, parameters: &P) -> core::result::Result<alloc::string::String, Self::Error> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingOrchardNote::encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> core::option::Option<alloc::string::String> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingOrchardNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::OutgoingOrchardNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::OutgoingOrchardNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::OutgoingOrchardNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutgoingOrchardNote::recipient(&self) -> Self::Address
+pub fn pepper_sync::wallet::OutgoingOrchardNote::recipient_full_unified_address(&self) -> core::option::Option<&zcash_keys::address::UnifiedAddress>
+pub fn pepper_sync::wallet::OutgoingOrchardNote::transaction_outgoing_notes(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OutgoingOrchardNote::value(&self) -> u64
+impl pepper_sync::wallet::OutgoingNoteInterface for pepper_sync::wallet::OutgoingSaplingNote
+pub type pepper_sync::wallet::OutgoingSaplingNote::Address = sapling_crypto::address::PaymentAddress
+pub type pepper_sync::wallet::OutgoingSaplingNote::Error = core::convert::Infallible
+pub type pepper_sync::wallet::OutgoingSaplingNote::ZcashNote = sapling_crypto::note::Note
+pub const pepper_sync::wallet::OutgoingSaplingNote::SHIELDED_PROTOCOL: zcash_protocol::ShieldedPool
+pub fn pepper_sync::wallet::OutgoingSaplingNote::encoded_recipient<P>(&self, consensus_parameters: &P) -> core::result::Result<alloc::string::String, Self::Error> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingSaplingNote::encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> core::option::Option<alloc::string::String> where P: zcash_protocol::consensus::Parameters + zcash_protocol::consensus::NetworkConstants
+pub fn pepper_sync::wallet::OutgoingSaplingNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::OutgoingSaplingNote::memo(&self) -> &zcash_protocol::memo::Memo
+pub fn pepper_sync::wallet::OutgoingSaplingNote::note(&self) -> &Self::ZcashNote
+pub fn pepper_sync::wallet::OutgoingSaplingNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutgoingSaplingNote::recipient(&self) -> Self::Address
+pub fn pepper_sync::wallet::OutgoingSaplingNote::recipient_full_unified_address(&self) -> core::option::Option<&zcash_keys::address::UnifiedAddress>
+pub fn pepper_sync::wallet::OutgoingSaplingNote::transaction_outgoing_notes(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OutgoingSaplingNote::value(&self) -> u64
+pub trait pepper_sync::wallet::OutputInterface: core::marker::Sized
+pub type pepper_sync::wallet::OutputInterface::Input: core::clone::Clone + core::fmt::Debug + core::cmp::PartialEq + core::cmp::Eq + core::cmp::PartialOrd + core::cmp::Ord
+pub type pepper_sync::wallet::OutputInterface::KeyId: pepper_sync::wallet::KeyIdInterface
+pub const pepper_sync::wallet::OutputInterface::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::OutputInterface::key_id(&self) -> Self::KeyId
+pub fn pepper_sync::wallet::OutputInterface::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OutputInterface::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::OutputInterface::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::OutputInterface::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::OutputInterface::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::OutputInterface::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OutputInterface::value(&self) -> u64
+impl pepper_sync::wallet::OutputInterface for pepper_sync::wallet::IronwoodNote
+pub type pepper_sync::wallet::IronwoodNote::Input = orchard::note::nullifier::Nullifier
+pub type pepper_sync::wallet::IronwoodNote::KeyId = pepper_sync::keys::KeyId
+pub const pepper_sync::wallet::IronwoodNote::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::IronwoodNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::IronwoodNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::IronwoodNote::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::IronwoodNote::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::IronwoodNote::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::IronwoodNote::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::IronwoodNote::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::IronwoodNote::value(&self) -> u64
+impl pepper_sync::wallet::OutputInterface for pepper_sync::wallet::OrchardNote
+pub type pepper_sync::wallet::OrchardNote::Input = orchard::note::nullifier::Nullifier
+pub type pepper_sync::wallet::OrchardNote::KeyId = pepper_sync::keys::KeyId
+pub const pepper_sync::wallet::OrchardNote::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::OrchardNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::OrchardNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::OrchardNote::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::OrchardNote::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::OrchardNote::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::OrchardNote::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::OrchardNote::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::OrchardNote::value(&self) -> u64
+impl pepper_sync::wallet::OutputInterface for pepper_sync::wallet::SaplingNote
+pub type pepper_sync::wallet::SaplingNote::Input = sapling_crypto::note::nullifier::Nullifier
+pub type pepper_sync::wallet::SaplingNote::KeyId = pepper_sync::keys::KeyId
+pub const pepper_sync::wallet::SaplingNote::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::SaplingNote::key_id(&self) -> pepper_sync::keys::KeyId
+pub fn pepper_sync::wallet::SaplingNote::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::SaplingNote::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::SaplingNote::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::SaplingNote::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::SaplingNote::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::SaplingNote::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::SaplingNote::value(&self) -> u64
+impl pepper_sync::wallet::OutputInterface for pepper_sync::wallet::TransparentCoin
+pub type pepper_sync::wallet::TransparentCoin::Input = zcash_transparent::bundle::OutPoint
+pub type pepper_sync::wallet::TransparentCoin::KeyId = pepper_sync::keys::transparent::TransparentAddressId
+pub const pepper_sync::wallet::TransparentCoin::POOL_TYPE: zcash_protocol::PoolType
+pub fn pepper_sync::wallet::TransparentCoin::key_id(&self) -> Self::KeyId
+pub fn pepper_sync::wallet::TransparentCoin::output_id(&self) -> pepper_sync::wallet::OutputId
+pub fn pepper_sync::wallet::TransparentCoin::set_spending_transaction(&mut self, spending_transaction: core::option::Option<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::wallet::TransparentCoin::spend_link(&self) -> core::option::Option<Self::Input>
+pub fn pepper_sync::wallet::TransparentCoin::spending_transaction(&self) -> core::option::Option<zcash_protocol::txid::TxId>
+pub fn pepper_sync::wallet::TransparentCoin::transaction_inputs(transaction: &pepper_sync::wallet::WalletTransaction) -> alloc::vec::Vec<&Self::Input>
+pub fn pepper_sync::wallet::TransparentCoin::transaction_outputs(transaction: &pepper_sync::wallet::WalletTransaction) -> &[Self]
+pub fn pepper_sync::wallet::TransparentCoin::value(&self) -> u64
+pub fn pepper_sync::wallet::pool_upgrade(pool: zcash_protocol::ShieldedPool) -> zcash_protocol::consensus::NetworkUpgrade
+pub type pepper_sync::wallet::IronwoodNote = pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Ironwood>
+pub type pepper_sync::wallet::OrchardNote = pepper_sync::wallet::WalletNote<orchard::note::Note, orchard::note::nullifier::Nullifier, pepper_sync::wallet::Orchard>
+pub type pepper_sync::wallet::OrchardShardStore = shardtree::store::memory::MemoryShardStore<orchard::tree::MerkleHashOrchard, zcash_protocol::consensus::BlockHeight>
+pub type pepper_sync::wallet::OutgoingIronwoodNote = pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Ironwood>
+pub type pepper_sync::wallet::OutgoingOrchardNote = pepper_sync::wallet::OutgoingNote<orchard::note::Note, pepper_sync::wallet::Orchard>
+pub type pepper_sync::wallet::OutgoingSaplingNote = pepper_sync::wallet::OutgoingNote<sapling_crypto::note::Note, pepper_sync::wallet::Sapling>
+pub type pepper_sync::wallet::SaplingNote = pepper_sync::wallet::WalletNote<sapling_crypto::note::Note, sapling_crypto::note::nullifier::Nullifier, pepper_sync::wallet::Sapling>
+pub type pepper_sync::wallet::SaplingShardStore = shardtree::store::memory::MemoryShardStore<sapling_crypto::tree::Node, zcash_protocol::consensus::BlockHeight>
+pub fn pepper_sync::add_scan_targets(sync_state: &mut pepper_sync::wallet::SyncState, scan_targets: &[pepper_sync::wallet::ScanTarget])
+pub fn pepper_sync::reset_spends(wallet_transactions: &mut std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, invalid_txids: alloc::vec::Vec<zcash_protocol::txid::TxId>)
+pub fn pepper_sync::scan_pending_transaction<W>(consensus_parameters: &impl zcash_protocol::consensus::Parameters, ufvks: &std::collections::hash::map::HashMap<zip32::AccountId, zcash_keys::keys::UnifiedFullViewingKey>, wallet: &mut W, transaction: zcash_primitives::transaction::Transaction, status: zingo_status::confirmation_status::ConfirmationStatus, datetime: u32) -> core::result::Result<(), pepper_sync::error::SyncError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks + pepper_sync::wallet::traits::SyncTransactions + pepper_sync::wallet::traits::SyncNullifiers + pepper_sync::wallet::traits::SyncOutPoints + pepper_sync::wallet::traits::SyncShardTrees
+pub fn pepper_sync::set_transactions_failed(wallet_transactions: &mut std::collections::hash::map::HashMap<zcash_protocol::txid::TxId, pepper_sync::wallet::WalletTransaction>, failed_txids: alloc::vec::Vec<zcash_protocol::txid::TxId>)
+pub async fn pepper_sync::sync<C, P, W>(client: C, consensus_parameters: &P, wallet: alloc::sync::Arc<tokio::sync::rwlock::RwLock<W>>, sync_mode: alloc::sync::Arc<core::sync::atomic::AtomicU8>, config: pepper_sync::config::SyncConfig) -> core::result::Result<pepper_sync::sync::SyncResult, pepper_sync::error::SyncError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where C: core::clone::Clone + zingo_netutils::Indexer + zingo_netutils::globally_public::TransparentIndexer + core::marker::Sync + core::marker::Send + 'static, P: zcash_protocol::consensus::Parameters + core::marker::Sync + core::marker::Send + 'static, W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks + pepper_sync::wallet::traits::SyncTransactions + pepper_sync::wallet::traits::SyncNullifiers + pepper_sync::wallet::traits::SyncOutPoints + pepper_sync::wallet::traits::SyncShardTrees + core::marker::Send
+pub async fn pepper_sync::sync_status<W>(wallet: &W) -> core::result::Result<pepper_sync::sync::SyncStatus, pepper_sync::error::SyncStatusError<<W as pepper_sync::wallet::traits::SyncWallet>::Error>> where W: pepper_sync::wallet::traits::SyncWallet + pepper_sync::wallet::traits::SyncBlocks

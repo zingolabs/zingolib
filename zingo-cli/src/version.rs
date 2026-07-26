@@ -2,4 +2,4 @@
 
 /// The current version of the `zingo-cli` crate, used in `--version` output
 /// and the clap `Command` definition.
-pub const VERSION: &str = "0.1.1";
+pub(crate) const VERSION: &str = "0.1.1";
