@@ -1,0 +1,6 @@
+pub mod workbench
+pub fn workbench::git(args: &[&str]) -> core::result::Result<alloc::string::String, alloc::vec::Vec<alloc::string::String>>
+pub fn workbench::read(path: &std::path::Path) -> core::result::Result<alloc::string::String, alloc::vec::Vec<alloc::string::String>>
+pub fn workbench::repo_root() -> core::result::Result<std::path::PathBuf, alloc::vec::Vec<alloc::string::String>>
+pub fn workbench::run<T>(prog: &str, body: impl core::ops::function::FnOnce() -> core::result::Result<T, alloc::vec::Vec<alloc::string::String>>, on_ok: impl core::ops::function::FnOnce(T)) -> never
+pub fn workbench::toolchain_channel(root: &std::path::Path) -> core::result::Result<alloc::string::String, alloc::vec::Vec<alloc::string::String>>

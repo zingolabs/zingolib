@@ -1,0 +1,6 @@
+pub mod zingo_cli
+pub fn zingo_cli::build_clap_app() -> clap_builder::builder::command::Command
+pub fn zingo_cli::help_output(matches: &clap_builder::parser::matches::arg_matches::ArgMatches) -> core::option::Option<alloc::string::String>
+pub fn zingo_cli::is_interactive(matches: &clap_builder::parser::matches::arg_matches::ArgMatches) -> bool
+pub fn zingo_cli::log_file_path(matches: &clap_builder::parser::matches::arg_matches::ArgMatches) -> std::path::PathBuf
+pub fn zingo_cli::run_cli(matches: clap_builder::parser::matches::arg_matches::ArgMatches) -> std::io::error::Result<()>

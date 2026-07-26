@@ -1,0 +1,104 @@
+pub mod zingo_netutils
+pub use zingo_netutils::Status
+pub use zingo_netutils::Streaming
+pub use zingo_netutils::lightwallet_protocol
+pub mod zingo_netutils::arm_race
+pub enum zingo_netutils::arm_race::LaunchPolicy
+pub zingo_netutils::arm_race::LaunchPolicy::EscalatingRounds
+pub zingo_netutils::arm_race::LaunchPolicy::Hedged
+pub zingo_netutils::arm_race::LaunchPolicy::Hedged::hedge_interval: core::time::Duration
+pub zingo_netutils::arm_race::LaunchPolicy::Hedged::max_parallel: usize
+pub enum zingo_netutils::arm_race::RaceAction
+pub zingo_netutils::arm_race::RaceAction::ArmHedgeTimer(core::time::Duration)
+pub zingo_netutils::arm_race::RaceAction::GiveUp
+pub zingo_netutils::arm_race::RaceAction::Launch
+pub zingo_netutils::arm_race::RaceAction::Launch::candidate: usize
+pub enum zingo_netutils::arm_race::RaceEvent
+pub zingo_netutils::arm_race::RaceEvent::ArmFailed
+pub zingo_netutils::arm_race::RaceEvent::ArmFailed::candidate: usize
+pub zingo_netutils::arm_race::RaceEvent::ArmFailed::error: alloc::string::String
+pub zingo_netutils::arm_race::RaceEvent::HedgeElapsed
+pub struct zingo_netutils::arm_race::ArmFailure
+pub zingo_netutils::arm_race::ArmFailure::candidate: usize
+pub zingo_netutils::arm_race::ArmFailure::error: alloc::string::String
+pub struct zingo_netutils::arm_race::RaceProgress
+pub zingo_netutils::arm_race::RaceProgress::failed: usize
+pub zingo_netutils::arm_race::RaceProgress::in_flight: usize
+pub zingo_netutils::arm_race::RaceProgress::launched: usize
+pub zingo_netutils::arm_race::RaceProgress::limit: usize
+impl core::fmt::Display for zingo_netutils::arm_race::RaceProgress
+pub fn zingo_netutils::arm_race::RaceProgress::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct zingo_netutils::arm_race::RaceState
+impl zingo_netutils::arm_race::RaceState
+pub fn zingo_netutils::arm_race::RaceState::failure_summary(&self, name: impl core::ops::function::Fn(usize) -> alloc::string::String) -> alloc::string::String
+pub fn zingo_netutils::arm_race::RaceState::failures(&self) -> &[zingo_netutils::arm_race::ArmFailure]
+pub fn zingo_netutils::arm_race::RaceState::launched(&self) -> usize
+pub fn zingo_netutils::arm_race::RaceState::new(candidates: usize, cap: usize, policy: zingo_netutils::arm_race::LaunchPolicy) -> Self
+pub fn zingo_netutils::arm_race::RaceState::on_event(&mut self, event: zingo_netutils::arm_race::RaceEvent) -> alloc::vec::Vec<zingo_netutils::arm_race::RaceAction>
+pub fn zingo_netutils::arm_race::RaceState::progress(&self) -> zingo_netutils::arm_race::RaceProgress
+pub fn zingo_netutils::arm_race::RaceState::start(&mut self) -> alloc::vec::Vec<zingo_netutils::arm_race::RaceAction>
+pub mod zingo_netutils::crypto
+pub fn zingo_netutils::crypto::ensure_default_crypto_provider()
+pub mod zingo_netutils::error
+pub enum zingo_netutils::error::GetClientError
+pub zingo_netutils::error::GetClientError::InvalidAuthority
+pub zingo_netutils::error::GetClientError::InvalidScheme
+pub zingo_netutils::error::GetClientError::Transport(tonic::transport::error::Error)
+pub enum zingo_netutils::GetClientError
+pub zingo_netutils::GetClientError::InvalidAuthority
+pub zingo_netutils::GetClientError::InvalidScheme
+pub zingo_netutils::GetClientError::Transport(tonic::transport::error::Error)
+pub struct zingo_netutils::GrpcIndexer
+impl zingo_netutils::GrpcIndexer
+pub async fn zingo_netutils::GrpcIndexer::get_clear_net_client(&self) -> lightwallet_protocol::cash::z::wallet::sdk::rpc::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::channel::Channel>
+pub async fn zingo_netutils::GrpcIndexer::new(uri: http::uri::Uri) -> core::result::Result<Self, zingo_netutils::GetClientError>
+pub fn zingo_netutils::GrpcIndexer::new_lazy(uri: http::uri::Uri) -> core::result::Result<Self, zingo_netutils::GetClientError>
+pub fn zingo_netutils::GrpcIndexer::uri(&self) -> &http::uri::Uri
+impl zingo_netutils::Indexer for zingo_netutils::GrpcIndexer
+pub async fn zingo_netutils::GrpcIndexer::get_block(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_nullifiers(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_range(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_range_nullifiers(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_latest_block(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_latest_tree_state(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_lightd_info(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::LightdInfo, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_mempool_stream(&mut self, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_mempool_tx(&mut self, request: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetMempoolTxRequest, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactTx>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_subtree_roots(&mut self, arg: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetSubtreeRootsArg, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::SubtreeRoot>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_transaction(&mut self, filter: lightwallet_protocol::cash::z::wallet::sdk::rpc::TxFilter, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_tree_state(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::send_transaction(&mut self, tx: lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, timeout: core::time::Duration) -> core::result::Result<alloc::string::String, tonic::status::Status>
+pub struct zingo_netutils::SendRejection
+pub zingo_netutils::SendRejection::code: i32
+pub zingo_netutils::SendRejection::message: alloc::string::String
+pub const zingo_netutils::NYM_STATUS_LINE_PREFIX: &str
+pub const zingo_netutils::SOCKS5_ADDR_LINE_PREFIX: &str
+pub trait zingo_netutils::Indexer
+pub fn zingo_netutils::Indexer::get_block(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_block_nullifiers(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_block_range(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_block_range_nullifiers(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_latest_block(&mut self, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_latest_tree_state(&mut self, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_lightd_info(&mut self, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::LightdInfo, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_mempool_stream(&mut self, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction>, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_mempool_tx(&mut self, request: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetMempoolTxRequest, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactTx>, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_subtree_roots(&mut self, arg: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetSubtreeRootsArg, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::SubtreeRoot>, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_transaction(&mut self, filter: lightwallet_protocol::cash::z::wallet::sdk::rpc::TxFilter, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::get_tree_state(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>> + core::marker::Send
+pub fn zingo_netutils::Indexer::send_transaction(&mut self, tx: lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, timeout: core::time::Duration) -> impl core::future::future::Future<Output = core::result::Result<alloc::string::String, tonic::status::Status>> + core::marker::Send
+impl zingo_netutils::Indexer for zingo_netutils::GrpcIndexer
+pub async fn zingo_netutils::GrpcIndexer::get_block(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_nullifiers(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_range(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_block_range_nullifiers(&mut self, range: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockRange, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactBlock>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_latest_block(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_latest_tree_state(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_lightd_info(&mut self, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::LightdInfo, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_mempool_stream(&mut self, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_mempool_tx(&mut self, request: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetMempoolTxRequest, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::CompactTx>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_subtree_roots(&mut self, arg: lightwallet_protocol::cash::z::wallet::sdk::rpc::GetSubtreeRootsArg, timeout: core::time::Duration) -> core::result::Result<tonic::codec::decode::Streaming<lightwallet_protocol::cash::z::wallet::sdk::rpc::SubtreeRoot>, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_transaction(&mut self, filter: lightwallet_protocol::cash::z::wallet::sdk::rpc::TxFilter, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::get_tree_state(&mut self, block_id: lightwallet_protocol::cash::z::wallet::sdk::rpc::BlockId, timeout: core::time::Duration) -> core::result::Result<lightwallet_protocol::cash::z::wallet::sdk::rpc::TreeState, tonic::status::Status>
+pub async fn zingo_netutils::GrpcIndexer::send_transaction(&mut self, tx: lightwallet_protocol::cash::z::wallet::sdk::rpc::RawTransaction, timeout: core::time::Duration) -> core::result::Result<alloc::string::String, tonic::status::Status>
+pub fn zingo_netutils::ensure_default_crypto_provider()

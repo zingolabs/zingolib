@@ -1,0 +1,181 @@
+pub mod zingolib_testutils
+pub mod zingolib_testutils::attribution
+pub enum zingolib_testutils::attribution::SendFailureAttribution
+pub zingolib_testutils::attribution::SendFailureAttribution::IndexerTransformed
+pub zingolib_testutils::attribution::SendFailureAttribution::IndexerTransformed::direct_txid: alloc::string::String
+pub zingolib_testutils::attribution::SendFailureAttribution::ValidatorWrongAtBoundary
+pub zingolib_testutils::attribution::SendFailureAttribution::ValidatorWrongAtBoundary::boundary_error: alloc::string::String
+pub zingolib_testutils::attribution::SendFailureAttribution::ValidatorWrongAtBoundary::later_txid: alloc::string::String
+pub zingolib_testutils::attribution::SendFailureAttribution::WalletBuiltInvalid
+pub zingolib_testutils::attribution::SendFailureAttribution::WalletBuiltInvalid::boundary_error: alloc::string::String
+pub zingolib_testutils::attribution::SendFailureAttribution::WalletBuiltInvalid::later_error: alloc::string::String
+impl zingolib_testutils::attribution::SendFailureAttribution
+pub fn zingolib_testutils::attribution::SendFailureAttribution::boundary_error(&self) -> core::option::Option<&str>
+impl core::fmt::Display for zingolib_testutils::attribution::SendFailureAttribution
+pub fn zingolib_testutils::attribution::SendFailureAttribution::fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub async fn zingolib_testutils::attribution::attribute_send_failure(local_net: &zingolib_testutils::setup_metrics::MeteredNet, client: &zingolib::lightclient::LightClient, distance_blocks: u32) -> zingolib_testutils::attribution::SendFailureAttribution
+pub async fn zingolib_testutils::attribution::failed_transaction_bytes(client: &zingolib::lightclient::LightClient) -> alloc::vec::Vec<u8>
+pub mod zingolib_testutils::chain_cache
+pub enum zingolib_testutils::chain_cache::ChainCachePolicy
+pub zingolib_testutils::chain_cache::ChainCachePolicy::Disabled
+pub zingolib_testutils::chain_cache::ChainCachePolicy::LoadRaw(std::path::PathBuf)
+pub zingolib_testutils::chain_cache::ChainCachePolicy::PerTest
+pub const zingolib_testutils::chain_cache::REGENERATE_ENV: &str
+pub async fn zingolib_testutils::chain_cache::export_raw(local_net: &zingolib_testutils::setup_metrics::MeteredNet, path: &std::path::Path)
+pub mod zingolib_testutils::observability
+pub struct zingolib_testutils::observability::FrontRecord
+impl zingolib_testutils::observability::FrontRecord
+pub fn zingolib_testutils::observability::FrontRecord::events(&self) -> alloc::vec::Vec<zingolib_testutils::observability::TapEvent>
+pub fn zingolib_testutils::observability::FrontRecord::prime(label: &'static str) -> alloc::sync::Arc<Self>
+pub fn zingolib_testutils::observability::FrontRecord::render(&self) -> alloc::string::String
+pub fn zingolib_testutils::observability::FrontRecord::summary(&self) -> alloc::string::String
+impl zcash_local_net::front::FrontObserver for zingolib_testutils::observability::FrontRecord
+pub fn zingolib_testutils::observability::FrontRecord::on_chunk(&self, event: &zcash_local_net::front::ChunkEvent)
+pub struct zingolib_testutils::observability::LinkTap
+impl zingolib_testutils::observability::LinkTap
+pub fn zingolib_testutils::observability::LinkTap::events(&self) -> alloc::vec::Vec<zingolib_testutils::observability::TapEvent>
+pub async fn zingolib_testutils::observability::LinkTap::open(label: &'static str, upstream_port: u16) -> Self
+pub fn zingolib_testutils::observability::LinkTap::port(&self) -> u16
+pub fn zingolib_testutils::observability::LinkTap::render(&self) -> alloc::string::String
+pub fn zingolib_testutils::observability::LinkTap::summary(&self) -> alloc::string::String
+impl core::ops::drop::Drop for zingolib_testutils::observability::LinkTap
+pub fn zingolib_testutils::observability::LinkTap::drop(&mut self)
+pub struct zingolib_testutils::observability::StateEvent
+pub zingolib_testutils::observability::StateEvent::at: core::time::Duration
+pub zingolib_testutils::observability::StateEvent::fingerprint: alloc::string::String
+pub struct zingolib_testutils::observability::StateWatch<O: zingolib_testutils::observability::Observable>
+impl<O: zingolib_testutils::observability::Observable> zingolib_testutils::observability::StateWatch<O>
+pub fn zingolib_testutils::observability::StateWatch<O>::elapsed(&self) -> core::time::Duration
+pub fn zingolib_testutils::observability::StateWatch<O>::events(&self) -> alloc::vec::Vec<zingolib_testutils::observability::StateEvent>
+pub fn zingolib_testutils::observability::StateWatch<O>::last(&self) -> core::option::Option<zingolib_testutils::observability::StateEvent>
+pub fn zingolib_testutils::observability::StateWatch<O>::prime(observer: O) -> Self
+pub fn zingolib_testutils::observability::StateWatch<O>::render(&self) -> alloc::string::String
+pub fn zingolib_testutils::observability::StateWatch<O>::summary(&self) -> alloc::string::String
+impl<O: zingolib_testutils::observability::Observable> core::ops::drop::Drop for zingolib_testutils::observability::StateWatch<O>
+pub fn zingolib_testutils::observability::StateWatch<O>::drop(&mut self)
+pub struct zingolib_testutils::observability::TapEvent
+pub zingolib_testutils::observability::TapEvent::at: core::time::Duration
+pub zingolib_testutils::observability::TapEvent::bytes: usize
+pub zingolib_testutils::observability::TapEvent::connection: usize
+pub zingolib_testutils::observability::TapEvent::direction: &'static str
+pub zingolib_testutils::observability::TapEvent::note: alloc::string::String
+pub struct zingolib_testutils::observability::WalletState
+pub zingolib_testutils::observability::WalletState::label: &'static str
+pub zingolib_testutils::observability::WalletState::wallet: alloc::sync::Arc<tokio::sync::rwlock::RwLock<zingolib::wallet::LightWallet>>
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::WalletState
+pub const zingolib_testutils::observability::WalletState::NODE: &'static str
+pub const zingolib_testutils::observability::WalletState::POLL_INTERVAL: core::time::Duration
+pub async fn zingolib_testutils::observability::WalletState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+pub struct zingolib_testutils::observability::ZainodState
+pub zingolib_testutils::observability::ZainodState::uri: http::uri::Uri
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::ZainodState
+pub const zingolib_testutils::observability::ZainodState::NODE: &'static str
+pub const zingolib_testutils::observability::ZainodState::POLL_INTERVAL: core::time::Duration
+pub async fn zingolib_testutils::observability::ZainodState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+pub struct zingolib_testutils::observability::ZebradState
+pub zingolib_testutils::observability::ZebradState::rpc_port: u16
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::ZebradState
+pub const zingolib_testutils::observability::ZebradState::NODE: &'static str
+pub async fn zingolib_testutils::observability::ZebradState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+pub trait zingolib_testutils::observability::Observable: core::marker::Send + 'static
+pub const zingolib_testutils::observability::Observable::NODE: &'static str
+pub const zingolib_testutils::observability::Observable::POLL_INTERVAL: core::time::Duration
+pub fn zingolib_testutils::observability::Observable::fingerprint(&self) -> impl core::future::future::Future<Output = core::option::Option<alloc::string::String>> + core::marker::Send
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::WalletState
+pub const zingolib_testutils::observability::WalletState::NODE: &'static str
+pub const zingolib_testutils::observability::WalletState::POLL_INTERVAL: core::time::Duration
+pub async fn zingolib_testutils::observability::WalletState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::ZainodState
+pub const zingolib_testutils::observability::ZainodState::NODE: &'static str
+pub const zingolib_testutils::observability::ZainodState::POLL_INTERVAL: core::time::Duration
+pub async fn zingolib_testutils::observability::ZainodState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+impl zingolib_testutils::observability::Observable for zingolib_testutils::observability::ZebradState
+pub const zingolib_testutils::observability::ZebradState::NODE: &'static str
+pub async fn zingolib_testutils::observability::ZebradState::fingerprint(&self) -> core::option::Option<alloc::string::String>
+pub mod zingolib_testutils::scenarios
+pub mod zingolib_testutils::scenarios::network_combo
+pub type zingolib_testutils::scenarios::network_combo::DefaultIndexer = zcash_local_net::indexer::zainod::Zainod
+pub type zingolib_testutils::scenarios::network_combo::DefaultValidator = zcash_local_net::validator::zebrad::Zebrad
+pub enum zingolib_testutils::scenarios::ChainCachePolicy
+pub zingolib_testutils::scenarios::ChainCachePolicy::Disabled
+pub zingolib_testutils::scenarios::ChainCachePolicy::LoadRaw(std::path::PathBuf)
+pub zingolib_testutils::scenarios::ChainCachePolicy::PerTest
+pub struct zingolib_testutils::scenarios::ClientBuilder
+pub zingolib_testutils::scenarios::ClientBuilder::server_id: http::uri::Uri
+pub zingolib_testutils::scenarios::ClientBuilder::zingo_datadir: tempfile::dir::TempDir
+impl zingolib_testutils::scenarios::ClientBuilder
+pub async fn zingolib_testutils::scenarios::ClientBuilder::build_client(&mut self, wallet_config: zingolib::config::WalletConfig, overwrite: bool) -> zingolib::lightclient::LightClient
+pub async fn zingolib_testutils::scenarios::ClientBuilder::build_faucet(&mut self, overwrite: bool) -> zingolib::lightclient::LightClient
+pub fn zingolib_testutils::scenarios::ClientBuilder::create_clientconfig(&self, conf_path: std::path::PathBuf, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, wallet_config: zingolib::config::WalletConfig) -> zingolib::config::ClientConfig
+pub fn zingolib_testutils::scenarios::ClientBuilder::make_unique_data_dir_and_create_config(&mut self, wallet_config: zingolib::config::WalletConfig) -> zingolib::config::ClientConfig
+pub fn zingolib_testutils::scenarios::ClientBuilder::new(server_id: http::uri::Uri, zingo_datadir: tempfile::dir::TempDir, activation_heights: zingo_common_components::protocol::ActivationHeights) -> Self
+pub const zingolib_testutils::scenarios::BLOCK_ONE_SAPLING_COINBASE: u64
+pub const zingolib_testutils::scenarios::DEFERRED_STREAM_SKIM: u64
+pub const zingolib_testutils::scenarios::FUNDED_FAUCET_SETUP_HEIGHT: u32
+pub const zingolib_testutils::scenarios::FUND_OFFLOAD_AMOUNT: u64
+pub const zingolib_testutils::scenarios::IRONWOOD_COINBASE_START_HEIGHT: u32
+pub const zingolib_testutils::scenarios::ORCHARD_COINBASE_START_HEIGHT: u32
+pub const zingolib_testutils::scenarios::POST_STREAM_BLOCK_REWARD: u64
+pub trait zingolib_testutils::scenarios::IndexerConvergence
+pub fn zingolib_testutils::scenarios::IndexerConvergence::converge(&self, target: u32) -> impl core::future::future::Future<Output = ()> + core::marker::Send
+impl<V> zingolib_testutils::scenarios::IndexerConvergence for zcash_local_net::LocalNet<V, zcash_local_net::indexer::zainod::Zainod> where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send
+pub async fn zcash_local_net::LocalNet<V, zcash_local_net::indexer::zainod::Zainod>::converge(&self, target: u32)
+pub async fn zingolib_testutils::scenarios::custom_clients(mine_to_pool: zcash_protocol::PoolType, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, cache: zingolib_testutils::chain_cache::ChainCachePolicy) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib_testutils::scenarios::ClientBuilder)
+pub async fn zingolib_testutils::scenarios::custom_clients_default() -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib_testutils::scenarios::ClientBuilder)
+pub fn zingolib_testutils::scenarios::default_net_activation_heights() -> zingo_consensus::ActivationHeights
+pub fn zingolib_testutils::scenarios::default_test_activation_heights() -> zingo_common_components::protocol::ActivationHeights
+pub async fn zingolib_testutils::scenarios::faucet(mine_to_pool: zcash_protocol::PoolType, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, cache: zingolib_testutils::chain_cache::ChainCachePolicy) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient)
+pub async fn zingolib_testutils::scenarios::faucet_default() -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient)
+pub async fn zingolib_testutils::scenarios::faucet_funded_recipient(orchard_funds: core::option::Option<u64>, sapling_funds: core::option::Option<u64>, transparent_funds: core::option::Option<u64>, mine_to_pool: zcash_protocol::PoolType, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, cache: zingolib_testutils::chain_cache::ChainCachePolicy) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient, zingolib::lightclient::LightClient, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>)
+pub async fn zingolib_testutils::scenarios::faucet_funded_recipient_default(orchard_funds: u64) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient, zingolib::lightclient::LightClient, alloc::string::String)
+pub async fn zingolib_testutils::scenarios::faucet_recipient(mine_to_pool: zcash_protocol::PoolType, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, cache: zingolib_testutils::chain_cache::ChainCachePolicy) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient, zingolib::lightclient::LightClient)
+pub async fn zingolib_testutils::scenarios::faucet_recipient_default() -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient, zingolib::lightclient::LightClient)
+pub const fn zingolib_testutils::scenarios::funded_faucet_ironwood_balance() -> u64
+pub async fn zingolib_testutils::scenarios::funded_orchard_mobileclient(value: u64) -> zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>
+pub async fn zingolib_testutils::scenarios::funded_orchard_sapling_transparent_shielded_mobileclient(value: u64) -> zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>
+pub async fn zingolib_testutils::scenarios::funded_orchard_with_3_txs_mobileclient(value: u64) -> zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>
+pub async fn zingolib_testutils::scenarios::funded_transparent_mobileclient(value: u64) -> zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>
+pub async fn zingolib_testutils::scenarios::generate_n_blocks_return_new_height<V, I>(local_net: &zcash_local_net::LocalNet<V, I>, n: u32) -> u32 where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send, I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, <I as zcash_local_net::process::Process>::Config: core::marker::Send
+pub async fn zingolib_testutils::scenarios::increase_height_and_wait_for_client<V, I>(local_net: &zcash_local_net::LocalNet<V, I>, client: &mut zingolib::lightclient::LightClient, n: u32) -> core::result::Result<(), zingolib::lightclient::error::LightClientError> where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send, I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, <I as zcash_local_net::process::Process>::Config: core::marker::Send, zcash_local_net::LocalNet<V, I>: zingolib_testutils::scenarios::IndexerConvergence
+pub async fn zingolib_testutils::scenarios::launch_test<V, I>(indexer_listen_port: core::option::Option<portpicker::Port>, mine_to_pool: zcash_protocol::PoolType, configured_activation_heights: zingo_common_components::protocol::ActivationHeights, chain_cache: core::option::Option<std::path::PathBuf>) -> zcash_local_net::LocalNet<V, I> where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send + zcash_local_net::validator::ValidatorConfig + core::default::Default, I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, <I as zcash_local_net::process::Process>::Config: core::marker::Send + zcash_local_net::indexer::IndexerConfig + core::default::Default
+pub const fn zingolib_testutils::scenarios::mined_block_rewards_total(count: u64) -> u64
+pub fn zingolib_testutils::scenarios::mobileclient_activation_heights() -> zingo_common_components::protocol::ActivationHeights
+pub const fn zingolib_testutils::scenarios::orchard_coinbase_total(tip: u32) -> u64
+pub async fn zingolib_testutils::scenarios::send_and_bump<V, I>(local_net: &zcash_local_net::LocalNet<V, I>, sender: &mut zingolib::lightclient::LightClient, receivers: alloc::vec::Vec<(&str, u64, core::option::Option<&str>)>) -> nonempty::NonEmpty<zcash_protocol::txid::TxId> where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send, I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, <I as zcash_local_net::process::Process>::Config: core::marker::Send, zcash_local_net::LocalNet<V, I>: zingolib_testutils::scenarios::IndexerConvergence
+pub async fn zingolib_testutils::scenarios::send_value_between_clients_and_sync<V, I>(local_net: &zcash_local_net::LocalNet<V, I>, sender: &mut zingolib::lightclient::LightClient, recipient: &mut zingolib::lightclient::LightClient, value: u64, address_pool: zcash_protocol::PoolType) -> core::result::Result<alloc::string::String, zingolib::lightclient::error::LightClientError> where V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send, I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, <I as zcash_local_net::process::Process>::Config: core::marker::Send, zcash_local_net::LocalNet<V, I>: zingolib_testutils::scenarios::IndexerConvergence
+pub async fn zingolib_testutils::scenarios::sync_client_to_validator_tip<V, I>(local_net: &zcash_local_net::LocalNet<V, I>, client: &mut zingolib::lightclient::LightClient) where I: zcash_local_net::indexer::Indexer + zcash_local_net::logs::LogsToStdoutAndStderr, V: zcash_local_net::validator::Validator + zcash_local_net::logs::LogsToStdoutAndStderr + core::marker::Send, <I as zcash_local_net::process::Process>::Config: core::marker::Send, <V as zcash_local_net::process::Process>::Config: core::marker::Send, zcash_local_net::LocalNet<V, I>: zingolib_testutils::scenarios::IndexerConvergence
+pub async fn zingolib_testutils::scenarios::unfunded_client(configured_activation_heights: zingo_common_components::protocol::ActivationHeights, cache: zingolib_testutils::chain_cache::ChainCachePolicy) -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient)
+pub async fn zingolib_testutils::scenarios::unfunded_client_default() -> (zingolib_testutils::setup_metrics::MeteredNet, zingolib::lightclient::LightClient)
+pub async fn zingolib_testutils::scenarios::unfunded_mobileclient() -> zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>
+pub fn zingolib_testutils::scenarios::wallet_activation_heights(heights: &zingo_consensus::ActivationHeights) -> zingo_common_components::protocol::ActivationHeights
+pub mod zingolib_testutils::setup_metrics
+pub struct zingolib_testutils::setup_metrics::MeteredNet
+impl zingolib_testutils::setup_metrics::MeteredNet
+pub fn zingolib_testutils::setup_metrics::MeteredNet::mark_setup_complete(&mut self, scenario: &'static str)
+pub fn zingolib_testutils::setup_metrics::MeteredNet::new(net: zcash_local_net::LocalNet<zingolib_testutils::scenarios::network_combo::DefaultValidator, zingolib_testutils::scenarios::network_combo::DefaultIndexer>, zebrad_front: alloc::sync::Arc<zingolib_testutils::observability::FrontRecord>, zainod_front: alloc::sync::Arc<zingolib_testutils::observability::FrontRecord>, setup_started: std::time::Instant) -> Self
+pub fn zingolib_testutils::setup_metrics::MeteredNet::zainod_front(&self) -> &zingolib_testutils::observability::FrontRecord
+pub fn zingolib_testutils::setup_metrics::MeteredNet::zainod_watch(&self) -> &zingolib_testutils::observability::StateWatch<zingolib_testutils::observability::ZainodState>
+pub fn zingolib_testutils::setup_metrics::MeteredNet::zebrad_front(&self) -> &zingolib_testutils::observability::FrontRecord
+pub fn zingolib_testutils::setup_metrics::MeteredNet::zebrad_watch(&self) -> &zingolib_testutils::observability::StateWatch<zingolib_testutils::observability::ZebradState>
+impl core::ops::deref::Deref for zingolib_testutils::setup_metrics::MeteredNet
+pub type zingolib_testutils::setup_metrics::MeteredNet::Target = zcash_local_net::LocalNet<zcash_local_net::validator::zebrad::Zebrad, zcash_local_net::indexer::zainod::Zainod>
+pub fn zingolib_testutils::setup_metrics::MeteredNet::deref(&self) -> &Self::Target
+impl core::ops::deref::DerefMut for zingolib_testutils::setup_metrics::MeteredNet
+pub fn zingolib_testutils::setup_metrics::MeteredNet::deref_mut(&mut self) -> &mut Self::Target
+impl core::ops::drop::Drop for zingolib_testutils::setup_metrics::MeteredNet
+pub fn zingolib_testutils::setup_metrics::MeteredNet::drop(&mut self)
+pub mod zingolib_testutils::validator_rpc
+pub enum zingolib_testutils::validator_rpc::RawTransactionVerdict
+pub zingolib_testutils::validator_rpc::RawTransactionVerdict::Accepted(alloc::string::String)
+pub zingolib_testutils::validator_rpc::RawTransactionVerdict::Rejected(alloc::string::String)
+pub struct zingolib_testutils::validator_rpc::LedgerEntry
+pub zingolib_testutils::validator_rpc::LedgerEntry::at: std::time::Instant
+pub zingolib_testutils::validator_rpc::LedgerEntry::method: alloc::string::String
+pub async fn zingolib_testutils::validator_rpc::get_block_hex(rpc_port: u16, height: u32) -> alloc::string::String
+pub async fn zingolib_testutils::validator_rpc::get_raw_mempool(rpc_port: u16) -> alloc::vec::Vec<alloc::string::String>
+pub fn zingolib_testutils::validator_rpc::is_write_method(method: &str) -> bool
+pub fn zingolib_testutils::validator_rpc::ledger_snapshot() -> alloc::vec::Vec<zingolib_testutils::validator_rpc::LedgerEntry>
+pub async fn zingolib_testutils::validator_rpc::send_raw_transaction(rpc_port: u16, transaction_bytes: &[u8]) -> zingolib_testutils::validator_rpc::RawTransactionVerdict
+pub async fn zingolib_testutils::validator_rpc::submit_block(rpc_port: u16, block_hex: &str)
+pub async fn zingolib_testutils::validator_rpc::try_get_chain_info(rpc_port: u16) -> core::option::Option<(u32, alloc::string::String)>
+pub async fn zingolib_testutils::validator_rpc::try_get_peer_count(rpc_port: u16) -> core::option::Option<usize>
