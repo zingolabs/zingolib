@@ -1,0 +1,20 @@
+pub mod zingo_price
+pub enum zingo_price::PriceError
+pub zingo_price::PriceError::InvalidPrice
+pub zingo_price::PriceError::ParseError(core::num::float_parse::ParseFloatError)
+pub zingo_price::PriceError::PriceListNotInitialized
+pub struct zingo_price::Price
+pub zingo_price::Price::price_usd: f32
+pub zingo_price::Price::time: u32
+pub struct zingo_price::PriceList
+impl zingo_price::PriceList
+pub fn zingo_price::PriceList::current_price(&self) -> core::option::Option<zingo_price::Price>
+pub fn zingo_price::PriceList::daily_prices(&self) -> &[zingo_price::Price]
+pub fn zingo_price::PriceList::new() -> Self
+pub fn zingo_price::PriceList::prune(&mut self, transaction_times: alloc::vec::Vec<u32>, prune_below: u32)
+pub fn zingo_price::PriceList::read<R: std::io::Read>(reader: R) -> std::io::error::Result<Self>
+pub fn zingo_price::PriceList::set_start_time(&mut self, time_of_birthday: u32)
+pub fn zingo_price::PriceList::time_historical_prices_last_updated(&self) -> core::option::Option<u32>
+pub fn zingo_price::PriceList::write<W: std::io::Write>(&self, writer: W) -> std::io::error::Result<()>
+impl core::default::Default for zingo_price::PriceList
+pub fn zingo_price::PriceList::default() -> Self

@@ -1,0 +1,13 @@
+pub mod libtonode_tests
+pub mod libtonode_tests::chain_generics
+pub struct libtonode_tests::chain_generics::LibtonodeEnvironment
+pub libtonode_tests::chain_generics::LibtonodeEnvironment::client_builder: zingolib_testutils::scenarios::ClientBuilder
+pub libtonode_tests::chain_generics::LibtonodeEnvironment::local_net: zingolib_testutils::setup_metrics::MeteredNet
+impl zingolib::testutils::chain_generics::conduct_chain::ConductChain for libtonode_tests::chain_generics::LibtonodeEnvironment
+pub fn libtonode_tests::chain_generics::LibtonodeEnvironment::confirmation_patience_blocks(&self) -> usize
+pub async fn libtonode_tests::chain_generics::LibtonodeEnvironment::create_faucet(&mut self) -> zingolib::lightclient::LightClient
+pub async fn libtonode_tests::chain_generics::LibtonodeEnvironment::increase_chain_height(&mut self)
+pub fn libtonode_tests::chain_generics::LibtonodeEnvironment::lightserver_uri(&self) -> core::option::Option<http::uri::Uri>
+pub async fn libtonode_tests::chain_generics::LibtonodeEnvironment::setup() -> Self
+pub async fn libtonode_tests::chain_generics::LibtonodeEnvironment::sync_client_to_tip(&self, client: &mut zingolib::lightclient::LightClient)
+pub async fn libtonode_tests::chain_generics::LibtonodeEnvironment::zingo_config(&mut self) -> zingolib::config::ClientConfig

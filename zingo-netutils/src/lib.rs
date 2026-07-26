@@ -273,6 +273,17 @@ pub struct GrpcIndexer {
 }
 
 impl GrpcIndexer {
+    /// Connects to the indexer at `uri` and returns a client ready to issue
+    /// RPCs.
+    ///
+    /// The URI must carry an `http` or `https` scheme and an authority.
+    /// Anything else fails with [`GetClientError::InvalidScheme`] or
+    /// [`GetClientError::InvalidAuthority`] before the network is touched.
+    /// An `https` URI negotiates TLS with this crate's client configuration.
+    ///
+    /// The channel connects eagerly, so an unreachable indexer fails here
+    /// rather than at the first RPC. Use [`Self::new_lazy`] to defer the
+    /// connection to first use.
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
         let scheme = uri
             .scheme_str()

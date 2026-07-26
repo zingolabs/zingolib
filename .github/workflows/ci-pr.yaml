@@ -25,6 +25,66 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Maximum item privacy, enforced over the whole tree: the other jobs start
+  # optimistically in parallel with this one and share warm build caches, but
+  # a privacy failure reaps the entire run — the last step cancels every
+  # in-flight job and returns its runner to the pool. Three layers run in
+  # order — rustc's unreachable_pub, rustc's missing_docs, then cargo
+  # public-api against the goldens in tools/workbench/goldens/public-api/.
+  # The driver lives in the workbench crate; run it locally with
+  #   cargo run --manifest-path tools/workbench/Cargo.toml --bin decent-exposure
+  # and regenerate the goldens by appending `-- --bless`.
+  decent_exposure:
+    name: decent_exposure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # actions: write lets the reap step cancel this very run.
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # cargo public-api builds rustdoc JSON, which only nightly rustdoc emits.
+      - name: Install nightly for rustdoc JSON
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            zingo-netutils
+            tools/workbench
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      # Pinned to the version the goldens were generated with.
+      - name: Install cargo-public-api
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.50.2
+
+      - name: Enforce maximum item privacy
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin decent-exposure
+
+      # Privacy failed: reap the whole run, deallocating every runner the
+      # optimistic parallel start claimed.
+      - name: Reap the run on privacy failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
 
