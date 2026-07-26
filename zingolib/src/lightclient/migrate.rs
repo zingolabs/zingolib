@@ -1668,7 +1668,7 @@ impl LightClient {
     ///     .await;
     /// # }
     /// ```
-    pub async fn migrate_immediately_presynced(
+    pub(crate) async fn migrate_immediately_presynced(
         &mut self,
         account: zip32::AccountId,
         sync: &SyncPauseGuard,
@@ -2745,7 +2745,8 @@ mod tests {
         use zcash_primitives::transaction::TxId;
 
         use super::*;
-        use crate::wallet::migration::{BoundaryWitness, PrepareResult, SkipReason};
+        use crate::wallet::migration::parts::SkipReason;
+        use crate::wallet::migration::{BoundaryWitness, PrepareResult};
 
         /// Past the provisional first bucket boundary, as in
         /// [`super::boundary_tree_state_unavailable_skips_the_part`].
@@ -3441,7 +3442,7 @@ mod tests {
             );
             assert_eq!(broadcast_client.submissions.lock().unwrap().len(), 1);
             assert_eq!(
-                client.batch_status(),
+                client.batch_progress_handle().status(),
                 None,
                 "the progress side channel returns to idle"
             );
@@ -3651,7 +3652,7 @@ mod tests {
 
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         const SEED: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
@@ -3790,7 +3791,7 @@ mod tests {
         use super::super::{MAX_ROUNDS, SplitStep};
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         /// The txid of the fabricated transaction that created the wallet's
         /// note of `value`.
