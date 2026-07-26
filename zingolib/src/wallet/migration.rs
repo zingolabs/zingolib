@@ -32,8 +32,8 @@
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`immediate`], which shares nothing with
-//! this two-phase design but the transaction builder.
+//! over the private path above. That alternative is [`ImmediateMigrationPlan`],
+//! which shares nothing with this two-phase design but the transaction builder.
 
 // The submodules carry a crate ceiling: the re-export block below is this
 // module's whole public surface, so a new public name is a deliberate act

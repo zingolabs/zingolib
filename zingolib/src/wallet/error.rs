@@ -96,8 +96,8 @@ pub enum WalletError {
     /// empty: every bucket below it is ruled out by the Ironwood era floor or
     /// by the part's own bound note, leaving no boundary at age one or more to
     /// prove against. A caller that derives its window from
-    /// [`crate::wallet::migration::schedule::first_permitted_bucket`] or from
-    /// `plan_schedule` cannot reach this; a hand-computed window can.
+    /// `first_permitted_bucket` or from `plan_schedule` cannot reach this; a
+    /// hand-computed window can.
     #[error(
         "Migration part cannot anchor in window {window}: no legal anchor bucket \
          at or above {lowest_anchor} sits below it."

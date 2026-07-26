@@ -120,8 +120,8 @@ pub struct PartRecord {
     pub note: Option<BoundNote>,
     /// The bucket this part broadcasts in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
-    /// builder's target height comes from here. Distinct from
-    /// [`Self::anchor_bucket`], which is where the part *proves*.
+    /// builder's target height comes from here. Distinct from the part's
+    /// `anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
@@ -148,7 +148,7 @@ pub struct PartRecord {
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub signed_blob: Option<Vec<u8>>,
-    /// The anchor root and witness at [`Self::anchor_bucket`]'s boundary,
+    /// The anchor root and witness at the part's `anchor_bucket` boundary,
     /// cached while that checkpoint is retained. Cleared on every bucket
     /// transition, since a fresh anchor bucket means a fresh boundary, and
     /// discarded when a pre-anchor-age schedule is read, where it proves the
@@ -194,8 +194,8 @@ impl PartRecord {
     /// `Bound → Assigned`: the schedule placed this part in a broadcast
     /// window.
     ///
-    /// Clears [`Self::anchor_bucket`], as every bucket transition does: the
-    /// placement operations in [`super::schedule`] are the only writers of an
+    /// Clears the part's `anchor_bucket`, as every bucket transition does: the
+    /// placement operations in the `schedule` module are the only writers of an
     /// anchor, and they set it immediately after transitioning. A caller that
     /// assigns directly leaves the part anchorless rather than carrying an
     /// anchor drawn against a different window.
