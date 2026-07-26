@@ -275,7 +275,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
 /// Mirrors `execute_due_parts` (which folds via the same reconcile pass) so a
 /// "batch due now" shown to the user can never name a part a send would not
 /// build. `report` must come from [`reconcile`] over the same `parts`.
-pub fn due_now_parts(
+pub(crate) fn due_now_parts(
     parts: &[PartRecord],
     report: &ReconcileReport,
     now_height: BlockHeight,
