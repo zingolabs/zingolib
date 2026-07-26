@@ -178,16 +178,7 @@ pub fn zingolib::lightclient::indexer_history::IndexerHistoryHandle::load(&self)
 pub const zingolib::lightclient::indexer_history::MAX_DIARY_ATTEMPTS: usize
 pub mod zingolib::lightclient::migrate
 pub mod zingolib::lightclient::migrate::broadcast_grpc
-pub struct zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient
-impl zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient
-pub fn zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient::new(uri: http::uri::Uri) -> Self
-impl zingolib::wallet::migration::BroadcastClient for zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient
-pub async fn zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient::submit(&self, raw_tx: alloc::vec::Vec<u8>, expiry_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::migration::BroadcastError>
 pub mod zingolib::lightclient::migrate::broadcast_route
-pub enum zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient
-pub zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient::Clearnet(zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient)
-impl zingolib::wallet::migration::BroadcastClient for zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient
-pub async fn zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient::submit(&self, raw_tx: alloc::vec::Vec<u8>, expiry_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::migration::BroadcastError>
 pub enum zingolib::lightclient::migrate::BatchPhase
 pub zingolib::lightclient::migrate::BatchPhase::Sending
 pub zingolib::lightclient::migrate::BatchPhase::Spacing
@@ -250,7 +241,7 @@ pub zingolib::lightclient::migrate::MigrationStatus::orchard_confirmed_spendable
 pub zingolib::lightclient::migrate::MigrationStatus::parts_confirmed: u32
 pub zingolib::lightclient::migrate::MigrationStatus::parts_total: u32
 pub zingolib::lightclient::migrate::MigrationStatus::phase: core::option::Option<zingolib::wallet::migration::MigrationPhase>
-pub zingolib::lightclient::migrate::MigrationStatus::upcoming_windows: alloc::vec::Vec<zingolib::wallet::migration::BroadcastWindow>
+pub zingolib::lightclient::migrate::MigrationStatus::upcoming_windows: alloc::vec::Vec<zingolib::wallet::migration::schedule::BroadcastWindow>
 pub zingolib::lightclient::migrate::MigrationStatus::value_migrated: u64
 pub zingolib::lightclient::migrate::MigrationStatus::value_total: u64
 pub struct zingolib::lightclient::migrate::MigrationSummary
@@ -328,15 +319,15 @@ pub async fn zingolib::lightclient::LightClient::migrate_immediately(&mut self, 
 pub async fn zingolib::lightclient::LightClient::migrate_immediately_presynced(&mut self, account: zip32::AccountId, sync: &zingolib::lightclient::sync::SyncPauseGuard) -> core::result::Result<zingolib::lightclient::migrate::ImmediateMigrationSummary, zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::migrate_to_ironwood(&mut self, account: zip32::AccountId) -> core::result::Result<zingolib::lightclient::migrate::MigrationSummary, zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::migration_status(&self) -> core::result::Result<zingolib::lightclient::migrate::MigrationStatus, zingolib::lightclient::error::LightClientError>
-pub async fn zingolib::lightclient::LightClient::plan_immediate_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::ImmediateMigrationPlan, zingolib::lightclient::error::LightClientError>
-pub async fn zingolib::lightclient::LightClient::plan_ironwood_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::MigrationPlan, zingolib::lightclient::error::LightClientError>
-pub async fn zingolib::lightclient::LightClient::plan_note_split(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::MigrationPlan, zingolib::lightclient::error::LightClientError>
+pub async fn zingolib::lightclient::LightClient::plan_immediate_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::immediate::ImmediateMigrationPlan, zingolib::lightclient::error::LightClientError>
+pub async fn zingolib::lightclient::LightClient::plan_ironwood_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::split::MigrationPlan, zingolib::lightclient::error::LightClientError>
+pub async fn zingolib::lightclient::LightClient::plan_note_split(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::split::MigrationPlan, zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::quick_immediate_migration(&mut self, account: zip32::AccountId, resume_sync: bool) -> core::result::Result<zingolib::lightclient::migrate::ImmediateMigrationSummary, zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::quick_split(&mut self, account: zip32::AccountId, resume_sync: bool) -> core::result::Result<zingolib::lightclient::migrate::SplitOutcome, zingolib::lightclient::error::LightClientError>
-pub async fn zingolib::lightclient::LightClient::reconcile_migration(&mut self) -> core::result::Result<zingolib::wallet::migration::ReconcileReport, zingolib::lightclient::error::LightClientError>
+pub async fn zingolib::lightclient::LightClient::reconcile_migration(&mut self) -> core::result::Result<zingolib::wallet::migration::reconcile::ReconcileReport, zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::reschedule_parts(&mut self, per_bucket: u32) -> core::result::Result<(), zingolib::lightclient::error::LightClientError>
 pub async fn zingolib::lightclient::LightClient::start_ironwood_migration(&mut self, account: zip32::AccountId, strategy: zingolib::wallet::migration::SigningStrategy, consented_plan_hash: [u8; 32], per_bucket: core::option::Option<u32>) -> core::result::Result<(), zingolib::lightclient::error::LightClientError>
-pub async fn zingolib::lightclient::LightClient::window_timeline(&self) -> core::result::Result<core::option::Option<alloc::vec::Vec<zingolib::wallet::migration::WindowReport>>, zingolib::lightclient::error::LightClientError>
+pub async fn zingolib::lightclient::LightClient::window_timeline(&self) -> core::result::Result<core::option::Option<alloc::vec::Vec<zingolib::wallet::migration::schedule::WindowReport>>, zingolib::lightclient::error::LightClientError>
 impl zingolib::lightclient::LightClient
 pub async fn zingolib::lightclient::LightClient::await_sync(&mut self) -> core::result::Result<pepper_sync::sync::SyncResult, zingolib::lightclient::error::LightClientError>
 pub fn zingolib::lightclient::LightClient::pause_sync(&self) -> core::result::Result<(), pepper_sync::error::SyncModeError>
@@ -640,14 +631,6 @@ pub zingolib::wallet::keys::WalletAddressRef::Unified::has_orchard: bool
 pub zingolib::wallet::keys::WalletAddressRef::Unified::has_sapling: bool
 pub zingolib::wallet::keys::WalletAddressRef::Unified::has_transparent: bool
 pub mod zingolib::wallet::migration
-pub enum zingolib::wallet::migration::BroadcastError
-pub zingolib::wallet::migration::BroadcastError::Rejected(alloc::string::String)
-pub zingolib::wallet::migration::BroadcastError::Transport(alloc::string::String)
-pub enum zingolib::wallet::migration::MaterializeOutcome
-pub zingolib::wallet::migration::MaterializeOutcome::Materialized
-pub zingolib::wallet::migration::MaterializeOutcome::Materialized::raw_tx: alloc::vec::Vec<u8>
-pub zingolib::wallet::migration::MaterializeOutcome::Materialized::txid: zcash_protocol::txid::TxId
-pub zingolib::wallet::migration::MaterializeOutcome::Skip(zingolib::wallet::migration::SkipReason)
 pub enum zingolib::wallet::migration::MigrationMode
 pub zingolib::wallet::migration::MigrationMode::Immediate
 pub zingolib::wallet::migration::MigrationMode::Scheduled
@@ -659,15 +642,6 @@ pub zingolib::wallet::migration::MigrationPhase::NoteSplitting::pending_txids: a
 pub zingolib::wallet::migration::MigrationPhase::NoteSplitting::round: u32
 pub zingolib::wallet::migration::MigrationPhase::PartsScheduled
 pub zingolib::wallet::migration::MigrationPhase::Planned
-pub enum zingolib::wallet::migration::PartClass
-pub zingolib::wallet::migration::PartClass::AwaitingExpiry
-pub zingolib::wallet::migration::PartClass::AwaitingExpiry::expiry: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::PartClass::Confirmed
-pub zingolib::wallet::migration::PartClass::Expired
-pub zingolib::wallet::migration::PartClass::Invalidated
-pub zingolib::wallet::migration::PartClass::OnTrack
-pub zingolib::wallet::migration::PartClass::Overdue
-pub zingolib::wallet::migration::PartClass::SlippedWithinTolerance
 pub enum zingolib::wallet::migration::PartState
 pub zingolib::wallet::migration::PartState::Assigned
 pub zingolib::wallet::migration::PartState::Bound
@@ -677,12 +651,6 @@ pub zingolib::wallet::migration::PartState::Confirmed::height: zcash_protocol::c
 pub zingolib::wallet::migration::PartState::Expired
 pub zingolib::wallet::migration::PartState::Invalidated
 pub zingolib::wallet::migration::PartState::Signed
-pub enum zingolib::wallet::migration::PrepareResult
-pub zingolib::wallet::migration::PrepareResult::Ready
-pub zingolib::wallet::migration::PrepareResult::Ready::expiry_height: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::PrepareResult::Ready::prove: alloc::boxed::Box<(dyn core::ops::function::FnOnce() -> core::result::Result<(zcash_protocol::txid::TxId, alloc::vec::Vec<u8>), zingolib::wallet::error::WalletError> + core::marker::Send + 'static)>
-pub zingolib::wallet::migration::PrepareResult::Ready::target_height: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::PrepareResult::Skip(zingolib::wallet::migration::SkipReason)
 pub enum zingolib::wallet::migration::RecommendedAction
 pub zingolib::wallet::migration::RecommendedAction::AwaitSplitConfirmation
 pub zingolib::wallet::migration::RecommendedAction::ContinueNoteSplitting
@@ -704,55 +672,14 @@ pub zingolib::wallet::migration::RecommendedAction::RetrySplit::txid: zcash_prot
 pub enum zingolib::wallet::migration::SigningStrategy
 pub zingolib::wallet::migration::SigningStrategy::LazyAtBoundary
 pub zingolib::wallet::migration::SigningStrategy::PreSigned
-pub enum zingolib::wallet::migration::SkipReason
-pub zingolib::wallet::migration::SkipReason::AnchorNotDrawn
-pub zingolib::wallet::migration::SkipReason::BoundNoteMismatch
-pub zingolib::wallet::migration::SkipReason::BoundNoteMismatch::bound: pepper_sync::wallet::OutputId
-pub zingolib::wallet::migration::SkipReason::BoundNoteSpent
-pub zingolib::wallet::migration::SkipReason::BoundNoteSpent::bound: pepper_sync::wallet::OutputId
-pub zingolib::wallet::migration::SkipReason::BoundaryBeforeActivation
-pub zingolib::wallet::migration::SkipReason::BoundaryBeforeActivation::activation: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::SkipReason::BoundaryBeforeActivation::boundary: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::SkipReason::MissedBoundary
-pub zingolib::wallet::migration::SkipReason::MissedBoundary::boundary: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::SkipReason::StaleTreeState
-pub zingolib::wallet::migration::SkipReason::StaleTreeState::boundary: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::SkipReason::StaleTreeState::scanned_to: core::option::Option<zcash_protocol::consensus::BlockHeight>
 pub struct zingolib::wallet::migration::BoundNote
 pub zingolib::wallet::migration::BoundNote::commitment: [u8; 32]
 pub zingolib::wallet::migration::BoundNote::nullifier: [u8; 32]
 pub zingolib::wallet::migration::BoundNote::output_id: pepper_sync::wallet::OutputId
-pub struct zingolib::wallet::migration::BoundaryWitness
-pub zingolib::wallet::migration::BoundaryWitness::anchor: [u8; 32]
-pub zingolib::wallet::migration::BoundaryWitness::auth_path: alloc::vec::Vec<[u8; 32]>
-pub zingolib::wallet::migration::BoundaryWitness::position: u64
-pub struct zingolib::wallet::migration::BroadcastWindow
-pub zingolib::wallet::migration::BroadcastWindow::boundary: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::BroadcastWindow::bucket_index: u64
-pub zingolib::wallet::migration::BroadcastWindow::latest_target_unix_time: u64
-pub zingolib::wallet::migration::BroadcastWindow::part_ids: alloc::vec::Vec<zingolib::wallet::migration::PartId>
-pub zingolib::wallet::migration::BroadcastWindow::window_opens_unix_time: u64
 pub struct zingolib::wallet::migration::ConsentBinding
 pub zingolib::wallet::migration::ConsentBinding::consented_at: u64
 pub zingolib::wallet::migration::ConsentBinding::params_hash: [u8; 32]
 pub zingolib::wallet::migration::ConsentBinding::plan_hash: [u8; 32]
-pub struct zingolib::wallet::migration::Denominations
-impl zingolib::wallet::migration::Denominations
-pub fn zingolib::wallet::migration::Denominations::outputs(&self) -> &[zcash_protocol::value::Zatoshis]
-pub fn zingolib::wallet::migration::Denominations::remainder(&self) -> zcash_protocol::value::Zatoshis
-pub fn zingolib::wallet::migration::Denominations::total(&self) -> zcash_protocol::value::Zatoshis
-pub struct zingolib::wallet::migration::ImmediateMigrationPlan
-pub zingolib::wallet::migration::ImmediateMigrationPlan::fee: u64
-pub zingolib::wallet::migration::ImmediateMigrationPlan::migrated: u64
-pub zingolib::wallet::migration::ImmediateMigrationPlan::residual: u64
-pub zingolib::wallet::migration::ImmediateMigrationPlan::transactions: alloc::vec::Vec<zingolib::wallet::migration::ImmediateMigrationTx>
-impl zingolib::wallet::migration::ImmediateMigrationPlan
-pub fn zingolib::wallet::migration::ImmediateMigrationPlan::is_empty(&self) -> bool
-pub struct zingolib::wallet::migration::ImmediateMigrationTx
-pub zingolib::wallet::migration::ImmediateMigrationTx::inputs: alloc::vec::Vec<u64>
-pub zingolib::wallet::migration::ImmediateMigrationTx::output: u64
-impl zingolib::wallet::migration::ImmediateMigrationTx
-pub fn zingolib::wallet::migration::ImmediateMigrationTx::fee(&self) -> u64
 pub struct zingolib::wallet::migration::MigrationParams
 pub zingolib::wallet::migration::MigrationParams::bucket_modulus: u32
 pub zingolib::wallet::migration::MigrationParams::denom_cap: u64
@@ -767,14 +694,6 @@ pub zingolib::wallet::migration::MigrationParams::version: u32
 impl zingolib::wallet::migration::MigrationParams
 pub fn zingolib::wallet::migration::MigrationParams::params_hash(&self) -> [u8; 32]
 pub fn zingolib::wallet::migration::MigrationParams::provisional(_chain: zingolib::config::ChainType) -> Self
-pub struct zingolib::wallet::migration::MigrationPlan
-pub zingolib::wallet::migration::MigrationPlan::parts: alloc::vec::Vec<u64>
-pub zingolib::wallet::migration::MigrationPlan::residual: u64
-pub zingolib::wallet::migration::MigrationPlan::split_rounds: alloc::vec::Vec<alloc::vec::Vec<zingolib::wallet::migration::NoteSplitTx>>
-impl zingolib::wallet::migration::MigrationPlan
-pub fn zingolib::wallet::migration::MigrationPlan::is_split(&self) -> bool
-pub fn zingolib::wallet::migration::MigrationPlan::parts_fee(&self, params: &zingolib::wallet::migration::MigrationParams) -> u64
-pub fn zingolib::wallet::migration::MigrationPlan::split_fee(&self) -> u64
 pub struct zingolib::wallet::migration::MigrationState
 pub zingolib::wallet::migration::MigrationState::account: zip32::AccountId
 pub zingolib::wallet::migration::MigrationState::consent: zingolib::wallet::migration::ConsentBinding
@@ -783,19 +702,9 @@ pub zingolib::wallet::migration::MigrationState::params: zingolib::wallet::migra
 pub zingolib::wallet::migration::MigrationState::parts: alloc::vec::Vec<zingolib::wallet::migration::PartRecord>
 pub zingolib::wallet::migration::MigrationState::phase: zingolib::wallet::migration::MigrationPhase
 pub zingolib::wallet::migration::MigrationState::strategy: zingolib::wallet::migration::SigningStrategy
-impl zingolib::wallet::migration::MigrationState
-pub fn zingolib::wallet::migration::MigrationState::reserved_output_ids(&self) -> alloc::vec::Vec<pepper_sync::wallet::OutputId>
-pub struct zingolib::wallet::migration::NoteSplitTx
-pub zingolib::wallet::migration::NoteSplitTx::inputs: alloc::vec::Vec<u64>
-pub zingolib::wallet::migration::NoteSplitTx::outputs: alloc::vec::Vec<u64>
-impl zingolib::wallet::migration::NoteSplitTx
-pub fn zingolib::wallet::migration::NoteSplitTx::fee(&self) -> u64
-pub struct zingolib::wallet::migration::PartAssessment
-pub zingolib::wallet::migration::PartAssessment::class: zingolib::wallet::migration::PartClass
-pub zingolib::wallet::migration::PartAssessment::id: zingolib::wallet::migration::PartId
 pub struct zingolib::wallet::migration::PartId(pub u32)
 pub struct zingolib::wallet::migration::PartRecord
-pub zingolib::wallet::migration::PartRecord::anchor_witness: core::option::Option<zingolib::wallet::migration::BoundaryWitness>
+pub zingolib::wallet::migration::PartRecord::anchor_witness: core::option::Option<zingolib::wallet::migration::parts::BoundaryWitness>
 pub zingolib::wallet::migration::PartRecord::attempts: u8
 pub zingolib::wallet::migration::PartRecord::bucket_index: core::option::Option<u64>
 pub zingolib::wallet::migration::PartRecord::denomination: u64
@@ -817,46 +726,8 @@ pub fn zingolib::wallet::migration::PartRecord::new(id: zingolib::wallet::migrat
 pub fn zingolib::wallet::migration::PartRecord::reassign(&mut self, bucket_index: u64) -> core::result::Result<(), zingolib::wallet::error::WalletError>
 pub fn zingolib::wallet::migration::PartRecord::record_attempt(&mut self)
 pub fn zingolib::wallet::migration::PartRecord::shift(&mut self, bucket_index: u64) -> core::result::Result<(), zingolib::wallet::error::WalletError>
-pub struct zingolib::wallet::migration::ReconcileReport
-pub zingolib::wallet::migration::ReconcileReport::actions: alloc::vec::Vec<zingolib::wallet::migration::RecommendedAction>
-pub zingolib::wallet::migration::ReconcileReport::assessments: alloc::vec::Vec<zingolib::wallet::migration::PartAssessment>
-pub struct zingolib::wallet::migration::WindowReport
-pub zingolib::wallet::migration::WindowReport::boundary: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::WindowReport::bucket_index: u64
-pub zingolib::wallet::migration::WindowReport::close: zcash_protocol::consensus::BlockHeight
-pub zingolib::wallet::migration::WindowReport::is_current: bool
-pub zingolib::wallet::migration::WindowReport::parts_confirmed: u32
-pub zingolib::wallet::migration::WindowReport::parts_total: u32
-pub zingolib::wallet::migration::WindowReport::value_migrated: u64
-pub zingolib::wallet::migration::WindowReport::value_total: u64
-pub const zingolib::wallet::migration::CANONICAL_PART_FEE: u64
-pub trait zingolib::wallet::migration::BroadcastClient: core::marker::Send + core::marker::Sync
-pub fn zingolib::wallet::migration::BroadcastClient::submit(&self, raw_tx: alloc::vec::Vec<u8>, expiry_height: zcash_protocol::consensus::BlockHeight) -> impl core::future::future::Future<Output = core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::migration::BroadcastError>> + core::marker::Send
-impl zingolib::wallet::migration::BroadcastClient for zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient
-pub async fn zingolib::lightclient::migrate::broadcast_grpc::GrpcBroadcastClient::submit(&self, raw_tx: alloc::vec::Vec<u8>, expiry_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::migration::BroadcastError>
-impl zingolib::wallet::migration::BroadcastClient for zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient
-pub async fn zingolib::lightclient::migrate::broadcast_route::RoutedBroadcastClient::submit(&self, raw_tx: alloc::vec::Vec<u8>, expiry_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::migration::BroadcastError>
-pub trait zingolib::wallet::migration::ChainView
-pub fn zingolib::wallet::migration::ChainView::chain_tip(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::migration::ChainView::note_spend(&self, output_id: pepper_sync::wallet::OutputId) -> core::option::Option<(zcash_protocol::txid::TxId, core::option::Option<zcash_protocol::consensus::BlockHeight>)>
-pub fn zingolib::wallet::migration::ChainView::orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64
-pub fn zingolib::wallet::migration::ChainView::spend_evidence_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::migration::ChainView::transaction_confirmed_height(&self, txid: &zcash_protocol::txid::TxId) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::migration::ChainView::transaction_failed(&self, txid: &zcash_protocol::txid::TxId) -> bool
-impl zingolib::wallet::migration::ChainView for zingolib::wallet::LightWallet
-pub fn zingolib::wallet::LightWallet::chain_tip(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::note_spend(&self, output_id: pepper_sync::wallet::OutputId) -> core::option::Option<(zcash_protocol::txid::TxId, core::option::Option<zcash_protocol::consensus::BlockHeight>)>
-pub fn zingolib::wallet::LightWallet::orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64
-pub fn zingolib::wallet::LightWallet::spend_evidence_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::transaction_confirmed_height(&self, txid: &zcash_protocol::txid::TxId) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::transaction_failed(&self, txid: &zcash_protocol::txid::TxId) -> bool
 pub fn zingolib::wallet::migration::bucket_index(height: zcash_protocol::consensus::BlockHeight, bucket_modulus: u32) -> u64
-pub fn zingolib::wallet::migration::decompose(value: zcash_protocol::value::Zatoshis, params: &zingolib::wallet::migration::MigrationParams) -> zingolib::wallet::migration::Denominations
-pub fn zingolib::wallet::migration::note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64
-pub fn zingolib::wallet::migration::part_denomination(value: u64, params: &zingolib::wallet::migration::MigrationParams) -> core::option::Option<u64>
-pub fn zingolib::wallet::migration::plan_hash(plan: &zingolib::wallet::migration::MigrationPlan) -> [u8; 32]
-pub fn zingolib::wallet::migration::plan_migration(note_values: &[u64], post_activation: bool, params: &zingolib::wallet::migration::MigrationParams) -> zingolib::wallet::migration::MigrationPlan
-pub fn zingolib::wallet::migration::reconcile(state: &zingolib::wallet::migration::MigrationState, chain: &impl zingolib::wallet::migration::ChainView) -> zingolib::wallet::migration::ReconcileReport
+pub fn zingolib::wallet::migration::plan_hash(plan: &zingolib::wallet::migration::split::MigrationPlan) -> [u8; 32]
 pub mod zingolib::wallet::output
 pub mod zingolib::wallet::output::query
 pub struct zingolib::wallet::output::query::OutputPoolQuery
@@ -1261,10 +1132,10 @@ pub fn zingolib::wallet::LightWallet::transparent_addresses_json(&self) -> json:
 pub fn zingolib::wallet::LightWallet::unified_addresses(&self) -> &alloc::collections::btree::map::BTreeMap<zingolib::wallet::keys::unified::UnifiedAddressId, zcash_keys::address::UnifiedAddress>
 pub fn zingolib::wallet::LightWallet::unified_addresses_json(&self) -> json::value::JsonValue
 impl zingolib::wallet::LightWallet
-pub fn zingolib::wallet::LightWallet::build_immediate_migration_transaction(&mut self, account: zip32::AccountId, planned: &zingolib::wallet::migration::ImmediateMigrationTx) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::error::WalletError>
-pub fn zingolib::wallet::LightWallet::plan_immediate_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::ImmediateMigrationPlan, zingolib::wallet::error::WalletError>
+pub fn zingolib::wallet::LightWallet::build_immediate_migration_transaction(&mut self, account: zip32::AccountId, planned: &zingolib::wallet::migration::immediate::ImmediateMigrationTx) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::error::WalletError>
+pub fn zingolib::wallet::LightWallet::plan_immediate_migration(&self, account: zip32::AccountId) -> core::result::Result<zingolib::wallet::migration::immediate::ImmediateMigrationPlan, zingolib::wallet::error::WalletError>
 impl zingolib::wallet::LightWallet
-pub fn zingolib::wallet::LightWallet::build_note_split_transaction(&mut self, account: zip32::AccountId, planned: &zingolib::wallet::migration::NoteSplitTx) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::error::WalletError>
+pub fn zingolib::wallet::LightWallet::build_note_split_transaction(&mut self, account: zip32::AccountId, planned: &zingolib::wallet::migration::split::NoteSplitTx) -> core::result::Result<zcash_protocol::txid::TxId, zingolib::wallet::error::WalletError>
 pub fn zingolib::wallet::LightWallet::migration_note_values(&self, account: zip32::AccountId) -> core::result::Result<alloc::vec::Vec<u64>, zingolib::wallet::error::WalletError>
 impl zingolib::wallet::LightWallet
 pub fn zingolib::wallet::LightWallet::calculate_transaction_fee(&self, transaction: &pepper_sync::wallet::WalletTransaction) -> core::result::Result<zcash_protocol::value::Zatoshis, zingolib::wallet::error::FeeError>
@@ -1290,8 +1161,8 @@ pub fn zingolib::wallet::LightWallet::is_sapling_address_in_unified_addresses(&s
 pub fn zingolib::wallet::LightWallet::is_transparent_wallet_address(&self, address: &zcash_transparent::address::TransparentAddress) -> core::option::Option<pepper_sync::keys::transparent::TransparentAddressId>
 pub fn zingolib::wallet::LightWallet::is_wallet_address(&self, encoded_address: &str) -> core::result::Result<core::option::Option<zingolib::wallet::keys::WalletAddressRef>, zingolib::wallet::error::KeyError>
 impl zingolib::wallet::LightWallet
-pub fn zingolib::wallet::LightWallet::materialize_part(&mut self, account: zip32::AccountId, part: &mut zingolib::wallet::migration::PartRecord, strategy: zingolib::wallet::migration::SigningStrategy, params: &zingolib::wallet::migration::MigrationParams) -> core::result::Result<zingolib::wallet::migration::MaterializeOutcome, zingolib::wallet::error::WalletError>
-pub fn zingolib::wallet::LightWallet::prepare_part(&mut self, account: zip32::AccountId, part: &mut zingolib::wallet::migration::PartRecord, params: &zingolib::wallet::migration::MigrationParams) -> core::result::Result<zingolib::wallet::migration::PrepareResult, zingolib::wallet::error::WalletError>
+pub fn zingolib::wallet::LightWallet::materialize_part(&mut self, account: zip32::AccountId, part: &mut zingolib::wallet::migration::PartRecord, strategy: zingolib::wallet::migration::SigningStrategy, params: &zingolib::wallet::migration::MigrationParams) -> core::result::Result<zingolib::wallet::migration::parts::MaterializeOutcome, zingolib::wallet::error::WalletError>
+pub fn zingolib::wallet::LightWallet::prepare_part(&mut self, account: zip32::AccountId, part: &mut zingolib::wallet::migration::PartRecord, params: &zingolib::wallet::migration::MigrationParams) -> core::result::Result<zingolib::wallet::migration::parts::PrepareResult, zingolib::wallet::error::WalletError>
 pub fn zingolib::wallet::LightWallet::record_part_result(&mut self, part: &mut zingolib::wallet::migration::PartRecord, txid: zcash_protocol::txid::TxId, raw_tx: &[u8], target_height: zcash_protocol::consensus::BlockHeight, expiry_height: zcash_protocol::consensus::BlockHeight, strategy: zingolib::wallet::migration::SigningStrategy) -> core::result::Result<(), zingolib::wallet::error::WalletError>
 pub fn zingolib::wallet::LightWallet::refresh_part_witnesses(&mut self) -> core::result::Result<(), zingolib::wallet::error::WalletError>
 impl zingolib::wallet::LightWallet
@@ -1411,13 +1282,6 @@ pub fn zingolib::wallet::LightWallet::store_transactions_to_be_sent(&mut self, t
 pub fn zingolib::wallet::LightWallet::truncate_to_chain_state(&mut self, _chain_state: zcash_client_backend::data_api::chain::ChainState) -> core::result::Result<(), Self::Error>
 pub fn zingolib::wallet::LightWallet::truncate_to_height(&mut self, _max_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<zcash_protocol::consensus::BlockHeight, Self::Error>
 pub fn zingolib::wallet::LightWallet::update_chain_tip(&mut self, _tip_height: zcash_protocol::consensus::BlockHeight) -> core::result::Result<(), Self::Error>
-impl zingolib::wallet::migration::ChainView for zingolib::wallet::LightWallet
-pub fn zingolib::wallet::LightWallet::chain_tip(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::note_spend(&self, output_id: pepper_sync::wallet::OutputId) -> core::option::Option<(zcash_protocol::txid::TxId, core::option::Option<zcash_protocol::consensus::BlockHeight>)>
-pub fn zingolib::wallet::LightWallet::orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64
-pub fn zingolib::wallet::LightWallet::spend_evidence_height(&self) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::transaction_confirmed_height(&self, txid: &zcash_protocol::txid::TxId) -> core::option::Option<zcash_protocol::consensus::BlockHeight>
-pub fn zingolib::wallet::LightWallet::transaction_failed(&self, txid: &zcash_protocol::txid::TxId) -> bool
 pub struct zingolib::wallet::RecoveryInfo
 pub zingolib::wallet::RecoveryInfo::birthday: u64
 pub zingolib::wallet::RecoveryInfo::no_of_accounts: u32
