@@ -555,21 +555,26 @@ impl crate::wallet::LightWallet {
     /// rather than at proving time keeps the placement and the capture in the
     /// same pass, so the part is ready before its window opens.
     ///
-    /// No-ops when the network does not have an activation height for NU6.3.
+    /// A wallet with no witness work — no migration state at all, or no
+    /// [`PartState::Assigned`] part awaiting its witness — returns without
+    /// consulting the activation schedule, so this ambient post-sync call
+    /// never blocks synchronization on a network that never activates NU6.3
+    /// (where the start paths refuse loudly, so such work cannot arise).
+    /// With work present, a missing NU6.3 activation is a real fault and
+    /// errors.
     #[allow(clippy::result_large_err)]
     pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
-        let Some(activation) = pepper_sync::wallet::PoolActivation::of(
-            &self.chain_type,
-            zcash_protocol::ShieldedPool::Ironwood,
-        ) else {
-            return Ok(());
-        };
         self.with_migration_state(|wallet, state| {
-            for part in state
+            let mut pending = state
                 .parts
                 .iter_mut()
                 .filter(|part| part.state == PartState::Assigned && part.anchor_witness.is_none())
-            {
+                .peekable();
+            if pending.peek().is_none() {
+                return Ok(());
+            }
+            let activation = wallet.ironwood_activation()?;
+            for part in pending {
                 let Some(bucket) = part.bucket_index else {
                     continue;
                 };
@@ -1186,5 +1191,92 @@ mod tests {
         let before = part.clone();
         assert!(part.mark_broadcast().is_err());
         assert_eq!(part, before);
+    }
+
+    /// A regtest wallet on a chain that never activates NU6.3: the custom-chain
+    /// shape whose ambient post-sync refresh must not block synchronization
+    /// (branch `fix/refresh_part_witnesses`).
+    fn no_nu6_3_wallet() -> crate::wallet::LightWallet {
+        let heights = zingo_common_components::protocol::ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(1))
+            .set_blossom(Some(1))
+            .set_heartwood(Some(1))
+            .set_canopy(Some(1))
+            .set_nu5(Some(1))
+            .set_nu6(Some(1))
+            .set_nu6_1(Some(1))
+            .set_nu6_2(Some(1))
+            .set_nu6_3(None)
+            .set_nu7(None)
+            .build();
+        crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+        )
+        .activation_heights(heights)
+        .build()
+    }
+
+    fn scheduled_state(parts: Vec<PartRecord>) -> crate::wallet::migration::MigrationState {
+        let params = crate::wallet::migration::MigrationParams::provisional(
+            crate::config::ChainType::Mainnet,
+        );
+        crate::wallet::migration::MigrationState {
+            consent: crate::wallet::migration::ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: crate::wallet::migration::SigningStrategy::LazyAtBoundary,
+            mode: crate::wallet::migration::MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase: crate::wallet::migration::MigrationPhase::PartsScheduled,
+            parts,
+        }
+    }
+
+    /// The inert arm: with no migration state the refresh returns without
+    /// consulting the activation schedule, so every sync on a chain without
+    /// NU6.3 succeeds. This is the bug the branch fixes — before it, the
+    /// lookup ran unconditionally and failed every `await_sync`.
+    #[test]
+    fn refresh_without_migration_state_is_inert_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        wallet
+            .refresh_part_witnesses()
+            .expect("a wallet with no migration state must sync on a no-NU6.3 chain");
+    }
+
+    /// The gate's grain: migration state whose parts carry no witness work
+    /// (nothing Assigned-and-unwitnessed) is likewise inert, so terminal or
+    /// fully-witnessed migration history never blocks synchronization even
+    /// if the activation lookup breaks.
+    #[test]
+    fn refresh_without_actionable_parts_is_inert_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        wallet.migration = Some(scheduled_state(vec![part_in(PartState::Bound)]));
+        wallet
+            .refresh_part_witnesses()
+            .expect("migration state without witness work must not consult the activation");
+    }
+
+    /// The loud arm: an Assigned part awaiting its witness on a chain with
+    /// no NU6.3 activation can only mean a real fault (the start paths
+    /// refuse on such chains), so the refresh errors instead of silently
+    /// stalling the migration.
+    #[test]
+    fn refresh_with_pending_work_errors_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
+        part.assign(3).expect("bound parts assign");
+        wallet.migration = Some(scheduled_state(vec![part]));
+        assert!(
+            matches!(
+                wallet.refresh_part_witnesses(),
+                Err(WalletError::MigrationBuild(_))
+            ),
+            "pending witness work with no NU6.3 activation must error loudly"
+        );
     }
 }
