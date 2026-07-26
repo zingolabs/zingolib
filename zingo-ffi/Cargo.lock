@@ -2151,7 +2151,6 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "bip32",
  "byteorder",
@@ -2181,7 +2180,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
+ "zingo-netutils 5.0.1",
  "zingo-status",
  "zip32",
 ]
@@ -4716,12 +4715,24 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
  "zcash_keys",
  "zcash_protocol",
+]
+
+[[package]]
+name = "zingo-netutils"
+version = "5.0.1"
+dependencies = [
+ "http",
+ "lightwallet-protocol",
+ "rustls 0.23.42",
+ "thiserror 2.0.19",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]
@@ -4739,23 +4750,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-netutils"
-version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
-dependencies = [
- "http",
- "lightwallet-protocol",
- "rustls 0.23.42",
- "thiserror 2.0.19",
- "tokio-rustls",
- "tokio-stream",
- "tonic",
-]
-
-[[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "byteorder",
  "thiserror 2.0.19",
@@ -4765,7 +4761,6 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -4788,7 +4783,6 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -4835,7 +4829,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
+ "zingo-netutils 5.0.1",
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
@@ -4846,7 +4840,6 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile#7ac32fa47b72076a276e87eff3ec8617b95ce09e"
 dependencies = [
  "http",
  "nonempty",
@@ -4858,7 +4851,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=fix%2Fironwood-split-mobile)",
+ "zingo-netutils 5.0.1",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",

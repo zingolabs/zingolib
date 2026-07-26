@@ -58,3 +58,11 @@ debug = 1
 # the patch in zingolib (feat/ironwood) so the dependency graph resolves to a single
 # ironwood-aware lightwallet-protocol.
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
+
+# LOCAL ONLY — manual testing against an unpushed zingolib working tree. Remove
+# before committing: the paths exist on no other machine and CI cannot resolve
+# them. Reverting also means restoring Cargo.lock, which the patch rewrites.
+[patch."https://github.com/zingolabs/zingolib"]
+zingolib = { path = "../../zingolib/zingolib" }
+pepper-sync = { path = "../../zingolib/pepper-sync" }
+zingolib_testutils = { path = "../../zingolib/zingolib_testutils" }

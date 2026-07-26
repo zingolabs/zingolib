@@ -165,7 +165,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             MigrationError::PreSignedUnavailable
             | MigrationError::NoteSplittingRequired
             | MigrationError::DifferentAccount
-            | MigrationError::ActivationBoundaryPending { .. } => ZingolibError::Migration(text),
+            | MigrationError::IronwoodEraTooYoung { .. } => ZingolibError::Migration(text),
             MigrationError::SplitDidNotConverge(_)
             | MigrationError::SplitTransactionFailed(_)
             | MigrationError::SplitConfirmationTimeout => ZingolibError::MigrationSplit(text),
@@ -1530,10 +1530,19 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
         PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
         PollReport::Ready(result) => match result {
-            Ok(sync_result) => Ok(json::object! {
-                "sync_complete" => json::JsonValue::from(sync_result)
+            Ok(sync_result) => {
+                // A bucket boundary's tree state is witnessable only while its
+                // checkpoint is retained, so the witness has to be taken on the
+                // sync that crosses it. `await_sync` does this for its own
+                // callers; we drive sync through the poll, so it falls here.
+                // No-op without a scheduled migration.
+                RT.block_on(lightclient.capture_migration_witnesses())
+                    .map_err(ffi_error)?;
+                Ok(json::object! {
+                    "sync_complete" => json::JsonValue::from(sync_result)
+                }
+                .pretty(2))
             }
-            .pretty(2)),
             Err(e) => Err(ZingolibError::sync(e)),
         },
     })
