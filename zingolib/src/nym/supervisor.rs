@@ -758,4 +758,74 @@ mod tests {
         );
         proxy.stop().await;
     }
+
+    // ----- the death-detail accessor's mode gate (issue #2563) -----
+
+    /// A `MixnetProxy` over a fabricated state, with an inert attached
+    /// driver: the accessor under test reads only the state, so the
+    /// transport variant carries no behavior here.
+    fn proxy_over(state: &Arc<Mutex<ProxyState>>) -> MixnetProxy {
+        MixnetProxy {
+            state: Arc::clone(state),
+            transport: Transport::Attached {
+                driver: tokio::spawn(std::future::ready(())),
+            },
+        }
+    }
+
+    /// HYPOTHESIS (the Connection Doctor's contract, issue #2563):
+    /// `death_detail` surfaces the recorded cause whole while the mode is
+    /// `Died`, and `None` in every other mode even when a stale record
+    /// remains in the state. Falsified if a stale record leaks out of a
+    /// mode that is not `Died`.
+    #[tokio::test]
+    async fn death_detail_is_gated_on_the_died_mode() {
+        let state = bootstrapping();
+        {
+            let mut guarded = state.lock().unwrap();
+            guarded.mode = MixnetMode::Died;
+            guarded.death_detail = Some(readiness_failure("no data through the endpoint"));
+        }
+        let proxy = proxy_over(&state);
+        assert_eq!(
+            proxy.death_detail(),
+            Some(readiness_failure("no data through the endpoint")),
+            "a died transport surfaces its typed cause whole"
+        );
+
+        for stale_mode in [
+            MixnetMode::Ready,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Off,
+        ] {
+            state.lock().unwrap().mode = stale_mode;
+            assert_eq!(
+                proxy.death_detail(),
+                None,
+                "a stale record must not leak out of {stale_mode:?}"
+            );
+        }
+    }
+
+    /// HYPOTHESIS (issue #2563): a spawned child's death — a closed stdout
+    /// pipe — carries no typed cause, and the accessor answers `None`
+    /// rather than a fabricated record. Falsified if the death path invents
+    /// a cause.
+    #[tokio::test]
+    async fn a_spawned_childs_death_surfaces_no_fabricated_cause() {
+        let state = bootstrapping();
+        // Address announced (Ready), then stdout closes: the child exited.
+        drive_state(
+            b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
+            Arc::clone(&state),
+        )
+        .await;
+        let proxy = proxy_over(&state);
+        assert_eq!(proxy.mode(), MixnetMode::Died);
+        assert_eq!(
+            proxy.death_detail(),
+            None,
+            "a closed stdout pipe carries no cause; nothing may be fabricated"
+        );
+    }
 }
