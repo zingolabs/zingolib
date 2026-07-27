@@ -1340,6 +1340,52 @@ mod proposal_shape {
         assert_eq!(change[0].output_pool(), PoolType::IRONWOOD);
     }
 
+    /// Spending a legacy Orchard note on a post-NU6.3 chain must leave the
+    /// change in the **Orchard** pool, not route it to Ironwood. ZIP 318
+    /// disables ordinary *payments* into the Orchard pool once NU6.3 activates
+    /// "while still permitting change"; the turnstile (ZIP 2006) blocks value
+    /// *entering* Orchard, and change funded by an Orchard input never leaves
+    /// it, so an Orchard change output nets the pool down and stays
+    /// consensus-valid. Keeping change in the source pool is the privacy policy
+    /// for ordinary sends (a discussed decision): it reveals only the payment
+    /// value crossing pools rather than migrating the whole note, and avoids
+    /// stamping every send with an Orchard->Ironwood migration fingerprint.
+    /// Deliberate Orchard->Ironwood movement is the migration engine's job, not
+    /// an ordinary send's.
+    #[tokio::test]
+    async fn orchard_send_change_stays_orchard_post_nu6_3() {
+        let note_value = 200_000;
+        let sent_value = 50_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        // Post-NU6.3 the payment itself routes through Ironwood (ZIP 318), but
+        // that must not drag the change out of Orchard.
+        let destination = external_address(PoolType::IRONWOOD);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.steps().first();
+        let change = step.balance().proposed_change();
+        assert_eq!(change.len(), 1);
+        assert!(
+            u64::from(change[0].value()) > 0,
+            "the send must leave real change for the pool assertion to bite"
+        );
+        assert_eq!(
+            change[0].output_pool(),
+            PoolType::ORCHARD,
+            "change from spending a legacy Orchard note must stay in Orchard \
+             post-NU6.3: ZIP 318 permits Orchard change, and the privacy policy \
+             keeps it in the source pool instead of migrating on every send"
+        );
+    }
+
     /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
     /// TEX address proposes as the ZIP-320 two-step: shield to an
     /// ephemeral transparent output, then the transparent leg to the TEX
