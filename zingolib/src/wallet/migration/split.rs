@@ -18,10 +18,6 @@ use super::quantize::decompose;
 /// to the crate constant by test.
 pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
-/// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
-/// at most this, and never manufactures an output worth at most this.
-/// Provisionally twice the marginal fee: a selected note must return strictly
-/// more than double the marginal action cost it adds, not merely break even.
 /// One side's per-transaction note budget, derived from the total budget
 /// ([`MigrationParams::max_actions_per_split_tx`], ZIP 318's 16-action
 /// preparation shape at
@@ -33,6 +29,10 @@ fn side_budget(params: &MigrationParams) -> usize {
     params.max_actions_per_split_tx.saturating_sub(1).max(1)
 }
 
+/// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
+/// at most this, and never manufactures an output worth at most this.
+/// Provisionally twice the marginal fee: a selected note must return strictly
+/// more than double the marginal action cost it adds, not merely break even.
 /// Shared by both migration paths: the private schedule reads it through
 /// [`MigrationParams`], and the immediate [`super::immediate`] reads it directly,
 /// so the two leave identical residuals.
@@ -260,7 +260,9 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 ///    budget, merge groups of at most that many notes into one note each
 ///    (smallest first).
 /// 2. **Sizing**: spend the remaining notes into notes sized exactly
-///    `denomination + part_fee`, where the denominations are the
+///    `denomination + part_fee` — consolidating the smallest inputs into one
+///    funding note first whenever the pool plus the targets would exceed one
+///    transaction's total budget — where the denominations are the
 ///    [`decompose`]-ition of what is left after all fees. When the balance
 ///    needs more target notes than fit one transaction (whale balances),
 ///    splitting recurses through intermediate notes.
@@ -380,13 +382,36 @@ pub fn plan_migration(
     }
 }
 
+/// The input-consolidation group a sizing transaction needs when its spends
+/// plus its outputs would exceed the total budget
+/// ([`MigrationParams::max_actions_per_split_tx`]): merging `k` inputs into
+/// one note removes `k − 1` spends, so the minimal group removes the excess
+/// exactly. At least three inputs merge whenever the pool has them: every
+/// pooled note strictly exceeds `sweep_min`, and three such notes clear the
+/// merge fee with a note the residual policy accepts, where a pair might
+/// not (the reduction loop guards the same hazard by carrying pairs).
+/// Count-based only, so [`split_into_fee`] models it exactly. Callers
+/// guarantee `n_in + m` exceeds the budget.
+fn merge_group_len(n_in: usize, m: usize, params: &MigrationParams) -> usize {
+    (n_in + m + 1 - params.max_actions_per_split_tx)
+        .max(3)
+        .min(n_in)
+}
+
 /// Total ZIP-317 fee of splitting `n_in` notes into `m` target notes,
 /// recursing through intermediates when `m` exceeds the per-transaction
-/// budget.
+/// budget, and consolidating inputs first when spends plus outputs would
+/// exceed the total budget (mirroring [`split_into`]).
 fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &MigrationParams) -> u64 {
     let max_notes = side_budget(params);
     if m <= max_notes {
-        note_split_fee(n_in, m, post_activation)
+        if n_in + m > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(n_in, m, params);
+            note_split_fee(group_len, 1, post_activation)
+                + note_split_fee(n_in - group_len + 1, m, post_activation)
+        } else {
+            note_split_fee(n_in, m, post_activation)
+        }
     } else {
         // One future transaction per chunk of `max_notes` targets, funded by
         // an intermediate note each. The intermediates are themselves split.
@@ -403,20 +428,41 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
 }
 
 /// Materializes the note-splitting rounds that turn `inputs` into exactly
-/// `targets`. Mirrors [`split_into_fee`]. The first transaction's fee absorbs
+/// `targets`. Mirrors [`split_into_fee`]. The final transaction's fee absorbs
 /// any slack between the input total and the exact target-side requirement.
+///
+/// The budget is a total: a transaction's spends and outputs together must
+/// fit [`MigrationParams::max_actions_per_split_tx`] (ZIP 318's 16-action
+/// preparation shape). When the pool plus the targets exceed it, the
+/// smallest inputs consolidate into one funding note first, in a round of
+/// their own, and the sizing transaction spends the consolidated note
+/// beside the survivors.
 fn split_into(
-    inputs: Vec<u64>,
+    mut inputs: Vec<u64>,
     targets: &[u64],
     post_activation: bool,
     params: &MigrationParams,
 ) -> Vec<Vec<NoteSplitTx>> {
     let max_notes = side_budget(params);
     if targets.len() <= max_notes {
-        return vec![vec![NoteSplitTx {
+        let mut rounds = Vec::new();
+        if inputs.len() + targets.len() > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(inputs.len(), targets.len(), params);
+            inputs.sort_unstable();
+            let group: Vec<u64> = inputs.drain(..group_len).collect();
+            let merged =
+                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+            rounds.push(vec![NoteSplitTx {
+                inputs: group,
+                outputs: vec![merged],
+            }]);
+            inputs.push(merged);
+        }
+        rounds.push(vec![NoteSplitTx {
             inputs,
             outputs: targets.to_vec(),
-        }]];
+        }]);
+        return rounds;
     }
     let chunks: Vec<&[u64]> = targets.chunks(max_notes).collect();
     let intermediates: Vec<u64> = chunks
@@ -940,6 +986,13 @@ mod tests {
                 assert!((2..=max_notes).contains(&tx.inputs.len()) || tx.inputs.len() == 1);
                 assert!(tx.inputs.len() <= max_notes, "too many inputs");
                 assert!(!tx.outputs.is_empty() && tx.outputs.len() <= max_notes);
+                assert!(
+                    tx.inputs.len() + tx.outputs.len() <= params.max_actions_per_split_tx,
+                    "spends plus outputs ({} + {}) exceed the total budget of {}",
+                    tx.inputs.len(),
+                    tx.outputs.len(),
+                    params.max_actions_per_split_tx
+                );
                 let min_fee = note_split_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
                 assert!(tx.fee() >= min_fee, "fee below ZIP-317 conventional");
                 for input in &tx.inputs {
@@ -984,6 +1037,47 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// ZIP 318's preparation shape is a total budget: a transaction's
+    /// spends and outputs together must fit
+    /// [`MigrationParams::max_actions_per_split_tx`]. A pool small enough
+    /// to skip reduction (at most one spend side's worth of notes) that
+    /// funds several denominations used to emit one sizing transaction
+    /// carrying the whole pool beside every target — up to 30 actions
+    /// post-NU6.3. The planner now consolidates the smallest inputs into
+    /// one funding note first, and every planned transaction fits the
+    /// budget (the executes-in-era validator asserts the bound for every
+    /// test in this module).
+    #[test]
+    fn sizing_respects_the_total_action_budget() {
+        let params = params();
+        // Fifteen unquantized ~11-ZEC notes: reduction is skipped, and the
+        // ~165-ZEC total decomposes into several denominations, so the
+        // sizing round mixes many spends with many outputs.
+        let notes = vec![1_100_000_007u64; 15];
+        for post_activation in [false, true] {
+            let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
+            assert!(
+                plan.parts.len() >= 2,
+                "the shape under test needs several targets, got {:?}",
+                plan.parts
+            );
+            // The consolidation prepends its own round, and the sizing
+            // transaction still mixes multiple spends with multiple
+            // outputs — the shape that used to bust the budget.
+            assert!(
+                plan.split_rounds.len() >= 2,
+                "expected consolidation + sizing"
+            );
+            assert!(
+                plan.split_rounds
+                    .iter()
+                    .flatten()
+                    .any(|tx| tx.inputs.len() >= 2 && tx.outputs.len() >= 2),
+                "the plan under test must exercise a mixed spend/output transaction"
+            );
         }
     }
 
