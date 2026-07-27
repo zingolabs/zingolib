@@ -87,7 +87,7 @@ pub enum PartState {
         height: BlockHeight,
     },
     /// Reached its expiry height unmined. Rebuilt with the same denomination
-    /// and a fresh bucket via [`PartRecord::reassign`].
+    /// and a fresh bucket via `PartRecord::reassign`.
     Expired,
     /// The bound note was spent outside the migration. Terminal. The
     /// remaining balance is replanned under fresh consent.
@@ -121,7 +121,7 @@ pub struct PartRecord {
     /// The bucket this part broadcasts in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
     /// builder's target height comes from here. Distinct from
-    /// [`Self::anchor_bucket`], which is where the part *proves*.
+    /// `Self::anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
@@ -131,7 +131,7 @@ pub struct PartRecord {
     /// `None` on a part read from a migration section written before anchors
     /// were drawn separately (inner version 3 and below) whose transaction is
     /// not yet signed; the next placement, or
-    /// [`crate::wallet::LightWallet::refresh_part_witnesses`], draws one.
+    /// `crate::wallet::LightWallet::refresh_part_witnesses`, draws one.
     pub(crate) anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
@@ -148,7 +148,7 @@ pub struct PartRecord {
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub(crate) signed_blob: Option<Vec<u8>>,
-    /// The anchor root and witness at [`Self::anchor_bucket`]'s boundary,
+    /// The anchor root and witness at `Self::anchor_bucket`'s boundary,
     /// cached while that checkpoint is retained. Cleared on every bucket
     /// transition, since a fresh anchor bucket means a fresh boundary, and
     /// discarded when a pre-anchor-age schedule is read, where it proves the
@@ -194,8 +194,8 @@ impl PartRecord {
     /// `Bound → Assigned`: the schedule placed this part in a broadcast
     /// window.
     ///
-    /// Clears [`Self::anchor_bucket`], as every bucket transition does: the
-    /// placement operations in [`super::schedule`] are the only writers of an
+    /// Clears `Self::anchor_bucket`, as every bucket transition does: the
+    /// placement operations in `super::schedule` are the only writers of an
     /// anchor, and they set it immediately after transitioning. A caller that
     /// assigns directly leaves the part anchorless rather than carrying an
     /// anchor drawn against a different window.
@@ -318,7 +318,7 @@ impl PartRecord {
 pub(crate) type ProveOnce =
     Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
-/// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
+/// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
     /// All wallet data was extracted. The closure does the CPU-intensive
@@ -387,7 +387,7 @@ pub enum SkipReason {
     /// anchors were drawn separately from broadcast windows (migration
     /// section inner version 3 and below). Proving cannot invent one,
     /// because the age draw is what keeps the anchor out of the open window.
-    /// [`crate::wallet::LightWallet::refresh_part_witnesses`] draws it at
+    /// `crate::wallet::LightWallet::refresh_part_witnesses` draws it at
     /// the next synchronization, which is also when its witness becomes
     /// capturable, so this reason clears itself.
     AnchorNotDrawn,
@@ -877,8 +877,8 @@ impl crate::wallet::LightWallet {
     /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
     /// anything.
     ///
-    /// For parallel proving of multiple parts, see [`Self::prepare_part`] and
-    /// [`Self::record_part_result`].
+    /// For parallel proving of multiple parts, see `Self::prepare_part` and
+    /// `Self::record_part_result`.
     #[allow(clippy::result_large_err)]
     pub fn materialize_part(
         &mut self,

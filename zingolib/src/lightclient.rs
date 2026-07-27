@@ -382,13 +382,11 @@ impl LightClient {
     ///     }
     /// });
     ///
-    /// // The caller owns the sync lifecycle: pause it, then migrate against that
-    /// // stable state. Completion is the returned summary (not a progress
-    /// // value), after which the handle reads `None` again.
-    /// let guard = client.pause_sync_scoped()?;
-    /// let summary = client
-    ///     .migrate_immediately_presynced(account, &guard)
-    ///     .await?;
+    /// // The caller owns the sync lifecycle; the call pauses it around the
+    /// // migration and resumes it afterwards. Completion is the returned
+    /// // summary (not a progress value), after which the handle reads `None`
+    /// // again.
+    /// let summary = client.quick_immediate_migration(account, true).await?;
     /// reporter.abort();
     ///
     /// println!(
