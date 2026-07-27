@@ -76,7 +76,7 @@ pub struct MigrationParams {
     ///
     /// A part's expiry is a pure function of its scheduled broadcast height:
     /// the most recent multiple of this modulus at or below it, plus twice
-    /// this modulus (see [`super::schedule::canonical_expiry_height`]).
+    /// this modulus (see `super::schedule::canonical_expiry_height`).
     /// Every migration transaction scheduled in the same 30-day period —
     /// from any wallet — commits the identical expiry height, so the expiry
     /// carries no per-wallet information. This field replaced the

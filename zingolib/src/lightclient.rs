@@ -100,14 +100,6 @@ impl WalletMeta {
     }
 }
 
-/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
-/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
-///
-/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
-///
-/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
-/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
-/// Call [`Self::set_indexer_uri`] to connect.
 /// A successfully fetched ZEC price, attested with the route it traveled.
 ///
 /// The attestation is the mixnet tunnel's local SOCKS5 endpoint the fetch
@@ -123,6 +115,14 @@ pub struct MixnetPriceFetch {
     pub via_socks5: String,
 }
 
+/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
+/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
+///
+/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
+///
+/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
+/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
+/// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
     migration_broadcast_uri: Option<http::Uri>,
@@ -397,13 +397,11 @@ impl LightClient {
     ///     }
     /// });
     ///
-    /// // The caller owns the sync lifecycle: pause it, then migrate against that
-    /// // stable state. Completion is the returned summary (not a progress
-    /// // value), after which the handle reads `None` again.
-    /// let guard = client.pause_sync_scoped()?;
-    /// let summary = client
-    ///     .migrate_immediately_presynced(account, &guard)
-    ///     .await?;
+    /// // The one-call entry pauses any running sync itself, migrates against
+    /// // that stable state, and resumes sync afterwards (the `true`).
+    /// // Completion is the returned summary (not a progress value), after
+    /// // which the handle reads `None` again.
+    /// let summary = client.quick_immediate_migration(account, true).await?;
     /// reporter.abort();
     ///
     /// println!(

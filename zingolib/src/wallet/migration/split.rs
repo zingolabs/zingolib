@@ -243,7 +243,7 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 ///    splitting recurses through intermediate notes.
 ///
 /// `post_activation` selects the note-splitting fee model (see
-/// [`note_split_fee`]): pass whether the transactions will confirm at or
+/// `note_split_fee`): pass whether the transactions will confirm at or
 /// after the NU6.3 activation height.
 pub fn plan_migration(
     note_values: &[u64],

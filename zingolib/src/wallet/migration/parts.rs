@@ -87,7 +87,7 @@ pub enum PartState {
         height: BlockHeight,
     },
     /// Reached its expiry height unmined. Rebuilt with the same denomination
-    /// and a fresh bucket via [`PartRecord::reassign`].
+    /// and a fresh bucket via `PartRecord::reassign`.
     Expired,
     /// The bound note was spent outside the migration. Terminal. The
     /// remaining balance is replanned under fresh consent.
@@ -123,7 +123,7 @@ pub struct PartRecord {
     pub bucket_index: Option<u64>,
     /// The scheduled broadcast height, drawn by the Poisson schedule
     /// (shuffled order, exponential inter-arrival delays; see
-    /// [`super::schedule::plan_schedule`]). Cleared whenever the bucket
+    /// `super::schedule::plan_schedule`). Cleared whenever the bucket
     /// changes so a fresh target is chosen.
     pub target_height: Option<BlockHeight>,
     /// Lifecycle state.
@@ -141,9 +141,9 @@ pub struct PartRecord {
     /// that boundary's checkpoint is retained (a window shorter than one
     /// boundary interval, so capture happens boundary by boundary as syncs
     /// pass them). The proving-time anchor draw
-    /// ([`super::schedule::draw_anchor_boundary`]) resolves against this
+    /// (`super::schedule::draw_anchor_boundary`) resolves against this
     /// cache; entries older than
-    /// [`super::schedule::ANCHOR_AGE_CAP`] boundaries are pruned.
+    /// `super::schedule::ANCHOR_AGE_CAP` boundaries are pruned.
     pub boundary_witnesses: std::collections::BTreeMap<u32, BoundaryWitness>,
     /// Broadcast attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
@@ -283,7 +283,7 @@ impl PartRecord {
 /// needed data; no wallet reference is captured. Safe to call on any thread.
 pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
-/// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
+/// Outcome of `LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
     /// All wallet data was extracted; the closure does the CPU-intensive
@@ -809,8 +809,8 @@ impl crate::wallet::LightWallet {
     /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
     /// anything.
     ///
-    /// For parallel proving of multiple parts, see [`Self::prepare_part`] and
-    /// [`Self::record_part_result`].
+    /// For parallel proving of multiple parts, see `Self::prepare_part` and
+    /// `Self::record_part_result`.
     #[allow(clippy::result_large_err)]
     pub fn materialize_part(
         &mut self,
