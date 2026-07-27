@@ -7,6 +7,12 @@ authors = ["zingo@zingolabs.org"]
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
+readme = "README.md"
+
+# README.md is generated from the lib.rs crate doc (the pepper-sync
+# convention) by running, in this directory:
+#     cargo rdme --intralinks-strip-links
+# The links are stripped because GitHub cannot resolve intra-doc links.
 
 # Deliberately empty. Zero dependencies is a hard requirement: it is what
 # lets this one crate serve both cargo workspaces (the parent workspace and
