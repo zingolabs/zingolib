@@ -54,6 +54,30 @@ in 0.30. The divergence unblocks with the librustzcash stack bump to the
 0.30 line, which is also what the deferred PCZT builders require. The
 fee change carries its own `MigrationParams` version bump when it lands.
 
+Part ordering is largest-denomination-first and deterministic:
+`plan_schedule` ranks the quantized parts so the largest land in the
+earliest windows, while the ZIP requires a uniformly random shuffle and
+names largest-first as its counterexample — the ordering lets an
+observer infer migration progress from any part it can attribute, and
+makes the sequence predictable to a targeted adversary who knows the
+balance (<https://zips.z.cash/zip-0318#transferscheduling>). The batch
+scheduler consumes the ranking, so the shuffle cannot be dropped in
+without it; it arrives with the scheduling delegation to the upstream
+`schedule` machinery (which shuffles internally), deferred under ADR
+0020's standing pull.
+
+Preparation broadcasts are not temporally decoupled: splitting rounds
+broadcast back-to-back, each round as soon as the previous one confirms,
+while the canonical law spaces preparation broadcasts by exponential
+delays with mean `PREP_MEAN_DELAY` (24 blocks) capped at
+`PREP_MAX_DELAY` (96), precisely to keep a burst of identically shaped
+padded transactions from forming a linkable cluster that also telegraphs
+the coming schedule
+(<https://zips.z.cash/zip-0318#notepreparationtransactions>). Upstream
+exports the law (`draw_prep_delay`, `schedule_prep_broadcast_heights`);
+adoption arrives with the scheduling delegation, deferred under ADR
+0020's standing pull.
+
 ## Retained local (the ZIP standardizes no value)
 
 `sweep_min` (twice the ZIP 317 marginal fee): the ZIP defers small-note
