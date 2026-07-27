@@ -1098,11 +1098,12 @@ async fn migration_with_memo_is_still_a_migration_value_transfer() {
 /// plus a sync).
 ///
 /// Setup: 34 fabricated legacy-Orchard (V2) notes make the provisional
-/// planner (max_actions_per_split_tx = 32) emit a first reduction round of
-/// TWO merge transactions. The mock indexer's lost-response fault plus an
+/// planner (16-action total budget) emit a first reduction round of several
+/// merge transactions — more than one, so a failure of the first can strand
+/// the rest. The mock indexer's lost-response fault plus an
 /// effectively-infinite download-queue rejection budget makes the FIRST
 /// submission fail deterministically after the wallet's probe budget. The
-/// second transaction must not stay stranded.
+/// transactions behind it must not stay stranded.
 #[tokio::test]
 async fn failed_split_round_transmit_strands_calculated_transactions() {
     use zcash_primitives::transaction::TxId;

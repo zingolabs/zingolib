@@ -670,8 +670,10 @@ impl Command for CurrentPriceCommand {
         indoc! {r"
             Fetch the current ZEC price. USD only.
 
-            Travels over the Nym mixnet and nothing else, so it needs the `nym`
-            feature and Mixnet Mode ready. Refused rather than sent over clearnet.
+            Fetches over clearnet, which discloses the client IP and wallet-alive
+            timing to the price source. A `nym`-feature build can instead route
+            the fetch over the Nym mixnet (see the `nym` command) via the
+            library's opt-in `update_current_price_over_mixnet`.
 
             Usage:
             current_price
@@ -685,10 +687,7 @@ impl Command for CurrentPriceCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
             match lightclient.update_current_price().await {
-                Ok(fetch) => format!(
-                    "current price: {} (via mixnet socks5 {})",
-                    fetch.usd, fetch.via_socks5
-                ),
+                Ok(price) => format!("current price: {price}"),
                 Err(e) => format!("error: {e}"),
             }
         }))
@@ -2539,6 +2538,10 @@ pub enum MigrationCommandError {
     MissingPlanHash,
     #[error("the plan hash must be 64 hex characters.")]
     MalformedPlanHash,
+    #[error("--per-bucket expects a positive integer.")]
+    MalformedPerBucket,
+    #[error("cadence expects the number of parts per broadcast window.")]
+    MalformedCadence,
     #[error("spacing must be a number of seconds.")]
     MalformedSpacing,
     #[error("drain expects a sub-command: plan | now. Type \"help drain\" for usage.")]
@@ -2556,14 +2559,24 @@ pub enum MigrationCommandError {
 #[derive(Debug, PartialEq, Eq)]
 enum MigrationSubCommand {
     Plan,
-    Start { plan_hash: [u8; 32] },
+    Start {
+        plan_hash: [u8; 32],
+        per_bucket: Option<u32>,
+    },
     Continue,
-    Execute { spacing: std::time::Duration },
+    Cadence {
+        per_bucket: u32,
+    },
+    Execute {
+        spacing: std::time::Duration,
+    },
     Auto,
     Status,
     Windows,
     Reconcile,
-    Catchup,
+    Catchup {
+        spacing: std::time::Duration,
+    },
     Cancel,
 }
 
@@ -2580,9 +2593,31 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
                 .ok()
                 .and_then(|bytes| bytes.try_into().ok())
                 .ok_or(MigrationCommandError::MalformedPlanHash)?;
-            Ok(MigrationSubCommand::Start { plan_hash })
+            let mut per_bucket = None;
+            let mut remaining = args[2..].iter();
+            while let Some(arg) = remaining.next() {
+                if *arg == "--per-bucket" {
+                    per_bucket = Some(
+                        remaining
+                            .next()
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .ok_or(MigrationCommandError::MalformedPerBucket)?,
+                    );
+                }
+            }
+            Ok(MigrationSubCommand::Start {
+                plan_hash,
+                per_bucket,
+            })
         }
         "continue" => Ok(MigrationSubCommand::Continue),
+        "cadence" => {
+            let per_bucket = args
+                .get(1)
+                .and_then(|value| value.parse::<u32>().ok())
+                .ok_or(MigrationCommandError::MalformedCadence)?;
+            Ok(MigrationSubCommand::Cadence { per_bucket })
+        }
         "execute" => {
             let spacing = match args.get(1) {
                 Some(seconds) => std::time::Duration::from_secs(
@@ -2598,7 +2633,17 @@ fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationC
         "status" => Ok(MigrationSubCommand::Status),
         "windows" => Ok(MigrationSubCommand::Windows),
         "reconcile" => Ok(MigrationSubCommand::Reconcile),
-        "catchup" => Ok(MigrationSubCommand::Catchup),
+        "catchup" => {
+            let spacing = match args.get(1) {
+                Some(seconds) => std::time::Duration::from_secs(
+                    seconds
+                        .parse::<u64>()
+                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
+                ),
+                None => std::time::Duration::from_secs(30),
+            };
+            Ok(MigrationSubCommand::Catchup { spacing })
+        }
         "cancel" => Ok(MigrationSubCommand::Cancel),
         _ => Err(MigrationCommandError::InvalidSubCommand),
     }
@@ -2655,11 +2700,21 @@ fn run_migration(
             }
             .pretty(2)
         }
-        MigrationSubCommand::Start { plan_hash } => {
-            RT.block_on(lightclient.start_ironwood_migration(
-                zip32::AccountId::ZERO,
-                migration::SigningStrategy::LazyAtBoundary,
-                plan_hash,
+        MigrationSubCommand::Start {
+            plan_hash,
+            per_bucket,
+        } => {
+            let progress = lightclient.transmit_progress_handle();
+            RT.block_on(with_transmit_heartbeat(
+                "migration start",
+                move || progress.latest(),
+                |line| eprintln!("{line}"),
+                lightclient.start_ironwood_migration(
+                    zip32::AccountId::ZERO,
+                    migration::SigningStrategy::LazyAtBoundary,
+                    plan_hash,
+                    per_bucket,
+                ),
             ))?;
             "Migration started.".to_string()
         }
@@ -2672,12 +2727,6 @@ fn run_migration(
                     "split_txids" => txids_json(&txids),
                 }
                 .pretty(2),
-                SplitStep::AwaitingSchedule { next_due } => {
-                    format!(
-                        "Next preparation transaction is due at height {}; sync and retry then.",
-                        u32::from(next_due)
-                    )
-                }
                 SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
                     "Round confirmed; waiting for the anchor to reach its outputs. \
                      Sync and retry."
@@ -2691,6 +2740,10 @@ fn run_migration(
                     "Note splitting complete; parts are scheduled.".to_string()
                 }
             }
+        }
+        MigrationSubCommand::Cadence { per_bucket } => {
+            RT.block_on(lightclient.reschedule_parts(per_bucket))?;
+            format!("Cadence set to {per_bucket} per window; the schedule was re-drawn.")
         }
         MigrationSubCommand::Execute { spacing } => {
             RT.block_on(lightclient.sync_and_await())
@@ -2804,13 +2857,13 @@ fn run_migration(
             }
             .pretty(2)
         }
-        MigrationSubCommand::Catchup => {
+        MigrationSubCommand::Catchup { spacing } => {
             let progress = lightclient.transmit_progress_handle();
             let txids = RT.block_on(with_transmit_heartbeat(
                 "migration catchup",
                 move || progress.latest(),
                 |line| eprintln!("{line}"),
-                lightclient.catch_up_migration(),
+                lightclient.catch_up_migration(spacing),
             ))?;
             if txids.is_empty() {
                 "No overdue parts.".to_string()
@@ -3076,21 +3129,21 @@ impl Command for MigrationCommand {
         indoc! {r"
             Drive the scheduled Orchard to Ironwood migration (ZIP 318).
 
-            Sub-commands:
             `plan` computes the plan (rounds, parts, fees, residual dust) from the
             wallet's spendable Orchard notes and prints its hash. Nothing is sent.
-            `start <plan_hash>` records consent to the plan with that hash and begins
-            the migration. Fails if the notes changed since planning. How many parts
-            share a broadcast window follows from the schedule alone: ZIP 318 places
-            no per-wallet multiplicity cap.
+            `start` records consent to the plan with that hash and begins. --per-bucket
+            caps how many parts share a broadcast window: lower is more private, higher
+            is faster. Fails if the notes changed since planning.
             `continue` syncs, then drives one splitting step, broadcasting the next
             round of self-sends or, once every note is part-ready, binding the parts and
             scheduling them. Repeat, syncing between rounds, until it reports them
             scheduled.
-            `execute [spacing_seconds]` syncs, then sends everything owed right now in
-            one batch, the current window's due parts plus any missed windows', spaced
-            by the given seconds (default 30). Reports each part's outcome. The manual
-            counterpart to `auto`.
+            `cadence` resets parts-per-window and redraws the schedule. Usable until the
+            first part is signed, so the choice can wait for splitting to end.
+            `execute` syncs, then sends everything owed right now in one batch, the
+            current window's due parts plus any missed windows', spaced by the given
+            seconds (default 30). Reports each part's outcome. The manual counterpart
+            to `auto`.
             `auto` syncs, then broadcasts whatever the current window has due. Run it
             periodically to drive the migration hands-off.
             `status` reports the Orchard confirmed-spendable balance, the phase, part
@@ -3100,18 +3153,18 @@ impl Command for MigrationCommand {
             reported even with no migration running.
             `reconcile` checks the persisted schedule against the chain and applies what
             is safe unattended. Run it after every sync.
-            `catchup` sends AT MOST ONE overdue part now and re-spreads the rest with
-            freshly drawn delays; ZIP 318 forbids sending several pool-crossing
-            transfers in one session. Disclosure (ZIP 318): sending at catch-up time
-            correlates the broadcast with this wallet's activity.
+            `catchup` sends overdue parts now, spaced by the given seconds (default 30).
+            Disclosure (ZIP 318): sending at catch-up time correlates the broadcasts
+            with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
 
             Usage:
             migration plan
-            migration start <plan_hash>
+            migration start <plan_hash> [--per-bucket N]
+            migration cadence <N>
             migration execute [spacing_seconds]
-            migration catchup
+            migration catchup [spacing_seconds]
             migration continue | auto | status | windows | reconcile | cancel
         "}
     }
@@ -3322,14 +3375,15 @@ mod migration_command_parsing {
     use super::*;
 
     #[test]
-    fn start_parses_hash() {
+    fn start_parses_hash_and_per_bucket() {
         let hash_hex = "11".repeat(32);
-        let parsed =
-            parse_migration_args(&["start", &hash_hex]).expect("well-formed arguments parse");
+        let parsed = parse_migration_args(&["start", &hash_hex, "--per-bucket", "3"])
+            .expect("well-formed arguments parse");
         assert_eq!(
             parsed,
             MigrationSubCommand::Start {
                 plan_hash: [0x11; 32],
+                per_bucket: Some(3),
             }
         );
     }
@@ -3359,12 +3413,14 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn cadence_is_no_longer_a_sub_command() {
-        // ZIP 318 places no per-wallet multiplicity cap (issue #2519,
-        // deviation 5), so the cadence knob is gone.
+    fn cadence_requires_a_count() {
+        assert_eq!(
+            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
+            MigrationSubCommand::Cadence { per_bucket: 4 }
+        );
         assert!(matches!(
-            parse_migration_args(&["cadence", "4"]),
-            Err(MigrationCommandError::InvalidSubCommand)
+            parse_migration_args(&["cadence"]),
+            Err(MigrationCommandError::MalformedCadence)
         ));
     }
 
@@ -3385,10 +3441,12 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn catchup_parses_bare() {
+    fn catchup_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
             parse_migration_args(&["catchup"]).expect("bare catchup parses"),
-            MigrationSubCommand::Catchup
+            MigrationSubCommand::Catchup {
+                spacing: std::time::Duration::from_secs(30),
+            }
         );
     }
 
@@ -3399,8 +3457,8 @@ mod migration_command_parsing {
             "Error: migration command expects a sub-command. Type \"help migration\" for usage."
         );
         assert_eq!(
-            format!("Error: {}", MigrationCommandError::MalformedSpacing),
-            "Error: spacing must be a number of seconds."
+            format!("Error: {}", MigrationCommandError::MalformedPerBucket),
+            "Error: --per-bucket expects a positive integer."
         );
     }
 }

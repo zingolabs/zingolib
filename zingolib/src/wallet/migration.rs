@@ -16,14 +16,17 @@
 //! wallet-fingerprinting output.
 //!
 //! The denominations are canonical so that migrated amounts collide across the
-//! whole migrating population instead of fingerprinting a wallet:
+//! whole migrating population instead of fingerprinting a wallet
+//! (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>):
 //!
-//! * Denominations are {0.001, 0.01, 0.1, 1, 10, 100} ZEC (powers of ten,
-//!   capped at `DENOM_CAP`, floored at `DUST_FLOOR`).
-//! * A balance is decomposed by decimal digit expansion, largest first.
-//! * Residue below the dust floor folds into fees. Notes worth at most
-//!   [`MigrationParams::sweep_min`] are stranded (moving them costs more than
-//!   they are worth).
+//! * Denominations are the values `n x 10^k` ZEC with `n` in {1, 2, 5},
+//!   from `MAX_RESIDUAL_VALUE` (0.01 ZEC) up to `DENOM_CAP` (10 000 ZEC),
+//!   both imported from the `zcash_pool_migration` reference crate.
+//! * A balance is decomposed greedily, largest denomination first.
+//! * Balance below `MAX_RESIDUAL_VALUE` stays unmigrated as the residual.
+//!   Notes worth at most [`MigrationParams::sweep_min`] are stranded
+//!   (moving them costs more than they are worth; the ZIP leaves that
+//!   economics to ZIP 317 and standardizes no sweep threshold).
 //!
 //! [`plan_migration`] is the pure planning entry point. It is deterministic
 //! and never touches the network, so callers (the one-call
@@ -67,7 +70,6 @@ pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
 pub use split::{MigrationPlan, NoteSplitTx, plan_hash, plan_migration};
 
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::BlockHeight;
 
 /// The consent captured when the user confirmed the migration schedule
 /// (ZIP 318 requires the whole schedule to be confirmed before any transfer
@@ -107,18 +109,10 @@ pub enum MigrationPhase {
     Planned,
     /// Executing note-splitting rounds.
     NoteSplitting {
-        /// The round currently in flight, counted from zero.
+        /// The round currently awaiting confirmation, counted from zero.
         round: u32,
-        /// Txids of the round's transactions already broadcast.
+        /// Txids of that round's transactions.
         pending_txids: Vec<TxId>,
-        /// The round's transactions not yet built, each held until its
-        /// drawn due height so successive preparations are temporally
-        /// decoupled (ZIP 318 note-preparation spacing; issue #2519,
-        /// deviation 1). Values only: the transaction is built at its due
-        /// wake with a near-tip anchor, never held signed across a delay.
-        ///
-        /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#note-preparation-transactions>
-        queued: Vec<QueuedSplitTx>,
     },
     /// Splitting complete, parts bound and scheduled.
     PartsScheduled,
@@ -127,20 +121,6 @@ pub enum MigrationPhase {
         /// Unmigrated value left in the Orchard pool, in zatoshis.
         residual: u64,
     },
-}
-
-/// One planned note-splitting transaction awaiting its drawn broadcast
-/// height: the input and output values of the plan, plus the height at
-/// which it becomes due. Building waits for the due wake so the
-/// transaction carries a near-tip anchor and a live expiry.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueuedSplitTx {
-    /// Values of the notes the transaction will spend.
-    pub inputs: Vec<u64>,
-    /// Values of the self-notes the transaction will create.
-    pub outputs: Vec<u64>,
-    /// The block height at (and after) which the transaction is due.
-    pub due_height: BlockHeight,
 }
 
 /// Everything the migration persists in the wallet file. Deliberately

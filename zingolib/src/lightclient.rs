@@ -104,8 +104,9 @@ impl WalletMeta {
 ///
 /// The attestation is the mixnet tunnel's local SOCKS5 endpoint the fetch
 /// went through. It rides the success value — not a log — so every consumer
-/// holds per-fetch evidence that no clearnet path ran (ADR 0011,
-/// amendment 2026-07-23).
+/// of [`LightClient::update_current_price_over_mixnet`] holds per-fetch
+/// evidence that this fetch ran over the mixnet (ADR 0011).
+#[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
@@ -606,16 +607,37 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
-    /// mixnet when Mixnet Mode is ready, fails closed while the mode
-    /// bootstraps or after the proxy dies, and is refused (never routed over
-    /// clearnet) while the mode is toggled off. The returned fetch carries
-    /// the tunnel endpoint it traveled through, so every consumer holds
-    /// per-fetch evidence of the route rather than trusting the static
-    /// argument alone.
+    /// Update and return the current ZEC price in USD over clearnet.
+    ///
+    /// This is the default price-fetch route and works in every build,
+    /// including those without the `nym` feature. It contacts a third-party
+    /// price API directly, so it discloses the client IP and wallet-alive
+    /// timing to that party; a caller that wants to hide those routes the
+    /// fetch over the Nym mixnet with `update_current_price_over_mixnet`
+    /// (a `nym`-feature method, ADR 0011).
+    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Ok(self
+            .wallet()
+            .write()
+            .await
+            .update_current_price(None)
+            .await?)
+    }
+
+    /// Update and return the current ZEC price in USD over the Nym mixnet,
+    /// hiding the client IP from the price source (ADR 0011). Opt-in: the fetch
+    /// is routed through the mixnet when Mixnet Mode is ready, and fails closed
+    /// (never falling back to clearnet) while the mode bootstraps, after the
+    /// proxy dies, or while it is toggled off. For the clearnet default, use
+    /// [`Self::update_current_price`].
+    ///
+    /// The returned fetch carries the tunnel endpoint it traveled through, so
+    /// every consumer holds per-fetch evidence of the route rather than
+    /// trusting the method name alone.
     #[cfg(feature = "nym")]
-    pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
+    pub async fn update_current_price_over_mixnet(
+        &self,
+    ) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
             crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
             crate::nym::MixnetRoute::Clearnet => {
@@ -627,21 +649,12 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .update_current_price(&socks5_addr)
+            .update_current_price(Some(&socks5_addr))
             .await?;
         Ok(MixnetPriceFetch {
             usd,
             via_socks5: socks5_addr,
         })
-    }
-
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
-    /// the Nym mixnet, so a build without the `nym` feature refuses: the
-    /// fetch code is not compiled in at all.
-    #[cfg(not(feature = "nym"))]
-    pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
-        Err(LightClientError::PriceFetchUnsupported)
     }
 
     /// Creates an additional ZIP-32 account derived from the wallet seed.
@@ -958,15 +971,18 @@ mod tests {
         }
     }
 
-    /// The price-fetch error contract (ADR 0011, amendment 2026-07-23).
+    /// The price-fetch error contract for the mixnet route (ADR 0011,
+    /// amendments 2026-07-23 and 2026-07-27).
     ///
-    /// Every way the mixnet-only price fetch can fail must arrive at the
+    /// Every way the opt-in mixnet price fetch can fail must arrive at the
     /// API surface as a typed [`LightClientError`] variant with its source
     /// chain intact: never prose in the data channel, never a silent
     /// clearnet fallback. The route pre-flight variants
     /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Bootstrapping,
     /// Died}`) pair with `nym::route`'s own `resolve_route` tests; the
-    /// tests here pin the surface wiring and the transport leg.
+    /// tests here pin the surface wiring and the transport leg. The
+    /// clearnet default lives on [`LightClient::update_current_price`] and
+    /// carries no mixnet contract.
     #[cfg(feature = "nym")]
     mod price_fetch_contract {
         use crate::lightclient::LightClient;
@@ -977,17 +993,17 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// Mixnet Mode off is a typed refusal, not a clearnet fetch: the
-        /// route pre-flight runs before any network object is built, so no
-        /// packet leaves the process.
+        /// Mixnet Mode off is a typed refusal, never a clearnet fallback:
+        /// the route pre-flight runs before any network object is built, so
+        /// no packet leaves the process.
         #[tokio::test]
         async fn off_mode_is_a_typed_refusal() {
             let client = LightClient::new_for_test(wallet()).await;
 
             let error = client
-                .update_current_price()
+                .update_current_price_over_mixnet()
                 .await
-                .expect_err("no proxy is attached, so the fetch must refuse");
+                .expect_err("no proxy is attached, so the mixnet fetch must refuse");
             assert!(
                 matches!(error, LightClientError::PriceFetchRequiresMixnet),
                 "the refusal must be typed, not prose: {error}"
@@ -999,7 +1015,8 @@ mod tests {
         /// distinguish a connection failure from a TLS or HTTP failure by
         /// inspection instead of parsing prose. The same value converts
         /// into [`LightClientError::PriceError`] by `From`, which is the
-        /// exact wiring `LightClient::update_current_price`'s `?` uses.
+        /// exact wiring `LightClient::update_current_price_over_mixnet`'s
+        /// `?` uses.
         #[tokio::test]
         async fn dead_proxy_failure_is_typed_with_its_source_intact() {
             // Bind then drop, so the port is closed when the fetch dials it.
@@ -1010,7 +1027,7 @@ mod tests {
 
             let mut wallet = wallet();
             let error = wallet
-                .update_current_price(&closed.to_string())
+                .update_current_price(Some(&closed.to_string()))
                 .await
                 .expect_err("a closed port cannot serve a price");
 
@@ -1048,7 +1065,7 @@ mod tests {
             let mut wallet = wallet();
             let outcome = tokio::time::timeout(
                 std::time::Duration::from_secs(2),
-                wallet.update_current_price(&addr.to_string()),
+                wallet.update_current_price(Some(&addr.to_string())),
             )
             .await;
 

@@ -569,17 +569,10 @@ mod tests {
         part
     }
 
-    /// The provisional bucket modulus, read from the one authoritative
-    /// source so these fixtures track parameter revisions.
-    fn modulus() -> u32 {
-        params().bucket_modulus
-    }
-
-    /// The bucket containing the default tip 10_000 under the provisional
-    /// modulus.
-    fn tip_bucket() -> u64 {
-        u64::from(10_000 / modulus())
-    }
+    /// Bucket arithmetic for the provisional M = 144 and tip 10_000: the tip
+    /// sits in bucket 69.
+    const M: u32 = 144;
+    const TIP_BUCKET: u64 = 10_000 / M as u64;
 
     /// Issue #2493, finding 8: a migration whose every part is terminal
     /// and whose replannable balance is zero must reach a terminal
@@ -591,11 +584,11 @@ mod tests {
     /// `cancel`.
     #[test]
     fn terminal_parts_with_nothing_replannable_reach_complete() {
-        let mut confirmed = assigned_part(0, tip_bucket() - 2);
+        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
         confirmed
             .mark_confirmed(BlockHeight::from_u32(9_000))
             .unwrap();
-        let mut invalidated = assigned_part(1, tip_bucket() - 2);
+        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
         invalidated.mark_invalidated().unwrap();
         let state = scheduled_state(vec![confirmed, invalidated]);
 
@@ -617,8 +610,8 @@ mod tests {
     #[test]
     fn future_and_open_windows_are_on_track() {
         let state = scheduled_state(vec![
-            assigned_part(0, tip_bucket()),     // window open
-            assigned_part(1, tip_bucket() + 3), // future
+            assigned_part(0, TIP_BUCKET),     // window open
+            assigned_part(1, TIP_BUCKET + 3), // future
         ]);
         let report = reconcile(&state, &MockChainView::default());
         assert!(
@@ -632,12 +625,12 @@ mod tests {
 
     #[test]
     fn recent_slips_are_silent_and_older_ones_prompt_catch_up() {
-        // Bucket tip_bucket() - 1's window closed at the tip's own boundary,
+        // Bucket TIP_BUCKET - 1's window closed at the tip's own boundary,
         // so a tip just past that boundary is within the slip tolerance.
-        let state = scheduled_state(vec![assigned_part(0, tip_bucket() - 1)]);
+        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
         let mut chain = MockChainView {
             tip: Some(BlockHeight::from_u32(
-                (tip_bucket() as u32) * modulus() + SLIP_TOLERANCE_BLOCKS,
+                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS,
             )),
             ..Default::default()
         };
@@ -649,7 +642,7 @@ mod tests {
         assert!(report.actions.is_empty(), "slips are not surfaced");
 
         chain.tip = Some(BlockHeight::from_u32(
-            (tip_bucket() as u32) * modulus() + SLIP_TOLERANCE_BLOCKS + 1,
+            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS + 1,
         ));
         let report = reconcile(&state, &chain);
         assert_eq!(report.assessments[0].class, PartClass::Overdue);
@@ -664,14 +657,10 @@ mod tests {
 
     #[test]
     fn due_now_reports_the_current_window_regardless_of_the_target() {
-        // Tip 10_000 sits in the tip bucket; its window spans one modulus
-        // of blocks from that bucket's opening boundary. The drawn target
-        // must lie inside that window, so place it between the tip and the
-        // window's close.
-        let window_close = (tip_bucket() as u32 + 1) * modulus();
-        let target = BlockHeight::from_u32(window_close - 10);
-        let mut part = assigned_part(0, tip_bucket());
-        part.target_height = Some(target); // advisory only
+        // Tip 10_000 sits in bucket TIP_BUCKET; its window is
+        // [TIP_BUCKET*144, (TIP_BUCKET+1)*144) = [9936, 10080).
+        let mut part = assigned_part(0, TIP_BUCKET);
+        part.target_height = Some(BlockHeight::from_u32(10_040)); // advisory only
         let state = scheduled_state(vec![part]);
 
         // The tip is below the random target, yet the window is open: the part
@@ -690,27 +679,31 @@ mod tests {
         );
 
         // And it stays due later in the window, past the target.
-        let late_tip = BlockHeight::from_u32(window_close - 5);
         let chain = MockChainView {
-            tip: Some(late_tip),
+            tip: Some(BlockHeight::from_u32(10_060)),
             ..Default::default()
         };
         let report = reconcile(&state, &chain);
         assert_eq!(
-            due_now_parts(&state.parts, &report, late_tip, &state.params),
+            due_now_parts(
+                &state.parts,
+                &report,
+                BlockHeight::from_u32(10_060),
+                &state.params,
+            ),
             vec![PartId(0)],
         );
     }
 
     #[test]
     fn due_now_folds_assigned_overdue_parts_but_not_signed_ones() {
-        // Bucket tip_bucket() - 2 closed well beyond the slip tolerance. The
+        // Bucket TIP_BUCKET - 2 closed well beyond the slip tolerance. The
         // Assigned part is Overdue and folds into the batch; the Signed one is
         // classified AwaitingExpiry (it waits out its expiry and rebuilds
         // rather than broadcasting late), so it is outside the catch-up batch
         // and never folds.
-        let assigned = assigned_part(0, tip_bucket() - 2);
-        let mut signed = assigned_part(1, tip_bucket() - 2);
+        let assigned = assigned_part(0, TIP_BUCKET - 2);
+        let mut signed = assigned_part(1, TIP_BUCKET - 2);
         signed
             .mark_signed(
                 TxId::from_bytes([9; 32]),
@@ -754,7 +747,7 @@ mod tests {
 
     #[test]
     fn due_now_excludes_future_windows() {
-        let part = assigned_part(0, tip_bucket() + 3);
+        let part = assigned_part(0, TIP_BUCKET + 3);
         let state = scheduled_state(vec![part]);
         let chain = MockChainView::default();
         let report = reconcile(&state, &chain);
@@ -777,7 +770,7 @@ mod tests {
         // send it and `due_now` must not advertise it. With no random target
         // it clears the bucket predicate, so only the OnTrack class gate drops
         // it, the property that gate exists for.
-        let mut part = assigned_part(0, tip_bucket());
+        let mut part = assigned_part(0, TIP_BUCKET);
         part.target_height = None;
         let state = scheduled_state(vec![part]);
         let mut chain = MockChainView::default();
@@ -804,7 +797,7 @@ mod tests {
 
     #[test]
     fn expired_transactions_are_rebuilt() {
-        let mut part = assigned_part(0, tip_bucket() - 2);
+        let mut part = assigned_part(0, TIP_BUCKET - 2);
         part.mark_signed(
             TxId::from_bytes([9; 32]),
             BlockHeight::from_u32(9_000),
@@ -824,7 +817,7 @@ mod tests {
 
     #[test]
     fn external_spend_invalidates_and_replans() {
-        let state = scheduled_state(vec![assigned_part(0, tip_bucket() + 1)]);
+        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET + 1)]);
         let mut chain = MockChainView::default();
         chain.note_spends.insert(
             output_id(0),
@@ -849,7 +842,7 @@ mod tests {
         // The part is persisted as Signed (the crash lost the Broadcast
         // record), but its own transaction spent the bound note on-chain.
         let own_txid = TxId::from_bytes([9; 32]);
-        let mut part = assigned_part(0, tip_bucket() - 1);
+        let mut part = assigned_part(0, TIP_BUCKET - 1);
         part.mark_signed(own_txid, BlockHeight::from_u32(20_000), None)
             .unwrap();
         let state = scheduled_state(vec![part]);
@@ -870,7 +863,7 @@ mod tests {
 
     #[test]
     fn all_confirmed_with_dust_residual_completes() {
-        let mut part = assigned_part(0, tip_bucket() - 2);
+        let mut part = assigned_part(0, TIP_BUCKET - 2);
         part.mark_signed(
             TxId::from_bytes([9; 32]),
             BlockHeight::from_u32(20_000),
@@ -903,7 +896,6 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![split_txid],
-            queued: Vec::new(),
         };
         let mut chain = MockChainView::default();
 
@@ -977,7 +969,6 @@ mod tests {
         state.phase = MigrationPhase::NoteSplitting {
             round: 0,
             pending_txids: vec![in_flight_txid],
-            queued: Vec::new(),
         };
         let report = reconcile(&state, &wallet);
         assert_eq!(

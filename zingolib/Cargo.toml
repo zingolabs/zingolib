@@ -10,12 +10,7 @@ license = "MIT"
 
 [features]
 default = []
-# IP-obfuscation transport (ADR 0011). Off by default. Enables the wallet-side
-# SOCKS5 transmit path in zingo-netutils (light — no nym-sdk, resolves in the
-# main lockfile); the wallet dials the spawned nym-proxy through it. Also the
-# only thing that compiles a price fetch: the fetch has no clearnet tier
-# (amendment 2026-07-23), so without this feature zingo-price is types-only.
-nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
+nym = ["zingo-netutils/socks5-transmit"]
 # Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
 # the wallet). Off by default; even when compiled, recording is a per-session
 # runtime opt-in, the outcome column is a sanitized category token, and the
@@ -86,8 +81,11 @@ zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
-zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"], optional = true }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+], optional = true }
 tokio-stream = { workspace = true, optional = true }
+zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
@@ -99,13 +97,13 @@ pepper-sync = { workspace = true, features = ["test-features"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
+rand_chacha = "0.3"
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
-zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"] }
-# Conformance oracle only: the shipped constants are defined locally so they
-# can never move underneath the consent hash via a dependency bump.
-zcash_pool_migration = { version = "=0.1.0-alpha.1", default-features = false }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+] }
 zingo_test_vectors = { workspace = true }
 
 [badges]

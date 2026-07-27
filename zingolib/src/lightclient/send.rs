@@ -243,7 +243,7 @@ async fn transmit_one_transaction(
 /// cap is reached.
 ///
 /// The draw comes from [`eligible_witnesses`], never the raw curated list: a
-/// witness is never the sync indexer's operator (ADR 0020), because that party
+/// witness is never the sync indexer's operator (ADR 0022), because that party
 /// already holds the wallet's address set and must not receive the broadcast
 /// too. An emptied pool refuses rather than falling back.
 #[cfg(feature = "nym")]
@@ -879,6 +879,99 @@ mod built_transaction_shape {
             ironwood_bundle.actions().len(),
             2,
             "payment plus dummy padding, the bundle minimum"
+        );
+    }
+
+    /// Privacy invariant: spending a legacy (V5) Orchard note on a post-NU6.3
+    /// chain must keep the **change** in the Orchard pool as a real Orchard
+    /// output, not migrate it to Ironwood. ZIP 318 disables ordinary *payments*
+    /// into the Orchard pool "while still permitting change"; the turnstile
+    /// (ZIP 2006) only blocks value *entering* Orchard, and change funded by an
+    /// Orchard input nets the pool *down*, so the Orchard change output is
+    /// consensus-valid. Upstream's `SingleOutputChangeStrategy` already keeps
+    /// change in the spent note's pool to avoid a pool-crossing (the
+    /// `ShieldedPool::Ironwood` passed by the proposer is only the *fallback*
+    /// for transactions with no shielded inputs, e.g. shields, ADR 0009);
+    /// deliberate Orchard->Ironwood movement is the migration engine's job.
+    ///
+    /// The proof is at the built-transaction level, not the proposal label:
+    /// the Orchard bundle carries the spend *and* the change output (its value
+    /// balance nets out only the payment plus fee, so the change stays in the
+    /// pool), while only the payment to the recipient's Orchard receiver routes
+    /// through the Ironwood bundle (turnstiled per ZIP 318). Had the change
+    /// crossed to Ironwood, the Orchard value balance would equal the whole
+    /// spent note.
+    #[tokio::test]
+    async fn orchard_note_send_keeps_change_in_orchard_pool_post_nu6_3() {
+        use zcash_client_backend::zip321::{Payment, TransactionRequest};
+        use zcash_protocol::{PoolType, value::Zatoshis};
+
+        let note_value = 200_000u64;
+        let sent_value = 50_000u64;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            external_orchard_address(),
+            Zatoshis::const_from_u64(sent_value),
+        )])
+        .unwrap();
+        let proposal = client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let step = proposal.steps().first();
+        let change = step.balance().proposed_change();
+        assert_eq!(change.len(), 1);
+        let change_value = u64::from(change[0].value());
+        assert!(change_value > 0, "the send must leave real change to place");
+        assert_eq!(
+            change[0].output_pool(),
+            PoolType::ORCHARD,
+            "the proposer must select the Orchard pool for change when spending an Orchard note"
+        );
+
+        let txids = client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(txids.len(), 1);
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        let transaction = wallet
+            .wallet_transactions
+            .get(&txids[0])
+            .unwrap()
+            .transaction();
+
+        // Orchard bundle: spends the note and holds the change output. Its
+        // value balance is (note - change) = payment + fee, which is strictly
+        // less than the whole note — the discriminator proving the change is a
+        // real Orchard output that stayed in the pool rather than crossing to
+        // Ironwood (which would leave the value balance at the full note value).
+        let orchard = transaction
+            .orchard_bundle()
+            .expect("spending a legacy Orchard note keeps a real Orchard bundle");
+        assert_eq!(
+            i64::from(*orchard.value_balance()),
+            i64::try_from(note_value - change_value).unwrap(),
+            "Orchard value balance must net out only payment + fee, leaving the change in Orchard"
+        );
+
+        // Ironwood bundle: carries only the payment to the recipient's Orchard
+        // receiver, turnstiled per ZIP 318 — never the change.
+        let ironwood = transaction
+            .ironwood_bundle()
+            .expect("the payment to an Orchard receiver routes via Ironwood post-NU6.3");
+        assert_eq!(
+            i64::from(*ironwood.value_balance()),
+            -i64::try_from(sent_value).unwrap(),
+            "Ironwood carries only the payment value, not the change"
         );
     }
 

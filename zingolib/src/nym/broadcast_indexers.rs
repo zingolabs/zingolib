@@ -77,7 +77,7 @@ pub const BROADCAST_INDEXERS: &[&str] = &[
 /// This is the raw curated list, for diagnostic surfaces that carry no wallet
 /// data (the `nym probe` pairing). A transmission draw MUST NOT use it
 /// directly: it goes through [`eligible_witnesses`], which enforces the
-/// witness-is-never-the-sync-indexer invariant (ADR 0020).
+/// witness-is-never-the-sync-indexer invariant (ADR 0022).
 pub fn broadcast_indexers() -> Vec<Uri> {
     BROADCAST_INDEXERS
         .iter()
@@ -86,7 +86,7 @@ pub fn broadcast_indexers() -> Vec<Uri> {
 }
 
 /// Every witness the sync indexer's operator left in the pool was excluded —
-/// there is nothing safe to draw, so the send refuses (ADR 0020).
+/// there is nothing safe to draw, so the send refuses (ADR 0022).
 #[derive(Clone, Debug, thiserror::Error)]
 #[error(
     "no eligible Broadcast Indexer: every entry in the pool belongs to the \
@@ -102,7 +102,7 @@ pub(crate) struct NoEligibleWitnesses {
 /// Indexers minus every entry operated by the party that runs `sync_indexer`.
 ///
 /// This is the sole sanctioned pool constructor for any surface that hands a
-/// raw transaction to a drawn indexer (ADR 0020). The sync indexer already
+/// raw transaction to a drawn indexer (ADR 0022). The sync indexer already
 /// holds the wallet's address set, so a draw that lands on it would hand that
 /// same party the broadcast too, defeating Witness Rotation exactly where it
 /// matters most. Exclusion is by operator, not by exact URI, for the same
@@ -223,7 +223,7 @@ mod tests {
     fn the_sync_indexers_operator_is_excluded_from_the_witness_pool() {
         // A regional variant, not the listed URI, so this fails if exclusion
         // ever weakens to exact-URI matching: the accumulating party is the
-        // operator (ADR 0020).
+        // operator (ADR 0022).
         let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
         let pool = eligible_witnesses(&sync).expect("ten operators remain");
         assert_eq!(pool.len(), BROADCAST_INDEXERS.len() - 1);

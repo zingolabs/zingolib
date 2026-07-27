@@ -320,11 +320,11 @@ on.
 Witness Rotation as ratified here left one draw unconstrained: nothing
 prevented the random pick from landing on the very indexer the wallet
 synchronizes against — the one party that already holds the address set,
-and the named adversary of this decision. That gap is closed by ADR 0020,
+and the named adversary of this decision. That gap is closed by ADR 0022,
 which makes the exclusion a universal, code-enforced invariant: every
 transmission draw filters the curated pool by the sync indexer's operator,
 and an emptied pool refuses in keeping with the fail-closed rule. See
-`docs/adr/0020-broadcast-witness-never-the-sync-indexer.md`.
+`docs/adr/0022-broadcast-witness-never-the-sync-indexer.md`.
 
 ## Amendment (2026-07-23): migration parts obey Mixnet Mode, and never target the sync server
 
@@ -375,3 +375,24 @@ feature, so the default build's dependency graph shrinks below its
 pre-mixnet shape; the crate's price types and their wallet-file
 serialization stay unconditional, keeping wallet files portable between
 builds with and without the feature.
+
+## Amendment (2026-07-27): the clearnet price tier is restored
+
+The 2026-07-23 price amendment above is superseded by PR #2548
+("fix/restore-price"), merged to `dev` on 2026-07-27. The price fetch
+regains a clearnet default: `update_current_price` works in every
+build, including builds without the `nym` feature, and its
+documentation discloses that the contact leaks the client IP and
+wallet-alive timing to the third-party price source. zingo-price
+returns to unconditional network dependencies and becomes a pure
+mechanism — the fetch function takes an optional SOCKS5 proxy address
+and the routing policy lives entirely in the caller.
+
+The mixnet route survives as the opt-in
+`update_current_price_over_mixnet`, a `nym`-feature method that keeps
+this record's fail-closed invariant: it refuses while Mixnet Mode is
+off, fails closed while the mode bootstraps or after the proxy dies,
+and never falls back to clearnet. Its success value remains
+`MixnetPriceFetch`, carrying the tunnel endpoint the fetch traveled
+through, so a consumer that chose the private route holds per-fetch
+evidence of it.

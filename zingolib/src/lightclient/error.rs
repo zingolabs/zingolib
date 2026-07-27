@@ -52,23 +52,16 @@ pub enum LightClientError {
     /// Price fetch error.
     #[error("Price fetch error. {0}")]
     PriceError(#[from] PriceError),
-    /// The price fetch was attempted while Mixnet Mode is toggled off. The
-    /// fetch has no clearnet tier (ADR 0011, 2026-07-23): unlike send, it is
-    /// refused rather than routed over clearnet on the deliberate opt-out.
+    /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
+    /// off. The opt-in route fails closed rather than falling back to clearnet
+    /// (ADR 0011); use the clearnet default `update_current_price` instead, or
+    /// enable Mixnet Mode (`nym on`).
     #[cfg(feature = "nym")]
     #[error(
-        "the price fetch travels only over the Nym mixnet and has no clearnet fallback; \
-         Mixnet Mode is off. Enable it (`nym on`) to fetch the price"
+        "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
+         enable it (`nym on`), or use the clearnet price fetch"
     )]
     PriceFetchRequiresMixnet,
-    /// The price fetch was attempted in a build without the `nym` feature,
-    /// which compiles no fetch code at all (ADR 0011, 2026-07-23).
-    #[cfg(not(feature = "nym"))]
-    #[error(
-        "the price fetch travels only over the Nym mixnet, and this build has no mixnet \
-         support; rebuild with the `nym` feature to fetch the price"
-    )]
-    PriceFetchUnsupported,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error("{0}")]
@@ -118,6 +111,9 @@ pub enum MigrationError {
     /// consented plan no longer describes what would be sent.
     #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
     ConsentStale,
+    /// The broadcast cadence can change only while every part is unsent.
+    #[error("Phase 2 has begun; the broadcast cadence can no longer change.")]
+    CadenceFixed,
     /// Note splitting kept producing new rounds past the round bound.
     #[error("Migration did not converge within {0} rounds.")]
     SplitDidNotConverge(usize),

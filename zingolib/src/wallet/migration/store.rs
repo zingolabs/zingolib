@@ -13,29 +13,17 @@ use zcash_protocol::consensus::BlockHeight;
 
 use pepper_sync::wallet::OutputId;
 
-use super::params::{CANONICAL_EXPIRY_MODULUS, MigrationParams};
+use super::params::MigrationParams;
 use super::parts::{BoundNote, BoundaryWitness, PartId, PartRecord, PartState, SigningStrategy};
-use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState, QueuedSplitTx};
+use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
-///
-/// Versions 3 and 4 were spent on divergent development lines and are dead
-/// numbers. Version 3 meant two different layouts (a dropped `k_max` slot
-/// plus the rolling witness cache on one line; a dropped expiry slot on the
-/// other) and neither meaning ever sat at a dev tip, so a v3 blob is refused
-/// rather than guessed at. Version 4 shipped from dev: it keeps the
-/// `k_max`/`target_sessions` params slots, drops the expiry slot, and adds a
-/// per-part `anchor_bucket` beside a single anchor witness.
-///
-/// Version 5 reunifies the layouts on the ZIP 318 schedule: the params carry
-/// the canonical rolling `expiry_modulus` (issue #2519, deviations 3 and 4)
-/// and no multiplicity or session slots (deviation 5), and each part carries
-/// the boundary-keyed rolling witness cache (deviation 2) in place of any
-/// single stored witness. Legacy reads discard the retired slots; a v4
-/// read additionally falls back to the provisional expiry modulus and lets
-/// the consent params-hash mismatch force a replan.
-const INNER_VERSION: u8 = 5;
+/// Version 3 drops the params `expiry_delta` field: the canonical expiry is
+/// the fixed ZIP 318 formula, not a parameter. Version 4 appends each part's
+/// `anchor_bucket` after its `bucket_index`, the anchor having become a
+/// bucket of its own rather than the broadcast window's (ADR 0018).
+const INNER_VERSION: u8 = 4;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -50,8 +38,9 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
     writer.write_u64::<LittleEndian>(params.max_residual_value)?;
     writer.write_u64::<LittleEndian>(params.sweep_min)?;
     writer.write_u32::<LittleEndian>(params.bucket_modulus)?;
+    writer.write_u32::<LittleEndian>(params.k_max)?;
+    writer.write_u32::<LittleEndian>(params.target_sessions)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
-    writer.write_u32::<LittleEndian>(params.expiry_modulus)?;
     writer.write_u64::<LittleEndian>(params.part_fee)?;
 
     writer.write_all(&state.consent.params_hash)?;
@@ -69,21 +58,10 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
         MigrationPhase::NoteSplitting {
             round,
             pending_txids,
-            queued,
         } => {
             writer.write_u8(1)?;
             writer.write_u32::<LittleEndian>(*round)?;
             Vector::write(&mut writer, pending_txids, |w, txid| txid.write(w))?;
-            // Version 3: the drawn preparation schedule of the round.
-            Vector::write(&mut writer, queued, |mut w, tx| {
-                Vector::write(&mut w, &tx.inputs, |w, value| {
-                    w.write_u64::<LittleEndian>(*value)
-                })?;
-                Vector::write(&mut w, &tx.outputs, |w, value| {
-                    w.write_u64::<LittleEndian>(*value)
-                })?;
-                w.write_u32::<LittleEndian>(tx.due_height.into())
-            })?;
         }
         MigrationPhase::PartsScheduled => writer.write_u8(2)?,
         MigrationPhase::Complete { residual } => {
@@ -109,14 +87,6 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             format!("unknown migration section version {inner_version}"),
         ));
     }
-    // Version 3 named two different development layouts and neither ever
-    // sat at a dev tip; a blob claiming it cannot be read unambiguously.
-    if inner_version == 3 {
-        return Err(Error::new(
-            ErrorKind::InvalidData,
-            "migration section version 3 is ambiguous and never shipped",
-        ));
-    }
 
     let version = reader.read_u32::<LittleEndian>()?;
     let denominations = Vector::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
@@ -132,16 +102,8 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             "bucket_modulus must be nonzero",
         ));
     }
-    // Versions 2 and below, and dev's version 4, carried a `k_max`
-    // multiplicity cap and a `target_sessions` signing-session target in
-    // two u32 slots here. ZIP 318 places no per-wallet multiplicity cap
-    // (issue #2519, deviation 5) and the Poisson schedule (deviation 1)
-    // retired the session target, so version 5 drops the slots and a
-    // legacy read discards them.
-    if inner_version <= 2 || inner_version == 4 {
-        let _legacy_k_max = reader.read_u32::<LittleEndian>()?;
-        let _legacy_target_sessions = reader.read_u32::<LittleEndian>()?;
-    }
+    let k_max = reader.read_u32::<LittleEndian>()?;
+    let target_sessions = reader.read_u32::<LittleEndian>()?;
     let max_actions_per_split_tx =
         usize::try_from(reader.read_u64::<LittleEndian>()?).map_err(|_| {
             Error::new(
@@ -149,16 +111,10 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
                 "max_actions_per_split_tx does not fit in this platform's usize",
             )
         })?;
-    // Params version 1 repurposed this u32 slot from the retired
-    // boundary-relative `expiry_delta`; the layout is unchanged. Dev's
-    // version 4 dropped the slot entirely, so a v4 read falls back to the
-    // provisional modulus and relies on the consent params-hash mismatch
-    // to force a replan.
-    let expiry_modulus = if inner_version == 4 {
-        CANONICAL_EXPIRY_MODULUS
-    } else {
-        reader.read_u32::<LittleEndian>()?
-    };
+    if inner_version <= 2 {
+        // Discarded: superseded by the fixed ZIP 318 expiry formula.
+        reader.read_u32::<LittleEndian>()?;
+    }
     let part_fee = reader.read_u64::<LittleEndian>()?;
     let params = MigrationParams {
         version,
@@ -167,8 +123,9 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         max_residual_value,
         sweep_min,
         bucket_modulus,
+        k_max,
+        target_sessions,
         max_actions_per_split_tx,
-        expiry_modulus,
         part_fee,
     };
 
@@ -201,27 +158,9 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         1 => {
             let round = reader.read_u32::<LittleEndian>()?;
             let pending_txids = Vector::read(&mut reader, |r| TxId::read(r))?;
-            // Only version 5 carries the drawn preparation schedule
-            // (version 2 predates it and dev's version 4 never had one);
-            // an empty queue makes the driver replan the remaining round.
-            let queued = if inner_version < 5 {
-                Vec::new()
-            } else {
-                Vector::read(&mut reader, |mut r| {
-                    let inputs = Vector::read(&mut r, |r| r.read_u64::<LittleEndian>())?;
-                    let outputs = Vector::read(&mut r, |r| r.read_u64::<LittleEndian>())?;
-                    let due_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-                    Ok(QueuedSplitTx {
-                        inputs,
-                        outputs,
-                        due_height,
-                    })
-                })?
-            };
             MigrationPhase::NoteSplitting {
                 round,
                 pending_txids,
-                queued,
             }
         }
         2 => MigrationPhase::PartsScheduled,
@@ -279,6 +218,9 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     Optional::write(&mut writer, part.bucket_index, |w, bucket_index| {
         w.write_u64::<LittleEndian>(bucket_index)
     })?;
+    Optional::write(&mut writer, part.anchor_bucket, |w, anchor_bucket| {
+        w.write_u64::<LittleEndian>(anchor_bucket)
+    })?;
     Optional::write(&mut writer, part.target_height, |w, target_height| {
         w.write_u32::<LittleEndian>(target_height.into())
     })?;
@@ -301,15 +243,15 @@ fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
     Optional::write(&mut writer, part.signed_blob.as_ref(), |w, signed_blob| {
         Vector::write(w, signed_blob, |w, byte| w.write_u8(*byte))
     })?;
-    // Version 3: the rolling witness cache, a boundary-keyed map (the
-    // single optional witness of version 2 is discarded on legacy read).
-    let witnesses: Vec<(&u32, &BoundaryWitness)> = part.boundary_witnesses.iter().collect();
-    Vector::write(&mut writer, &witnesses, |mut w, (boundary, witness)| {
-        w.write_u32::<LittleEndian>(**boundary)?;
-        w.write_all(&witness.anchor)?;
-        w.write_u64::<LittleEndian>(witness.position)?;
-        Vector::write(&mut w, &witness.auth_path, |w, node| w.write_all(node))
-    })?;
+    Optional::write(
+        &mut writer,
+        part.anchor_witness.as_ref(),
+        |mut w, witness| {
+            w.write_all(&witness.anchor)?;
+            w.write_u64::<LittleEndian>(witness.position)?;
+            Vector::write(&mut w, &witness.auth_path, |w, node| w.write_all(node))
+        },
+    )?;
     writer.write_u8(part.attempts)
 }
 
@@ -330,12 +272,11 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
         })
     })?;
     let bucket_index = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
-    // Dev's version 4 stored a scheduling-time anchor bucket per part; the
-    // anchor is now drawn at proving time (ZIP 318's anchor-selection
-    // rule), so a v4 read discards it.
-    if inner_version == 4 {
-        Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
-    }
+    let stored_anchor_bucket = if inner_version >= 4 {
+        Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?
+    } else {
+        None
+    };
     let target_height = if inner_version >= 1 {
         Optional::read(&mut reader, |r| {
             Ok(BlockHeight::from_u32(r.read_u32::<LittleEndian>()?))
@@ -367,60 +308,60 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
     let signed_blob = Optional::read(&mut reader, |r| {
         Vector::read(r, byteorder::ReadBytesExt::read_u8)
     })?;
-    let boundary_witnesses = if inner_version < 5 {
-        // Version 2 stored a single optional witness with no boundary key,
-        // and dev's version 4 stored a single scheduling-time anchor
-        // witness in the same shape. Both prove against boundaries the
-        // proving-time anchor draw will not choose; discard and recapture
-        // from the tree after sync.
-        Optional::read(&mut reader, |mut r| {
-            let mut anchor = [0u8; 32];
-            r.read_exact(&mut anchor)?;
-            let _position = r.read_u64::<LittleEndian>()?;
-            Vector::read(&mut r, |r| {
-                let mut node = [0u8; 32];
-                r.read_exact(&mut node)?;
-                Ok(node)
-            })?;
-            Ok(())
+    let anchor_witness = Optional::read(&mut reader, |mut r| {
+        let mut anchor = [0u8; 32];
+        r.read_exact(&mut anchor)?;
+        let position = r.read_u64::<LittleEndian>()?;
+        let auth_path = Vector::read(&mut r, |r| {
+            let mut node = [0u8; 32];
+            r.read_exact(&mut node)?;
+            Ok(node)
         })?;
-        std::collections::BTreeMap::new()
-    } else {
-        Vector::read(&mut reader, |mut r| {
-            let boundary = r.read_u32::<LittleEndian>()?;
-            let mut anchor = [0u8; 32];
-            r.read_exact(&mut anchor)?;
-            let position = r.read_u64::<LittleEndian>()?;
-            let auth_path = Vector::read(&mut r, |r| {
-                let mut node = [0u8; 32];
-                r.read_exact(&mut node)?;
-                Ok(node)
-            })?;
-            Ok((
-                boundary,
-                BoundaryWitness {
-                    anchor,
-                    position,
-                    auth_path,
-                },
-            ))
-        })?
-        .into_iter()
-        .collect()
-    };
+        Ok(BoundaryWitness {
+            anchor,
+            position,
+            auth_path,
+        })
+    })?;
     let attempts = reader.read_u8()?;
+
+    // Before version 4 the anchor *was* the broadcast window's boundary, an
+    // age of zero. A part that already carries a transaction committed to
+    // that anchor keeps it: the signature cannot be re-aimed, so recording
+    // anything else would misdescribe what is on the wire. An unsigned part
+    // has committed to nothing, so it is left anchorless and the next
+    // placement (or `refresh_part_witnesses`) draws it a legal age (ADR 0018).
+    //
+    // Its cached witness goes with it. That witness proves the note under the
+    // *window's* boundary, which is not where the part will anchor once an
+    // age is drawn, so keeping it would either fail to prove or quietly prove
+    // against the age-zero anchor this change exists to retire.
+    let (anchor_bucket, anchor_witness) = if inner_version >= 4 {
+        (stored_anchor_bucket, anchor_witness)
+    } else {
+        match state {
+            PartState::Signed | PartState::Broadcast | PartState::Confirmed { .. } => {
+                (bucket_index, anchor_witness)
+            }
+            PartState::Bound
+            | PartState::Assigned
+            | PartState::Expired
+            | PartState::Invalidated => (None, None),
+        }
+    };
 
     Ok(PartRecord {
         id,
         denomination,
         note,
         bucket_index,
+        anchor_bucket,
         target_height,
         state,
         txid,
         expiry_height,
         signed_blob,
-        boundary_witnesses,
+        anchor_witness,
         attempts,
     })
 }
@@ -438,8 +379,9 @@ mod tests {
             any::<u64>(),
             any::<u64>(),
             any::<u32>(),
-            1usize..=1000,
             any::<u32>(),
+            any::<u32>(),
+            1usize..=1000,
             any::<u64>(),
         )
             .prop_map(
@@ -450,8 +392,9 @@ mod tests {
                     max_residual_value,
                     sweep_min,
                     bucket_modulus,
+                    k_max,
+                    target_sessions,
                     max_actions_per_split_tx,
-                    expiry_modulus,
                     part_fee,
                 )| MigrationParams {
                     version,
@@ -460,8 +403,9 @@ mod tests {
                     max_residual_value,
                     sweep_min,
                     bucket_modulus,
+                    k_max,
+                    target_sessions,
                     max_actions_per_split_tx,
-                    expiry_modulus,
                     part_fee,
                 },
             )
@@ -510,12 +454,13 @@ mod tests {
                     proptest::collection::vec(any::<[u8; 32]>(), 0..32),
                 )),
                 any::<u8>(),
+                proptest::option::of(any::<u64>()),
             ),
         )
             .prop_map(
                 |(
                     (id, denomination, note, bucket_index, target_height, state),
-                    (txid, expiry_height, signed_blob, anchor_witness, attempts),
+                    (txid, expiry_height, signed_blob, anchor_witness, attempts, anchor_bucket),
                 )| PartRecord {
                     id: PartId(id),
                     denomination,
@@ -525,28 +470,19 @@ mod tests {
                         commitment,
                     }),
                     bucket_index,
+                    anchor_bucket,
                     target_height: target_height.map(BlockHeight::from_u32),
                     state,
                     txid,
                     expiry_height: expiry_height.map(BlockHeight::from_u32),
                     signed_blob,
-                    boundary_witnesses: anchor_witness
-                        .map(|(anchor, position, auth_path)| {
-                            // Keyed at the provisional boundary modulus — a
-                            // named ZIP 318 value, never a bare literal.
-                            let modulus =
-                                MigrationParams::provisional(crate::config::ChainType::Mainnet)
-                                    .bucket_modulus;
-                            std::collections::BTreeMap::from([(
-                                modulus,
-                                BoundaryWitness {
-                                    anchor,
-                                    position,
-                                    auth_path,
-                                },
-                            )])
-                        })
-                        .unwrap_or_default(),
+                    anchor_witness: anchor_witness.map(|(anchor, position, auth_path)| {
+                        BoundaryWitness {
+                            anchor,
+                            position,
+                            auth_path,
+                        }
+                    }),
                     attempts,
                 },
             )
@@ -561,12 +497,7 @@ mod tests {
             )
                 .prop_map(|(round, pending_txids)| MigrationPhase::NoteSplitting {
                     round,
-                    pending_txids,
-                    queued: vec![QueuedSplitTx {
-                        inputs: vec![1_020_000, 300_000],
-                        outputs: vec![1_020_000],
-                        due_height: BlockHeight::from_u32(3_500_000),
-                    }],
+                    pending_txids
                 }),
             Just(MigrationPhase::PartsScheduled),
             any::<u64>().prop_map(|residual| MigrationPhase::Complete { residual }),
@@ -657,55 +588,11 @@ mod tests {
         assert!(read(bytes.as_slice()).is_err());
     }
 
-    /// Version 3 named two divergent development layouts and neither ever
-    /// sat at a dev tip, so a blob claiming it must be refused rather than
-    /// parsed under a guessed layout.
-    #[test]
-    fn ambiguous_v3_is_refused() {
-        let mut bytes = Vec::new();
-        write(&mut bytes, &planned_state()).expect("writes");
-        bytes[0] = 3;
-        let error = read(bytes.as_slice()).expect_err("a v3 blob must not read");
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
-    }
-
-    /// Dev's version 4 keeps the `k_max`/`target_sessions` u32 slots and
-    /// drops the expiry u32; a v4 blob is therefore the current blob with
-    /// the version byte lowered, the two slots re-inserted after
-    /// `bucket_modulus`, and the expiry u32 removed. Reading it must
-    /// succeed, discard the retired slots, and fall back to the
-    /// provisional expiry modulus.
-    #[test]
-    fn v4_blob_reads_with_legacy_discards() {
-        let state = planned_state();
-        let mut bytes = Vec::new();
-        write(&mut bytes, &state).expect("writes");
-        bytes[0] = 4;
-        // Offset of the retired slots, as in `v1_blob_reads_with_scheduled_mode`.
-        let denominations = state.params.denominations.len();
-        assert!(denominations < 253, "CompactSize stays a single byte");
-        let legacy_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
-        let mut legacy_slots = Vec::new();
-        legacy_slots.extend(8u32.to_le_bytes());
-        legacy_slots.extend(6u32.to_le_bytes());
-        bytes.splice(legacy_offset..legacy_offset, legacy_slots);
-        // Remove the expiry u32 that follows the two inserted slots and
-        // the `max_actions_per_split_tx` u64.
-        let expiry_offset = legacy_offset + 4 + 4 + 8;
-        bytes.drain(expiry_offset..expiry_offset + 4);
-
-        let recovered = read(bytes.as_slice()).expect("a v4 blob still reads");
-        assert_eq!(recovered.params.expiry_modulus, CANONICAL_EXPIRY_MODULUS);
-        assert_eq!(recovered, state);
-    }
-
-    /// Version 2 only appended the mode byte, and version 5 dropped the
-    /// legacy `k_max` and `target_sessions` params slots; a v1 blob is
-    /// therefore the current blob with the version byte lowered, the two
-    /// u32 slots re-inserted after `bucket_modulus`, and the trailing mode
-    /// byte dropped. Reading it must succeed and default the mode to
-    /// `Scheduled`, the conservative reading that makes the immediate path
-    /// refuse to collapse an old persisted state.
+    /// Relative to v3, a v1 blob carries the retired `expiry_delta` u32
+    /// before `part_fee` and lacks the trailing mode byte. Reading it must
+    /// succeed, discard the delta, and default the mode to `Scheduled`, the
+    /// conservative reading that makes the immediate path refuse to
+    /// collapse an old persisted state.
     #[test]
     fn v1_blob_reads_with_scheduled_mode() {
         let mut state = planned_state();
@@ -713,19 +600,11 @@ mod tests {
         let mut bytes = Vec::new();
         write(&mut bytes, &state).expect("writes");
         bytes[0] = 1;
-        // Offset of the retired `k_max` slot: the inner version byte, the
-        // params version, the denominations vector (a single CompactSize
-        // length byte below 253 entries plus eight bytes each), denom_cap,
-        // max_residual_value, sweep_min, and bucket_modulus.
-        let denominations = state.params.denominations.len();
-        assert!(denominations < 253, "CompactSize stays a single byte");
-        let legacy_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
-        // The retired `k_max` then `target_sessions` u32 slots.
-        let mut legacy_slots = Vec::new();
-        legacy_slots.extend(8u32.to_le_bytes());
-        legacy_slots.extend(6u32.to_le_bytes());
-        bytes.splice(legacy_offset..legacy_offset, legacy_slots);
         bytes.pop();
+        // Splice the legacy expiry_delta back in where v1 carried it: after
+        // the fixed-width params fields that follow the denominations vector.
+        let offset = 1 + 4 + 1 + 8 * state.params.denominations.len() + 3 * 8 + 3 * 4 + 8;
+        bytes.splice(offset..offset, 296u32.to_le_bytes());
 
         let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");
         assert_eq!(recovered.mode, MigrationMode::Scheduled);
@@ -733,11 +612,90 @@ mod tests {
         assert_eq!(recovered, state);
     }
 
+    /// Before version 4 a part's anchor was its broadcast window's boundary,
+    /// an age of zero. Reading such a part must sort it by whether a
+    /// transaction already commits to that anchor: a `Signed` part keeps it,
+    /// because its signature cannot be re-aimed, while an unsigned one is left
+    /// anchorless so the next placement draws it a legal age. The unsigned
+    /// part's cached witness must go too — it proves the note under the
+    /// window's boundary, so surviving into a redrawn anchor would either fail
+    /// to prove or quietly resurrect the age-zero anchor (ADR 0018).
+    #[test]
+    fn a_v3_blob_keeps_signed_anchors_and_drops_unsigned_ones() {
+        let witness = BoundaryWitness {
+            anchor: [7; 32],
+            position: 11,
+            auth_path: vec![[3; 32]],
+        };
+        // A v3 part's anchor *is* its bucket_index, so the fixture writes
+        // them equal; the sentinel only has to be locatable in the stream.
+        const BUCKET: u64 = 0x0BAD_C0DE;
+        let with_state = |state: PartState| {
+            let mut part = PartRecord::new(
+                PartId(0),
+                1_000_000,
+                BoundNote {
+                    output_id: OutputId::new(TxId::from_bytes([1; 32]), 0),
+                    nullifier: [0; 32],
+                    commitment: [0; 32],
+                },
+            );
+            part.bucket_index = Some(BUCKET);
+            part.anchor_bucket = Some(BUCKET);
+            part.anchor_witness = Some(witness.clone());
+            part.state = state;
+            let mut state_with_part = planned_state();
+            state_with_part.parts = vec![part];
+            let mut bytes = Vec::new();
+            write(&mut bytes, &state_with_part).expect("writes");
+
+            // Re-label as v3 and strip the field the v4 layout added: the
+            // `Optional` tag and payload of the *second* of the two adjacent
+            // identical encodings, which is `anchor_bucket`.
+            bytes[0] = 3;
+            let field = [&[1u8][..], &BUCKET.to_le_bytes()[..]].concat();
+            let first = bytes
+                .windows(field.len())
+                .position(|window| window == field)
+                .expect("bucket_index is in the stream");
+            let anchor_at = first + field.len();
+            assert_eq!(
+                &bytes[anchor_at..anchor_at + field.len()],
+                field.as_slice(),
+                "anchor_bucket is written immediately after bucket_index"
+            );
+            bytes.drain(anchor_at..anchor_at + field.len());
+            read(bytes.as_slice()).expect("a v3 blob still reads").parts
+        };
+
+        let signed = with_state(PartState::Signed);
+        assert_eq!(
+            signed[0].anchor_bucket,
+            Some(BUCKET),
+            "a signed part keeps the age-zero anchor its transaction commits"
+        );
+        assert_eq!(
+            signed[0].anchor_witness.as_ref(),
+            Some(&witness),
+            "and keeps the witness that proves it"
+        );
+
+        let assigned = with_state(PartState::Assigned);
+        assert_eq!(
+            assigned[0].anchor_bucket, None,
+            "an unsigned part is left anchorless for a fresh draw"
+        );
+        assert_eq!(
+            assigned[0].anchor_witness, None,
+            "and loses the witness aimed at the window's boundary"
+        );
+    }
+
     /// The `as usize` cast reading `max_actions_per_split_tx` silently
     /// truncates on 32-bit targets. This test patches a serialized stream so
     /// the persisted value exceeds `u32::MAX`: the read must either reject
     /// the stream (the desired `usize::try_from` + `InvalidData` behavior)
-    /// or preserve the value. It passes vacuously on 64-bit hosts; run under
+    /// or preserve the value. It passes vacuously on 64-bit hosts. Run under
     /// a 32-bit target (e.g. i686-unknown-linux-gnu) to observe the failure.
     /// Every bucket computation divides or multiplies by the modulus, so a
     /// zero arriving from a corrupt wallet file must fail the read typed
