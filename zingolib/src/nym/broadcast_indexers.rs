@@ -76,7 +76,8 @@ pub const BROADCAST_INDEXERS: &[&str] = &[
 ///
 /// This is the raw curated list, for diagnostic surfaces that carry no wallet
 /// data (the `nym probe` pairing). A transmission draw MUST NOT use it
-/// directly: it goes through [`eligible_witnesses`], which enforces the
+/// directly: it goes through `eligible_witnesses` (crate-private, so no
+/// intra-doc link from this public item), which enforces the
 /// witness-is-never-the-sync-indexer invariant (ADR 0022).
 pub fn broadcast_indexers() -> Vec<Uri> {
     BROADCAST_INDEXERS
@@ -116,8 +117,14 @@ pub(crate) fn eligible_witnesses(sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligi
     eligible_from(broadcast_indexers(), sync_indexer)
 }
 
-/// Pure core of [`eligible_witnesses`], over an arbitrary pool for testability.
-fn eligible_from(pool: Vec<Uri>, sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligibleWitnesses> {
+/// Pure core of [`eligible_witnesses`], over an arbitrary pool for
+/// testability. Crate-visible so the migration draw's pool filtering
+/// (`eligible_candidates`) delegates here instead of growing a second,
+/// divergent exclusion (ADR 0022 requires one).
+pub(crate) fn eligible_from(
+    pool: Vec<Uri>,
+    sync_indexer: &Uri,
+) -> Result<Vec<Uri>, NoEligibleWitnesses> {
     let sync_operator = sync_indexer.host().map(operator_domain);
     let eligible: Vec<Uri> = pool
         .into_iter()
@@ -133,13 +140,22 @@ fn eligible_from(pool: Vec<Uri>, sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligi
     Ok(eligible)
 }
 
+/// Whether two hosts belong to the same accumulating operator: their
+/// operator keys match. This is the one predicate every transmission
+/// surface uses to compare a candidate against the sync indexer (ADR 0022).
+pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
+    operator_domain(host_a) == operator_domain(host_b)
+}
+
 /// The operator key of a host: its registrable parent domain, approximated as
-/// the last two dot-separated labels (the whole host when it has fewer). Two
-/// hosts with the same key are treated as one accumulating party. The
-/// approximation can only over-exclude (two unrelated hosts sharing a suffix
-/// collapse together), which merely shrinks the pool — it never lets the sync
+/// the last two dot-separated labels (the whole host when it has fewer),
+/// lowercased because DNS names compare case-insensitively. Two hosts with
+/// the same key are treated as one accumulating party. The approximation can
+/// only over-exclude (two unrelated hosts sharing a suffix collapse
+/// together), which merely shrinks the pool — it never lets the sync
 /// indexer's operator through.
 fn operator_domain(host: &str) -> String {
+    let host = host.to_ascii_lowercase();
     let labels: Vec<&str> = host.rsplit('.').collect();
     labels
         .iter()

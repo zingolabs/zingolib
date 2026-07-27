@@ -910,9 +910,10 @@ impl LightClient {
     /// While the mode is on, parts travel ONLY over the mixnet (failing
     /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
     /// proxy bootstraps or after it dies) to one Broadcast Indexer drawn at
-    /// random per submission, with the synchronization endpoint's host
-    /// forbidden as a target (a `migration_broadcast_uri` on that host is
-    /// refused). Clearnet carries parts only when the user deliberately
+    /// random per submission, with the synchronization endpoint's operator
+    /// forbidden as a target (ADR 0022: a `migration_broadcast_uri` on the
+    /// sync operator's domain is refused, and the draw excludes that
+    /// operator). Clearnet carries parts only when the user deliberately
     /// toggled the mode off, or in a build without the `nym` feature: then
     /// the dedicated `migration_broadcast_uri` when configured, else the
     /// synchronization endpoint with a logged correlation warning, else
@@ -922,13 +923,10 @@ impl LightClient {
     ) -> Result<broadcast_route::RoutedBroadcastClient, LightClientError> {
         #[cfg(feature = "nym")]
         if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
-            let sync_host = self
-                .indexer_uri()
-                .and_then(|uri| uri.host().map(str::to_string));
+            let sync_indexer = self.indexer_uri();
             let candidates = broadcast_route::eligible_candidates(
                 self.migration_broadcast_uri.clone(),
-                sync_host.as_deref(),
-                crate::nym::broadcast_indexers::broadcast_indexers(),
+                sync_indexer.as_ref(),
             )?;
             return Ok(broadcast_route::RoutedBroadcastClient::Mixnet(
                 broadcast_route::MixnetBroadcastClient::new(socks5_addr, candidates),
