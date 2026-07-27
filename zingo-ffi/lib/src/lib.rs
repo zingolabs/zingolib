@@ -153,7 +153,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::FileError(_) => ZingolibError::Save(text),
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::PriceError(_) | LightClientError::PriceFetchUnsupported => {
+        LightClientError::PriceError(_) => {
             ZingolibError::Read(text)
         }
         LightClientError::MigrationError(inner) => match inner {
