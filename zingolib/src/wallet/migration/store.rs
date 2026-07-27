@@ -13,16 +13,29 @@ use zcash_protocol::consensus::BlockHeight;
 
 use pepper_sync::wallet::OutputId;
 
-use super::params::MigrationParams;
+use super::params::{CANONICAL_EXPIRY_MODULUS, MigrationParams};
 use super::parts::{BoundNote, BoundaryWitness, PartId, PartRecord, PartState, SigningStrategy};
 use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState, QueuedSplitTx};
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
-/// Version 3 drops the `k_max` params slot (issue #2519, deviation 5) and
-/// replaces the part's single optional witness with the boundary-keyed
-/// rolling witness cache (deviation 2); a legacy read discards both.
-const INNER_VERSION: u8 = 3;
+///
+/// Versions 3 and 4 were spent on divergent development lines and are dead
+/// numbers. Version 3 meant two different layouts (a dropped `k_max` slot
+/// plus the rolling witness cache on one line; a dropped expiry slot on the
+/// other) and neither meaning ever sat at a dev tip, so a v3 blob is refused
+/// rather than guessed at. Version 4 shipped from dev: it keeps the
+/// `k_max`/`target_sessions` params slots, drops the expiry slot, and adds a
+/// per-part `anchor_bucket` beside a single anchor witness.
+///
+/// Version 5 reunifies the layouts on the ZIP 318 schedule: the params carry
+/// the canonical rolling `expiry_modulus` (issue #2519, deviations 3 and 4)
+/// and no multiplicity or session slots (deviation 5), and each part carries
+/// the boundary-keyed rolling witness cache (deviation 2) in place of any
+/// single stored witness. Legacy reads discard the retired slots; a v4
+/// read additionally falls back to the provisional expiry modulus and lets
+/// the consent params-hash mismatch force a replan.
+const INNER_VERSION: u8 = 5;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -34,7 +47,7 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
         w.write_u64::<LittleEndian>(*denomination)
     })?;
     writer.write_u64::<LittleEndian>(params.denom_cap)?;
-    writer.write_u64::<LittleEndian>(params.dust_floor)?;
+    writer.write_u64::<LittleEndian>(params.max_residual_value)?;
     writer.write_u64::<LittleEndian>(params.sweep_min)?;
     writer.write_u32::<LittleEndian>(params.bucket_modulus)?;
     writer.write_u64::<LittleEndian>(params.max_actions_per_split_tx as u64)?;
@@ -96,11 +109,19 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             format!("unknown migration section version {inner_version}"),
         ));
     }
+    // Version 3 named two different development layouts and neither ever
+    // sat at a dev tip; a blob claiming it cannot be read unambiguously.
+    if inner_version == 3 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "migration section version 3 is ambiguous and never shipped",
+        ));
+    }
 
     let version = reader.read_u32::<LittleEndian>()?;
     let denominations = Vector::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
     let denom_cap = reader.read_u64::<LittleEndian>()?;
-    let dust_floor = reader.read_u64::<LittleEndian>()?;
+    let max_residual_value = reader.read_u64::<LittleEndian>()?;
     let sweep_min = reader.read_u64::<LittleEndian>()?;
     let bucket_modulus = reader.read_u32::<LittleEndian>()?;
     // Every bucket computation divides or multiplies by the modulus, so a
@@ -111,15 +132,13 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             "bucket_modulus must be nonzero",
         ));
     }
-    // Version 2 carried a `k_max` multiplicity cap in a u32 slot here;
-    // ZIP 318 places no per-wallet multiplicity cap (issue #2519,
-    // deviation 5), so version 3 drops the slot and a legacy read
-    // discards it.
-    // Version 2 carried a `target_sessions` signing-session target after
-    // the `k_max` slot; the Poisson schedule (issue #2519, deviation 1)
-    // retired both, so version 3 drops the slots and a legacy read
-    // discards them.
-    if inner_version <= 2 {
+    // Versions 2 and below, and dev's version 4, carried a `k_max`
+    // multiplicity cap and a `target_sessions` signing-session target in
+    // two u32 slots here. ZIP 318 places no per-wallet multiplicity cap
+    // (issue #2519, deviation 5) and the Poisson schedule (deviation 1)
+    // retired the session target, so version 5 drops the slots and a
+    // legacy read discards them.
+    if inner_version <= 2 || inner_version == 4 {
         let _legacy_k_max = reader.read_u32::<LittleEndian>()?;
         let _legacy_target_sessions = reader.read_u32::<LittleEndian>()?;
     }
@@ -131,14 +150,21 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
             )
         })?;
     // Params version 1 repurposed this u32 slot from the retired
-    // boundary-relative `expiry_delta`; the layout is unchanged.
-    let expiry_modulus = reader.read_u32::<LittleEndian>()?;
+    // boundary-relative `expiry_delta`; the layout is unchanged. Dev's
+    // version 4 dropped the slot entirely, so a v4 read falls back to the
+    // provisional modulus and relies on the consent params-hash mismatch
+    // to force a replan.
+    let expiry_modulus = if inner_version == 4 {
+        CANONICAL_EXPIRY_MODULUS
+    } else {
+        reader.read_u32::<LittleEndian>()?
+    };
     let part_fee = reader.read_u64::<LittleEndian>()?;
     let params = MigrationParams {
         version,
         denominations,
         denom_cap,
-        dust_floor,
+        max_residual_value,
         sweep_min,
         bucket_modulus,
         max_actions_per_split_tx,
@@ -175,9 +201,10 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         1 => {
             let round = reader.read_u32::<LittleEndian>()?;
             let pending_txids = Vector::read(&mut reader, |r| TxId::read(r))?;
-            // Version 2 predates the drawn preparation schedule; an empty
-            // queue makes the driver replan the remaining round.
-            let queued = if inner_version <= 2 {
+            // Only version 5 carries the drawn preparation schedule
+            // (version 2 predates it and dev's version 4 never had one);
+            // an empty queue makes the driver replan the remaining round.
+            let queued = if inner_version < 5 {
                 Vec::new()
             } else {
                 Vector::read(&mut reader, |mut r| {
@@ -303,6 +330,12 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
         })
     })?;
     let bucket_index = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+    // Dev's version 4 stored a scheduling-time anchor bucket per part; the
+    // anchor is now drawn at proving time (ZIP 318's anchor-selection
+    // rule), so a v4 read discards it.
+    if inner_version == 4 {
+        Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+    }
     let target_height = if inner_version >= 1 {
         Optional::read(&mut reader, |r| {
             Ok(BlockHeight::from_u32(r.read_u32::<LittleEndian>()?))
@@ -334,9 +367,12 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
     let signed_blob = Optional::read(&mut reader, |r| {
         Vector::read(r, byteorder::ReadBytesExt::read_u8)
     })?;
-    let boundary_witnesses = if inner_version <= 2 {
-        // Version 2 stored a single optional witness with no boundary key;
-        // discard it (nothing shipped wrote one) and recapture after sync.
+    let boundary_witnesses = if inner_version < 5 {
+        // Version 2 stored a single optional witness with no boundary key,
+        // and dev's version 4 stored a single scheduling-time anchor
+        // witness in the same shape. Both prove against boundaries the
+        // proving-time anchor draw will not choose; discard and recapture
+        // from the tree after sync.
         Optional::read(&mut reader, |mut r| {
             let mut anchor = [0u8; 32];
             r.read_exact(&mut anchor)?;
@@ -411,7 +447,7 @@ mod tests {
                     version,
                     denominations,
                     denom_cap,
-                    dust_floor,
+                    max_residual_value,
                     sweep_min,
                     bucket_modulus,
                     max_actions_per_split_tx,
@@ -421,7 +457,7 @@ mod tests {
                     version,
                     denominations,
                     denom_cap,
-                    dust_floor,
+                    max_residual_value,
                     sweep_min,
                     bucket_modulus,
                     max_actions_per_split_tx,
@@ -621,13 +657,55 @@ mod tests {
         assert!(read(bytes.as_slice()).is_err());
     }
 
-    /// Version 2 only appended the mode byte, and version 3 dropped the
-    /// legacy `k_max` params slot; a v1 blob is therefore the current blob
-    /// with the version byte lowered, a `k_max` u32 re-inserted after
-    /// `bucket_modulus`, and the trailing mode byte dropped. Reading it
-    /// must succeed and default the mode to `Scheduled`, the
-    /// conservative reading that makes the immediate path refuse to
-    /// collapse an old persisted state.
+    /// Version 3 named two divergent development layouts and neither ever
+    /// sat at a dev tip, so a blob claiming it must be refused rather than
+    /// parsed under a guessed layout.
+    #[test]
+    fn ambiguous_v3_is_refused() {
+        let mut bytes = Vec::new();
+        write(&mut bytes, &planned_state()).expect("writes");
+        bytes[0] = 3;
+        let error = read(bytes.as_slice()).expect_err("a v3 blob must not read");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    /// Dev's version 4 keeps the `k_max`/`target_sessions` u32 slots and
+    /// drops the expiry u32; a v4 blob is therefore the current blob with
+    /// the version byte lowered, the two slots re-inserted after
+    /// `bucket_modulus`, and the expiry u32 removed. Reading it must
+    /// succeed, discard the retired slots, and fall back to the
+    /// provisional expiry modulus.
+    #[test]
+    fn v4_blob_reads_with_legacy_discards() {
+        let state = planned_state();
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+        bytes[0] = 4;
+        // Offset of the retired slots, as in `v1_blob_reads_with_scheduled_mode`.
+        let denominations = state.params.denominations.len();
+        assert!(denominations < 253, "CompactSize stays a single byte");
+        let legacy_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;
+        let mut legacy_slots = Vec::new();
+        legacy_slots.extend(8u32.to_le_bytes());
+        legacy_slots.extend(6u32.to_le_bytes());
+        bytes.splice(legacy_offset..legacy_offset, legacy_slots);
+        // Remove the expiry u32 that follows the two inserted slots and
+        // the `max_actions_per_split_tx` u64.
+        let expiry_offset = legacy_offset + 4 + 4 + 8;
+        bytes.drain(expiry_offset..expiry_offset + 4);
+
+        let recovered = read(bytes.as_slice()).expect("a v4 blob still reads");
+        assert_eq!(recovered.params.expiry_modulus, CANONICAL_EXPIRY_MODULUS);
+        assert_eq!(recovered, state);
+    }
+
+    /// Version 2 only appended the mode byte, and version 5 dropped the
+    /// legacy `k_max` and `target_sessions` params slots; a v1 blob is
+    /// therefore the current blob with the version byte lowered, the two
+    /// u32 slots re-inserted after `bucket_modulus`, and the trailing mode
+    /// byte dropped. Reading it must succeed and default the mode to
+    /// `Scheduled`, the conservative reading that makes the immediate path
+    /// refuse to collapse an old persisted state.
     #[test]
     fn v1_blob_reads_with_scheduled_mode() {
         let mut state = planned_state();
@@ -638,7 +716,7 @@ mod tests {
         // Offset of the retired `k_max` slot: the inner version byte, the
         // params version, the denominations vector (a single CompactSize
         // length byte below 253 entries plus eight bytes each), denom_cap,
-        // dust_floor, sweep_min, and bucket_modulus.
+        // max_residual_value, sweep_min, and bucket_modulus.
         let denominations = state.params.denominations.len();
         assert!(denominations < 253, "CompactSize stays a single byte");
         let legacy_offset = 1 + 4 + (1 + denominations * 8) + 8 + 8 + 8 + 4;

@@ -29,7 +29,7 @@ byteorder = { workspace = true }
 # rustls-tls-webpki-roots-no-provider: never auto-selects a rustls
 # CryptoProvider (the fetch path installs aws-lc-rs, first-install-wins,
 # before requesting), and verifies against the compiled-in Mozilla webpki
-# bundle — the same root decision as ADR 0017. The former bare
+# bundle — the same root decision as ADR 0021. The former bare
 # rustls-tls-no-provider resolved to MANUAL roots: an empty trust store
 # that failed every handshake with UnknownIssuer, buried three Display
 # layers deep (zingolib#2531 follow-up).

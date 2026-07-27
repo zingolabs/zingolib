@@ -361,8 +361,8 @@ pub trait SyncShardTrees: SyncWallet {
 
     /// Removes all shard tree data above the given `truncate_height`:
     /// each tree rolls back to its checkpoint at that height, stays
-    /// untouched because it records nothing above it, or — holding state
-    /// it cannot roll back — aborts with
+    /// untouched because it records nothing above it, or, holding state
+    /// it cannot roll back, aborts with
     /// [`SyncError::TruncationError`] so the caller can fall back to the
     /// clear-and-rescan recovery. Each tree's outcome is decided by the
     /// pure per-pool rule `plan_pool_truncation` over facts read here
@@ -398,9 +398,9 @@ where
 /// and applies it.
 ///
 /// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
-/// checkpoint at `truncate_height`; [`PoolTruncation::Untouched`] leaves
-/// the tree alone; [`PoolTruncation::RequiresRescan`] — and a planned
-/// rollback the tree store unexpectedly refuses — becomes
+/// checkpoint at `truncate_height`. [`PoolTruncation::Untouched`] leaves
+/// the tree alone. [`PoolTruncation::RequiresRescan`], and a planned
+/// rollback the tree store unexpectedly refuses, becomes
 /// [`SyncError::TruncationError`] naming the pool, so the caller can
 /// fall back to the clear-and-rescan recovery.
 fn truncate_pool_tree<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(

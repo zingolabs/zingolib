@@ -103,6 +103,9 @@ tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
 zaino-proto = { version = "0.2.0", default-features = false, features = ["grpc_proxy_server"] }
+# Conformance oracle only: the shipped constants are defined locally so they
+# can never move underneath the consent hash via a dependency bump.
+zcash_pool_migration = { version = "=0.1.0-alpha.1", default-features = false }
 zingo_test_vectors = { workspace = true }
 
 [badges]

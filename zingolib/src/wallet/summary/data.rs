@@ -141,7 +141,7 @@ fn pools_to_json(pools: &[PoolType]) -> JsonValue {
 }
 
 /// The pools flagged present, in protocol order. `present` indices are
-/// (transparent, sapling, orchard, ironwood); this function is the single
+/// (transparent, sapling, orchard, ironwood). This function is the single
 /// definition of that order for pool lists exposed by summaries.
 pub(crate) fn pools_present(present: [bool; 4]) -> Vec<PoolType> {
     let [transparent, sapling, orchard, ironwood] = present;
@@ -208,7 +208,7 @@ impl TransactionSummary {
     }
 
     /// The shielded note summaries paired with their pool, newest pool first
-    /// (ironwood, orchard, sapling) — the order value transfers are listed in.
+    /// (ironwood, orchard, sapling), the order value transfers are listed in.
     pub(crate) fn shielded_notes_by_pool(&self) -> [(&[BasicNoteSummary], PoolType); 3] {
         [
             (self.ironwood_notes.as_slice(), PoolType::IRONWOOD),
@@ -454,7 +454,7 @@ pub struct ValueTransfer {
     /// Together with [`Self::pools_received`] this exposes pool movement. An
     /// Orchard -> Ironwood send-to-self (`pools_sent_from: [Orchard]`,
     /// `pools_received: [Ironwood]`) is classified as
-    /// [`SelfSendValueTransfer::Migration`] by zingolib itself; interpreting any
+    /// [`SelfSendValueTransfer::Migration`] by zingolib itself. Interpreting any
     /// other pool movement is left to the consumer.
     pub pools_sent_from: Vec<PoolType>,
     /// Pools this value transfer's value arrived into: the pool of the grouped notes for
@@ -1149,7 +1149,7 @@ mod tests {
     }
 
     /// A minimal send-to-self summary with the given funding pools and received
-    /// Ironwood/Orchard notes; every other field is empty or a neutral default.
+    /// Ironwood/Orchard notes. Every other field is empty or a neutral default.
     fn self_send_summary(
         pools_sent_from: Vec<PoolType>,
         ironwood_notes: Vec<BasicNoteSummary>,

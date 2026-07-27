@@ -136,7 +136,7 @@ x509-parser = "0.18"
 # (paired with the `rebuild-proto` feature above) and the time v0.3.47 pin.
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
-# ADR 0017 (zingolib#2531): the mixnet shim's TLS verifies against the
+# ADR 0021 (zingolib#2531): the mixnet shim's TLS verifies against the
 # compiled-in Mozilla bundle instead of rustls-platform-verifier's
 # OS-trust-store integration, which on Android demands JNI initialization
 # the shim's zero-unsafe invariant rules out. The stand-in lives in this

@@ -1,4 +1,4 @@
-# The webpki-roots replacement for rustls-platform-verifier (ADR 0017,
+# The webpki-roots replacement for rustls-platform-verifier (ADR 0021,
 # zingolib#2531). The package deliberately carries the upstream crate's name
 # and a version inside reqwest's `>=0.6, <0.8` requirement so the workspace
 # `[patch.crates-io]` substitutes it everywhere; the directory name says what
@@ -7,7 +7,7 @@
 name = "rustls-platform-verifier"
 version = "0.7.0"
 edition = "2021"
-description = "Workspace-local webpki-roots verifier standing in for rustls-platform-verifier (ADR 0017)"
+description = "Workspace-local webpki-roots verifier standing in for rustls-platform-verifier (ADR 0021)"
 publish = false
 
 [dependencies]

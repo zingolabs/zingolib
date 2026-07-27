@@ -3,7 +3,7 @@
 //! This module wraps the nym-sdk `Socks5MixnetClient` lifecycle and provides
 //! auto-discovery of public exit gateways (network requesters). It is gated
 //! on the `nym` feature, whose dependencies resolve only in this crate's own
-//! lockfile — never the parent workspace's — because nym-sdk's transitive
+//! lockfile, never the parent workspace's, because nym-sdk's transitive
 //! graph requires `crypto-common ^0.2`, which cannot coexist with the parent
 //! workspace's `crypto-common =0.2.0-rc.1` pin. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
@@ -17,7 +17,7 @@
 //!
 //! [`NymProxy`] embeds an in-process SOCKS5 proxy that connects to the
 //! mixnet and listens on a localhost port. A consumer routes gRPC (or any
-//! TCP) traffic through that local SOCKS5 address; the wallet-side transport
+//! TCP) traffic through that local SOCKS5 address. The wallet-side transport
 //! that dials it lives in the main workspace and needs only a SOCKS5 client,
 //! not this nym-sdk stack.
 //!
@@ -68,7 +68,7 @@ const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 ///
 /// Nym SDK connection attempts can block indefinitely if a gateway is
 /// unresponsive. This timeout caps total wall-clock time for the entire
-/// retry loop; [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
+/// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
 const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Timeout for a single provider connect attempt.
@@ -76,7 +76,7 @@ const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Without this bound, one unresponsive provider hangs
 /// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
 /// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds; six full
+/// responsive provider bootstraps in well under ten seconds. Six full
 /// attempts fit inside the lifecycle budget.
 const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -99,7 +99,7 @@ impl NymProxy {
     /// Queries the Nym API for active exit gateways, then races hedged
     /// connect attempts across them, keeping the first winner. The proxy
     /// listens on a random available localhost port. This is the recommended
-    /// entry point — no Nym-specific addresses are required.
+    /// entry point, since no Nym-specific addresses are required.
     pub async fn start() -> Result<Self, NymProxyError> {
         Self::start_with_progress(|_| {}).await
     }
@@ -301,7 +301,7 @@ impl NymProxy {
     /// Query the Nym API for active exit gateways running a network requester.
     ///
     /// Returns addresses shuffled for load distribution
-    /// ([`seeded_shuffle`] on [`time_entropy_seed`] — see its docs for why
+    /// ([`seeded_shuffle`] on [`time_entropy_seed`], see its docs for why
     /// this is deliberately not cryptographic randomness). Callers should try
     /// multiple entries since individual gateways may be offline.
     async fn discover_providers(nym_api_url: &str) -> Result<Vec<String>, NymProxyError> {
@@ -356,7 +356,7 @@ fn short_provider_name(providers: &[String], candidate: usize) -> String {
 
 /// Execute a pure racing plan ([`crate::arm_race`]) over real tokio tasks:
 /// launch arms as the planner directs, keep at most one pending hedge timer,
-/// feed completions back as events, and stop at the first winner — aborting
+/// feed completions back as events, and stop at the first winner, aborting
 /// the arms still in flight and handing any arm that had already finished as
 /// a second winner to `abandon` rather than leaking it. A lost race returns
 /// the final [`RaceState`], which carries every attempt's failure for the
@@ -514,7 +514,7 @@ mod tests {
     async fn no_abandon(_: &str) {}
 
     /// HYPOTHESIS: a provider whose connect hangs costs only the hedge
-    /// interval before a parallel arm can win — not the per-attempt timeout,
+    /// interval before a parallel arm can win, not the per-attempt timeout,
     /// and never the lifecycle budget (the regression behind live 120s
     /// startup hangs). Falsified if the race waits for the dud to time out.
     /// Runs on paused tokio time, so no live network and no real waiting.
@@ -585,8 +585,8 @@ mod tests {
         assert!(elapsed < NYM_LIFECYCLE_TIMEOUT);
     }
 
-    /// HYPOTHESIS: a lost race accounts for EVERY attempt, not just the last
-    /// failure — the information the retired retry engine discarded.
+    /// HYPOTHESIS: a lost race accounts for EVERY attempt, down to the first
+    /// failure, the information the retired retry engine discarded.
     /// Falsified if any attempt's failure is missing from the summary.
     #[tokio::test(start_paused = true)]
     async fn a_lost_race_accounts_for_every_attempt() {

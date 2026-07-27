@@ -1,5 +1,5 @@
 //! Assembles offline wallets with fabricated, spendable-and-proposable
-//! funds — no network, no chain, no fixture files.
+//! funds, with no network, no chain, and no fixture files.
 //!
 //! Proposal creation gates on: a known chain height (fully scanned scan
 //! ranges), anchor checkpoints in BOTH shard-tree stores, and notes that
@@ -7,7 +7,7 @@
 //! and no spend. This builder fabricates exactly those invariants.
 //!
 //! Beyond proposing, the wallets can BUILD transactions offline
-//! (`LightWallet::calculate_transactions` — the build-without-broadcast
+//! (`LightWallet::calculate_transactions`, the build-without-broadcast
 //! seam of the protection audit's gap remediation plan): each fabricated
 //! note is addressed to the wallet's own keys and its commitment is
 //! appended to the corresponding shard tree at the note's claimed

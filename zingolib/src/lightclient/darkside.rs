@@ -4,8 +4,8 @@
 //! The darkside-tests crate froze on two darkside-mode bugs in the
 //! legacy indexer ("invalid block hash length in tree states",
 //! post-reorg prev-hash continuity), leaving all nine of its tests
-//! ignored. The protections they held — a wallet's behavior when the
-//! chain changes its mind — port here onto
+//! ignored. The protections they held (a wallet's behavior when the
+//! chain changes its mind) port here onto
 //! [`crate::testutils::mock_indexer`], whose [`MockChain::reorg_to`]
 //! primitive plays the darksidewalletd role without the legacy stack
 //! or either of its bugs.
@@ -22,7 +22,7 @@
 //! (subsumed here by the incoming variant plus the expiry legs), and
 //! the two proptest `any_source_sends_to_any_receiver` fuzzers
 //! (formerly blocked on the pepper-sync `darkside_test` feature
-//! question, zingolabs/zingolib#2447; that feature is now deleted).
+//! question, zingolabs/zingolib#2447. That feature is now deleted).
 
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;

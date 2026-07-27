@@ -137,25 +137,25 @@ pub struct LightClient {
     /// never serialized, minted by the proposing calls, released when the
     /// proposal is consumed, cleared, or fails to come into existence.
     proposal_pause_guard: Option<sync::SyncPauseGuard>,
-    /// Live progress of an in-progress immediate drain, or `None` when idle.
+    /// Live progress of an in-progress immediate migration, or `None` when idle.
     /// A side channel off the wallet lock, so it stays pollable while build and
     /// transmit hold the wallet write lock across their loops.
-    drain_progress: migrate::DrainProgressHandle,
+    immediate_migration_progress: migrate::ImmediateMigrationProgressHandle,
     /// Live progress of the note-splitting round a [`Self::quick_split`] call
     /// is building/transmitting, or `None` when idle. The Phase 1 counterpart
-    /// to `drain_progress`, the same off-the-wallet-lock side channel.
+    /// to `immediate_migration_progress`, the same off-the-wallet-lock side channel.
     split_progress: migrate::SplitProgressHandle,
     /// Live progress of a running migration execute batch
     /// ([`Self::execute_due_parts`]), the same side-channel pattern.
     batch_progress: migrate::BatchProgressHandle,
     /// The latest progress line of an in-flight Transmission, or `None` when
-    /// idle. A side channel like `drain_progress`, updated by
+    /// idle. A side channel like `immediate_migration_progress`, updated by
     /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
     /// The cross-session per-indexer attempt history (the indexer diary).
     /// Disk-backed only under the `nym-diary` feature, and recording only
-    /// after the session opts in via `set_indexer_diary`; otherwise the
+    /// after the session opts in via `set_indexer_diary`. Otherwise the
     /// handle is inert.
     indexer_history: indexer_history::IndexerHistoryHandle,
     /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
@@ -220,7 +220,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            drain_progress: migrate::DrainProgressHandle::default(),
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
@@ -235,12 +235,12 @@ impl LightClient {
         })
     }
 
-    /// Wraps an already-constructed wallet — typically from
-    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`] — so
+    /// Wraps an already-constructed wallet, typically from
+    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`], so
     /// client-level APIs that only read wallet state (proposing, balances,
-    /// summaries) can be exercised offline. No indexer is configured — the
+    /// summaries) can be exercised offline. No indexer is configured, so the
     /// client is genuinely offline rather than pointed at a never-contacted
-    /// placeholder; the wallet path lives under the OS temp directory and is
+    /// placeholder. The wallet path lives under the OS temp directory and is
     /// never written unless a test saves explicitly.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
@@ -257,7 +257,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            drain_progress: migrate::DrainProgressHandle::default(),
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
@@ -309,7 +309,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            drain_progress: migrate::DrainProgressHandle::default(),
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
@@ -336,21 +336,21 @@ impl LightClient {
 
     /// A cloneable handle to the in-flight Transmission's latest progress
     /// line, or `None` while no transmission runs. Grab it *before* invoking a
-    /// transmitting call (send, shield, transmit, migrate) — those borrow
-    /// `&mut self` — then poll [`transmit::TransmitProgressHandle::latest`]
+    /// transmitting call (send, shield, transmit, migrate), which borrow
+    /// `&mut self`, then poll [`transmit::TransmitProgressHandle::latest`]
     /// concurrently, the same side-channel pattern as
-    /// [`Self::drain_progress_handle`]. The line narrates submissions,
+    /// [`Self::immediate_migration_progress_handle`]. The line narrates submissions,
     /// retries, queued probes, and mixnet fan-out rounds.
     pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
         self.transmit_progress.clone()
     }
 
     /// A cloneable handle to the cross-session per-indexer attempt history
-    /// (the indexer diary) —
+    /// (the indexer diary).
     /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
     /// record for display or scoring. Transmission arms and diagnostic probes
     /// append to it only in a `nym-diary` build whose session has opted in
-    /// via `set_indexer_diary`; in every other configuration the handle is
+    /// via `set_indexer_diary`. In every other configuration the handle is
     /// inert and loads empty.
     pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
         self.indexer_history.clone()
@@ -359,30 +359,20 @@ impl LightClient {
     /// Opt this session in to (or back out of) recording the indexer diary:
     /// one sanitized line per transmission arm or probe leg, appended to
     /// `indexer-history.tsv` beside the wallet. The choice is never
-    /// persisted — every session starts with recording off.
+    /// persisted, and every session starts with recording off.
     #[cfg(feature = "nym-diary")]
     pub fn set_indexer_diary(&self, record: bool) {
         self.indexer_history.set_recording(record);
     }
 
-    /// A snapshot of the in-progress immediate drain
-    /// ([`Self::drain_orchard_to_ironwood`]), or `None` when idle.
+    /// A cloneable handle to the migration's live progress. Grab it *before*
+    /// starting an immediate migration, then poll [`migrate::ImmediateMigrationProgressHandle::status`]
+    /// concurrently while the immediate migration holds `&mut self`.
     ///
-    /// Reads a side channel, not the wallet, so it never blocks on the drain's
-    /// wallet write lock. To poll while a drain — which borrows `&mut self` — is
-    /// running, grab a [`Self::drain_progress_handle`] first.
-    pub fn drain_status(&self) -> Option<migrate::DrainStatus> {
-        self.drain_progress.status()
-    }
-
-    /// A cloneable handle to the drain's live progress. Grab it *before*
-    /// starting a drain, then poll [`migrate::DrainProgressHandle::status`]
-    /// concurrently while the drain holds `&mut self`.
-    ///
-    /// [`Self::drain_status`] reads the same channel but needs `&self`, so it
-    /// cannot be called on the client the drain is borrowing. This handle is
-    /// how a concurrent poller — a spawned task, or the consumer's existing
-    /// sync-status loop — observes progress.
+    /// The handle reads a side channel, not the wallet, so it never blocks on
+    /// the wallet write lock the immediate migration holds. It is how a
+    /// concurrent poller (a spawned task, or the consumer's existing
+    /// sync-status loop) observes progress.
     ///
     /// # Examples
     ///
@@ -391,12 +381,12 @@ impl LightClient {
     /// #     mut client: zingolib::lightclient::LightClient,
     /// #     account: zip32::AccountId,
     /// # ) -> Result<(), zingolib::lightclient::error::LightClientError> {
-    /// // Grab the handle up front; the drain will borrow `client` exclusively.
-    /// let progress = client.drain_progress_handle();
+    /// // Grab the handle up front. The immediate migration will borrow `client` exclusively.
+    /// let progress = client.immediate_migration_progress_handle();
     ///
     /// // Report from a second task. `status()` reads a side channel, so it
-    /// // never blocks on the wallet lock the drain holds across its loops. It
-    /// // reads `None` before the drain arms it and once the drain finishes, so
+    /// // never blocks on the wallet lock the immediate migration holds across its loops. It
+    /// // reads `None` before the immediate migration arms it and once the immediate migration finishes, so
     /// // the `if let` simply skips those ticks.
     /// let reporter = tokio::spawn(async move {
     ///     loop {
@@ -407,12 +397,12 @@ impl LightClient {
     ///     }
     /// });
     ///
-    /// // The caller owns the sync lifecycle: pause it, then drain against that
-    /// // stable state. Completion is the returned summary — not a progress
-    /// // value — after which the handle reads `None` again.
+    /// // The caller owns the sync lifecycle: pause it, then migrate against that
+    /// // stable state. Completion is the returned summary (not a progress
+    /// // value), after which the handle reads `None` again.
     /// let guard = client.pause_sync_scoped()?;
     /// let summary = client
-    ///     .drain_orchard_to_ironwood_presynced(account, &guard)
+    ///     .migrate_immediately_presynced(account, &guard)
     ///     .await?;
     /// reporter.abort();
     ///
@@ -424,40 +414,24 @@ impl LightClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn drain_progress_handle(&self) -> migrate::DrainProgressHandle {
-        self.drain_progress.clone()
-    }
-
-    /// A snapshot of the note-splitting round a [`Self::quick_split`] call is
-    /// building, or `None` when idle. Reads a side channel, not the wallet, so
-    /// it never blocks on the round's wallet write lock. To poll while a
-    /// `quick_split` — which borrows `&mut self` — runs, grab a
-    /// [`Self::split_progress_handle`] first.
-    pub fn split_status(&self) -> Option<migrate::SplitStatus> {
-        self.split_progress.status()
+    pub fn immediate_migration_progress_handle(&self) -> migrate::ImmediateMigrationProgressHandle {
+        self.immediate_migration_progress.clone()
     }
 
     /// A cloneable handle to the note-splitting round's live progress. Grab it
     /// *before* calling [`Self::quick_split`], then poll
     /// [`migrate::SplitProgressHandle::status`] concurrently while the round
-    /// holds `&mut self` — the Phase 1 counterpart to
-    /// [`Self::drain_progress_handle`].
+    /// holds `&mut self`, the Phase 1 counterpart to
+    /// [`Self::immediate_migration_progress_handle`].
     pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
         self.split_progress.clone()
-    }
-
-    /// A snapshot of the running migration execute batch
-    /// ([`Self::execute_due_parts`]), or `None` when idle. Reads a side
-    /// channel, never the wallet lock.
-    pub fn batch_status(&self) -> Option<migrate::BatchStatus> {
-        self.batch_progress.status()
     }
 
     /// A cloneable handle to the execute batch's live progress. Grab it
     /// *before* starting the batch, then poll
     /// [`migrate::BatchProgressHandle::status`] concurrently while the
-    /// batch holds `&mut self` — the same pattern as
-    /// [`Self::drain_progress_handle`].
+    /// batch holds `&mut self`, the same pattern as
+    /// [`Self::immediate_migration_progress_handle`].
     pub fn batch_progress_handle(&self) -> migrate::BatchProgressHandle {
         self.batch_progress.clone()
     }
@@ -516,7 +490,7 @@ impl LightClient {
 
     /// Returns the connected server's diagnostics as typed data.
     ///
-    /// Failure travels on the error channel; the data channel carries a
+    /// Failure travels on the error channel. The data channel carries a
     /// [`ServerInfo`]. No caller ever inspects a returned value's content
     /// to learn whether the call succeeded (zingolabs/zingolib#2446).
     pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
@@ -637,8 +611,8 @@ impl LightClient {
     /// Update and return the current ZEC price in USD. The price fetch has no
     /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
     /// mixnet when Mixnet Mode is ready, fails closed while the mode
-    /// bootstraps or after the proxy dies, and is refused — never routed over
-    /// clearnet — while the mode is toggled off. The returned fetch carries
+    /// bootstraps or after the proxy dies, and is refused (never routed over
+    /// clearnet) while the mode is toggled off. The returned fetch carries
     /// the tunnel endpoint it traveled through, so every consumer holds
     /// per-fetch evidence of the route rather than trusting the static
     /// argument alone.
@@ -688,7 +662,7 @@ impl LightClient {
     }
 
     /// Clears any stored send proposal and restores the sync engine to the
-    /// mode it held before the proposal was created — the decline path of
+    /// mode it held before the proposal was created, the decline path of
     /// the two-phase send. Previously the pause a proposal took outlived a
     /// declined proposal until some later send opted into resuming.
     pub async fn clear_proposal(&mut self) {
@@ -726,13 +700,13 @@ impl LightClient {
 }
 
 /// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
-/// bundled `nym-proxy` child process; disabling shuts it down. The tri-state
+/// bundled `nym-proxy` child process. Disabling shuts it down. The tri-state
 /// reflects the child's lifecycle, and clearnet is reachable only by a
 /// deliberate disable, never as a silent fallback.
 #[cfg(feature = "nym")]
 impl LightClient {
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
-    /// `binary_path`. Returns immediately; [`Self::mixnet_mode`] reports
+    /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
     /// `Ready`. Enabling while already enabled replaces the running proxy.
     pub async fn enable_mixnet(
@@ -807,10 +781,10 @@ impl LightClient {
 
     /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
     /// against every Broadcast Indexer when `target` is `None`. Indexers are
-    /// probed concurrently; each probe runs `GetLightdInfo` over both routes
+    /// probed concurrently. Each probe runs `GetLightdInfo` over both routes
     /// (the mixnet leg is skipped when the proxy is not ready) and appends
     /// its outcomes to the cross-session indexer history. The clearnet leg
-    /// contacts indexers from the real IP — this is a user-invoked
+    /// contacts indexers from the real IP, and this is a user-invoked
     /// diagnostic, never an automatic path.
     pub async fn probe_broadcast_indexers(
         &self,
@@ -896,9 +870,9 @@ mod tests {
 
     /// Round-trips a wallet through `save()` and `from_bytes`, asserting the deserialized
     /// `LightClient` exposes the same derived addresses as the source. Crucially, the
-    /// `from_bytes` config uses `WalletConfig::Read` with an empty wallet_dir — no file is
-    /// written or read; if `from_bytes` ever regresses into touching disk this assertion
-    /// would still pass but the call would fail to construct.
+    /// `from_bytes` config uses `WalletConfig::Read` with an empty wallet_dir, so no
+    /// file is written or read; if `from_bytes` ever regresses into touching disk this
+    /// assertion would still pass but the call would fail to construct.
     #[tokio::test]
     async fn from_bytes_roundtrip() {
         let temp_dir = TempDir::new().unwrap();
@@ -925,7 +899,7 @@ mod tests {
             .expect("save returned an error")
             .expect("nothing to save");
 
-        // Reconstruct purely from bytes — note the config carries no source file path,
+        // Reconstruct purely from bytes. Note the config carries no source file path,
         // confirming the constructor never touches the filesystem to load the wallet.
         let restored_config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
@@ -949,21 +923,21 @@ mod tests {
 
     /// The `info` data/error channel contract (zingolabs/zingolib#2446).
     ///
-    /// Failure must travel on the error channel; the data channel carries
+    /// Failure must travel on the error channel. The data channel carries
     /// only typed data. Downstream FFIs must never have to inspect a
     /// returned value's content to learn whether the call succeeded.
     mod info_contract {
         use crate::lightclient::LightClient;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-        /// The test client is Indexerless, so the info request must fail —
+        /// The test client is Indexerless, so the info request must fail,
         /// and that failure must not surface as prose in the data channel.
         ///
         /// This began as the red TDD test for the migration: `do_info`
         /// returned `String`, and the connection failure arrived as a
         /// `Status {..}` Debug string indistinguishable by type from
         /// data. It originally pinned a typed `IndexerError` from a
-        /// never-listening lazy endpoint; the offline-mode work replaced
+        /// never-listening lazy endpoint. The offline-mode work replaced
         /// that placeholder with a genuinely Indexerless client, whose
         /// typed failure is `Offline`. The migration ended with `do_info`
         /// deleted outright: `info()` returns a typed `ServerInfo`, and

@@ -1,4 +1,4 @@
-//! The webpki-roots stand-in for `rustls-platform-verifier` (ADR 0017,
+//! The webpki-roots stand-in for `rustls-platform-verifier` (ADR 0021,
 //! zingolib#2531).
 //!
 //! The mobile mixnet shim cannot use the real crate: on Android it demands
@@ -21,9 +21,7 @@
 
 use std::sync::Arc;
 
-use rustls::client::danger::{
-    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
 use rustls::crypto::CryptoProvider;
 use rustls::{pki_types, DigitallySignedStruct, Error as TlsError, OtherError, SignatureScheme};
@@ -58,12 +56,10 @@ impl Verifier {
         crypto_provider: Arc<CryptoProvider>,
     ) -> Result<Self, TlsError> {
         let mut root_store = rustls::RootCertStore::empty();
-        let (added, ignored) = root_store.add_parsable_certificates(
-            webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned(),
-        );
+        let (added, ignored) = root_store
+            .add_parsable_certificates(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned());
         log::debug!("loaded {added} webpki root certificates ({ignored} ignored)");
-        let (extra_added, extra_ignored) =
-            root_store.add_parsable_certificates(extra_roots);
+        let (extra_added, extra_ignored) = root_store.add_parsable_certificates(extra_roots);
         if extra_added > 0 || extra_ignored > 0 {
             log::debug!("added {extra_added} extra roots ({extra_ignored} ignored)");
         }
@@ -73,12 +69,9 @@ impl Verifier {
             ));
         }
         Ok(Self {
-            inner: WebPkiServerVerifier::builder_with_provider(
-                root_store.into(),
-                crypto_provider,
-            )
-            .build()
-            .map_err(|e| TlsError::Other(OtherError(Arc::new(e))))?,
+            inner: WebPkiServerVerifier::builder_with_provider(root_store.into(), crypto_provider)
+                .build()
+                .map_err(|e| TlsError::Other(OtherError(Arc::new(e))))?,
         })
     }
 }

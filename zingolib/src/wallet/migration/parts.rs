@@ -135,7 +135,7 @@ pub struct PartRecord {
     /// The raw signed transaction under [`SigningStrategy::PreSigned`].
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
-    pub signed_blob: Option<Vec<u8>>,
+    pub(crate) signed_blob: Option<Vec<u8>>,
     /// The rolling witness cache: the bound note's anchor and witness at
     /// each recent boundary, keyed by boundary height and captured while
     /// that boundary's checkpoint is retained (a window shorter than one
@@ -193,7 +193,7 @@ impl PartRecord {
     /// fresh bucket, clearing the stale transaction artifacts (FR15, no fresh
     /// consent needed since the denomination and total are unchanged).
     #[allow(clippy::result_large_err)]
-    pub fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Expired"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
         self.txid = None;
@@ -205,7 +205,7 @@ impl PartRecord {
 
     /// `Assigned → Signed`: the canonical transaction is built and signed.
     #[allow(clippy::result_large_err)]
-    pub fn mark_signed(
+    pub(crate) fn mark_signed(
         &mut self,
         txid: TxId,
         expiry_height: BlockHeight,
@@ -220,13 +220,13 @@ impl PartRecord {
 
     /// Records a submit attempt. Persist the record between this and the
     /// actual submission, so an unrecorded-but-mined part is detectable.
-    pub fn record_attempt(&mut self) {
+    pub(crate) fn record_attempt(&mut self) {
         self.attempts = self.attempts.saturating_add(1);
     }
 
     /// `Signed → Broadcast`: the transaction was submitted.
     #[allow(clippy::result_large_err)]
-    pub fn mark_broadcast(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_broadcast(&mut self) -> Result<(), WalletError> {
         self.transition(&["Signed"], PartState::Broadcast)
     }
 
@@ -235,7 +235,7 @@ impl PartRecord {
     /// pre-broadcast states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
-    pub fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
+    pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
         self.transition(
             &["Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Confirmed { height },
@@ -245,14 +245,14 @@ impl PartRecord {
     /// `{Assigned, Signed, Broadcast} → Expired`: the signed transaction
     /// reached its expiry height unmined.
     #[allow(clippy::result_large_err)]
-    pub fn mark_expired(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_expired(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned", "Signed", "Broadcast"], PartState::Expired)
     }
 
     /// `{Bound, Assigned, Signed, Broadcast, Expired} → Invalidated`: the
     /// bound note was spent by a non-migration transaction.
     #[allow(clippy::result_large_err)]
-    pub fn mark_invalidated(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_invalidated(&mut self) -> Result<(), WalletError> {
         self.transition(
             &["Bound", "Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Invalidated,
@@ -264,7 +264,7 @@ impl PartRecord {
     /// is already fixed to the old boundary, so they expire and reassign
     /// instead.
     #[allow(clippy::result_large_err)]
-    pub fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         if self.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
                 from: self.state.name(),
@@ -381,9 +381,47 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::MigrationBoundNoteMissing(output_id))
     }
 
+    /// The checkpoint whose tree state is the tree state at `boundary`: the
+    /// greatest one at or below it, or `None` once they are all pruned.
+    ///
+    /// A bucket boundary is an arbitrary height, and pepper-sync checkpoints
+    /// a block only when it carries an Orchard output, so the boundary
+    /// usually has no checkpoint of its own. The greatest checkpoint below it
+    /// still holds the boundary's tree: had any block in between carried an
+    /// Orchard output, that block would itself be a checkpoint. The anchor
+    /// this yields is therefore the same value every wallet sending into the
+    /// bucket computes, which is what anchoring at the boundary is for.
+    ///
+    /// Yields nothing until the wallet has scanned past `boundary`: above
+    /// the fully scanned height an intervening block's outputs may simply be
+    /// missing, and the tree would be short rather than merely older.
+    fn boundary_anchor_checkpoint(&self, boundary: BlockHeight) -> Option<BlockHeight> {
+        use shardtree::store::ShardStore as _;
+
+        if self
+            .sync_state
+            .fully_scanned_height()
+            .is_none_or(|scanned| scanned < boundary)
+        {
+            return None;
+        }
+
+        let store = self.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        // Depth counts back from the newest, so the first id at or below the
+        // boundary is the greatest one.
+        (0..count).find_map(|depth| {
+            store
+                .get_checkpoint_at_depth(depth)
+                .expect("infallible")
+                .map(|(id, _)| id)
+                .filter(|id| *id <= boundary)
+        })
+    }
+
     /// Captures the boundary anchor and witness for one part from the local
-    /// shard tree, if the boundary's checkpoint is retained. Local-only:
-    /// never touches the network.
+    /// shard tree, if a checkpoint holding the boundary's tree survives.
+    /// Local-only: never touches the network.
     #[allow(clippy::result_large_err)]
     fn capture_boundary_witness(
         &mut self,
@@ -399,14 +437,33 @@ impl crate::wallet::LightWallet {
             WalletError::MigrationStateCorrupt("bound note has no tree position".to_string()),
         )?;
 
-        let Some(root) = self.shard_trees.orchard.root_at_checkpoint_id(&boundary)? else {
+        let Some(checkpoint) = self.boundary_anchor_checkpoint(boundary) else {
             return Ok(None);
         };
-        let Some(witness) = self
+        let Some(root) = self
             .shard_trees
             .orchard
-            .witness_at_checkpoint_id_caching(position, &boundary)?
+            .root_at_checkpoint_id(&checkpoint)?
         else {
+            return Ok(None);
+        };
+        let witness = match self
+            .shard_trees
+            .orchard
+            .witness_at_checkpoint_id_caching(position, &checkpoint)
+        {
+            Ok(witness) => witness,
+            // The checkpoint predates the note, which no anchor there can
+            // contain. The same dead end as a pruned checkpoint; the
+            // proving-time draw's funding-creation bound
+            // ([`super::schedule::draw_anchor_boundary`]) is what keeps the
+            // chosen anchor out of it.
+            Err(shardtree::error::ShardTreeError::Query(
+                shardtree::error::QueryError::NotContained(_),
+            )) => None,
+            Err(e) => return Err(e.into()),
+        };
+        let Some(witness) = witness else {
             return Ok(None);
         };
 
@@ -431,7 +488,7 @@ impl crate::wallet::LightWallet {
     ///
     /// Specification: <https://github.com/zcash/zips/blob/main/zips/zip-0318.md#anchor-height-bucketing-and-cohorts>
     #[allow(clippy::result_large_err)]
-    pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
         use shardtree::store::ShardStore as _;
         let Some(tree_tip) = self
             .shard_trees
@@ -479,7 +536,7 @@ impl crate::wallet::LightWallet {
     /// multiple closures concurrently on background threads. Mutates
     /// `part.boundary_witnesses` when the latest boundary needs capturing.
     #[allow(clippy::result_large_err)]
-    pub fn prepare_part(
+    pub(crate) fn prepare_part(
         &mut self,
         account: zip32::AccountId,
         part: &mut PartRecord,
@@ -718,7 +775,7 @@ impl crate::wallet::LightWallet {
     ///
     /// Called sequentially in Phase C after all parallel proving is complete.
     #[allow(clippy::result_large_err)]
-    pub fn record_part_result(
+    pub(crate) fn record_part_result(
         &mut self,
         part: &mut PartRecord,
         txid: TxId,

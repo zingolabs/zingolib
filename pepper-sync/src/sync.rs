@@ -50,11 +50,11 @@ pub mod truncate;
 
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
-/// validator's finalization boundary — zebra's
+/// validator's finalization boundary, zebra's
 /// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
 /// final and no deeper reorg can occur. Zebra crates are not
 /// dependencies of this workspace, so the value is pinned to its
-/// upstream by documentation rather than import; if zebra ever moves
+/// upstream by documentation rather than import. If zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
 
@@ -778,7 +778,7 @@ where
     /// Sums one per-pool trio of output counts into the pool-agnostic
     /// total. Pure and total: this is the single definition of which
     /// pools participate in scan-progress accounting, so every
-    /// consumer — the percentages and the exact u64 ratio — agrees by
+    /// consumer (the percentages and the exact u64 ratio) agrees by
     /// construction, and adding a pool touches exactly this function.
     fn output_pool_total(sapling: u32, orchard: u32, ironwood: u32) -> u64 {
         u64::from(sapling) + u64::from(orchard) + u64::from(ironwood)
@@ -1125,7 +1125,7 @@ pub fn reset_spends(
 /// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
 ///
 /// Transactions with `Confirmed` status are skipped with a warning. A mined transaction
-/// cannot fail — only a reorg can un-mine it, and reorgs are handled by truncation, which
+/// cannot fail, since only a reorg can un-mine it, and reorgs are handled by truncation, which
 /// reopens the affected scan ranges. For a confirmed transaction the note's
 /// `spending_transaction` field is the wallet's only durable record of the on-chain spend
 /// (detection consumed the nullifier-map entry when the spending block was scanned), so
@@ -1178,7 +1178,7 @@ pub(crate) fn set_transactions_failed_unchecked(
 
 /// Returns true if the scanner and mempool are shutdown.
 /// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
-/// snapshot — the caller loads the atomics and clocks; this only
+/// snapshot: the caller loads the atomics and clocks. This only
 /// decides, so the whole policy is table-testable without a runtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DrainVerdict {
@@ -1194,7 +1194,7 @@ enum DrainVerdict {
 /// The drain policy for scanner shutdown.
 ///
 /// `connected_for` is the age of the mempool stream subscription
-/// (`None` until it is established). Connection — not first delivery —
+/// (`None` until it is established). Connection, not first delivery,
 /// is deliberately the grace trigger: an empty mempool never delivers,
 /// and a delivery-based grace would hold every such session for the
 /// full ceiling, restoring the fixed second c90f8d309 removed. The
@@ -1621,7 +1621,7 @@ where
 ///
 /// The decision of what a correct truncation does is made purely by
 /// [`truncate::plan_truncation`] from the wallet state, the shard-tree
-/// state, and the truncation target; this function only applies the
+/// state, and the truncation target. This function only applies the
 /// returned plan.
 fn truncate_wallet_data<W>(
     wallet: &mut W,
@@ -2016,7 +2016,7 @@ where
     // heals it after a reorg (see `subtree_fetch_start_index`). When a
     // refetch happens, the pool's newest stored shard range is dropped
     // before the fetched roots are accounted, so the range accounting is
-    // rebuilt from the refetched root — never duplicated, and corrected
+    // rebuilt from the refetched root, never duplicated, and corrected
     // if a reorg moved the subtree's completing height.
     let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
     let stored_sapling_roots = witness::stored_subtree_root_count(&shard_trees.sapling);
@@ -2197,8 +2197,8 @@ where
             Ok(mut mempool_stream) => {
                 // First successful subscription: the drain policy's
                 // grace window keys on this instant. Deliberately not
-                // reset on reconnect — any successful connect proves
-                // the indexer serves the stream.
+                // reset on reconnect, since any successful connect
+                // proves the indexer serves the stream.
                 let _already_set = stream_connected_at.set(std::time::Instant::now());
                 interval.reset();
                 loop {
@@ -2292,8 +2292,8 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 #[cfg(test)]
 mod test {
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
-    /// completion is the sync task's own terminal condition — sync has
-    /// started and every scan range is `Scanned` — independent of the
+    /// completion is the sync task's own terminal condition (sync has
+    /// started and every scan range is `Scanned`), independent of the
     /// output ratio, so an output-free birthday-to-chain-height range can
     /// complete and a stale `total_outputs` cannot fake completion.
     mod sync_status_completion {
@@ -2388,9 +2388,9 @@ mod test {
 
     /// The truncation contract of [`crate::sync::truncate_wallet_data`]:
     /// a reorg truncation rolls every store back to the truncate height,
-    /// and a shard tree that records nothing above that height — such as
+    /// and a shard tree that records nothing above that height (such as
     /// the empty ironwood tree a pre-ironwood (v0) wallet blob migrates
-    /// to — is untouched, never classified broken. Only a tree that
+    /// to) is untouched, never classified broken. Only a tree that
     /// holds state above the height and cannot roll back to it forces
     /// the clear-and-rescan path.
     mod truncation {
@@ -2447,7 +2447,7 @@ mod test {
         /// zero (`ShardTrees::read`), while sapling and orchard carry
         /// the checkpoints of past scanning. The first routine reorg
         /// truncation after the upgrade must roll sapling and orchard
-        /// back and leave the empty ironwood tree untouched — not
+        /// back and leave the empty ironwood tree untouched, not
         /// classify it broken and wipe the wallet.
         #[test]
         fn migrated_wallet_survives_reorg_truncation() {
@@ -2490,8 +2490,8 @@ mod test {
         }
 
         /// A tree that records state above the truncate height but holds
-        /// no checkpoint at it cannot roll back; the established recovery
-        /// — clear all wallet data and rescan — is preserved for it.
+        /// no checkpoint at it cannot roll back. The established recovery
+        /// (clear all wallet data and rescan) is preserved for it.
         #[test]
         fn unrecoverable_tree_still_clears_wallet_data() {
             // Orchard scanned past the target but its checkpoint at the
@@ -2530,8 +2530,8 @@ mod test {
     }
 
     /// The pool-accounting contract of [`crate::sync::sync_status`]:
-    /// every output total on the status — the per-pool u32 fields, the
-    /// u64 exact-ratio pair, and the f32 percentage — describes the
+    /// every output total on the status (the per-pool u32 fields, the
+    /// u64 exact-ratio pair, and the f32 percentage) describes the
     /// same per-pool trio, summed once through `output_pool_total`.
     /// Regression for the skew where the u64 fields re-summed only
     /// sapling and orchard while the percentages included ironwood.
@@ -2639,7 +2639,7 @@ mod test {
             assert_eq!(status.total_outputs, 70);
 
             // The percentage must describe the same ratio as the exact
-            // fields — the skew's observable symptom was these two
+            // fields. The skew's observable symptom was these two
             // disagreeing on ironwood chains.
             let expected_percentage =
                 (status.total_outputs_scanned as f32 / status.total_outputs as f32) * 100.0;
@@ -2673,18 +2673,18 @@ mod test {
         fn table() {
             let cases: &[DrainCase] = &[
                 // The reported bug: first-loop shutdown on a fully
-                // synced chain, stream not yet connected — hold the
+                // synced chain, stream not yet connected. Hold the
                 // session open instead of closing it instantly.
                 (0, 0, None, 0, KeepPolling, "no stream yet"),
                 // Connected but inside the settle window: still hold.
                 (0, 0, Some(50), 100, KeepPolling, "settling"),
                 // The typical session: stream connected long ago,
-                // scanner drained — immediate shutdown, no added cost.
+                // scanner drained. Immediate shutdown, no added cost.
                 (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
                 // Exactly the settle boundary counts as settled.
                 (0, 0, Some(200), 0, Shutdown, "settle boundary"),
                 // Unprocessed work always re-enters the processing
-                // loop, whatever the stream state — no deadline caps
+                // loop, whatever the stream state. No deadline caps
                 // the processing itself.
                 (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
                 (5, 1, None, 999, Reenter, "work trumps missing stream"),
@@ -2693,7 +2693,7 @@ mod test {
                 (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
                 (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
                 // Ceiling with a stream that never connected: the
-                // pre-c90f8d309 semantics — a dead stream must not
+                // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
                 (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
             ];
@@ -2716,7 +2716,7 @@ mod test {
     ///
     /// The wallet remembers an on-chain spend observation in exactly one durable place: the
     /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
-    /// buffer — entries are consumed on detection (`detect_shielded_spends`) and pruned
+    /// buffer: entries are consumed on detection (`detect_shielded_spends`) and pruned
     /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
     /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
     /// one durable place.

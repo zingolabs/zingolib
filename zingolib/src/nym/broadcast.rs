@@ -1,11 +1,11 @@
-//! Censorship-robust broadcast over the Nym mixnet: an escalating, serially
+//! Censorship-resistant broadcast over the Nym mixnet: an escalating, serially
 //! gated fan-out over the curated Broadcast Indexer list.
 //!
-//! The adversary is a Broadcast Indexer that suppresses a send — accepting the
-//! connection but declining to relay, or misreporting the outcome — so the
+//! The adversary is a Broadcast Indexer that suppresses a send (accepting the
+//! connection but declining to relay, or misreporting the outcome), so the
 //! send must be able to route around it to honest indexers. The first round
 //! submits to a single random indexer (witness rotation, and the common
-//! success path); only if that fails to confirm delivery does the send
+//! success path). Only if that fails to confirm delivery does the send
 //! escalate, submitting to two fresh indexers in parallel, then three, each
 //! round gated on the complete failure of the round before it. The fan-out
 //! stops at [`MAX_BROADCAST_WITNESSES`] distinct indexers, which the one-two-
@@ -13,13 +13,13 @@
 //! first indexer to confirm delivery wins and the rest are abandoned. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
-//! This orchestrates the shared per-submission policy — retry,
-//! duplicate-in-mempool, queued-probe, delivery-check — rather than
+//! This orchestrates the shared per-submission policy (retry,
+//! duplicate-in-mempool, queued-probe, delivery-check) rather than
 //! duplicating it: each arm is a call to
 //! [`resilient_transmit`](crate::lightclient::transmit::resilient_transmit),
 //! the same policy the clearnet path runs. The escalation logic itself is
 //! the shared pure racing planner ([`zingo_netutils::arm_race`]) under its
-//! serially gated [`LaunchPolicy::EscalatingRounds`]; this module drives the
+//! serially gated [`LaunchPolicy::EscalatingRounds`]. This module drives the
 //! planner's actions over borrowed futures and keeps the ratified schedule.
 //! The per-arm runner and the random-number generator are injected, so the
 //! round, escalation, and cap logic is exercised in CI without a live mixnet
@@ -37,7 +37,7 @@ use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
 
 /// The maximum number of distinct Broadcast Indexers a single send may contact
 /// before it surfaces failure (ADR 0011). The escalating one-two-three fan-out
-/// reaches this at the end of the third round; it is the circuit breaker for an
+/// reaches this at the end of the third round. It is the circuit breaker for an
 /// unbroadcastable transaction, since the client cannot classify a rejection.
 pub(crate) const MAX_BROADCAST_WITNESSES: usize = 6;
 
@@ -61,8 +61,8 @@ pub(crate) enum FanoutError {
 /// Broadcast to `indexers` as an escalating, serially gated fan-out, returning
 /// the server-reported txid of the first indexer to confirm delivery. `run_arm`
 /// submits to one indexer and resolves to `Ok(server_txid)` on confirmed
-/// delivery or `Err(msg)` otherwise; `rng` chooses the random order (witness
-/// rotation); `cap` bounds the distinct indexers contacted.
+/// delivery or `Err(msg)` otherwise. `rng` chooses the random order (witness
+/// rotation), and `cap` bounds the distinct indexers contacted.
 ///
 /// Round `r` submits to `r` fresh indexers in parallel, and round `r + 1` runs
 /// only after every arm of round `r` fails, so parallelism widens only as
@@ -71,7 +71,7 @@ pub(crate) enum FanoutError {
 /// schedule stops once `cap` distinct indexers have been contacted.
 ///
 /// `report` receives a succinct progress line whenever the race's shape
-/// changes — a launch or an arm failure — rendering the planner's own
+/// changes (a launch or an arm failure), rendering the planner's own
 /// [`RaceProgress`] snapshot for display.
 pub(crate) async fn fanout_broadcast<A, F, R, P>(
     indexers: &[Uri],
@@ -358,7 +358,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: a failed fan-out accounts for every witness contacted and
-    /// how each failed, not just the last failure. Falsified if any
+    /// how each failed, down to the first. Falsified if any
     /// contacted host is missing from the error summary.
     #[tokio::test]
     async fn a_failed_fanout_names_every_witness_and_its_failure() {

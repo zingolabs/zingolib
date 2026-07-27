@@ -31,7 +31,7 @@ use crate::lightclient::transmit::{
 
 /// Records one finished send attempt against `host` into the cross-session
 /// history: route, elapsed time, and the sanitized failure category when it
-/// failed — never the raw failure prose, which can embed the txid.
+/// failed, never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
     host: &str,
@@ -67,7 +67,7 @@ pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
 /// The transaction built from a proposal expires at its target height plus
 /// [`DEFAULT_TX_EXPIRY_DELTA`], so the lift gives it the longest expiry the
 /// epoch permits: it stays transmittable until the next scheduled network
-/// upgrade. That is the outer limit for any pre-signed Zcash transaction —
+/// upgrade. That is the outer limit for any pre-signed Zcash transaction:
 /// the signature commits to the epoch's consensus branch ID, so no expiry
 /// height can carry it past the upgrade. When the params schedule no
 /// upgrade above the stored target, the cap is instead the highest target
@@ -243,7 +243,7 @@ async fn transmit_one_transaction(
 /// cap is reached.
 ///
 /// The draw comes from [`eligible_witnesses`], never the raw curated list: a
-/// witness is never the sync indexer's operator (ADR 0015), because that party
+/// witness is never the sync indexer's operator (ADR 0020), because that party
 /// already holds the wallet's address set and must not receive the broadcast
 /// too. An emptied pool refuses rather than falling back.
 #[cfg(feature = "nym")]
@@ -369,7 +369,7 @@ impl LightClient {
     ///
     /// If sync was running prior to creating a send proposal, sync will have
     /// been paused. If `resume_sync` is `true`, the engine is restored to
-    /// the mode it held before the proposal was created — a pause the
+    /// the mode it held before the proposal was created, so a pause the
     /// caller established before proposing is preserved, not overridden. If
     /// `false`, the engine stays paused for the caller to resume.
     pub async fn send_stored_proposal(
@@ -399,10 +399,10 @@ impl LightClient {
     }
 
     /// Calculates (signs) transactions from the stored proposal without an
-    /// Indexer — the offline-signing half of the Indexerless capability set
+    /// Indexer, the offline-signing half of the Indexerless capability set
     /// (ADR 0006). The stored proposal is consumed, exactly as
     /// [`Self::send_stored_proposal`] consumes it, and the signed
-    /// transactions land in the wallet with `Calculated` status; transmit
+    /// transactions land in the wallet with `Calculated` status. Transmit
     /// them with [`Self::transmit_calculated`] once an Indexer is
     /// configured.
     ///
@@ -410,9 +410,9 @@ impl LightClient {
     /// retargeted: its target height is lifted to the last height of the
     /// consensus-branch epoch the wallet believes it is in, so the built
     /// transaction carries the longest expiry that epoch permits. It stays
-    /// transmittable until the next scheduled network upgrade — the outer
+    /// transmittable until the next scheduled network upgrade, the outer
     /// limit for any pre-signed Zcash transaction, whose signature commits
-    /// to the epoch's consensus branch ID — and a stale offline chain view
+    /// to the epoch's consensus branch ID, and a stale offline chain view
     /// cannot expire it before an Indexer is available (issue #2455). An
     /// Indexer-connected calculation keeps the proposal's ordinary expiry,
     /// [`DEFAULT_TX_EXPIRY_DELTA`] blocks past the target: connected
@@ -471,8 +471,8 @@ impl LightClient {
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
-    /// given order — the transmission half of the offline-signing flow.
-    /// Requires an Indexer; an Indexerless attempt fails with
+    /// given order, the transmission half of the offline-signing flow.
+    /// Requires an Indexer. An Indexerless attempt fails with
     /// [`LightClientError::Offline`] and the Calculated transactions remain
     /// in the wallet, ready to transmit once connected.
     pub async fn transmit_calculated(
@@ -486,7 +486,7 @@ impl LightClient {
     ///
     /// If sync is running, it is paused before creating the send proposal.
     /// If `resume_sync` is `true`, the engine is restored to its prior mode
-    /// after the send, on every exit path; if `false`, it stays paused for
+    /// after the send, on every exit path. If `false`, it stays paused for
     /// the caller to resume.
     pub async fn quick_send(
         &mut self,
@@ -518,7 +518,7 @@ impl LightClient {
 
     /// Shields all transparent funds skipping proposal confirmation. The
     /// sync engine is paused before the proposal's wallet reads and
-    /// restored to its prior mode when the call returns; the shield path
+    /// restored to its prior mode when the call returns. The shield path
     /// previously proposed, built, and stored transactions under a running
     /// engine.
     pub async fn quick_shield(
@@ -650,9 +650,9 @@ impl LightClient {
 
             // Published after the transaction is confirmed transmitted and its
             // server txid verified. Each is a no-op unless its owner armed the
-            // side channel — an immediate drain or a note-splitting round —
+            // side channel (an immediate migration or a note-splitting round),
             // and the two are mutually exclusive in practice.
-            self.drain_progress.set_sent(index as u32 + 1);
+            self.immediate_migration_progress.set_sent(index as u32 + 1);
             self.split_progress.set_sent(index as u32 + 1);
         }
 
@@ -665,7 +665,7 @@ impl LightClient {
 /// remediation plan): the built transaction's expiry and consensus
 /// branch id must derive from the wallet's synced height + 1.
 /// `LightWallet::calculate_transactions` is the build-without-broadcast
-/// seam — it proves and stores the transaction without transmitting —
+/// seam (it proves and stores the transaction without transmitting),
 /// so these cells run offline over a synthetic wallet.
 #[cfg(test)]
 mod built_transaction_shape {
@@ -753,7 +753,7 @@ mod built_transaction_shape {
     /// built transaction nets exactly their sum minus the 30_000
     /// four-input shield fee into the Ironwood pool (a V6 shield's
     /// change lands in the ironwood bundle, ADR 0009). The live assert
-    /// is the post-confirmation balance; the offline equivalent is the
+    /// is the post-confirmation balance. The offline equivalent is the
     /// ironwood bundle's value balance on the built transaction.
     #[tokio::test]
     async fn four_coin_shield_builds_and_nets_input_minus_fee() {
@@ -806,9 +806,9 @@ mod built_transaction_shape {
     /// Gap-1b cell of the remediation plan, mirroring the live
     /// multi_input_sapling_send_with_orchard_change_no_panic offline: a
     /// payment that no single sapling note covers builds (proves) a
-    /// two-input sapling spend. Under V6 the change stays in Sapling —
-    /// the upstream change selector avoids pool-crossing when no orchard
-    /// flow exists (ADR 0009) — while the payment to the orchard receiver
+    /// two-input sapling spend. Under V6 the change stays in Sapling (the
+    /// upstream change selector avoids pool-crossing when no orchard
+    /// flow exists, ADR 0009) while the payment to the orchard receiver
     /// lands in the ironwood bundle. The sapling proving parameters are
     /// embedded in the crate, so the plan's parameters precondition is
     /// satisfied in the unit environment.
@@ -883,7 +883,7 @@ mod built_transaction_shape {
     }
 
     /// Gap-3 cell of the remediation plan: the entire ZIP-320 two-step
-    /// builds offline behind the seam — `zcash_client_backend` chains
+    /// builds offline behind the seam: `zcash_client_backend` chains
     /// step one's ephemeral transparent output into step two before
     /// anything touches a network. Step two's sole transparent input
     /// spends step one's ephemeral output, and the TEX-decoded P2PKH
@@ -1216,7 +1216,7 @@ mod test {
 /// Migrated from libtonode `slow::t_incoming_t_outgoing_disallowed`: a
 /// received transparent coin appears in the transaction summaries with its
 /// height and value, and spending transparent funds through an ordinary
-/// send is refused — the wallet demands a shield first, surfacing as an
+/// send is refused, since the wallet demands a shield first, surfacing as an
 /// insufficient-funds proposal error because transparent coins are not
 /// send-spendable.
 #[cfg(test)]

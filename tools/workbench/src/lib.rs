@@ -1,8 +1,8 @@
 //! Shared helpers for the workbench tooling crate (one binary per `src/bin/*.rs`).
 //!
-//! Every tool follows the same shape — resolve something under the repo root,
+//! Every tool follows the same shape: resolve something under the repo root,
 //! then either print a result or emit one-or-more `"{prog}: {line}"`
-//! diagnostics and exit non-zero. [`run`] centralises that `main()` shape;
+//! diagnostics and exit non-zero. [`run`] centralises that `main()` shape, and
 //! [`repo_root`], [`git`], and [`toolchain_channel`] are the shared primitives.
 
 #![forbid(unsafe_code)]
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
 /// Run a tool `body`, reporting diagnostics as `"{prog}: {line}"` to stderr and
-/// exiting `1` on error; on success runs `on_ok` (e.g. to print a result) and
+/// exiting `1` on error. On success runs `on_ok` (e.g. to print a result) and
 /// exits `0`. This is the single `main()` shape shared by every binary.
 pub fn run<T>(
     prog: &str,
@@ -109,7 +109,7 @@ fn channel_value(line: &str) -> Option<String> {
     Some(value[..end].to_string())
 }
 
-/// `^[0-9]+\.[0-9]+(\.[0-9]+)?$` — two or three dot-separated all-digit parts.
+/// `^[0-9]+\.[0-9]+(\.[0-9]+)?$`, two or three dot-separated all-digit parts.
 fn is_concrete_numeric(channel: &str) -> bool {
     let parts: Vec<&str> = channel.split('.').collect();
     matches!(parts.len(), 2 | 3)

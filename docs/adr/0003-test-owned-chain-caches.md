@@ -13,8 +13,8 @@ mining behavior carry an explicit opt-out), and each test owns exactly one
 cache keyed by its own name. The snapshot is taken at scenario-setup
 completion for every scenario: setup sends are embedded in the cache, and
 wallets recover their view of those transactions by syncing the cached
-chain. `faucet_funded_recipient` — the one constructor whose funding txids
-escape to the test — additionally records the identifiers its build-time
+chain. `faucet_funded_recipient` (the one constructor whose funding txids
+escape to the test) additionally records the identifiers its build-time
 sends minted in the cache's `outputs.json`, written under the same atomic
 rename as the blocks; a warm run replays the chain those transactions are
 in and returns the recorded identifiers. The stage recorded in the inputs
@@ -35,8 +35,8 @@ pass back through full `submitblock` validation, a corrupt cache fails loudly
 at load rather than silently skewing assertions. Each cache carries an inputs
 manifest recording its chain-determining inputs (setup stage, activation
 heights, miner pool, validator and indexer identity); a mismatch at load time
-is treated as a miss and triggers a rebuild, so consensus-parameter drift —
-imminent on this branch as the ironwood migration moves activation heights —
+is treated as a miss and triggers a rebuild, so consensus-parameter drift
+(imminent on this branch as the ironwood migration moves activation heights)
 cannot silently serve a chain mined under old rules.
 
 ## Considered Options
@@ -50,12 +50,12 @@ deduplication remains the intended consolidation once the MVP has proven the
 mechanism; the "chain shape" term is defined in `CONTEXT.md` for that purpose.
 
 The decision as first recorded (earlier on 2026-07-07) snapshotted *every*
-scenario at the send boundary — the point before setup's first
-wallet-initiated transaction — to dodge the txid-return problem wholesale.
+scenario at the send boundary (the point before setup's first
+wallet-initiated transaction) to dodge the txid-return problem wholesale.
 The same day's baseline instrumentation refuted the premise: setup costs 895
 aggregate seconds across the 41 LocalNet tests, almost all of it in
-post-send-boundary work (sends, confirmation mining, sync — the
-`mine_to_transparent*` tests prove the send-free floor is ~4-6 s), and only
+post-send-boundary work (sends, confirmation mining, sync), with the
+`mine_to_transparent*` tests proving the send-free floor is ~4-6 s, and only
 `faucet_funded_recipient` actually returns txids. A universal send boundary
 would have recovered one to two minutes of the fifteen; snapshotting
 completed setup for the txid-free scenarios recovers roughly twelve, at no
@@ -71,11 +71,11 @@ The mechanism as first implemented copied the Validator's data directory via
 run relaunching from its own snapshot. The first cold run (2026-07-08) refuted
 that design for this stack: zebra holds every block within 100 of the tip in
 its in-memory non-finalized state, so a copied data dir of a 4–6-block setup
-chain contains essentially genesis — and `Zebrad::stop()` is a SIGKILL, so
+chain contains essentially genesis, and `Zebrad::stop()` is a SIGKILL, so
 even the finalized portion is copied without a graceful flush. The relaunched
 Validator served a chain zainod could not index ("could not determine best
 chain"). The infrastructure repo's own zebrad cache generator corroborates
-the boundary: it mines 150 blocks — past the finalization depth — before
+the boundary: it mines 150 blocks (past the finalization depth) before
 calling `cache_chain`. State-directory caches are therefore only viable for
 100+-block chains, and block replay was adopted in their place. The
 builder-relaunch property was consciously dropped with them: replay is
@@ -98,7 +98,7 @@ evidence: `submitblock`'s "duplicate" verdict counts as acceptance
 (transparent-pool regtest blocks are byte-deterministic, so the cached
 and launch-mined block 1 can be the same block), the replay preflight
 expects height ≤ 1, and replay barriers on Indexer convergence to the
-replayed tip before any wallet syncs — the Indexer starts ingesting
+replayed tip before any wallet syncs. The Indexer starts ingesting
 within milliseconds of launch and would otherwise briefly serve the
 orphaned launch block, which is exactly how the matrix_young pair
 failed.
@@ -108,13 +108,13 @@ failed.
 - A cache-hit run's chain differs from a live-generated run's chain in
   non-consensus details (block timestamps, hashes), and setup transactions
   embedded in a cache keep their build-time txids across runs. No test can
-  assert on those txids — the txid-free scenarios by definition never hand
-  them out — but tests asserting on other non-consensus chain details must
+  assert on those txids (the txid-free scenarios by definition never hand
+  them out), but tests asserting on other non-consensus chain details must
   opt out; none are known to at the time of writing.
 - The cache medium is human-auditable: `blocks.hex` is the chain itself, one
   serialized block per line, and any zcash tooling that parses raw blocks can
   inspect it. Nothing validator-internal (database format, state layout) is
-  ever stored, so validator upgrades cannot corrupt caches — at worst a new
+  ever stored, so validator upgrades cannot corrupt caches. At worst a new
   validator rejects an old block on replay, which is a loud rebuild signal.
 - The regenerate knob is deliberately not representable in source. An
   in-source per-test bool whose "on" state must never be committed would be a

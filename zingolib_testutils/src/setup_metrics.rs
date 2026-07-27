@@ -2,9 +2,9 @@
 //! migration (ADR 0003).
 //!
 //! Every libtonode test's `LocalNet` is wrapped in a [`MeteredNet`], which
-//! samples the Validator's data-directory size at three points — right
+//! samples the Validator's data-directory size at three points: right
 //! after launch, at scenario-setup completion (the send boundary once
-//! caches exist), and at teardown — plus the setup wall-clock, and appends
+//! caches exist), and at teardown, plus the setup wall-clock, and appends
 //! one JSON line per test to `chain_caches/setup-metrics.jsonl` at the
 //! repository root. That location is bind-mounted into the test container,
 //! so host tooling reads the numbers directly after a containerized run.
@@ -13,7 +13,7 @@
 //! chain-cache replay lands after launch, so cached and live runs are
 //! distinguished by `setup_wall_ms`, not by launch size),
 //! `setup_bytes - launch_bytes` is the chain setup established, and
-//! `teardown_bytes - setup_bytes` is test-body growth — the measured
+//! `teardown_bytes - setup_bytes` is test-body growth, the measured
 //! form of "does this test exercise mining behavior."
 
 use std::ops::{Deref, DerefMut};
@@ -105,7 +105,7 @@ impl MeteredNet {
     }
 
     /// Record that scenario setup finished here. Nested constructors each
-    /// call this on the way out; the outermost call runs last and wins, so
+    /// call this on the way out. The outermost call runs last and wins, so
     /// the row reflects the scenario the test actually asked for.
     pub fn mark_setup_complete(&mut self, scenario: &'static str) {
         self.recorder.scenario = scenario;
@@ -138,8 +138,8 @@ impl Drop for MeteredNet {
 }
 
 impl MeteredNet {
-    /// Write the full observatory record — watch timelines, tap
-    /// traffic, and the RPC ledger — to the per-test log under
+    /// Write the full observatory record (watch timelines, tap
+    /// traffic, and the RPC ledger) to the per-test log under
     /// `test-logs/observatory/`, leaving a single pointer line on
     /// stderr. The location is gitignored and bind-mounted into the
     /// test container, so host tooling reads (and scp reaches) the
@@ -212,7 +212,7 @@ struct SetupRecorder {
 
 impl SetupRecorder {
     /// Append this test's row. Runs in `Drop`, possibly during a panic
-    /// unwind, so failures are reported to stderr rather than panicking —
+    /// unwind, so failures are reported to stderr rather than panicking:
     /// a lost metrics row must never mask the test's own outcome.
     fn write_row(&self, teardown_bytes: u64) {
         let row = serde_json::json!({
@@ -259,7 +259,7 @@ fn metrics_path() -> PathBuf {
 }
 
 /// The per-test observatory log: `test-logs/observatory/<binary>__<test>.log`
-/// at the repository root — gitignored, bind-mounted, appended per net
+/// at the repository root, gitignored, bind-mounted, appended per net
 /// so a test that builds several nets keeps every record.
 fn observatory_log_path(binary: &str, test: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -292,7 +292,7 @@ pub(crate) fn current_binary_name() -> String {
 
 /// The test's path, from the thread name the libtest harness assigns.
 /// Scenario constructors are awaited in the test's root future, which
-/// tokio polls on the test thread under both runtime flavors — but a
+/// tokio polls on the test thread under both runtime flavors, but a
 /// constructor awaited inside a spawned task would land on a worker
 /// thread, so fail loudly rather than key metrics (and later, chain
 /// caches) to a garbage name.

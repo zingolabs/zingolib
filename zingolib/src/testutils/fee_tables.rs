@@ -17,18 +17,18 @@ use zcash_protocol::{PoolType, ShieldedPool};
 ///   cell.
 /// - Ironwood-note spends are counted in the *orchard* bundle view: the
 ///   wallet labels V3 notes `PoolType::ORCHARD` for input selection (the
-///   builder detects Ironwood inputs by note version — see
+///   builder detects Ironwood inputs by note version, see
 ///   `wallet/zcb_traits.rs`), so Orchard and Ironwood sources price
 ///   identically. The upstream fee view therefore charges an
 ///   orchard-bundle contribution for the inputs *and* an ironwood-bundle
-///   contribution for the outputs; if upstream later folds these into one
+///   contribution for the outputs. If upstream later folds these into one
 ///   bundle's actions, this table (and the proposer) will drop in lockstep
 ///   on the dependency bump.
 /// - Change follows upstream's `select_change_pool`: Orchard when any
 ///   orchard-view flow exists (which includes Ironwood sources), else
-///   Sapling when a sapling flow exists; Orchard-pool change is then
+///   Sapling when a sapling flow exists. Orchard-pool change is then
 ///   routed into the ironwood bundle.
-/// - Each shielded bundle with any flow pads to its own two-action floor;
+/// - Each shielded bundle with any flow pads to its own two-action floor, while
 ///   the transparent contribution is unpadded.
 #[must_use]
 pub fn one_to_one(

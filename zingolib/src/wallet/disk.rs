@@ -52,9 +52,9 @@ impl LightWallet {
     ///
     /// Changes in version 42:
     /// Optional Orchard→Ironwood migration section appended (see
-    /// [`crate::wallet::migration::store`]; the section carries its own inner
+    /// [`crate::wallet::migration::store`]. The section carries its own inner
     /// version). (An earlier revision of 42 also wrote an
-    /// `allow_v6_transactions` bool after `min_confirmations`; the setting
+    /// `allow_v6_transactions` bool after `min_confirmations`. The setting
     /// was later removed and version 42 redefined without the byte, leaving
     /// two shipped layouts under one number. Both are read, disambiguated
     /// via `Self::read_price_and_migration`.)
@@ -710,8 +710,8 @@ impl LightWallet {
         }
     }
 
-    /// Parses the final section of a version 42 wallet file — the price list
-    /// followed by the optional migration section — anchored at end of file.
+    /// Parses the final section of a version 42 wallet file (the price list
+    /// followed by the optional migration section) anchored at end of file.
     /// Trailing bytes are an error, which is what lets the two revisions of
     /// version 42 be told apart: the pre-release revision carries exactly one
     /// extra leading byte, so the two readings start one byte apart while

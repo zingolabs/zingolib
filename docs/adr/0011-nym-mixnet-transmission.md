@@ -1,6 +1,6 @@
 # IP obfuscation for Transmission and price-fetch runs over the Nym mixnet
 
-To keep a server-side adversary — principally the indexer — from learning the
+To keep a server-side adversary (principally the indexer) from learning the
 client's IP address and linking it to a wallet's activity, we route the two
 highest-linkage outbound surfaces, Transmission and price-fetch, through the
 Nym mixnet, while leaving synchronization on the ordinary connector. The
@@ -27,7 +27,7 @@ infrequent.
 
 Obfuscation is a property of each surface rather than of the whole client, and
 two transports run at once. Transmission and price-fetch require the mixnet.
-Synchronization — including pepper-sync's long-lived mempool stream — does not;
+Synchronization (including pepper-sync's long-lived mempool stream) does not;
 it may run over bare clearnet or, for a user who wants the indexer blinded to
 their IP during sync as well, over a system-provided NymVPN. Sync degrades
 gracefully and never fails closed. This tiering spends the expensive anonymity
@@ -72,8 +72,8 @@ facts forbid an in-process link. The NymVPN client stack is GPL-3.0 while every
 zingolib crate is MIT, so static linking would relicense the distributed
 wallet. Its crates are unpublished, reachable only by a git pin the dependency
 rule forbids. And the tunnel needs a system TUN device that a wallet process
-cannot create — on Android it is the single consent-gated `VpnService`, on iOS
-a separate entitled Network Extension — so an embed is impossible on the mobile
+cannot create (on Android it is the single consent-gated `VpnService`, on iOS
+a separate entitled Network Extension), so an embed is impossible on the mobile
 targets that matter most. The low-latency mode we would want for sync is
 moreover NymVPN-exclusive: the mixnet SDK is fixed at five hops and exposes no
 faster tier, so no shortcut through the already-approved SDK exists. A thin,
@@ -88,8 +88,8 @@ from a single shared mixnet proxy, owns the two mixnet surfaces. Routing is
 decided by each operation's static tier, never by a per-call boolean, so no
 call site can accidentally route a send over the wrong transport. A send picks
 one indexer at random from a curated broadcast list of eleven reliable,
-low-latency indexers — a list kept separate from the sync-server list, because
-broadcast wants reliable relay and sync-ranking wants low query latency — and
+low-latency indexers (a list kept separate from the sync-server list, because
+broadcast wants reliable relay and sync-ranking wants low query latency), and
 submits over the mixnet. Those eleven are the mixnet-reachable subset of the
 fourteen distinct operators the 2026-07-21 discovery sweep found; the other
 three were excluded because they answer only on port 9067, which the mixnet
@@ -100,11 +100,11 @@ decoupled from the address-knowing sync indexer.
 
 Delivery is pursued through an escalating, serially gated fan-out whose purpose
 is robustness to censorship. The adversary here is a Broadcast Indexer that
-suppresses a send — accepting the connection but declining to relay the
-transaction, or misreporting the outcome — and the countermeasure is the
+suppresses a send (accepting the connection but declining to relay the
+transaction, or misreporting the outcome), and the countermeasure is the
 ability to route the same send around it to honest indexers. The first round
-submits to a single random indexer, so the common case — a send that lands on
-its first try — contacts exactly one witness and keeps the rotation property
+submits to a single random indexer, so the common case (a send that lands on
+its first try) contacts exactly one witness and keeps the rotation property
 intact. Only if that submission fails to confirm delivery does the send
 escalate: the second round submits to two fresh random indexers in parallel,
 and the third round, entered only after both of the second round's submissions
@@ -121,14 +121,14 @@ single-witness discipline.
 Because the client cannot assume whether zainod, lightwalletd, or another
 server sits at the far end of the mixnet, failover is driven by attempt counts
 and delivery checks, never by classifying a server's error text. A round
-"fails," and so escalates, on any outcome short of confirmed delivery — a
-transport failure, a refusal, or a silence — since a censoring indexer can
+"fails," and so escalates, on any outcome short of confirmed delivery (a
+transport failure, a refusal, or a silence), since a censoring indexer can
 present any of these. Success is defined by delivery: an accepted submission, a
 duplicate already in the mempool or chain, or a delivery check that finds the
 transaction known. Because a censoring indexer can also misreport delivery, the
 strongest confirmation is one that does not rest solely on the word of the
-indexer being tested — a cross-check against a different indexer or the
-client's own sync view of the public mempool — and the implementation should
+indexer being tested (a cross-check against a different indexer or the
+client's own sync view of the public mempool), and the implementation should
 prefer such an independent check where it is available. There is no
 merit-rejection short-circuit; an unbroadcastable transaction is bounded
 instead by the six-indexer cap, after which the send surfaces failure for the
@@ -145,8 +145,8 @@ client as cheap defense in depth against a network-level observer.
 ## The toggle and its fail-closed invariant
 
 The mixnet is controllable at runtime through a `LightClient` API that both
-zingo-mobile and zingo-cli drive, exposing a tri-state status — off,
-bootstrapping, or ready — because "on but not yet reachable" is a real state a
+zingo-mobile and zingo-cli drive, exposing a tri-state status (off,
+bootstrapping, or ready), because "on but not yet reachable" is a real state a
 user interface must show. The mixnet is forced on at the start of every
 connected session and its off-state is never persisted, so the worst case is a
 user re-disabling it rather than a forgotten-off clearnet broadcast; an
@@ -170,8 +170,8 @@ constraint on the design rather than a convenience.
 We rejected routing send over Tor, which never carried a send here and offers
 weaker correlation resistance than a mixnet. We rejected embedding NymVPN for
 the license, distribution, and mobile-OS reasons above. We rejected sourcing
-price from an on-chain oracle — which would have eliminated the price surface
-rather than obfuscating it — because it would make the wallet depend on an
+price from an on-chain oracle (which would have eliminated the price surface
+rather than obfuscating it) because it would make the wallet depend on an
 oracle that does not yet exist; price-fetch therefore rides the mixnet like
 send, reusing the same proxy through the HTTP client's SOCKS5 support.
 
@@ -205,9 +205,9 @@ a child process, reads its address, and routes the Transmission and
 price-fetch surfaces through it with a light SOCKS5 client (`tokio-socks`)
 that resolves cleanly in the main lockfile. The tri-state Mixnet Mode maps to
 the child's lifecycle: off is not spawned, bootstrapping is spawned and
-connecting, ready is SOCKS5-reachable. The fail-closed invariant is unchanged
-— if the child never reaches ready, a send refuses rather than falling back
-to clearnet.
+connecting, ready is SOCKS5-reachable. The fail-closed invariant is
+unchanged. If the child never reaches ready, a send refuses rather than
+falling back to clearnet.
 
 Everything else in this record stands: the per-surface tiers, the
 witness-rotation broadcast over the curated Broadcast Indexer list, the toggle
@@ -215,8 +215,8 @@ semantics, and the sync tier's user-provided NymVPN.
 
 ## Amendment (2026-07-17): the broadcaster is an escalating fan-out
 
-The broadcast policy this record originally described — a single random pick
-with sequential failover and "exactly one submission ever in flight" — is
+The broadcast policy this record originally described (a single random pick
+with sequential failover and "exactly one submission ever in flight") is
 superseded. Its stated purpose was witness rotation for privacy; the amended
 purpose adds robustness to censorship, since a Broadcast Indexer can accept a
 send and then suppress the relay. A send now uses an escalating, serially gated
@@ -225,7 +225,7 @@ fresh indexers in parallel only after round one fails to confirm delivery, and
 round three submits to three more only after both of round two's arms fail. The
 fan-out is capped at six distinct indexers, which the one-two-three schedule
 reaches at the end of round three. Witness rotation is retained on the happy
-path — a first-try success still contacts exactly one witness — and redundancy
+path (a first-try success still contacts exactly one witness), and redundancy
 is accepted only once delivery is in doubt. The "The two mixnet surfaces"
 section above has been rewritten to reflect this; the delivery-check and
 no-error-string-classification discipline is unchanged, and each individual
@@ -238,7 +238,7 @@ The tri-state Mixnet Mode this record ratified is superseded by four states:
 off, bootstrapping, ready, and died. A live stage-three smoke run exposed the
 gap. The user interrupted a stuck command with Ctrl-C, the terminal delivered
 the signal to the whole foreground process group, and the nym-proxy child died
-silently — after which every fan-out arm failed against a proxy that the mode
+silently, after which every fan-out arm failed against a proxy that the mode
 still reported as ready. Died names that condition: the spawned proxy exited
 unexpectedly, during bootstrap or after reaching ready. It is distinct from
 off because it is unconsented. Off remains the only state that routes the
@@ -254,13 +254,13 @@ in its own process group, so a Ctrl-C aimed at a wallet command no longer
 reaches the proxy; the interrupt aborts the command while the mixnet keeps
 running. And the supervisor holds the child's stdin pipe open for the child's
 whole life while the child watches that pipe for end-of-file: any parent exit
-— clean, panicked, or killed with SIGKILL, which skips ordinary
-kill-on-drop cleanup — closes the pipe and the child disconnects from the
-mixnet and exits. No orphaned proxy survives its parent, and no parent
-interrupt orphans a session from its transport. On platforms without process
+(clean, panicked, or killed with SIGKILL, which skips ordinary kill-on-drop
+cleanup) closes the pipe and the child disconnects from the mixnet and exits.
+No orphaned proxy survives its parent, and no parent interrupt orphans a
+session from its transport. On platforms without process
 groups the child shares the terminal's group and an interrupt still reaches
-it; the outcome is the safe one — the mode becomes died and the surfaces
-refuse — rather than a silent clearnet fallback.
+it; the outcome is the safe one (the mode becomes died and the surfaces
+refuse) rather than a silent clearnet fallback.
 
 ## Amendment (2026-07-21): the runtime boundary generalizes for mobile
 
@@ -320,11 +320,11 @@ on.
 Witness Rotation as ratified here left one draw unconstrained: nothing
 prevented the random pick from landing on the very indexer the wallet
 synchronizes against — the one party that already holds the address set,
-and the named adversary of this decision. That gap is closed by ADR 0015,
+and the named adversary of this decision. That gap is closed by ADR 0020,
 which makes the exclusion a universal, code-enforced invariant: every
 transmission draw filters the curated pool by the sync indexer's operator,
 and an emptied pool refuses in keeping with the fail-closed rule. See
-`docs/adr/0015-broadcast-witness-never-the-sync-indexer.md`.
+`docs/adr/0020-broadcast-witness-never-the-sync-indexer.md`.
 
 ## Amendment (2026-07-23): migration parts obey Mixnet Mode, and never target the sync server
 
@@ -333,8 +333,8 @@ record routed Transmission and price-fetch by Mixnet Mode but left ZIP 318
 migration-part broadcasts on unconditional clearnet, silently breaking the
 mode's central invariant for the wallet's most correlation-sensitive
 traffic. Migration broadcasts now obey the same policy as every other
-transmitting surface. While the mode is on — assuming the `nym` feature is
-compiled in and the session has not opted out — parts travel ONLY over the
+transmitting surface. While the mode is on (assuming the `nym` feature is
+compiled in and the session has not opted out), parts travel ONLY over the
 mixnet and MUST NEVER go over clearnet: the broadcast client resolves the
 route first and fails closed while the proxy bootstraps or after it dies,
 refusing rather than falling back. Clearnet carries parts only through the
@@ -346,9 +346,9 @@ correlation warning) is unchanged.
 Over the mixnet, migration parts ride Witness Rotation like sends: each
 submission draws one Broadcast Indexer at random from the curated list.
 The synchronization endpoint is forbidden as a mixnet target in both
-shapes of the draw — a configured `migration_broadcast_uri` sharing the
+shapes of the draw (a configured `migration_broadcast_uri` sharing the
 sync server's host is refused with a typed error, and the random draw
-excludes that host from the list — so no single server can correlate a
+excludes that host from the list), so no single server can correlate a
 wallet's sync stream with its migration cohort, which is the correlation
 ZIP 318's scheduling machinery exists to prevent.
 
@@ -356,9 +356,9 @@ ZIP 318's scheduling machinery exists to prevent.
 
 Ratified in the same review walk-through as the migration amendment
 above, and stricter: the price fetch travels ONLY over the mixnet, with
-no clearnet tier in any configuration. Unlike send — whose clearnet
+no clearnet tier in any configuration. Unlike send, whose clearnet
 opt-out exists because a user may need to move funds when the mixnet is
-unavailable — the price fetch contacts a third-party price API whose
+unavailable, the price fetch contacts a third-party price API whose
 value is cosmetic, and a clearnet contact leaks the client IP and
 wallet-alive timing to a party outside the Zcash ecosystem. There is no
 availability argument, so there is no opt-out: while Mixnet Mode is off

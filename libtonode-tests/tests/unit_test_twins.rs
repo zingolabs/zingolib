@@ -4,27 +4,27 @@
 //!
 //! Each test here is the LIVE original of an offline twin in zingolib
 //! (see docs/testing/live-offline-twins.md for the per-test equivalence
-//! record). The originals are preserved verbatim — never deleted — but
+//! record). The originals are preserved verbatim, never deleted, but
 //! gated out of the default suite: the `unit_test_twins` feature, this
 //! module, and this file all carry the same name. Run them with
 //! `cargo nextest run -p libtonode-tests --features unit_test_twins`.
 //!
 //! The fast/slow module wrappers the originals once carried were
-//! flattened out repository-wide (tests have one-shorter paths); each
+//! flattened out repository-wide (tests have one-shorter paths). Each
 //! test's historical identity, including its old module-qualified name,
 //! is recorded in the equivalence table of
 //! docs/testing/live-offline-twins.md.
 //!
 //! The bump-and-check macros of `list_value_transfers_check_fees` and
 //! `from_t_z_o_tz_to_zo_tzo_to_orchard` bit-rotted during the
-//! ironwood-era balance migration — each bound an `i:` argument but
-//! expanded `i: 0` — and were repaired on 2026-07-21 (review of PR
+//! ironwood-era balance migration (each bound an `i:` argument but
+//! expanded `i: 0`) and were repaired on 2026-07-21 (review of PR
 //! #2495). Their ledgers were then adjudicated by live container runs
 //! the same day: the chain confirmed the twins' fee model (no
 //! orchard-bundle-view charge on V6 ironwood spends), and from
 //! `from_t_z_o`'s step 10 the live ledger deliberately forks from the
 //! twin's (the live proposer drains single-pool and refuses exact
-//! drains); see docs/testing/live-offline-twins.md before editing
+//! drains). See docs/testing/live-offline-twins.md before editing
 //! either side.
 
 mod unit_test_twins {
@@ -860,7 +860,7 @@ TransactionSummary {
         //    - 317: 15_000 = 5_000 transparent out + 10_000 ironwood pair.
         //  Adjudicated live 2026-07-21: the live proposer selects ironwood
         //  alone here (sapling's 10_000 stays put), and the mock's exact
-        //  two-pool drain of 470_000 is refused at the boundary — exact
+        //  two-pool drain of 470_000 is refused at the boundary. Exact
         //  drains are pricing-shape-sensitive on the live proposer, so
         //  this ledger stays 5_000 inside the achievable maximum.
         from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 465_000, None)])

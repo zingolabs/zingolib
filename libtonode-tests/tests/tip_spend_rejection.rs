@@ -6,8 +6,8 @@
 //! The pool_matrix orchard-source rows fail in zebra's mempool with
 //! "could not validate orchard proof ... will be rejected from the mempool
 //! until the next chain tip block", during the funding send (orchard spends
-//! with an orchard output). The sapling-source rows — whose funding sends
-//! make the SAME orchard spends but with a sapling output — pass. The
+//! with an orchard output). The sapling-source rows (whose funding sends
+//! make the SAME orchard spends but with a sapling output) pass. The
 //! normalize_shielded_faucet_balance offload historically hit the same rejection when
 //! it spent the tip block's coinbase note (fixed by sync-then-mine
 //! separation in f39cee419).
@@ -19,10 +19,10 @@
 //!   faucet's note selection happened to pick older notes for those
 //!   funding amounts.
 //! - H-ANCHOR: the trigger is the orchard ANCHOR referencing the tip
-//!   block's post-state root; note age is irrelevant.
+//!   block's post-state root. Note age is irrelevant.
 //! - H-OUTPUT: the trigger correlates with the presence of an orchard
 //!   OUTPUT (bundle shape), not with spends or anchors.
-//! - H-SELECT: there is no wallet/zebra asymmetry at all; the matrix rows
+//! - H-SELECT: there is no wallet/zebra asymmetry at all. The matrix rows
 //!   differ only because fee-table differences in funding amounts flip
 //!   note selection between old and tip notes.
 //!
@@ -31,8 +31,8 @@
 //! Every test gives the sending wallet EXACTLY ONE spendable orchard note,
 //! which eliminates note selection and thereby kills H-SELECT as a
 //! confound in these cells. The wallet is synced to the validator tip in
-//! all four cells, so the anchor height is held constant (at the tip);
-//! note depth and output pool vary independently:
+//! all four cells, so the anchor height is held constant (at the tip).
+//! Note depth and output pool vary independently:
 //!
 //! | test                  | note depth | output pool | H-NOTE says | H-ANCHOR says | H-OUTPUT says |
 //! |-----------------------|------------|-------------|-------------|---------------|---------------|
@@ -43,8 +43,8 @@
 //!
 //! The four verdicts read as a column of this table and select the
 //! hypothesis (or falsify all three, which is itself progress). The
-//! encoded assertions below state the H-NOTE column — the leading
-//! hypothesis given the f39cee419 prior — so a different truth table
+//! encoded assertions below state the H-NOTE column (the leading
+//! hypothesis given the f39cee419 prior), so a different truth table
 //! surfaces as test failures whose messages print the observed cell.
 //!
 //! # Round one verdict (2026-07-06, host stack)
@@ -75,12 +75,12 @@
 //! | matrix_aged_coinbase_to_orchard   | 10           | orchard     | ACCEPTED        | rejected (footnote two) |
 //!
 //! Footnote one: H-BOUNDARY predicts rejection for BOTH output pools near
-//! the boundary; an accept in the sapling cell while the orchard cell
+//! the boundary. An accept in the sapling cell while the orchard cell
 //! rejects reproduces the differential under identical amounts and note
 //! selection, eliminating H-SELECT for good.
 //!
 //! Footnote two: ten extra blocks leave the coinbase notes still far
-//! younger than transparent maturity; if youth is the trigger that cell
+//! younger than transparent maturity. If youth is the trigger that cell
 //! still rejects, while H-BOUNDARY says the boundary is now five blocks
 //! behind and the send goes through.
 
@@ -90,7 +90,7 @@
 //! (zaino#1404), so the indexer-path error STRING is no longer a
 //! trustworthy classifier. Every cell now classifies its verdict by
 //! the validator's own judgement of the wallet's retained bytes,
-//! via [`zingolib_testutils::attribution::attribute_send_failure`] —
+//! via [`zingolib_testutils::attribution::attribute_send_failure`],
 //! the dual-channel/dual-time probe round three prototyped, extracted
 //! into a shared measure. Failures print the full attribution, so a
 //! red cell names the guilty layer (wallet builder, indexer
@@ -102,7 +102,7 @@
 //! boundary-adjacent orchard-output sends are ACCEPTED, observed
 //! twice deterministically in both the attribution environment and
 //! the matrix cell. The mechanism was inside zebra rc.0's mempool
-//! admission (reworked in 6.0.0); H-WALLET-CONTEXT is revised and the
+//! admission (reworked in 6.0.0). H-WALLET-CONTEXT is revised and the
 //! wallet builder exonerated. Every cell now pins acceptance, and the
 //! suite's residual value is as a regression sentinel: a relapse
 //! fails with the full attribution in the failure message. Separately,
@@ -124,7 +124,7 @@ enum Verdict {
 }
 
 /// Blocks of distance the attribution probe mines before its second
-/// direct submission — enough to clear the height-5 co-activation
+/// direct submission, enough to clear the height-5 co-activation
 /// from any short-chain environment.
 const ATTRIBUTION_DISTANCE_BLOCKS: u32 = 5;
 
@@ -162,8 +162,8 @@ async fn classify_send_outcome(
 }
 
 /// Runs one cell: fund the recipient with a single shielded note (the
-/// scenario funds via the newest pool — ironwood since the
-/// `PoolType::IRONWOOD` migration of `faucet_funded_recipient`; the
+/// scenario funds via the newest pool, ironwood since the
+/// `PoolType::IRONWOOD` migration of `faucet_funded_recipient`, though the
 /// cells were originally observed with orchard funding), age it
 /// `depth` blocks (the wallet stays synced to the tip, so the anchor
 /// is always the tip), then send to the faucet's address in
@@ -201,7 +201,7 @@ async fn run_cell(depth: u32, target_pool: &str) -> (Verdict, String) {
 /// Round-one verdict: ACCEPTED (falsifying every hypothesis that keyed
 /// on note freshness, anchors, or output pool in this environment). A
 /// fresh non-coinbase orchard note on a tall chain spends fine with an
-/// orchard output; the assertion pins that observed invariant.
+/// orchard output. The assertion pins that observed invariant.
 #[tokio::test]
 async fn tip_note_to_orchard() {
     let (verdict, observables) = run_cell(0, "unified").await;
@@ -224,7 +224,7 @@ async fn aged_note_to_orchard() {
     assert_eq!(verdict, Verdict::Accepted, "{observables}");
 }
 
-/// Control cell: an aged note with a sapling output; every hypothesis
+/// Control cell: an aged note with a sapling output. Every hypothesis
 /// predicts acceptance, so a rejection here falsifies the whole space.
 #[tokio::test]
 async fn aged_note_to_sapling() {
@@ -233,7 +233,7 @@ async fn aged_note_to_sapling() {
 }
 
 /// Rebuilds the pool_matrix environment (short chain near the height-5
-/// co-activation; miner faucet whose only funds are young orchard
+/// co-activation, miner faucet whose only funds are young orchard
 /// coinbase notes) and classifies one faucet send.
 async fn run_matrix_cell(extra_blocks: u32, target_pool: &str) -> (Verdict, String) {
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
@@ -260,7 +260,7 @@ async fn run_matrix_cell(extra_blocks: u32, target_pool: &str) -> (Verdict, Stri
 ///
 /// Round-five verdict (2026-07-16, zebrad 6.0.0): ACCEPTED, observed
 /// twice deterministically. The rejection this cell reproduced lived
-/// in zebra rc.0's mempool admission and is fixed upstream; the pin
+/// in zebra rc.0's mempool admission and is fixed upstream. The pin
 /// flips to acceptance, so a relapse surfaces as a failure whose
 /// message carries the full attribution.
 #[tokio::test]
@@ -271,7 +271,7 @@ async fn matrix_young_coinbase_to_ironwood() {
 
 /// The differential under identical amounts and note selection: same
 /// sender, same young coinbase funds, sapling output. The pool_matrix
-/// sapling rows say this is accepted; H-COINBASE says rejected.
+/// sapling rows say this is accepted. H-COINBASE says rejected.
 #[tokio::test]
 async fn matrix_young_coinbase_to_sapling() {
     let (verdict, observables) = run_matrix_cell(0, "sapling").await;
@@ -295,21 +295,21 @@ async fn matrix_aged_coinbase_to_orchard() {
 /// bytes. The wallet retains the built Transaction in its record when
 /// transmission fails (status Failed), so the exact rejected bytes are
 /// recoverable, and the validator's JSON-RPC port is directly reachable
-/// via rpc_listen_port — no indexer in the loop.
+/// via rpc_listen_port, with no indexer in the loop.
 ///
 /// Two predicates on the SAME bytes sort the hypothesis space:
 ///
 /// - Verdict parity NOW: submitting the captured bytes directly to
 ///   zebra's sendrawtransaction at the boundary must reproduce the
 ///   rejection. Parity exonerates zainod as a transport (it relayed
-///   zebra's verdict faithfully); a divergent verdict implicates it.
+///   zebra's verdict faithfully). A divergent verdict implicates it.
 /// - Same bytes LATER: after five blocks of distance, resubmit the
 ///   IDENTICAL bytes. Zebra's own error text ("until the next chain tip
-///   block") predicts acceptance; the round-two cure worked with a
+///   block") predicts acceptance. The round-two cure worked with a
 ///   REBUILT transaction, which left both explanations open. If the
 ///   identical bytes are accepted, the proof was valid all along and
 ///   zebra's boundary-time verdict was wrong (the mechanism is inside
-///   zebra); if they are still rejected, the wallet built a transaction
+///   zebra). If they are still rejected, the wallet built a transaction
 ///   only valid under post-boundary rules and zebra was right both
 ///   times (H-WALLET-CONTEXT).
 ///
@@ -320,11 +320,11 @@ async fn matrix_aged_coinbase_to_orchard() {
 /// # Round five: the phenomenon is fixed upstream
 ///
 /// Under zebrad 6.0.0 (bumped 2026-07-16) the boundary-adjacent
-/// orchard-output send is ACCEPTED — observed twice deterministically
+/// orchard-output send is ACCEPTED, observed twice deterministically
 /// in this environment and in the matrix cell. The mechanism was
 /// inside zebra rc.0's mempool admission after all, the outcome round
 /// three's "same bytes LATER" predicate had named as the
-/// mechanism-inside-zebra branch; the wallet builder is exonerated,
+/// mechanism-inside-zebra branch. The wallet builder is exonerated,
 /// and the round-three H-WALLET-CONTEXT conviction is revised (the
 /// wrong-branch-id rejection of the resubmitted bytes was the
 /// expected fate of boundary-built bytes crossing an activation, not

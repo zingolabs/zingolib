@@ -279,7 +279,7 @@ mod test {
     /// whenever the UA carries an orchard receiver, Sapling only when that
     /// is the best on offer. This is the guarantee the LocalNet test
     /// `diversified_addresses_receive_funds_in_best_pool` enforced with a
-    /// full zebrad+zainod network; the proposal's payment-pool map states
+    /// full zebrad+zainod network. The proposal's payment-pool map states
     /// it directly from synthetic wallet data alone.
     #[test]
     fn proposal_targets_best_pool_per_unified_address() {
@@ -364,7 +364,7 @@ mod test {
             .expect("orchard funds propose cleanly to a sapling destination");
     }
 
-    /// Proposing a spend of existing funds works from wallet data alone —
+    /// Proposing a spend of existing funds works from wallet data alone, with
     /// no network. Formerly `#[ignore]`d ("for some reason this does not
     /// work without network"): it loaded an example wallet fixture, and
     /// fixtures deserialize without the confirmed-transaction state

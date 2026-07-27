@@ -25,7 +25,7 @@ pub trait ChainView {
     fn chain_tip(&self) -> Option<BlockHeight>;
 
     /// The Spend-Evidence Height: the height through which the wallet's
-    /// evidence of spends and transaction inclusion is complete — every
+    /// evidence of spends and transaction inclusion is complete, with every
     /// block at or below it scanned with its nullifiers mapped. This is
     /// the only lawful input to judgments that condemn (a transaction
     /// expired-unmined, a part dead): the chain tip runs ahead of
@@ -63,8 +63,8 @@ pub enum PartClass {
     /// broadcasting it now would mine a permanent lateness fingerprint
     /// (the cleartext expiry and the stale anchor single the part out
     /// within its denomination cohort), so it waits out its expiry and
-    /// rebuilds fresh — on-chain indistinguishable from an on-schedule
-    /// part. Not part of the catch-up cohort; surfaced so status can say
+    /// rebuilds fresh, on-chain indistinguishable from an on-schedule
+    /// part. Not part of the catch-up batch. Surfaced so status can say
     /// why nothing was sent and when the rebuild comes.
     AwaitingExpiry {
         /// The expiry height being waited out.
@@ -236,13 +236,13 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
         // The ZIP 318 invalidation predicate: a worthwhile
         // confirmed-spendable Orchard balance remains while a scheduled
         // part is invalid. At or below the Sweep Minimum a replan would
-        // strand everything it planned, so no replan is offered.
+        // leave everything it planned as residual, so no replan is offered.
         report.actions.push(RecommendedAction::ReplanRemainder);
     }
     // The completion rule: when every part is terminal, the migration
     // concludes unless a worthwhile remainder exists. Complete means
-    // "nothing left for this migration to do", not "everything migrated" —
-    // an insistently spent-away migration completes with zero confirmed
+    // "nothing left for this migration to do", not "everything migrated".
+    // An insistently spent-away migration completes with zero confirmed
     // parts, reported faithfully by the status surface.
     if all_terminal && !state.parts.is_empty() {
         if spendable <= state.params.sweep_min {
@@ -265,7 +265,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
 /// instant, computed read-only from a reconcile `report` and the schedule.
 ///
 /// This is the current window's parts whose random target the chain has
-/// reached, plus the overdue parts catch-up folds into the current window —
+/// reached, plus the overdue parts catch-up folds into the current window,
 /// only the [`PartState::Assigned`] ones, since a [`PartState::Signed`]
 /// overdue part keeps its stale anchor and is rebuilt rather than folded.
 /// Parts reconciliation would instead confirm, invalidate or rebuild are
@@ -308,7 +308,7 @@ pub fn due_now_parts(
             } else {
                 // A natively-current part goes out as soon as its window is
                 // open. Gating on OnTrack drops the parts reconciliation will
-                // confirm, invalidate or expire instead of sending — they
+                // confirm, invalidate or expire instead of sending. They
                 // would otherwise leak through the state/bucket check while
                 // still Assigned or Signed.
                 on_track.contains(&part.id)
@@ -366,7 +366,7 @@ fn classify(
     };
 
     // Expiry: a signed-or-broadcast transaction is condemned as dead only
-    // on complete evidence — the Spend-Evidence Height must reach the
+    // on complete evidence. The Spend-Evidence Height must reach the
     // expiry, so every block the transaction could have mined in has been
     // scanned with its nullifiers mapped. Judging against the chain tip
     // here condemned parts whose exonerating spend sat in the unscanned
@@ -587,7 +587,7 @@ mod tests {
     /// currently satisfies neither `MarkComplete` (not every part is
     /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
     /// reconcile recommends nothing forever and the stuck state blocks
-    /// both the immediate migration and the drain until the user finds
+    /// both the immediate migration and the immediate migration until the user finds
     /// `cancel`.
     #[test]
     fn terminal_parts_with_nothing_replannable_reach_complete() {
@@ -706,8 +706,8 @@ mod tests {
     fn due_now_folds_assigned_overdue_parts_but_not_signed_ones() {
         // Bucket tip_bucket() - 2 closed well beyond the slip tolerance. The
         // Assigned part is Overdue and folds into the batch; the Signed one is
-        // classified AwaitingExpiry — it waits out its expiry and rebuilds
-        // rather than broadcasting late — so it is outside the catch-up cohort
+        // classified AwaitingExpiry (it waits out its expiry and rebuilds
+        // rather than broadcasting late), so it is outside the catch-up batch
         // and never folds.
         let assigned = assigned_part(0, tip_bucket() - 2);
         let mut signed = assigned_part(1, tip_bucket() - 2);
@@ -766,7 +766,7 @@ mod tests {
                 &state.params,
             )
             .is_empty(),
-            "a part whose window has not opened is a future wake, not a due batch",
+            "a part whose window has not opened is a future window, not a due batch",
         );
     }
 
@@ -776,7 +776,7 @@ mod tests {
         // migration: reconcile classifies it Invalidated, so a tap would not
         // send it and `due_now` must not advertise it. With no random target
         // it clears the bucket predicate, so only the OnTrack class gate drops
-        // it — the property that gate exists for.
+        // it, the property that gate exists for.
         let mut part = assigned_part(0, tip_bucket());
         part.target_height = None;
         let state = scheduled_state(vec![part]);

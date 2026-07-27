@@ -1,4 +1,4 @@
-//! `ZingoCli` — a command-line interface for the Zingo Zcash light wallet.
+//! `ZingoCli`, a command-line interface for the Zingo Zcash light wallet.
 //!
 //! This crate provides the library half of `zingo-cli`. It owns argument
 //! parsing ([`build_clap_app`]), configuration assembly, wallet startup,
@@ -92,7 +92,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("indexer-diary")
                 .long("indexer-diary")
                 .action(clap::ArgAction::SetTrue)
-                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `nym history`). The diary stores hosts, timings, and a failure category — never server text — and is capped. Requires the `nym-diary` build feature; the choice is never persisted."))
+                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `nym history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -154,7 +154,7 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// Performs the per-prompt housekeeping on the command-loop thread, where
 /// the [`LightClient`] lives: polls the sync task, reports any save-task
 /// failure, and returns the sync indicator to embed in the interactive
-/// prompt — `" [Syncing X / Y outputs]"` while sync is in progress,
+/// prompt: `" [Syncing X / Y outputs]"` while sync is in progress,
 /// `" [Synced X / X outputs]"` when fully synced, `" [Sync error]"` on
 /// failure, or `" [Sync stopped at X / Y outputs]"` when no sync task is
 /// running and the wallet is not fully synced.
@@ -364,15 +364,15 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
 /// A request to the background command loop.
 ///
-/// The variant — not the content of the response string — tells the
+/// The variant, rather than the content of the response string, tells the
 /// requester how to interpret the reply, so no consumer ever classifies
 /// a response by sniffing its text (the in-band-error problem of issue
 /// zingolabs/zingolib#2446).
 enum Request {
-    /// Execute a user command; the reply is the command's output.
+    /// Execute a user command. The reply is the command's output.
     Command(String, Vec<String>),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
-    /// typed calls on the loop thread; the reply is the sync indicator
+    /// typed calls on the loop thread. The reply is the sync indicator
     /// to embed in the interactive prompt.
     PromptIndicator,
 }
@@ -504,7 +504,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> CommunicationMode {
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
     communication_mode: CommunicationMode,
-    /// The Indexer to connect to; `None` exactly when the session is in
+    /// The Indexer to connect to. `None` exactly when the session is in
     /// Offline mode.
     server: Option<http::Uri>,
     /// All servers that responded to `get_info()` during dynamic selection,
@@ -528,7 +528,7 @@ pub(crate) struct ConfigTemplate {
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     nym_proxy_path: Option<String>,
     /// `--indexer-diary`: opt this session in to recording the indexer diary.
-    /// Effective only with the `nym-diary` build feature; other builds warn.
+    /// Effective only with the `nym-diary` build feature. Other builds warn.
     indexer_diary: bool,
 }
 
@@ -573,7 +573,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        // Offline mode never resolves a server — resolution probes the
+        // Offline mode never resolves a server, since resolution probes the
         // network, and the session's contract is that no Indexer is ever
         // configured.
         let (server, ranked_servers) = match communication_mode {
@@ -625,7 +625,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
 /// Builds a `ClientConfig` from the filled config template.
 ///
-/// This is a pure function — no I/O or side effects — and is the
+/// This is a pure function, with no I/O or side effects, and is the
 /// first testable seam inside the startup sequence.
 fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
     let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
@@ -726,7 +726,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     // The indexer diary is a per-session runtime opt-in on top of its build
     // gate: recording starts only when the user passes --indexer-diary, and
     // the choice is never persisted. A build without the feature warns loudly
-    // instead of silently not recording — failing safe is not recording.
+    // instead of silently not recording, because failing safe is not recording.
     #[cfg(feature = "nym-diary")]
     if filled_template.indexer_diary {
         lightclient.set_indexer_diary(true);
@@ -743,7 +743,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
     // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected,
     // unless the user opts out with --no-mixnet. The off-state is never
-    // persisted — this runs every launch. Offline sessions never transmit and
+    // persisted, so this runs every launch. Offline sessions never transmit and
     // skip the bootstrap. A spawn failure fails closed: the session aborts
     // rather than quietly transmitting over clearnet.
     #[cfg(feature = "nym")]
@@ -794,7 +794,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for
-/// `recovery_info` but the wallet file cannot be fully parsed — the whole
+/// `recovery_info` but the wallet file cannot be fully parsed. The whole
 /// point of that command is to escape a wallet no current build can read.
 fn print_salvaged_recovery_info(
     cli_config: &ConfigTemplate,

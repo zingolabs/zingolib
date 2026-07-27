@@ -371,7 +371,7 @@ async fn wallet_round_trips_migration_state_at_current_version() {
 ///
 /// The tail is returned in full, not merely as a length, because asserting
 /// on it is what makes these tests meaningful. Recovery info comes from the
-/// file *prefix* and so survives even a badly misparsed tail; only comparing
+/// file *prefix* and so survives even a badly misparsed tail. Only comparing
 /// the tail proves the disambiguating reader chose the right layout.
 struct CurrentVersionWallet {
     chain_type: crate::config::ChainType,
@@ -559,7 +559,7 @@ fn ambiguous_version_42_tail_is_refused() {
     );
 }
 
-/// When the full parse fails — here simulated by a truncated file — the
+/// When the full parse fails (here simulated by a truncated file) the
 /// prefix-only salvage reader must still recover seed, birthday, and
 /// account count, so no format break can strand a wallet.
 #[tokio::test]
@@ -584,7 +584,7 @@ async fn recovery_info_salvages_a_wallet_file_that_fails_to_read() {
 /// info from the prefix salvage, so no corpus wallet is stranded.
 ///
 /// The corpus holds live seed material, so it is gitignored and this test
-/// never prints seeds; it reports only per-file outcomes. On machines
+/// never prints seeds. It reports only per-file outcomes. On machines
 /// without the corpus (CI included) the sweep is an empty pass.
 #[test]
 fn data_wallets_corpus_parses_or_salvages() {

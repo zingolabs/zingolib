@@ -9,7 +9,7 @@
 //! every outcome in a closed enum, so callers must match on meanings
 //! rather than interpret a bit.
 //!
-//! Raw calls to the wrapped operations are confined to this module; the
+//! Raw calls to the wrapped operations are confined to this module. The
 //! `raw_boolean_calls_are_confined_to_this_module` test enforces the
 //! boundary.
 
@@ -28,7 +28,7 @@ pub enum CheckpointAppendOutcome {
     /// The association between the id and the current frontier position
     /// was recorded.
     Appended,
-    /// The id is not above the store's newest checkpoint; the tree is
+    /// The id is not above the store's newest checkpoint. The tree is
     /// unchanged. Appending stamps the *current* frontier, so recording
     /// it at or below an already-stamped height would duplicate or
     /// falsify the height-to-frontier record. Checkpoints for past
@@ -44,13 +44,13 @@ pub enum CheckpointAppendOutcome {
 pub enum RollbackOutcome {
     /// The tree was truncated to the checkpoint's state.
     RolledBack,
-    /// No checkpoint exists with the given id; the tree is unchanged.
+    /// No checkpoint exists with the given id. The tree is unchanged.
     NoSuchCheckpoint,
 }
 
 /// The boundary wrapper over shardtree's boolean operations, exported so
 /// downstream crates route through it too (zingolib's legacy wallet
-/// import does; its own source-walk test enforces its confinement).
+/// import does. Its own source-walk test enforces its confinement).
 pub trait ShardTreeExt {
     /// As [`ShardTree::checkpoint`], with the boolean classified: append
     /// a checkpoint recording the tree's current frontier at the id.

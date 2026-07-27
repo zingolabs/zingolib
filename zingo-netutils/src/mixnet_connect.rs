@@ -3,8 +3,8 @@
 //! [`NymProxy`](crate::NymProxy) is gated on the `nym` feature and its
 //! collaborators (the mixnet client, the discovery API) cannot be constructed
 //! in a unit test, so any logic left inline there is untestable in CI's
-//! default build. This module holds small pure functions — input in, output
-//! out, entropy injected — and is deliberately NOT feature-gated, so these
+//! default build. This module holds small pure functions (input in, output
+//! out, entropy injected) and is deliberately NOT feature-gated, so these
 //! tests run in the default build without the nym-sdk stack. The connect
 //! escalation logic itself lives in the shared planner,
 //! [`crate::arm_race`].
@@ -20,12 +20,12 @@ pub(crate) fn strip_socks5_scheme(url: &str) -> &str {
 
 /// Fisher-Yates shuffle driven by a caller-supplied seed, so the permutation
 /// is a pure function of `(items, seed)`. The pure core of provider
-/// shuffling: the caller supplies entropy (production hashes the clock;
+/// shuffling: the caller supplies entropy (production hashes the clock,
 /// tests pass a constant).
 ///
-/// NOTE: the underlying generator is a plain LCG — NOT cryptographically
+/// NOTE: the underlying generator is a plain LCG, NOT cryptographically
 /// secure. Its purpose is load distribution across exit gateways, not
-/// unpredictability; the mixnet's privacy comes from Sphinx routing, not
+/// unpredictability. The mixnet's privacy comes from Sphinx routing, not
 /// from which gateway is chosen.
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 pub(crate) fn seeded_shuffle<T>(items: &mut [T], mut seed: u64) {

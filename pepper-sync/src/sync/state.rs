@@ -1038,7 +1038,7 @@ where
 /// where shard ranges in `sync_state` are empty.
 /// Drops the newest stored shard range for `shielded_protocol`, so a
 /// refetched newest subtree root can rebuild it through
-/// [`add_shard_ranges`] — never duplicated, and corrected when a reorg
+/// [`add_shard_ranges`], never duplicated, and corrected when a reorg
 /// moved the subtree's completing height. No-op when no range exists.
 pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
@@ -1132,7 +1132,7 @@ mod tests {
     /// A refetched newest subtree root (see
     /// `crate::sync::update_subtree_roots`) rebuilds its shard range via
     /// pop-then-readd: idempotent when the completing height is
-    /// unchanged, corrected when a reorg moved it — never duplicated.
+    /// unchanged, corrected when a reorg moved it, never duplicated.
     #[test]
     fn refetched_newest_root_rebuilds_its_shard_range() {
         fn root(completing_block_height: u64) -> SubtreeRoot {

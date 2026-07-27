@@ -11,8 +11,8 @@ pub struct Denominations {
     /// One entry per Ironwood output to create. Every value is a member of
     /// [`MigrationParams::denominations`]. Ordered largest first.
     outputs: Vec<Zatoshis>,
-    /// The leftover below the dust floor that has no canonical denomination.
-    /// Always strictly less than [`MigrationParams::dust_floor`]. The
+    /// The leftover below the smallest denomination that has no canonical denomination.
+    /// Always strictly less than [`MigrationParams::max_residual_value`]. The
     /// migration folds this into the fee instead of creating a non-standard
     /// note.
     remainder: Zatoshis,
@@ -24,7 +24,7 @@ impl Denominations {
         &self.outputs
     }
 
-    /// The sub-dust-floor leftover to fold into the fee.
+    /// The sub-denomination leftover to fold into the fee.
     pub fn remainder(&self) -> Zatoshis {
         self.remainder
     }
@@ -68,8 +68,8 @@ pub fn decompose(value: Zatoshis, params: &MigrationParams) -> Denominations {
 
     Denominations {
         outputs,
-        // `remaining` is what is left after removing every dust-floor unit,
-        // so it is strictly below the dust floor and trivially in range.
+        // `remaining` is what is left after removing every smallest-denomination unit,
+        // so it is strictly below the smallest denomination and trivially in range.
         remainder: Zatoshis::const_from_u64(remaining),
     }
 }
@@ -213,13 +213,13 @@ mod tests {
             );
         }
 
-        // The remainder is always below the dust floor, so folding it into
-        // the fee costs at most one dust-floor unit.
+        // The remainder is always below the smallest denomination, so folding it into
+        // the fee costs at most one smallest-denomination unit.
         #[test]
-        fn remainder_below_dust_floor(value in 0u64..=MAX_MONEY) {
+        fn remainder_below_max_residual_value(value in 0u64..=MAX_MONEY) {
             let params = params();
             let d = decompose(Zatoshis::const_from_u64(value), &params);
-            prop_assert!(u64::from(d.remainder()) < params.dust_floor);
+            prop_assert!(u64::from(d.remainder()) < params.max_residual_value);
         }
     }
 }

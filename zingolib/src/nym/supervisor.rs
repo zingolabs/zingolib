@@ -5,8 +5,8 @@
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
 //! the child announces on stdout, and drives the tri-state
 //! [`MixnetMode`](crate::nym::MixnetMode). While the child is starting the
-//! mode is `Bootstrapping`; it becomes `Ready` once the address arrives. If
-//! the child's stdout later closes — during bootstrap or after ready — the
+//! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
+//! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
 //! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
 //! deliberate [`Self::stop`] yields `Off`.
@@ -32,11 +32,11 @@
 //! tear the transport out from under a live session:
 //!
 //! - The child is spawned in its **own process group**, so a terminal `Ctrl-C`
-//!   — delivered to the shell's foreground group — does not reach it. `Ctrl-C`
+//!   (delivered to the shell's foreground group) does not reach it. `Ctrl-C`
 //!   aborts the wallet's current command while the mixnet keeps running.
 //! - The supervisor holds the child's **stdin pipe** open for the child's
-//!   life. The child watches that pipe; any parent exit — clean, panic, or
-//!   `SIGKILL` (which skips `kill_on_drop`) — closes the pipe, the child reads
+//!   life. The child watches that pipe. Any parent exit (clean, panic, or
+//!   `SIGKILL`, which skips `kill_on_drop`) closes the pipe, the child reads
 //!   EOF, disconnects from the mixnet, and exits. No orphaned proxy survives a
 //!   dead parent.
 #![forbid(unsafe_code)]
@@ -133,8 +133,8 @@ enum Transport {
         reader: JoinHandle<()>,
         /// The child's stdin, held open for the child's life. The child
         /// watches this pipe and exits when it closes, so dropping this
-        /// handle — on [`MixnetProxy::stop`] or when the whole process dies —
-        /// tears the proxy down. Never written to; its openness is the
+        /// handle (on [`MixnetProxy::stop`] or when the whole process dies)
+        /// tears the proxy down. Never written to. Its openness is the
         /// signal.
         _stdin: ChildStdin,
     },
@@ -144,7 +144,7 @@ enum Transport {
 
 impl MixnetProxy {
     /// Spawn the `nym-proxy` binary at `binary_path`. Returns immediately with
-    /// mode [`MixnetMode::Bootstrapping`]; poll [`Self::mode`] for readiness.
+    /// mode [`MixnetMode::Bootstrapping`]. Poll [`Self::mode`] for readiness.
     /// The child is killed if this supervisor is dropped, spawned in its own
     /// process group (terminal signals do not reach it) with its stdin piped
     /// (its closure is how the child learns the parent is gone).
@@ -346,8 +346,8 @@ async fn drive_attached_state<RFut, P, PFut>(
 }
 
 /// Read `stdout` for the child's whole life: the address announcement flips
-/// the mode to `Ready`, progress lines update the live bootstrap detail, and —
-/// the key coupling change — reading continues *past* `Ready` so a later close
+/// the mode to `Ready`, progress lines update the live bootstrap detail, and,
+/// the key coupling change, reading continues *past* `Ready` so a later close
 /// is observed. When stdout closes at all, whether before or after the address
 /// arrived, the mode becomes `Died`: an unexpected loss of the proxy, not a
 /// consented `Off`. Only [`MixnetProxy::stop`] sets `Off`, and it aborts this
@@ -409,9 +409,9 @@ mod tests {
     }
 
     /// A reader that yields `bytes` once and then stays pending forever, never
-    /// reaching EOF — modelling a live child whose stdout is open but idle
+    /// reaching EOF, modelling a live child whose stdout is open but idle
     /// after its announcement. A plain byte slice EOFs immediately, which
-    /// `drive_state` now (correctly) reads as the child dying; these tests
+    /// `drive_state` now (correctly) reads as the child dying. These tests
     /// want to observe the intermediate `Ready` while the stream is still
     /// open, so the reader must not close.
     struct OpenAfter(Cursor<Vec<u8>>);
@@ -549,7 +549,7 @@ mod tests {
 
     /// HYPOTHESIS: the reader keeps watching past Ready, so a proxy that dies
     /// AFTER announcing its address lands in Died with the stale address
-    /// cleared — the exact zombie path the coupling closes. Falsified if the
+    /// cleared, the exact zombie path the coupling closes. Falsified if the
     /// reader stops at Ready (mode stuck Ready) or leaves the dead address
     /// dialable.
     #[tokio::test]

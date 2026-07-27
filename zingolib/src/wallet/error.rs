@@ -92,12 +92,28 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
-    /// A drain was requested but the account holds no spendable Orchard note
+    /// A placement asked for a broadcast window whose candidate anchor set is
+    /// empty: every bucket below it is ruled out by the Ironwood era floor or
+    /// by the part's own bound note, leaving no boundary at age one or more to
+    /// prove against. A caller that derives its window from
+    /// [`crate::wallet::migration::schedule::first_permitted_bucket`] or from
+    /// `plan_schedule` cannot reach this; a hand-computed window can.
+    #[error(
+        "Migration part cannot anchor in window {window}: no legal anchor bucket \
+         at or above {lowest_anchor} sits below it."
+    )]
+    MigrationNoLegalAnchor {
+        /// The broadcast window the part was being placed in.
+        window: u64,
+        /// The lowest bucket the part's floors permit as an anchor.
+        lowest_anchor: u64,
+    },
+    /// An immediate migration was requested but the account holds no spendable Orchard note
     /// worth more than it would cost to spend.
     #[error("No spendable Orchard notes to migrate.")]
     NothingToMigrate,
     /// `TargetValue::AllFunds(MaxSpendMode::Everything)` was requested. Its
-    /// contract — fail if ANY unspendable funds exist — requires a
+    /// contract (fail if ANY unspendable funds exist) requires a
     /// whole-wallet audit this selector does not yet perform, and a wrong
     /// success would silently strand funds, so the request is refused with
     /// this typed error instead.

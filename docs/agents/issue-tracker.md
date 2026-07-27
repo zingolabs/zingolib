@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live in **Linear**, in the **Zingo Mobile** team
 (`team` id `e2a5ee38-9519-4447-bfec-581c2b9e838f`). All operations go through the
-`linear-server` MCP tools — not a CLI. Most tool schemas are deferred; load them
+`linear-server` MCP tools, not a CLI. Most tool schemas are deferred; load them
 with `ToolSearch` (e.g. `select:mcp__linear-server__save_issue`) before calling.
 
 There is no GitHub-style issue tracker for triage purposes. External pull
@@ -14,7 +14,7 @@ requests on the `zingolabs/zingolib` GitHub repo are **not** a triage surface;
 Always scope to `team: "Zingo Mobile"`.
 
 - **Create an issue**: `mcp__linear-server__save_issue` with `title`, `description`
-  (markdown — use real newlines, not `\n`), and `team`. Set `state` and `labels`
+  (markdown, using real newlines, not `\n`), and `team`. Set `state` and `labels`
   per `triage-labels.md`.
 - **Read an issue**: `mcp__linear-server__get_issue` by id, plus
   `mcp__linear-server__list_comments` for the discussion thread.
@@ -28,11 +28,11 @@ Always scope to `team: "Zingo Mobile"`.
 - **List labels / statuses**: `mcp__linear-server__list_issue_labels` and
   `mcp__linear-server__list_issue_statuses`, both scoped to the team.
 
-### Team facts (snapshot — re-list to confirm)
+### Team facts (snapshot, re-list to confirm)
 
 - **Statuses**: Backlog, Todo, In Progress, In Review, Done, Duplicate, Canceled.
 - **Labels**: Design, Feature, Bug, Improvement. Triage labels
-  (`needs-info`, `ready-for-agent`) are created lazily — see `triage-labels.md`.
+  (`needs-info`, `ready-for-agent`) are created lazily (see `triage-labels.md`).
 
 ## When a skill says "publish to the issue tracker"
 

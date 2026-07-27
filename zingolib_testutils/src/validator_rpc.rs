@@ -3,7 +3,7 @@
 //! Every wallet-facing observation flows through the indexer, so
 //! attribution experiments (is a surprising verdict zebra's, zainod's, or
 //! the wallet's?) need a channel that bypasses the indexer entirely. The
-//! running Zebrad exposes its JSON-RPC port via `rpc_listen_port()`;
+//! running Zebrad exposes its JSON-RPC port via `rpc_listen_port()`, and
 //! these helpers speak the methods the attribution cells and the
 //! chain-cache replay mechanism need.
 //!
@@ -22,9 +22,9 @@ use std::time::Instant;
 /// The validator's verdict on a directly-submitted raw transaction.
 #[derive(Debug)]
 pub enum RawTransactionVerdict {
-    /// Accepted into the mempool; carries the txid the validator returned.
+    /// Accepted into the mempool. Carries the txid the validator returned.
     Accepted(String),
-    /// Rejected; carries the validator's error message.
+    /// Rejected. Carries the validator's error message.
     Rejected(String),
 }
 
@@ -55,7 +55,7 @@ pub fn is_write_method(method: &str) -> bool {
 }
 
 /// Issue a JSON-RPC call, recording it in the ledger. Returns `None`
-/// on any transport or parse failure — probes that poll through launch
+/// on any transport or parse failure, since probes that poll through launch
 /// and teardown windows want silence, not panics.
 async fn try_rpc_call(
     rpc_port: u16,
@@ -105,7 +105,7 @@ pub async fn try_get_chain_info(rpc_port: u16) -> Option<(u32, String)> {
 }
 
 /// Non-panicking probe of the validator's connected peer count. On
-/// regtest this must be zero; anything else names a mutation channel
+/// regtest this must be zero. Anything else names a mutation channel
 /// the isolation assumptions exclude.
 pub async fn try_get_peer_count(rpc_port: u16) -> Option<usize> {
     let response = try_rpc_call(rpc_port, "getpeerinfo", serde_json::json!([])).await?;
@@ -178,7 +178,7 @@ pub async fn get_block_hex(rpc_port: u16, height: u32) -> String {
 }
 
 /// Submits a raw serialized block (hex) via `submitblock`. Panics on any
-/// verdict other than acceptance — chain-cache replay resubmits blocks
+/// verdict other than acceptance, since chain-cache replay resubmits blocks
 /// the validator itself produced, so a rejection means the cache is
 /// invalid, not that rejection is interesting data.
 ///

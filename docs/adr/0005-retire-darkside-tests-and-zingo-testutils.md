@@ -9,8 +9,8 @@ binary.
 
 ## Context
 
-`darkside-tests` drove `darksidewalletd` — lightwalletd's adversarial
-mode — to exercise how a wallet behaves when the chain reorganizes.
+`darkside-tests` drove `darksidewalletd` (lightwalletd's adversarial
+mode) to exercise how a wallet behaves when the chain reorganizes.
 Every one of its nine tests had been `#[ignore]`d for months on two
 darkside-mode bugs in lightwalletd itself: an invalid block-hash length
 in served tree states, and a post-reorg `prev_hash` discontinuity. The
@@ -19,7 +19,7 @@ legacy stack (lightwalletd, the `zcash_local_net` `legacy-stack` feature)
 in the dependency graph for its sake, and while carrying a subtractive
 pepper-sync feature (`darkside_test`) whose activation under
 `cargo --workspace` removed `GetSubtreeRoots` calls from every crate in
-the build by feature unification — the mechanism behind
+the build by feature unification, the mechanism behind
 zingolabs/zingolib#2447.
 
 `zingo-testutils` was already a dead directory: not a workspace member,
@@ -35,9 +35,9 @@ the eight portable libtonode tests were preserved, was rejected. That
 pattern earns its keep only for tests that still *run*: a gated original
 is a live control group that can be re-executed to verify its twin. The
 darkside nine cannot run at all, so gating them would archive
-unbuildable code — dragging the `DarksideConnector`, lightwalletd, and
+unbuildable code, dragging the `DarksideConnector`, lightwalletd, and
 the poisoning feature forward, and demanding the dead code be maintained
-through every future API migration — to preserve what `git` already
+through every future API migration, all to preserve what `git` already
 preserves verbatim at `4d6a65236^`. This ledger is the durable record
 instead.
 
@@ -62,7 +62,7 @@ tracked in the feature comments.
   `zingo-testutils`. `run_workspace_tests.sh` collapses to a single
   `cargo nextest run --workspace`.
 - #2447 is resolved at its root: the subtractive feature can no longer be
-  activated. When the offline `from_t_z_o` twin — ignored on #2447 — is
+  activated. When the offline `from_t_z_o` twin (ignored on #2447) is
   un-ignored, the live original temporarily restored to `concrete.rs`'s
   default suite returns behind the `unit_test_twins` gate.
 - Eliding lightwalletd entirely from this repository now turns only on
