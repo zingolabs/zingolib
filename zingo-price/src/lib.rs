@@ -131,17 +131,31 @@ impl PriceList {
         self.time_historical_prices_last_updated = Some(time_of_birthday);
     }
 
-    /// Update and return current price of ZEC.
+    /// Records `price` as the current price, so it survives serialization
+    /// and [`Self::current_price`] reflects the latest fetch.
+    ///
+    /// This is the storage half of a price update. A caller that must not
+    /// hold a lock across the network wait runs [`fetch_current_price`]
+    /// first, then records the result here under a briefly-held lock (the
+    /// net-diag polling-blackout remedy).
+    pub fn record_current_price(&mut self, price: Price) {
+        self.current_price = Some(price);
+    }
+
+    /// Update, record, and return the current price of ZEC.
     ///
     /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
     /// request is routed through that local SOCKS5 proxy (the Nym mixnet
-    /// transport); `None` fetches over clearnet. This is a pure mechanism: the
-    /// caller decides which route to use.
+    /// transport); `None` fetches over clearnet. The caller decides which
+    /// route to use. The fetched price is recorded on `self` as
+    /// [`Self::current_price`].
     pub async fn update_current_price(
         &mut self,
         socks5_proxy: Option<&str>,
     ) -> Result<Price, PriceError> {
-        fetch_current_price(socks5_proxy).await
+        let price = fetch_current_price(socks5_proxy).await?;
+        self.record_current_price(price);
+        Ok(price)
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
@@ -515,6 +529,28 @@ mod tests {
             "GEMINI_ZECUSD_URL must request TRADES_REQUESTED trades: {GEMINI_ZECUSD_URL}"
         );
         assert_eq!(MEDIAN_INDEX, TRADES_REQUESTED / 2);
+    }
+
+    /// A recorded current price survives the write/read round trip, so the
+    /// latest fetch is what a reloaded wallet reports.
+    #[test]
+    fn a_recorded_price_survives_the_serialization_round_trip() {
+        let mut list = PriceList::new();
+        assert!(list.current_price().is_none());
+        list.record_current_price(Price {
+            time: 1_753_000_000,
+            price_usd: 42.25,
+        });
+
+        let mut bytes = Vec::new();
+        list.write(&mut bytes).expect("an in-memory write succeeds");
+        let reloaded = PriceList::read(bytes.as_slice()).expect("the bytes just written read back");
+
+        let stored = reloaded
+            .current_price()
+            .expect("the recorded price survives");
+        assert_eq!(stored.time, 1_753_000_000);
+        assert_eq!(stored.price_usd, 42.25);
     }
 
     /// The classification table, exercised with fabricated signals and chain

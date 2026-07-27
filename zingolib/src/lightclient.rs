@@ -624,7 +624,7 @@ impl LightClient {
         let price = zingo_price::fetch_current_price(None)
             .await
             .map_err(crate::wallet::error::PriceError::from)?;
-        self.wallet().write().await.record_price_update();
+        self.wallet().write().await.record_price_update(price);
         Ok(price.price_usd)
     }
 
@@ -657,7 +657,7 @@ impl LightClient {
         let price = zingo_price::fetch_current_price(Some(&socks5_addr))
             .await
             .map_err(crate::wallet::error::PriceError::from)?;
-        self.wallet().write().await.record_price_update();
+        self.wallet().write().await.record_price_update(price);
         Ok(MixnetPriceFetch {
             usd: price.price_usd,
             via_socks5: socks5_addr,
@@ -1037,6 +1037,7 @@ mod tests {
         /// wiring `LightClient::update_current_price_over_mixnet`'s `?`
         /// uses.
         #[tokio::test]
+        #[allow(deprecated)] // the lock-holding path is the unit under test
         async fn dead_proxy_failure_is_typed_with_its_source_intact() {
             use zingo_net_diag::NetOpStage;
 
@@ -1091,6 +1092,7 @@ mod tests {
         /// longer happen. Paused tokio time auto-advances the client
         /// timeout, so the test does not spend the real twenty seconds.
         #[tokio::test(start_paused = true)]
+        #[allow(deprecated)] // the lock-holding path is the unit under test
         async fn black_holed_proxy_times_out_typed_within_the_bound() {
             use zingo_net_diag::NetOpStage;
 
