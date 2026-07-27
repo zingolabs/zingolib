@@ -615,13 +615,17 @@ impl LightClient {
     /// timing to that party; a caller that wants to hide those routes the
     /// fetch over the Nym mixnet with `update_current_price_over_mixnet`
     /// (a `nym`-feature method, ADR 0011).
+    ///
+    /// The fetch runs before any wallet lock is taken, and the lock is then
+    /// re-acquired briefly to record the update (the net-diag
+    /// polling-blackout remedy: an observer polling wallet state never
+    /// queues behind a network wait).
     pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
-        Ok(self
-            .wallet()
-            .write()
+        let price = zingo_price::fetch_current_price(None)
             .await
-            .update_current_price(None)
-            .await?)
+            .map_err(crate::wallet::error::PriceError::from)?;
+        self.wallet().write().await.record_price_update();
+        Ok(price.price_usd)
     }
 
     /// Update and return the current ZEC price in USD over the Nym mixnet,
@@ -645,14 +649,17 @@ impl LightClient {
             }
         };
 
-        let usd = self
-            .wallet()
-            .write()
+        // The fetch runs outside the wallet lock (the net-diag
+        // polling-blackout remedy), so a hung tunnel can no longer freeze
+        // every wallet-state observer. The route was resolved above and
+        // could die mid-fetch; the fetch itself then reports that as a
+        // typed transport failure rather than anything falling back.
+        let price = zingo_price::fetch_current_price(Some(&socks5_addr))
             .await
-            .update_current_price(Some(&socks5_addr))
-            .await?;
+            .map_err(crate::wallet::error::PriceError::from)?;
+        self.wallet().write().await.record_price_update();
         Ok(MixnetPriceFetch {
-            usd,
+            usd: price.price_usd,
             via_socks5: socks5_addr,
         })
     }
@@ -780,6 +787,17 @@ impl LightClient {
         self.mixnet_proxy
             .as_ref()
             .and_then(|proxy| proxy.bootstrap_detail())
+    }
+
+    /// Why the transport died, while Mixnet Mode is
+    /// [`MixnetMode::Died`](crate::nym::MixnetMode) and the watcher held a
+    /// typed cause: the [`zingo_net_diag::NetOpFailure`] record naming the
+    /// stage, the target, and the cause chain as a vector, so a `died`
+    /// verdict carries *why* without anyone parsing prose.
+    pub fn mixnet_death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.death_detail())
     }
 
     /// Resolve the fail-closed route every mixnet-only surface must obey: the
@@ -1010,15 +1028,18 @@ mod tests {
             );
         }
 
-        /// A dead proxy endpoint surfaces as the typed transport variant
-        /// with the reqwest failure preserved inside it, so a consumer can
-        /// distinguish a connection failure from a TLS or HTTP failure by
-        /// inspection instead of parsing prose. The same value converts
-        /// into [`LightClientError::PriceError`] by `From`, which is the
-        /// exact wiring `LightClient::update_current_price_over_mixnet`'s
-        /// `?` uses.
+        /// A dead proxy endpoint surfaces as the typed request variant with
+        /// the [`zingo_net_diag::NetOpFailure`] record beside the reqwest
+        /// source, preserved whole, so a consumer distinguishes a connect
+        /// failure from a TLS or HTTP failure by fields instead of parsing
+        /// prose. The same value converts into
+        /// [`LightClientError::PriceError`] by `From`, which is the exact
+        /// wiring `LightClient::update_current_price_over_mixnet`'s `?`
+        /// uses.
         #[tokio::test]
         async fn dead_proxy_failure_is_typed_with_its_source_intact() {
+            use zingo_net_diag::NetOpStage;
+
             // Bind then drop, so the port is closed when the fetch dials it.
             let closed = {
                 let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1033,11 +1054,24 @@ mod tests {
 
             match &error {
                 crate::wallet::error::PriceError::PriceError(
-                    zingo_price::PriceError::RequestFailed(request_error),
+                    zingo_price::PriceError::RequestFailed { failure, source },
                 ) => {
                     assert!(
-                        request_error.is_connect(),
-                        "the reqwest failure must keep its kind: {request_error}"
+                        source.is_connect(),
+                        "the reqwest failure must keep its kind: {source}"
+                    );
+                    assert!(
+                        matches!(
+                            failure.stage,
+                            NetOpStage::LocalProxyConnect
+                                | NetOpStage::SocksHandshake
+                                | NetOpStage::RemoteConnect
+                        ),
+                        "a dead local proxy must classify as a connect-phase stage: {failure}"
+                    );
+                    assert!(
+                        !failure.cause_chain.is_empty(),
+                        "the cause chain arrives as a vector of layers"
                     );
                 }
                 other => panic!("the transport failure must arrive typed: {other}"),
@@ -1051,30 +1085,39 @@ mod tests {
         }
 
         /// A black-holed proxy (the TCP connect completes in the kernel's
-        /// backlog, but no SOCKS5 reply ever comes) hangs the fetch
-        /// indefinitely: the reqwest client is built with no timeout, so
-        /// this failure mode is the one the error enum never reports. This
-        /// test documents that gap. If a client timeout is added, the hang
-        /// arm below starts failing and this test should flip to asserting
-        /// the typed timeout error instead.
-        #[tokio::test]
-        async fn black_holed_proxy_hangs_without_a_client_timeout() {
+        /// backlog, but no SOCKS5 reply ever comes) resolves within the
+        /// client bound as a typed timed-out failure (net-diag acceptance
+        /// criteria 2 and 9) — the unbounded five-minute field hang can no
+        /// longer happen. Paused tokio time auto-advances the client
+        /// timeout, so the test does not spend the real twenty seconds.
+        #[tokio::test(start_paused = true)]
+        async fn black_holed_proxy_times_out_typed_within_the_bound() {
+            use zingo_net_diag::NetOpStage;
+
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
 
             let mut wallet = wallet();
-            let outcome = tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                wallet.update_current_price(Some(&addr.to_string())),
-            )
-            .await;
+            let error = wallet
+                .update_current_price(Some(&addr.to_string()))
+                .await
+                .expect_err("a silent proxy cannot serve a price");
 
-            assert!(
-                outcome.is_err(),
-                "the fetch is expected to hang against a silent proxy; \
-                 it returned instead: {:?}",
-                outcome.expect("just checked")
-            );
+            match &error {
+                crate::wallet::error::PriceError::PriceError(
+                    zingo_price::PriceError::RequestFailed { failure, source },
+                ) => {
+                    assert!(
+                        matches!(failure.stage, NetOpStage::TimedOut { .. }),
+                        "the hang must arrive as a typed timeout stage: {failure}"
+                    );
+                    assert!(
+                        source.is_timeout(),
+                        "the reqwest source must keep its timeout kind: {source}"
+                    );
+                }
+                other => panic!("the timeout must arrive typed: {other}"),
+            }
             drop(listener);
         }
     }

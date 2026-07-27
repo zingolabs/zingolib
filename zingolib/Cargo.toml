@@ -86,6 +86,7 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
 ], optional = true }
 tokio-stream = { workspace = true, optional = true }
 zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
+zingo-net-diag.workspace = true
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }

@@ -113,6 +113,12 @@ struct ProxyState {
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
+    /// Why the transport died, when [`MixnetMode::Died`] and the watcher
+    /// held a typed cause: the failed readiness round trip or liveness
+    /// probe, as the taxonomy record with its cause chain intact
+    /// (`docs/agents/net-diag-design.md`). The mode enum itself is
+    /// unchanged; this rides beside it.
+    death_detail: Option<zingo_net_diag::NetOpFailure>,
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
@@ -171,6 +177,7 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
+            death_detail: None,
         }));
         let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state)));
         Ok(MixnetProxy {
@@ -201,6 +208,7 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
+            death_detail: None,
         }));
         let addr = socks5_addr.to_string();
         let probe_addr = addr.clone();
@@ -242,6 +250,20 @@ impl MixnetProxy {
             .clone()
     }
 
+    /// Why the transport died, while the mode is [`MixnetMode::Died`] and
+    /// the watcher held a typed cause: which stage failed, against what
+    /// target, with the cause chain as a vector. `None` in every other
+    /// mode, and `None` for a spawned child's death (a closed stdout pipe
+    /// carries no cause; the child's own stderr is the diagnostic there).
+    pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
+        let guarded = self.state.lock().expect("proxy state mutex");
+        if guarded.mode == MixnetMode::Died {
+            guarded.death_detail.clone()
+        } else {
+            None
+        }
+    }
+
     /// Shut the transport down deliberately and mark the mode
     /// [`MixnetMode::Off`]. The watcher task is aborted BEFORE the teardown,
     /// so this deliberate `Off` is never overwritten by the watcher's `Died`.
@@ -262,12 +284,15 @@ impl MixnetProxy {
 /// The attach readiness gate: a real data round trip through the endpoint to
 /// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
 /// listener that accepts TCP proves nothing about the mixnet carrying data —
-/// the lesson behind the spawned binary's health gate.
-async fn attach_readiness(socks5_addr: String) -> Result<(), String> {
+/// the lesson behind the spawned binary's health gate. The last attempt's
+/// failure is returned typed: stage by typed match over the transmit error,
+/// target the local endpoint for pre-tunnel stages and the health indexer
+/// beyond, cause chain captured layer by layer.
+async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
-    let mut last_failure = String::new();
+    let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_HEALTH_RETRY_PAUSE).await;
@@ -280,10 +305,20 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), String> {
         .await
         {
             Ok(_) => return Ok(()),
-            Err(error) => last_failure = error.to_string(),
+            Err(error) => {
+                let stage = crate::nym::socks5_transmit_stage(&error);
+                let target = match stage {
+                    zingo_net_diag::NetOpStage::LocalProxyConnect
+                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.as_str(),
+                    _ => ATTACH_HEALTH_INDEXER,
+                };
+                last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
+                    stage, target, &error,
+                ));
+            }
         }
     }
-    Err(last_failure)
+    Err(last_failure.expect("at least one readiness attempt ran"))
 }
 
 /// One liveness probe: can the endpoint still be dialed? Local and cheap —
@@ -315,31 +350,39 @@ async fn drive_attached_state<RFut, P, PFut>(
     mut probe: P,
     interval: Duration,
 ) where
-    RFut: Future<Output = Result<(), String>>,
+    RFut: Future<Output = Result<(), zingo_net_diag::NetOpFailure>>,
     P: FnMut() -> PFut,
     PFut: Future<Output = bool>,
 {
-    let die = |state: &Arc<Mutex<ProxyState>>| {
+    let die = |state: &Arc<Mutex<ProxyState>>, cause: zingo_net_diag::NetOpFailure| {
         let mut guarded = state.lock().expect("proxy state mutex");
         guarded.mode = MixnetMode::Died;
         guarded.socks5_addr = None;
         guarded.bootstrap_detail = None;
+        guarded.death_detail = Some(cause);
     };
 
-    if readiness.await.is_err() {
-        die(&state);
+    if let Err(failure) = readiness.await {
+        die(&state, failure);
         return;
     }
     {
         let mut guarded = state.lock().expect("proxy state mutex");
-        guarded.socks5_addr = Some(socks5_addr);
+        guarded.socks5_addr = Some(socks5_addr.clone());
         guarded.bootstrap_detail = None;
         guarded.mode = MixnetMode::Ready;
     }
     loop {
         tokio::time::sleep(interval).await;
         if !probe().await {
-            die(&state);
+            die(
+                &state,
+                zingo_net_diag::NetOpFailure::message(
+                    zingo_net_diag::NetOpStage::LocalProxyConnect,
+                    &socks5_addr,
+                    "the liveness probe could not dial the attached endpoint",
+                ),
+            );
             return;
         }
     }
@@ -405,7 +448,17 @@ mod tests {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
+            death_detail: None,
         }))
+    }
+
+    /// A fabricated readiness failure for the attach falsifiers.
+    fn readiness_failure(text: &str) -> zingo_net_diag::NetOpFailure {
+        zingo_net_diag::NetOpFailure::message(
+            zingo_net_diag::NetOpStage::TunnelTransport,
+            "zec.rocks:443",
+            text,
+        )
     }
 
     /// A reader that yields `bytes` once and then stays pending forever, never
@@ -588,7 +641,7 @@ mod tests {
         drive_attached_state(
             Arc::clone(&state),
             "127.0.0.1:1080".to_string(),
-            std::future::ready(Err("no data through the endpoint".to_string())),
+            std::future::ready(Err(readiness_failure("no data through the endpoint"))),
             move || {
                 *probed_flag.lock().unwrap() = true;
                 std::future::ready(true)
@@ -599,6 +652,11 @@ mod tests {
         let s = state.lock().unwrap();
         assert_eq!(s.mode, MixnetMode::Died, "readiness failure is death");
         assert!(s.socks5_addr.is_none(), "no address may be published");
+        assert_eq!(
+            s.death_detail,
+            Some(readiness_failure("no data through the endpoint")),
+            "the death must carry the typed readiness failure"
+        );
         assert!(
             !*probed.lock().unwrap(),
             "liveness probing must not start for an endpoint that never became ready"

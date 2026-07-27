@@ -422,6 +422,13 @@ impl LightWallet {
         Ok(current_price)
     }
 
+    /// Records that a price fetch performed *outside* the wallet lock
+    /// completed (the net-diag polling-blackout remedy: the caller fetches
+    /// with no lock held, then re-acquires briefly and calls this).
+    pub(crate) fn record_price_update(&mut self) {
+        self.save_required = true;
+    }
+
     /// Prunes historical prices to days containing transactions in the wallet.
     ///
     /// Avoids pruning above fully scanned height.

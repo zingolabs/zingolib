@@ -41,22 +41,55 @@ use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
 /// unbroadcastable transaction, since the client cannot classify a rejection.
 pub(crate) const MAX_BROADCAST_WITNESSES: usize = 6;
 
-/// Why a fan-out broadcast failed.
-#[derive(Clone, Debug, thiserror::Error)]
-pub(crate) enum FanoutError {
+/// One witness's failed arm: which indexer was tried and its typed failure,
+/// carried whole (`docs/agents/net-diag-design.md`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct WitnessAttempt<E> {
+    /// The witness's host.
+    pub witness: String,
+    /// The arm's failure, untouched.
+    pub failure: E,
+}
+
+/// Why a fan-out broadcast failed. The failed attempts are a vector of
+/// typed records; the joined-prose rendering is a `Display` on top of that
+/// vector for the existing string consumers, never the storage form.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FanoutError<E> {
     /// The Broadcast Indexer list was empty.
-    #[error("the Broadcast Indexer list is empty")]
     NoIndexers,
     /// The cap was reached without any indexer confirming delivery.
-    #[error("no indexer confirmed delivery after contacting {attempts} of them: {summary}")]
     AllFailed {
         /// The number of distinct indexers contacted.
         attempts: usize,
-        /// Every witness's failure, surfaced for the user: which indexers
-        /// were tried and how each one failed.
-        summary: String,
+        /// Every witness's failure: which indexers were tried and how each
+        /// arm failed, in completion order.
+        failures: Vec<WitnessAttempt<E>>,
     },
 }
+
+impl<E: std::fmt::Display> std::fmt::Display for FanoutError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FanoutError::NoIndexers => write!(f, "the Broadcast Indexer list is empty"),
+            FanoutError::AllFailed { attempts, failures } => {
+                write!(
+                    f,
+                    "no indexer confirmed delivery after contacting {attempts} of them: "
+                )?;
+                for (i, attempt) in failures.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "; ")?;
+                    }
+                    write!(f, "{}: {}", attempt.witness, attempt.failure)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for FanoutError<E> {}
 
 /// Broadcast to `indexers` as an escalating, serially gated fan-out, returning
 /// the server-reported txid of the first indexer to confirm delivery. `run_arm`
@@ -73,16 +106,17 @@ pub(crate) enum FanoutError {
 /// `report` receives a succinct progress line whenever the race's shape
 /// changes (a launch or an arm failure), rendering the planner's own
 /// [`RaceProgress`] snapshot for display.
-pub(crate) async fn fanout_broadcast<A, F, R, P>(
+pub(crate) async fn fanout_broadcast<A, F, E, R, P>(
     indexers: &[Uri],
     rng: &mut R,
     cap: usize,
     run_arm: A,
     report: P,
-) -> Result<String, FanoutError>
+) -> Result<String, FanoutError<E>>
 where
     A: Fn(Uri) -> F,
-    F: Future<Output = Result<String, String>>,
+    F: Future<Output = Result<String, E>>,
+    E: std::fmt::Display,
     R: Rng + ?Sized,
     P: Fn(String),
 {
@@ -106,6 +140,7 @@ where
     let mut race = RaceState::new(order.len(), cap, LaunchPolicy::EscalatingRounds);
     let mut arms = FuturesUnordered::new();
     let mut lost = false;
+    let mut failures: Vec<WitnessAttempt<E>> = Vec::new();
 
     let launch = |actions: Vec<RaceAction>, arms: &mut FuturesUnordered<_>, lost: &mut bool| {
         for action in actions {
@@ -133,11 +168,20 @@ where
             // abandons the round's remaining arms.
             Ok(server_txid) => return Ok(server_txid),
             Err(error) => {
+                // The race planner's event wants a rendered line for its
+                // progress narration; the typed failure itself is kept.
                 launch(
-                    race.on_event(RaceEvent::ArmFailed { candidate, error }),
+                    race.on_event(RaceEvent::ArmFailed {
+                        candidate,
+                        error: error.to_string(),
+                    }),
                     &mut arms,
                     &mut lost,
                 );
+                failures.push(WitnessAttempt {
+                    witness: host_of(candidate),
+                    failure: error,
+                });
                 report(race.progress().to_string());
             }
         }
@@ -145,7 +189,7 @@ where
 
     Err(FanoutError::AllFailed {
         attempts: race.launched(),
-        summary: race.failure_summary(host_of),
+        failures,
     })
 }
 
@@ -358,10 +402,11 @@ mod tests {
     }
 
     /// HYPOTHESIS: a failed fan-out accounts for every witness contacted and
-    /// how each failed, down to the first. Falsified if any
-    /// contacted host is missing from the error summary.
+    /// how each failed, as typed records — and the prose rendering on top
+    /// still names each one. Falsified if any contacted host is missing from
+    /// the typed attempts or the rendering.
     #[tokio::test]
-    async fn a_failed_fanout_names_every_witness_and_its_failure() {
+    async fn a_failed_fanout_records_every_witness_and_its_failure() {
         let hosts = ["a", "b", "c"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
@@ -377,13 +422,20 @@ mod tests {
         )
         .await
         .expect_err("all suppressed");
-        let FanoutError::AllFailed { summary, .. } = err else {
+        let rendered = err.to_string();
+        let FanoutError::AllFailed { failures, .. } = err else {
             panic!("expected AllFailed");
         };
         for host in hosts {
             assert!(
-                summary.contains(&format!("{host}: suppressed")),
-                "the summary must name {host}: {summary}"
+                failures
+                    .iter()
+                    .any(|a| a.witness == host && a.failure == "suppressed"),
+                "the typed attempts must record {host}: {failures:?}"
+            );
+            assert!(
+                rendered.contains(&format!("{host}: suppressed")),
+                "the rendering must name {host}: {rendered}"
             );
         }
     }
