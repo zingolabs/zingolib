@@ -4,12 +4,12 @@
 //! `nym-proxy` binary and spawns it as a child. This supervisor owns that
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
 //! the child announces on stdout, and drives the tri-state
-//! [`MixnetMode`](crate::nym::MixnetMode). While the child is starting the
+//! [`MixnetMode`]. While the child is starting the
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
 //! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
-//! deliberate [`Self::stop`] yields `Off`.
+//! deliberate [`MixnetProxy::stop`] yields `Off`.
 //!
 //! # The attached transport
 //!
