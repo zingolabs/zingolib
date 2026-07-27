@@ -141,6 +141,27 @@ reachable from at least one fabricated input.
 
 ## Integration points
 
+### The mobile probe surface (zingo-mobile Workstream A)
+
+zingo-mobile now crosses probe results over UniFFI as structured
+dictionaries, not JSON prose: `ProbeReport { host, clearnet, mixnet? }`
+with `ProbeLeg { ok, detail, millis }` per leg (zingo-mobile
+`probe_server`, built on `probe_broadcast_indexers`). The `detail`
+string is a stopgap: today it carries the leg's collapsed
+`Result<String, String>` — the "chain X, height N" summary on Ok and
+prose on Err — because that is all `nym::probe::ProbeLeg` exposes.
+
+Structured data end to end is what the mobile side is building towards.
+When the sync-path probe stages land here, shape the leg outcome as
+data, not a summary string: the Ok path as fields (chain name and
+height, not a formatted sentence), the Err path as the `NetOpFailure`
+record itself (stage, target, cause chain as a vector). The mobile
+dictionaries then grow additively — `ProbeLeg` gains `stage`, `chain`,
+`height`, `cause_chain` fields beside the retained `detail` — and the
+Doctor's report upgrades without any consumer ever parsing prose. The
+stability contract above already forbids decision-making on rendered
+text; fielded probe legs are what retire the temptation.
+
 ### zingo-price
 
 The reqwest client gains `.timeout(Duration::from_secs(20))` and
