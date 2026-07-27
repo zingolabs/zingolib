@@ -240,13 +240,18 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
     );
 }
 
-/// A due part whose boundary tree state is unavailable is skipped with no
-/// writes and no synchronization (the ZIP 318 decoupling requirement). The
-/// wallet leaps past the boundary in a single sync, so the boundary
-/// checkpoint falls outside shardtree's retention window and the witness
-/// was never captured.
+/// A due part with no legal anchor yet is skipped with no state writes and
+/// no synchronization (the ZIP 318 decoupling requirement), while the
+/// broadcast path's local capture pass still fills the rolling witness
+/// cache. The wallet leaps past the boundary in a single sync, so the
+/// boundary has no checkpoint of its own; the capture falls back to the
+/// greatest retained checkpoint below it (the same tree, since any block
+/// in between carrying an Orchard output would itself be a checkpoint).
+/// The skip comes from the anchor draw: the only boundary below the most
+/// recent one sits below the NU6.3 activation, so no candidate anchor is
+/// legal until the chain crosses the next boundary.
 #[tokio::test]
-async fn unavailable_boundary_tree_state_skips_without_sync() {
+async fn anchorless_part_skips_without_sync() {
     use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 
     // The blocks mined behind the wallet's back before the broadcast
@@ -370,7 +375,15 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     let part = &wallet.migration.as_ref().unwrap().parts[0];
     assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
     assert_eq!(part.attempts, 0, "a skip records no attempt");
-    assert!(part.boundary_witnesses.is_empty());
+    // The boundary has no checkpoint of its own, but the capture pass reads
+    // the greatest retained checkpoint below it, so the rolling cache holds
+    // the boundary's witness even as the part skips. Together with the
+    // unchanged height below, this pins that the capture is purely local.
+    assert!(
+        part.boundary_witnesses
+            .contains_key(&(2 * PRUNED_BUCKET_MODULUS)),
+        "the local capture pass fills the cache from below the boundary"
+    );
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),

@@ -2575,10 +2575,9 @@ mod tests {
     }
 
     /// Offline twin of the libtonode
-    /// `unavailable_boundary_tree_state_skips_without_sync` scenario: a due
-    /// part whose bucket-boundary checkpoint is absent from the shard tree
-    /// is skipped with no writes, no attempt recorded, and nothing
-    /// broadcast.
+    /// `anchorless_part_skips_without_sync` scenario: a due part with no
+    /// legal anchor available is skipped with no writes, no attempt
+    /// recorded, and nothing broadcast.
     ///
     /// Limitation: the synthetic wallet FABRICATES the pruned-checkpoint
     /// state (the builder checkpoints the shard trees only at the tip),
