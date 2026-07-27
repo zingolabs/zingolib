@@ -173,6 +173,30 @@ detail. Not required for this PR. The shim workspace path-dep must not
 pull any new transitive dependency, which the zero-dependency rule
 guarantees.
 
+## Clearnet price fetch, test-gated
+
+The production price fetch has no clearnet tier and must keep none (ADR
+0011 amendment). Tests are exempt: exercising the Gemini payload
+parsing, the insufficient-trades panic, and the classifier against the
+live endpoint currently requires a live mixnet tunnel, which makes those
+tests slow, flaky, and entangled with Nym weather.
+
+Add a clearnet fetch path gated so it cannot ship: either
+`#[cfg(any(test, feature = "clearnet-price-fetch"))]` on a separate
+`get_current_price_clearnet()` in `zingo-price`, or the same gate on an
+internal route parameter. The mobile workspaces must never enable the
+feature. The function is for this repository's tests and diagnostics
+probes only, and its doc comment says so. The always-on mobile flavors
+additionally refuse app-side before the FFI, so even a misconfigured
+build would not reach it there.
+
+While in `zingo-price`: the current-price extraction indexes into the
+sorted trades vector at a fixed position. A response with fewer trades
+than expected panics. Replace the indexing with a typed
+insufficient-data failure (a `PayloadDecode` stage fits), and cover it
+with a fabricated short response in the tests the clearnet gate makes
+cheap.
+
 ## The polling blackout
 
 This section is a required part of the implementation, recorded here in
