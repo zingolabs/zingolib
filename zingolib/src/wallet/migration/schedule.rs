@@ -5,7 +5,7 @@
 //! broadcasts while the chain is inside it.
 //!
 //! A part's *anchor* is a separate bucket from its broadcast window. The
-//! anchor sits at [`draw_anchor_age`] buckets below the window, never zero
+//! anchor sits a canonically drawn age below the window, never zero
 //! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
@@ -59,10 +59,10 @@ const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 // The `zip318_conformance_tripwires` tests below pin every imported value to the
 // ZIP's literal number, so a dependency bump that moved one fails red
 // and is adopted deliberately, with a params version bump.
+use std::num::NonZeroU32;
+
 use rand::CryptoRng;
-use zcash_pool_migration::scheduling::{
-    ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW, SchedulingParams,
-};
+use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
@@ -71,8 +71,11 @@ use zcash_pool_migration::scheduling::{
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
 pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
-    let height = u32::from(broadcast_height);
-    BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
+    // Delegates to the canonical implementation; heights cross the git
+    // dependency's type divide as u32, the workspace's standard insulation.
+    BlockHeight::from_u32(u32::from(zcash_pool_migration::scheduling::expiry_height(
+        u32::from(broadcast_height).into(),
+    )))
 }
 
 /// The bucket containing `height`.
@@ -149,65 +152,39 @@ impl AnchorFloor {
     }
 }
 
-/// Draws an anchor age `a ≥ 1` from the recency-weighted `Geometric(1/2)`
-/// distribution: the number of failed fair coin flips plus one, so
-/// `P(a = 1) = 1/2`, `P(a = 2) = 1/4`, and the mean age is two buckets.
-///
-/// Age zero is never produced. That is the whole point: an age-zero anchor
-/// is the boundary of the window the chain is still inside, the newest tree
-/// state there is, whose cohort has not accumulated yet.
-///
-/// Counting stops one past [`ANCHOR_AGE_CAP`], which the caller rejects
-/// anyway, so a single 64-bit draw always suffices and the loop is bounded.
-pub fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
-    // Each bit of one fresh word is one fair coin flip, as upstream's
-    // `draw_anchor_age` does it. The cap is far below 64, so one word is
-    // always enough and the loop needs no refill.
-    let mut bits = rng.next_u64();
-    let mut age: u32 = 1;
-    while age <= ANCHOR_AGE_CAP {
-        if bits & 1 == 1 {
-            return age;
-        }
-        bits >>= 1;
-        age += 1;
-    }
-    age
-}
-
 /// The anchor bucket for a part broadcasting in `window`: `window − a` for a
-/// drawn age, redrawn until it clears `floor` and [`ANCHOR_AGE_CAP`].
+/// canonically drawn age (`Geometric(1/2)`, never zero, capped at
+/// [`ANCHOR_AGE_CAP`]), redrawn until it clears `floor`.
 ///
-/// `None` when the candidate set is empty, which is the caller's signal that
-/// `window` is too early for this part rather than a transient condition.
-/// Age one always yields `window − 1`, the highest candidate, so whenever the
-/// set is non-empty the rejection loop terminates with probability one half
-/// per draw.
+/// Delegates to the canonical
+/// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
+/// (<https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>), mapped
+/// into bucket space: the part's window boundary plays the observed chain
+/// tip, so the most recent boundary is the window's own and the drawn anchor
+/// is `window − a` exactly as the retired local draw computed it. Seeded
+/// golden vectors captured from that local implementation pin the
+/// equivalence. `None` when the candidate set is empty, which is the
+/// caller's signal that `window` is too early for this part rather than a
+/// transient condition.
 pub fn draw_anchor_bucket(
     window: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     bucket_modulus: u32,
 ) -> Option<u64> {
-    // The highest candidate is one full bucket below the window, since the
-    // age is never zero. An empty set means the floors reach the window.
-    let highest = window.checked_sub(1)?;
-    let lowest = floor.lowest_anchor_bucket(bucket_modulus);
-    if lowest > highest {
-        return None;
-    }
-    loop {
-        let age = draw_anchor_age(rng);
-        if age > ANCHOR_AGE_CAP {
-            continue;
-        }
-        // An age reaching past bucket zero is a too-old anchor: redraw.
-        if let Some(candidate) = window.checked_sub(u64::from(age))
-            && candidate >= lowest
-        {
-            return Some(candidate);
-        }
-    }
+    let interval = AnchorBucketInterval::custom(
+        NonZeroU32::new(bucket_modulus).expect("bucket modulus is nonzero by params invariant"),
+    );
+    let window_boundary = u32::from(boundary_of(window, bucket_modulus));
+    let funding = floor.note_confirmed_at.map_or(0, u32::from);
+    let anchor = zcash_pool_migration::scheduling::draw_anchor_boundary(
+        interval,
+        u32::from(floor.activation.height()).into(),
+        funding.into(),
+        window_boundary.into(),
+        rng,
+    )?;
+    Some(u64::from(u32::from(anchor)) / u64::from(bucket_modulus))
 }
 
 /// The first bucket a part may be scheduled into: strictly after
@@ -294,7 +271,7 @@ pub fn place_immediate(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -310,7 +287,7 @@ pub fn place_immediate(
 fn anchor_for(
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<u64, WalletError> {
     draw_anchor_bucket(bucket, floor, rng, params.bucket_modulus).ok_or(
@@ -584,6 +561,7 @@ mod tests {
     use crate::wallet::migration::parts::BoundNote;
     use pepper_sync::wallet::OutputId;
     use proptest::prelude::*;
+    use zcash_pool_migration::scheduling::{ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW};
     use zcash_primitives::transaction::TxId;
 
     fn params() -> MigrationParams {
@@ -677,17 +655,6 @@ mod tests {
 
     /// The anchor age is never zero: a part must never prove against the
     /// boundary of the window it is broadcasting in. That boundary is the
-    /// newest tree state at broadcast time, so its ZIP 318 cohort has not
-    /// accumulated and the anonymity set the anchor draw exists to build is
-    /// empty. Upstream states it as a MUST ("age 0 is NEVER produced").
-    #[test]
-    fn anchor_age_is_never_zero() {
-        for _ in 0..2_000 {
-            let age = draw_anchor_age(&mut rand::rngs::OsRng);
-            assert!(age >= 1, "drew age {age}, which is the open window itself");
-        }
-    }
-
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
     /// cap. The rejection loop, not the raw geometric draw, is what enforces
@@ -1165,8 +1132,6 @@ mod tests {
     /// a dependency bump that changes one turns this suite red, and red
     /// means adopt deliberately, with a params version bump.
     mod zip318_conformance_tripwires {
-        use zcash_pool_migration::scheduling;
-
         use super::*;
         use zcash_protocol::value::COIN;
 
@@ -1181,6 +1146,37 @@ mod tests {
         #[test]
         fn anchor_age_cap_matches_the_zip() {
             assert_eq!(ANCHOR_AGE_CAP, 16);
+        }
+
+        /// Strict behavioral equivalence across the anchor-draw delegation
+        /// (ADR 0020, Landing C): these vectors were captured from the
+        /// retired local implementation under seeded rngs immediately before
+        /// the swap to `draw_anchor_boundary`, so a divergence here means the
+        /// delegated draw no longer reproduces the behavior the mirror had.
+        #[test]
+        fn anchor_draw_matches_the_retired_mirror_goldens() {
+            use rand::SeedableRng;
+            let activation = PoolActivation::new_for_test(BlockHeight::from_u32(1_000));
+            let expected: [(Option<u64>, Option<u64>, Option<u64>); 6] = [
+                (Some(99), Some(99), Some(51)),
+                (Some(99), Some(98), Some(51)),
+                (Some(99), Some(98), Some(52)),
+                (Some(97), Some(97), Some(52)),
+                (Some(97), Some(99), Some(52)),
+                (Some(98), Some(99), Some(52)),
+            ];
+            for (seed, expected) in expected.iter().enumerate() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
+                let floor_loose = AnchorFloor::new(activation, None);
+                let floor_note =
+                    AnchorFloor::new(activation, Some(BlockHeight::from_u32(50 * 144 + 3)));
+                let drawn = (
+                    draw_anchor_bucket(100, &floor_loose, &mut rng, 144),
+                    draw_anchor_bucket(100, &floor_note, &mut rng, 144),
+                    draw_anchor_bucket(53, &floor_note, &mut rng, 144),
+                );
+                assert_eq!(&drawn, expected, "diverged at seed {seed}");
+            }
         }
 
         /// The `zcash_pool_migration` revision this workspace has adjudicated.
@@ -1214,8 +1210,13 @@ mod tests {
             );
         }
 
+        /// Pins the delegated expiry to the ZIP's own arithmetic (the most
+        /// recent `EXPIRY_MODULUS` multiple at or below the height, plus
+        /// `EXPIRY_WINDOW`), independent of the implementation now that
+        /// `canonical_expiry_height` calls the canonical crate.
+        /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>
         #[test]
-        fn expiry_heights_match_upstream() {
+        fn expiry_heights_match_the_zip_arithmetic() {
             let sample = [
                 0,
                 1,
@@ -1226,14 +1227,10 @@ mod tests {
                 100 * EXPIRY_MODULUS,
                 101 * EXPIRY_MODULUS - 1,
             ];
-            // The git dependency carries its own zcash_protocol, so its
-            // BlockHeight is a distinct type from the workspace's; heights
-            // cross the boundary as u32, the same value-level insulation the
-            // imports rely on.
             for height in sample {
                 assert_eq!(
                     u32::from(canonical_expiry_height(BlockHeight::from_u32(height))),
-                    u32::from(scheduling::expiry_height(height.into())),
+                    height - (height % 34_560) + 69_120,
                     "diverged at {height}"
                 );
             }

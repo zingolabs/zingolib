@@ -22,6 +22,26 @@ boundary, while the canonical law chains successive transfers (each
 delay from the previous transfer). Chaining arrives with the scheduling
 delegation deferred under ADR 0020's standing pull.
 
+## Delegated (Landing C: the mirrors are deleted)
+
+The anchor draw delegates to `scheduling::draw_anchor_boundary`, mapped
+into bucket space with the part's window boundary playing the observed
+chain tip; the local geometric age draw and rejection loop are deleted,
+and seeded golden vectors captured from the retired mirror pin the
+equivalence
+(<https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>).
+
+The expiry computation delegates to `scheduling::expiry_height`; the
+local arithmetic is deleted, and the tripwire pins the delegated result
+to the ZIP's own arithmetic over a sample of heights
+(<https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>).
+
+The decomposition mirror is retained for now: the canonical crate
+exports the `{1, 2, 5}` series only inside its `DenominationStrategy`
+planning entry points, no bare decomposition, so `quantize::decompose`
+keeps the ladder walk under its shape and conservation proptests. Its
+delegation arrives with the planning-layer delegation.
+
 ## Blocked (divergent, dependency named)
 
 The part transfer's Ironwood bundle is padded to two actions and its fee
