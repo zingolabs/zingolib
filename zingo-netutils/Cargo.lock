@@ -9137,6 +9137,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-net-diag"
+version = "0.1.0"
+
+[[package]]
 name = "zingo-netutils"
 version = "5.0.1"
 dependencies = [
@@ -9159,6 +9163,7 @@ dependencies = [
  "tonic",
  "tower",
  "x509-parser",
+ "zingo-net-diag",
 ]
 
 [[package]]

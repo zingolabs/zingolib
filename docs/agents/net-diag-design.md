@@ -28,8 +28,13 @@ reads the milestone lines below).
   (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
   untouched reqwest source), the fan-out (`FanoutError::AllFailed`
   carries typed per-witness attempts), the attach validation
-  (`LightClient::mixnet_death_detail`), and both probe shapes
-  (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`).
+  (`LightClient::mixnet_death_detail`), both probe shapes
+  (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`), and
+  the provider connect race in the `zingo-netutils` workspace
+  (`NymProxyError::AttemptsExhausted` carries typed per-provider
+  `NetOpFailure` records, closing issue #2562; the netutils workspace
+  now takes the optional path dependency anticipated below, and the
+  race planner's `failure_summary` is gone with its last caller).
 - **Clearnet test gate**: SUPERSEDED. PR #2548 restored the clearnet
   price tier before this design was implemented, so tests fetch over
   clearnet directly and no `cfg` gate is needed; the section below
