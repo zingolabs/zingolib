@@ -173,6 +173,63 @@ detail. Not required for this PR. The shim workspace path-dep must not
 pull any new transitive dependency, which the zero-dependency rule
 guarantees.
 
+## The polling blackout
+
+This section is a required part of the implementation, recorded here in
+full because the field evidence is subtle and the fix is structural.
+
+### What was observed
+
+On 2026-07-26, on the zingo-mobile silent alpha, a price fetch through a
+half-dead tunnel hung with no bound. The app's mixnet mode poll, which
+had heartbeat every 30 seconds all session, went silent from 19:36:05 to
+19:41:22. It resumed only when the hung fetch finally died with `tls
+handshake eof` after roughly five minutes. A second fetch attempt froze
+the polls again until the app was force-stopped. During the entire
+blackout the app believed the transport was `ready`.
+
+### Why it happens
+
+The mobile FFI's `zec_price` holds the lightclient write lock across the
+whole network fetch. The mode poll takes the read side of the same lock,
+so it queues behind the hung writer. Every observer that could have
+noticed the dead tunnel shares its choke point with the operation that
+is stuck on the dead tunnel. The consequences chain: the liveness
+question is never asked, `died` can never be reported, the wallet's
+`ready` claim goes stale with no bound, and the app's auto-recovery
+(which triggers on `died`) can never fire. The privacy property held
+throughout. Fail-closed does not depend on the poll. Availability and
+observability did not hold.
+
+### Required remedies
+
+1. The client timeout (acceptance criterion 2) bounds the blackout but
+   does not remove it. Twenty seconds of frozen polling per hung fetch
+   is tolerable. It is not the fix.
+2. `update_current_price` must not hold the wallet write lock across the
+   network fetch. Resolve the route under the lock, release it, perform
+   the fetch, then re-acquire briefly to store the fetched price.
+   Document the small race this admits (the route could die mid-fetch,
+   which the fetch itself then reports as a typed failure).
+3. Audit the other covered operations for the same coupling. The
+   broadcast fan-out and attach validation also run under long-held
+   locks. For each, either the lock is released across network waits or
+   the operation's progress is observable through a side channel that
+   shares no lock with it (zingo-mobile's DRAIN_PROGRESS idiom, an
+   independent Arc the poller reads).
+4. The mixnet mode query itself must never block behind a covered
+   operation's network wait. If remedy 2 alone does not guarantee that,
+   snapshot the mode into a lock-free or separately locked cell at
+   transition points and serve queries from the snapshot.
+
+### Additional acceptance criteria
+
+8. A test drives an oracle fetch against a black-hole listener (accepts
+   the TCP connection, never completes TLS) and asserts the mixnet mode
+   query answers within one second throughout the fetch.
+9. The same test asserts the fetch itself resolves within the client
+   timeout as a typed `TimedOut` failure.
+
 ## Constraints
 
 - Every new file starts with `#![forbid(unsafe_code)]` at the crate
