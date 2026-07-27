@@ -1,0 +1,14 @@
+[package]
+name = "zingo-net-diag"
+version = "0.1.0"
+edition = "2024"
+description = "The shared network-failure taxonomy: typed stages and failure records for covered network operations (docs/agents/net-diag-design.md)."
+authors = ["zingo@zingolabs.org"]
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+# Deliberately empty. Zero dependencies is a hard requirement: it is what
+# lets this one crate serve both cargo workspaces (the parent workspace and
+# the standalone zingo-netutils workspace) without resolver coupling.
+[dependencies]
