@@ -1,9 +1,39 @@
 # Design: the net-diag failure taxonomy
 
-Status: ready for implementation. Target branch: `nym_mobile_adoption`
-(PR #2527). Written 2026-07-26 during the zingo-mobile silent-alpha
+Status: implemented on `dev` (the `net_diag_taxonomy` arc, 2026-07-27),
+with the deltas and the sync-path addendum recorded at the end of this
+file. Written 2026-07-26 during the zingo-mobile silent-alpha
 verification sessions (zingo-mobile#1207). Related records: ADR 0011 and
-its mobile amendment, ADR 0017, issue #2531.
+its mobile amendment, ADR 0017, issue #2531, issue #2552, and
+zingo-mobile's `docs/agents/nym-diagnostics-plan.md` (whose pin protocol
+reads the milestone lines below).
+
+## Milestone status (the pin protocol's signal)
+
+- **Taxonomy crate**: LANDED. `zingo-net-diag` at the repository root,
+  std-only, zero dependencies, `#![forbid(unsafe_code)]`.
+- **Price timeout**: LANDED. `zingo_price::REQUEST_TIMEOUT` (20 s) and
+  `CONNECT_TIMEOUT` (10 s); a black-holed fetch resolves as a typed
+  `TimedOut` failure (acceptance criteria 2 and 9 are pinned by tests in
+  zingo-price and zingolib).
+- **Lock release**: LANDED for the two price surfaces
+  (`LightClient::update_current_price` and
+  `update_current_price_over_mixnet` fetch before any wallet lock is
+  taken and re-acquire briefly to record). The remedy-3 audit of the
+  broadcast fan-out and attach validation under long-held locks remains
+  open in issue #2552.
+- **Sync-path probes**: LANDED. `zingolib::nym::probe::probe_sync_server`
+  (see the addendum below).
+- **Fielded integrations**: LANDED for the price fetch
+  (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
+  untouched reqwest source), the fan-out (`FanoutError::AllFailed`
+  carries typed per-witness attempts), the attach validation
+  (`LightClient::mixnet_death_detail`), and both probe shapes
+  (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`).
+- **Clearnet test gate**: SUPERSEDED. PR #2548 restored the clearnet
+  price tier before this design was implemented, so tests fetch over
+  clearnet directly and no `cfg` gate is needed; the section below
+  stands as history.
 
 ## Problem
 
@@ -284,3 +314,46 @@ observability did not hold.
    workspaces.
 7. The `via_socks5` attestation field is unchanged and covered by an
    unmodified passing test.
+
+## Addendum (2026-07-27): implementation deltas and the sync-path probe
+
+The implementation refined the ratified sketch in three ways, each in the
+direction the mobile side asked for (structured data end to end, nothing
+flattened).
+
+First, `NetOpFailure` carries `cause_chain: Vec<String>` — one `Display`
+text per layer, outermost first — instead of the sketched single `detail`
+string, so the mobile FFI's fielded probe legs receive the chain as a
+vector and never re-split prose. The `Display` stability contract keeps
+its shape (`failed at {stage} to {target}: {chain joined with ": "}`).
+
+Second, `NetOpStage` gained one variant, `RemoteConnect`: the direct
+(untunneled) sibling of `LocalProxyConnect`, for sync-path failures where
+the transport reports its whole connect phase as one failure. The reqwest
+classifier lives in `zingo-price` as a pure table over extracted signals
+(`classify_stage`), because a `reqwest::Error` cannot be fabricated in
+tests; the `Socks5TransmitError` classifier is a pure typed match in
+`zingolib::nym` (`socks5_transmit_stage`) with no substring inspection at
+all.
+
+Third, failure values travel whole below every seam: the transmit policy
+(`resilient_transmit`) is generic over each target's typed failure
+(`tonic::Status` for clearnet, `Socks5TransmitError` for the mixnet) and
+classifies only the server's own verdict text; the fan-out collects
+per-witness typed attempts and renders prose only in `Display`; the
+existing rendered-text seams (the indexer history's `FailureKind`, the
+send path's `Result<String, String>` boundary in the NotYetTyped backlog)
+were left where they were rather than adding new ones.
+
+### The sync-path probe (zingo-mobile Workstream A, item 1)
+
+`zingolib::nym::probe::probe_sync_server(server, stage_timeout)` walks
+one configured server through three bounded, individually timed stages —
+`tcp-connect` (raw reachability), `tls-channel` (TLS and the HTTP/2
+session, one stage because the transport establishes them as one connect
+phase; with TCP already proven, a failure here is the secure channel),
+and `grpc-info` (a `GetLightdInfo` round trip) — stopping at the first
+failure. Success carries `ProbeSuccess { chain, height }` as fields;
+every failure is a `NetOpFailure`. The paired clearnet/mixnet probe's
+`ProbeLeg` outcome took the same typed shape. No wallet lock is held
+anywhere in either probe path, per the polling-blackout rules.
