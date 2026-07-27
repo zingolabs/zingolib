@@ -132,7 +132,7 @@ pub struct PartRecord {
     /// were drawn separately (inner version 3 and below) whose transaction is
     /// not yet signed; the next placement, or
     /// [`crate::wallet::LightWallet::refresh_part_witnesses`], draws one.
-    pub anchor_bucket: Option<u64>,
+    pub(crate) anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
     /// prevents the server from seeing all parts cluster at the boundary.
@@ -147,7 +147,7 @@ pub struct PartRecord {
     /// The raw signed transaction under [`SigningStrategy::PreSigned`].
     /// `None` under the lazy strategy: between signing and broadcast the
     /// bytes are recoverable from the wallet's transaction record by txid.
-    pub signed_blob: Option<Vec<u8>>,
+    pub(crate) signed_blob: Option<Vec<u8>>,
     /// The anchor root and witness at [`Self::anchor_bucket`]'s boundary,
     /// cached while that checkpoint is retained. Cleared on every bucket
     /// transition, since a fresh anchor bucket means a fresh boundary, and
@@ -212,7 +212,7 @@ impl PartRecord {
     /// begins). Clears every scheduling artifact. The binding to its note
     /// stands.
     #[allow(clippy::result_large_err)]
-    pub fn unassign(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn unassign(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned"], PartState::Bound)?;
         self.bucket_index = None;
         self.anchor_bucket = None;
@@ -225,7 +225,7 @@ impl PartRecord {
     /// fresh bucket, clearing the stale transaction artifacts (FR15, no fresh
     /// consent needed since the denomination and total are unchanged).
     #[allow(clippy::result_large_err)]
-    pub fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Expired"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
         self.anchor_bucket = None;
@@ -238,7 +238,7 @@ impl PartRecord {
 
     /// `Assigned → Signed`: the canonical transaction is built and signed.
     #[allow(clippy::result_large_err)]
-    pub fn mark_signed(
+    pub(crate) fn mark_signed(
         &mut self,
         txid: TxId,
         expiry_height: BlockHeight,
@@ -253,13 +253,13 @@ impl PartRecord {
 
     /// Records a submit attempt. Persist the record between this and the
     /// actual submission, so an unrecorded-but-mined part is detectable.
-    pub fn record_attempt(&mut self) {
+    pub(crate) fn record_attempt(&mut self) {
         self.attempts = self.attempts.saturating_add(1);
     }
 
     /// `Signed → Broadcast`: the transaction was submitted.
     #[allow(clippy::result_large_err)]
-    pub fn mark_broadcast(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_broadcast(&mut self) -> Result<(), WalletError> {
         self.transition(&["Signed"], PartState::Broadcast)
     }
 
@@ -268,7 +268,7 @@ impl PartRecord {
     /// pre-broadcast states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
-    pub fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
+    pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
         self.transition(
             &["Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Confirmed { height },
@@ -278,14 +278,14 @@ impl PartRecord {
     /// `{Assigned, Signed, Broadcast} → Expired`: the signed transaction
     /// reached its expiry height unmined.
     #[allow(clippy::result_large_err)]
-    pub fn mark_expired(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_expired(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned", "Signed", "Broadcast"], PartState::Expired)
     }
 
     /// `{Bound, Assigned, Signed, Broadcast, Expired} → Invalidated`: the
     /// bound note was spent by a non-migration transaction.
     #[allow(clippy::result_large_err)]
-    pub fn mark_invalidated(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_invalidated(&mut self) -> Result<(), WalletError> {
         self.transition(
             &["Bound", "Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Invalidated,
@@ -297,7 +297,7 @@ impl PartRecord {
     /// is already fixed to the old boundary, so they expire and reassign
     /// instead.
     #[allow(clippy::result_large_err)]
-    pub fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         if self.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
                 from: self.state.name(),
@@ -315,7 +315,8 @@ impl PartRecord {
 /// A part's proving closure: builds, proves, and signs the part's
 /// transaction, returning its txid and raw bytes. Takes ownership of all
 /// needed data. No wallet reference is captured. Safe to call on any thread.
-pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+pub(crate) type ProveOnce =
+    Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
 /// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
 /// proving closure or the reason the part must be skipped.
@@ -435,7 +436,7 @@ impl crate::wallet::LightWallet {
     /// maximum across every part, which forced the whole schedule up to the
     /// newest note's boundary; each part now clears only its own.
     #[must_use]
-    pub fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
+    pub(crate) fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
         let bound = part.note?;
         self.wallet_transactions
             .get(&bound.output_id.txid())?
@@ -555,7 +556,7 @@ impl crate::wallet::LightWallet {
     /// rather than at proving time keeps the placement and the capture in the
     /// same pass, so the part is ready before its window opens.
     #[allow(clippy::result_large_err)]
-    pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
         let activation = pepper_sync::wallet::PoolActivation::of(
             &self.chain_type,
             zcash_protocol::ShieldedPool::Ironwood,
@@ -618,7 +619,7 @@ impl crate::wallet::LightWallet {
     /// multiple closures concurrently on background threads. Mutates
     /// `part.anchor_witness` if the boundary witness needs capturing.
     #[allow(clippy::result_large_err)]
-    pub fn prepare_part(
+    pub(crate) fn prepare_part(
         &mut self,
         account: zip32::AccountId,
         part: &mut PartRecord,
@@ -834,7 +835,7 @@ impl crate::wallet::LightWallet {
     ///
     /// Called sequentially in Phase C after all parallel proving is complete.
     #[allow(clippy::result_large_err)]
-    pub fn record_part_result(
+    pub(crate) fn record_part_result(
         &mut self,
         part: &mut PartRecord,
         txid: TxId,
