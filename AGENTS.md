@@ -119,3 +119,10 @@ Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
 
 **Single-context**: one `CONTEXT.md` + `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
+
+### Pending designs
+
+Ready-for-implementation designs live beside this file's other agent
+docs. Current: `docs/agents/net-diag-design.md`, the shared network
+failure taxonomy for the mixnet-covered operations (target branch
+`nym_mobile_adoption`, PR #2527).
