@@ -6,7 +6,7 @@ driver for consumers. Phase 2 (parts, buckets, their consent binding) is
 unaffected.
 
 `LightClient::quick_split(account, resume_sync)` is the consumer entry point
-for executing Phase 1 note splitting. Like the immediate Drain (ADR 0015) and
+for executing Phase 1 note splitting. Like the immediate Drain (ADR 0019) and
 `quick_send`, it pauses sync internally, plans against the wallet's *current*
 confirmed notes without synchronizing, and restores the prior sync mode on
 return unless `resume_sync` is `false`. It does **one round** of Orchard

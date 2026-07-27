@@ -8,9 +8,6 @@
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
-//! The lifecycle wiring for that flow (which call belongs to which app
-//! moment, consent and disclosure UX, scheduling background wakes) is laid
-//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -1671,7 +1668,7 @@ impl LightClient {
     ///     .await;
     /// # }
     /// ```
-    pub async fn migrate_immediately_presynced(
+    pub(crate) async fn migrate_immediately_presynced(
         &mut self,
         account: zip32::AccountId,
         sync: &SyncPauseGuard,
@@ -1734,7 +1731,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -2748,7 +2745,8 @@ mod tests {
         use zcash_primitives::transaction::TxId;
 
         use super::*;
-        use crate::wallet::migration::{BoundaryWitness, PrepareResult, SkipReason};
+        use crate::wallet::migration::parts::SkipReason;
+        use crate::wallet::migration::{BoundaryWitness, PrepareResult};
 
         /// Past the provisional first bucket boundary, as in
         /// [`super::boundary_tree_state_unavailable_skips_the_part`].
@@ -3444,7 +3442,7 @@ mod tests {
             );
             assert_eq!(broadcast_client.submissions.lock().unwrap().len(), 1);
             assert_eq!(
-                client.batch_status(),
+                client.batch_progress_handle().status(),
                 None,
                 "the progress side channel returns to idle"
             );
@@ -3654,7 +3652,7 @@ mod tests {
 
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         const SEED: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
@@ -3793,7 +3791,7 @@ mod tests {
         use super::super::{MAX_ROUNDS, SplitStep};
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         /// The txid of the fabricated transaction that created the wallet's
         /// note of `value`.

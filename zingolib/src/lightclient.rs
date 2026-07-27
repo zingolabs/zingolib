@@ -350,23 +350,13 @@ impl LightClient {
         self.indexer_history.set_recording(record);
     }
 
-    /// A snapshot of the in-progress immediate migration
-    /// ([`Self::migrate_immediately`]), or `None` when idle.
-    ///
-    /// Reads a side channel, not the wallet, so it never blocks on the migration's
-    /// wallet write lock. To poll while an immediate migration (which borrows `&mut self`) is
-    /// running, grab a [`Self::immediate_migration_progress_handle`] first.
-    pub fn immediate_migration_status(&self) -> Option<migrate::ImmediateMigrationStatus> {
-        self.immediate_migration_progress.status()
-    }
-
     /// A cloneable handle to the migration's live progress. Grab it *before*
     /// starting an immediate migration, then poll [`migrate::ImmediateMigrationProgressHandle::status`]
     /// concurrently while the immediate migration holds `&mut self`.
     ///
-    /// [`Self::immediate_migration_status`] reads the same channel but needs `&self`, so it
-    /// cannot be called on the client the immediate migration is borrowing. This handle is
-    /// how a concurrent poller (a spawned task, or the consumer's existing
+    /// The handle reads a side channel, not the wallet, so it never blocks on
+    /// the wallet write lock the immediate migration holds. It is how a
+    /// concurrent poller (a spawned task, or the consumer's existing
     /// sync-status loop) observes progress.
     ///
     /// # Examples
@@ -413,15 +403,6 @@ impl LightClient {
         self.immediate_migration_progress.clone()
     }
 
-    /// A snapshot of the note-splitting round a [`Self::quick_split`] call is
-    /// building, or `None` when idle. Reads a side channel, not the wallet, so
-    /// it never blocks on the round's wallet write lock. To poll while a
-    /// `quick_split` (which borrows `&mut self`) runs, grab a
-    /// [`Self::split_progress_handle`] first.
-    pub fn split_status(&self) -> Option<migrate::SplitStatus> {
-        self.split_progress.status()
-    }
-
     /// A cloneable handle to the note-splitting round's live progress. Grab it
     /// *before* calling [`Self::quick_split`], then poll
     /// [`migrate::SplitProgressHandle::status`] concurrently while the round
@@ -429,13 +410,6 @@ impl LightClient {
     /// [`Self::immediate_migration_progress_handle`].
     pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
         self.split_progress.clone()
-    }
-
-    /// A snapshot of the running migration execute batch
-    /// ([`Self::execute_due_parts`]), or `None` when idle. Reads a side
-    /// channel, never the wallet lock.
-    pub fn batch_status(&self) -> Option<migrate::BatchStatus> {
-        self.batch_progress.status()
     }
 
     /// A cloneable handle to the execute batch's live progress. Grab it

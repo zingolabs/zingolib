@@ -26,7 +26,7 @@ use super::parts::{PartId, PartRecord, PartState};
 /// Picks a random block within `[boundary, boundary + M)` as the broadcast
 /// target for one part, spreading sends across the window instead of
 /// clustering them at the boundary.
-pub fn random_target_in_bucket(
+fn random_target_in_bucket(
     bucket: u64,
     rng: &mut impl Rng,
     params: &MigrationParams,
@@ -40,10 +40,10 @@ pub fn random_target_in_bucket(
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
 /// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
-pub const EXPIRY_MODULUS: u32 = 34_560;
+const EXPIRY_MODULUS: u32 = 34_560;
 
 /// The canonical validity window past an expiry bucket's opening.
-pub const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
@@ -71,7 +71,8 @@ pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
 }
 
 /// The most recent boundary at or below `height`.
-pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
+#[cfg(test)]
+fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
 
@@ -80,7 +81,7 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
 /// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
 /// not a [`MigrationParams`] field: it does not feed the consent hash, so
 /// adopting it costs no existing consent.
-pub const ANCHOR_AGE_CAP: u32 = 16;
+const ANCHOR_AGE_CAP: u32 = 16;
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
 /// one part.
@@ -235,7 +236,7 @@ pub fn first_ironwood_era_window_boundary(
 /// The first bucket whose boundary sits at or above `height`. The modulus
 /// is nonzero by the [`MigrationParams::bucket_modulus`] invariant
 /// (enforced at store read), as in every bucket computation.
-pub fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
+fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
     u64::from(u32::from(height)).div_ceil(u64::from(bucket_modulus))
 }
 
@@ -421,7 +422,7 @@ pub struct BroadcastWindow {
 
 /// Rough unix time `height` is expected to be mined, extrapolated from
 /// `now_height` at the target block spacing (past heights estimate as now).
-pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
+fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
     let blocks_until = u64::from(u32::from(height).saturating_sub(u32::from(now_height)));
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }

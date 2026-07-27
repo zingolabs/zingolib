@@ -37,7 +37,7 @@ const MIN_BUNDLE_ACTIONS: u64 = 2;
 /// (1 output, padded to 2 actions), so it pays for 4 logical actions. Every
 /// split note is sized `denomination + part_fee` so the part balances
 /// exactly.
-pub const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
+pub(crate) const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
 
 /// The number of logical actions the builder will produce for a bundle of
 /// `n_in` spends and `n_out` outputs at the given bundle version, asked of the
@@ -95,7 +95,7 @@ fn orchard_version(post_activation: bool) -> orchard::bundle::BundleVersion {
 
 /// The ZIP-317 conventional fee for an Orchard-only note-splitting
 /// transaction with `n_in` spends and `n_out` outputs.
-pub fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
+pub(crate) fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
     zip317_fee(
         bundle_actions(orchard_version(post_activation), n_in, n_out),
         0,
@@ -104,7 +104,7 @@ pub fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
 
 /// If a note of value `v` is already part-ready, sized exactly
 /// `denomination + part_fee`, returns that denomination.
-pub fn part_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
+pub(crate) fn part_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
     value
         .checked_sub(params.part_fee)
         .filter(|d| params.denominations.contains(d))
@@ -418,7 +418,7 @@ impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
     #[allow(clippy::result_large_err)]
-    pub fn migration_note_values(
+    pub(crate) fn migration_note_values(
         &self,
         account: zip32::AccountId,
     ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
@@ -535,7 +535,7 @@ impl crate::wallet::LightWallet {
     /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
-    pub fn build_note_split_transaction(
+    pub(crate) fn build_note_split_transaction(
         &mut self,
         account: zip32::AccountId,
         planned: &NoteSplitTx,
