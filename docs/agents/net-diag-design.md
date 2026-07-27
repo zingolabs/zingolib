@@ -143,24 +143,32 @@ reachable from at least one fabricated input.
 
 ### The mobile probe surface (zingo-mobile Workstream A)
 
-zingo-mobile now crosses probe results over UniFFI as structured
-dictionaries, not JSON prose: `ProbeReport { host, clearnet, mixnet? }`
-with `ProbeLeg { ok, detail, millis }` per leg (zingo-mobile
-`probe_server`, built on `probe_broadcast_indexers`). The `detail`
-string is a stopgap: today it carries the leg's collapsed
-`Result<String, String>` — the "chain X, height N" summary on Ok and
-prose on Err — because that is all `nym::probe::ProbeLeg` exposes.
+Landed on both sides. This repository's taxonomy arc fielded the probe
+legs (`ProbeLeg.outcome: Result<ProbeSuccess, NetOpFailure>`) and
+shipped the staged sync-path probe (`probe_sync_server`); zingo-mobile
+consumes both through UniFFI enums that exhaust each closed possibility
+space, with no boolean-beside-optional pairs and no bare null where
+absence has a name:
 
-Structured data end to end is what the mobile side is building towards.
-When the sync-path probe stages land here, shape the leg outcome as
-data, not a summary string: the Ok path as fields (chain name and
-height, not a formatted sentence), the Err path as the `NetOpFailure`
-record itself (stage, target, cause chain as a vector). The mobile
-dictionaries then grow additively — `ProbeLeg` gains `stage`, `chain`,
-`height`, `cause_chain` fields beside the retained `detail` — and the
-Doctor's report upgrades without any consumer ever parsing prose. The
+- `ProbeLegOutcome`: `Answered(ProbeSuccessData)` or
+  `Failed(ProbeFailure)`. The old `ok` flag and composed `detail`
+  string are gone — both derivable.
+- `MixnetLeg`: `Probed(ProbeLeg)` or `NotCarried` — the proxy-not-ready
+  case has exactly one producer and carries its name across the FFI.
+- `SyncStageOutcome`: `Passed` or `Failed(ProbeFailure)`;
+  `SyncServerVerdict`: `Reachable(ProbeSuccessData)` or `Stopped`.
+- `ProbeFailure` is this crate's record verbatim: kebab-case stage,
+  target, and the cause chain as a vector, one text per layer.
+
+Step and stage names deliberately cross as open strings, not closed
+unions, so this repository may add stages without breaking deployed
+consumers; the mobile side renders unrecognized names as-is. The
 stability contract above already forbids decision-making on rendered
-text; fielded probe legs are what retire the temptation.
+text, and with the enums in place no mobile consumer touches prose at
+all: the Doctor's rows, its markdown report, and its dispatch all read
+typed fields. Keep new probe surfaces in this shape — an exhaustive
+outcome enum per closed space, `NetOpFailure` for every failure arm —
+and the mobile crossing extends additively.
 
 ### zingo-price
 
