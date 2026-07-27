@@ -855,6 +855,8 @@ internal interface IntegrityCheckingUniffiLib : Library {
 
     fun uniffi_zingo_checksum_func_poll_sync(): Short
 
+    fun uniffi_zingo_checksum_func_quick_split(): Short
+
     fun uniffi_zingo_checksum_func_reconcile_migration(): Short
 
     fun uniffi_zingo_checksum_func_remove_transaction(): Short
@@ -879,11 +881,15 @@ internal interface IntegrityCheckingUniffiLib : Library {
 
     fun uniffi_zingo_checksum_func_shield(): Short
 
+    fun uniffi_zingo_checksum_func_split_status(): Short
+
     fun uniffi_zingo_checksum_func_start_ironwood_migration(): Short
 
     fun uniffi_zingo_checksum_func_status_sync(): Short
 
     fun uniffi_zingo_checksum_func_wallet_kind(): Short
+
+    fun uniffi_zingo_checksum_func_window_timeline(): Short
 
     fun uniffi_zingo_checksum_func_zec_price(): Short
 
@@ -1077,6 +1083,8 @@ internal interface UniffiLib : Library {
 
     fun uniffi_zingo_fn_func_poll_sync(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
+    fun uniffi_zingo_fn_func_quick_split(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
+
     fun uniffi_zingo_fn_func_reconcile_migration(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
     fun uniffi_zingo_fn_func_remove_transaction(
@@ -1114,6 +1122,8 @@ internal interface UniffiLib : Library {
 
     fun uniffi_zingo_fn_func_shield(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
+    fun uniffi_zingo_fn_func_split_status(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
+
     fun uniffi_zingo_fn_func_start_ironwood_migration(
         `planHashHex`: RustBuffer.ByValue,
         `perBucket`: RustBuffer.ByValue,
@@ -1123,6 +1133,8 @@ internal interface UniffiLib : Library {
     fun uniffi_zingo_fn_func_status_sync(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
     fun uniffi_zingo_fn_func_wallet_kind(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
+
+    fun uniffi_zingo_fn_func_window_timeline(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
     fun uniffi_zingo_fn_func_zec_price(uniffi_out_err: UniffiRustCallStatus): RustBuffer.ByValue
 
@@ -2478,6 +2490,14 @@ fun `pollSync`(): kotlin.String =
     )
 
 @Throws(ZingolibException::class)
+fun `quickSplit`(): kotlin.String =
+    FfiConverterString.lift(
+        uniffiRustCallWithError(ZingolibException) { _status ->
+            UniffiLib.INSTANCE.uniffi_zingo_fn_func_quick_split(_status)
+        },
+    )
+
+@Throws(ZingolibException::class)
 fun `reconcileMigration`(): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
@@ -2581,6 +2601,14 @@ fun `shield`(): kotlin.String =
     )
 
 @Throws(ZingolibException::class)
+fun `splitStatus`(): kotlin.String =
+    FfiConverterString.lift(
+        uniffiRustCallWithError(ZingolibException) { _status ->
+            UniffiLib.INSTANCE.uniffi_zingo_fn_func_split_status(_status)
+        },
+    )
+
+@Throws(ZingolibException::class)
 fun `startIronwoodMigration`(
     `planHashHex`: kotlin.String,
     `perBucket`: kotlin.UInt?,
@@ -2608,6 +2636,14 @@ fun `walletKind`(): kotlin.String =
     FfiConverterString.lift(
         uniffiRustCallWithError(ZingolibException) { _status ->
             UniffiLib.INSTANCE.uniffi_zingo_fn_func_wallet_kind(_status)
+        },
+    )
+
+@Throws(ZingolibException::class)
+fun `windowTimeline`(): kotlin.String =
+    FfiConverterString.lift(
+        uniffiRustCallWithError(ZingolibException) { _status ->
+            UniffiLib.INSTANCE.uniffi_zingo_fn_func_window_timeline(_status)
         },
     )
 
