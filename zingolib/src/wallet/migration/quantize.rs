@@ -1,5 +1,6 @@
-//! Canonical quantization: decomposing a balance into the standard
-//! power-of-ten denominations of ZIP 318.
+//! Canonical quantization: decomposing a balance into ZIP 318's standard
+//! `{1, 2, 5} x 10^k` denominations
+//! (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
 
 use zcash_protocol::value::Zatoshis;
 
@@ -36,7 +37,7 @@ impl Denominations {
     }
 }
 
-/// Decompose `value` into canonical powers-of-ten denominations.
+/// Decompose `value` into the canonical `{1, 2, 5} x 10^k` denominations.
 ///
 /// Greedy, largest denomination first. Because each denomination is exactly
 /// ten times the next, greedy decomposition also minimizes the number of
@@ -69,10 +70,10 @@ pub fn decompose(value: Zatoshis, params: &MigrationParams) -> Denominations {
 
 #[cfg(test)]
 mod tests {
-    use super::super::params::COIN;
     use super::*;
     use crate::config::ChainType;
     use proptest::prelude::*;
+    use zcash_protocol::value::COIN;
     use zcash_protocol::value::MAX_MONEY;
 
     fn params() -> MigrationParams {

@@ -85,6 +85,7 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
     "grpc_proxy_server",
 ], optional = true }
 tokio-stream = { workspace = true, optional = true }
+zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
@@ -93,15 +94,13 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
+rand_chacha = "0.3"
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
 zaino-proto = { version = "0.2.0", default-features = false, features = [
     "grpc_proxy_server",
 ] }
-# Conformance oracle only: the shipped constants are defined locally so they
-# can never move underneath the consent hash via a dependency bump.
-zcash_pool_migration = { version = "=0.1.0-alpha.1", default-features = false }
 zingo_test_vectors = { workspace = true }
 
 [badges]

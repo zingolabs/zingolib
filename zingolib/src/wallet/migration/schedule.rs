@@ -5,7 +5,7 @@
 //! broadcasts while the chain is inside it.
 //!
 //! A part's *anchor* is a separate bucket from its broadcast window. The
-//! anchor sits at [`draw_anchor_age`] buckets below the window, never zero
+//! anchor sits a canonically drawn age below the window, never zero
 //! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
@@ -23,36 +23,59 @@ use crate::wallet::error::WalletError;
 use super::params::MigrationParams;
 use super::parts::{PartId, PartRecord, PartState};
 
-/// Picks a random block within `[boundary, boundary + M)` as the broadcast
-/// target for one part, spreading sends across the window instead of
-/// clustering them at the boundary.
+/// Draws the advisory broadcast target for one part from the canonical
+/// transfer-delay law: the ZIP 318 exponential inter-arrival distribution
+/// (mean 144 blocks, capped at 576), offset from the part's window boundary
+/// (<https://zips.z.cash/zip-0318#transferscheduling>). The draw can land
+/// past the window; the target is advisory (ADR 0017), so a late target
+/// only aims the reminder and never gates sendability. Chaining successive
+/// transfers (each delay drawn from the previous transfer rather than the
+/// boundary) arrives with the scheduling delegation; the divergence ledger
+/// records that gap.
 fn random_target_in_bucket(
     bucket: u64,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> BlockHeight {
     let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-    let offset = rng.gen_range(0..params.bucket_modulus);
+    let offset = SchedulingParams::ZIP_318.transfer_delay().draw(rng);
     BlockHeight::from_u32(boundary + offset)
 }
 
 /// Zcash target block spacing in seconds, used to estimate window times.
+/// Matches the spacing ZIP 318's block-count constants assume; see
+/// <https://zips.z.cash/zip-0318#transferscheduling>.
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
-/// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
-const EXPIRY_MODULUS: u32 = 34_560;
+// The ZIP 318 expiry and anchor-age constants are imported from the
+// canonical reference crate, never restated. `EXPIRY_MODULUS` (34 560
+// blocks, 30 days) and `EXPIRY_WINDOW` (2x, about 60 days) are
+// standardized at
+// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>;
+// `ANCHOR_AGE_CAP` (16 boundaries, about two days) at
+// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>.
+// ANCHOR_AGE_CAP is deliberately not a `MigrationParams` field: it does
+// not feed the consent hash, so adopting it costs no existing consent.
+// The `zip318_conformance_tripwires` tests below pin every imported value to the
+// ZIP's literal number, so a dependency bump that moved one fails red
+// and is adopted deliberately, with a params version bump.
+use std::num::NonZeroU32;
 
-/// The canonical validity window past an expiry bucket's opening.
-const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+use rand::CryptoRng;
+use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
 /// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
-/// coarse period.
+/// coarse period. See
+/// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
 pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
-    let height = u32::from(broadcast_height);
-    BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
+    // Delegates to the canonical implementation; heights cross the git
+    // dependency's type divide as u32, the workspace's standard insulation.
+    BlockHeight::from_u32(u32::from(zcash_pool_migration::scheduling::expiry_height(
+        u32::from(broadcast_height).into(),
+    )))
 }
 
 /// The bucket containing `height`.
@@ -75,13 +98,6 @@ pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
 fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
-
-/// `ANCHOR_AGE_CAP`: the greatest anchor age the draw accepts, in buckets.
-/// A draw above it is discarded and redrawn, bounding how stale a part's
-/// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
-/// not a [`MigrationParams`] field: it does not feed the consent hash, so
-/// adopting it costs no existing consent.
-const ANCHOR_AGE_CAP: u32 = 16;
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
 /// one part.
@@ -136,65 +152,39 @@ impl AnchorFloor {
     }
 }
 
-/// Draws an anchor age `a ≥ 1` from the recency-weighted `Geometric(1/2)`
-/// distribution: the number of failed fair coin flips plus one, so
-/// `P(a = 1) = 1/2`, `P(a = 2) = 1/4`, and the mean age is two buckets.
-///
-/// Age zero is never produced. That is the whole point: an age-zero anchor
-/// is the boundary of the window the chain is still inside, the newest tree
-/// state there is, whose cohort has not accumulated yet.
-///
-/// Counting stops one past [`ANCHOR_AGE_CAP`], which the caller rejects
-/// anyway, so a single 64-bit draw always suffices and the loop is bounded.
-pub fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
-    // Each bit of one fresh word is one fair coin flip, as upstream's
-    // `draw_anchor_age` does it. The cap is far below 64, so one word is
-    // always enough and the loop needs no refill.
-    let mut bits = rng.next_u64();
-    let mut age: u32 = 1;
-    while age <= ANCHOR_AGE_CAP {
-        if bits & 1 == 1 {
-            return age;
-        }
-        bits >>= 1;
-        age += 1;
-    }
-    age
-}
-
 /// The anchor bucket for a part broadcasting in `window`: `window − a` for a
-/// drawn age, redrawn until it clears `floor` and [`ANCHOR_AGE_CAP`].
+/// canonically drawn age (`Geometric(1/2)`, never zero, capped at
+/// [`ANCHOR_AGE_CAP`]), redrawn until it clears `floor`.
 ///
-/// `None` when the candidate set is empty, which is the caller's signal that
-/// `window` is too early for this part rather than a transient condition.
-/// Age one always yields `window − 1`, the highest candidate, so whenever the
-/// set is non-empty the rejection loop terminates with probability one half
-/// per draw.
+/// Delegates to the canonical
+/// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
+/// (<https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>), mapped
+/// into bucket space: the part's window boundary plays the observed chain
+/// tip, so the most recent boundary is the window's own and the drawn anchor
+/// is `window − a` exactly as the retired local draw computed it. Seeded
+/// golden vectors captured from that local implementation pin the
+/// equivalence. `None` when the candidate set is empty, which is the
+/// caller's signal that `window` is too early for this part rather than a
+/// transient condition.
 pub fn draw_anchor_bucket(
     window: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     bucket_modulus: u32,
 ) -> Option<u64> {
-    // The highest candidate is one full bucket below the window, since the
-    // age is never zero. An empty set means the floors reach the window.
-    let highest = window.checked_sub(1)?;
-    let lowest = floor.lowest_anchor_bucket(bucket_modulus);
-    if lowest > highest {
-        return None;
-    }
-    loop {
-        let age = draw_anchor_age(rng);
-        if age > ANCHOR_AGE_CAP {
-            continue;
-        }
-        // An age reaching past bucket zero is a too-old anchor: redraw.
-        if let Some(candidate) = window.checked_sub(u64::from(age))
-            && candidate >= lowest
-        {
-            return Some(candidate);
-        }
-    }
+    let interval = AnchorBucketInterval::custom(
+        NonZeroU32::new(bucket_modulus).expect("bucket modulus is nonzero by params invariant"),
+    );
+    let window_boundary = u32::from(boundary_of(window, bucket_modulus));
+    let funding = floor.note_confirmed_at.map_or(0, u32::from);
+    let anchor = zcash_pool_migration::scheduling::draw_anchor_boundary(
+        interval,
+        u32::from(floor.activation.height()).into(),
+        funding.into(),
+        window_boundary.into(),
+        rng,
+    )?;
+    Some(u64::from(u32::from(anchor)) / u64::from(bucket_modulus))
 }
 
 /// The first bucket a part may be scheduled into: strictly after
@@ -258,7 +248,7 @@ pub fn place(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -281,7 +271,7 @@ pub fn place_immediate(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -297,7 +287,7 @@ pub fn place_immediate(
 fn anchor_for(
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<u64, WalletError> {
     draw_anchor_bucket(bucket, floor, rng, params.bucket_modulus).ok_or(
@@ -344,7 +334,7 @@ pub fn plan_schedule(
     activation: PoolActivation,
     note_confirmed_at: impl Fn(&PartRecord) -> Option<BlockHeight>,
     params: &MigrationParams,
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + CryptoRng),
 ) -> Result<(), WalletError> {
     let unassigned: Vec<usize> = parts
         .iter()
@@ -571,6 +561,7 @@ mod tests {
     use crate::wallet::migration::parts::BoundNote;
     use pepper_sync::wallet::OutputId;
     use proptest::prelude::*;
+    use zcash_pool_migration::scheduling::{ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW};
     use zcash_primitives::transaction::TxId;
 
     fn params() -> MigrationParams {
@@ -662,23 +653,14 @@ mod tests {
         }
     }
 
-    /// The anchor age is never zero: a part must never prove against the
-    /// boundary of the window it is broadcasting in. That boundary is the
-    /// newest tree state at broadcast time, so its ZIP 318 cohort has not
-    /// accumulated and the anonymity set the anchor draw exists to build is
-    /// empty. Upstream states it as a MUST ("age 0 is NEVER produced").
-    #[test]
-    fn anchor_age_is_never_zero() {
-        for _ in 0..2_000 {
-            let age = draw_anchor_age(&mut rand::rngs::OsRng);
-            assert!(age >= 1, "drew age {age}, which is the open window itself");
-        }
-    }
-
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
-    /// cap. The rejection loop, not the raw geometric draw, is what enforces
-    /// the lower end.
+    /// cap. The first bound is the age-never-zero rule: a part must never
+    /// prove against the boundary of the window it is broadcasting in,
+    /// because that boundary is the newest tree state there is and its
+    /// cohort has not accumulated yet. The delegated `draw_anchor_boundary`
+    /// enforces every one of these bounds now that the local rejection loop
+    /// is retired; this test pins that contract from the caller's side.
     #[test]
     fn drawn_anchors_land_inside_the_candidate_set() {
         let params = params();
@@ -753,7 +735,7 @@ mod tests {
     /// exists to prevent, correlated across every wallet that rebuilds
     /// after an expiry.
     #[test]
-    fn place_draws_a_fresh_target_inside_the_new_window() {
+    fn place_draws_a_fresh_target_from_the_new_boundary() {
         let params = params();
         let mut part = bound_part(0, 1_000_000);
         part.assign(1).unwrap();
@@ -779,11 +761,12 @@ mod tests {
             part.target_height
                 .expect("jittered placement draws a fresh target"),
         );
+        let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
         assert!(
-            target >= boundary && target < boundary + params.bucket_modulus,
-            "the fresh target {target} must lie inside bucket 5's window \
-             [{boundary}, {})",
-            boundary + params.bucket_modulus,
+            target >= boundary && target <= boundary + cap,
+            "the fresh target {target} must be drawn from bucket 5's boundary \
+             under the canonical delay law [{boundary}, {}]",
+            boundary + cap,
         );
     }
 
@@ -810,10 +793,13 @@ mod tests {
             assert_eq!(part.state, PartState::Assigned);
             let bucket = part.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
-            // Target is within the part's bucket window.
+            // Target is drawn from the part's boundary under the canonical
+            // delay law (mean 144, capped at 576; it may pass the window,
+            // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
-            assert!(target >= boundary && target < boundary + params.bucket_modulus);
+            let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
+            assert!(target >= boundary && target <= boundary + cap);
         }
         // Largest denominations land in the earliest buckets.
         for a in &parts {
@@ -1032,9 +1018,10 @@ mod tests {
                 // Target is within the bucket's window.
                 let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
                 let target = u32::from(part.target_height.unwrap());
+                let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
                 prop_assert!(
-                    target >= boundary && target < boundary + params.bucket_modulus,
-                    "target in window"
+                    target >= boundary && target <= boundary + cap,
+                    "target drawn from the boundary under the canonical delay law"
                 );
             }
             prop_assert!(cohort_sizes.values().all(|&size| size <= k), "k bound");
@@ -1141,29 +1128,108 @@ mod tests {
         assert!(upcoming_windows(&parts, now, now_unix, 0, &params).is_empty());
     }
 
-    /// Checks our locally defined ZIP 318 values against
-    /// `zcash_pool_migration`, the reference implementation. The constants
-    /// stay local so they can only move by an explicit commit (they feed the
-    /// consent hash), and this suite is what catches upstream ratifying
-    /// different ones: bump the pinned dev-dependency and red means adopt
-    /// deliberately, with a params version bump.
-    mod zip318_conformance {
-        use zcash_pool_migration::note_splitting::{
-            MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN,
-        };
-        use zcash_pool_migration::scheduling;
-
+    /// Pins the ZIP 318 values imported from `zcash_pool_migration`, the
+    /// reference implementation, to the ZIP's literal numbers. The values
+    /// feed the consent hash, so they must move only by an explicit commit:
+    /// a dependency bump that changes one turns this suite red, and red
+    /// means adopt deliberately, with a params version bump.
+    mod zip318_conformance_tripwires {
         use super::*;
-        use crate::wallet::migration::params::COIN;
+        use zcash_protocol::value::COIN;
 
+        /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>
         #[test]
-        fn expiry_constants_match_upstream() {
-            assert_eq!(EXPIRY_MODULUS, scheduling::EXPIRY_MODULUS);
-            assert_eq!(EXPIRY_WINDOW, scheduling::EXPIRY_WINDOW);
+        fn expiry_constants_match_the_zip() {
+            assert_eq!(EXPIRY_MODULUS, 34_560);
+            assert_eq!(EXPIRY_WINDOW, 69_120);
         }
 
+        /// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
         #[test]
-        fn expiry_heights_match_upstream() {
+        fn anchor_age_cap_matches_the_zip() {
+            assert_eq!(ANCHOR_AGE_CAP, 16);
+        }
+
+        /// Strict behavioral equivalence across the anchor-draw delegation
+        /// (ADR 0020, Landing C): these vectors were captured from the
+        /// retired local implementation under seeded rngs immediately before
+        /// the swap to `draw_anchor_boundary`, so a divergence here means the
+        /// delegated draw no longer reproduces the behavior the mirror had.
+        ///
+        /// The generator is pinned to [`rand_chacha::ChaCha12Rng`] rather
+        /// than spelled `StdRng`, because the vectors are a property of the
+        /// exact random stream: at capture time rand 0.8's `StdRng` was
+        /// ChaCha12, but `StdRng` is documented as free to change algorithms
+        /// across rand versions, and such a change would fail these goldens
+        /// spuriously. If this test ever goes red, the delegated draw has
+        /// diverged (or the pinned generator itself moved); never repair it
+        /// by re-capturing the vectors from the delegated implementation,
+        /// because vectors captured from the code under test pin nothing.
+        #[test]
+        fn anchor_draw_matches_the_retired_mirror_goldens() {
+            use rand::SeedableRng;
+            use rand_chacha::ChaCha12Rng;
+            let activation = PoolActivation::new_for_test(BlockHeight::from_u32(1_000));
+            let expected: [(Option<u64>, Option<u64>, Option<u64>); 6] = [
+                (Some(99), Some(99), Some(51)),
+                (Some(99), Some(98), Some(51)),
+                (Some(99), Some(98), Some(52)),
+                (Some(97), Some(97), Some(52)),
+                (Some(97), Some(99), Some(52)),
+                (Some(98), Some(99), Some(52)),
+            ];
+            for (seed, expected) in expected.iter().enumerate() {
+                let mut rng = ChaCha12Rng::seed_from_u64(seed as u64);
+                let floor_loose = AnchorFloor::new(activation, None);
+                let floor_note =
+                    AnchorFloor::new(activation, Some(BlockHeight::from_u32(50 * 144 + 3)));
+                let drawn = (
+                    draw_anchor_bucket(100, &floor_loose, &mut rng, 144),
+                    draw_anchor_bucket(100, &floor_note, &mut rng, 144),
+                    draw_anchor_bucket(53, &floor_note, &mut rng, 144),
+                );
+                assert_eq!(&drawn, expected, "diverged at seed {seed}");
+            }
+        }
+
+        /// The `zcash_pool_migration` revision this workspace has adjudicated.
+        /// The dependency floats on zcash/librustzcash's default branch (ADR
+        /// 0020), so an ordinary `cargo update` can move it. This tripwire
+        /// makes every move loud: when the resolved revision changes, this
+        /// test fails, and the adopting commit re-runs the value tripwires
+        /// above and bumps this literal deliberately.
+        const ADJUDICATED_UPSTREAM_REV: &str = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031";
+
+        /// Fails when the floating librustzcash dependency moves (ADR 0020's
+        /// branch-move tripwire). Reads the workspace lockfile rather than any
+        /// crate metadata, because the lockfile is where a float lands first.
+        #[test]
+        fn upstream_revision_is_the_adjudicated_one() {
+            let lockfile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("zingolib sits directly under the workspace root")
+                .join("Cargo.lock");
+            let lock = std::fs::read_to_string(lockfile).expect("workspace lockfile is readable");
+            let package_block = lock
+                .split("[[package]]")
+                .find(|block| block.contains("name = \"zcash_pool_migration\""))
+                .expect("the lockfile resolves zcash_pool_migration");
+            assert!(
+                package_block.contains(&format!("#{ADJUDICATED_UPSTREAM_REV}\"")),
+                "zcash_pool_migration moved off the adjudicated revision \
+                 {ADJUDICATED_UPSTREAM_REV}. Re-run the zip318 tripwires against \
+                 the new revision and bump ADJUDICATED_UPSTREAM_REV in the same \
+                 commit that adopts it."
+            );
+        }
+
+        /// Pins the delegated expiry to the ZIP's own arithmetic (the most
+        /// recent `EXPIRY_MODULUS` multiple at or below the height, plus
+        /// `EXPIRY_WINDOW`), independent of the implementation now that
+        /// `canonical_expiry_height` calls the canonical crate.
+        /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>
+        #[test]
+        fn expiry_heights_match_the_zip_arithmetic() {
             let sample = [
                 0,
                 1,
@@ -1174,21 +1240,66 @@ mod tests {
                 100 * EXPIRY_MODULUS,
                 101 * EXPIRY_MODULUS - 1,
             ];
-            for height in sample.map(BlockHeight::from_u32) {
+            for height in sample {
                 assert_eq!(
-                    canonical_expiry_height(height),
-                    scheduling::expiry_height(height),
+                    u32::from(canonical_expiry_height(BlockHeight::from_u32(height))),
+                    height - (height % 34_560) + 69_120,
                     "diverged at {height}"
                 );
             }
         }
 
         #[test]
-        fn params_match_upstream() {
+        fn params_match_the_zip() {
             let params = MigrationParams::provisional(ChainType::Mainnet);
-            assert_eq!(params.bucket_modulus, scheduling::BOUNDARY_MODULUS);
-            assert_eq!(params.denom_cap, MIGRATION_MAX_DENOMINATION_ZEC * COIN);
-            assert_eq!(params.max_residual_value, u64::from(RESIDUAL_MIGRATION_MIN));
+            // <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
+            assert_eq!(params.bucket_modulus, 144);
+            // <https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>
+            assert_eq!(params.denom_cap, 10_000 * COIN);
+            assert_eq!(params.max_residual_value, COIN / 100);
+            // <https://zips.z.cash/zip-0318#notepreparationtransactions>
+            assert_eq!(params.max_actions_per_split_tx, 16);
+        }
+
+        /// <https://zips.z.cash/zip-0318#transferscheduling>
+        #[test]
+        fn transfer_delay_matches_the_zip() {
+            let delay = SchedulingParams::ZIP_318.transfer_delay();
+            assert_eq!(delay.mean().get(), 144);
+            assert_eq!(delay.cap().get(), 576);
+        }
+
+        /// Pins the derived ladder to the ZIP 318 enumeration
+        /// (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
+        /// The denominations feed the consent hash, so a derivation bug or a
+        /// moved bound would silently invalidate every recorded consent; this
+        /// vector is the tripwire.
+        #[test]
+        fn ladder_matches_the_zip318_enumeration() {
+            assert_eq!(
+                MigrationParams::provisional(ChainType::Mainnet).denominations,
+                vec![
+                    10_000 * COIN,
+                    5_000 * COIN,
+                    2_000 * COIN,
+                    1_000 * COIN,
+                    500 * COIN,
+                    200 * COIN,
+                    100 * COIN,
+                    50 * COIN,
+                    20 * COIN,
+                    10 * COIN,
+                    5 * COIN,
+                    2 * COIN,
+                    COIN,
+                    COIN / 2,
+                    COIN / 5,
+                    COIN / 10,
+                    COIN / 20,
+                    COIN / 50,
+                    COIN / 100,
+                ],
+            );
         }
 
         /// Every denomination is `n × 10^k` with `n ∈ {1, 2, 5}`.
