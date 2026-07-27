@@ -121,7 +121,7 @@ impl PriceList {
         &mut self,
         socks5_proxy: Option<&str>,
     ) -> Result<Price, PriceError> {
-        get_current_price(socks5_proxy).await
+        get_current_price(socks5_proxy, GEMINI_ZECUSD_URL).await
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
@@ -208,23 +208,26 @@ fn ensure_default_crypto_provider() {
     }
 }
 
-/// Get current price of ZEC in USD, optionally through a local SOCKS5 proxy.
+/// The public price source: Gemini's recent-trades endpoint for the ZEC/USD
+/// pair, eleven trades so the median (index 5 of the sorted list) is a robust
+/// current price.
+const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_trades=11";
+
+/// Get current price of ZEC in USD from `url`, optionally through a local
+/// SOCKS5 proxy.
 ///
 /// When `socks5_proxy` is `Some(addr)`, the request is proxied through
 /// `socks5h://addr`, so the destination hostname is resolved at the proxy and
-/// never leaked to the local clearnet resolver (the Nym mixnet transport, ADR
-/// 0011). `None` fetches over clearnet.
-async fn get_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
+/// never leaked to the local clearnet resolver (the Nym mixnet transport).
+/// `None` fetches over clearnet. `url` is the trades endpoint; production
+/// callers pass [`GEMINI_ZECUSD_URL`], tests point it at a local server.
+async fn get_current_price(socks5_proxy: Option<&str>, url: &str) -> Result<Price, PriceError> {
     ensure_default_crypto_provider();
     let mut builder = reqwest::Client::builder();
     if let Some(addr) = socks5_proxy {
         builder = builder.proxy(reqwest::Proxy::all(format!("socks5h://{addr}"))?);
     }
-    let httpget = builder
-        .build()?
-        .get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
-        .send()
-        .await?;
+    let httpget = builder.build()?.get(url).send().await?;
     let mut trades = httpget
         .json::<Vec<CurrentPriceResponse>>()
         .await?
@@ -249,4 +252,79 @@ async fn get_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceErr
     });
 
     Ok(trades[5])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GEMINI_ZECUSD_URL, get_current_price};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Serves exactly one Gemini-shaped trades response over plain HTTP and
+    /// returns the URL to hit it. One connection, then the socket closes.
+    async fn spawn_trades_server(body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            // Drain the request headers; the content is irrelevant to the stub.
+            let mut buf = [0u8; 2048];
+            let _ = sock.read(&mut buf).await;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            sock.write_all(response.as_bytes()).await.unwrap();
+            sock.flush().await.unwrap();
+        });
+        format!("http://{addr}/v1/trades/zecusd")
+    }
+
+    /// The clearnet fetch (`socks5_proxy = None`) performs the real HTTP round
+    /// trip, deserializes the Gemini trades payload, and returns the median of
+    /// the eleven trades (index 5 of the sorted list). Eleven deliberately
+    /// out-of-order prices 100..=110 make the median 105 and prove the sort.
+    #[tokio::test]
+    async fn clearnet_fetch_returns_median_price() {
+        let body = r#"[
+            {"price":"110","timestamp":1},
+            {"price":"100","timestamp":2},
+            {"price":"105","timestamp":3},
+            {"price":"101","timestamp":4},
+            {"price":"109","timestamp":5},
+            {"price":"102","timestamp":6},
+            {"price":"108","timestamp":7},
+            {"price":"103","timestamp":8},
+            {"price":"107","timestamp":9},
+            {"price":"104","timestamp":10},
+            {"price":"106","timestamp":11}
+        ]"#;
+        let url = spawn_trades_server(body).await;
+
+        let price = get_current_price(None, &url)
+            .await
+            .expect("the clearnet fetch parses a valid trades response");
+
+        assert_eq!(
+            price.price_usd, 105.0,
+            "the returned price is the median (index 5) of the eleven sorted trades"
+        );
+    }
+
+    /// Smoke test against the real Gemini endpoint over clearnet. Ignored by
+    /// default (needs network and a live third party); run with
+    /// `cargo test -p zingo-price -- --ignored` to confirm the live fetch.
+    #[tokio::test]
+    #[ignore = "hits the live Gemini API over clearnet"]
+    async fn live_gemini_clearnet_fetch_smoke() {
+        let price = get_current_price(None, GEMINI_ZECUSD_URL)
+            .await
+            .expect("the live Gemini fetch succeeds");
+        assert!(
+            price.price_usd > 0.0 && price.price_usd.is_finite(),
+            "a live ZEC/USD price is positive and finite, got {}",
+            price.price_usd
+        );
+    }
 }

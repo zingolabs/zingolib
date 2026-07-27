@@ -12,13 +12,14 @@ license = "MIT"
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
-# rustls-tls-no-provider: never auto-selects a rustls CryptoProvider; the
-# fetch path installs aws-lc-rs (first-install-wins) before requesting. The
-# `socks` feature backs the optional Nym mixnet route (ADR 0011); the fetch
-# defaults to clearnet.
+# rustls-tls-webpki-roots-no-provider: bundles the webpki trust anchors (so
+# the TLS handshake to the price source verifies) but never auto-selects a
+# rustls CryptoProvider; the fetch path installs aws-lc-rs (first-install-wins)
+# before requesting. The `socks` feature backs the optional Nym mixnet route;
+# the fetch defaults to clearnet.
 reqwest = { workspace = true, default-features = false, features = [
     "cookies",
-    "rustls-tls-no-provider",
+    "rustls-tls-webpki-roots-no-provider",
     "json",
     "socks",
 ] }
@@ -27,3 +28,6 @@ rustls = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
