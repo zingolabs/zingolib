@@ -957,4 +957,108 @@ mod tests {
             );
         }
     }
+
+    /// The price-fetch error contract (ADR 0011, amendment 2026-07-23).
+    ///
+    /// Every way the mixnet-only price fetch can fail must arrive at the
+    /// API surface as a typed [`LightClientError`] variant with its source
+    /// chain intact: never prose in the data channel, never a silent
+    /// clearnet fallback. The route pre-flight variants
+    /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Bootstrapping,
+    /// Died}`) pair with `nym::route`'s own `resolve_route` tests; the
+    /// tests here pin the surface wiring and the transport leg.
+    #[cfg(feature = "nym")]
+    mod price_fetch_contract {
+        use crate::lightclient::LightClient;
+        use crate::lightclient::error::LightClientError;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        fn wallet() -> crate::wallet::LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// Mixnet Mode off is a typed refusal, not a clearnet fetch: the
+        /// route pre-flight runs before any network object is built, so no
+        /// packet leaves the process.
+        #[tokio::test]
+        async fn off_mode_is_a_typed_refusal() {
+            let client = LightClient::new_for_test(wallet()).await;
+
+            let error = client
+                .update_current_price()
+                .await
+                .expect_err("no proxy is attached, so the fetch must refuse");
+            assert!(
+                matches!(error, LightClientError::PriceFetchRequiresMixnet),
+                "the refusal must be typed, not prose: {error}"
+            );
+        }
+
+        /// A dead proxy endpoint surfaces as the typed transport variant
+        /// with the reqwest failure preserved inside it, so a consumer can
+        /// distinguish a connection failure from a TLS or HTTP failure by
+        /// inspection instead of parsing prose. The same value converts
+        /// into [`LightClientError::PriceError`] by `From`, which is the
+        /// exact wiring `LightClient::update_current_price`'s `?` uses.
+        #[tokio::test]
+        async fn dead_proxy_failure_is_typed_with_its_source_intact() {
+            // Bind then drop, so the port is closed when the fetch dials it.
+            let closed = {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                listener.local_addr().unwrap()
+            };
+
+            let mut wallet = wallet();
+            let error = wallet
+                .update_current_price(&closed.to_string())
+                .await
+                .expect_err("a closed port cannot serve a price");
+
+            match &error {
+                crate::wallet::error::PriceError::PriceError(
+                    zingo_price::PriceError::RequestFailed(request_error),
+                ) => {
+                    assert!(
+                        request_error.is_connect(),
+                        "the reqwest failure must keep its kind: {request_error}"
+                    );
+                }
+                other => panic!("the transport failure must arrive typed: {other}"),
+            }
+
+            let surfaced = LightClientError::from(error);
+            assert!(
+                matches!(surfaced, LightClientError::PriceError(_)),
+                "the API surface must report the same typed variant: {surfaced}"
+            );
+        }
+
+        /// A black-holed proxy (the TCP connect completes in the kernel's
+        /// backlog, but no SOCKS5 reply ever comes) hangs the fetch
+        /// indefinitely: the reqwest client is built with no timeout, so
+        /// this failure mode is the one the error enum never reports. This
+        /// test documents that gap. If a client timeout is added, the hang
+        /// arm below starts failing and this test should flip to asserting
+        /// the typed timeout error instead.
+        #[tokio::test]
+        async fn black_holed_proxy_hangs_without_a_client_timeout() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+
+            let mut wallet = wallet();
+            let outcome = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                wallet.update_current_price(&addr.to_string()),
+            )
+            .await;
+
+            assert!(
+                outcome.is_err(),
+                "the fetch is expected to hang against a silent proxy; \
+                 it returned instead: {:?}",
+                outcome.expect("just checked")
+            );
+            drop(listener);
+        }
+    }
 }
