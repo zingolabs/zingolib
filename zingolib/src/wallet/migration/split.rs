@@ -24,8 +24,10 @@ pub(crate) const MARGINAL_FEE: u64 = 5_000;
 /// <https://zips.z.cash/zip-0318#notepreparationtransactions>): a split
 /// transaction's spends and outputs together must fit the budget, so each
 /// side's chunk is the budget less the one note on the other side (15
-/// spends merging into one note, or one note dividing into 15).
-fn side_budget(params: &MigrationParams) -> usize {
+/// spends merging into one note, or one note dividing into 15). The
+/// immediate migration chunks under the same law: many spends beside its
+/// single Ironwood output (see [`super::immediate`]).
+pub(crate) fn side_budget(params: &MigrationParams) -> usize {
     params.max_actions_per_split_tx.saturating_sub(1).max(1)
 }
 
@@ -33,8 +35,7 @@ fn side_budget(params: &MigrationParams) -> usize {
 /// at most this, and never manufactures an output worth at most this.
 /// Provisionally twice the marginal fee: a selected note must return strictly
 /// more than double the marginal action cost it adds, not merely break even.
-/// Shared by both migration paths: the private schedule reads it through
-/// [`MigrationParams`], and the immediate [`super::immediate`] reads it directly,
+/// Shared by both migration paths through [`MigrationParams::sweep_min`],
 /// so the two leave identical residuals.
 ///
 /// A local policy, not a ZIP 318 value: the ZIP leaves whether consuming a

@@ -88,5 +88,14 @@ economics to ZIP 317
 value (<https://zips.z.cash/zip-0318#whalehandling>), and the signing
 session target is wallet ergonomics.
 
+The immediate migration's chunk bound: the ZIP standardizes no shape
+for the non-private option and upstream implements no immediate path
+(ADR 0020), so the bound is local policy. Each immediate transaction's
+spends beside its single Ironwood output fit the same 16-action total
+budget the preparation transactions carry, through the same side-budget
+law, so every migration transaction the wallet emits shares one shape
+family; the fee a larger chunk would save is small even on a very
+fragmented wallet. Previously an independent 32-input cap.
+
 Whole-open-window sendability (ADR 0017): a client policy layered over
 the canonical schedule; the drawn target stays advisory.
