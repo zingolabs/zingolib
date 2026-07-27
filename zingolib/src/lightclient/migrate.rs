@@ -83,7 +83,7 @@ pub enum ImmediateMigrationPhase {
 
 /// A snapshot of an in-progress immediate Orchard→Ironwood migration, for rendering
 /// "built i/N, sent i/N". The immediate-migration counterpart to [`MigrationStatus`].
-/// `None` from [`LightClient::immediate_migration_status`] means no immediate migration is running.
+/// `None` from [`ImmediateMigrationProgressHandle::status`] means no immediate migration is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImmediateMigrationStatus {
     /// Total transactions in the plan (N), fixed when the immediate migration begins.
@@ -220,7 +220,7 @@ pub enum SplitPhase {
 /// A snapshot of the note-splitting round a [`LightClient::quick_split`] call
 /// is building, for rendering "built i/N, sent i/N" within that call. The
 /// Phase 1 counterpart to [`ImmediateMigrationStatus`]. `None` from
-/// [`LightClient::split_status`] means no round is running.
+/// [`SplitProgressHandle::status`] means no round is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitStatus {
     /// Transactions in this round (N), fixed when the round begins.
@@ -1620,7 +1620,7 @@ impl LightClient {
     ///
     /// Syncs the wallet before migrating. Consumers that own the sync
     /// lifecycle and keep a background sync running should call
-    /// [`Self::migrate_immediately_presynced`] instead, which migrates
+    /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
     pub async fn migrate_immediately(
         &mut self,
@@ -1721,8 +1721,8 @@ impl LightClient {
     /// This is the send-family entry point for the immediate migration, and
     /// the only immediate-migration entry point that crosses the UniFFI boundary:
     /// [`Self::migrate_immediately`] self-syncs and so collides with a
-    /// consumer's continuous background sync, and
-    /// [`Self::migrate_immediately_presynced`] takes a
+    /// consumer's continuous background sync, and the internal
+    /// `migrate_immediately_presynced` takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
     ///

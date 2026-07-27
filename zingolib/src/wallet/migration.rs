@@ -16,14 +16,17 @@
 //! wallet-fingerprinting output.
 //!
 //! The denominations are canonical so that migrated amounts collide across the
-//! whole migrating population instead of fingerprinting a wallet:
+//! whole migrating population instead of fingerprinting a wallet
+//! (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>):
 //!
-//! * Denominations are {0.001, 0.01, 0.1, 1, 10, 100} ZEC (powers of ten,
-//!   capped at `DENOM_CAP`, floored at `DUST_FLOOR`).
-//! * A balance is decomposed by decimal digit expansion, largest first.
-//! * Residue below the dust floor folds into fees. Notes worth at most
-//!   [`MigrationParams::sweep_min`] are stranded (moving them costs more than
-//!   they are worth).
+//! * Denominations are the values `n x 10^k` ZEC with `n` in {1, 2, 5},
+//!   from `MAX_RESIDUAL_VALUE` (0.01 ZEC) up to `DENOM_CAP` (10 000 ZEC),
+//!   both imported from the `zcash_pool_migration` reference crate.
+//! * A balance is decomposed greedily, largest denomination first.
+//! * Balance below `MAX_RESIDUAL_VALUE` stays unmigrated as the residual.
+//!   Notes worth at most [`MigrationParams::sweep_min`] are stranded
+//!   (moving them costs more than they are worth; the ZIP leaves that
+//!   economics to ZIP 317 and standardizes no sweep threshold).
 //!
 //! [`plan_migration`] is the pure planning entry point. It is deterministic
 //! and never touches the network, so callers (the one-call
@@ -32,7 +35,7 @@
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`immediate`], which shares nothing with
+//! over the private path above. That is the `immediate` module, which shares nothing with
 //! this two-phase design but the transaction builder.
 
 // The submodules carry a crate ceiling: the re-export block below is this
