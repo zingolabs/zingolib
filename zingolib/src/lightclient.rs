@@ -591,13 +591,31 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
-    /// mixnet when Mixnet Mode is ready, fails closed while the mode
-    /// bootstraps or after the proxy dies, and is refused (never routed over
-    /// clearnet) while the mode is toggled off.
-    #[cfg(feature = "nym")]
+    /// Update and return the current ZEC price in USD over clearnet.
+    ///
+    /// This is the default price-fetch route and works in every build,
+    /// including those without the `nym` feature. It contacts a third-party
+    /// price API directly, so it discloses the client IP and wallet-alive
+    /// timing to that party; a caller that wants to hide those routes the
+    /// fetch over the Nym mixnet with `update_current_price_over_mixnet`
+    /// (a `nym`-feature method, ADR 0011).
     pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Ok(self
+            .wallet()
+            .write()
+            .await
+            .update_current_price(None)
+            .await?)
+    }
+
+    /// Update and return the current ZEC price in USD over the Nym mixnet,
+    /// hiding the client IP from the price source (ADR 0011). Opt-in: the fetch
+    /// is routed through the mixnet when Mixnet Mode is ready, and fails closed
+    /// (never falling back to clearnet) while the mode bootstraps, after the
+    /// proxy dies, or while it is toggled off. For the clearnet default, use
+    /// [`Self::update_current_price`].
+    #[cfg(feature = "nym")]
+    pub async fn update_current_price_over_mixnet(&self) -> Result<f32, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
             crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
             crate::nym::MixnetRoute::Clearnet => {
@@ -609,17 +627,8 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .update_current_price(&socks5_addr)
+            .update_current_price(Some(&socks5_addr))
             .await?)
-    }
-
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
-    /// the Nym mixnet, so a build without the `nym` feature refuses: the
-    /// fetch code is not compiled in at all.
-    #[cfg(not(feature = "nym"))]
-    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
-        Err(LightClientError::PriceFetchUnsupported)
     }
 
     /// Creates an additional ZIP-32 account derived from the wallet seed.

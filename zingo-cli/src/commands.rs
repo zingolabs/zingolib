@@ -670,8 +670,10 @@ impl Command for CurrentPriceCommand {
         indoc! {r"
             Fetch the current ZEC price. USD only.
 
-            Travels over the Nym mixnet and nothing else, so it needs the `nym`
-            feature and Mixnet Mode ready. Refused rather than sent over clearnet.
+            Fetches over clearnet, which discloses the client IP and wallet-alive
+            timing to the price source. A `nym`-feature build can instead route
+            the fetch over the Nym mixnet (see the `nym` command) via the
+            library's opt-in `update_current_price_over_mixnet`.
 
             Usage:
             current_price
