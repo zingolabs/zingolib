@@ -8,9 +8,6 @@
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
-//! The lifecycle wiring for that flow (which call belongs to which app
-//! moment, consent and disclosure UX, scheduling background wakes) is laid
-//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -1734,7 +1731,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,

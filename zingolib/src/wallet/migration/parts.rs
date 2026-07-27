@@ -132,7 +132,7 @@ pub struct PartRecord {
     /// were drawn separately (inner version 3 and below) whose transaction is
     /// not yet signed; the next placement, or
     /// [`crate::wallet::LightWallet::refresh_part_witnesses`], draws one.
-    pub anchor_bucket: Option<u64>,
+    pub(crate) anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
     /// prevents the server from seeing all parts cluster at the boundary.
@@ -212,7 +212,7 @@ impl PartRecord {
     /// begins). Clears every scheduling artifact. The binding to its note
     /// stands.
     #[allow(clippy::result_large_err)]
-    pub fn unassign(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn unassign(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned"], PartState::Bound)?;
         self.bucket_index = None;
         self.anchor_bucket = None;
@@ -315,7 +315,7 @@ impl PartRecord {
 /// A part's proving closure: builds, proves, and signs the part's
 /// transaction, returning its txid and raw bytes. Takes ownership of all
 /// needed data. No wallet reference is captured. Safe to call on any thread.
-pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
 /// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
 /// proving closure or the reason the part must be skipped.
@@ -435,7 +435,7 @@ impl crate::wallet::LightWallet {
     /// maximum across every part, which forced the whole schedule up to the
     /// newest note's boundary; each part now clears only its own.
     #[must_use]
-    pub fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
+    pub(crate) fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
         let bound = part.note?;
         self.wallet_transactions
             .get(&bound.output_id.txid())?

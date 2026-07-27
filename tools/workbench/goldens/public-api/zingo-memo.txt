@@ -1,0 +1,12 @@
+pub mod zingo_memo
+pub enum zingo_memo::ParsedMemo
+pub zingo_memo::ParsedMemo::Version0
+pub zingo_memo::ParsedMemo::Version0::uas: alloc::vec::Vec<zcash_keys::address::UnifiedAddress>
+pub zingo_memo::ParsedMemo::Version1
+pub zingo_memo::ParsedMemo::Version1::rejection_address_indexes: alloc::vec::Vec<u32>
+pub zingo_memo::ParsedMemo::Version1::uas: alloc::vec::Vec<zcash_keys::address::UnifiedAddress>
+pub fn zingo_memo::create_wallet_internal_memo_version_0(consensus_parameters: &impl zcash_protocol::consensus::Parameters, uas: &[zcash_keys::address::UnifiedAddress]) -> std::io::error::Result<[u8; 511]>
+pub fn zingo_memo::create_wallet_internal_memo_version_1(consensus_parameters: &impl zcash_protocol::consensus::Parameters, uas: &[zcash_keys::address::UnifiedAddress], refund_address_indexes: &[u32]) -> std::io::error::Result<[u8; 511]>
+pub fn zingo_memo::parse_zingo_memo(memo: [u8; 511]) -> std::io::error::Result<zingo_memo::ParsedMemo>
+pub fn zingo_memo::read_unified_address_from_raw_encoding<R: std::io::Read>(reader: R) -> std::io::error::Result<zcash_keys::address::UnifiedAddress>
+pub fn zingo_memo::write_unified_address_to_raw_encoding<W: std::io::Write>(consensus_parameters: &impl zcash_protocol::consensus::Parameters, ua: &zcash_keys::address::UnifiedAddress, writer: W) -> std::io::error::Result<()>

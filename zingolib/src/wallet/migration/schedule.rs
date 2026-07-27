@@ -26,7 +26,7 @@ use super::parts::{PartId, PartRecord, PartState};
 /// Picks a random block within `[boundary, boundary + M)` as the broadcast
 /// target for one part, spreading sends across the window instead of
 /// clustering them at the boundary.
-pub fn random_target_in_bucket(
+fn random_target_in_bucket(
     bucket: u64,
     rng: &mut impl Rng,
     params: &MigrationParams,
@@ -40,17 +40,17 @@ pub fn random_target_in_bucket(
 const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
 /// `EXPIRY_MODULUS`: 30 days of blocks at the 75-second target spacing.
-pub const EXPIRY_MODULUS: u32 = 34_560;
+const EXPIRY_MODULUS: u32 = 34_560;
 
 /// The canonical validity window past an expiry bucket's opening.
-pub const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
+const EXPIRY_WINDOW: u32 = 2 * EXPIRY_MODULUS;
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
 /// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
 /// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
 /// coarse period.
-pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
+pub(crate) fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
     let height = u32::from(broadcast_height);
     BlockHeight::from_u32(height - (height % EXPIRY_MODULUS) + EXPIRY_WINDOW)
 }
@@ -63,7 +63,7 @@ pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
 /// The boundary that opens `bucket_index`. It is the anchor height of every
 /// part whose *anchor bucket* this is, which is never the same bucket the
 /// part broadcasts in.
-pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
+pub(crate) fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
     BlockHeight::from_u32(
         u32::try_from(bucket_index * u64::from(bucket_modulus))
             .expect("bucket boundaries fit a block height"),
@@ -71,7 +71,8 @@ pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
 }
 
 /// The most recent boundary at or below `height`.
-pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
+#[cfg(test)]
+fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
 
@@ -80,7 +81,7 @@ pub fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeigh
 /// anchor may be (16 buckets is about two days at `M` = 144). Deliberately
 /// not a [`MigrationParams`] field: it does not feed the consent hash, so
 /// adopting it costs no existing consent.
-pub const ANCHOR_AGE_CAP: u32 = 16;
+const ANCHOR_AGE_CAP: u32 = 16;
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
 /// one part.
@@ -91,7 +92,7 @@ pub const ANCHOR_AGE_CAP: u32 = 16;
 /// note, because a note has no Merkle path under a root that predates it.
 /// Both are ZIP 318 candidate-set conditions (a) and (b).
 #[derive(Debug, Clone, Copy)]
-pub struct AnchorFloor {
+pub(crate) struct AnchorFloor {
     activation: PoolActivation,
     note_confirmed_at: Option<BlockHeight>,
 }
@@ -103,7 +104,7 @@ impl AnchorFloor {
     /// [`crate::wallet::LightWallet::prepare_part`] declines it on that
     /// ground rather than this one.
     #[must_use]
-    pub fn new(activation: PoolActivation, note_confirmed_at: Option<BlockHeight>) -> Self {
+    pub(crate) fn new(activation: PoolActivation, note_confirmed_at: Option<BlockHeight>) -> Self {
         AnchorFloor {
             activation,
             note_confirmed_at,
@@ -113,7 +114,7 @@ impl AnchorFloor {
     /// The lowest bucket this part may anchor at: the higher of the two
     /// floors.
     #[must_use]
-    pub fn lowest_anchor_bucket(&self, bucket_modulus: u32) -> u64 {
+    fn lowest_anchor_bucket(&self, bucket_modulus: u32) -> u64 {
         let era = bucket_index(self.activation.height(), bucket_modulus) + 1;
         let anchorability = self
             .note_confirmed_at
@@ -130,7 +131,7 @@ impl AnchorFloor {
     /// above its anchor, so a scheduled window clears the activation by two
     /// buckets without being asked to.
     #[must_use]
-    pub fn earliest_window(&self, bucket_modulus: u32) -> u64 {
+    fn earliest_window(&self, bucket_modulus: u32) -> u64 {
         self.lowest_anchor_bucket(bucket_modulus) + 1
     }
 }
@@ -145,7 +146,7 @@ impl AnchorFloor {
 ///
 /// Counting stops one past [`ANCHOR_AGE_CAP`], which the caller rejects
 /// anyway, so a single 64-bit draw always suffices and the loop is bounded.
-pub fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
+fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
     // Each bit of one fresh word is one fair coin flip, as upstream's
     // `draw_anchor_age` does it. The cap is far below 64, so one word is
     // always enough and the loop needs no refill.
@@ -169,7 +170,7 @@ pub fn draw_anchor_age(rng: &mut impl Rng) -> u32 {
 /// Age one always yields `window − 1`, the highest candidate, so whenever the
 /// set is non-empty the rejection loop terminates with probability one half
 /// per draw.
-pub fn draw_anchor_bucket(
+pub(crate) fn draw_anchor_bucket(
     window: u64,
     floor: &AnchorFloor,
     rng: &mut impl Rng,
@@ -203,7 +204,7 @@ pub fn draw_anchor_bucket(
 /// This is the single bucket chooser: every site that schedules a part
 /// into a future bucket derives the bucket from here, never from raw
 /// arithmetic.
-pub fn first_permitted_bucket(
+pub(crate) fn first_permitted_bucket(
     now_height: BlockHeight,
     floor: &AnchorFloor,
     params: &MigrationParams,
@@ -222,7 +223,7 @@ pub fn first_permitted_bucket(
 /// the constraint is which consensus branch the window's implied target
 /// commits to, not whether a Merkle path exists (issue #2493, finding 6,
 /// and ADR 0014's corrected reason).
-pub fn first_ironwood_era_window_boundary(
+pub(crate) fn first_ironwood_era_window_boundary(
     activation: PoolActivation,
     bucket_modulus: u32,
 ) -> BlockHeight {
@@ -235,7 +236,7 @@ pub fn first_ironwood_era_window_boundary(
 /// The first bucket whose boundary sits at or above `height`. The modulus
 /// is nonzero by the [`MigrationParams::bucket_modulus`] invariant
 /// (enforced at store read), as in every bucket computation.
-pub fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
+fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
     u64::from(u32::from(height)).div_ceil(u64::from(bucket_modulus))
 }
 
@@ -253,7 +254,7 @@ pub fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
 /// into a later window while keeping an old anchor would silently age past
 /// [`ANCHOR_AGE_CAP`]; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
-pub fn place(
+pub(crate) fn place(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
@@ -276,7 +277,7 @@ pub fn place(
 /// Disclosing the send time is the accepted cost of catch-up; handing the
 /// part an empty cohort as well is not.
 #[allow(clippy::result_large_err)]
-pub fn place_immediate(
+pub(crate) fn place_immediate(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
@@ -337,7 +338,7 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
 /// parts, because windows are shared even though anchors are not: a window
 /// no part could anchor under would strand the whole batch.
 #[allow(clippy::result_large_err)]
-pub fn plan_schedule(
+pub(crate) fn plan_schedule(
     parts: &mut [PartRecord],
     now_height: BlockHeight,
     activation: PoolActivation,
@@ -421,7 +422,7 @@ pub struct BroadcastWindow {
 
 /// Rough unix time `height` is expected to be mined, extrapolated from
 /// `now_height` at the target block spacing (past heights estimate as now).
-pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
+fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
     let blocks_until = u64::from(u32::from(height).saturating_sub(u32::from(now_height)));
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
@@ -438,7 +439,7 @@ pub fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix:
 /// read, so a status can never advertise a part a send would decline. It does
 /// *not* fold in earlier, missed windows: an overdue part sits in a bucket
 /// below `current_bucket` and is catch-up's business.
-pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
+pub(crate) fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
     matches!(part.state, PartState::Assigned | PartState::Signed)
         && part.bucket_index == Some(current_bucket)
 }
@@ -447,7 +448,7 @@ pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has
 /// already passed are reconciliation's business and are not listed here.
-pub fn upcoming_windows(
+pub(crate) fn upcoming_windows(
     parts: &[PartRecord],
     now_height: BlockHeight,
     now_unix: u64,
@@ -519,7 +520,7 @@ pub struct WindowReport {
 /// calendar exists (with zero tallies) before any migration is scheduled.
 /// Pure over the given parts and tip. Parts not yet assigned to a bucket
 /// have no window and are not listed.
-pub fn window_timeline(
+pub(crate) fn window_timeline(
     parts: &[PartRecord],
     now_height: BlockHeight,
     params: &MigrationParams,

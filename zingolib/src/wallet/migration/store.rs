@@ -26,7 +26,7 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 const INNER_VERSION: u8 = 4;
 
 /// Serializes the migration section.
-pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
+pub(crate) fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
     writer.write_u8(INNER_VERSION)?;
 
     let params = &state.params;
@@ -79,7 +79,7 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
 }
 
 /// Deserializes the migration section.
-pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
+pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
     let inner_version = reader.read_u8()?;
     if inner_version > INNER_VERSION {
         return Err(Error::new(
