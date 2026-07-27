@@ -15,3 +15,17 @@ deny = [
     { crate = "boring", reason = "Use rustls or other pure-Rust TLS implementations instead" },
     { crate = "boring-sys", reason = "Use rustls or other pure-Rust TLS implementations instead" },
 ]
+
+# TLS-backend policy: aws-lc-rs, never ring. Every backend we CHOOSE selects
+# aws-lc-rs (rustls prefer-post-quantum, tokio-rustls aws_lc_rs, tonic
+# tls-aws-lc). `ring` is not banned above only because two transitive sources
+# we cannot sever pull it, both ratified exceptions (ADR 0011, 2026-07-21):
+#   1. zcash_proofs's parameter downloader (minreq -> rustls 0.21 -> ring), a
+#      build-time transitive of the ironwood stack, unrelated to nym.
+#   2. nym-sdk's cosmos credential core (nym-client-core -> ... -> rustls 0.21
+#      -> ring), confined to the standalone zingo-netutils nym build.
+# Both stem from rustls 0.21, which predates rustls's aws-lc-rs backend (0.23);
+# cutting either needs an upstream bump or a barred fork/[patch]. Promoting this
+# to an enforced ban with a `wrappers` allowance for those parents is a tracked
+# follow-up; run `cargo tree -i ring` when touching TLS deps and keep new ring
+# sources out.

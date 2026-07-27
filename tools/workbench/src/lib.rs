@@ -56,6 +56,23 @@ pub fn read(path: &Path) -> Result<String, Vec<String>> {
     std::fs::read_to_string(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
 }
 
+/// The value of a `--dest <dir>` or `--dest=<dir>` argument, if present.
+pub fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if let Some(dir) = arg.strip_prefix("--dest=") {
+            return Ok(Some(PathBuf::from(dir)));
+        }
+        if arg == "--dest" {
+            let dir = iter
+                .next()
+                .ok_or_else(|| vec!["--dest requires a directory argument".to_string()])?;
+            return Ok(Some(PathBuf::from(dir)));
+        }
+    }
+    Ok(None)
+}
+
 /// The pinned, validated rustc channel from `<root>/rust-toolchain.toml`.
 ///
 /// Single source of truth for `RUST_VERSION`. Rejects any non-numeric channel
@@ -115,6 +132,29 @@ mod tests {
         assert_eq!(channel_value("# channel = \"x\""), None);
         assert_eq!(channel_value("components = [\"clippy\"]"), None);
         assert_eq!(channel_value("[toolchain]"), None);
+    }
+
+    #[test]
+    fn parses_separate_and_joined_dest() {
+        let sep = vec![
+            "--release".to_string(),
+            "--dest".to_string(),
+            "/x".to_string(),
+        ];
+        assert_eq!(parse_dest(&sep).unwrap(), Some(PathBuf::from("/x")));
+
+        let joined = vec!["--dest=/y".to_string()];
+        assert_eq!(parse_dest(&joined).unwrap(), Some(PathBuf::from("/y")));
+    }
+
+    #[test]
+    fn no_dest_is_none() {
+        assert_eq!(parse_dest(&["--release".to_string()]).unwrap(), None);
+    }
+
+    #[test]
+    fn dest_without_value_is_an_error() {
+        assert!(parse_dest(&["--dest".to_string()]).is_err());
     }
 
     #[test]

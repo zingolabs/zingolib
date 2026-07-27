@@ -398,6 +398,20 @@ args = [
     "${@}",
 ]
 
+[tasks.bundle-android-shim]
+description = "Release-build the mixnet proxy shim (zingo-nym-proxy-ffi, zingo-netutils workspace) for every Android ABI zingo-mobile ships, regenerate the Kotlin bindings, and lay out target/android-shim/{jniLibs,kotlin} for packaging (#2513). Pass --abi <name> to limit ABIs, or --dest <dir> for another location. Requires cargo-ndk, an NDK, and the matching rustup targets."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "bundle-android-shim",
+    "--",
+    "${@}",
+]
+
 [tasks.rerun]
 clear = true
 description = "Rerun tests that failed or did not complete in the latest recorded nextest run"

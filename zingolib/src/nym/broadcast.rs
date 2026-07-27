@@ -8,16 +8,16 @@
 //! success path). Only if that fails to confirm delivery does the send
 //! escalate, submitting to two fresh indexers in parallel, then three, each
 //! round gated on the complete failure of the round before it. The fan-out
-//! stops at [`MAX_BROADCAST_WITNESSES`] distinct indexers, which the one-two-
+//! stops at `MAX_BROADCAST_WITNESSES` distinct indexers, which the one-two-
 //! three schedule reaches at the end of the third round. Within a round the
 //! first indexer to confirm delivery wins and the rest are abandoned. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
 //! This orchestrates the shared per-submission policy (retry,
 //! duplicate-in-mempool, queued-probe, delivery-check) rather than
-//! duplicating it: each arm is a call to
-//! [`resilient_transmit`](crate::lightclient::transmit::resilient_transmit),
-//! the same policy the clearnet path runs. The escalation logic itself is
+//! duplicating it: each arm is a call to `resilient_transmit`
+//! (`crate::lightclient::transmit`, crate-private, so no intra-doc link
+//! from this public module), the same policy the clearnet path runs. The escalation logic itself is
 //! the shared pure racing planner ([`zingo_netutils::arm_race`]) under its
 //! serially gated [`LaunchPolicy::EscalatingRounds`]. This module drives the
 //! planner's actions over borrowed futures and keeps the ratified schedule.

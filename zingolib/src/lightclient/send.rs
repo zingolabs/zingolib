@@ -220,7 +220,16 @@ async fn transmit_one_transaction(
         }
         #[cfg(feature = "nym")]
         Some(socks5_addr) => {
-            mixnet_fanout_transmit(socks5_addr, tx_bytes, height, txid, progress, history).await
+            mixnet_fanout_transmit(
+                socks5_addr,
+                indexer.uri(),
+                tx_bytes,
+                height,
+                txid,
+                progress,
+                history,
+            )
+            .await
         }
         #[cfg(not(feature = "nym"))]
         Some(_) => Err("a mixnet route requires the nym feature".to_string()),
@@ -232,9 +241,15 @@ async fn transmit_one_transaction(
 /// against one Broadcast Indexer through the SOCKS5 proxy, and the fan-out
 /// escalates round by round until an indexer confirms delivery or the witness
 /// cap is reached.
+///
+/// The draw comes from [`eligible_witnesses`], never the raw curated list: a
+/// witness is never the sync indexer's operator (ADR 0022), because that party
+/// already holds the wallet's address set and must not receive the broadcast
+/// too. An emptied pool refuses rather than falling back.
 #[cfg(feature = "nym")]
 async fn mixnet_fanout_transmit(
     socks5_addr: &str,
+    sync_indexer: &http::Uri,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
@@ -242,9 +257,9 @@ async fn mixnet_fanout_transmit(
     history: &IndexerHistoryHandle,
 ) -> Result<String, String> {
     use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
-    use crate::nym::broadcast_indexers::broadcast_indexers;
+    use crate::nym::broadcast_indexers::eligible_witnesses;
 
-    let indexers = broadcast_indexers();
+    let indexers = eligible_witnesses(sync_indexer).map_err(|e| e.to_string())?;
     let run_arm = |indexer: http::Uri| {
         let socks5_addr = socks5_addr.to_string();
         let tx_bytes = tx_bytes.to_vec();
