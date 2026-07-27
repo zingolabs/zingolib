@@ -653,12 +653,14 @@ mod tests {
         }
     }
 
-    /// The anchor age is never zero: a part must never prove against the
-    /// boundary of the window it is broadcasting in. That boundary is the
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
-    /// cap. The rejection loop, not the raw geometric draw, is what enforces
-    /// the lower end.
+    /// cap. The first bound is the age-never-zero rule: a part must never
+    /// prove against the boundary of the window it is broadcasting in,
+    /// because that boundary is the newest tree state there is and its
+    /// cohort has not accumulated yet. The delegated `draw_anchor_boundary`
+    /// enforces every one of these bounds now that the local rejection loop
+    /// is retired; this test pins that contract from the caller's side.
     #[test]
     fn drawn_anchors_land_inside_the_candidate_set() {
         let params = params();
@@ -1153,9 +1155,20 @@ mod tests {
         /// retired local implementation under seeded rngs immediately before
         /// the swap to `draw_anchor_boundary`, so a divergence here means the
         /// delegated draw no longer reproduces the behavior the mirror had.
+        ///
+        /// The generator is pinned to [`rand_chacha::ChaCha12Rng`] rather
+        /// than spelled `StdRng`, because the vectors are a property of the
+        /// exact random stream: at capture time rand 0.8's `StdRng` was
+        /// ChaCha12, but `StdRng` is documented as free to change algorithms
+        /// across rand versions, and such a change would fail these goldens
+        /// spuriously. If this test ever goes red, the delegated draw has
+        /// diverged (or the pinned generator itself moved); never repair it
+        /// by re-capturing the vectors from the delegated implementation,
+        /// because vectors captured from the code under test pin nothing.
         #[test]
         fn anchor_draw_matches_the_retired_mirror_goldens() {
             use rand::SeedableRng;
+            use rand_chacha::ChaCha12Rng;
             let activation = PoolActivation::new_for_test(BlockHeight::from_u32(1_000));
             let expected: [(Option<u64>, Option<u64>, Option<u64>); 6] = [
                 (Some(99), Some(99), Some(51)),
@@ -1166,7 +1179,7 @@ mod tests {
                 (Some(98), Some(99), Some(52)),
             ];
             for (seed, expected) in expected.iter().enumerate() {
-                let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
+                let mut rng = ChaCha12Rng::seed_from_u64(seed as u64);
                 let floor_loose = AnchorFloor::new(activation, None);
                 let floor_note =
                     AnchorFloor::new(activation, Some(BlockHeight::from_u32(50 * 144 + 3)));

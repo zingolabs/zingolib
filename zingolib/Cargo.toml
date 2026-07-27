@@ -97,6 +97,7 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
+rand_chacha = "0.3"
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }

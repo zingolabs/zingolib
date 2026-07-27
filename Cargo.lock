@@ -5093,6 +5093,7 @@ dependencies = [
  "proptest",
  "prost",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rust-embed",
  "sapling-crypto",
  "secp256k1 0.31.1",
