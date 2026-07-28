@@ -155,6 +155,25 @@ fn messages_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn balance_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_balance);
+    // Every pool balance of the fresh wallet is zero, and all four pools
+    // (including Ironwood) report.
+    let mut fields = 0;
+    for (field, value) in answer.entries() {
+        assert_eq!(value.as_u64(), Some(0), "{field} of a fresh wallet: {answer}");
+        fields += 1;
+    }
+    assert_eq!(fields, 12, "three figures for each of four pools: {answer}");
+    assert!(
+        answer["total_ironwood_balance"].as_u64().is_some(),
+        "the Ironwood pool reports: {answer}"
+    );
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

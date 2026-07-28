@@ -1916,7 +1916,7 @@ pub fn get_messages(address: String) -> Result<String, ZingolibError> {
 }
 
 pub fn get_balance() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             match lightclient.account_balance(AccountId::ZERO).await {
                 Ok(bal) => Ok(json::JsonValue::from(bal).pretty(2)),
