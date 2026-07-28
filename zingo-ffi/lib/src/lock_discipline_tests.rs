@@ -163,7 +163,11 @@ fn balance_answers_beside_a_held_read_guard() {
     // (including Ironwood) report.
     let mut fields = 0;
     for (field, value) in answer.entries() {
-        assert_eq!(value.as_u64(), Some(0), "{field} of a fresh wallet: {answer}");
+        assert_eq!(
+            value.as_u64(),
+            Some(0),
+            "{field} of a fresh wallet: {answer}"
+        );
         fields += 1;
     }
     assert_eq!(fields, 12, "three figures for each of four pools: {answer}");
@@ -194,6 +198,18 @@ fn total_value_to_address_answers_beside_a_held_read_guard() {
     assert!(
         answer.is_object() && answer.is_empty(),
         "the fixture wallet has sent no value: {answer}"
+    );
+}
+
+#[test]
+fn total_spends_to_address_answer_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_total_spends_to_address);
+    // No sends yet, so the per-address tally is an empty object.
+    assert!(
+        answer.is_object() && answer.is_empty(),
+        "the fixture wallet has spent nothing: {answer}"
     );
 }
 

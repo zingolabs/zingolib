@@ -1949,7 +1949,7 @@ pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
                 Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
