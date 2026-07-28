@@ -3812,6 +3812,8 @@ mod tests {
         #[test]
         fn migration_planner_errors_when_the_horizon_withholds_every_note() {
             let mut wallet = SyntheticWalletBuilder::new(SEED)
+                // The builder confirms this note in block 2, its first
+                // synthetic note slot, deep below the stall gap.
                 .orchard_note(1_234_567_890)
                 .tip(360)
                 .build();
@@ -3828,6 +3830,8 @@ mod tests {
         #[test]
         fn immediate_planner_errors_when_the_horizon_withholds_every_note() {
             let mut wallet = SyntheticWalletBuilder::new(SEED)
+                // The builder confirms this note in block 2, its first
+                // synthetic note slot, deep below the stall gap.
                 .orchard_note(1_234_567_890)
                 .tip(360)
                 .build();
