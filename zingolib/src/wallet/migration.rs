@@ -16,14 +16,17 @@
 //! wallet-fingerprinting output.
 //!
 //! The denominations are canonical so that migrated amounts collide across the
-//! whole migrating population instead of fingerprinting a wallet:
+//! whole migrating population instead of fingerprinting a wallet
+//! (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>):
 //!
-//! * Denominations are {0.001, 0.01, 0.1, 1, 10, 100} ZEC (powers of ten,
-//!   capped at `DENOM_CAP`, floored at `DUST_FLOOR`).
-//! * A balance is decomposed by decimal digit expansion, largest first.
-//! * Residue below the dust floor folds into fees. Notes worth at most
-//!   [`MigrationParams::sweep_min`] are stranded (moving them costs more than
-//!   they are worth).
+//! * Denominations are the values `n x 10^k` ZEC with `n` in {1, 2, 5},
+//!   from `MAX_RESIDUAL_VALUE` (0.01 ZEC) up to `DENOM_CAP` (10 000 ZEC),
+//!   both imported from the `zcash_pool_migration` reference crate.
+//! * A balance is decomposed greedily, largest denomination first.
+//! * Balance below `MAX_RESIDUAL_VALUE` stays unmigrated as the residual.
+//!   Notes worth at most [`MigrationParams::sweep_min`] are stranded
+//!   (moving them costs more than they are worth; the ZIP leaves that
+//!   economics to ZIP 317 and standardizes no sweep threshold).
 //!
 //! [`plan_migration`] is the pure planning entry point. It is deterministic
 //! and never touches the network, so callers (the one-call
@@ -32,38 +35,39 @@
 //!
 //! ZIP 318 also permits an **immediate** migration, a single transfer with no
 //! delay and minimal privacy, as an explicit alternative the user may choose
-//! over the private path above. That is [`immediate`], which shares nothing with
+//! over the private path above. That is the `immediate` module, which shares nothing with
 //! this two-phase design but the transaction builder.
 
-pub mod broadcast;
-pub mod immediate;
-pub mod params;
+// The submodules carry a crate ceiling: the re-export block below is this
+// module's whole public surface, so a new public name is a deliberate act
+// here rather than a side effect of `pub` in a submodule. Two modules stay
+// public because the mobile consumer imports through their paths
+// (`parts::PartState`, `parts::SigningStrategy`, `split::plan_hash`);
+// their items are tightened individually instead.
+pub(crate) mod broadcast;
+pub(crate) mod immediate;
+pub(crate) mod params;
 pub mod parts;
-pub mod quantize;
-pub mod reconcile;
-pub mod schedule;
+pub(crate) mod quantize;
+pub(crate) mod reconcile;
+pub(crate) mod schedule;
 pub mod split;
-pub mod store;
+pub(crate) mod store;
 
 pub use broadcast::{BroadcastClient, BroadcastError};
-pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx, immediate_migration_fee};
+pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx};
 pub use params::MigrationParams;
 pub use parts::{
-    BoundNote, BoundaryWitness, MaterializeOutcome, PartId, PartRecord, PartState, PrepareResult,
-    SigningStrategy, SkipReason,
+    BoundNote, BoundaryWitness, PartId, PartRecord, PartState, PrepareResult, SigningStrategy,
 };
 pub use quantize::{Denominations, decompose};
+pub(crate) use reconcile::due_now_parts;
 pub use reconcile::{
-    ChainView, PartClass, RecommendedAction, ReconcileReport, due_now_parts, reconcile,
+    ChainView, PartAssessment, PartClass, RecommendedAction, ReconcileReport, reconcile,
 };
-pub use schedule::{
-    BroadcastWindow, WindowReport, estimated_unix_at, part_in_current_bucket, plan_schedule,
-    upcoming_windows, window_timeline,
-};
-pub use split::{
-    CANONICAL_PART_FEE, MigrationPlan, NoteSplitTx, note_split_fee, part_denomination, plan_hash,
-    plan_migration,
-};
+pub use schedule::{BroadcastWindow, WindowReport, bucket_index};
+pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
+pub use split::{MigrationPlan, NoteSplitTx, plan_hash, plan_migration};
 
 use zcash_primitives::transaction::TxId;
 

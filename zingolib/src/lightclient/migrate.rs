@@ -8,9 +8,6 @@
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::broadcast_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
-//! The lifecycle wiring for that flow (which call belongs to which app
-//! moment, consent and disclosure UX, scheduling background wakes) is laid
-//! out in `docs/mobile-ironwood-migration.md`.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -86,7 +83,7 @@ pub enum ImmediateMigrationPhase {
 
 /// A snapshot of an in-progress immediate Orchard→Ironwood migration, for rendering
 /// "built i/N, sent i/N". The immediate-migration counterpart to [`MigrationStatus`].
-/// `None` from [`LightClient::immediate_migration_status`] means no immediate migration is running.
+/// `None` from [`ImmediateMigrationProgressHandle::status`] means no immediate migration is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImmediateMigrationStatus {
     /// Total transactions in the plan (N), fixed when the immediate migration begins.
@@ -223,7 +220,7 @@ pub enum SplitPhase {
 /// A snapshot of the note-splitting round a [`LightClient::quick_split`] call
 /// is building, for rendering "built i/N, sent i/N" within that call. The
 /// Phase 1 counterpart to [`ImmediateMigrationStatus`]. `None` from
-/// [`LightClient::split_status`] means no round is running.
+/// [`SplitProgressHandle::status`] means no round is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitStatus {
     /// Transactions in this round (N), fixed when the round begins.
@@ -568,8 +565,10 @@ pub struct MigrationStatus {
     /// chain is currently inside is reported by [`Self::due_now`], not here.
     pub upcoming_windows: Vec<BroadcastWindow>,
     /// The batch the client can broadcast right now, or `None` when a send
-    /// this instant would build nothing (no migration, wrong phase, every
-    /// part still ahead of its random target, or all parts confirmed).
+    /// this instant would build nothing (no migration, wrong phase, no part
+    /// assigned to the window the chain is inside, or all parts confirmed).
+    /// A part's random target does not gate this: it is due for its whole
+    /// open window (ADR 0017).
     /// Unlike [`Self::upcoming_windows`] this reports the window the chain is
     /// currently *inside*, which `upcoming_windows` structurally cannot carry.
     pub due_now: Option<DueBatch>,
@@ -666,6 +665,7 @@ impl LightClient {
                 &mut state.parts,
                 now_height,
                 activation,
+                |part| wallet.bound_note_confirmed_at(part),
                 &state.params,
                 &mut rand::rngs::OsRng,
             )?;
@@ -780,6 +780,7 @@ impl LightClient {
                         &mut state.parts,
                         now_height,
                         activation,
+                        |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
                         &mut rand::rngs::OsRng,
                     )?;
@@ -891,6 +892,7 @@ impl LightClient {
                         &mut state.parts,
                         now_height,
                         activation,
+                        |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
                         &mut rand::rngs::OsRng,
                     )?;
@@ -908,9 +910,10 @@ impl LightClient {
     /// While the mode is on, parts travel ONLY over the mixnet (failing
     /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
     /// proxy bootstraps or after it dies) to one Broadcast Indexer drawn at
-    /// random per submission, with the synchronization endpoint's host
-    /// forbidden as a target (a `migration_broadcast_uri` on that host is
-    /// refused). Clearnet carries parts only when the user deliberately
+    /// random per submission, with the synchronization endpoint's operator
+    /// forbidden as a target (ADR 0022: a `migration_broadcast_uri` on the
+    /// sync operator's domain is refused, and the draw excludes that
+    /// operator). Clearnet carries parts only when the user deliberately
     /// toggled the mode off, or in a build without the `nym` feature: then
     /// the dedicated `migration_broadcast_uri` when configured, else the
     /// synchronization endpoint with a logged correlation warning, else
@@ -920,13 +923,10 @@ impl LightClient {
     ) -> Result<broadcast_route::RoutedBroadcastClient, LightClientError> {
         #[cfg(feature = "nym")]
         if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
-            let sync_host = self
-                .indexer_uri()
-                .and_then(|uri| uri.host().map(str::to_string));
+            let sync_indexer = self.indexer_uri();
             let candidates = broadcast_route::eligible_candidates(
                 self.migration_broadcast_uri.clone(),
-                sync_host.as_deref(),
-                crate::nym::broadcast_indexers::broadcast_indexers(),
+                sync_indexer.as_ref(),
             )?;
             return Ok(broadcast_route::RoutedBroadcastClient::Mixnet(
                 broadcast_route::MixnetBroadcastClient::new(socks5_addr, candidates),
@@ -1194,13 +1194,14 @@ impl LightClient {
                                 .last_known_chain_height()
                                 .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                             let activation = wallet.ironwood_activation()?;
+                            let floor = schedule::AnchorFloor::new(
+                                activation,
+                                wallet.bound_note_confirmed_at(part),
+                            );
                             schedule::place(
                                 part,
-                                schedule::first_permitted_bucket(
-                                    now_height,
-                                    activation,
-                                    &state.params,
-                                ),
+                                schedule::first_permitted_bucket(now_height, &floor, &state.params),
+                                &floor,
                                 &mut rand::rngs::OsRng,
                                 &state.params,
                             )?;
@@ -1286,6 +1287,7 @@ impl LightClient {
                     .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                 let current_bucket =
                     schedule::bucket_index(now_height, state.params.bucket_modulus);
+                let activation = wallet.ironwood_activation()?;
                 for part_id in &overdue {
                     let part = &mut state.parts[part_id.0 as usize];
                     if part.state == PartState::Assigned {
@@ -1293,8 +1295,23 @@ impl LightClient {
                         // explicitly immediate placement. Overdue
                         // signed parts never reach here. Reconcile
                         // classifies them AwaitingExpiry, outside the
-                        // catch-up cohort.
-                        schedule::place_immediate(part, current_bucket)?;
+                        // catch-up batch.
+                        //
+                        // The anchor is still drawn at age one or more: an
+                        // overdue part's note has been settled for at least
+                        // the window it missed, so the current bucket always
+                        // has legal anchors below it.
+                        let floor = schedule::AnchorFloor::new(
+                            activation,
+                            wallet.bound_note_confirmed_at(part),
+                        );
+                        schedule::place_immediate(
+                            part,
+                            current_bucket,
+                            &floor,
+                            &mut rand::rngs::OsRng,
+                            &state.params,
+                        )?;
                     }
                 }
                 Ok::<_, crate::wallet::error::WalletError>(())
@@ -1601,7 +1618,7 @@ impl LightClient {
     ///
     /// Syncs the wallet before migrating. Consumers that own the sync
     /// lifecycle and keep a background sync running should call
-    /// [`Self::migrate_immediately_presynced`] instead, which migrates
+    /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
     pub async fn migrate_immediately(
         &mut self,
@@ -1649,7 +1666,7 @@ impl LightClient {
     ///     .await;
     /// # }
     /// ```
-    pub async fn migrate_immediately_presynced(
+    pub(crate) async fn migrate_immediately_presynced(
         &mut self,
         account: zip32::AccountId,
         sync: &SyncPauseGuard,
@@ -1702,8 +1719,8 @@ impl LightClient {
     /// This is the send-family entry point for the immediate migration, and
     /// the only immediate-migration entry point that crosses the UniFFI boundary:
     /// [`Self::migrate_immediately`] self-syncs and so collides with a
-    /// consumer's continuous background sync, and
-    /// [`Self::migrate_immediately_presynced`] takes a
+    /// consumer's continuous background sync, and the internal
+    /// `migrate_immediately_presynced` takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
     ///
@@ -1712,7 +1729,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0015-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1802,6 +1819,15 @@ impl LightClient {
         // a replan would re-select those inputs and re-broadcast the round.
         // Check this first, from the wallet's pending transactions, and defer.
         if self.wallet().read().await.note_split_in_flight(account) {
+            return Ok(SplitOutcome::AwaitingConfirmation);
+        }
+
+        // Mining ends the pending state some blocks before the anchor reaches
+        // the round's outputs. In that gap the planner sees neither the spent
+        // inputs nor the new outputs, so it plans nothing and the split reads
+        // finished. Defer until the outputs are selectable, the stateless form
+        // of `continue_note_splitting`'s `unanchored` check.
+        if self.wallet().read().await.unanchored_v2_outputs(account)? {
             return Ok(SplitOutcome::AwaitingConfirmation);
         }
 
@@ -1983,11 +2009,12 @@ impl LightClient {
                             return Err(MigrationError::DifferentAccount.into());
                         }
                     }
-                    // An immediate part anchors at the current bucket's
-                    // boundary. Until the first post-activation boundary
-                    // opens, no anchor exists and every broadcast pass
-                    // would skip every part, previously a MAX_ROUNDS
-                    // spin ending in a misleading SplitDidNotConverge.
+                    // An immediate part broadcasts in the current bucket and
+                    // anchors in a lower one. Until the current bucket sits
+                    // two buckets above the activation's, no legal anchor
+                    // exists and every broadcast pass would skip every part,
+                    // previously a MAX_ROUNDS spin ending in a misleading
+                    // SplitDidNotConverge.
                     let bucket_modulus = wallet.migration.as_ref().map_or_else(
                         || MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
                         |state| state.params.bucket_modulus,
@@ -1997,16 +2024,11 @@ impl LightClient {
                         .sync_state
                         .last_known_chain_height()
                         .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                    let current_boundary = schedule::boundary_of(
-                        schedule::bucket_index(now_height, bucket_modulus),
-                        bucket_modulus,
-                    );
-                    if current_boundary < activation.height() {
-                        return Err(MigrationError::ActivationBoundaryPending {
-                            retry_after: schedule::first_anchorable_boundary(
-                                activation,
-                                bucket_modulus,
-                            ),
+                    let first_window =
+                        schedule::first_ironwood_era_window_boundary(activation, bucket_modulus);
+                    if now_height < first_window {
+                        return Err(MigrationError::IronwoodEraTooYoung {
+                            retry_after: first_window,
                         }
                         .into());
                     }
@@ -2044,11 +2066,23 @@ impl LightClient {
                         let current_bucket =
                             schedule::bucket_index(now_height, state.params.bucket_modulus);
                         // Immediate mode: everything sends now, in the
-                        // current bucket, explicitly immediate.
-                        for part in state.parts.iter_mut() {
-                            match part.state {
+                        // current bucket, explicitly immediate. The anchor is
+                        // still drawn at age one or more; immediacy is about
+                        // the send time, not the anchor (ADR 0018).
+                        for index in 0..state.parts.len() {
+                            match state.parts[index].state {
                                 PartState::Bound | PartState::Assigned => {
-                                    schedule::place_immediate(part, current_bucket)?;
+                                    let floor = schedule::AnchorFloor::new(
+                                        activation,
+                                        wallet.bound_note_confirmed_at(&state.parts[index]),
+                                    );
+                                    schedule::place_immediate(
+                                        &mut state.parts[index],
+                                        current_bucket,
+                                        &floor,
+                                        &mut rand::rngs::OsRng,
+                                        &state.params,
+                                    )?;
                                 }
                                 _ => (),
                             }
@@ -2553,6 +2587,65 @@ mod tests {
         );
     }
 
+    /// A bucket boundary is an arbitrary height, and pepper-sync checkpoints
+    /// a block only when it carries an Orchard output, so on a chain whose
+    /// blocks are mostly empty the boundary has no checkpoint of its own and
+    /// every part of the schedule was unwitnessable forever. The greatest
+    /// checkpoint below it holds the same tree, since a block in between
+    /// carrying an output would itself be a checkpoint, so it anchors the
+    /// part with the same root every other wallet anchoring there derives.
+    ///
+    /// The part broadcasts in the current bucket and anchors one bucket
+    /// below it, the age-one placement, so the boundary under test is the
+    /// anchor's, not the window's.
+    #[tokio::test]
+    async fn a_boundary_without_its_own_checkpoint_anchors_below_it() {
+        use shardtree::store::{Checkpoint, ShardStore as _};
+
+        let (mut wallet, bound_note) = wallet_with_migration_note(360);
+        let params = MigrationParams::provisional(wallet.chain_type());
+        let now_height = wallet
+            .sync_state
+            .last_known_chain_height()
+            .expect("the synthetic wallet is fully synced");
+        let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+        let anchor_bucket = current_bucket - 1;
+        let boundary = schedule::boundary_of(anchor_bucket, params.bucket_modulus);
+
+        // The one checkpoint the boundary can reach, well below it, holding
+        // the note the part is bound to. The builder checkpoints at the tip
+        // alone, which sits above the boundary and is no help.
+        let position = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == NOTE_VALUE)
+            .and_then(|note| note.position())
+            .expect("the fabricated note is scanned into the tree");
+        wallet
+            .shard_trees
+            .orchard
+            .store_mut()
+            .add_checkpoint(boundary - 60, Checkpoint::at_position(position))
+            .expect("infallible on the memory store");
+
+        let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+        part.assign(current_bucket).expect("fresh parts are bound");
+        part.anchor_bucket = Some(anchor_bucket);
+        wallet.migration = Some(scheduled_state(params, vec![part]));
+
+        wallet
+            .refresh_part_witnesses()
+            .expect("the capture pass reads the tree only");
+
+        assert!(
+            wallet.migration.as_ref().unwrap().parts[0]
+                .anchor_witness
+                .is_some(),
+            "the boundary must anchor at the checkpoint below it",
+        );
+    }
+
     /// The entry gate of the one-call immediate path (issue #2493,
     /// findings 3 and 4): a consented scheduled migration is refused
     /// rather than collapsed into an immediate broadcast, a different
@@ -2650,7 +2743,8 @@ mod tests {
         use zcash_primitives::transaction::TxId;
 
         use super::*;
-        use crate::wallet::migration::{BoundaryWitness, PrepareResult, SkipReason};
+        use crate::wallet::migration::parts::SkipReason;
+        use crate::wallet::migration::{BoundaryWitness, PrepareResult};
 
         /// Past the provisional first bucket boundary, as in
         /// [`super::boundary_tree_state_unavailable_skips_the_part`].
@@ -2660,9 +2754,18 @@ mod tests {
         /// `prepare_part` reaches the bound-note revalidation instead of
         /// skipping earlier on the missing checkpoint. The revalidation
         /// runs before the witness bytes are parsed, so garbage suffices.
-        fn assigned_part_with_witness(bound_note: BoundNote, bucket: u64) -> PartRecord {
+        ///
+        /// `anchor_bucket` is explicit rather than derived from `bucket`
+        /// because one case below wants a pre-activation anchor under a
+        /// legal window, which no age draw would produce.
+        fn assigned_part_with_witness(
+            bound_note: BoundNote,
+            bucket: u64,
+            anchor_bucket: u64,
+        ) -> PartRecord {
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(bucket).expect("fresh parts are bound");
+            part.anchor_bucket = Some(anchor_bucket);
             part.anchor_witness = Some(BoundaryWitness {
                 anchor: [0; 32],
                 position: 0,
@@ -2689,7 +2792,7 @@ mod tests {
                     note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
                 });
 
-            let mut part = assigned_part_with_witness(bound_note, bucket);
+            let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
             let result = wallet
                 .prepare_part(AccountId::ZERO, &mut part, &params)
                 .expect("a spent bound note is a skip, not an error");
@@ -2716,7 +2819,7 @@ mod tests {
                 ..bound_note
             };
 
-            let mut part = assigned_part_with_witness(diverged, bucket);
+            let mut part = assigned_part_with_witness(diverged, bucket, bucket - 1);
             let result = wallet
                 .prepare_part(AccountId::ZERO, &mut part, &params)
                 .expect("a diverged bound note is a skip, not an error");
@@ -2728,19 +2831,60 @@ mod tests {
         }
 
         #[test]
-        fn pre_activation_boundary_skips() {
+        fn pre_activation_anchor_skips() {
             let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
             let params = MigrationParams::provisional(wallet.chain_type());
 
-            // Bucket zero's boundary is height zero, below any activation.
-            let mut part = assigned_part_with_witness(bound_note, 0);
+            // A legal window over an illegal anchor: bucket zero's boundary
+            // is height zero, below any activation. The era floor keeps new
+            // placements out of this, so only a schedule persisted before the
+            // floor existed reaches it.
+            let mut part = assigned_part_with_witness(bound_note, 1, 0);
             let result = wallet
                 .prepare_part(AccountId::ZERO, &mut part, &params)
-                .expect("a pre-activation boundary is a skip, not an error");
+                .expect("a pre-activation anchor is a skip, not an error");
             assert!(matches!(
                 result,
                 PrepareResult::Skip(SkipReason::BoundaryBeforeActivation { .. })
             ));
+        }
+
+        /// A part persisted before anchors were drawn separately from
+        /// broadcast windows carries no anchor. Proving cannot invent one,
+        /// because the age draw is what keeps the anchor out of the open
+        /// window, so the part skips until a synchronization draws it.
+        #[test]
+        fn an_undrawn_anchor_skips() {
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let bucket = schedule::bucket_index(
+                wallet.sync_state.last_known_chain_height().unwrap(),
+                params.bucket_modulus,
+            );
+
+            let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
+            part.anchor_bucket = None;
+            let result = wallet
+                .prepare_part(AccountId::ZERO, &mut part, &params)
+                .expect("a missing anchor is a skip, not an error");
+            assert!(matches!(
+                result,
+                PrepareResult::Skip(SkipReason::AnchorNotDrawn)
+            ));
+
+            // The capture pass draws it, at a legal age, and the skip clears.
+            // The stale witness goes with the stale anchor, exactly as the
+            // legacy read discards it (`store::read_part`): it proves the note
+            // under the window's boundary, not under the drawn anchor.
+            part.anchor_witness = None;
+            wallet.migration = Some(scheduled_state(params.clone(), vec![part]));
+            wallet
+                .refresh_part_witnesses()
+                .expect("the capture pass draws a missing anchor");
+            let drawn = wallet.migration.as_ref().unwrap().parts[0]
+                .anchor_bucket
+                .expect("the capture pass drew an anchor");
+            assert!(drawn < bucket, "the drawn anchor is below the open window");
         }
     }
 
@@ -3296,7 +3440,7 @@ mod tests {
             );
             assert_eq!(broadcast_client.submissions.lock().unwrap().len(), 1);
             assert_eq!(
-                client.batch_status(),
+                client.batch_progress_handle().status(),
                 None,
                 "the progress side channel returns to idle"
             );
@@ -3422,7 +3566,7 @@ mod tests {
                 Some(2),
                 "re-bucketed into the current bucket (tip 360 sits in bucket 2): \
                  rescheduling before any send re-runs the schedule, so the first \
-                 cohort is again immediately due"
+                 batch is again immediately due"
             );
             assert!(part.target_height.is_some(), "fresh random target drawn");
             assert!(wallet.save_required, "the reschedule must persist");
@@ -3502,9 +3646,11 @@ mod tests {
     /// classified from the wallet's live notes and pending transactions with
     /// no persisted migration state.
     mod quick_split {
+        use std::num::NonZeroU32;
+
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         const SEED: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
@@ -3582,6 +3728,57 @@ mod tests {
                 SplitOutcome::AwaitingConfirmation
             );
         }
+
+        /// Mining ends the pending state some blocks before the anchor
+        /// reaches a round's outputs. Planning in that gap selects nothing —
+        /// the inputs are spent, the outputs are not yet witnessable — so the
+        /// plan comes back empty and reads as fully split. The false
+        /// `Complete` then binds a migration with no parts at all. Same
+        /// wallet as `reports_complete_when_every_note_is_part_ready`, with
+        /// the anchor moved below the note.
+        #[tokio::test]
+        async fn defers_while_a_confirmed_round_sits_above_the_anchor() {
+            use shardtree::store::{Checkpoint, ShardStore as _};
+            use zcash_protocol::consensus::BlockHeight;
+
+            let part_ready = 100_000 + CANONICAL_PART_FEE;
+            let mut wallet = SyntheticWalletBuilder::new(SEED)
+                .orchard_note(part_ready)
+                .tip(360)
+                .build();
+            // The note confirms at height 2; this puts the anchor at 1.
+            wallet.wallet_settings.min_confirmations =
+                NonZeroU32::new(360).expect("non-zero literal");
+            // Note selection needs a checkpoint at the anchor in every store.
+            // Empty ones: at the anchor the tree holds nothing yet, which is
+            // what leaves the planner with no notes to plan over.
+            let anchor = BlockHeight::from_u32(1);
+            let memory_store = "infallible on the memory store";
+            wallet
+                .shard_trees
+                .sapling
+                .store_mut()
+                .add_checkpoint(anchor, Checkpoint::tree_empty())
+                .expect(memory_store);
+            wallet
+                .shard_trees
+                .orchard
+                .store_mut()
+                .add_checkpoint(anchor, Checkpoint::tree_empty())
+                .expect(memory_store);
+            wallet
+                .shard_trees
+                .ironwood
+                .store_mut()
+                .add_checkpoint(anchor, Checkpoint::tree_empty())
+                .expect(memory_store);
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            assert_eq!(
+                client.quick_split(AccountId::ZERO, true).await.unwrap(),
+                SplitOutcome::AwaitingConfirmation
+            );
+        }
     }
 
     mod continue_note_splitting {
@@ -3592,7 +3789,7 @@ mod tests {
         use super::super::{MAX_ROUNDS, SplitStep};
         use super::*;
         use crate::lightclient::error::{LightClientError, MigrationError};
-        use crate::wallet::migration::CANONICAL_PART_FEE;
+        use crate::wallet::migration::split::CANONICAL_PART_FEE;
 
         /// The txid of the fabricated transaction that created the wallet's
         /// note of `value`.
@@ -3840,10 +4037,13 @@ mod tests {
             assert_eq!(batch.boundary, boundary);
         }
 
-        /// End to end: scheduling a fresh cohort makes batch 1 immediately due.
-        /// `plan_schedule` opens the first cohort in the current bucket, so
-        /// `due_now` is `Some` at the very tip it was scheduled at, with no sync
-        /// advance, no waiting for the next window.
+        /// End to end: scheduling a settled part makes batch 1 immediately due.
+        /// `plan_schedule` opens the first batch in the current bucket whenever
+        /// the anchor floors allow it, so `due_now` is `Some` at the very tip it
+        /// was scheduled at, with no sync advance and no waiting for the next
+        /// window. The synthetic note confirms at height 2, far below the
+        /// current bucket, so both the anchorability and era floors leave the
+        /// window where it is and the anchor lands in a closed bucket below it.
         #[tokio::test]
         async fn first_batch_is_due_the_moment_it_is_scheduled() {
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
@@ -3860,6 +4060,7 @@ mod tests {
                 std::slice::from_mut(&mut part),
                 now_height,
                 activation,
+                |part| wallet.bound_note_confirmed_at(part),
                 &params,
                 &mut rand::rngs::OsRng,
             )
@@ -3867,7 +4068,12 @@ mod tests {
             assert_eq!(
                 part.bucket_index,
                 Some(current_bucket),
-                "the first cohort opens in the current bucket",
+                "the first batch opens in the current bucket",
+            );
+            assert!(
+                part.anchor_bucket
+                    .is_some_and(|anchor| anchor < current_bucket),
+                "the anchor is a bucket the chain has already left",
             );
             wallet.migration = Some(scheduled_state(params, vec![part]));
 

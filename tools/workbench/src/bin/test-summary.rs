@@ -188,7 +188,7 @@ fn parse_summary(log: &str) -> Summary {
 ///
 /// nextest prints e.g.:
 ///   FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation
-///   TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync
+///   TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration anchorless_part_skips_without_sync
 /// and re-prints the same lines in its end-of-run failure recap, so entries
 /// deduplicate. `TRY n FAIL` retry lines are ignored: only a test's final
 /// status line carries the plain prefix.
@@ -484,7 +484,7 @@ mod parse_failures {
     fn collects_and_deduplicates_terminal_statuses() {
         let log = "        PASS [  50.205s] ( 1/40) libtonode-tests::concrete mine_to_transparent\n\
              \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n\
-             \x20    TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync\n\
+             \x20    TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration anchorless_part_skips_without_sync\n\
              \x20   TRY 2 FAIL [  1.002s] ( 2/40) libtonode-tests::concrete retried_test\n\
              \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n";
         assert_eq!(
@@ -497,7 +497,7 @@ mod parse_failures {
                 ),
                 (
                     "TIMEOUT".to_string(),
-                    "libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync"
+                    "libtonode-tests::migration anchorless_part_skips_without_sync"
                         .to_string()
                 ),
             ]

@@ -50,6 +50,20 @@ that default, mobile, and CI builds remain free of it. No `[patch]` tables and
 no fork or branch pins are authorized; the crate having moved in-workspace, the
 proof of concept's `nym_proxy.rs` ports directly with no external pin.
 
+The nym exception carries a transitive TLS-backend exception, ratified
+2026-07-21. This workspace's crypto backend is aws-lc-rs, never ring — every
+backend we choose selects aws-lc-rs — but `nym-sdk` transitively links ring
+through its cosmos credential core (`nym-client-core` → `cosmrs` →
+`tendermint-rpc` → `reqwest 0.11` → `hyper-rustls 0.24` → `rustls 0.21`, and
+rustls gained the aws-lc-rs backend only in 0.23). It sits in the mixnet
+client's core, so no feature flag severs it, and cutting it would require
+forking or `[patch]`-ing nym, both barred. The ring is accepted as unavoidable
+and confined to the standalone `zingo-netutils` nym build — the proxy binary
+and the mobile UniFFI shim — never entering the main wallet lock, whose only
+ring is a separate build-time transitive of `zcash_proofs`'s parameter
+downloader and predates this work. Eliminating both is tracked upstream, not
+undertaken here.
+
 ## NymVPN is provided by the user, never embedded
 
 The NymVPN layer that protects the sync tier is installed and run by the user
@@ -248,6 +262,70 @@ groups the child shares the terminal's group and an interrupt still reaches
 it; the outcome is the safe one (the mode becomes died and the surfaces
 refuse) rather than a silent clearnet fallback.
 
+## Amendment (2026-07-21): the runtime boundary generalizes for mobile
+
+The spawned-child consumption model is the desktop instance of a general
+rule, not the rule itself. What the dependency conflict actually forces is
+that the nym stack live in its own resolution unit and meet the wallet at a
+*runtime* boundary that carries exactly two things: a local SOCKS5 endpoint
+and a liveness signal. A child process is one such boundary. Mobile platforms
+demand others, and the wallet core should not care which one is in play.
+
+Three consequences, one per layer. First, zingolib gains an attach entry
+point beside the spawn one: the platform hands the wallet an already-running
+local SOCKS5 address, the mode reaches ready after a connectivity check, and
+liveness is thereafter observed by a periodic probe of that endpoint — probe
+failure lands died, preserving the refuse-never-clearnet invariant without
+the stdout pipe. Everything downstream of "mode plus address" — the route
+resolver, the fan-out, the price fetch, the status narration — is unchanged.
+
+Second, Android keeps the spawn model. An app may execute a bundled binary
+only from its native-library directory, so the proxy ships as a native
+library named like one (`libnym_proxy.so`) and the existing supervisor,
+stdin-EOF watchdog included, runs it from there.
+
+Third, iOS cannot spawn processes at all, and two Rust static libraries
+cannot link into one binary. There the boundary becomes a dynamic library:
+the standalone netutils workspace — already a separate resolution unit with
+its own lockfile — builds the proxy as a small UniFFI dynamic framework
+(start returning the SOCKS5 address, stop, and a death callback), the app
+hosts it, and hands the address to the wallet's attach entry. The proxy is
+its own UniFFI component, distinct from the wallet's: UniFFI binds the
+wallet layer (zingolib's toggle and status methods, which are plain strings
+and enums) as one component, while the proxy is a separate component with
+its own generated bindings. The two boundaries never meet in one interface
+definition.
+
+Amendment (2026-07-21): the mobile proxy boundary is UniFFI, not a raw C
+ABI. An earlier draft of this decision specified three hand-written
+`extern "C"` functions, deliberately not a UniFFI surface, for minimalism.
+That is reversed. This repository requires every Rust file to carry
+`#![forbid(unsafe_code)]`, and a hand-written C ABI cannot honour it: the
+raw-pointer marshalling, the callback function pointer, and the
+`CString`/`Box` `into_raw`/`from_raw` calls are all `unsafe`, which would
+force a ratified exception to the rule and place hand-rolled unsafe in the
+shim. A UniFFI surface does not. It was verified empirically that
+`#![forbid(unsafe_code)]` does not fire on uniffi's proc-macro-generated
+scaffolding — a control crate carrying the lint compiled a
+`#[uniffi::export]` whose expansion holds dozens of `unsafe` occurrences,
+while a single hand-written `unsafe` block in that same crate did trip the
+lint. UniFFI is therefore the only option that keeps `forbid` intact with
+no exception, contributing zero hand-written unsafe while the lint still
+rejects any a future contributor introduces. The minimalism argument does
+not outweigh preserving the safety invariant the whole codebase depends
+on.
+
+## Amendment (2026-07-22): a Broadcast Witness is never the sync indexer
+
+Witness Rotation as ratified here left one draw unconstrained: nothing
+prevented the random pick from landing on the very indexer the wallet
+synchronizes against — the one party that already holds the address set,
+and the named adversary of this decision. That gap is closed by ADR 0022,
+which makes the exclusion a universal, code-enforced invariant: every
+transmission draw filters the curated pool by the sync indexer's operator,
+and an emptied pool refuses in keeping with the fail-closed rule. See
+`docs/adr/0022-broadcast-witness-never-the-sync-indexer.md`.
+
 ## Amendment (2026-07-23): migration parts obey Mixnet Mode, and never target the sync server
 
 Ratified while walking the PR #2470 review findings (M3). The original
@@ -297,3 +375,24 @@ feature, so the default build's dependency graph shrinks below its
 pre-mixnet shape; the crate's price types and their wallet-file
 serialization stay unconditional, keeping wallet files portable between
 builds with and without the feature.
+
+## Amendment (2026-07-27): the clearnet price tier is restored
+
+The 2026-07-23 price amendment above is superseded by PR #2548
+("fix/restore-price"), merged to `dev` on 2026-07-27. The price fetch
+regains a clearnet default: `update_current_price` works in every
+build, including builds without the `nym` feature, and its
+documentation discloses that the contact leaks the client IP and
+wallet-alive timing to the third-party price source. zingo-price
+returns to unconditional network dependencies and becomes a pure
+mechanism — the fetch function takes an optional SOCKS5 proxy address
+and the routing policy lives entirely in the caller.
+
+The mixnet route survives as the opt-in
+`update_current_price_over_mixnet`, a `nym`-feature method that keeps
+this record's fail-closed invariant: it refuses while Mixnet Mode is
+off, fails closed while the mode bootstraps or after the proxy dies,
+and never falls back to clearnet. Its success value remains
+`MixnetPriceFetch`, carrying the tunnel endpoint the fetch traveled
+through, so a consumer that chose the private route holds per-fetch
+evidence of it.

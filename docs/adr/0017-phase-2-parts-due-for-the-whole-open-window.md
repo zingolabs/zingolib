@@ -2,7 +2,15 @@
 
 Status: accepted. A deliberate ZIP 318 privacy relaxation the product owner
 accepted for responsiveness rather than a bug fix. Scoped to Phase 2 (scheduled
-parts).
+parts). Partially superseded by ADR 0018: the advisory-target decision below —
+a part is due for its entire open window, the random target a read-only hint —
+remains live and unqualified, but the claim that `plan_schedule` opens the first
+cohort in the **current** bucket is superseded. A part's anchor is now drawn at
+an age of one bucket or more, so the current bucket ceases to be a legal window
+whenever a part's anchor floor lands at or above it, which is the case for a
+wallet scheduling immediately after its split. Where the anchor floor sits
+lower, the current bucket is still where the first cohort opens, and the
+responsiveness win described here holds.
 
 A scheduled part is due to broadcast for its **entire open window**, meaning it
 is in the current bucket, whose boundary sits at or below the tip, rather than

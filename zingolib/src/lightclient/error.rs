@@ -52,23 +52,16 @@ pub enum LightClientError {
     /// Price fetch error.
     #[error("Price fetch error. {0}")]
     PriceError(#[from] PriceError),
-    /// The price fetch was attempted while Mixnet Mode is toggled off. The
-    /// fetch has no clearnet tier (ADR 0011, 2026-07-23): unlike send, it is
-    /// refused rather than routed over clearnet on the deliberate opt-out.
+    /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
+    /// off. The opt-in route fails closed rather than falling back to clearnet
+    /// (ADR 0011); use the clearnet default `update_current_price` instead, or
+    /// enable Mixnet Mode (`nym on`).
     #[cfg(feature = "nym")]
     #[error(
-        "the price fetch travels only over the Nym mixnet and has no clearnet fallback; \
-         Mixnet Mode is off. Enable it (`nym on`) to fetch the price"
+        "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
+         enable it (`nym on`), or use the clearnet price fetch"
     )]
     PriceFetchRequiresMixnet,
-    /// The price fetch was attempted in a build without the `nym` feature,
-    /// which compiles no fetch code at all (ADR 0011, 2026-07-23).
-    #[cfg(not(feature = "nym"))]
-    #[error(
-        "the price fetch travels only over the Nym mixnet, and this build has no mixnet \
-         support; rebuild with the `nym` feature to fetch the price"
-    )]
-    PriceFetchUnsupported,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error("{0}")]
@@ -148,15 +141,17 @@ pub enum MigrationError {
     /// The migration in progress belongs to a different account.
     #[error("The migration in progress belongs to a different account.")]
     DifferentAccount,
-    /// An immediate migration part anchors at the current bucket's
-    /// boundary, and the first boundary at or above the NU6.3 activation
-    /// has not opened yet: no anchor exists for the part to commit to.
+    /// The Ironwood era is too young to hold a part. A part broadcasts in one
+    /// bucket and anchors in a lower one, and both must sit above the NU6.3
+    /// activation, so the earliest window that can hold a part opens two
+    /// buckets above the activation's. Until then there is no legal anchor,
+    /// whatever the wallet's notes look like.
     #[error(
-        "The first post-activation bucket boundary (height {retry_after}) has not opened yet. \
-         Retry after it."
+        "The Ironwood era is too young for a migration part: the first window that can \
+         hold one opens at height {retry_after}. Retry after it."
     )]
-    ActivationBoundaryPending {
-        /// The first bucket boundary an Ironwood part can anchor to.
+    IronwoodEraTooYoung {
+        /// The first broadcast window boundary that can hold a part.
         retry_after: zcash_protocol::consensus::BlockHeight,
     },
 }

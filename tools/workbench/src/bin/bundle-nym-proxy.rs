@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use workbench::{repo_root, run};
+use workbench::{parse_dest, repo_root, run};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -75,49 +75,4 @@ fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
         )]
     })?;
     Ok(dest)
-}
-
-/// The value of a `--dest <dir>` or `--dest=<dir>` argument, if present.
-fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        if let Some(dir) = arg.strip_prefix("--dest=") {
-            return Ok(Some(PathBuf::from(dir)));
-        }
-        if arg == "--dest" {
-            let dir = iter
-                .next()
-                .ok_or_else(|| vec!["--dest requires a directory argument".to_string()])?;
-            return Ok(Some(PathBuf::from(dir)));
-        }
-    }
-    Ok(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_separate_and_joined_dest() {
-        let sep = vec![
-            "--release".to_string(),
-            "--dest".to_string(),
-            "/x".to_string(),
-        ];
-        assert_eq!(parse_dest(&sep).unwrap(), Some(PathBuf::from("/x")));
-
-        let joined = vec!["--dest=/y".to_string()];
-        assert_eq!(parse_dest(&joined).unwrap(), Some(PathBuf::from("/y")));
-    }
-
-    #[test]
-    fn no_dest_is_none() {
-        assert_eq!(parse_dest(&["--release".to_string()]).unwrap(), None);
-    }
-
-    #[test]
-    fn dest_without_value_is_an_error() {
-        assert!(parse_dest(&["--dest".to_string()]).is_err());
-    }
 }

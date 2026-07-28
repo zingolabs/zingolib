@@ -23,7 +23,8 @@
 use orchard::bundle::BundleVersion;
 use zcash_primitives::transaction::TxId;
 
-use super::split::{MigrationOutputs, SWEEP_MIN, bundle_actions, zip317_fee};
+use super::params::MigrationParams;
+use super::split::{MigrationOutputs, bundle_actions, side_budget, zip317_fee};
 use crate::wallet::error::WalletError;
 
 /// The ZIP-317 conventional fee of a immediate migration transaction with `n_in` Orchard
@@ -36,7 +37,7 @@ use crate::wallet::error::WalletError;
 /// Unlike [`super::split::note_split_fee`] this is era-independent: the Orchard
 /// bundle has no outputs, so whether `orchard_v3` permits a spend and an output
 /// to share an action makes no difference to the count (pinned by test).
-pub fn immediate_migration_fee(n_in: usize) -> u64 {
+fn immediate_migration_fee(n_in: usize) -> u64 {
     zip317_fee(
         bundle_actions(BundleVersion::orchard_v3(), n_in, 0),
         bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
@@ -87,34 +88,37 @@ impl ImmediateMigrationPlan {
     }
 }
 
-/// The most Orchard notes one immediate migration transaction spends. An immediate migration's Orchard
-/// bundle is spend-only, so `n` inputs cost `n` actions. This caps a single
-/// migration transaction's proving cost and size. An immediate migration is not a note split, so
-/// it carries its own bound rather than borrowing the splitter's.
-const MAX_DRAIN_INPUTS: usize = 32;
-
 /// Plans an immediate migration of the Orchard notes with the given values (zatoshis): spend
-/// every note worth more than the `SWEEP_MIN` Sweep Minimum into one Ironwood
-/// output, chunked so no transaction exceeds `MAX_DRAIN_INPUTS` inputs.
-/// Deterministic and pure.
+/// every note worth more than the [`MigrationParams::sweep_min`] Sweep Minimum
+/// into one Ironwood output, chunked so each transaction's spends beside its
+/// single output fit the [`MigrationParams::max_actions_per_split_tx`] total
+/// budget — the same 16-action shape the preparation transactions carry, via
+/// the same [`side_budget`] law. The wallet thereby emits one transaction
+/// shape family across both migration paths; the fee a larger chunk would
+/// save is small even on a very fragmented wallet (the divergence ledger's
+/// "retained local" section records the choice). Deterministic and pure.
 ///
-/// Notes worth at most `SWEEP_MIN` are left as residual rather than selected (see the
+/// Notes worth at most the Sweep Minimum are left as residual rather than selected (see the
 /// Sweep Minimum's safety-factor policy). The same floor applies to what a
-/// migration creates: a chunk whose output would not exceed `SWEEP_MIN` is
+/// migration creates: a chunk whose output would not exceed the Sweep Minimum is
 /// left whole as residual, so an immediate migration never manufactures a note the policy refuses to
 /// spend.
-pub fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
+pub(crate) fn plan_immediate_migration(
+    note_values: &[u64],
+    params: &MigrationParams,
+) -> ImmediateMigrationPlan {
     let mut plan = ImmediateMigrationPlan::default();
+    let sweep_min = params.sweep_min;
 
     let (spendable, dust): (Vec<u64>, Vec<u64>) =
-        note_values.iter().partition(|&&value| value > SWEEP_MIN);
+        note_values.iter().partition(|&&value| value > sweep_min);
     plan.residual = dust.iter().sum();
 
-    for chunk in spendable.chunks(MAX_DRAIN_INPUTS) {
+    for chunk in spendable.chunks(side_budget(params)) {
         let total: u64 = chunk.iter().sum();
         let fee = immediate_migration_fee(chunk.len());
         match total.checked_sub(fee) {
-            Some(output) if output > SWEEP_MIN => {
+            Some(output) if output > sweep_min => {
                 plan.migrated += output;
                 plan.fee += fee;
                 plan.transactions.push(ImmediateMigrationTx {
@@ -124,7 +128,7 @@ pub fn plan_immediate_migration(note_values: &[u64]) -> ImmediateMigrationPlan {
             }
             // A chunk that cannot fund both its fee and an output worth
             // spending is left whole as residual: an Ironwood note at or below
-            // `SWEEP_MIN` is one the residual policy itself refuses. Only
+            // the Sweep Minimum is one the residual policy itself refuses. Only
             // reachable when a chunk holds at most three near-`SWEEP_MIN`
             // notes, which the entry filter cannot rule out for small
             // chunks.
@@ -139,13 +143,18 @@ impl crate::wallet::LightWallet {
     /// Plans an immediate migration from the account's spendable pre-Ironwood (V2) Orchard
     /// notes. Pure and deterministic: nothing is signed or sent, so the plan
     /// can be shown to the user for consent first.
+    ///
+    /// Plans under the provisional [`MigrationParams`] for the wallet's chain:
+    /// an immediate migration is planned fresh on every call and records no
+    /// consent hash, so no stored parameter set can bind it.
     #[allow(clippy::result_large_err)]
-    pub fn plan_immediate_migration(
+    pub(crate) fn plan_immediate_migration(
         &self,
         account: zip32::AccountId,
     ) -> Result<ImmediateMigrationPlan, WalletError> {
         Ok(plan_immediate_migration(
             &self.migration_note_values(account)?,
+            &MigrationParams::provisional(self.chain_type()),
         ))
     }
 
@@ -155,7 +164,7 @@ impl crate::wallet::LightWallet {
     /// Errors below the NU6.3 activation height: there is no Ironwood pool to
     /// send to.
     #[allow(clippy::result_large_err)]
-    pub fn build_immediate_migration_transaction(
+    pub(crate) fn build_immediate_migration_transaction(
         &mut self,
         account: zip32::AccountId,
         planned: &ImmediateMigrationTx,
@@ -171,7 +180,14 @@ impl crate::wallet::LightWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::migration::split::{CANONICAL_PART_FEE, MARGINAL_FEE};
+    use crate::config::ChainType;
+    use crate::wallet::migration::split::{CANONICAL_PART_FEE, MARGINAL_FEE, SWEEP_MIN};
+
+    /// The provisional parameter set every test plans under, the same set
+    /// [`crate::wallet::LightWallet::plan_immediate_migration`] resolves.
+    fn params() -> MigrationParams {
+        MigrationParams::provisional(ChainType::Mainnet)
+    }
 
     /// An immediate migration's Orchard bundle has no outputs, so `orchard_v3`'s ban on
     /// cross-address transfers cannot change its action count. That is what
@@ -179,7 +195,7 @@ mod tests {
     /// take as an argument.
     #[test]
     fn immediate_migration_fee_is_era_independent() {
-        for n_in in [1usize, 2, 3, 5, 32] {
+        for n_in in [1usize, 2, 3, 5, side_budget(&params())] {
             assert_eq!(
                 bundle_actions(BundleVersion::orchard_v2(), n_in, 0),
                 bundle_actions(BundleVersion::orchard_v3(), n_in, 0),
@@ -213,7 +229,7 @@ mod tests {
             &[1, 2, 3],
         ];
         for note_values in cases {
-            let plan = plan_immediate_migration(note_values);
+            let plan = plan_immediate_migration(note_values, &params());
             let total: u64 = note_values.iter().sum();
             assert_eq!(
                 plan.migrated + plan.fee + plan.residual,
@@ -231,7 +247,8 @@ mod tests {
 
     #[test]
     fn chunks_at_the_action_bound() {
-        let max = MAX_DRAIN_INPUTS;
+        let params = params();
+        let max = side_budget(&params);
         for (note_count, expected_txs) in [
             (0, 0),
             (1, 1),
@@ -241,17 +258,18 @@ mod tests {
             (max * 2 + 1, 3),
         ] {
             let note_values = vec![1_000_000u64; note_count];
-            let plan = plan_immediate_migration(&note_values);
+            let plan = plan_immediate_migration(&note_values, &params);
             assert_eq!(
                 plan.transactions.len(),
                 expected_txs,
                 "{note_count} notes should chunk into {expected_txs} transaction(s)"
             );
             assert!(
-                plan.transactions
-                    .iter()
-                    .all(|transaction| transaction.inputs.len() <= max),
-                "a chunk exceeded the action bound"
+                plan.transactions.iter().all(|transaction| {
+                    let actions = transaction.inputs.len() + 1;
+                    actions <= params.max_actions_per_split_tx
+                }),
+                "a chunk's spends and single output together exceeded the total action budget"
             );
         }
     }
@@ -259,7 +277,7 @@ mod tests {
     #[test]
     fn all_dust_leaves_everything_residual() {
         let note_values = vec![SWEEP_MIN, SWEEP_MIN - 1, 1];
-        let plan = plan_immediate_migration(&note_values);
+        let plan = plan_immediate_migration(&note_values, &params());
 
         assert!(plan.is_empty());
         assert_eq!(plan.migrated, 0);
@@ -276,7 +294,7 @@ mod tests {
         let mut note_values = dust.to_vec();
         note_values.extend([SWEEP_MIN + 1, 1_000_000]);
 
-        let plan = plan_immediate_migration(&note_values);
+        let plan = plan_immediate_migration(&note_values, &params());
         assert_eq!(plan.residual, dust.iter().sum::<u64>());
         for transaction in &plan.transactions {
             for &input in &transaction.inputs {
@@ -307,19 +325,19 @@ mod tests {
     fn output_at_or_below_sweep_min_leaves_the_chunk_residual() {
         // One 25_000-zatoshi note: the fee is 20_000, so the output would be
         // 5_000, at most the sweep minimum.
-        let plan = plan_immediate_migration(&[25_000]);
+        let plan = plan_immediate_migration(&[25_000], &params());
         assert!(plan.is_empty());
         assert_eq!(plan.residual, 25_000);
         assert_eq!(plan.fee, 0);
 
         // An output of exactly `sweep_min` still leaves its chunk as residual.
         let boundary = immediate_migration_fee(1) + SWEEP_MIN;
-        let plan = plan_immediate_migration(&[boundary]);
+        let plan = plan_immediate_migration(&[boundary], &params());
         assert!(plan.is_empty());
         assert_eq!(plan.residual, boundary);
 
         // One zatoshi above the boundary migrates.
-        let plan = plan_immediate_migration(&[boundary + 1]);
+        let plan = plan_immediate_migration(&[boundary + 1], &params());
         assert_eq!(plan.transactions.len(), 1);
         assert_eq!(plan.transactions[0].output, SWEEP_MIN + 1);
         assert_eq!(plan.residual, 0);
@@ -332,7 +350,7 @@ mod tests {
         #[test]
         fn immediate_migration_inputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {            let plan = plan_immediate_migration(&note_values);
+        ) {            let plan = plan_immediate_migration(&note_values, &params());
             for transaction in &plan.transactions {
                 for &input in &transaction.inputs {
                     proptest::prop_assert!(input > SWEEP_MIN);
@@ -346,7 +364,7 @@ mod tests {
         #[test]
         fn immediate_migration_outputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {            let plan = plan_immediate_migration(&note_values);
+        ) {            let plan = plan_immediate_migration(&note_values, &params());
             for transaction in &plan.transactions {
                 proptest::prop_assert!(transaction.output > SWEEP_MIN);
             }
@@ -359,11 +377,11 @@ mod tests {
     #[test]
     fn replanning_covers_only_the_remaining_notes() {
         let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
-        let full = plan_immediate_migration(&all);
+        let full = plan_immediate_migration(&all, &params());
 
         // The first two notes were spent by an immediate migration that did broadcast.
         let remaining = &all[2..];
-        let replan = plan_immediate_migration(remaining);
+        let replan = plan_immediate_migration(remaining, &params());
 
         assert_eq!(replan.transactions.len(), 1);
         assert_eq!(replan.transactions[0].inputs, remaining.to_vec());

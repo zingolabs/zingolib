@@ -100,6 +100,22 @@ impl WalletMeta {
     }
 }
 
+/// A successfully fetched ZEC price, attested with the route it traveled.
+///
+/// The attestation is the mixnet tunnel's local SOCKS5 endpoint the fetch
+/// went through. It rides the success value — not a log — so every consumer
+/// of [`LightClient::update_current_price_over_mixnet`] holds per-fetch
+/// evidence that this fetch ran over the mixnet (ADR 0011).
+#[cfg(feature = "nym")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixnetPriceFetch {
+    /// The current ZEC price in USD.
+    pub usd: f32,
+    /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
+    /// through.
+    pub via_socks5: String,
+}
+
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
@@ -350,23 +366,13 @@ impl LightClient {
         self.indexer_history.set_recording(record);
     }
 
-    /// A snapshot of the in-progress immediate migration
-    /// ([`Self::migrate_immediately`]), or `None` when idle.
-    ///
-    /// Reads a side channel, not the wallet, so it never blocks on the migration's
-    /// wallet write lock. To poll while an immediate migration (which borrows `&mut self`) is
-    /// running, grab a [`Self::immediate_migration_progress_handle`] first.
-    pub fn immediate_migration_status(&self) -> Option<migrate::ImmediateMigrationStatus> {
-        self.immediate_migration_progress.status()
-    }
-
     /// A cloneable handle to the migration's live progress. Grab it *before*
     /// starting an immediate migration, then poll [`migrate::ImmediateMigrationProgressHandle::status`]
     /// concurrently while the immediate migration holds `&mut self`.
     ///
-    /// [`Self::immediate_migration_status`] reads the same channel but needs `&self`, so it
-    /// cannot be called on the client the immediate migration is borrowing. This handle is
-    /// how a concurrent poller (a spawned task, or the consumer's existing
+    /// The handle reads a side channel, not the wallet, so it never blocks on
+    /// the wallet write lock the immediate migration holds. It is how a
+    /// concurrent poller (a spawned task, or the consumer's existing
     /// sync-status loop) observes progress.
     ///
     /// # Examples
@@ -392,13 +398,11 @@ impl LightClient {
     ///     }
     /// });
     ///
-    /// // The caller owns the sync lifecycle: pause it, then migrate against that
-    /// // stable state. Completion is the returned summary (not a progress
-    /// // value), after which the handle reads `None` again.
-    /// let guard = client.pause_sync_scoped()?;
-    /// let summary = client
-    ///     .migrate_immediately_presynced(account, &guard)
-    ///     .await?;
+    /// // The one-call entry pauses any running sync itself, migrates against
+    /// // that stable state, and resumes sync afterwards (the `true`).
+    /// // Completion is the returned summary (not a progress value), after
+    /// // which the handle reads `None` again.
+    /// let summary = client.quick_immediate_migration(account, true).await?;
     /// reporter.abort();
     ///
     /// println!(
@@ -413,15 +417,6 @@ impl LightClient {
         self.immediate_migration_progress.clone()
     }
 
-    /// A snapshot of the note-splitting round a [`Self::quick_split`] call is
-    /// building, or `None` when idle. Reads a side channel, not the wallet, so
-    /// it never blocks on the round's wallet write lock. To poll while a
-    /// `quick_split` (which borrows `&mut self`) runs, grab a
-    /// [`Self::split_progress_handle`] first.
-    pub fn split_status(&self) -> Option<migrate::SplitStatus> {
-        self.split_progress.status()
-    }
-
     /// A cloneable handle to the note-splitting round's live progress. Grab it
     /// *before* calling [`Self::quick_split`], then poll
     /// [`migrate::SplitProgressHandle::status`] concurrently while the round
@@ -429,13 +424,6 @@ impl LightClient {
     /// [`Self::immediate_migration_progress_handle`].
     pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
         self.split_progress.clone()
-    }
-
-    /// A snapshot of the running migration execute batch
-    /// ([`Self::execute_due_parts`]), or `None` when idle. Reads a side
-    /// channel, never the wallet lock.
-    pub fn batch_status(&self) -> Option<migrate::BatchStatus> {
-        self.batch_progress.status()
     }
 
     /// A cloneable handle to the execute batch's live progress. Grab it
@@ -619,13 +607,37 @@ impl LightClient {
         self.wallet().read().await.do_total_value_to_address().await
     }
 
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23): it goes through the
-    /// mixnet when Mixnet Mode is ready, fails closed while the mode
-    /// bootstraps or after the proxy dies, and is refused (never routed over
-    /// clearnet) while the mode is toggled off.
-    #[cfg(feature = "nym")]
+    /// Update and return the current ZEC price in USD over clearnet.
+    ///
+    /// This is the default price-fetch route and works in every build,
+    /// including those without the `nym` feature. It contacts a third-party
+    /// price API directly, so it discloses the client IP and wallet-alive
+    /// timing to that party; a caller that wants to hide those routes the
+    /// fetch over the Nym mixnet with `update_current_price_over_mixnet`
+    /// (a `nym`-feature method, ADR 0011).
     pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
+        Ok(self
+            .wallet()
+            .write()
+            .await
+            .update_current_price(None)
+            .await?)
+    }
+
+    /// Update and return the current ZEC price in USD over the Nym mixnet,
+    /// hiding the client IP from the price source (ADR 0011). Opt-in: the fetch
+    /// is routed through the mixnet when Mixnet Mode is ready, and fails closed
+    /// (never falling back to clearnet) while the mode bootstraps, after the
+    /// proxy dies, or while it is toggled off. For the clearnet default, use
+    /// [`Self::update_current_price`].
+    ///
+    /// The returned fetch carries the tunnel endpoint it traveled through, so
+    /// every consumer holds per-fetch evidence of the route rather than
+    /// trusting the method name alone.
+    #[cfg(feature = "nym")]
+    pub async fn update_current_price_over_mixnet(
+        &self,
+    ) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
             crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
             crate::nym::MixnetRoute::Clearnet => {
@@ -633,21 +645,16 @@ impl LightClient {
             }
         };
 
-        Ok(self
+        let usd = self
             .wallet()
             .write()
             .await
-            .update_current_price(&socks5_addr)
-            .await?)
-    }
-
-    /// Update and return the current ZEC price in USD. The price fetch has no
-    /// clearnet tier (ADR 0011, amendment 2026-07-23) and travels only over
-    /// the Nym mixnet, so a build without the `nym` feature refuses: the
-    /// fetch code is not compiled in at all.
-    #[cfg(not(feature = "nym"))]
-    pub async fn update_current_price(&self) -> Result<f32, LightClientError> {
-        Err(LightClientError::PriceFetchUnsupported)
+            .update_current_price(Some(&socks5_addr))
+            .await?;
+        Ok(MixnetPriceFetch {
+            usd,
+            via_socks5: socks5_addr,
+        })
     }
 
     /// Creates an additional ZIP-32 account derived from the wallet seed.
@@ -721,6 +728,25 @@ impl LightClient {
             running.stop().await;
         }
         self.mixnet_proxy = Some(crate::nym::MixnetProxy::spawn(binary_path)?);
+        Ok(())
+    }
+
+    /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5
+    /// endpoint (ADR 0011's mobile amendment) instead of spawning the bundled
+    /// nym-proxy binary. Returns immediately; [`Self::mixnet_mode`] reports
+    /// `Bootstrapping` while a data round trip validates the endpoint, then
+    /// `Ready`, or `Died` if validation or the ongoing liveness probe fails —
+    /// an attached transport refuses rather than falls back to clearnet,
+    /// exactly like a spawned one. Attaching while a proxy is running
+    /// replaces it.
+    pub async fn attach_mixnet(
+        &mut self,
+        socks5_addr: &str,
+    ) -> Result<(), crate::nym::MixnetProxyError> {
+        if let Some(running) = self.mixnet_proxy.take() {
+            running.stop().await;
+        }
+        self.mixnet_proxy = Some(crate::nym::MixnetProxy::attach(socks5_addr)?);
         Ok(())
     }
 
@@ -942,6 +968,114 @@ mod tests {
                 matches!(error, crate::lightclient::error::LightClientError::Offline),
                 "the failure must be typed, not prose: {error}"
             );
+        }
+    }
+
+    /// The price-fetch error contract for the mixnet route (ADR 0011,
+    /// amendments 2026-07-23 and 2026-07-27).
+    ///
+    /// Every way the opt-in mixnet price fetch can fail must arrive at the
+    /// API surface as a typed [`LightClientError`] variant with its source
+    /// chain intact: never prose in the data channel, never a silent
+    /// clearnet fallback. The route pre-flight variants
+    /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Bootstrapping,
+    /// Died}`) pair with `nym::route`'s own `resolve_route` tests; the
+    /// tests here pin the surface wiring and the transport leg. The
+    /// clearnet default lives on [`LightClient::update_current_price`] and
+    /// carries no mixnet contract.
+    #[cfg(feature = "nym")]
+    mod price_fetch_contract {
+        use crate::lightclient::LightClient;
+        use crate::lightclient::error::LightClientError;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        fn wallet() -> crate::wallet::LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// Mixnet Mode off is a typed refusal, never a clearnet fallback:
+        /// the route pre-flight runs before any network object is built, so
+        /// no packet leaves the process.
+        #[tokio::test]
+        async fn off_mode_is_a_typed_refusal() {
+            let client = LightClient::new_for_test(wallet()).await;
+
+            let error = client
+                .update_current_price_over_mixnet()
+                .await
+                .expect_err("no proxy is attached, so the mixnet fetch must refuse");
+            assert!(
+                matches!(error, LightClientError::PriceFetchRequiresMixnet),
+                "the refusal must be typed, not prose: {error}"
+            );
+        }
+
+        /// A dead proxy endpoint surfaces as the typed transport variant
+        /// with the reqwest failure preserved inside it, so a consumer can
+        /// distinguish a connection failure from a TLS or HTTP failure by
+        /// inspection instead of parsing prose. The same value converts
+        /// into [`LightClientError::PriceError`] by `From`, which is the
+        /// exact wiring `LightClient::update_current_price_over_mixnet`'s
+        /// `?` uses.
+        #[tokio::test]
+        async fn dead_proxy_failure_is_typed_with_its_source_intact() {
+            // Bind then drop, so the port is closed when the fetch dials it.
+            let closed = {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                listener.local_addr().unwrap()
+            };
+
+            let mut wallet = wallet();
+            let error = wallet
+                .update_current_price(Some(&closed.to_string()))
+                .await
+                .expect_err("a closed port cannot serve a price");
+
+            match &error {
+                crate::wallet::error::PriceError::PriceError(
+                    zingo_price::PriceError::RequestFailed(request_error),
+                ) => {
+                    assert!(
+                        request_error.is_connect(),
+                        "the reqwest failure must keep its kind: {request_error}"
+                    );
+                }
+                other => panic!("the transport failure must arrive typed: {other}"),
+            }
+
+            let surfaced = LightClientError::from(error);
+            assert!(
+                matches!(surfaced, LightClientError::PriceError(_)),
+                "the API surface must report the same typed variant: {surfaced}"
+            );
+        }
+
+        /// A black-holed proxy (the TCP connect completes in the kernel's
+        /// backlog, but no SOCKS5 reply ever comes) hangs the fetch
+        /// indefinitely: the reqwest client is built with no timeout, so
+        /// this failure mode is the one the error enum never reports. This
+        /// test documents that gap. If a client timeout is added, the hang
+        /// arm below starts failing and this test should flip to asserting
+        /// the typed timeout error instead.
+        #[tokio::test]
+        async fn black_holed_proxy_hangs_without_a_client_timeout() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+
+            let mut wallet = wallet();
+            let outcome = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                wallet.update_current_price(Some(&addr.to_string())),
+            )
+            .await;
+
+            assert!(
+                outcome.is_err(),
+                "the fetch is expected to hang against a silent proxy; \
+                 it returned instead: {:?}",
+                outcome.expect("just checked")
+            );
+            drop(listener);
         }
     }
 }
