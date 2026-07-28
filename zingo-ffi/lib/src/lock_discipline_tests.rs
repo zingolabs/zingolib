@@ -131,6 +131,29 @@ fn ufvk_answers_beside_a_held_read_guard() {
     assert_eq!(answer["chain_name"].as_str(), Some("main"), "{answer}");
 }
 
+/// The fixture wallet's own (only) unified address.
+fn fixture_unified_address() -> String {
+    let parsed = json::parse(&get_unified_addresses().expect("initialized fixture"))
+        .expect("well-formed address list");
+    parsed[0]["encoded_address"]
+        .as_str()
+        .expect("the fixture derives one address")
+        .to_string()
+}
+
+#[test]
+fn messages_answer_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let own_address = fixture_unified_address();
+    let answer = answer_under_held_read_lock(move || get_messages(own_address));
+    // No history means no messages, still under the named key.
+    assert!(
+        answer["value_transfers"].is_array() && answer["value_transfers"].is_empty(),
+        "the fixture wallet holds no messages: {answer}"
+    );
+}
+
 #[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
