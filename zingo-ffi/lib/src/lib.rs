@@ -407,6 +407,9 @@ where
     })
 }
 
+#[cfg(test)]
+mod lock_discipline_tests;
+
 /// Parses the schedule suffix of a `regtest:<schedule>` chain hint into
 /// activation heights.
 ///
@@ -1446,18 +1449,11 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
 }
 
 pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                object! { "height" => json::JsonValue::from(wallet.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient_read(|lightclient| {
+        Ok(RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            object! { "height" => json::JsonValue::from(wallet.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
+        }))
     })
 }
 
