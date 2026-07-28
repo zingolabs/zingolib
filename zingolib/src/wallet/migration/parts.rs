@@ -985,9 +985,7 @@ impl crate::wallet::LightWallet {
             ));
         }
 
-        let (_, anchor_height) = self
-            .get_migration_heights()?
-            .ok_or(WalletError::NoSyncData)?;
+        let (_, anchor_height) = self.get_migration_heights()?;
         let mut ready: Vec<(u64, BoundNote)> = Vec::new();
         for note in self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(

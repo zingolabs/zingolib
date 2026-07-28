@@ -738,9 +738,7 @@ impl LightClient {
                     // The round's outputs enter planning once the anchor
                     // reaches their confirmation heights; replanning earlier
                     // would read a note set with the round half-applied.
-                    let (_, anchor_height) = wallet
-                        .get_migration_heights()?
-                        .ok_or(WalletError::NoSyncData)?;
+                    let (_, anchor_height) = wallet.get_migration_heights()?;
                     let unanchored = pending_txids.iter().any(|txid| {
                         wallet
                             .transaction_confirmed_height(txid)
@@ -970,14 +968,6 @@ impl LightClient {
         self.broadcast_due_parts_selected(client, None).await
     }
 
-    /// The due-part broadcast loop, optionally narrowed to a single part so
-    /// catch-up can sequence sends with spacing.
-    ///
-    /// Proving is parallelised across all due parts via
-    /// [`tokio::task::spawn_blocking`]: wallet reads happen under the write
-    /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
-    /// blocking thread pool without holding the lock (Phase B), and wallet
-    /// writes + submission happen sequentially under the lock again (Phase C).
     /// The due-part broadcast loop, optionally narrowed to a single part so
     /// catch-up can sequence sends with spacing.
     ///
@@ -2188,14 +2178,14 @@ impl LightClient {
                 )
             };
             if let Some(txid) = failed {
-                return Err(MigrationError::SplitTransactionFailed(txid).into());
+                return Err(MigrationError::MigrationTransactionFailed(txid).into());
             }
             if all_confirmed {
                 return Ok(());
             }
             tokio::time::sleep(CONFIRMATION_POLL_INTERVAL).await;
         }
-        Err(MigrationError::SplitConfirmationTimeout.into())
+        Err(MigrationError::MigrationConfirmationTimeout.into())
     }
 }
 

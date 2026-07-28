@@ -494,9 +494,7 @@ impl crate::wallet::LightWallet {
     ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
 
-        let (_, anchor_height) = self
-            .get_migration_heights()?
-            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        let (_, anchor_height) = self.get_migration_heights()?;
         Ok(self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
@@ -546,9 +544,7 @@ impl crate::wallet::LightWallet {
     ) -> Result<bool, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
 
-        let (_, anchor_height) = self
-            .get_migration_heights()?
-            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        let (_, anchor_height) = self.get_migration_heights()?;
         // A failed transaction carries no confirmed height
         Ok(self
             .wallet_transactions
@@ -617,20 +613,27 @@ impl crate::wallet::LightWallet {
         )
     }
 
+    /// The target and anchor heights every migration site plans and builds
+    /// against. A thin wrapper over `get_target_and_anchor_heights` that pins
+    /// the wallet's own `min_confirmations` and turns the no-sync-data case
+    /// into the typed [`WalletError::NoSyncData`], so no caller re-derives
+    /// either.
+    ///
+    /// [`WalletError::NoSyncData`]: crate::wallet::error::WalletError::NoSyncData
     pub(crate) fn get_migration_heights(
         &self,
     ) -> Result<
-        Option<(
+        (
             zcash_protocol::consensus::BlockHeight,
             zcash_protocol::consensus::BlockHeight,
-        )>,
+        ),
         crate::wallet::error::WalletError,
     > {
         use zcash_client_backend::data_api::WalletRead as _;
-        Ok(self
-            .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
+        self.get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
             .expect("infallible")
-            .map(|(target, anchor)| (target.into(), anchor)))
+            .map(|(target, anchor)| (target.into(), anchor))
+            .ok_or(crate::wallet::error::WalletError::NoSyncData)
     }
 
     #[allow(clippy::result_large_err)]
@@ -646,9 +649,7 @@ impl crate::wallet::LightWallet {
 
         use crate::wallet::error::WalletError;
 
-        let (target_height, anchor_height) = self
-            .get_migration_heights()?
-            .ok_or(WalletError::NoSyncData)?;
+        let (target_height, anchor_height) = self.get_migration_heights()?;
 
         // Pick one spendable V2 note per planned input value (distinct notes
         // for repeated values), copying out what the builder needs so the
