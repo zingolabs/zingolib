@@ -235,6 +235,19 @@ fn spendable_balance_with_address_refuses_beside_a_held_read_guard() {
 }
 
 #[test]
+fn spendable_balance_total_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_spendable_balance_total);
+    // A fresh wallet holds nothing spendable.
+    assert_eq!(
+        answer["spendable_balance"].as_u64(),
+        Some(0),
+        "the fixture wallet's spendable total is zero: {answer}"
+    );
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

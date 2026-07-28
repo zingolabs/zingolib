@@ -2007,7 +2007,7 @@ pub fn get_spendable_balance_with_address(
 }
 
 pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
             let spendable_balance = wallet
