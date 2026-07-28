@@ -158,9 +158,14 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
             ZingolibError::Read(text)
         }
-        LightClientError::MixnetNotReady(_) | LightClientError::NoEligibleBroadcastIndexer => {
-            ZingolibError::Mixnet(text)
-        }
+        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
+        // A deliberate verdict (#1229): exhausting the eligible Broadcast
+        // Indexers is a server-topology problem, not a mixnet refusal —
+        // switching the synchronization endpoint changes eligibility, so
+        // the app's switch-and-retry routing can genuinely help. Mapping it
+        // to Mixnet would stamp it with the owned refusal marker and turn
+        // it never-retry.
+        LightClientError::NoEligibleBroadcastIndexer => ZingolibError::Indexer(text),
         LightClientError::MigrationBroadcastTargetIsSyncEndpoint { .. } => {
             ZingolibError::Migration(text)
         }
@@ -851,6 +856,39 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
             map_wallet_save(wallet.save())
         })
     })
+}
+
+/// The classification seam contract (#1229): the app routes send failures
+/// by our own error variants' display prefixes, so each zingolib failure
+/// must land in the variant whose routing verdict it deserves. A mixnet
+/// refusal is never-retry; the excluded-indexer exhaustion is a
+/// server-topology problem where switching servers genuinely changes
+/// eligibility, so it must NOT carry the mixnet marker.
+#[cfg(test)]
+mod ffi_error_routing_tests {
+    use super::*;
+
+    #[test]
+    fn a_mixnet_refusal_maps_to_the_owned_mixnet_marker() {
+        let mapped = ffi_error(LightClientError::MixnetNotReady(
+            zingolib::nym::MixnetNotReady::Bootstrapping,
+        ));
+        assert!(
+            matches!(&mapped, ZingolibError::Mixnet(_)),
+            "a refusal must carry the owned mixnet marker: {mapped:?}"
+        );
+        assert!(mapped.to_string().starts_with("Error: mixnet:"));
+    }
+
+    #[test]
+    fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
+        let mapped = ffi_error(LightClientError::NoEligibleBroadcastIndexer);
+        assert!(
+            matches!(&mapped, ZingolibError::Indexer(_)),
+            "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
+        );
+        assert!(mapped.to_string().starts_with("Error: indexer:"));
+    }
 }
 
 /// The save-path contract (zingolabs/zingo-mobile#1151; audit Issue Q), now
