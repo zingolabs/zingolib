@@ -138,6 +138,25 @@ fn config_wallet_performance_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn wallet_version_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_wallet_version);
+    // A freshly created wallet reads back at the version it was written
+    // with, so the two versions agree and are positive.
+    let current = answer["current_version"].as_u32();
+    assert!(
+        current.is_some_and(|version| version > 0),
+        "the wallet has a positive serialization version: {answer}"
+    );
+    assert_eq!(
+        answer["read_version"].as_u32(),
+        current,
+        "a fresh wallet's read version matches current: {answer}"
+    );
+}
+
+#[test]
 fn latest_block_wallet_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

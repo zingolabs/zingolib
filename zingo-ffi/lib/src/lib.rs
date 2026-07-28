@@ -2228,24 +2228,17 @@ pub fn get_config_wallet_performance() -> Result<String, ZingolibError> {
 }
 
 pub fn get_wallet_version() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                let current_version = wallet.current_version();
-                let read_version = wallet.read_version();
-                object! {
-                    "current_version" => current_version,
-                    "read_version" => read_version
-                }
-                .pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient_read(|lightclient| {
+        Ok(RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            let current_version = wallet.current_version();
+            let read_version = wallet.read_version();
+            object! {
+                "current_version" => current_version,
+                "read_version" => read_version
+            }
+            .pretty(2)
+        }))
     })
 }
 
