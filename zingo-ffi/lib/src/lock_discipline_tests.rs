@@ -74,6 +74,25 @@ fn wallet_kind_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn unified_addresses_answer_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_unified_addresses);
+    // A fresh wallet derives exactly one unified address, Orchard-only,
+    // for account 0.
+    assert_eq!(answer.len(), 1, "one derived address: {answer}");
+    let address = &answer[0];
+    assert_eq!(address["account"].as_u32(), Some(0), "{answer}");
+    assert_eq!(address["has_orchard"].as_bool(), Some(true), "{answer}");
+    assert!(
+        address["encoded_address"]
+            .as_str()
+            .is_some_and(|encoded| encoded.starts_with("u1")),
+        "a mainnet unified address encodes with the u1 prefix: {answer}"
+    );
+}
+
+#[test]
 fn latest_block_wallet_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
