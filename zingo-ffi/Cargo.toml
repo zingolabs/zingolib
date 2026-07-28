@@ -4,14 +4,15 @@ resolver = "2"
 
 [workspace.dependencies]
 # TEMPORARY pin (send-over-nym step 4, zingolib#2505): the mixnet attach seam
-# rides zingolib's `nym_mobile_adoption` branch until PR #2470 merges into
-# feat/ironwood. Revert all three branches to "feat/ironwood" before this
-# branch's PR merges. The `nym` feature enables the Mixnet Mode surface.
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "nym_mobile_adoption", features = [
+# was built against zingolib's `nym_mobile_adoption` branch, since deleted.
+# Pinned by rev to that branch's head so the arc still resolves and builds;
+# later stacked PRs advance the pin along zingolib's own history. The `nym`
+# feature enables the Mixnet Mode surface.
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
     "nym",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "nym_mobile_adoption" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "nym_mobile_adoption" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 

@@ -155,8 +155,14 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::FileError(_) => ZingolibError::Save(text),
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::PriceError(_) => {
+        LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
             ZingolibError::Read(text)
+        }
+        LightClientError::MixnetNotReady(_) | LightClientError::NoEligibleBroadcastIndexer => {
+            ZingolibError::Mixnet(text)
+        }
+        LightClientError::MigrationBroadcastTargetIsSyncEndpoint { .. } => {
+            ZingolibError::Migration(text)
         }
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
