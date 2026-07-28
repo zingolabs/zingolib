@@ -112,6 +112,19 @@ fn transparent_addresses_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn wallet_save_required_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_wallet_save_required);
+    // A freshly created wallet has never been saved, so a save is required.
+    assert_eq!(
+        answer["save_required"].as_bool(),
+        Some(true),
+        "the fresh fixture wallet requires a save: {answer}"
+    );
+}
+
+#[test]
 fn latest_block_wallet_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
