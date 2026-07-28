@@ -117,13 +117,13 @@ pub enum MigrationError {
     /// Note splitting kept producing new rounds past the round bound.
     #[error("Migration did not converge within {0} rounds.")]
     SplitDidNotConverge(usize),
-    /// A note-splitting transaction failed or disappeared from the wallet.
-    #[error("Note-splitting transaction {0} failed or disappeared.")]
-    SplitTransactionFailed(TxId),
-    /// Note-splitting transactions were not confirmed within the polling
-    /// window.
-    #[error("Timed out waiting for note-splitting transactions to confirm.")]
-    SplitConfirmationTimeout,
+    /// A migration transaction (a note split or a part) failed or
+    /// disappeared from the wallet.
+    #[error("Migration transaction {0} failed or disappeared.")]
+    MigrationTransactionFailed(TxId),
+    /// Migration transactions were not confirmed within the polling window.
+    #[error("Timed out waiting for migration transactions to confirm.")]
+    MigrationConfirmationTimeout,
     /// The scheduled flow was asked to start over a plan that still needs
     /// note splitting, which no scheduled-flow driver executes yet.
     #[error(
