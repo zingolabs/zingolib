@@ -55,6 +55,12 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// The wallet holds notes whose spend status sync has not yet confirmed.
+    #[error(
+        "Sync incomplete: the wallet's notes await spend-status confirmation. \
+         Complete sync and retry."
+    )]
+    SyncIncomplete,
     /// Maximum number of accounts already in use.
     #[error("Maximum number of accounts already in use.")]
     AccountCreationFailed,

@@ -487,6 +487,11 @@ fn split_into(
 impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
+    ///
+    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// withholds every V2 note the anchor would otherwise offer.
+    ///
+    /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete
     #[allow(clippy::result_large_err)]
     pub(crate) fn migration_note_values(
         &self,
@@ -497,17 +502,27 @@ impl crate::wallet::LightWallet {
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        Ok(self
-            .spendable_notes::<pepper_sync::wallet::OrchardNote>(
-                anchor_height,
-                &[],
-                account,
-                false,
-            )?
-            .into_iter()
-            .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
-            .map(|note| note.value())
-            .collect())
+        let anchored_v2_values = |include_potentially_spent: bool| {
+            Ok::<_, crate::wallet::error::WalletError>(
+                self.spendable_notes::<pepper_sync::wallet::OrchardNote>(
+                    anchor_height,
+                    &[],
+                    account,
+                    include_potentially_spent,
+                )?
+                .into_iter()
+                .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
+                .map(|note| note.value())
+                .collect::<Vec<u64>>(),
+            )
+        };
+        let confirmed_unspent = anchored_v2_values(false)?;
+        // The queries differ only in the spend-horizon filter, so empty
+        // first with non-empty second means sync stalled below the tip.
+        if confirmed_unspent.is_empty() && !anchored_v2_values(true)?.is_empty() {
+            return Err(crate::wallet::error::WalletError::SyncIncomplete);
+        }
+        Ok(confirmed_unspent)
     }
 
     /// The values of the account's live pre-Ironwood (V2) Orchard notes:
