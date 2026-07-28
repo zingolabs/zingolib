@@ -1482,7 +1482,7 @@ fn splice_migrated_values(
 }
 
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
 

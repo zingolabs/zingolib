@@ -34,22 +34,44 @@ pub(crate) fn init_offline_wallet() {
 }
 
 /// Runs `endpoint` on another thread while the caller's thread holds a read
-/// guard on `LIGHTCLIENT`, and returns its parsed answer. Panics if the
-/// endpoint blocks behind the guard (it takes the write lock), errors, or
-/// answers with malformed JSON.
-fn answer_under_held_read_lock(endpoint: fn() -> Result<String, ZingolibError>) -> json::JsonValue {
+/// guard on `LIGHTCLIENT`, and returns its outcome. Panics only if the
+/// endpoint blocks behind the guard (it takes the write lock).
+fn outcome_under_held_read_lock(
+    endpoint: impl FnOnce() -> Result<String, ZingolibError> + Send + 'static,
+) -> Result<String, ZingolibError> {
     let _reader = LIGHTCLIENT
         .read()
         .expect("no serialized test leaves the lock poisoned");
-    let (answer_tx, answer_rx) = std::sync::mpsc::channel();
+    let (outcome_tx, outcome_rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = answer_tx.send(endpoint());
+        let _ = outcome_tx.send(endpoint());
     });
-    let answer = answer_rx
+    outcome_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("the endpoint queued behind a held read guard: it takes the write lock")
+}
+
+/// [`outcome_under_held_read_lock`] for the common case: the endpoint must
+/// answer Ok with well-formed JSON.
+fn answer_under_held_read_lock(
+    endpoint: impl FnOnce() -> Result<String, ZingolibError> + Send + 'static,
+) -> json::JsonValue {
+    let answer = outcome_under_held_read_lock(endpoint)
         .expect("the initialized wallet answers this endpoint");
     json::parse(&answer).expect("the endpoint answers well-formed JSON")
+}
+
+#[test]
+fn value_transfers_answer_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_value_transfers);
+    // A fresh wallet has no history, and the empty list still arrives
+    // under its named key.
+    assert!(
+        answer["value_transfers"].is_array() && answer["value_transfers"].is_empty(),
+        "the fixture wallet's history is an empty list: {answer}"
+    );
 }
 
 #[test]
