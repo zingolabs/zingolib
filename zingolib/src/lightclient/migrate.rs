@@ -2178,14 +2178,14 @@ impl LightClient {
                 )
             };
             if let Some(txid) = failed {
-                return Err(MigrationError::MigrationTransactionFailed(txid).into());
+                return Err(MigrationError::TransactionFailed(txid).into());
             }
             if all_confirmed {
                 return Ok(());
             }
             tokio::time::sleep(CONFIRMATION_POLL_INTERVAL).await;
         }
-        Err(MigrationError::MigrationConfirmationTimeout.into())
+        Err(MigrationError::ConfirmationTimeout.into())
     }
 }
 

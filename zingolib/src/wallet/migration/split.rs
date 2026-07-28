@@ -895,6 +895,36 @@ mod tests {
         assert!(params().sweep_min >= MARGINAL_FEE);
     }
 
+    /// The wrapper's typed contract: `get_migration_heights` turns the
+    /// absent-sync case into [`crate::wallet::error::WalletError::NoSyncData`]
+    /// itself, so every migration site inherits the typed refusal from one
+    /// place. A freshly constructed wallet has never synced, which is
+    /// exactly the case the wrapper must type.
+    #[test]
+    fn migration_heights_on_an_unsynced_wallet_are_typed_no_sync_data() {
+        use zingo_common_components::protocol::ActivationHeights;
+
+        use crate::config::WalletConfig;
+        use crate::testutils::default_test_wallet_settings;
+        use crate::wallet::error::WalletError;
+
+        let wallet = crate::wallet::LightWallet::new(
+            ChainType::Regtest(ActivationHeights::default()),
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().expect("hard-coded non-zero"),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+        )
+        .expect("a fresh mnemonic wallet constructs");
+
+        assert!(matches!(
+            wallet.get_migration_heights(),
+            Err(WalletError::NoSyncData)
+        ));
+    }
+
     /// The action-count rule the fee model rests on: an Orchard bundle from
     /// NU6.3 disables cross-address transfers, so a spend and an output no
     /// longer share an action. The crates own that rule and the split fee
