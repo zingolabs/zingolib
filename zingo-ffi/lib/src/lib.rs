@@ -1720,53 +1720,46 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
 }
 
 pub fn wallet_kind() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                if wallet.mnemonic_phrase().is_some() {
-                    object! {"kind" => "Loaded from seed or mnemonic phrase",
-                            "transparent" => true,
-                            "sapling" => true,
-                            "orchard" => true,
-                    }
-                    .pretty(2)
-                } else {
-                    match wallet
-                        .unified_key_store
-                        .get(&AccountId::ZERO)
-                        .expect("account 0 must always exist")
-                    {
-                        UnifiedKeyStore::Spend(_) => object! {
-                            "kind" => "Loaded from unified spending key",
-                            "transparent" => true,
-                            "sapling" => true,
-                            "orchard" => true,
-                        }
-                        .pretty(2),
-                        UnifiedKeyStore::View(ufvk) => object! {
-                            "kind" => "Loaded from unified full viewing key",
-                            "transparent" => ufvk.transparent().is_some(),
-                            "sapling" => ufvk.sapling().is_some(),
-                            "orchard" => ufvk.orchard().is_some(),
-                        }
-                        .pretty(2),
-                        UnifiedKeyStore::Empty => object! {
-                            "kind" => "No keys found",
-                            "transparent" => false,
-                            "sapling" => false,
-                            "orchard" => false,
-                        }
-                        .pretty(2),
-                    }
+    with_initialized_lightclient_read(|lightclient| {
+        Ok(RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            if wallet.mnemonic_phrase().is_some() {
+                object! {"kind" => "Loaded from seed or mnemonic phrase",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
                 }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+                .pretty(2)
+            } else {
+                match wallet
+                    .unified_key_store
+                    .get(&AccountId::ZERO)
+                    .expect("account 0 must always exist")
+                {
+                    UnifiedKeyStore::Spend(_) => object! {
+                        "kind" => "Loaded from unified spending key",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                    }
+                    .pretty(2),
+                    UnifiedKeyStore::View(ufvk) => object! {
+                        "kind" => "Loaded from unified full viewing key",
+                        "transparent" => ufvk.transparent().is_some(),
+                        "sapling" => ufvk.sapling().is_some(),
+                        "orchard" => ufvk.orchard().is_some(),
+                    }
+                    .pretty(2),
+                    UnifiedKeyStore::Empty => object! {
+                        "kind" => "No keys found",
+                        "transparent" => false,
+                        "sapling" => false,
+                        "orchard" => false,
+                    }
+                    .pretty(2),
+                }
+            }
+        }))
     })
 }
 

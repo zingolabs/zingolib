@@ -14,7 +14,7 @@ use super::*;
 /// suite correct under plain `cargo test`'s in-process threads too.
 static LIGHTCLIENT_SERIAL: Mutex<()> = Mutex::new(());
 
-fn serialized() -> std::sync::MutexGuard<'static, ()> {
+pub(crate) fn serialized() -> std::sync::MutexGuard<'static, ()> {
     LIGHTCLIENT_SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -22,7 +22,7 @@ fn serialized() -> std::sync::MutexGuard<'static, ()> {
 
 /// Builds a fresh Indexerless mainnet wallet (the offline `init_new` path)
 /// and stores it as the global client.
-fn init_offline_wallet() {
+pub(crate) fn init_offline_wallet() {
     init_new(
         String::new(),
         0,
@@ -37,9 +37,7 @@ fn init_offline_wallet() {
 /// guard on `LIGHTCLIENT`, and returns its parsed answer. Panics if the
 /// endpoint blocks behind the guard (it takes the write lock), errors, or
 /// answers with malformed JSON.
-fn answer_under_held_read_lock(
-    endpoint: fn() -> Result<String, ZingolibError>,
-) -> json::JsonValue {
+fn answer_under_held_read_lock(endpoint: fn() -> Result<String, ZingolibError>) -> json::JsonValue {
     let _reader = LIGHTCLIENT
         .read()
         .expect("no serialized test leaves the lock poisoned");
@@ -52,6 +50,27 @@ fn answer_under_held_read_lock(
         .expect("the endpoint queued behind a held read guard: it takes the write lock")
         .expect("the initialized wallet answers this endpoint");
     json::parse(&answer).expect("the endpoint answers well-formed JSON")
+}
+
+#[test]
+fn wallet_kind_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(wallet_kind);
+    // The offline fixture is a NewSeed wallet, so its kind is the mnemonic
+    // one with every receiver present.
+    assert_eq!(
+        answer["kind"].as_str(),
+        Some("Loaded from seed or mnemonic phrase"),
+        "the fixture wallet's kind answer changed shape: {answer}"
+    );
+    for receiver in ["transparent", "sapling", "orchard"] {
+        assert_eq!(
+            answer[receiver].as_bool(),
+            Some(true),
+            "a seed wallet carries every receiver: {answer}"
+        );
+    }
 }
 
 #[test]
