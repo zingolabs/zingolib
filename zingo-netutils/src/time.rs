@@ -8,8 +8,8 @@
 //! two call sites share a constant only when they bound the *same*
 //! quantity, never because their numbers coincide — the census behind this
 //! module adjudicated every coincidence. Values that exist only for tests
-//! live in [`test`], compiled unconditionally so downstream test code can
-//! import them.
+//! live in the `test` submodule, which `cfg(test)` exposes to this crate's
+//! own tests and the `testutils` feature exposes to downstream test code.
 //!
 //! The one production exception dependency direction forces: `zingo-price`
 //! sits below the wallet with no dependency on this crate, so

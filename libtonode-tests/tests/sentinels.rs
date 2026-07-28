@@ -15,7 +15,6 @@
 #![cfg(feature = "sentinels")]
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use zcash_local_net::MinerPool;
 use zcash_local_net::process::Process;
