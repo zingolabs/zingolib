@@ -41,6 +41,12 @@ pub(crate) fn socks5_transmit_stage(
         Socks5TransmitError::Rpc { .. } | Socks5TransmitError::Rejected(_) => {
             NetOpStage::RemoteHttp
         }
+        // The client's own bound elapsed: no answer arrived, so this is
+        // never a remote verdict. The bound rides into the stage so a
+        // consumer can distinguish "slow" from "absent" (issue #2564).
+        Socks5TransmitError::TimedOut { after, .. } => NetOpStage::TimedOut {
+            after_ms: after.as_millis() as u64,
+        },
         Socks5TransmitError::InsecureScheme { .. } => NetOpStage::RouteResolution,
     }
 }
@@ -97,6 +103,13 @@ mod classifier_tests {
                     status: zingo_netutils::Status::unavailable("overloaded"),
                 },
                 NetOpStage::RemoteHttp,
+            ),
+            (
+                Socks5TransmitError::TimedOut {
+                    destination: "zec.rocks:443".into(),
+                    after: std::time::Duration::from_secs(25),
+                },
+                NetOpStage::TimedOut { after_ms: 25_000 },
             ),
             (
                 Socks5TransmitError::InsecureScheme {
