@@ -1927,7 +1927,7 @@ pub fn get_balance() -> Result<String, ZingolibError> {
 }
 
 pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
                 Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
