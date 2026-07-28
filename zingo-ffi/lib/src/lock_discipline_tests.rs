@@ -125,6 +125,19 @@ fn wallet_save_required_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn config_wallet_performance_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_config_wallet_performance);
+    // The fixture initializes with the Medium performance level.
+    assert_eq!(
+        answer["performance_level"].as_str(),
+        Some("Medium"),
+        "the fixture wallet's configured level: {answer}"
+    );
+}
+
+#[test]
 fn latest_block_wallet_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

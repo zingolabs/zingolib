@@ -2213,24 +2213,17 @@ pub fn set_config_wallet_to_prod(
 }
 
 pub fn get_config_wallet_performance() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet().read().await;
-                let performance_level = match wallet.wallet_settings.sync_config.performance_level {
-                    PerformanceLevel::Low => "Low",
-                    PerformanceLevel::Medium => "Medium",
-                    PerformanceLevel::High => "High",
-                    PerformanceLevel::Maximum => "Maximum",
-                };
-                object! { "performance_level" => performance_level }.pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient_read(|lightclient| {
+        Ok(RT.block_on(async move {
+            let wallet = lightclient.wallet().read().await;
+            let performance_level = match wallet.wallet_settings.sync_config.performance_level {
+                PerformanceLevel::Low => "Low",
+                PerformanceLevel::Medium => "Medium",
+                PerformanceLevel::High => "High",
+                PerformanceLevel::Maximum => "Maximum",
+            };
+            object! { "performance_level" => performance_level }.pretty(2)
+        }))
     })
 }
 
