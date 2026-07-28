@@ -799,6 +799,17 @@ impl LightClient {
             .and_then(|proxy| proxy.death_detail())
     }
 
+    /// The latched death read whole — its moment and, when the watcher held
+    /// one, its typed cause — while Mixnet Mode is
+    /// [`MixnetMode::Died`](crate::nym::MixnetMode); `None` in every other
+    /// mode. The moment is what distinguishes a stale latch from a fresh
+    /// one; staleness math goes through [`crate::nym::DeathReport::age`].
+    pub fn mixnet_death_report(&self) -> Option<crate::nym::DeathReport> {
+        self.mixnet_proxy
+            .as_ref()
+            .and_then(|proxy| proxy.death_report())
+    }
+
     /// Resolve the fail-closed route every mixnet-only surface must obey: the
     /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
     /// clearnet when off (a deliberate toggle-off), and a refusal while

@@ -20,7 +20,33 @@ pub mod supervisor;
 
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
-pub use supervisor::{MixnetProxy, MixnetProxyError};
+pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
+
+/// The temporal calibration a consumer of the mixnet transport reads from
+/// the wallet, so a user interface paces itself from the same source of
+/// truth as the gates (`zingo_netutils::time`) instead of pinning copies
+/// across the FFI, where no compiler catches drift (issue #2564). Field
+/// names match the constants they carry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MixnetTiming {
+    /// The attach readiness gate's total worst-case budget: how long
+    /// "Connecting to mixnet…" may legitimately take before a `died`
+    /// verdict can land. A consumer's connect patience derives from this.
+    pub attach_readiness_budget: std::time::Duration,
+    /// Bound on one data round trip through the tunnel, the per-attempt
+    /// patience behind the budget.
+    pub mixnet_round_trip_bound: std::time::Duration,
+}
+
+/// The current [`MixnetTiming`], read from the one place the constants
+/// live. Pure and infallible, so the FFI layer can surface it as a plain
+/// record.
+pub fn mixnet_timing() -> MixnetTiming {
+    MixnetTiming {
+        attach_readiness_budget: zingo_netutils::time::ATTACH_READINESS_BUDGET,
+        mixnet_round_trip_bound: zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND,
+    }
+}
 
 /// The taxonomy stage of a SOCKS5 transmit failure
 /// (`docs/agents/net-diag-design.md`): a pure, typed match over the error's
