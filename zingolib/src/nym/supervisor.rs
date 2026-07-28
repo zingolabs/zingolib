@@ -58,10 +58,11 @@ use zingo_netutils::{NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
 
-/// The indexer the attach readiness gate round-trips through. No wallet data
-/// travels — a bare `GetLightdInfo` — and the target mirrors the spawned
-/// binary's health-check indexer.
-const ATTACH_HEALTH_INDEXER: &str = "https://zec.rocks:443";
+/// The indexer the attach readiness gate round-trips through: the census's
+/// shared health target, the same one the spawned binary's gate uses (one
+/// owner, issue #2565's rule; the census pins it to an active member). No
+/// wallet data travels — a bare `GetLightdInfo`.
+const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
 
 /// Readiness attempts against the attached endpoint before declaring it
 /// dead. Unlike the spawned binary's health gate, attach cannot redraw a

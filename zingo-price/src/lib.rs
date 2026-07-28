@@ -59,6 +59,15 @@ pub enum PriceError {
     /// Invalid price.
     #[error("invalid price.")]
     InvalidPrice,
+    /// The source answered in-band with its own error report instead of a
+    /// price (Kraken's `error` array). The report carries the source's own
+    /// words.
+    #[error("the price source reported: {0}")]
+    SourceReportedError(String),
+    /// The body decoded as JSON but its structure was not the source's
+    /// documented shape. Names the missing piece.
+    #[error("the price source answered with an unexpected shape: missing {0}")]
+    UnexpectedShape(&'static str),
 }
 
 #[derive(Debug, Deserialize)]
@@ -275,13 +284,282 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// store the result under a briefly-held lock afterwards (the net-diag
 /// polling-blackout remedy).
 pub async fn fetch_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
-    get_current_price(
+    fetch_current_price_from(PriceSource::Gemini, socks5_proxy).await
+}
+
+/// Fetch the current ZEC/USD price from the named source, optionally
+/// through a local SOCKS5 proxy (`socks5h://`, so hostname resolution
+/// happens at the proxy). The same lock-free contract as
+/// [`fetch_current_price`] applies.
+pub async fn fetch_current_price_from(
+    source: PriceSource,
+    socks5_proxy: Option<&str>,
+) -> Result<Price, PriceError> {
+    get_source_price(
+        source,
         socks5_proxy,
-        GEMINI_ZECUSD_URL,
+        source.url(),
         REQUEST_TIMEOUT,
         CONNECT_TIMEOUT,
     )
     .await
+}
+
+/// The winning answer of the three-source race: the price and the source
+/// that answered first.
+#[derive(Debug, Clone, Copy)]
+pub struct RacedPrice {
+    /// The first price to arrive.
+    pub price: Price,
+    /// The source that answered it.
+    pub source: PriceSource,
+}
+
+/// Every source in the race failed. Each failure keeps its source's name
+/// beside the typed error, and the rendered report carries every cause
+/// chain, so a total outage is diagnosable per operator.
+#[derive(Debug, thiserror::Error)]
+#[error("every price source failed. {}", self.report())]
+pub struct PriceRaceFailure {
+    /// Each source's typed failure, in completion order.
+    pub failures: Vec<(PriceSource, PriceError)>,
+}
+
+impl PriceRaceFailure {
+    /// One line per source: its name, its error, and the full cause chain.
+    pub fn report(&self) -> String {
+        self.failures
+            .iter()
+            .map(|(source, error)| {
+                let mut line = format!("{}: {error}", source.name());
+                let mut cause = std::error::Error::source(error);
+                while let Some(layer) = cause {
+                    line.push_str(": ");
+                    line.push_str(&layer.to_string());
+                    cause = layer.source();
+                }
+                line
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+}
+
+/// Race all three sources concurrently and report the first success; the
+/// losing fetches are cancelled. When every source fails, the error names
+/// each source's typed failure. Bounded by [`REQUEST_TIMEOUT`] per leg, so
+/// the whole race settles within the single-fetch bound.
+pub async fn race_current_price(
+    socks5_proxy: Option<&str>,
+) -> Result<RacedPrice, PriceRaceFailure> {
+    race_sources(
+        socks5_proxy,
+        [
+            (PriceSource::Gemini, GEMINI_ZECUSD_URL.to_string()),
+            (PriceSource::Kraken, KRAKEN_ZECUSD_URL.to_string()),
+            (PriceSource::CoinGecko, COINGECKO_ZECUSD_URL.to_string()),
+        ],
+        REQUEST_TIMEOUT,
+        CONNECT_TIMEOUT,
+    )
+    .await
+}
+
+/// The race mechanism, URL-injectable for tests. First `Ok` wins and
+/// aborts the rest; all-fail collects every typed failure.
+async fn race_sources(
+    socks5_proxy: Option<&str>,
+    entries: [(PriceSource, String); 3],
+    request_timeout: Duration,
+    connect_timeout: Duration,
+) -> Result<RacedPrice, PriceRaceFailure> {
+    use futures::stream::{FuturesUnordered, StreamExt};
+    let mut in_flight: FuturesUnordered<_> = entries
+        .into_iter()
+        .map(|(source, url)| {
+            let proxy = socks5_proxy.map(str::to_string);
+            async move {
+                let outcome = get_source_price(
+                    source,
+                    proxy.as_deref(),
+                    &url,
+                    request_timeout,
+                    connect_timeout,
+                )
+                .await;
+                (source, outcome)
+            }
+        })
+        .collect();
+
+    let mut failures = Vec::new();
+    while let Some((source, outcome)) = in_flight.next().await {
+        match outcome {
+            // Dropping `in_flight` cancels the losing legs.
+            Ok(price) => return Ok(RacedPrice { price, source }),
+            Err(error) => failures.push((source, error)),
+        }
+    }
+    Err(PriceRaceFailure { failures })
+}
+
+/// Kraken's public recent-trades endpoint for the ZEC/USD pair, requesting
+/// [`TRADES_REQUESTED`] trades so the Gemini median contract transfers.
+const KRAKEN_ZECUSD_URL: &str = "https://api.kraken.com/0/public/Trades?pair=ZECUSD&count=11";
+
+/// CoinGecko's simple-price endpoint for ZEC in USD. An aggregator spot
+/// value with its update time; there are no trades to take a median of.
+const COINGECKO_ZECUSD_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd&include_last_updated_at=true";
+
+/// The public price sources, each an independent operator and failure
+/// domain. Rotation order is the declaration order, wrapping; the caller
+/// owning rotation policy decides when to advance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PriceSource {
+    /// Gemini's recent-trades endpoint, median of eleven trades.
+    Gemini,
+    /// Kraken's recent-trades endpoint, median of eleven trades.
+    Kraken,
+    /// CoinGecko's simple-price endpoint, an aggregator's spot value.
+    CoinGecko,
+}
+
+impl PriceSource {
+    /// The next source in rotation order, wrapping at the end.
+    pub fn next(self) -> PriceSource {
+        match self {
+            PriceSource::Gemini => PriceSource::Kraken,
+            PriceSource::Kraken => PriceSource::CoinGecko,
+            PriceSource::CoinGecko => PriceSource::Gemini,
+        }
+    }
+
+    /// The stable lowercase name carried in payloads and reports.
+    pub fn name(self) -> &'static str {
+        match self {
+            PriceSource::Gemini => "gemini",
+            PriceSource::Kraken => "kraken",
+            PriceSource::CoinGecko => "coingecko",
+        }
+    }
+
+    fn url(self) -> &'static str {
+        match self {
+            PriceSource::Gemini => GEMINI_ZECUSD_URL,
+            PriceSource::Kraken => KRAKEN_ZECUSD_URL,
+            PriceSource::CoinGecko => COINGECKO_ZECUSD_URL,
+        }
+    }
+
+    /// The source's parser, a pure function over the response text.
+    fn parse(self, body: &str) -> Result<Price, PriceError> {
+        match self {
+            PriceSource::Gemini => parse_gemini_trades(body),
+            PriceSource::Kraken => parse_kraken_trades(body),
+            PriceSource::CoinGecko => parse_coingecko_simple(body),
+        }
+    }
+}
+
+/// The median of a sorted trades list, guarded so a structurally short
+/// response is a typed refusal, never an index panic.
+fn median_price(mut trades: Vec<Price>) -> Result<Price, PriceError> {
+    trades.sort_by(|a, b| {
+        a.price_usd
+            .partial_cmp(&b.price_usd)
+            .expect("trades are checked to be finite and comparable")
+    });
+    let received = trades.len();
+    trades
+        .get(MEDIAN_INDEX)
+        .copied()
+        .ok_or(PriceError::InsufficientTrades { received })
+}
+
+fn parse_gemini_trades(body: &str) -> Result<Price, PriceError> {
+    let responses: Vec<CurrentPriceResponse> = serde_json::from_str(body)?;
+    let trades = responses
+        .iter()
+        .map(|response| {
+            let price_usd: f32 = response.price.parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            Ok(Price {
+                price_usd,
+                time: response.timestamp,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+fn parse_kraken_trades(body: &str) -> Result<Price, PriceError> {
+    let envelope: serde_json::Value = serde_json::from_str(body)?;
+    if let Some(reported) = envelope["error"].as_array()
+        && !reported.is_empty()
+    {
+        return Err(PriceError::SourceReportedError(
+            reported
+                .iter()
+                .filter_map(|entry| entry.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
+    let pairs = envelope["result"]
+        .as_object()
+        .ok_or(PriceError::UnexpectedShape("the result object"))?;
+    // The trades live under the pair's name (`XZECZUSD`); `last` is the
+    // pagination cursor beside it.
+    let (_pair, entries) = pairs
+        .iter()
+        .find(|(key, _)| *key != "last")
+        .ok_or(PriceError::UnexpectedShape("the traded pair"))?;
+    let trades = entries
+        .as_array()
+        .ok_or(PriceError::UnexpectedShape("the trades array"))?
+        .iter()
+        .map(|entry| {
+            let price_usd: f32 = entry
+                .get(0)
+                .and_then(|price| price.as_str())
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                .parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let time = entry
+                .get(2)
+                .and_then(|time| time.as_f64())
+                .ok_or(PriceError::UnexpectedShape("a trade's time"))?
+                as u32;
+            Ok(Price { price_usd, time })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+#[derive(Debug, Deserialize)]
+struct CoinGeckoZecQuote {
+    usd: f32,
+    last_updated_at: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct CoinGeckoSimplePrice {
+    zcash: CoinGeckoZecQuote,
+}
+
+fn parse_coingecko_simple(body: &str) -> Result<Price, PriceError> {
+    let quote: CoinGeckoSimplePrice = serde_json::from_str(body)?;
+    if !quote.zcash.usd.is_finite() {
+        return Err(PriceError::InvalidPrice);
+    }
+    Ok(Price {
+        price_usd: quote.zcash.usd,
+        time: quote.zcash.last_updated_at,
+    })
 }
 
 /// The typed signals [`classify_stage`] reads from a [`reqwest::Error`],
@@ -388,7 +666,29 @@ fn classify_request(
 ///
 /// Production callers go through [`fetch_current_price`]; tests point `url`
 /// at a local server and shrink the bounds.
+#[cfg(test)]
 async fn get_current_price(
+    socks5_proxy: Option<&str>,
+    url: &str,
+    request_timeout: Duration,
+    connect_timeout: Duration,
+) -> Result<Price, PriceError> {
+    get_source_price(
+        PriceSource::Gemini,
+        socks5_proxy,
+        url,
+        request_timeout,
+        connect_timeout,
+    )
+    .await
+}
+
+/// Fetch one source's answer over the shared HTTP leg and hand the body to
+/// the source's parser. Transport failures classify through the net-diag
+/// table; a body that arrives but does not parse is the parser's typed
+/// refusal.
+async fn get_source_price(
+    source: PriceSource,
     socks5_proxy: Option<&str>,
     url: &str,
     request_timeout: Duration,
@@ -405,42 +705,17 @@ async fn get_current_price(
     if let Some(addr) = socks5_proxy {
         builder = builder.proxy(reqwest::Proxy::all(format!("socks5h://{addr}")).map_err(typed)?);
     }
-    let httpget = builder
+    let body = builder
         .build()
         .map_err(typed)?
         .get(url)
         .send()
         .await
-        .map_err(typed)?;
-    let mut trades = httpget
-        .json::<Vec<CurrentPriceResponse>>()
-        .await
         .map_err(typed)?
-        .iter()
-        .map(|response| {
-            let price_usd: f32 = response.price.parse()?;
-            if !price_usd.is_finite() {
-                return Err(PriceError::InvalidPrice);
-            }
-
-            Ok(Price {
-                price_usd,
-                time: response.timestamp,
-            })
-        })
-        .collect::<Result<Vec<Price>, PriceError>>()?;
-
-    trades.sort_by(|a, b| {
-        a.price_usd
-            .partial_cmp(&b.price_usd)
-            .expect("trades are checked to be finite and comparable")
-    });
-
-    let received = trades.len();
-    trades
-        .get(MEDIAN_INDEX)
-        .copied()
-        .ok_or(PriceError::InsufficientTrades { received })
+        .text()
+        .await
+        .map_err(typed)?;
+    source.parse(&body)
 }
 
 #[cfg(test)]
@@ -690,5 +965,168 @@ mod tests {
             matches!(error, PriceError::InsufficientTrades { received: 2 }),
             "the refusal must be typed with the received count: {error}"
         );
+    }
+
+    /// Eleven Kraken-shaped trades around a 43.00 median. Trade entries are
+    /// [price, volume, time, buy/sell, market/limit, misc, id].
+    const KRAKEN_ELEVEN_TRADES: &str = r#"{
+        "error": [],
+        "result": {
+            "XZECZUSD": [
+                ["42.80","1.0",1700000001.1,"b","m","",1],
+                ["43.20","0.5",1700000002.2,"s","l","",2],
+                ["42.90","2.0",1700000003.3,"b","m","",3],
+                ["43.10","1.1",1700000004.4,"s","m","",4],
+                ["43.00","0.7",1700000005.5,"b","l","",5],
+                ["42.70","0.2",1700000006.6,"s","m","",6],
+                ["43.30","1.4",1700000007.7,"b","m","",7],
+                ["42.60","0.9",1700000008.8,"s","l","",8],
+                ["43.40","0.3",1700000009.9,"b","m","",9],
+                ["42.95","1.8",1700000010.1,"s","m","",10],
+                ["43.05","0.6",1700000011.2,"b","l","",11]
+            ],
+            "last": "1700000011200000000"
+        }
+    }"#;
+
+    #[test]
+    fn kraken_trades_parse_to_the_median_price() {
+        let median = parse_kraken_trades(KRAKEN_ELEVEN_TRADES).expect("eleven finite trades parse");
+        assert_eq!(median.price_usd, 43.00);
+        assert_eq!(median.time, 1700000005);
+    }
+
+    #[test]
+    fn a_kraken_in_band_error_is_a_typed_source_report() {
+        let body = r#"{"error":["EQuery:Unknown asset pair"],"result":{}}"#;
+        let error = parse_kraken_trades(body).expect_err("a reported error is never a price");
+        assert!(
+            matches!(&error, PriceError::SourceReportedError(report)
+                if report.contains("EQuery:Unknown asset pair")),
+            "the report must carry the source's own words: {error}"
+        );
+    }
+
+    #[test]
+    fn a_kraken_response_without_a_pair_is_a_typed_shape_refusal() {
+        let body = r#"{"error":[],"result":{"last":"1700000011200000000"}}"#;
+        let error = parse_kraken_trades(body).expect_err("no pair key, no trades");
+        assert!(
+            matches!(error, PriceError::UnexpectedShape(_)),
+            "the refusal must name the missing shape: {error}"
+        );
+    }
+
+    #[test]
+    fn coingecko_simple_price_parses_with_its_update_time() {
+        let body = r#"{"zcash":{"usd":41.37,"last_updated_at":1700000123}}"#;
+        let spot = parse_coingecko_simple(body).expect("a spot quote parses");
+        assert_eq!(spot.price_usd, 41.37);
+        assert_eq!(spot.time, 1700000123);
+    }
+
+    #[test]
+    fn a_non_finite_coingecko_price_is_a_typed_refusal() {
+        let body = r#"{"zcash":{"usd":1e39,"last_updated_at":1700000123}}"#;
+        let error = parse_coingecko_simple(body).expect_err("an overflowed float is no price");
+        assert!(
+            matches!(error, PriceError::InvalidPrice),
+            "the refusal must be the typed invalid-price arm: {error}"
+        );
+    }
+
+    #[test]
+    fn the_rotation_order_cycles_through_every_source() {
+        assert_eq!(PriceSource::Gemini.next(), PriceSource::Kraken);
+        assert_eq!(PriceSource::Kraken.next(), PriceSource::CoinGecko);
+        assert_eq!(PriceSource::CoinGecko.next(), PriceSource::Gemini);
+    }
+
+    /// A server that answers every connection with this body, until dropped.
+    async fn spawn_answering_server(body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = sock.read(&mut buf).await;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(response.as_bytes()).await;
+            }
+        });
+        url
+    }
+
+    /// A server that accepts and never answers, until dropped.
+    async fn spawn_silent_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let _sock = listener.accept().await;
+            std::future::pending::<()>().await;
+        });
+        url
+    }
+
+    #[tokio::test]
+    async fn the_race_reports_the_first_success() {
+        let garbage = spawn_answering_server("not json at all").await;
+        let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
+        let silent = spawn_silent_server().await;
+        let short = Duration::from_millis(500);
+
+        let won = race_sources(
+            None,
+            [
+                (PriceSource::Gemini, garbage),
+                (PriceSource::Kraken, kraken),
+                (PriceSource::CoinGecko, silent),
+            ],
+            short,
+            short,
+        )
+        .await
+        .expect("one healthy source wins the race");
+        assert_eq!(won.source, PriceSource::Kraken);
+        assert_eq!(won.price.price_usd, 43.00);
+    }
+
+    #[tokio::test]
+    async fn a_race_where_every_source_fails_reports_all_three() {
+        let garbage_one = spawn_answering_server("not json at all").await;
+        let garbage_two = spawn_answering_server(r#"{"unexpected":true}"#).await;
+        let silent = spawn_silent_server().await;
+        let short = Duration::from_millis(300);
+
+        let failure = race_sources(
+            None,
+            [
+                (PriceSource::Gemini, garbage_one),
+                (PriceSource::Kraken, garbage_two),
+                (PriceSource::CoinGecko, silent),
+            ],
+            short,
+            short,
+        )
+        .await
+        .expect_err("no source answered with a price");
+        let named: Vec<&str> = failure
+            .failures
+            .iter()
+            .map(|(source, _)| source.name())
+            .collect();
+        assert_eq!(failure.failures.len(), 3);
+        for name in ["gemini", "kraken", "coingecko"] {
+            assert!(named.contains(&name), "missing {name} in {named:?}");
+            assert!(
+                failure.to_string().contains(name),
+                "the rendered report must name {name}: {failure}"
+            );
+        }
     }
 }

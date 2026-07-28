@@ -1,14 +1,14 @@
 //! Dynamic server selection via `get_info()` against a curated list of indexers.
 //!
 //! When no `--server` is specified, we call `get_info()` on each URI in
-//! `most_up_indexer_uris::MOST_UP_INDEXER_URIS` concurrently,
+//! `zingo_netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
 //! measure response time, and return the responsive servers sorted
 //! from fastest to slowest.
 
 use std::time::{Duration, Instant};
 
 use crate::commands::RT;
-use crate::most_up_indexer_uris::MOST_UP_INDEXER_URIS;
+use zingo_netutils::indexers::MOST_UP_INDEXER_URIS;
 use zingo_netutils::{GrpcIndexer, Indexer as _};
 
 /// A server that responded successfully to `get_info()`, with its measured latency.
