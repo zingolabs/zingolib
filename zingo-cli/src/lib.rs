@@ -14,7 +14,7 @@
 
 mod commands;
 mod examples;
-mod most_up_indexer_uris;
+
 mod server_select;
 
 use std::num::NonZeroU32;

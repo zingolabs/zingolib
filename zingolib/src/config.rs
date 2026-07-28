@@ -20,10 +20,12 @@ use crate::wallet::{
     keys::unified::UnifiedKeyStore,
 };
 
-/// Default indexer uri
-pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
-/// Default indexer uri (testnet)
-pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks";
+/// The default indexer URIs, from the census (the sole source of truth for
+/// indexer endpoints). NOTE: the census testnet default carries an explicit
+/// `:443`, retiring the old portless string this module completed to
+/// `:9067` — the drift between that completion and the mobile list's `:443`
+/// is what the census exists to end.
+pub use zingo_netutils::indexers::{DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET};
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
