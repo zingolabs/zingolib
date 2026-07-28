@@ -248,6 +248,36 @@ fn spendable_balance_total_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn check_my_address_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let own_address = fixture_unified_address();
+    let expected_encoding = own_address.clone();
+    let answer = answer_under_held_read_lock(move || check_my_address(own_address));
+    // The wallet recognizes its own derived unified address.
+    assert_eq!(
+        answer["is_wallet_address"].as_bool(),
+        Some(true),
+        "{answer}"
+    );
+    assert_eq!(answer["address_type"].as_str(), Some("unified"), "{answer}");
+    assert_eq!(
+        answer["encoded_address"].as_str(),
+        Some(expected_encoding.as_str()),
+        "{answer}"
+    );
+    // And disowns an address it did not derive.
+    let foreign = answer_under_held_read_lock(|| {
+        check_my_address(get_developer_donation_address().expect("static address"))
+    });
+    assert_eq!(
+        foreign["is_wallet_address"].as_bool(),
+        Some(false),
+        "{foreign}"
+    );
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

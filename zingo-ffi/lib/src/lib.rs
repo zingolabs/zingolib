@@ -2086,7 +2086,7 @@ pub fn create_new_transparent_address() -> Result<String, ZingolibError> {
 }
 
 pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
             let address_ref = wallet
