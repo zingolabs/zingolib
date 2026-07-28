@@ -1648,7 +1648,7 @@ fn chain_name_short(chain: ChainType) -> &'static str {
 // TODO: rename "get_seed_phrase" or "get_mnemonic_phrase"
 // or if other recovery info is being used could rename "get_recovery_info" ?
 pub fn get_seed() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             let wallet = lightclient.wallet().read().await;
             let recovery_info = wallet.recovery_info().ok_or_else(|| {

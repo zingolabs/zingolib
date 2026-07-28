@@ -92,6 +92,27 @@ fn status_sync_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn seed_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_seed);
+    // The NewSeed fixture carries a 24-word mnemonic, its Library Birthday,
+    // and the wallet's own chain.
+    assert_eq!(
+        answer["seed_phrase"]
+            .as_str()
+            .map(|phrase| phrase.split_whitespace().count()),
+        Some(24),
+        "the recovery info carries the 24-word mnemonic: {answer}"
+    );
+    assert!(
+        answer["birthday"].as_u32().is_some_and(|height| height > 0),
+        "an offline new wallet gets the positive Library Birthday: {answer}"
+    );
+    assert_eq!(answer["chain_name"].as_str(), Some("main"), "{answer}");
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
