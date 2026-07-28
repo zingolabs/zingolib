@@ -396,3 +396,54 @@ and never falls back to clearnet. Its success value remains
 `MixnetPriceFetch`, carrying the tunnel endpoint the fetch traveled
 through, so a consumer that chose the private route holds per-fetch
 evidence of it.
+
+## Amendment (2026-07-28): off decomposes into Unattached and SwitchedOff
+
+The four-state mode the 2026-07-21 amendment ratified is superseded by five
+states: unattached, switched off, bootstrapping, ready, and died. An
+automated review of zingo-mobile PR #1225 exposed the gap. The wallet
+derived its mode from the absence of a proxy handle — a never-attached
+wallet reported off — while the route resolver maps off to clearnet as the
+user's informed consent. On mobile, where the platform starts the transport
+and a start can fail, the conflation opened a real path to unconsented
+clearnet: the coordinator published its fail-closed failure view, the next
+steady poll read off from the wallet that had never attached, the presenter
+took off as consent, and the send gate opened about thirty seconds after
+the failure the user was never asked about.
+
+The root cause is representational: "no transport was ever established" and
+"the user chose clearnet" are different facts that shared one variant. The
+decomposition gives each its own state. Unattached names a present
+condition, not a history: no transport is established and no consent is
+recorded. It is the initial state, and equally the state after a failed
+enable or re-enable — a wallet that once ran a transport returns to
+unattached when a fresh enable fails, because refusal follows from the
+current absence of transport and consent, never from history. It refuses
+the mixnet surfaces exactly as bootstrapping and died do, because absence
+is not consent. A failed enable never restores an earlier switched-off
+state either: by enabling, the user revoked the standing clearnet consent,
+and a failure must not silently reinstate it. SwitchedOff is
+reached only by the explicit disable call and remains the sole
+clearnet-routing state; the rename from Off makes the deliberate act part
+of the name. The wallet owns the distinction as an explicit state field
+rather than deriving it from `Option` on the proxy handle, since dropping
+the handle on disable would erase the very bit that separates the two
+states.
+
+The considered alternative — the mobile coordinator tracking a
+session-local consent bit and withholding trust from polled off — was
+rejected because it patches one consumer while every other reader of the
+mode keeps consuming the lie: the wallet's own route resolver would still
+resolve a never-attached wallet to clearnet, the CLI narration would still
+call it a choice, and the always-on recovery loop had already been forced
+to invent the phrase "an unconsented off" for a state the type refused to
+name. Fail-closed demands the backstop at the routing decision, which
+lives in the wallet; the presenter goes back to being a pure projection.
+
+Consequences: the FFI mode enum grows a variant and its generated bindings
+regenerate on both platforms; the CLI status narration distinguishes "never
+enabled" from "switched off"; the mobile coordinator's recovery predicate
+becomes a plain match on unattached-or-died-or-failure; and a recreated
+wallet on a live session reports unattached rather than off, so the second
+fail-open path the review identified (a configure re-run on the same
+backend instance) closes by construction.
