@@ -186,6 +186,18 @@ fn total_memobytes_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn total_value_to_address_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_total_value_to_address);
+    // No sends yet, so the per-address tally is an empty object.
+    assert!(
+        answer.is_object() && answer.is_empty(),
+        "the fixture wallet has sent no value: {answer}"
+    );
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
