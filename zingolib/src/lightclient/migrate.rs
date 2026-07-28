@@ -584,8 +584,10 @@ impl LightClient {
         &self,
         account: zip32::AccountId,
     ) -> Result<MigrationPlan, LightClientError> {
-        let wallet = self.wallet().read().await;
-        Ok(wallet.plan_ironwood_migration_now(account)?)
+        self.wallet()
+            .read()
+            .await
+            .plan_ironwood_migration_now(account)
     }
 
     /// Records the user's consent to a proposed migration plan and persists
@@ -1517,7 +1519,7 @@ impl LightClient {
                     MigrationPhase::Planned | MigrationPhase::NoteSplitting { .. } => {
                         let plan = crate::wallet::migration::plan_migration(
                             &wallet.live_v2_note_values(state.account),
-                            wallet.splits_confirm_post_activation(),
+                            wallet.splits_confirm_post_activation()?,
                             &state.params,
                         );
                         (plan.parts.len() as u32, plan.parts.iter().sum())
@@ -2200,11 +2202,11 @@ impl crate::wallet::LightWallet {
     pub(crate) fn plan_ironwood_migration_now(
         &self,
         account: zip32::AccountId,
-    ) -> Result<MigrationPlan, crate::wallet::error::WalletError> {
+    ) -> Result<MigrationPlan, LightClientError> {
         let params = MigrationParams::provisional(self.chain_type());
         Ok(plan_migration(
             &self.migration_note_values(account)?,
-            self.splits_confirm_post_activation(),
+            self.splits_confirm_post_activation()?,
             &params,
         ))
     }
@@ -2212,7 +2214,7 @@ impl crate::wallet::LightWallet {
     /// Whether a transaction built now confirms at or after NU6.3
     /// activation. Note-splitting fees depend on it (the Orchard bundle's
     /// cross-address rules change the action count).
-    pub(crate) fn splits_confirm_post_activation(&self) -> bool {
+    pub(crate) fn splits_confirm_post_activation(&self) -> Result<bool, LightClientError> {
         match (
             self.sync_state.last_known_chain_height(),
             pepper_sync::wallet::PoolActivation::of(
@@ -2220,8 +2222,9 @@ impl crate::wallet::LightWallet {
                 zcash_protocol::ShieldedPool::Ironwood,
             ),
         ) {
-            (Some(chain_height), Some(activation)) => chain_height + 1 >= activation.height(),
-            _ => false,
+            (None, Some(_)) => Err(LightClientError::WalletError(WalletError::NoSyncData)),
+            (Some(chain_height), Some(activation)) => Ok(chain_height + 1 >= activation.height()),
+            _ => Ok(false),
         }
     }
 
@@ -3173,7 +3176,7 @@ mod tests {
         let params = MigrationParams::provisional(wallet.chain_type());
         let expected = crate::wallet::migration::plan_migration(
             &[600_000_000, 600_000_000],
-            wallet.splits_confirm_post_activation(),
+            wallet.splits_confirm_post_activation().unwrap(),
             &params,
         );
         assert!(
