@@ -38,15 +38,9 @@ use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
     NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
+    indexers::MIXNET_HEALTH_INDEXER,
     time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
-
-/// The indexer contacted to prove the mixnet actually carries data before the
-/// proxy announces readiness. Reached only over the mixnet, and `GetLightdInfo`
-/// carries no wallet data, so this leaks nothing about the user. A widely
-/// deployed, reliable mainnet endpoint. Contacting it is a health probe, not a
-/// wallet operation. (A future refinement could rotate this across a set.)
-const HEALTH_CHECK_INDEXER: &str = "https://zec.rocks:443";
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -97,7 +91,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// stdout so `nym status` shows the verification. Returns an error only when
 /// every draw fails, which the caller turns into a non-zero exit.
 async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Error>> {
-    let indexer: http::Uri = HEALTH_CHECK_INDEXER.parse()?;
+    let indexer: http::Uri = MIXNET_HEALTH_INDEXER.parse()?;
     for attempt in 1..=MIXNET_HEALTH_DRAWS {
         report(format!(
             "verifying the mixnet path (attempt {attempt}/{MIXNET_HEALTH_DRAWS})"

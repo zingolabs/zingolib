@@ -41,6 +41,7 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod crypto;
 pub mod error;
+pub mod indexers;
 
 pub use crypto::ensure_default_crypto_provider;
 
