@@ -217,6 +217,14 @@ impl LightWallet {
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
     ///
+    /// The horizon *withholds* a note when the note's confirmation height lies below it. A spending
+    /// transaction can be mined only at or above the block that mined the note, so a note at or
+    /// above the horizon has had its entire spend window scanned, and the absence of a discovered
+    /// spend proves the note unspent. For a note below the horizon, the unscanned gap may conceal
+    /// a spend, so the strict form of [`Self::spendable_notes`] omits the note rather than vouch
+    /// for it. Withholding asserts nothing about the note; it records only that the wallet does
+    /// not yet know.
+    ///
     /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
     /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
     /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
