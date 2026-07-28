@@ -8,7 +8,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
     },
-    time::Duration,
 };
 
 use json::JsonValue;
@@ -58,7 +57,7 @@ mod darkside;
 #[cfg(test)]
 mod mock_chain_tests;
 
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+pub use zingo_netutils::time::DEFAULT_REQUEST_TIMEOUT;
 
 /// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
 /// the read/write lock.

@@ -40,12 +40,7 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-/// The cadence of the transmit heartbeat. A transmission can legitimately run
-/// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
-/// rounds, queued-verdict probes), so every transmitting command prints the
-/// transmission's latest progress line at this interval while it waits. A send
-/// that completes before the first tick stays silent.
-const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+use zingo_netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
 /// Awaits `operation`, emitting a heartbeat every
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
@@ -843,10 +838,8 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
     }
 }
 
-/// How long each probe leg may take. Generous for the mixnet leg's tunnel
-/// establishment. A hanging exit is reported as a timeout, not waited out.
 #[cfg(feature = "nym")]
-const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+use zingo_netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one paired probe: the two legs side by side, so a mixnet-specific
 /// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
@@ -1057,7 +1050,7 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
             }
             NymSubCommand::Probe { target } => {
                 let probes = lightclient
-                    .probe_broadcast_indexers(target, PROBE_TIMEOUT)
+                    .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
                     .await;
                 Ok(probes
                     .iter()
@@ -3314,7 +3307,7 @@ mod transmit_heartbeat {
             "confirm",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(5)),
+            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
         )
         .await;
         let () = out;

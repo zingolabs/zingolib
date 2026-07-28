@@ -51,6 +51,9 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
+use zingo_netutils::time::{
+    ATTACH_HEALTH_RETRY_PAUSE, ATTACH_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND, MIXNET_ROUND_TRIP_BOUND,
+};
 use zingo_netutils::{NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
@@ -60,23 +63,11 @@ use crate::nym::MixnetMode;
 /// binary's health-check indexer.
 const ATTACH_HEALTH_INDEXER: &str = "https://zec.rocks:443";
 
-/// Bound on one attach readiness round trip.
-const ATTACH_HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
-
 /// Readiness attempts against the attached endpoint before declaring it
 /// dead. Unlike the spawned binary's health gate, attach cannot redraw a
 /// mixnet path — the platform owns the endpoint — so retrying buys recovery
 /// only from a transient blip, and two attempts suffice.
 const ATTACH_HEALTH_ATTEMPTS: usize = 2;
-
-/// Pause between attach readiness attempts.
-const ATTACH_HEALTH_RETRY_PAUSE: Duration = Duration::from_secs(1);
-
-/// Cadence of the liveness probe against an attached endpoint.
-const ATTACH_PROBE_INTERVAL: Duration = Duration::from_secs(30);
-
-/// Bound on one liveness probe connect.
-const ATTACH_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A failure starting the mixnet proxy child process or attaching to a
 /// platform-hosted endpoint.
@@ -300,7 +291,7 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
         match zingo_netutils::get_lightd_info_via_socks5(
             &socks5_addr,
             &indexer,
-            ATTACH_HEALTH_TIMEOUT,
+            MIXNET_ROUND_TRIP_BOUND,
         )
         .await
         {
@@ -327,7 +318,7 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
 async fn endpoint_alive(socks5_addr: String) -> bool {
     matches!(
         tokio::time::timeout(
-            ATTACH_PROBE_TIMEOUT,
+            LOOPBACK_DIAL_BOUND,
             tokio::net::TcpStream::connect(&socks5_addr),
         )
         .await,

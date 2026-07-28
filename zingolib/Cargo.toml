@@ -93,6 +93,8 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
+# The nym tests read their temporal parameters from `time::test`.
+zingo-netutils = { workspace = true, features = ["testutils"] }
 # `test-util` enables paused-time tests (`start_paused`) for the attached-
 # transport falsifiers; dev-only, so the shipped graph is unchanged.
 tokio = { workspace = true, features = ["full", "test-util"] }

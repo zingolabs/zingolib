@@ -69,7 +69,7 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
         "this test issued writes itself, so it cannot attribute block 1: {writes:?}"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle zebrad must still answer");
@@ -145,7 +145,7 @@ async fn suppressed_launch_generate_leaves_genesis() {
          state persists on disk after all, or something other than the launch generate mines"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle cache-loaded zebrad must still answer");

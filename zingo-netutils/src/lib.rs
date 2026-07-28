@@ -56,6 +56,10 @@ pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
 /// definition. The full line is e.g.
 /// `NYM_STATUS=attempt 4/10: 2 in flight, 2 failed`.
 pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
+
+// The temporal parameters of every crate that can see this one, including
+// the values owned by tests (`time::test`). See the module's registry.
+pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
@@ -629,8 +633,6 @@ mod tests {
     //! - We explicitly install a rustls crypto provider to avoid
     //!   provider-selection panics in test binaries.
 
-    use std::time::Duration;
-
     use http::{Request, Response};
     use hyper::{
         body::{Bytes, Incoming},
@@ -644,7 +646,7 @@ mod tests {
 
     use tokio_rustls::rustls::RootCertStore;
 
-    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+    use crate::time::test::LOCAL_TLS_TEST_BOUND;
 
     fn add_test_cert_to_roots(roots: &mut RootCertStore) {
         use tonic::transport::CertificateDer;
@@ -959,7 +961,7 @@ mod tests {
         let response = GrpcIndexer::new(uri)
             .await
             .expect("URI to be valid.")
-            .get_lightd_info(DEFAULT_TIMEOUT)
+            .get_lightd_info(LOCAL_TLS_TEST_BOUND)
             .await
             .expect("to get info");
         assert!(
@@ -995,7 +997,7 @@ mod tests {
         let mut indexer = GrpcIndexer::new(uri).await.expect("valid URI");
 
         let tip = indexer
-            .get_latest_block(DEFAULT_TIMEOUT)
+            .get_latest_block(LOCAL_TLS_TEST_BOUND)
             .await
             .expect("get_latest_block");
         let start_height = tip.height;
@@ -1015,7 +1017,7 @@ mod tests {
         };
 
         let mut stream = indexer
-            .get_block_range(range, DEFAULT_TIMEOUT)
+            .get_block_range(range, LOCAL_TLS_TEST_BOUND)
             .await
             .expect("get_block_range");
 
