@@ -75,6 +75,23 @@ fn value_transfers_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn status_sync_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(status_sync);
+    // A never-synced wallet reports an empty scan plan with zero progress.
+    assert!(
+        answer["scan_ranges"].is_array() && answer["scan_ranges"].is_empty(),
+        "no scan ranges before a first sync: {answer}"
+    );
+    assert_eq!(
+        answer["total_outputs_scanned"].as_u64(),
+        Some(0),
+        "nothing scanned before a first sync: {answer}"
+    );
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

@@ -1582,7 +1582,7 @@ pub fn pause_sync() -> Result<String, ZingolibError> {
 }
 
 fn status_sync() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async {
             let wallet = lightclient.wallet().read().await;
             match pepper_sync::sync_status(&*wallet).await {
