@@ -110,6 +110,23 @@ struct ProxyState {
     /// (`docs/agents/net-diag-design.md`). The mode enum itself is
     /// unchanged; this rides beside it.
     death_detail: Option<zingo_net_diag::NetOpFailure>,
+    /// When the death latched, for every death (a spawned child's closed
+    /// pipe carries no cause but still has a moment). The latch is sticky
+    /// by design (proxy-owner-remediates), so without this a consumer
+    /// cannot distinguish a stale verdict from a fresh one (issue #2564).
+    death_at: Option<std::time::SystemTime>,
+}
+
+/// One latched death, read whole: when it happened and, when the watcher
+/// held one, the typed cause. The timestamp is always present because every
+/// death has a moment; the detail is `None` for a spawned child's closed
+/// stdout pipe, whose diagnostic is the child's own stderr.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeathReport {
+    /// When the death latched.
+    pub at: std::time::SystemTime,
+    /// The typed cause, when one was held.
+    pub detail: Option<zingo_net_diag::NetOpFailure>,
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
@@ -169,6 +186,7 @@ impl MixnetProxy {
             socks5_addr: None,
             bootstrap_detail: None,
             death_detail: None,
+            death_at: None,
         }));
         let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state)));
         Ok(MixnetProxy {
@@ -200,6 +218,7 @@ impl MixnetProxy {
             socks5_addr: None,
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
             death_detail: None,
+            death_at: None,
         }));
         let addr = socks5_addr.to_string();
         let probe_addr = addr.clone();
@@ -250,6 +269,23 @@ impl MixnetProxy {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == MixnetMode::Died {
             guarded.death_detail.clone()
+        } else {
+            None
+        }
+    }
+
+    /// The latched death read whole — its moment, and its typed cause when
+    /// one was held — while the mode is [`MixnetMode::Died`]; `None` in
+    /// every other mode. The sticky latch (proxy-owner-remediates) makes
+    /// the timestamp the difference between "attach timed out twenty
+    /// minutes ago" and "the proxy is gone now" (issue #2564).
+    pub fn death_report(&self) -> Option<DeathReport> {
+        let guarded = self.state.lock().expect("proxy state mutex");
+        if guarded.mode == MixnetMode::Died {
+            guarded.death_at.map(|at| DeathReport {
+                at,
+                detail: guarded.death_detail.clone(),
+            })
         } else {
             None
         }
@@ -351,6 +387,7 @@ async fn drive_attached_state<RFut, P, PFut>(
         guarded.socks5_addr = None;
         guarded.bootstrap_detail = None;
         guarded.death_detail = Some(cause);
+        guarded.death_at = Some(std::time::SystemTime::now());
     };
 
     if let Err(failure) = readiness.await {
@@ -410,6 +447,7 @@ async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyStat
     guarded.mode = MixnetMode::Died;
     guarded.socks5_addr = None;
     guarded.bootstrap_detail = None;
+    guarded.death_at = Some(std::time::SystemTime::now());
 }
 
 /// Extract the SOCKS5 address from a child stdout line, if it is the
@@ -440,6 +478,7 @@ mod tests {
             socks5_addr: None,
             bootstrap_detail: None,
             death_detail: None,
+            death_at: None,
         }))
     }
 
@@ -615,6 +654,10 @@ mod tests {
             s.socks5_addr.is_none(),
             "the dead proxy's address must be cleared so nothing dials it"
         );
+        assert!(
+            s.death_at.is_some(),
+            "even a causeless death (closed pipe) must latch its moment"
+        );
     }
 
     // ----- attached-transport falsifiers (issue #2503) -----
@@ -761,6 +804,56 @@ mod tests {
             transport: Transport::Attached {
                 driver: tokio::spawn(std::future::ready(())),
             },
+        }
+    }
+
+    /// HYPOTHESIS (issue #2565's drift-test pattern): the named readiness
+    /// budget equals the gate it summarizes — every attempt's round-trip
+    /// bound plus the pauses between attempts. Falsified if any of the
+    /// three constants is retuned without the others.
+    #[test]
+    fn the_readiness_budget_is_the_sum_of_its_gate() {
+        let attempts = u32::try_from(ATTACH_HEALTH_ATTEMPTS).expect("a small count");
+        assert_eq!(
+            zingo_netutils::time::ATTACH_READINESS_BUDGET,
+            MIXNET_ROUND_TRIP_BOUND * attempts + ATTACH_HEALTH_RETRY_PAUSE * (attempts - 1),
+            "retune the budget with its gate, never apart"
+        );
+    }
+
+    /// HYPOTHESIS (issue #2564): a death latches its moment, `death_report`
+    /// surfaces moment and cause together while the mode is `Died`, and the
+    /// report is gated exactly like the detail. Falsified if a died mode
+    /// with a recorded moment yields no report, or a stale report leaks out
+    /// of another mode.
+    #[tokio::test]
+    async fn death_report_carries_the_latch_moment_and_respects_the_mode_gate() {
+        let state = bootstrapping();
+        {
+            let mut guarded = state.lock().unwrap();
+            guarded.mode = MixnetMode::Died;
+            guarded.death_detail = Some(readiness_failure("no data through the endpoint"));
+            guarded.death_at = Some(std::time::SystemTime::UNIX_EPOCH);
+        }
+        let proxy = proxy_over(&state);
+        let report = proxy.death_report().expect("a died transport reports");
+        assert_eq!(report.at, std::time::SystemTime::UNIX_EPOCH);
+        assert_eq!(
+            report.detail,
+            Some(readiness_failure("no data through the endpoint"))
+        );
+
+        for stale_mode in [
+            MixnetMode::Ready,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Off,
+        ] {
+            state.lock().unwrap().mode = stale_mode;
+            assert_eq!(
+                proxy.death_report(),
+                None,
+                "a stale report must not leak out of {stale_mode:?}"
+            );
         }
     }
 

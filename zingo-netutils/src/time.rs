@@ -28,9 +28,14 @@ use std::time::Duration;
 /// round trip the spawnable `nym-proxy` binary gates readiness on, and the
 /// identical round trip the wallet's attach readiness gate runs (ADR 0011's
 /// mobile amendment). One physical quantity, defined once so the two gates
-/// cannot be retuned apart (issue #2565). A dead path stalls the TLS
-/// handshake, so this must fire well within [`NYM_LIFECYCLE_TIMEOUT`].
-pub const MIXNET_ROUND_TRIP_BOUND: Duration = Duration::from_secs(15);
+/// cannot be retuned apart (issue #2565). Both gates run against a *cold*
+/// tunnel — the first data through a fresh gateway session, where tail
+/// latency lives — and issue #2564's field run showed healthy round trips
+/// of ~3 s with tails that intermittently blew a 15-second bound, so the
+/// bound is thirty seconds: roughly ten times the healthy round trip, and
+/// still well inside [`NYM_LIFECYCLE_TIMEOUT`] even for the spawned
+/// binary's three draws (3 × 30 s = 90 s of 120 s).
+pub const MIXNET_ROUND_TRIP_BOUND: Duration = Duration::from_secs(30);
 
 /// Bound on one loopback exchange with the local SOCKS5 listener: the wallet
 /// supervisor's liveness probe (a bare TCP dial) and the mobile shim's
@@ -82,6 +87,18 @@ pub const ATTACH_PROBE_INTERVAL: Duration = Duration::from_secs(30);
 /// transient blip pass. Spacing, not a bound: the attempts themselves are
 /// bounded by [`MIXNET_ROUND_TRIP_BOUND`].
 pub const ATTACH_HEALTH_RETRY_PAUSE: Duration = Duration::from_secs(1);
+
+/// The attach readiness gate's total budget, worst case: every attempt's
+/// round-trip bound plus the pauses between attempts (today two attempts of
+/// [`MIXNET_ROUND_TRIP_BOUND`] with one [`ATTACH_HEALTH_RETRY_PAUSE`]).
+/// This is the number a user experiences between "Connecting to mixnet…"
+/// and a `died` verdict, previously emergent and unnamed (issue #2565's
+/// census); a consumer pacing a wait (the mobile app's connect spinner)
+/// reads it through the wallet's typed timing record instead of pinning a
+/// copy. The attempt count lives with the gate in the wallet supervisor,
+/// which pins this sum with a relation test so the three constants cannot
+/// drift apart.
+pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
 
 // ---------------------------------------------------------------------------
 // The gRPC data path (sync and send)
