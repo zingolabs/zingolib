@@ -23,7 +23,10 @@ use crate::{
     config::ChainType,
     data::proposal::{ProportionalFeeProposal, ZingoProposal},
 };
-use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
+use pepper_sync::{
+    keys::transparent::TransparentScope,
+    sync::{ScanPriority, ScanRange},
+};
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -218,25 +221,20 @@ impl LightWallet {
     /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
     /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
     pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
-        self.sync_state
-            .scan_ranges()
-            .iter()
-            .rev()
-            .find(|scan_range| {
-                if all_spends_known {
-                    scan_range.priority() >= ScanPriority::FoundNote
-                        || scan_range.priority() == ScanPriority::Scanning
-                } else {
-                    !scan_range.priority().is_scanned()
-                }
-            })
-            .map(|scan_range| scan_range.block_range().end)
-            .or_else(|| {
-                self.sync_state
-                    .scan_ranges()
-                    .first()
-                    .map(|range| range.block_range().start)
-            })
+        let mut scan_ranges_top_to_bottom = self.sync_state.scan_ranges().iter().rev();
+        let awaits_spend_detection = |scan_range: &&ScanRange| {
+            if all_spends_known {
+                scan_range.priority() >= ScanPriority::FoundNote
+                    || scan_range.priority() == ScanPriority::Scanning
+            } else {
+                !scan_range.priority().is_scanned()
+            }
+        };
+        let highest_range_awaiting_detection =
+            scan_ranges_top_to_bottom.find(awaits_spend_detection);
+        highest_range_awaiting_detection
+            .map(|awaiting_range| awaiting_range.block_range().end)
+            .or_else(|| self.sync_state.wallet_birthday())
     }
 
     /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
