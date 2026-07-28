@@ -93,6 +93,25 @@ fn unified_addresses_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn transparent_addresses_answer_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_transparent_addresses);
+    // A fresh wallet derives exactly one external transparent address for
+    // account 0.
+    assert_eq!(answer.len(), 1, "one derived address: {answer}");
+    let address = &answer[0];
+    assert_eq!(address["account"].as_u32(), Some(0), "{answer}");
+    assert_eq!(address["scope"].as_str(), Some("external"), "{answer}");
+    assert!(
+        address["encoded_address"]
+            .as_str()
+            .is_some_and(|encoded| encoded.starts_with("t1")),
+        "a mainnet P2PKH address encodes with the t1 prefix: {answer}"
+    );
+}
+
+#[test]
 fn latest_block_wallet_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

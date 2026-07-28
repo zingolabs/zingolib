@@ -2036,19 +2036,8 @@ pub fn get_unified_addresses() -> Result<String, ZingolibError> {
 }
 
 pub fn get_transparent_addresses() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(
-                RT.block_on(
-                    async move { lightclient.transparent_addresses_json().await.pretty(2) },
-                ),
-            )
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient_read(|lightclient| {
+        Ok(RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) }))
     })
 }
 
