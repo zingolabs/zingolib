@@ -113,6 +113,25 @@ fn seed_answers_beside_a_held_read_guard() {
 }
 
 #[test]
+fn ufvk_answers_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let answer = answer_under_held_read_lock(get_ufvk);
+    // The seed wallet's spending key views down to a mainnet UFVK.
+    assert!(
+        answer["ufvk"]
+            .as_str()
+            .is_some_and(|encoded| encoded.starts_with("uview1")),
+        "a mainnet UFVK encodes with the uview1 prefix: {answer}"
+    );
+    assert!(
+        answer["birthday"].as_u32().is_some_and(|height| height > 0),
+        "the UFVK travels with the positive birthday: {answer}"
+    );
+    assert_eq!(answer["chain_name"].as_str(), Some("main"), "{answer}");
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
