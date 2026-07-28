@@ -207,8 +207,8 @@ impl LightWallet {
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 
-    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
-    /// `Scanned`, `ScannedWithoutMapping` or `RefetchingNullifiers` priority).
+    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges whose
+    /// priority satisfies [`ScanPriority::is_scanned`]).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
@@ -218,8 +218,7 @@ impl LightWallet {
     /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
     /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
     pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
-        if let Some(scan_range) = self
-            .sync_state
+        self.sync_state
             .scan_ranges()
             .iter()
             .rev()
@@ -228,19 +227,16 @@ impl LightWallet {
                     scan_range.priority() >= ScanPriority::FoundNote
                         || scan_range.priority() == ScanPriority::Scanning
                 } else {
-                    scan_range.priority() != ScanPriority::Scanned
-                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
-                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
+                    !scan_range.priority().is_scanned()
                 }
             })
-        {
-            Some(scan_range.block_range().end)
-        } else {
-            self.sync_state
-                .scan_ranges()
-                .first()
-                .map(|range| range.block_range().start)
-        }
+            .map(|scan_range| scan_range.block_range().end)
+            .or_else(|| {
+                self.sync_state
+                    .scan_ranges()
+                    .first()
+                    .map(|range| range.block_range().start)
+            })
     }
 
     /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
