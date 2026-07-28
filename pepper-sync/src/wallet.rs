@@ -51,6 +51,7 @@ use crate::{
 pub mod traits;
 
 #[cfg(feature = "wallet_essentials")]
+pub mod integrity;
 pub mod serialization;
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
