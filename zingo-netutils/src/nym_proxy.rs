@@ -38,7 +38,6 @@ use std::{
     collections::HashMap,
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Duration,
 };
 
 use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
@@ -59,31 +58,9 @@ const MAX_PROVIDER_ATTEMPTS: usize = 10;
 /// parallelism is deliberately narrow.
 const MAX_PARALLEL_CONNECTS: usize = 3;
 
-/// How long the hedged bootstrap stays quiet before launching another
-/// provider in parallel. A responsive provider typically connects in well
-/// under ten seconds, so an attempt this old is worth hedging against
-/// without yet giving up on it.
-const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
-
-/// Overall timeout for `start()` and `reconnect()` to prevent infinite hangs.
-///
-/// Nym SDK connection attempts can block indefinitely if a gateway is
-/// unresponsive. This timeout caps total wall-clock time for the entire
-/// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
-const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Timeout for a single provider connect attempt.
-///
-/// Without this bound, one unresponsive provider hangs
-/// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
-/// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds. Six full
-/// attempts fit inside the lifecycle budget.
-const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-
-/// Timeout for the provider-discovery API query, which is otherwise
-/// unbounded for the same reason as the connect attempts.
-const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+use crate::time::{
+    DISCOVERY_TIMEOUT, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
+};
 
 /// Embedded Nym SOCKS5 proxy that routes traffic through the Nym mixnet.
 ///
@@ -581,6 +558,8 @@ fn time_entropy_seed() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     // The scheme-stripping and retry-engine logic is tested in

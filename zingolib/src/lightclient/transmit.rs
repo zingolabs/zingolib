@@ -25,8 +25,7 @@ pub(crate) const MAX_RETRIES: u8 = 3;
 /// cadence, for the verdict to become storage-backed (issue #2450).
 pub(crate) const MAX_QUEUED_PROBES: u8 = 30;
 
-/// The interval between retries and queued-probes.
-const RETRY_INTERVAL: Duration = Duration::from_secs(1);
+use zingo_netutils::time::TRANSMIT_RETRY_INTERVAL;
 
 /// A shareable snapshot of the in-flight Transmission's latest progress line,
 /// or `None` when no transmission is running. A consumer holding a clone (the
@@ -209,7 +208,7 @@ where
                 report(format!(
                     "delivered, awaiting the server's verdict (probe {queued_probes}/{MAX_QUEUED_PROBES})"
                 ));
-                sleep(RETRY_INTERVAL).await;
+                sleep(TRANSMIT_RETRY_INTERVAL).await;
             }
             RejectionClass::Transient => {
                 if retry_count >= MAX_RETRIES {
@@ -228,7 +227,7 @@ where
                 report(format!(
                     "retrying after a transient error (retry {retry_count}/{MAX_RETRIES})"
                 ));
-                sleep(RETRY_INTERVAL).await;
+                sleep(TRANSMIT_RETRY_INTERVAL).await;
             }
         }
     }

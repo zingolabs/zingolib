@@ -35,11 +35,10 @@
 #![forbid(unsafe_code)]
 
 use std::io::Write as _;
-use std::time::Duration;
-
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
     NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
+    time::MIXNET_ROUND_TRIP_BOUND,
 };
 
 /// The indexer contacted to prove the mixnet actually carries data before the
@@ -48,10 +47,6 @@ use zingo_netutils::{
 /// deployed, reliable mainnet endpoint. Contacting it is a health probe, not a
 /// wallet operation. (A future refinement could rotate this across a set.)
 const HEALTH_CHECK_INDEXER: &str = "https://zec.rocks:443";
-
-/// Per-attempt bound on the health round trip. A dead path stalls the TLS
-/// handshake, so this must fire well within the mixnet's own lifecycle cap.
-const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How many draws to try before giving up. Each failure redraws a fresh set of
 /// gateways, so this is the number of distinct mixnet paths attempted.
@@ -111,7 +106,8 @@ async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Err
         report(format!(
             "verifying the mixnet path (attempt {attempt}/{MAX_HEALTH_ATTEMPTS})"
         ));
-        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, HEALTH_CHECK_TIMEOUT).await
+        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, MIXNET_ROUND_TRIP_BOUND)
+            .await
         {
             Ok(_) => {
                 report("mixnet path verified".to_string());

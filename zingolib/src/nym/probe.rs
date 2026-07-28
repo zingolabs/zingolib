@@ -400,7 +400,7 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 mod tests {
     use super::*;
 
-    const FAST: Duration = Duration::from_millis(800);
+    use zingo_netutils::time::test::FAST_STAGE_BOUND;
 
     fn uri(text: &str) -> Uri {
         text.parse().expect("static uri")
@@ -415,7 +415,7 @@ mod tests {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             listener.local_addr().unwrap()
         };
-        let probe = probe_sync_server(&uri(&format!("https://{closed}")), FAST).await;
+        let probe = probe_sync_server(&uri(&format!("https://{closed}")), FAST_STAGE_BOUND).await;
         assert_eq!(probe.stages.len(), 1, "the run stops at the first failure");
         assert_eq!(probe.stages[0].step, SyncProbeStep::TcpConnect);
         let failure = probe.stages[0].failure.as_ref().expect("stage failed");
@@ -439,7 +439,7 @@ mod tests {
             }
         });
 
-        let probe = probe_sync_server(&uri(&format!("https://{addr}")), FAST).await;
+        let probe = probe_sync_server(&uri(&format!("https://{addr}")), FAST_STAGE_BOUND).await;
         assert_eq!(probe.stages.len(), 2);
         assert!(probe.stages[0].failure.is_none(), "TCP is reachable");
         let failure = probe.stages[1].failure.as_ref().expect("channel must fail");
@@ -466,7 +466,11 @@ mod tests {
     #[tokio::test]
     #[ignore = "contacts a live public indexer over clearnet"]
     async fn live_staged_probe_smoke() {
-        let probe = probe_sync_server(&uri("https://zec.rocks:443"), Duration::from_secs(15)).await;
+        let probe = probe_sync_server(
+            &uri("https://zec.rocks:443"),
+            zingo_netutils::time::test::LIVE_STAGE_BOUND,
+        )
+        .await;
         assert_eq!(probe.stages.len(), 3, "all stages ran: {probe:?}");
         assert!(probe.info.is_some(), "a live indexer answers: {probe:?}");
     }

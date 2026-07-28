@@ -435,6 +435,8 @@ pub async fn transaction_known_via_socks5(
 mod tests {
     use super::*;
 
+    use crate::time::test::MOCK_OP_BOUND;
+
     fn an_indexer() -> Uri {
         "https://indexer.example:443".parse().expect("static uri")
     }
@@ -567,10 +569,9 @@ mod tests {
     #[tokio::test]
     async fn a_non_https_indexer_is_refused() {
         let http = "http://indexer.example:9067".parse().expect("static uri");
-        let err =
-            send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("http must be refused");
+        let err = send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("http must be refused");
         assert!(
             matches!(err, Socks5TransmitError::InsecureScheme { .. }),
             "expected InsecureScheme, got: {err}"
@@ -588,10 +589,9 @@ mod tests {
         let addr = listener.local_addr().expect("local addr").to_string();
         drop(listener);
 
-        let err =
-            send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("no proxy is listening");
+        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("no proxy is listening");
         assert!(
             matches!(err, Socks5TransmitError::ProxyUnreachable { .. }),
             "expected ProxyUnreachable, got: {err}"
@@ -616,10 +616,9 @@ mod tests {
             }
         });
 
-        let err =
-            send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("the handshake dies");
+        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("the handshake dies");
         assert!(
             matches!(err, Socks5TransmitError::TunnelRefused { .. }),
             "expected TunnelRefused, got: {err}"

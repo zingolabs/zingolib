@@ -238,12 +238,12 @@ impl RaceState {
 mod tests {
     use super::*;
 
-    const HEDGE: Duration = Duration::from_secs(5);
+    use crate::time::test::PLANNER_HEDGE;
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
         LaunchPolicy::Hedged {
             max_parallel,
-            hedge_interval: HEDGE,
+            hedge_interval: PLANNER_HEDGE,
         }
     }
 
@@ -261,7 +261,7 @@ mod tests {
             race.start(),
             vec![
                 RaceAction::Launch { candidate: 0 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ]
         );
     }
@@ -274,7 +274,7 @@ mod tests {
             race.on_event(RaceEvent::HedgeElapsed),
             vec![
                 RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ]
         );
         // The third arm fills max_parallel, so no further timer is armed.
@@ -295,7 +295,7 @@ mod tests {
             actions,
             vec![
                 RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ],
             "a failure is a signal to try elsewhere at once, not to wait"
         );

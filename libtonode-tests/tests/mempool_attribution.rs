@@ -129,7 +129,7 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
     )
     .await
     .unwrap();
-    let bound = Duration::from_secs(10);
+    let bound = zingo_netutils::time::test::MEMPOOL_INGEST_BOUND;
     let indexer_lag = loop {
         let mut mempool_stream = grpc_client
             .get_mempool_tx(
@@ -137,7 +137,7 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
                     exclude_txid_suffixes: vec![],
                     pool_types: vec![],
                 },
-                Duration::from_secs(5),
+                zingo_netutils::time::test::MEMPOOL_STREAM_BOUND,
             )
             .await
             .unwrap();
@@ -195,7 +195,7 @@ async fn wallet_mempool_record_trails_validator_acceptance() {
     recipient.sync_and_await().await.unwrap();
     let sync_returned = accepted_at.elapsed();
 
-    let bound = Duration::from_secs(15);
+    let bound = zingo_netutils::time::test::WALLET_RECORD_LAG_BOUND;
     let wallet_record_lag = loop {
         let in_mempool = {
             let wallet = recipient.wallet();

@@ -23,7 +23,7 @@ pub(crate) struct RankedServer {
 ///
 /// Uses a per-server timeout so one slow server doesn't block the rest.
 pub(crate) fn select_servers() -> Vec<RankedServer> {
-    const GET_INFO_TIMEOUT: Duration = Duration::from_secs(5);
+    use zingo_netutils::time::SERVER_RANKING_TIMEOUT;
 
     let uris: Vec<http::Uri> = MOST_UP_INDEXER_URIS
         .iter()
@@ -42,7 +42,7 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
                     Ok(i) => i,
                     Err(_) => return None,
                 };
-                match indexer.get_lightd_info(GET_INFO_TIMEOUT).await {
+                match indexer.get_lightd_info(SERVER_RANKING_TIMEOUT).await {
                     Ok(_info) => Some(RankedServer {
                         uri,
                         latency: start.elapsed(),

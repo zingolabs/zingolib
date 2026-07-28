@@ -54,6 +54,9 @@ zingo-net-diag = { version = "0.1.0", path = "../zingo-net-diag", optional = tru
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
+# Exposes `time::test`, the temporal parameters owned by tests. Enabled by
+# downstream crates' dev-dependencies only, never by a production build.
+testutils = []
 # Wallet-side SOCKS5-dialing transmit (ADR 0011, consumption model A). Light —
 # no nym-sdk, so it resolves in the main workspace's lockfile. The wallet
 # enables this to route a transaction through the spawned nym-proxy's local
