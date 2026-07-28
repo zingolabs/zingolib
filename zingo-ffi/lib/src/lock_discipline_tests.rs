@@ -214,6 +214,27 @@ fn total_spends_to_address_answer_beside_a_held_read_guard() {
 }
 
 #[test]
+fn spendable_balance_with_address_refuses_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    // A never-synced wallet cannot propose, so the endpoint's correct
+    // answer is the typed Send refusal, still delivered beside the guard.
+    let outcome = outcome_under_held_read_lock(|| {
+        get_spendable_balance_with_address(
+            get_developer_donation_address().expect("static address"),
+            "false".to_string(),
+        )
+    });
+    match outcome {
+        Err(ZingolibError::Send(reason)) => assert!(
+            reason.contains("Must scan blocks first"),
+            "the refusal names the missing scan: {reason}"
+        ),
+        other => panic!("expected the typed Send refusal, got: {other:?}"),
+    }
+}
+
+#[test]
 fn wallet_kind_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();

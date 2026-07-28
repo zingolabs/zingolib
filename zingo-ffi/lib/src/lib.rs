@@ -1990,7 +1990,7 @@ pub fn get_spendable_balance_with_address(
     address: String,
     zennies: String,
 ) -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    with_initialized_lightclient_read(|lightclient| {
         let address = address_from_str(&address)
             .map_err(|_| ZingolibError::InvalidInput("unknown address format".to_string()))?;
         let zennies = zennies.parse().map_err(|_| {
