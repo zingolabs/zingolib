@@ -3784,6 +3784,7 @@ mod tests {
     /// Planning under a sync stalled below the recorded tip: the spend
     /// horizon withholds every note and the planners error instead of
     /// returning an empty plan.
+    #[cfg(test)]
     mod stalled_sync_planning {
         use pepper_sync::sync::{ScanPriority, ScanRange};
         use pepper_sync::wallet::SyncState;
