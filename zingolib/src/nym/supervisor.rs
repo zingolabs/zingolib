@@ -3,13 +3,14 @@
 //! The wallet cannot link the mixnet transport in-process, so it bundles the
 //! `nym-proxy` binary and spawns it as a child. This supervisor owns that
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
-//! the child announces on stdout, and drives the tri-state
-//! [`MixnetMode`]. While the child is starting the
+//! the child announces on stdout, and drives the transport's lifecycle
+//! states of [`MixnetMode`]. While the child is starting the
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
 //! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
-//! deliberate [`MixnetProxy::stop`] yields `Off`.
+//! deliberate [`MixnetProxy::stop`] tears down to `Unattached`; the consented
+//! `SwitchedOff` is the wallet slot's to record, never this transport's.
 //!
 //! # The attached transport
 //!
@@ -235,7 +236,7 @@ impl MixnetProxy {
         })
     }
 
-    /// The current tri-state.
+    /// The transport's current lifecycle state.
     pub fn mode(&self) -> MixnetMode {
         self.state.lock().expect("proxy state mutex").mode
     }
@@ -292,8 +293,12 @@ impl MixnetProxy {
     }
 
     /// Shut the transport down deliberately and mark the mode
-    /// [`MixnetMode::Off`]. The watcher task is aborted BEFORE the teardown,
-    /// so this deliberate `Off` is never overwritten by the watcher's `Died`.
+    /// [`MixnetMode::Unattached`]: the transport is gone, and a deliberate
+    /// stop is neither a death nor the user's clearnet consent
+    /// (`SwitchedOff` is the wallet's to record, never a torn-down
+    /// transport's). The watcher task is aborted BEFORE the teardown, so
+    /// this deliberate stop is never overwritten by the watcher's `Died`,
+    /// and any stale reader of the handle refuses rather than routes.
     pub async fn stop(self) {
         match self.transport {
             Transport::Spawned {
@@ -304,7 +309,7 @@ impl MixnetProxy {
             }
             Transport::Attached { driver } => driver.abort(),
         }
-        self.state.lock().expect("proxy state mutex").mode = MixnetMode::Off;
+        self.state.lock().expect("proxy state mutex").mode = MixnetMode::Unattached;
     }
 }
 
@@ -368,8 +373,8 @@ async fn endpoint_alive(socks5_addr: String) -> bool {
 /// liveness probe runs every `interval`; a failed probe lands `Died` and
 /// clears the address, exactly as a closed stdout pipe does for a spawned
 /// child. Generic over both effects so the transitions are unit-tested on
-/// paused time without a network; only [`MixnetProxy::stop`] sets `Off`, and
-/// it aborts this task first.
+/// paused time without a network; only [`MixnetProxy::stop`] tears down to
+/// `Unattached`, and it aborts this task first.
 async fn drive_attached_state<RFut, P, PFut>(
     state: Arc<Mutex<ProxyState>>,
     socks5_addr: String,
@@ -420,9 +425,10 @@ async fn drive_attached_state<RFut, P, PFut>(
 /// the mode to `Ready`, progress lines update the live bootstrap detail, and,
 /// the key coupling change, reading continues *past* `Ready` so a later close
 /// is observed. When stdout closes at all, whether before or after the address
-/// arrived, the mode becomes `Died`: an unexpected loss of the proxy, not a
-/// consented `Off`. Only [`MixnetProxy::stop`] sets `Off`, and it aborts this
-/// task first so its deliberate `Off` is never overwritten by this `Died`.
+/// arrived, the mode becomes `Died`: an unexpected loss of the proxy, never
+/// a consented clearnet. Only [`MixnetProxy::stop`] tears down to
+/// `Unattached`, and it aborts this task first so a deliberate stop is never
+/// overwritten by this `Died`.
 /// Generic over the reader so the state machine is unit-tested without a
 /// process.
 async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyState>>) {
@@ -625,7 +631,7 @@ mod tests {
         assert_eq!(
             s.mode,
             MixnetMode::Died,
-            "a proxy that closes without an address died; it is not consented Off"
+            "a proxy that closes without an address died; it is never consented clearnet"
         );
         assert!(s.socks5_addr.is_none());
     }
@@ -747,11 +753,12 @@ mod tests {
     }
 
     /// HYPOTHESIS: attach validates the address synchronously, and stop() on
-    /// an attached transport is the deliberate Off — never Died. Falsified
-    /// if a malformed address is accepted, or if a stopped attachment
-    /// reports anything but Off.
+    /// an attached transport is a deliberate teardown to Unattached — never
+    /// Died, and never the wallet's SwitchedOff. Falsified if a malformed
+    /// address is accepted, or if a live attachment reports anything but the
+    /// transport lifecycle states.
     #[tokio::test]
-    async fn attach_validates_the_address_and_stop_is_a_deliberate_off() {
+    async fn attach_validates_the_address_and_stop_is_a_deliberate_teardown() {
         assert!(matches!(
             MixnetProxy::attach("not-a-socket-address"),
             Err(MixnetProxyError::InvalidAddress { .. })
@@ -760,7 +767,16 @@ mod tests {
         // A refusing localhost endpoint: readiness will fail, but stop() must
         // win regardless of where the driver is when it lands.
         let proxy = MixnetProxy::attach("127.0.0.1:9").expect("a valid address attaches");
-        assert_ne!(proxy.mode(), MixnetMode::Off, "attach never starts Off");
+        // The readiness gate races this assert (a refused port can land Died
+        // fast), so assert only what is invariant: a live attachment is in
+        // the transport lifecycle, never in a wallet slot state.
+        assert!(
+            !matches!(
+                proxy.mode(),
+                MixnetMode::Unattached | MixnetMode::SwitchedOff
+            ),
+            "a live attachment never reports a slot state"
+        );
         proxy.stop().await;
     }
 
@@ -846,7 +862,8 @@ mod tests {
         for stale_mode in [
             MixnetMode::Ready,
             MixnetMode::Bootstrapping,
-            MixnetMode::Off,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
         ] {
             state.lock().unwrap().mode = stale_mode;
             assert_eq!(
@@ -880,7 +897,8 @@ mod tests {
         for stale_mode in [
             MixnetMode::Ready,
             MixnetMode::Bootstrapping,
-            MixnetMode::Off,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
         ] {
             state.lock().unwrap().mode = stale_mode;
             assert_eq!(

@@ -158,10 +158,12 @@ pub struct LightClient {
     /// after the session opts in via `set_indexer_diary`. Otherwise the
     /// handle is inert.
     indexer_history: indexer_history::IndexerHistoryHandle,
-    /// The spawned mixnet proxy child while Mixnet Mode is enabled (ADR 0011).
-    /// `None` means Mixnet Mode is off.
+    /// The mixnet transport slot (ADR 0011, amendment 2026-07-28): the
+    /// explicit state Mixnet Mode is read from — unattached, switched off,
+    /// or an attached transport. Explicit rather than `Option` so a
+    /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
-    mixnet_proxy: Option<crate::nym::MixnetProxy>,
+    mixnet_slot: crate::nym::MixnetSlot,
 }
 
 impl LightClient {
@@ -231,7 +233,7 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_proxy: None,
+            mixnet_slot: crate::nym::MixnetSlot::Unattached,
         })
     }
 
@@ -265,7 +267,7 @@ impl LightClient {
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_proxy: None,
+            mixnet_slot: crate::nym::MixnetSlot::Unattached,
         }
     }
 
@@ -320,7 +322,7 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_proxy: None,
+            mixnet_slot: crate::nym::MixnetSlot::Unattached,
         })
     }
 
@@ -630,9 +632,9 @@ impl LightClient {
     /// Update and return the current ZEC price in USD over the Nym mixnet,
     /// hiding the client IP from the price source (ADR 0011). Opt-in: the fetch
     /// is routed through the mixnet when Mixnet Mode is ready, and fails closed
-    /// (never falling back to clearnet) while the mode bootstraps, after the
-    /// proxy dies, or while it is toggled off. For the clearnet default, use
-    /// [`Self::update_current_price`].
+    /// (never falling back to clearnet) while the mixnet is unattached, while
+    /// the mode bootstraps, after the proxy dies, or while it is switched off.
+    /// For the clearnet default, use [`Self::update_current_price`].
     ///
     /// The returned fetch carries the tunnel endpoint it traveled through, so
     /// every consumer holds per-fetch evidence of the route rather than
@@ -717,23 +719,38 @@ impl LightClient {
 }
 
 /// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
-/// bundled `nym-proxy` child process. Disabling shuts it down. The tri-state
-/// reflects the child's lifecycle, and clearnet is reachable only by a
-/// deliberate disable, never as a silent fallback.
+/// bundled `nym-proxy` child process. Disabling shuts it down. The mode
+/// reflects the transport slot's state, and clearnet is reachable only by a
+/// deliberate disable, never as a silent fallback: a session that never
+/// enabled the mixnet, or whose enable failed, is `Unattached` and refuses.
 #[cfg(feature = "nym")]
 impl LightClient {
+    /// Take whatever transport the slot holds, leaving it `Unattached`, and
+    /// shut a held transport down. `Unattached` is deliberately the state a
+    /// failed enable leaves behind: by enabling, the user revoked any
+    /// standing clearnet consent, and a failure must not silently reinstate
+    /// a prior `SwitchedOff`.
+    async fn vacate_mixnet_slot(&mut self) {
+        if let crate::nym::MixnetSlot::Attached(running) =
+            std::mem::replace(&mut self.mixnet_slot, crate::nym::MixnetSlot::Unattached)
+        {
+            running.stop().await;
+        }
+    }
+
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
     /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
-    /// `Ready`. Enabling while already enabled replaces the running proxy.
+    /// `Ready`. Enabling while already enabled replaces the running proxy. A
+    /// spawn failure leaves the mode `Unattached`, which refuses the mixnet
+    /// surfaces — never a fallback to clearnet.
     pub async fn enable_mixnet(
         &mut self,
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
-        if let Some(running) = self.mixnet_proxy.take() {
-            running.stop().await;
-        }
-        self.mixnet_proxy = Some(crate::nym::MixnetProxy::spawn(binary_path)?);
+        self.vacate_mixnet_slot().await;
+        self.mixnet_slot =
+            crate::nym::MixnetSlot::Attached(crate::nym::MixnetProxy::spawn(binary_path)?);
         Ok(())
     }
 
@@ -749,42 +766,43 @@ impl LightClient {
         &mut self,
         socks5_addr: &str,
     ) -> Result<(), crate::nym::MixnetProxyError> {
-        if let Some(running) = self.mixnet_proxy.take() {
-            running.stop().await;
-        }
-        self.mixnet_proxy = Some(crate::nym::MixnetProxy::attach(socks5_addr)?);
+        self.vacate_mixnet_slot().await;
+        self.mixnet_slot =
+            crate::nym::MixnetSlot::Attached(crate::nym::MixnetProxy::attach(socks5_addr)?);
         Ok(())
     }
 
-    /// Disable Mixnet Mode. This is a deliberate, per-session choice: the
-    /// mixnet-only surfaces then route over clearnet as informed consent, and
-    /// the proxy child is shut down.
+    /// Disable Mixnet Mode. This is a deliberate, per-session choice — the
+    /// only act that reaches [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode):
+    /// the mixnet-only surfaces then route over clearnet as informed consent,
+    /// and any running transport is shut down.
     pub async fn disable_mixnet(&mut self) {
-        if let Some(running) = self.mixnet_proxy.take() {
-            running.stop().await;
-        }
+        self.vacate_mixnet_slot().await;
+        self.mixnet_slot = crate::nym::MixnetSlot::SwitchedOff;
     }
 
-    /// The current Mixnet Mode: [`MixnetMode::Off`](crate::nym::MixnetMode)
-    /// when disabled, otherwise the proxy's tri-state (bootstrapping or ready).
+    /// The current Mixnet Mode, read from the transport slot:
+    /// [`MixnetMode::Unattached`](crate::nym::MixnetMode) before any enable
+    /// (and after a failed one),
+    /// [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode) after the
+    /// deliberate disable, otherwise the transport's lifecycle state
+    /// (bootstrapping, ready, or died).
     pub fn mixnet_mode(&self) -> crate::nym::MixnetMode {
-        self.mixnet_proxy
-            .as_ref()
-            .map_or(crate::nym::MixnetMode::Off, |proxy| proxy.mode())
+        self.mixnet_slot.mode()
     }
 
     /// The local SOCKS5 address while Mixnet Mode is ready.
     pub fn mixnet_socks5_addr(&self) -> Option<String> {
-        self.mixnet_proxy
-            .as_ref()
+        self.mixnet_slot
+            .proxy()
             .and_then(|proxy| proxy.socks5_addr())
     }
 
     /// The proxy's latest bootstrap progress line while Mixnet Mode is
     /// bootstrapping, so a user interface can narrate the connect race.
     pub fn mixnet_bootstrap_detail(&self) -> Option<String> {
-        self.mixnet_proxy
-            .as_ref()
+        self.mixnet_slot
+            .proxy()
             .and_then(|proxy| proxy.bootstrap_detail())
     }
 
@@ -794,15 +812,16 @@ impl LightClient {
     /// stage, the target, and the cause chain as a vector, so a `died`
     /// verdict carries *why* without anyone parsing prose.
     pub fn mixnet_death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
-        self.mixnet_proxy
-            .as_ref()
+        self.mixnet_slot
+            .proxy()
             .and_then(|proxy| proxy.death_detail())
     }
 
     /// Resolve the fail-closed route every mixnet-only surface must obey: the
     /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
-    /// clearnet when off (a deliberate toggle-off), and a refusal while
-    /// bootstrapping. Send and price-fetch share this single resolver.
+    /// clearnet only when switched off (the deliberate toggle-off), and a
+    /// refusal while unattached, bootstrapping, or died. Send and price-fetch
+    /// share this single resolver.
     pub fn mixnet_route(&self) -> Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady> {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
@@ -995,7 +1014,7 @@ mod tests {
     /// API surface as a typed [`LightClientError`] variant with its source
     /// chain intact: never prose in the data channel, never a silent
     /// clearnet fallback. The route pre-flight variants
-    /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Bootstrapping,
+    /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Unattached, Bootstrapping,
     /// Died}`) pair with `nym::route`'s own `resolve_route` tests; the
     /// tests here pin the surface wiring and the transport leg. The
     /// clearnet default lives on [`LightClient::update_current_price`] and
@@ -1010,17 +1029,41 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// Mixnet Mode off is a typed refusal, never a clearnet fallback:
-        /// the route pre-flight runs before any network object is built, so
-        /// no packet leaves the process.
+        /// A never-enabled mixnet is a typed refusal, never a clearnet
+        /// fallback: the fresh client is `Unattached` (absence is not
+        /// consent, ADR 0011 amendment 2026-07-28), and the route pre-flight
+        /// runs before any network object is built, so no packet leaves the
+        /// process.
         #[tokio::test]
-        async fn off_mode_is_a_typed_refusal() {
+        async fn an_unattached_mixnet_is_a_typed_refusal() {
             let client = LightClient::new_for_test(wallet()).await;
 
             let error = client
                 .update_current_price_over_mixnet()
                 .await
-                .expect_err("no proxy is attached, so the mixnet fetch must refuse");
+                .expect_err("no transport was ever enabled, so the mixnet fetch must refuse");
+            assert!(
+                matches!(
+                    error,
+                    LightClientError::MixnetNotReady(crate::nym::MixnetNotReady::Unattached)
+                ),
+                "the refusal must be typed, not prose: {error}"
+            );
+        }
+
+        /// Mixnet Mode switched off is equally a typed refusal for the
+        /// opt-in mixnet fetch: the caller demanded the private route, so a
+        /// consented-clearnet mode answers `PriceFetchRequiresMixnet` rather
+        /// than quietly fetching over clearnet.
+        #[tokio::test]
+        async fn switched_off_mode_is_a_typed_refusal() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client.disable_mixnet().await;
+
+            let error = client
+                .update_current_price_over_mixnet()
+                .await
+                .expect_err("switched off consents to clearnet, not to a mixnet fetch");
             assert!(
                 matches!(error, LightClientError::PriceFetchRequiresMixnet),
                 "the refusal must be typed, not prose: {error}"

@@ -2,10 +2,11 @@
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
 //! [`Ready`](crate::nym::MixnetMode::Ready) they route through the local
-//! SOCKS5 proxy. When it is [`Off`](crate::nym::MixnetMode::Off), reachable
-//! only by the user's deliberate toggle-off, they route over clearnet as
-//! informed consent. While
-//! [`Bootstrapping`](crate::nym::MixnetMode::Bootstrapping) or after
+//! SOCKS5 proxy. When it is
+//! [`SwitchedOff`](crate::nym::MixnetMode::SwitchedOff), reachable only by
+//! the user's deliberate toggle-off, they route over clearnet as informed
+//! consent. While [`Unattached`](crate::nym::MixnetMode::Unattached),
+//! [`Bootstrapping`](crate::nym::MixnetMode::Bootstrapping), or after
 //! [`Died`](crate::nym::MixnetMode::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
 //! instead of each re-deriving the mode semantics.
@@ -17,7 +18,8 @@ use crate::nym::MixnetMode;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
     /// Route over clearnet. Reached only when Mixnet Mode is
-    /// [`Off`](MixnetMode::Off), i.e. the user deliberately toggled it off.
+    /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
+    /// toggled it off.
     Clearnet,
     /// Route through the local SOCKS5 proxy at this address.
     Mixnet(String),
@@ -41,6 +43,15 @@ impl MixnetRoute {
 /// restarting a dead proxy are different actions.
 #[derive(Clone, Copy, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MixnetNotReady {
+    /// No mixnet transport is established and the user has not consented to
+    /// clearnet: the initial state, and the state after a failed enable.
+    /// Absence is not consent, so the surface refuses.
+    #[error(
+        "the Nym mixnet is not enabled; this operation refuses rather than use \
+         clearnet without consent. Run `nym on` to enable the mixnet, or `nym off` \
+         to choose clearnet"
+    )]
+    Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
     #[error("the Nym mixnet is bootstrapping; this operation requires it to be ready")]
     Bootstrapping,
@@ -53,16 +64,18 @@ pub enum MixnetNotReady {
 }
 
 /// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
-/// SOCKS5 address. `Ready` yields the mixnet route, `Off` yields clearnet, and
-/// `Bootstrapping`, `Died`, or `Ready` with no address yet all refuse.
-/// Crucially, only the deliberate `Off` yields clearnet: a `Died` proxy
-/// refuses rather than leaking the send to clearnet without consent.
+/// SOCKS5 address. `Ready` yields the mixnet route, `SwitchedOff` yields
+/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` with no
+/// address yet all refuse. Crucially, only the deliberate `SwitchedOff`
+/// yields clearnet: a never-enabled session and a `Died` proxy both refuse
+/// rather than leaking the send to clearnet without consent.
 pub fn resolve_route(
     mode: MixnetMode,
     socks5_addr: Option<String>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match mode {
-        MixnetMode::Off => Ok(MixnetRoute::Clearnet),
+        MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
+        MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
         MixnetMode::Ready => socks5_addr
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
@@ -76,10 +89,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn off_routes_clearnet() {
+    fn switched_off_routes_clearnet() {
         assert_eq!(
-            resolve_route(MixnetMode::Off, None),
+            resolve_route(MixnetMode::SwitchedOff, None),
             Ok(MixnetRoute::Clearnet)
+        );
+    }
+
+    #[test]
+    fn unattached_refuses_because_absence_is_not_consent() {
+        // The 2026-07-28 invariant: a session that never enabled the mixnet
+        // (or whose enable failed) has not consented to clearnet, so it
+        // refuses exactly as bootstrapping and died do.
+        assert_eq!(
+            resolve_route(MixnetMode::Unattached, None),
+            Err(MixnetNotReady::Unattached)
+        );
+        assert_eq!(
+            resolve_route(MixnetMode::Unattached, Some("127.0.0.1:9050".to_string())),
+            Err(MixnetNotReady::Unattached),
+            "a stray address must not conjure a route without a transport"
         );
     }
 
@@ -126,6 +155,12 @@ mod tests {
         assert!(died.contains("died"), "{died}");
         assert!(died.contains("nym on"), "{died}");
         assert!(!died.contains("bootstrapping"), "{died}");
+
+        let unattached = MixnetNotReady::Unattached.to_string();
+        assert!(unattached.contains("not enabled"), "{unattached}");
+        assert!(unattached.contains("nym on"), "{unattached}");
+        assert!(!unattached.contains("bootstrapping"), "{unattached}");
+        assert!(!unattached.contains("died"), "{unattached}");
     }
 
     #[test]
