@@ -1,29 +1,29 @@
-//! Build and launch `zingo-cli`, by default with a `nym-proxy` sidecar.
+//! Build and launch `zingo-cli`, by default mixnet-capable.
 //!
 //! Usage: `run-cli [--clearnet] [--release] [<zingo-cli args...>]`. The
 //! `--clearnet` and `--release` flags are consumed wherever they appear
 //! (as is the retired `--nym`, a no-op now that it names the default);
 //! every other argument is forwarded to `zingo-cli` unchanged.
 //!
+//! The default run compiles the mixnet transport into the CLI and bundles
+//! the `nym-proxy` binary beside it, where the CLI's provisioning
+//! precedence resolves it. This tool never launches the proxy: the CLI
+//! owns that lifecycle, spawning the proxy at its go-online moment for an
+//! Online session (Mixnet Mode forced on, ADR 0024) and never for an
+//! offline one — an offline session boots no proxy at all (ADR 0025).
+//! `--clearnet` opts out of both the feature and the bundling: a plain
+//! build with no mixnet capability.
+//!
 //! The launched session decides its own connectivity: first boot is offline,
 //! and only a consent act — a stored standing Connectivity Consent from a
 //! previous run, or an explicit `--online`/`--server` passed through in the
 //! trailing arguments — takes it online (ADR 0025). Neither this tool nor a
-//! running proxy implies consent: the CLI launches offline beside a live
-//! sidecar exactly as it does without one.
-//!
-//! The default run compiles the mixnet transport into the CLI, bundles the
-//! `nym-proxy` binary beside it (so the CLI's proxy-path resolution finds it
-//! when Mixnet Mode is enabled), and launches one `nym-proxy` process
-//! alongside the CLI, logging to `target/nym-proxy.log`. The sidecar is
-//! killed when the CLI exits, so no orphan survives the session.
-//! `--clearnet` opts out of all three: a plain build with no bundled proxy
-//! and no sidecar.
+//! bundled proxy binary implies consent.
 
 #![forbid(unsafe_code)]
 
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio, exit};
+use std::path::Path;
+use std::process::{Command, exit};
 
 use workbench::repo_root;
 
@@ -42,8 +42,8 @@ fn main() {
     }
 }
 
-/// Build the CLI (and, unless `--clearnet` opts out, bundle and launch the
-/// proxy sidecar), run the CLI to completion, and return its exit code.
+/// Build the CLI (and, unless `--clearnet` opts out, bundle the proxy
+/// binary beside it), run the CLI to completion, and return its exit code.
 fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     let clearnet = args.iter().any(|arg| arg == "--clearnet");
     let nym_flag = args.iter().any(|arg| arg == "--nym");
@@ -82,11 +82,9 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         return Err(vec![format!("cargo build of zingo-cli failed ({status})")]);
     }
 
-    let mut sidecar = if nym {
-        Some(launch_proxy_sidecar(&root, release)?)
-    } else {
-        None
-    };
+    if nym {
+        bundle_proxy(&root, release)?;
+    }
 
     let cli = root
         .join("target")
@@ -97,19 +95,14 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         .status()
         .map_err(|e| vec![format!("failed to launch {}: {e}", cli.display())]);
 
-    if let Some(proxy) = sidecar.as_mut() {
-        proxy.kill().ok();
-        proxy.wait().ok();
-        eprintln!("{PROG}: nym-proxy sidecar stopped with the session");
-    }
-
     Ok(cli_status?.code().unwrap_or(1))
 }
 
 /// Bundle `nym-proxy` beside the wallet binaries via the sibling
-/// `bundle-nym-proxy` tool, then spawn it with both output streams appended
-/// to `target/nym-proxy.log`, returning the child for session-bound teardown.
-fn launch_proxy_sidecar(root: &Path, release: bool) -> Result<Child, Vec<String>> {
+/// `bundle-nym-proxy` tool, so the CLI's provisioning precedence finds it.
+/// The CLI decides whether the proxy ever runs: it spawns it only at an
+/// Online session's go-online moment, never for an offline session.
+fn bundle_proxy(root: &Path, release: bool) -> Result<(), Vec<String>> {
     let mut bundle = Command::new("cargo");
     bundle.current_dir(root).args([
         "run",
@@ -132,32 +125,12 @@ fn launch_proxy_sidecar(root: &Path, release: bool) -> Result<Child, Vec<String>
             bundled.status
         )]);
     }
-    let proxy_path = PathBuf::from(
-        String::from_utf8(bundled.stdout)
-            .map_err(|e| vec![format!("bundle-nym-proxy output not utf-8: {e}")])?
-            .trim(),
-    );
-
-    let log_path = root.join("target").join("nym-proxy.log");
-    let log = std::fs::File::create(&log_path)
-        .map_err(|e| vec![format!("cannot create {}: {e}", log_path.display())])?;
-    let log_for_stderr = log
-        .try_clone()
-        .map_err(|e| vec![format!("cannot clone log handle: {e}")])?;
-    // Detach stdin: the sidecar would otherwise share the raw-mode tty with
-    // zingo-cli's readline and steal keystrokes byte by byte.
-    let child = Command::new(&proxy_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(log_for_stderr))
-        .spawn()
-        .map_err(|e| vec![format!("failed to launch {}: {e}", proxy_path.display())])?;
+    let proxy_path = String::from_utf8(bundled.stdout)
+        .map_err(|e| vec![format!("bundle-nym-proxy output not utf-8: {e}")])?;
     eprintln!(
-        "{PROG}: nym-proxy sidecar launched (pid {}); its SOCKS5_ADDR line will \
-         appear in {}. The session it runs beside still starts offline unless a \
-         stored Connectivity Consent takes it online.",
-        child.id(),
-        log_path.display()
+        "{PROG}: nym-proxy bundled at {}; the CLI spawns it only for an Online \
+         session (offline sessions boot no proxy)",
+        proxy_path.trim()
     );
-    Ok(child)
+    Ok(())
 }
