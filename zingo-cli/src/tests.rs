@@ -893,3 +893,37 @@ mod config_template {
         }
     }
 }
+
+mod offline_mode_pin {
+    //! The REPL-dispatch half of the Offline-mode contract (issue #2286):
+    //! `change_server` is refused before command execution, since an
+    //! Offline session may never configure an Indexer. The command-surface
+    //! half lives in `commands::offline_contract`.
+
+    use crate::{CommunicationMode, offline_mode_refusal};
+
+    #[test]
+    fn offline_mode_refuses_change_server_before_dispatch() {
+        let refusal = offline_mode_refusal(CommunicationMode::Offline, "change_server")
+            .expect("an Offline session must refuse change_server");
+        assert_eq!(
+            refusal,
+            "Error: this session is in Offline mode; no Indexer may be configured. \
+             Restart without --offline to change servers."
+        );
+    }
+
+    #[test]
+    fn online_mode_and_other_commands_pass_the_pin() {
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Online, "change_server"),
+            None,
+            "an Online session may change servers"
+        );
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Offline, "balance"),
+            None,
+            "the pin refuses exactly one command, never the local surface"
+        );
+    }
+}

@@ -425,14 +425,8 @@ pub(crate) fn command_loop(
                 }
             };
             // The Offline-mode pin: this session never configures an Indexer.
-            if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
-                resp_transmitter
-                    .send(
-                        "Error: this session is in Offline mode; no Indexer may be configured. \
-                         Restart without --offline to change servers."
-                            .to_string(),
-                    )
-                    .unwrap();
+            if let Some(refusal) = offline_mode_refusal(communication_mode, &cmd) {
+                resp_transmitter.send(refusal).unwrap();
                 continue;
             }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
@@ -501,6 +495,19 @@ enum CommunicationMode {
     /// The session never configures an Indexer: the client remains
     /// Indexerless, and only that state's capability set is available.
     Offline,
+}
+
+/// The Offline-mode pin at the REPL dispatch (issue #2286): an Offline
+/// session never configures an Indexer, so `change_server` is refused
+/// before it reaches command execution. Returns the refusal to send in
+/// place of executing `cmd`, or `None` when the command may proceed.
+/// Pure, so the pin is testable without a REPL thread.
+fn offline_mode_refusal(communication_mode: CommunicationMode, cmd: &str) -> Option<String> {
+    (communication_mode == CommunicationMode::Offline && cmd == "change_server").then(|| {
+        "Error: this session is in Offline mode; no Indexer may be configured. \
+         Restart without --offline to change servers."
+            .to_string()
+    })
 }
 
 /// One session's connectivity verdict (ADR 0025): how the launch acts and
