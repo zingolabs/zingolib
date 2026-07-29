@@ -82,14 +82,15 @@ Reproduce the latest failing or incomplete nextest run:
 Run ignored tests explicitly:
   makers run-ignored
 
-Launch the wallet CLI (offline unless a Connectivity Consent stored by
-a previous run takes the session online; ADR 0025):
+Launch the wallet CLI with the mixnet transport compiled in, nym-proxy
+bundled beside the binary, and a proxy sidecar running for the session
+(logs to target/nym-proxy.log). The session is still offline unless a
+Connectivity Consent stored by a previous run takes it online
+(ADR 0025); other args are forwarded to zingo-cli:
   makers run-cli
 
-Also compile the mixnet transport in, bundle nym-proxy beside the
-binary, and launch a proxy sidecar for the session (logs to
-target/nym-proxy.log); other args are forwarded to zingo-cli:
-  makers run-cli --nym
+Opt out of the mixnet default — plain build, no sidecar:
+  makers run-cli --clearnet
 
 Install cargo-make if these commands are unavailable:
   cargo install cargo-make
@@ -408,7 +409,7 @@ args = [
 ]
 
 [tasks.run-cli]
-description = "Build and launch zingo-cli. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --nym to compile the mixnet transport in, bundle nym-proxy beside the binary, and launch the proxy alongside (logs to target/nym-proxy.log, stopped when the CLI exits); pass --release for release builds. Every other argument is forwarded to zingo-cli."
+description = "Build and launch zingo-cli with the mixnet transport compiled in, nym-proxy bundled beside the binary, and the proxy running alongside (logs to target/nym-proxy.log, stopped when the CLI exits). The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, no sidecar); pass --release for release builds. Every other argument is forwarded to zingo-cli."
 command = "cargo"
 args = [
     "run",

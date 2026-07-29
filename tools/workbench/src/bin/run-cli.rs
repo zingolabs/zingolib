@@ -1,8 +1,9 @@
-//! Build and launch `zingo-cli`, optionally with a `nym-proxy` sidecar.
+//! Build and launch `zingo-cli`, by default with a `nym-proxy` sidecar.
 //!
-//! Usage: `run-cli [--nym] [--release] [<zingo-cli args...>]`. The `--nym`
-//! and `--release` flags are consumed wherever they appear; every other
-//! argument is forwarded to `zingo-cli` unchanged.
+//! Usage: `run-cli [--clearnet] [--release] [<zingo-cli args...>]`. The
+//! `--clearnet` and `--release` flags are consumed wherever they appear
+//! (as is the retired `--nym`, a no-op now that it names the default);
+//! every other argument is forwarded to `zingo-cli` unchanged.
 //!
 //! The launched session decides its own connectivity: first boot is offline,
 //! and only a consent act — a stored standing Connectivity Consent from a
@@ -11,16 +12,18 @@
 //! running proxy implies consent: the CLI launches offline beside a live
 //! sidecar exactly as it does without one.
 //!
-//! `--nym` compiles the mixnet transport into the CLI, bundles the
+//! The default run compiles the mixnet transport into the CLI, bundles the
 //! `nym-proxy` binary beside it (so the CLI's proxy-path resolution finds it
 //! when Mixnet Mode is enabled), and launches one `nym-proxy` process
 //! alongside the CLI, logging to `target/nym-proxy.log`. The sidecar is
 //! killed when the CLI exits, so no orphan survives the session.
+//! `--clearnet` opts out of all three: a plain build with no bundled proxy
+//! and no sidecar.
 
 #![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
-use std::process::{exit, Child, Command, Stdio};
+use std::process::{Child, Command, Stdio, exit};
 
 use workbench::repo_root;
 
@@ -39,14 +42,26 @@ fn main() {
     }
 }
 
-/// Build the CLI (and, under `--nym`, bundle and launch the proxy sidecar),
-/// run the CLI to completion, and return its exit code.
+/// Build the CLI (and, unless `--clearnet` opts out, bundle and launch the
+/// proxy sidecar), run the CLI to completion, and return its exit code.
 fn launch(args: &[String]) -> Result<i32, Vec<String>> {
-    let nym = args.iter().any(|arg| arg == "--nym");
+    let clearnet = args.iter().any(|arg| arg == "--clearnet");
+    let nym_flag = args.iter().any(|arg| arg == "--nym");
+    if clearnet && nym_flag {
+        return Err(vec![
+            "--clearnet and --nym contradict each other; pass --clearnet for a \
+         plain build, or nothing for the mixnet default"
+                .to_string(),
+        ]);
+    }
+    if nym_flag {
+        eprintln!("{PROG}: note: --nym is now the default and the flag is ignored");
+    }
+    let nym = !clearnet;
     let release = args.iter().any(|arg| arg == "--release");
     let cli_args: Vec<&String> = args
         .iter()
-        .filter(|arg| *arg != "--nym" && *arg != "--release")
+        .filter(|arg| *arg != "--nym" && *arg != "--release" && *arg != "--clearnet")
         .collect();
 
     let root = repo_root()?;
