@@ -663,12 +663,13 @@ struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Fetch the current ZEC price. USD only.
+            Fetch the current ZEC price over the Nym mixnet. USD only.
 
-            Fetches over clearnet, which discloses the client IP and wallet-alive
-            timing to the price source. A `nym`-feature build can instead route
-            the fetch over the Nym mixnet (see the `nym` command) via the
-            library's opt-in `update_current_price_over_mixnet`.
+            Price travels only over the mixnet (ADR 0011): the fetch runs while
+            Mixnet Mode is ready and refuses in every other state, including
+            switched off — the clearnet consent covers sends, never price,
+            because the price source is a third party outside the Zcash
+            ecosystem. A build without the `nym` feature has no price fetch.
 
             Usage:
             current_price
@@ -679,13 +680,26 @@ impl Command for CurrentPriceCommand {
         "Updates and returns current price of ZEC."
     }
 
+    #[cfg(feature = "nym")]
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
             match lightclient.update_current_price().await {
-                Ok(price) => format!("current price: {price}"),
+                Ok(fetch) => format!(
+                    "current price: {} (fetched over the mixnet via {})",
+                    fetch.usd, fetch.via_socks5
+                ),
                 Err(e) => format!("error: {e}"),
             }
         }))
+    }
+
+    #[cfg(not(feature = "nym"))]
+    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(
+            "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011). \
+             Rebuild zingo-cli with `--features nym`."
+                .to_string(),
+        )
     }
 }
 
