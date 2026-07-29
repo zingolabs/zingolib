@@ -144,7 +144,10 @@ fn launch_proxy_sidecar(root: &Path, release: bool) -> Result<Child, Vec<String>
     let log_for_stderr = log
         .try_clone()
         .map_err(|e| vec![format!("cannot clone log handle: {e}")])?;
+    // Detach stdin: the sidecar would otherwise share the raw-mode tty with
+    // zingo-cli's readline and steal keystrokes byte by byte.
     let child = Command::new(&proxy_path)
+        .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_for_stderr))
         .spawn()
