@@ -305,17 +305,17 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     let send_command =
         |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
 
-    let mut chain_name = String::new();
+    // The prompt's chain label comes from local config, not the server. An
+    // `info` round trip here blocked the first prompt behind the cold mixnet
+    // tunnel (up to MIXNET_ROUND_TRIP_BOUND), and an offline session got a
+    // refusal instead of a name, leaving the prompt's parens empty.
+    let chain_name = match cli_config.chaintype {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    };
 
     loop {
-        if chain_name.is_empty() {
-            let info = send_command("info".to_string(), vec![]);
-            chain_name = json::parse(&info)
-                .map(|mut json_info| json_info.remove("chain_name"))
-                .ok()
-                .and_then(|name| name.as_str().map(ToString::to_string))
-                .unwrap_or_default();
-        }
         // Read the height first
         let height = json::parse(&send_command(
             "height".to_string(),
