@@ -13,9 +13,16 @@ use crate::nym::MixnetProxy;
 /// [`MixnetMode::SwitchedOff`], the one state that consents to clearnet. See
 /// `docs/adr/0011-nym-mixnet-transmission.md` (amendment 2026-07-28).
 ///
-/// This enum is the canonical wire mint for every consumer (ADR 0024): the
-/// serde representation and [`MixnetMode::as_str`] agree on one token per
-/// state, and no consumer may restate those tokens in its own code.
+/// This enum is the canonical wire mint for every consumer (ADR 0024), and
+/// its five wire strings are MINTED TOKENS: this is their sole production
+/// site. The mint enforces itself four ways. The serde `snake_case`
+/// representation, [`MixnetMode::as_str`], and `Display` are forced to agree
+/// on one token per state, pinned literally by the `wire_contract` tests;
+/// `FromStr` and deserialization accept exactly those five tokens and
+/// nothing else; the retired token `off` is rejected by parse, with a test
+/// pinning the rejection as the mint's negative space; and consumers render
+/// and parse through these impls but never restate the token bytes in their
+/// own code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MixnetMode {
