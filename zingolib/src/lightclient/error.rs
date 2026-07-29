@@ -7,10 +7,10 @@ use zcash_protocol::TxId;
 use pepper_sync::error::{SyncError, SyncModeError};
 use zingo_netutils::GetClientError;
 
+#[cfg(feature = "nym")]
+use crate::wallet::error::PriceError;
 use crate::wallet::{
-    error::{
-        CalculateTransactionError, PriceError, ProposeSendError, ProposeShieldError, WalletError,
-    },
+    error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
     output::OutputRef,
 };
 
@@ -49,7 +49,9 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
-    /// Price fetch error.
+    /// Price fetch error. Exists only in nym builds: the mixnet-only price
+    /// rule leaves other builds with no fetch to fail.
+    #[cfg(feature = "nym")]
     #[error("Price fetch error. {0}")]
     PriceError(#[from] PriceError),
     /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
