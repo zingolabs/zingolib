@@ -302,16 +302,142 @@ mod communication_mode {
     use super::*;
     use crate::{CommunicationMode, get_communication_mode};
 
+    /// A scratch data directory per test, so no stored Connectivity
+    /// Consent leaks between tests or into the developer's real store.
+    fn scratch_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("a scratch directory")
+    }
+
+    /// Resolve the communication mode for `extra` launch arguments against
+    /// the scratch store.
+    fn mode_with_dir(dir: &tempfile::TempDir, extra: &[&str]) -> CommunicationMode {
+        let mut args = vec![
+            examples::BIN_NAME,
+            "--data-dir",
+            dir.path().to_str().expect("utf-8 temp path"),
+        ];
+        args.extend_from_slice(extra);
+        get_communication_mode(&parse(&args)).expect("the mode resolves")
+    }
+
+    /// ADR 0025: first boot is offline. With no stored choice and no
+    /// consent act, the session must not touch the network.
     #[test]
-    fn default_is_online() {
-        let matches = parse(&[examples::BIN_NAME]);
-        assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
+    fn first_boot_without_consent_is_offline() {
+        let dir = scratch_dir();
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
     }
 
     #[test]
     fn offline_flag_pins_offline() {
-        let matches = parse(&[examples::BIN_NAME, "--offline"]);
-        assert_eq!(get_communication_mode(&matches), CommunicationMode::Offline);
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--offline"]),
+            CommunicationMode::Offline
+        );
+    }
+
+    /// The per-session consent act: --online takes this session online and
+    /// stores nothing, so the next default launch is offline again.
+    #[test]
+    fn online_flag_consents_this_session_only() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::Offline,
+            "an un-stored act must not outlive its session"
+        );
+    }
+
+    /// Naming an endpoint is consenting to connect to it: an explicit
+    /// --server is a consent act (ADR 0025).
+    #[test]
+    fn an_explicit_server_is_a_consent_act() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--server", examples::SERVER_URI]),
+            CommunicationMode::Online
+        );
+    }
+
+    /// The standing choice: --remember-online stores the consent, and a
+    /// later launch with no acts attaches automatically.
+    #[test]
+    fn remember_online_stores_the_standing_choice() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--remember-online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::Online,
+            "the stored choice attaches later sessions automatically"
+        );
+    }
+
+    /// --forget-online removes the standing choice: the forgetting session
+    /// runs offline (no other act was expressed), and so does the next.
+    #[test]
+    fn forget_online_returns_the_store_to_first_boot() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--forget-online"]),
+            CommunicationMode::Offline
+        );
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+    }
+
+    /// Forgetting the store and consenting for the session compose: the
+    /// launch goes online once while the standing choice dies.
+    #[test]
+    fn forget_online_composes_with_a_session_act() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--forget-online", "--online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+    }
+
+    /// The deliberate --offline outranks even a stored standing choice.
+    #[test]
+    fn offline_flag_wins_over_the_stored_choice() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--offline"]),
+            CommunicationMode::Offline
+        );
+    }
+
+    #[test]
+    fn online_conflicts_with_offline() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--online"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn remember_online_conflicts_with_offline_and_forget() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--remember-online"])
+                .is_err()
+        );
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--remember-online", "--forget-online"])
+                .is_err()
+        );
     }
 
     #[test]
@@ -456,7 +582,7 @@ mod config_template {
     fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        let communication_mode = get_communication_mode(&matches);
+        let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
         ConfigTemplate::fill(mode, communication_mode, matches)
     }
 
@@ -561,13 +687,15 @@ mod config_template {
 
         #[test]
         fn nosync_flag() {
-            let config = fill(&[examples::BIN_NAME, "--nosync"]).unwrap();
+            // --online keeps this a test of the flag, not of the offline
+            // default (an unconsented session disables sync by itself).
+            let config = fill(&[examples::BIN_NAME, "--online", "--nosync"]).unwrap();
             assert!(!config.sync);
         }
 
         #[test]
         fn waitsync_flag() {
-            let config = fill(&[examples::BIN_NAME, "--waitsync"]).unwrap();
+            let config = fill(&[examples::BIN_NAME, "--online", "--waitsync"]).unwrap();
             assert!(config.waitsync);
         }
 
@@ -673,8 +801,11 @@ mod config_template {
 
         #[test]
         fn default_server_is_propagated() {
+            // --online is the consent act (ADR 0025); the default server
+            // then fills in because none was named explicitly.
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
+                "--online",
                 "--seed",
                 HOSPITAL_MUSEUM_SEED,
                 "--birthday",

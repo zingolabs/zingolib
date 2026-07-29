@@ -85,6 +85,20 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with_all(["server", "waitsync"])
                 .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
+            .arg(Arg::new("online")
+                .long("online")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("offline")
+                .help("Consent to go online this session (Connectivity Consent). First boot is offline by design; this flag, --remember-online, an explicit --server, or a stored standing consent takes a session online. The choice is not persisted."))
+            .arg(Arg::new("remember-online")
+                .long("remember-online")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with_all(["offline", "forget-online"])
+                .help("Consent to go online this session AND store the choice beside the wallet, so future sessions attach to the network automatically. Undo with --forget-online."))
+            .arg(Arg::new("forget-online")
+                .long("forget-online")
+                .action(clap::ArgAction::SetTrue)
+                .help("Remove the stored standing Connectivity Consent before deciding this session's connectivity. Without another consent act the session then runs offline."))
             .arg(Arg::new("no-mixnet")
                 .long("no-mixnet")
                 .action(clap::ArgAction::SetTrue)
@@ -489,14 +503,108 @@ enum CommunicationMode {
     Offline,
 }
 
-/// Determines the communication mode from parsed CLI arguments: the
-/// `--offline` flag pins the session to Offline mode.
-fn get_communication_mode(matches: &clap::ArgMatches) -> CommunicationMode {
-    if matches.get_flag("offline") {
-        CommunicationMode::Offline
-    } else {
-        CommunicationMode::Online
+/// One session's connectivity verdict (ADR 0025): how the launch acts and
+/// the stored standing choice combine. Pure, so the precedence is pinned
+/// by unit tests without touching a filesystem.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConnectivityDecision {
+    /// `--offline`: the deliberate zero-traffic session contract.
+    DeliberateOffline,
+    /// A consent act — this launch's or the stored standing choice —
+    /// authorizes the connection; `store` additionally records the
+    /// standing choice for future sessions.
+    Online { store: bool },
+    /// No consent exists anywhere: the session runs offline, and the
+    /// first-boot notice names the acts that would take it online.
+    UnconsentedOffline,
+}
+
+/// Combines the launch acts with the stored choice (ADR 0025): the
+/// deliberate `--offline` wins over everything, a launch act (`--online`,
+/// `--remember-online`, an explicit `--server`) over the store, the store
+/// alone sustains the connection, and nothing else goes online.
+fn decide_connectivity(
+    offline: bool,
+    online: bool,
+    remember_online: bool,
+    explicit_server: bool,
+    stored: zingolib::connectivity::ConnectivityConsent,
+) -> ConnectivityDecision {
+    if offline {
+        return ConnectivityDecision::DeliberateOffline;
     }
+    if remember_online {
+        return ConnectivityDecision::Online { store: true };
+    }
+    if online || explicit_server {
+        return ConnectivityDecision::Online { store: false };
+    }
+    match stored {
+        zingolib::connectivity::ConnectivityConsent::StandingOnline => {
+            ConnectivityDecision::Online { store: false }
+        }
+        zingolib::connectivity::ConnectivityConsent::Unrecorded => {
+            ConnectivityDecision::UnconsentedOffline
+        }
+    }
+}
+
+/// The session's data directory: `--data-dir`, or the `wallets` directory
+/// under the working directory. Shared by the Connectivity Consent record
+/// and the wallet path, which must agree on where "beside the wallet" is.
+fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
+    matches
+        .get_one::<String>("data-dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("wallets"))
+}
+
+/// Determines the communication mode from the parsed arguments and the
+/// stored Connectivity Consent (ADR 0025), performing the acts' effects:
+/// `--forget-online` removes the record before the decision,
+/// `--remember-online` stores it, and a session with no consent anywhere
+/// runs offline behind a notice naming the ways online.
+fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+    let data_dir = data_dir_from(matches);
+    if matches.get_flag("forget-online") {
+        zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
+        eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
+    }
+    let explicit_server =
+        matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+    let decision = decide_connectivity(
+        matches.get_flag("offline"),
+        matches.get_flag("online"),
+        matches.get_flag("remember-online"),
+        explicit_server,
+        zingolib::connectivity::load_connectivity_consent(&data_dir),
+    );
+    Ok(match decision {
+        ConnectivityDecision::DeliberateOffline => CommunicationMode::Offline,
+        ConnectivityDecision::Online { store } => {
+            if store {
+                zingolib::connectivity::store_standing_online(&data_dir)?;
+                eprintln!(
+                    "Standing Connectivity Consent stored in '{}'; future sessions attach \
+                     to the network automatically. Undo with --forget-online.",
+                    data_dir
+                        .join(zingolib::connectivity::CONNECTIVITY_CONSENT_FILE)
+                        .display()
+                );
+            }
+            CommunicationMode::Online
+        }
+        ConnectivityDecision::UnconsentedOffline => {
+            eprintln!(
+                "No Connectivity Consent is recorded, so this session runs offline: local \
+                 operations work and nothing touches the network. To go online, pass --online \
+                 (this session only), --remember-online (store the choice for future \
+                 sessions), or --server <uri>. Pass --offline to run offline deliberately and \
+                 silence this notice."
+            );
+            CommunicationMode::Offline
+        }
+    })
 }
 
 /// All CLI-derived configuration needed to create a [`LightClient`] and
@@ -571,11 +679,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
-            PathBuf::from(dir.clone())
-        } else {
-            PathBuf::from("wallets")
-        };
+        let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         // Offline mode never resolves a server, since resolution probes the
         // network, and the session's contract is that no Indexer is ever
@@ -962,7 +1066,7 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<()> {
     let mode = get_mode_of_operation(&matches);
-    let communication_mode = get_communication_mode(&matches);
+    let communication_mode = get_communication_mode(&matches)?;
     let cli_config =
         ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)

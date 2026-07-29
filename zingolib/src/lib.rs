@@ -6,6 +6,7 @@
 use crate::config::ChainType;
 
 pub mod config;
+pub mod connectivity;
 pub mod data;
 pub mod lightclient;
 pub mod utils;
