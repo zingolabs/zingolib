@@ -145,6 +145,15 @@ impl SyncState {
                 }?,
             };
 
+            // Checked before the constructor: `from_parts` asserts on
+            // inversion, and a corrupt file must fail the load, not
+            // panic the process.
+            if start > end {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("inverted scan range in wallet file: {start}..{end}"),
+                ));
+            }
             Ok(ScanRange::from_parts(start..end, priority))
         })?;
         let sapling_shard_ranges = Vector::read(&mut reader, |r| {
@@ -186,14 +195,18 @@ impl SyncState {
         .into_iter()
         .collect::<BTreeSet<_>>();
 
-        Ok(Self {
+        let sync_state = Self {
             scan_ranges,
             sapling_shard_ranges,
             orchard_shard_ranges,
             ironwood_shard_ranges,
             scan_targets,
             initial_sync_state: InitialSyncState::new(),
-        })
+        };
+        sync_state
+            .validate()
+            .map_err(|violation| std::io::Error::new(std::io::ErrorKind::InvalidData, violation))?;
+        Ok(sync_state)
     }
 
     /// Serialize into `writer`

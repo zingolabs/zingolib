@@ -857,10 +857,15 @@ where
         total_ironwood_outputs,
     );
 
-    let session_blocks_scanned =
-        total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
+    // Saturating throughout: a mid-session reorg truncation legally
+    // shrinks the scanned totals below the counts recorded at session
+    // start, and a status query in that window must degrade, not
+    // underflow.
+    let session_blocks_scanned = total_blocks_scanned
+        .saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
     let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
-        / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
+        / total_blocks.saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks)
+            as f32)
         * 100.0)
         .clamp(0.0, 100.0);
     if percentage_session_blocks_scanned.is_nan() {
@@ -872,18 +877,21 @@ where
         percentage_total_blocks_scanned = 100.0;
     }
 
-    let session_sapling_outputs_scanned = total_sapling_outputs_scanned
-        - sync_state
+    let session_sapling_outputs_scanned = total_sapling_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_sapling_outputs;
-    let session_orchard_outputs_scanned = total_orchard_outputs_scanned
-        - sync_state
+            .previously_scanned_sapling_outputs,
+    );
+    let session_orchard_outputs_scanned = total_orchard_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_orchard_outputs;
-    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned
-        - sync_state
+            .previously_scanned_orchard_outputs,
+    );
+    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_ironwood_outputs;
+            .previously_scanned_ironwood_outputs,
+    );
     let session_outputs_scanned = output_pool_total(
         session_sapling_outputs_scanned,
         session_orchard_outputs_scanned,
@@ -901,7 +909,7 @@ where
             .previously_scanned_ironwood_outputs,
     );
     let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
-        / (total_outputs - previously_scanned_outputs) as f32)
+        / total_outputs.saturating_sub(previously_scanned_outputs) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
     if percentage_session_outputs_scanned.is_nan() {
