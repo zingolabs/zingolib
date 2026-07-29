@@ -823,8 +823,8 @@ impl LightClient {
     /// mode. The moment is what distinguishes a stale latch from a fresh
     /// one; staleness math goes through [`crate::nym::DeathReport::age`].
     pub fn mixnet_death_report(&self) -> Option<crate::nym::DeathReport> {
-        self.mixnet_proxy
-            .as_ref()
+        self.mixnet_slot
+            .proxy()
             .and_then(|proxy| proxy.death_report())
     }
 
