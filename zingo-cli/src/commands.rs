@@ -721,53 +721,19 @@ impl Command for NymCommand {
     }
 }
 
-/// Resolve the `nym-proxy` binary path, in precedence order: an explicit value,
-/// then `$ZINGO_NYM_PROXY`, then a `nym-proxy` bundled beside the running
-/// executable (the `bundle-nym-proxy` workbench tool puts it there, so a
-/// packaged wallet needs no configuration), then the bare name `nym-proxy`
-/// resolved on PATH. Shared by the `nym on` command and the forced-on-at-startup
-/// policy.
+/// Resolve the `nym-proxy` binary path by handing this consumer's platform
+/// hints — the explicit flag value and the executable-sibling bundled
+/// directory (where the `bundle-nym-proxy` workbench tool places the
+/// binary) — to [`zingolib::nym::provision`], which owns the precedence
+/// rule and its tests (ADR 0024). Shared by the `nym on` command and the
+/// forced-on-at-startup policy.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    choose_proxy_path(
+    use zingolib::nym::provision::{self, SpawnHints};
+    provision::resolve_proxy_path(&SpawnHints {
         explicit,
-        std::env::var("ZINGO_NYM_PROXY").ok(),
-        bundled_proxy_path(),
-    )
-}
-
-/// Picks the proxy path from the three candidate sources
-/// [`resolve_proxy_path`] gathers from the environment, with no I/O of its own.
-/// An empty explicit or environment value counts as absent.
-#[cfg(feature = "nym")]
-fn choose_proxy_path(
-    explicit: Option<&str>,
-    env_value: Option<String>,
-    bundled: Option<String>,
-) -> String {
-    if let Some(path) = explicit.filter(|p| !p.is_empty()) {
-        return path.to_string();
-    }
-    if let Some(path) = env_value.filter(|p| !p.is_empty()) {
-        return path;
-    }
-    if let Some(bundled) = bundled {
-        return bundled;
-    }
-    "nym-proxy".to_string()
-}
-
-/// The `nym-proxy` binary sitting next to the running executable, if present.
-/// This is where the `bundle-nym-proxy` workbench tool places it.
-#[cfg(feature = "nym")]
-fn bundled_proxy_path() -> Option<String> {
-    let executable = std::env::current_exe().ok()?;
-    let candidate = executable
-        .parent()?
-        .join(format!("nym-proxy{}", std::env::consts::EXE_SUFFIX));
-    candidate
-        .is_file()
-        .then(|| candidate.to_string_lossy().into_owned())
+        bundled_dir: provision::executable_sibling_dir(),
+    })
 }
 
 /// Typed failure of the `nym` command family. Each variant exists only in
@@ -3689,52 +3655,6 @@ mod nym_command_parsing {
         assert_eq!(
             NymCommandError::FeatureAbsent.to_string(),
             "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
-        );
-    }
-
-    /// Pins the proxy-path precedence chain: explicit, then environment,
-    /// then bundled, then the bare name on PATH, with empty explicit and
-    /// environment values counting as absent.
-    #[cfg(feature = "nym")]
-    #[test]
-    fn proxy_path_precedence_is_explicit_env_bundled_bare() {
-        let env = || Some("/env/nym-proxy".to_string());
-        let bundled = || Some("/bundled/nym-proxy".to_string());
-
-        assert_eq!(
-            choose_proxy_path(Some("/explicit"), env(), bundled()),
-            "/explicit",
-            "an explicit path wins over everything"
-        );
-        assert_eq!(
-            choose_proxy_path(None, env(), bundled()),
-            "/env/nym-proxy",
-            "the environment wins once there is no explicit path"
-        );
-        assert_eq!(
-            choose_proxy_path(None, None, bundled()),
-            "/bundled/nym-proxy",
-            "the bundled binary wins once explicit and environment are absent"
-        );
-        assert_eq!(
-            choose_proxy_path(None, None, None),
-            "nym-proxy",
-            "with nothing configured, fall back to the bare name on PATH"
-        );
-    }
-
-    #[cfg(feature = "nym")]
-    #[test]
-    fn empty_explicit_and_env_values_count_as_absent() {
-        assert_eq!(
-            choose_proxy_path(Some(""), Some("/env/nym-proxy".to_string()), None),
-            "/env/nym-proxy",
-            "an empty explicit path falls through to the environment"
-        );
-        assert_eq!(
-            choose_proxy_path(None, Some(String::new()), None),
-            "nym-proxy",
-            "an empty environment value falls through"
         );
     }
 

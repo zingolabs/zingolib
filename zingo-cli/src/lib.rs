@@ -741,30 +741,43 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     }
 
     // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
-    // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected,
-    // unless the user opts out with --no-mixnet. The off-state is never
-    // persisted, so this runs every launch. Offline sessions never transmit and
-    // skip the bootstrap. A spawn failure fails closed: the session aborts
-    // rather than quietly transmitting over clearnet.
+    // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected.
+    // The off-state is never persisted, so this runs every launch. Offline
+    // sessions never transmit and skip the bootstrap. A spawn failure fails
+    // closed: the session aborts rather than quietly transmitting over clearnet.
+    //
+    // A --no-mixnet session records the startup opt-out as the explicit act
+    // that reaches SwitchedOff (ADR 0024, consent at start): the session
+    // transmits over clearnet as informed consent, exactly as an in-session
+    // `nym off` would arrange — never by silently remaining unattached, whose
+    // mode refuses the mixnet-only surfaces.
     #[cfg(feature = "nym")]
-    if filled_template.communication_mode == CommunicationMode::Online && !filled_template.no_mixnet
-    {
-        let path = std::path::PathBuf::from(commands::resolve_proxy_path(
-            filled_template.nym_proxy_path.as_deref(),
-        ));
-        RT.block_on(lightclient.enable_mixnet(&path)).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to start the Nym mixnet proxy at '{}': {e}. Mixnet Mode is required for a \
-                 connected session; install the nym-proxy binary, pass --nym-proxy <path>, set \
-                 $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this session.",
+    if filled_template.communication_mode == CommunicationMode::Online {
+        if filled_template.no_mixnet {
+            RT.block_on(lightclient.disable_mixnet());
+            info!(
+                "Mixnet Mode switched off by --no-mixnet; send and price-fetch use clearnet this \
+                 session."
+            );
+        } else {
+            let path = std::path::PathBuf::from(commands::resolve_proxy_path(
+                filled_template.nym_proxy_path.as_deref(),
+            ));
+            RT.block_on(lightclient.enable_mixnet(&path)).map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to start the Nym mixnet proxy at '{}': {e}. Mixnet Mode is required \
+                     for a connected session; install the nym-proxy binary, pass --nym-proxy \
+                     <path>, set $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet \
+                     this session.",
+                    path.display()
+                ))
+            })?;
+            info!(
+                "Mixnet Mode enabling; the nym proxy at {} is bootstrapping. Send and \
+                 price-fetch become available once it is ready (see `nym status`).",
                 path.display()
-            ))
-        })?;
-        info!(
-            "Mixnet Mode enabling; the nym proxy at {} is bootstrapping. Send and price-fetch \
-             become available once it is ready (see `nym status`).",
-            path.display()
-        );
+            );
+        }
     }
 
     if filled_template.sync {

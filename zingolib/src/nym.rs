@@ -15,6 +15,7 @@ pub mod broadcast;
 pub mod broadcast_indexers;
 mod mode;
 pub mod probe;
+pub mod provision;
 pub mod route;
 pub mod supervisor;
 
