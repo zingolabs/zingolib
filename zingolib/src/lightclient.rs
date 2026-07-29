@@ -731,6 +731,24 @@ impl LightClient {
 
         Ok(())
     }
+
+    /// Record the deliberate clearnet consent for a test client: with the
+    /// mixnet compiled in, the slot moves to
+    /// [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode) — the same act
+    /// the CLI's `network off` performs — so scenario sends transmit over
+    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
+    /// feature the wallet has no mixnet surface and this is a no-op.
+    ///
+    /// Deliberately unconditional (not `nym`-gated): feature unification
+    /// can enable `zingolib/nym` from any workspace member — zingo-cli
+    /// carries it as a default feature (ADR 0026) — so a caller keying the
+    /// consent on its *own* feature set desyncs from zingolib's and
+    /// compiles the consent out exactly when the refusal is compiled in.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn consent_to_clearnet_for_tests(&mut self) {
+        #[cfg(feature = "nym")]
+        self.disable_mixnet().await;
+    }
 }
 
 /// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
