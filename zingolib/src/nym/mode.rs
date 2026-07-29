@@ -69,6 +69,24 @@ impl MixnetMode {
         matches!(self, MixnetMode::Ready)
     }
 
+    /// Whether this mode is the recovery affordance's target: true exactly
+    /// for [`MixnetMode::Died`], the one state that proves a transport was
+    /// consented, established, and lost — where a re-enable repairs a loss.
+    /// This is the session driver's recovery predicate (ADR 0024, decision
+    /// 2), minted here so every consumer offers the affordance from one
+    /// truth instead of re-deriving it.
+    ///
+    /// Deliberately false for [`MixnetMode::Unattached`]: the ground state
+    /// carries no online intent — a wallet may never have consented to
+    /// connectivity at all — and a failed enable reaches the consumer that
+    /// expressed intent through the driver's typed error, not by reading
+    /// intent into the mode. False for [`MixnetMode::SwitchedOff`] too:
+    /// leaving it is consent revocation, a different act with different
+    /// narration.
+    pub fn needs_recovery(self) -> bool {
+        matches!(self, MixnetMode::Died)
+    }
+
     /// The canonical wire token for this state: the one mint every consumer
     /// renders from and parses back to (ADR 0024). The retired token `off`
     /// is deliberately not a token of any state — the 2026-07-28 amendment

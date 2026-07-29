@@ -22,8 +22,8 @@ use zingo_price::PriceList;
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
 use error::{KeyError, WalletError};
-// The only price-consulting method left here is the nym-gated, deprecated
-// `update_current_price`; without the feature the import would be unused.
+// The one PriceError-returning method is nym-gated (the mixnet-only price
+// rule), so its import follows the feature.
 #[cfg(feature = "nym")]
 use error::PriceError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
