@@ -1,15 +1,15 @@
 //! Dynamic server selection via `get_info()` against a curated list of indexers.
 //!
 //! When no `--server` is specified, we call `get_info()` on each URI in
-//! `zingo_netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
+//! `zingolib::netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
 //! measure response time, and return the responsive servers sorted
 //! from fastest to slowest.
 
 use std::time::{Duration, Instant};
 
 use crate::commands::RT;
-use zingo_netutils::indexers::MOST_UP_INDEXER_URIS;
-use zingo_netutils::{GrpcIndexer, Indexer as _};
+use zingolib::netutils::indexers::MOST_UP_INDEXER_URIS;
+use zingolib::netutils::{GrpcIndexer, Indexer as _};
 
 /// A server that responded successfully to `get_info()`, with its measured latency.
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub(crate) struct RankedServer {
 ///
 /// Uses a per-server timeout so one slow server doesn't block the rest.
 pub(crate) fn select_servers() -> Vec<RankedServer> {
-    use zingo_netutils::time::SERVER_RANKING_TIMEOUT;
+    use zingolib::netutils::time::SERVER_RANKING_TIMEOUT;
 
     let uris: Vec<http::Uri> = MOST_UP_INDEXER_URIS
         .iter()

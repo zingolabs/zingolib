@@ -4987,6 +4987,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components",
  "zingo_grpc_proxy",
+ "zingo_test_vectors",
  "zingolib",
  "zip32",
 ]

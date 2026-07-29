@@ -29,10 +29,10 @@ use log::{error, info};
 use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use zingolib::netutils::Indexer as _;
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
@@ -305,17 +305,17 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     let send_command =
         |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
 
-    let mut chain_name = String::new();
+    // The prompt's chain label comes from local config, not the server. An
+    // `info` round trip here blocked the first prompt behind the cold mixnet
+    // tunnel (up to MIXNET_ROUND_TRIP_BOUND), and an offline session got a
+    // refusal instead of a name, leaving the prompt's parens empty.
+    let chain_name = match cli_config.chaintype {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    };
 
     loop {
-        if chain_name.is_empty() {
-            let info = send_command("info".to_string(), vec![]);
-            chain_name = json::parse(&info)
-                .map(|mut json_info| json_info.remove("chain_name"))
-                .ok()
-                .and_then(|name| name.as_str().map(ToString::to_string))
-                .unwrap_or_default();
-        }
         // Read the height first
         let height = json::parse(&send_command(
             "height".to_string(),
@@ -425,14 +425,8 @@ pub(crate) fn command_loop(
                 }
             };
             // The Offline-mode pin: this session never configures an Indexer.
-            if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
-                resp_transmitter
-                    .send(
-                        "Error: this session is in Offline mode; no Indexer may be configured. \
-                         Restart without --offline to change servers."
-                            .to_string(),
-                    )
-                    .unwrap();
+            if let Some(refusal) = offline_mode_refusal(communication_mode, &cmd) {
+                resp_transmitter.send(refusal).unwrap();
                 continue;
             }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
@@ -501,6 +495,19 @@ enum CommunicationMode {
     /// The session never configures an Indexer: the client remains
     /// Indexerless, and only that state's capability set is available.
     Offline,
+}
+
+/// The Offline-mode pin at the REPL dispatch (issue #2286): an Offline
+/// session never configures an Indexer, so `change_server` is refused
+/// before it reaches command execution. Returns the refusal to send in
+/// place of executing `cmd`, or `None` when the command may proceed.
+/// Pure, so the pin is testable without a REPL thread.
+fn offline_mode_refusal(communication_mode: CommunicationMode, cmd: &str) -> Option<String> {
+    (communication_mode == CommunicationMode::Offline && cmd == "change_server").then(|| {
+        "Error: this session is in Offline mode; no Indexer may be configured. \
+         Restart without --offline to change servers."
+            .to_string()
+    })
 }
 
 /// One session's connectivity verdict (ADR 0025): how the launch acts and
@@ -770,7 +777,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = match filled_template.server.clone() {
             Some(server) => RT
                 .block_on(async move {
-                    zingo_netutils::GrpcIndexer::new(server)
+                    zingolib::netutils::GrpcIndexer::new(server)
                         .await
                         .map_err(|e| format!("{e:?}"))?
                         .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
