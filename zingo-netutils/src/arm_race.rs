@@ -15,9 +15,11 @@
 //! the default build without the nym-sdk stack.
 //!
 //! Every arm's outcome is retained ([`RaceState::failures`]), down to the
-//! first: failures trigger immediate replacement launches, feed live
-//! progress ([`RaceState::progress`]), and compose the terminal error
-//! summary ([`RaceState::failure_summary`]).
+//! first: failures trigger immediate replacement launches and feed live
+//! progress ([`RaceState::progress`]). The terminal account of a lost race
+//! belongs to the driver, which keeps each arm's failure as a typed record
+//! (issue #2562); the planner retains only the rendered line each failure
+//! fed to its progress narration.
 #![forbid(unsafe_code)]
 
 use std::time::Duration;
@@ -40,8 +42,7 @@ pub enum LaunchPolicy {
     EscalatingRounds,
 }
 
-/// One arm's failure, retained for replacement decisions, progress, and the
-/// terminal summary.
+/// One arm's failure, retained for replacement decisions and progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArmFailure {
     /// The candidate index (into the caller's ordered list) that failed.
@@ -231,36 +232,18 @@ impl RaceState {
     pub fn launched(&self) -> usize {
         self.next
     }
-
-    /// The terminal account of a lost race: every failure, rendered through
-    /// `name` (mapping a candidate index to something a human recognizes).
-    pub fn failure_summary(&self, name: impl Fn(usize) -> String) -> String {
-        if self.failures.is_empty() {
-            return "no candidate was contacted".to_string();
-        }
-        let parts: Vec<String> = self
-            .failures
-            .iter()
-            .map(|f| format!("{}: {}", name(f.candidate), f.error))
-            .collect();
-        format!(
-            "all {} attempts failed — {}",
-            self.failures.len(),
-            parts.join("; ")
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const HEDGE: Duration = Duration::from_secs(5);
+    use crate::time::test::PLANNER_HEDGE;
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
         LaunchPolicy::Hedged {
             max_parallel,
-            hedge_interval: HEDGE,
+            hedge_interval: PLANNER_HEDGE,
         }
     }
 
@@ -278,7 +261,7 @@ mod tests {
             race.start(),
             vec![
                 RaceAction::Launch { candidate: 0 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ]
         );
     }
@@ -291,7 +274,7 @@ mod tests {
             race.on_event(RaceEvent::HedgeElapsed),
             vec![
                 RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ]
         );
         // The third arm fills max_parallel, so no further timer is armed.
@@ -312,7 +295,7 @@ mod tests {
             actions,
             vec![
                 RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(HEDGE)
+                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
             ],
             "a failure is a signal to try elsewhere at once, not to wait"
         );
@@ -337,10 +320,20 @@ mod tests {
         race.on_event(RaceEvent::HedgeElapsed);
         race.on_event(failed(0));
         assert_eq!(race.on_event(failed(1)), vec![RaceAction::GiveUp]);
-        assert_eq!(race.failures().len(), 2, "every failure is retained");
-        let summary = race.failure_summary(|i| format!("provider-{i}"));
-        assert!(summary.contains("provider-0: candidate 0 down"));
-        assert!(summary.contains("provider-1: candidate 1 down"));
+        assert_eq!(
+            race.failures(),
+            &[
+                ArmFailure {
+                    candidate: 0,
+                    error: "candidate 0 down".to_string(),
+                },
+                ArmFailure {
+                    candidate: 1,
+                    error: "candidate 1 down".to_string(),
+                },
+            ],
+            "every failure is retained, in order"
+        );
     }
 
     #[test]

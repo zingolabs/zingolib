@@ -21,7 +21,11 @@ use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
-use error::{KeyError, PriceError, WalletError};
+use error::{KeyError, WalletError};
+// The one PriceError-returning method is nym-gated (the mixnet-only price
+// rule), so its import follows the feature.
+#[cfg(feature = "nym")]
+use error::PriceError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
@@ -402,12 +406,24 @@ impl LightWallet {
         }
     }
 
-    /// Update and return current price of ZEC.
+    /// Update, record, and return the current price of ZEC.
     ///
     /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
     /// fetch is routed through that local SOCKS5 address (the Nym mixnet
     /// transport, ADR 0011); `None` fetches over clearnet. The caller resolves
     /// which route to use.
+    ///
+    /// Deprecated because this method holds `&mut self` — and therefore the
+    /// wallet lock — across the network wait, which is exactly the polling
+    /// blackout the net-diag design removed: every wallet-state observer
+    /// queues behind the fetch. Production surfaces fetch first with
+    /// [`zingo_price::fetch_current_price`] (no lock held) and then record
+    /// the result under a briefly-held lock, as
+    /// `LightClient::update_current_price` does.
+    #[cfg(feature = "nym")]
+    #[deprecated(note = "holds the wallet lock across the network wait; \
+                fetch with zingo_price::fetch_current_price and record with \
+                record_price_update instead")]
     pub async fn update_current_price(
         &mut self,
         socks5_proxy: Option<&str>,
@@ -420,6 +436,18 @@ impl LightWallet {
         self.save_required = true;
 
         Ok(current_price)
+    }
+
+    /// Records a price fetched *outside* the wallet lock (the net-diag
+    /// polling-blackout remedy: the caller fetches with no lock held, then
+    /// re-acquires briefly and stores the result here). The price lands in
+    /// the price list, so it serializes with the wallet. Price fetching
+    /// exists only in `nym` builds (ADR 0011, amendment 2026-07-28), so the
+    /// recorder is gated with its only caller.
+    #[cfg(feature = "nym")]
+    pub(crate) fn record_price_update(&mut self, price: zingo_price::Price) {
+        self.price_list.record_current_price(price);
+        self.save_required = true;
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.

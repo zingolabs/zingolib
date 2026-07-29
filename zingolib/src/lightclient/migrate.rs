@@ -46,8 +46,7 @@ use crate::wallet::migration::{
 pub mod broadcast_grpc;
 pub mod broadcast_route;
 
-/// How long to wait between sync polls while a note-splitting round confirms.
-const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
+use zingo_netutils::time::CONFIRMATION_POLL_INTERVAL;
 /// Give up waiting for a note-splitting round after this many polls.
 const MAX_CONFIRMATION_POLLS: usize = 720;
 /// A migration replans after every round. A real plan converges in
@@ -3778,6 +3777,83 @@ mod tests {
                 client.quick_split(AccountId::ZERO, true).await.unwrap(),
                 SplitOutcome::AwaitingConfirmation
             );
+        }
+    }
+
+    /// Planning under a sync stalled below the recorded tip: the spend
+    /// horizon withholds every note and the planners error instead of
+    /// returning an empty plan.
+    #[cfg(test)]
+    mod stalled_sync_planning {
+        use pepper_sync::sync::{ScanPriority, ScanRange};
+        use pepper_sync::wallet::SyncState;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use super::*;
+        use crate::wallet::error::WalletError;
+
+        const SEED: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+
+        /// Headers reach 600, scanning stopped at the old tip 360.
+        fn stall_past_scanned_tip(wallet: &mut LightWallet) {
+            wallet.sync_state = SyncState::new_for_test(vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(361),
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(361)..BlockHeight::from_u32(601),
+                    ScanPriority::Historic,
+                ),
+            ]);
+        }
+
+        #[test]
+        fn migration_planner_errors_when_the_horizon_withholds_every_note() {
+            let mut wallet = SyntheticWalletBuilder::new(SEED)
+                // The builder confirms this note in block 2, its first
+                // synthetic note slot, deep below the stall gap.
+                .orchard_note(1_234_567_890)
+                .tip(360)
+                .build();
+            stall_past_scanned_tip(&mut wallet);
+
+            let planned = wallet.plan_ironwood_migration_now(AccountId::ZERO);
+            assert!(
+                matches!(planned, Err(WalletError::SyncIncomplete)),
+                "a stalled sync must not read as an empty wallet, got {planned:?}"
+            );
+        }
+
+        /// The immediate (drain) planner shares the error.
+        #[test]
+        fn immediate_planner_errors_when_the_horizon_withholds_every_note() {
+            let mut wallet = SyntheticWalletBuilder::new(SEED)
+                // The builder confirms this note in block 2, its first
+                // synthetic note slot, deep below the stall gap.
+                .orchard_note(1_234_567_890)
+                .tip(360)
+                .build();
+            stall_past_scanned_tip(&mut wallet);
+
+            let planned = wallet.plan_immediate_migration(AccountId::ZERO);
+            assert!(
+                matches!(planned, Err(WalletError::SyncIncomplete)),
+                "a stalled sync must not read as an empty wallet, got {planned:?}"
+            );
+        }
+
+        /// A wallet with no V2 notes plans an empty migration under the same
+        /// stalled ranges, without error.
+        #[test]
+        fn empty_wallet_still_plans_empty_under_a_stalled_sync() {
+            let mut wallet = SyntheticWalletBuilder::new(SEED).tip(360).build();
+            stall_past_scanned_tip(&mut wallet);
+
+            let plan = wallet
+                .plan_ironwood_migration_now(AccountId::ZERO)
+                .expect("an empty note set is not a sync failure");
+            assert!(plan.is_split() && plan.parts.is_empty());
         }
     }
 

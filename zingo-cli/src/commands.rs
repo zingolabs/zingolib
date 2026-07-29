@@ -40,12 +40,7 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-/// The cadence of the transmit heartbeat. A transmission can legitimately run
-/// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
-/// rounds, queued-verdict probes), so every transmitting command prints the
-/// transmission's latest progress line at this interval while it waits. A send
-/// that completes before the first tick stays silent.
-const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+use zingolib::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
 /// Awaits `operation`, emitting a heartbeat every
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
@@ -668,12 +663,17 @@ struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r"
-            Fetch the current ZEC price. USD only.
+            Fetch the current ZEC price over the Nym mixnet. USD only.
 
-            Fetches over clearnet, which discloses the client IP and wallet-alive
-            timing to the price source. A `nym`-feature build can instead route
-            the fetch over the Nym mixnet (see the `nym` command) via the
-            library's opt-in `update_current_price_over_mixnet`.
+            The fetch races all three price sources (gemini, kraken,
+            coingecko) through the tunnel and reports the first answer,
+            naming the winning source and the round-trip time.
+
+            Price travels only over the mixnet (ADR 0011): the fetch runs while
+            Mixnet Mode is ready and refuses in every other state, including
+            switched off — the clearnet consent covers sends, never price,
+            because the price source is a third party outside the Zcash
+            ecosystem. A build without the `nym` feature has no price fetch.
 
             Usage:
             current_price
@@ -684,13 +684,29 @@ impl Command for CurrentPriceCommand {
         "Updates and returns current price of ZEC."
     }
 
+    #[cfg(feature = "nym")]
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(RT.block_on(async move {
             match lightclient.update_current_price().await {
-                Ok(price) => format!("current price: {price}"),
+                Ok(fetch) => format!(
+                    "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
+                    fetch.usd,
+                    fetch.source.name(),
+                    fetch.round_trip.as_millis(),
+                    fetch.via_socks5
+                ),
                 Err(e) => format!("error: {e}"),
             }
         }))
+    }
+
+    #[cfg(not(feature = "nym"))]
+    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> Result<String, CommandError> {
+        Ok(
+            "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011). \
+             Rebuild zingo-cli with `--features nym`."
+                .to_string(),
+        )
     }
 }
 
@@ -726,53 +742,26 @@ impl Command for NymCommand {
     }
 }
 
-/// Resolve the `nym-proxy` binary path, in precedence order: an explicit value,
-/// then `$ZINGO_NYM_PROXY`, then a `nym-proxy` bundled beside the running
-/// executable (the `bundle-nym-proxy` workbench tool puts it there, so a
-/// packaged wallet needs no configuration), then the bare name `nym-proxy`
-/// resolved on PATH. Shared by the `nym on` command and the forced-on-at-startup
-/// policy.
+/// This consumer's platform hints for provisioning the `nym-proxy` binary:
+/// the explicit flag value and the executable-sibling bundled directory
+/// (where the `bundle-nym-proxy` workbench tool places the binary).
+/// [`zingolib::nym::provision`] owns the precedence rule and its tests
+/// (ADR 0024); this names only what zingolib cannot know by itself. Shared
+/// by the session driver call at startup and the `nym on` command.
+#[cfg(feature = "nym")]
+pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::SpawnHints<'_> {
+    use zingolib::nym::provision::{self, SpawnHints};
+    SpawnHints {
+        explicit,
+        bundled_dir: provision::executable_sibling_dir(),
+    }
+}
+
+/// Resolve the `nym-proxy` binary path from this consumer's
+/// [`spawn_hints`], for the `nym on` command's in-session enable.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    choose_proxy_path(
-        explicit,
-        std::env::var("ZINGO_NYM_PROXY").ok(),
-        bundled_proxy_path(),
-    )
-}
-
-/// Picks the proxy path from the three candidate sources
-/// [`resolve_proxy_path`] gathers from the environment, with no I/O of its own.
-/// An empty explicit or environment value counts as absent.
-#[cfg(feature = "nym")]
-fn choose_proxy_path(
-    explicit: Option<&str>,
-    env_value: Option<String>,
-    bundled: Option<String>,
-) -> String {
-    if let Some(path) = explicit.filter(|p| !p.is_empty()) {
-        return path.to_string();
-    }
-    if let Some(path) = env_value.filter(|p| !p.is_empty()) {
-        return path;
-    }
-    if let Some(bundled) = bundled {
-        return bundled;
-    }
-    "nym-proxy".to_string()
-}
-
-/// The `nym-proxy` binary sitting next to the running executable, if present.
-/// This is where the `bundle-nym-proxy` workbench tool places it.
-#[cfg(feature = "nym")]
-fn bundled_proxy_path() -> Option<String> {
-    let executable = std::env::current_exe().ok()?;
-    let candidate = executable
-        .parent()?
-        .join(format!("nym-proxy{}", std::env::consts::EXE_SUFFIX));
-    candidate
-        .is_file()
-        .then(|| candidate.to_string_lossy().into_owned())
+    zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
 /// Typed failure of the `nym` command family. Each variant exists only in
@@ -843,10 +832,8 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
     }
 }
 
-/// How long each probe leg may take. Generous for the mixnet leg's tunnel
-/// establishment. A hanging exit is reported as a timeout, not waited out.
 #[cfg(feature = "nym")]
-const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one paired probe: the two legs side by side, so a mixnet-specific
 /// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
@@ -854,8 +841,11 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 #[cfg(feature = "nym")]
 fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
-        Ok(summary) => format!("ok in {}ms: {summary}", leg.millis),
-        Err(detail) => format!("FAILED after {}ms: {detail}", leg.millis),
+        Ok(success) => format!(
+            "ok in {}ms: chain {}, height {}",
+            leg.millis, success.chain, success.height
+        ),
+        Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
     let mixnet = match &probe.mixnet {
         Some(mixnet_leg) => leg(mixnet_leg),
@@ -972,7 +962,7 @@ fn render_history(
 
 /// Render the `nym status` line for a Mixnet Mode, the live bootstrap
 /// progress while bootstrapping, and the local SOCKS5 address when ready.
-/// Pure, so the user-facing tri-state strings are pinned by unit tests and
+/// Pure, so the user-facing mode strings are pinned by unit tests and
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
@@ -983,7 +973,13 @@ fn render_status(
     use zingolib::nym::MixnetMode;
 
     match mode {
-        MixnetMode::Off => "Mixnet Mode: off (send and price-fetch use clearnet)".to_string(),
+        MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
+             and no consent to clearnet has been given: send and price-fetch refuse. Run \
+             `nym on` to enable the mixnet, or `nym off` to use clearnet."
+            .to_string(),
+        MixnetMode::SwitchedOff => {
+            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
+        }
         MixnetMode::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
                 "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
@@ -1054,7 +1050,7 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
             }
             NymSubCommand::Probe { target } => {
                 let probes = lightclient
-                    .probe_broadcast_indexers(target, PROBE_TIMEOUT)
+                    .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
                     .await;
                 Ok(probes
                     .iter()
@@ -1646,12 +1642,15 @@ impl Command for QuickSendCommand {
                 "quicksend",
                 move || progress.latest(),
                 |line| eprintln!("{line}"),
-                lightclient.quick_send(request, zip32::AccountId::ZERO, true),
+                lightclient.quick_send_reported(request, zip32::AccountId::ZERO, true),
             )
             .await
             {
-                Ok(txids) => {
-                    object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
+                Ok(reports) => {
+                    object! {
+                        "txids" => reports.iter().map(|report| report.txid.to_string()).collect::<Vec<_>>(),
+                        "transmissions" => reports.iter().map(render_transmit_report).collect::<Vec<_>>(),
+                    }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -1659,6 +1658,31 @@ impl Command for QuickSendCommand {
             }
             .pretty(2)
         }))
+    }
+}
+
+/// One transmitted transaction's attestation as JSON: the route it
+/// traveled, the endpoint that accepted it, and the round-trip time.
+fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) -> json::JsonValue {
+    use zingolib::lightclient::send::TransmitRoute;
+    let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
+    match &report.route {
+        TransmitRoute::Clearnet { indexer } => object! {
+            "txid" => report.txid.to_string(),
+            "over_mixnet" => false,
+            "indexer" => indexer.clone(),
+            "rtt_ms" => rtt_ms,
+        },
+        TransmitRoute::Mixnet {
+            witness,
+            via_socks5,
+        } => object! {
+            "txid" => report.txid.to_string(),
+            "over_mixnet" => true,
+            "witness" => witness.clone(),
+            "via_socks5" => via_socks5.clone(),
+            "rtt_ms" => rtt_ms,
+        },
     }
 }
 
@@ -3311,7 +3335,7 @@ mod transmit_heartbeat {
             "confirm",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(5)),
+            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
         )
         .await;
         let () = out;
@@ -3602,31 +3626,40 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn paired_probe_renders_both_legs_side_by_side() {
-        use zingolib::nym::probe::{PairedProbe, ProbeLeg};
+        use zingo_net_diag::{NetOpFailure, NetOpStage};
+        use zingolib::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
 
+        let tip = ProbeSuccess {
+            chain: "main".to_string(),
+            height: 3_420_400,
+        };
         let mixnet_specific = PairedProbe {
             host: "carover0.xyz".to_string(),
             clearnet: ProbeLeg {
-                outcome: Ok("chain main, height 3420400".to_string()),
+                outcome: Ok(tip.clone()),
                 millis: 210,
             },
             mixnet: Some(ProbeLeg {
-                outcome: Err(
-                    "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
-                        .to_string(),
-                ),
+                outcome: Err(NetOpFailure {
+                    stage: NetOpStage::SocksHandshake,
+                    target: "carover0.xyz".to_string(),
+                    cause_chain: vec![
+                        "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+                            .to_string(),
+                    ],
+                }),
                 millis: 20_000,
             }),
         };
         assert_eq!(
             render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
 
         let proxy_not_ready = PairedProbe {
             host: "zec.rocks".to_string(),
             clearnet: ProbeLeg {
-                outcome: Ok("chain main, height 3420400".to_string()),
+                outcome: Ok(tip),
                 millis: 180,
             },
             mixnet: None,
@@ -3681,61 +3714,22 @@ mod nym_command_parsing {
         );
     }
 
-    /// Pins the proxy-path precedence chain: explicit, then environment,
-    /// then bundled, then the bare name on PATH, with empty explicit and
-    /// environment values counting as absent.
-    #[cfg(feature = "nym")]
-    #[test]
-    fn proxy_path_precedence_is_explicit_env_bundled_bare() {
-        let env = || Some("/env/nym-proxy".to_string());
-        let bundled = || Some("/bundled/nym-proxy".to_string());
-
-        assert_eq!(
-            choose_proxy_path(Some("/explicit"), env(), bundled()),
-            "/explicit",
-            "an explicit path wins over everything"
-        );
-        assert_eq!(
-            choose_proxy_path(None, env(), bundled()),
-            "/env/nym-proxy",
-            "the environment wins once there is no explicit path"
-        );
-        assert_eq!(
-            choose_proxy_path(None, None, bundled()),
-            "/bundled/nym-proxy",
-            "the bundled binary wins once explicit and environment are absent"
-        );
-        assert_eq!(
-            choose_proxy_path(None, None, None),
-            "nym-proxy",
-            "with nothing configured, fall back to the bare name on PATH"
-        );
-    }
-
-    #[cfg(feature = "nym")]
-    #[test]
-    fn empty_explicit_and_env_values_count_as_absent() {
-        assert_eq!(
-            choose_proxy_path(Some(""), Some("/env/nym-proxy".to_string()), None),
-            "/env/nym-proxy",
-            "an empty explicit path falls through to the environment"
-        );
-        assert_eq!(
-            choose_proxy_path(None, Some(String::new()), None),
-            "nym-proxy",
-            "an empty environment value falls through"
-        );
-    }
-
-    /// Pins the `nym status` tri-state strings via the pure renderer.
+    /// Pins the `nym status` mode strings via the pure renderer.
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
         use zingolib::nym::MixnetMode;
 
         assert_eq!(
-            render_status(MixnetMode::Off, None, None),
-            "Mixnet Mode: off (send and price-fetch use clearnet)"
+            render_status(MixnetMode::Unattached, None, None),
+            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
+             clearnet has been given: send and price-fetch refuse. Run `nym on` to enable \
+             the mixnet, or `nym off` to use clearnet.",
+            "absence is not consent: unattached names refusal, never clearnet"
+        );
+        assert_eq!(
+            render_status(MixnetMode::SwitchedOff, None, None),
+            "Mixnet Mode: switched off (send and price-fetch use clearnet)"
         );
         assert_eq!(
             render_status(MixnetMode::Bootstrapping, None, None),
@@ -3755,7 +3749,8 @@ mod nym_command_parsing {
             render_status(MixnetMode::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
              refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
-            "a died proxy is reported distinctly from off, and tells the user how to recover"
+            "a died proxy is reported distinctly from switched off, and tells the user how to \
+             recover"
         );
     }
 
@@ -3796,7 +3791,8 @@ mod nym_command_parsing {
         use zingolib::nym::MixnetMode;
 
         for mode in [
-            MixnetMode::Off,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
             MixnetMode::Bootstrapping,
             MixnetMode::Ready,
             MixnetMode::Died,
@@ -3819,6 +3815,527 @@ mod nym_command_parsing {
                     "the disclaimer must name {phrase:?} in mode {mode:?}: {out}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod offline_contract {
+    //! The Offline-mode contract at the command surface (issue #2286,
+    //! ADR 0006, ADR 0025). Every client here is genuinely Indexerless —
+    //! built by [`LightClient::new_for_test`] from a synthetic wallet, with
+    //! no server configured and no network object constructed — so these
+    //! tests run with zero traffic and prove two halves of one contract:
+    //!
+    //! - every wallet-local command completes offline, meaning connectivity
+    //!   is never the obstacle (a domain failure such as "nothing to
+    //!   shield" is legitimate; the Offline refusal is not); and
+    //! - every connectivity-requiring command refuses offline with the one
+    //!   typed refusal, [`zingolib::lightclient::error::LightClientError::Offline`],
+    //!   rendered through the command's own error channel — never a hang, a
+    //!   panic, or a silent clearnet fallback.
+    //!
+    //! The `change_server` pin lives at the REPL dispatch, not here: see
+    //! `offline_mode_refusal` and its tests in `crate::tests`.
+    //!
+    //! Deliberately untested, with the reasoning on record: `drain now`,
+    //! `split now`, and `migration catchup` refuse at the transmit stage,
+    //! whose pre-flight `transmit` and `quicksend` pin below (each extra
+    //! case would buy another proving run, not another guarantee); `nym on`
+    //! and `nym probe` currently carry NO offline gate (they would emit
+    //! traffic from an Offline session — a known gap tracked for the ADR
+    //! 0024 session driver), and the REPL-owned `servers` command likewise
+    //! probes the network unguarded.
+
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::{CommandError, RT, get_commands};
+
+    /// The Display of `LightClientError::Offline`: the single refusal every
+    /// connectivity-requiring command must surface, and the string no
+    /// offline-capable command may ever emit.
+    const OFFLINE_REFUSAL: &str =
+        "Offline: no indexer configured. Call set_indexer_uri() to connect.";
+
+    /// An Indexerless client over an empty synthetic wallet.
+    fn offline_client() -> LightClient {
+        RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ))
+    }
+
+    /// An Indexerless client whose wallet holds a spendable orchard note
+    /// and a transparent coin, so proposing, planning, and shielding have
+    /// material to work with.
+    fn funded_offline_client() -> LightClient {
+        RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000_000)
+                .transparent_coin(50_000_000)
+                .build(),
+        ))
+    }
+
+    fn exec(
+        client: &mut LightClient,
+        command: &str,
+        args: &[&str],
+    ) -> Result<String, CommandError> {
+        get_commands()
+            .get(command)
+            .unwrap_or_else(|| panic!("command `{command}` is registered"))
+            .exec(args, client)
+    }
+
+    /// Asserts `command` succeeds offline and returns its output.
+    fn assert_works_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
+        let output = exec(client, command, args)
+            .unwrap_or_else(|error| panic!("`{command}` must work offline: {error}"));
+        assert!(
+            !output.contains(OFFLINE_REFUSAL),
+            "`{command}` must not surface the Offline refusal: {output}"
+        );
+        output
+    }
+
+    /// Asserts connectivity is never `command`'s obstacle: it may succeed
+    /// or fail on domain grounds, but must not surface the Offline refusal.
+    fn assert_unblocked_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
+        let rendered = match exec(client, command, args) {
+            Ok(output) => output,
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            !rendered.contains(OFFLINE_REFUSAL),
+            "`{command}` must not be blocked by Offline mode: {rendered}"
+        );
+        rendered
+    }
+
+    /// Asserts `command` refuses offline through its `Err` channel with the
+    /// typed Offline refusal.
+    fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
+        let error = exec(client, command, args).expect_err(command);
+        assert!(
+            error.to_string().contains(OFFLINE_REFUSAL),
+            "`{command}` must refuse with the typed Offline error: {error}"
+        );
+    }
+
+    /// Asserts `command` refuses offline through its rendered `error` field
+    /// (the send family reports failure inside its JSON success string).
+    fn assert_refuses_offline_in_output(client: &mut LightClient, command: &str, args: &[&str]) {
+        let output = exec(client, command, args)
+            .unwrap_or_else(|error| panic!("`{command}` renders refusals into output: {error}"));
+        assert!(
+            output.contains(OFFLINE_REFUSAL),
+            "`{command}` must report the typed Offline refusal: {output}"
+        );
+    }
+
+    /// A fresh unified address from the wallet itself, so send-family tests
+    /// stay on the wallet's own chain.
+    fn own_unified_address(client: &mut LightClient) -> String {
+        let output = assert_works_offline(client, "new_address", &["o"]);
+        let parsed = json::parse(&output).expect("new_address returns JSON");
+        parsed["encoded_address"]
+            .as_str()
+            .expect("encoded_address is a string")
+            .to_string()
+    }
+
+    mod works_offline {
+        //! The offline-capable surface: every command here must complete
+        //! against an Indexerless client.
+
+        use super::*;
+
+        #[test]
+        fn version() {
+            let output = assert_works_offline(&mut offline_client(), "version", &[]);
+            assert!(!output.is_empty());
+        }
+
+        #[test]
+        fn help() {
+            let output = assert_works_offline(&mut offline_client(), "help", &[]);
+            assert!(output.contains("Wallet commands"), "{output}");
+        }
+
+        #[test]
+        fn parse_address_of_the_wallets_own() {
+            let mut client = offline_client();
+            let address = own_unified_address(&mut client);
+            let output = assert_works_offline(&mut client, "parse_address", &[&address]);
+            assert!(output.contains("success"), "{output}");
+        }
+
+        #[test]
+        fn parse_viewkey_of_the_exported_ufvk() {
+            let mut client = offline_client();
+            let exported = assert_works_offline(&mut client, "export_ufvk", &[]);
+            let ufvk = json::parse(&exported).expect("export_ufvk returns JSON")["ufvk"]
+                .as_str()
+                .expect("ufvk is a string")
+                .to_string();
+            let output = assert_works_offline(&mut client, "parse_viewkey", &[&ufvk]);
+            assert!(output.contains("success"), "{output}");
+        }
+
+        #[test]
+        fn addresses() {
+            let output = assert_works_offline(&mut offline_client(), "addresses", &[]);
+            json::parse(&output).expect("addresses returns JSON");
+        }
+
+        #[test]
+        fn t_addresses() {
+            let output = assert_works_offline(&mut offline_client(), "t_addresses", &[]);
+            json::parse(&output).expect("t_addresses returns JSON");
+        }
+
+        #[test]
+        fn new_address() {
+            let output = assert_works_offline(&mut offline_client(), "new_address", &["oz"]);
+            assert!(output.contains("encoded_address"), "{output}");
+        }
+
+        /// Funded, because the address-gap rule (a new transparent address
+        /// only after the latest one received funds) is a domain rule that
+        /// applies offline exactly as it does online.
+        #[test]
+        fn new_taddress() {
+            let output = assert_works_offline(&mut funded_offline_client(), "new_taddress", &[]);
+            assert!(output.contains("encoded_address"), "{output}");
+        }
+
+        #[test]
+        fn balance() {
+            let output = assert_works_offline(&mut funded_offline_client(), "balance", &[]);
+            assert!(!output.is_empty());
+        }
+
+        #[test]
+        fn spendable_balance() {
+            let output =
+                assert_works_offline(&mut funded_offline_client(), "spendable_balance", &[]);
+            assert!(output.contains("spendable_balance"), "{output}");
+        }
+
+        #[test]
+        fn max_send_value() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            let output = assert_works_offline(&mut client, "max_send_value", &[&address]);
+            assert!(output.contains("max_send_value"), "{output}");
+        }
+
+        #[test]
+        fn birthday() {
+            let output = assert_works_offline(&mut offline_client(), "birthday", &[]);
+            assert!(!output.is_empty());
+        }
+
+        #[test]
+        fn height_reports_the_wallets_own_view() {
+            let output = assert_works_offline(&mut offline_client(), "height", &[]);
+            assert!(output.contains("20"), "the synthetic tip is 20: {output}");
+        }
+
+        #[test]
+        fn notes() {
+            assert_works_offline(&mut funded_offline_client(), "notes", &[]);
+        }
+
+        #[test]
+        fn coins() {
+            assert_works_offline(&mut funded_offline_client(), "coins", &[]);
+        }
+
+        #[test]
+        fn transactions() {
+            assert_works_offline(&mut offline_client(), "transactions", &[]);
+        }
+
+        #[test]
+        fn value_transfers() {
+            assert_works_offline(&mut offline_client(), "value_transfers", &[]);
+        }
+
+        #[test]
+        fn messages() {
+            assert_works_offline(&mut offline_client(), "messages", &[]);
+        }
+
+        #[test]
+        fn sends_to_address() {
+            assert_works_offline(&mut offline_client(), "sends_to_address", &[]);
+        }
+
+        #[test]
+        fn value_to_address() {
+            assert_works_offline(&mut offline_client(), "value_to_address", &[]);
+        }
+
+        #[test]
+        fn memobytes_to_address() {
+            assert_works_offline(&mut offline_client(), "memobytes_to_address", &[]);
+        }
+
+        #[test]
+        fn wallet_kind() {
+            let output = assert_works_offline(&mut offline_client(), "wallet_kind", &[]);
+            assert!(output.contains("mnemonic"), "{output}");
+        }
+
+        #[test]
+        fn settings() {
+            assert_unblocked_offline(&mut offline_client(), "settings", &[]);
+        }
+
+        #[test]
+        fn recovery_info() {
+            let output = assert_works_offline(&mut offline_client(), "recovery_info", &[]);
+            assert!(!output.is_empty());
+        }
+
+        #[test]
+        fn export_ufvk() {
+            let output = assert_works_offline(&mut offline_client(), "export_ufvk", &[]);
+            assert!(output.contains("ufvk"), "{output}");
+        }
+
+        #[test]
+        fn check_address_recognizes_the_wallets_own() {
+            let mut client = offline_client();
+            let address = own_unified_address(&mut client);
+            let output = assert_works_offline(&mut client, "check_address", &[&address]);
+            assert!(output.contains("is_wallet_address"), "{output}");
+        }
+
+        #[test]
+        fn clear() {
+            let output = assert_works_offline(&mut offline_client(), "clear", &[]);
+            assert!(output.contains("success"), "{output}");
+        }
+
+        /// `sync status` reads wallet state only; on a synthetic wallet it
+        /// reports a wallet-shape error (no wallet blocks are fabricated),
+        /// which is a domain outcome — connectivity is never the obstacle.
+        #[test]
+        fn sync_status() {
+            assert_unblocked_offline(&mut offline_client(), "sync", &["status"]);
+        }
+
+        #[test]
+        fn sync_poll() {
+            let output = assert_works_offline(&mut offline_client(), "sync", &["poll"]);
+            assert_eq!(output, "Sync task has not been launched.");
+        }
+
+        #[test]
+        fn quit() {
+            let output = assert_works_offline(&mut offline_client(), "quit", &[]);
+            assert!(output.contains("quit successfully"), "{output}");
+        }
+
+        /// Proposing is an Indexerless capability (ADR 0006): `send` shows
+        /// the fee offline, for a later `calculate`/`transmit`.
+        #[test]
+        fn send_proposes_offline() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            let output = assert_works_offline(&mut client, "send", &[&address, "50000"]);
+            assert!(output.contains("fee"), "{output}");
+        }
+
+        #[test]
+        fn send_all_proposes_offline() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            let output = assert_works_offline(&mut client, "send_all", &[&address]);
+            assert!(output.contains("fee"), "{output}");
+        }
+
+        #[test]
+        fn shield_proposes_offline() {
+            let output = assert_works_offline(&mut funded_offline_client(), "shield", &[]);
+            assert!(output.contains("fee"), "{output}");
+        }
+
+        /// Offline signing (ADR 0006): `calculate` signs the stored
+        /// proposal with no Indexer, leaving Calculated transactions for a
+        /// connected `transmit`.
+        #[test]
+        fn calculate_signs_offline() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            assert_works_offline(&mut client, "send", &[&address, "50000"]);
+            let output = assert_works_offline(&mut client, "calculate", &[]);
+            assert!(output.contains("txids"), "{output}");
+        }
+
+        #[test]
+        fn drain_plan() {
+            let output = assert_works_offline(&mut funded_offline_client(), "drain", &["plan"]);
+            assert!(output.contains("transactions"), "{output}");
+        }
+
+        #[test]
+        fn split_plan() {
+            let output = assert_works_offline(&mut funded_offline_client(), "split", &["plan"]);
+            assert!(output.contains("split_rounds"), "{output}");
+        }
+
+        #[test]
+        fn migration_plan() {
+            let output = assert_works_offline(&mut funded_offline_client(), "migration", &["plan"]);
+            assert!(output.contains("plan_hash"), "{output}");
+        }
+
+        #[test]
+        fn migration_status() {
+            let output =
+                assert_works_offline(&mut funded_offline_client(), "migration", &["status"]);
+            assert!(output.contains("phase"), "{output}");
+        }
+
+        #[test]
+        fn migration_windows() {
+            assert_unblocked_offline(&mut funded_offline_client(), "migration", &["windows"]);
+        }
+
+        /// `nym status` reads the wallet's mode: an offline session never
+        /// bootstraps the mixnet, so a fresh client reports unattached.
+        #[cfg(feature = "nym")]
+        #[test]
+        fn nym_status_reports_unattached() {
+            let output = assert_works_offline(&mut offline_client(), "nym", &["status"]);
+            assert!(output.contains("unattached"), "{output}");
+        }
+
+        #[test]
+        fn remove_transaction_fails_on_the_txid_never_on_connectivity() {
+            let unknown_txid = "ab".repeat(32);
+            assert_unblocked_offline(
+                &mut offline_client(),
+                "remove_transaction",
+                &[&unknown_txid],
+            );
+        }
+
+        #[test]
+        fn delete_fails_on_the_file_never_on_connectivity() {
+            assert_unblocked_offline(&mut offline_client(), "delete", &[]);
+        }
+    }
+
+    mod refuses_offline {
+        //! The connectivity-requiring surface: every command here must
+        //! refuse offline with the typed Offline error, through its own
+        //! error channel.
+
+        use super::*;
+
+        #[test]
+        fn sync_run() {
+            assert_refuses_offline_via_err(&mut offline_client(), "sync", &["run"]);
+        }
+
+        #[test]
+        fn rescan() {
+            assert_refuses_offline_via_err(&mut offline_client(), "rescan", &[]);
+        }
+
+        /// `info` renders the typed failure at its presentation boundary:
+        /// the output IS the refusal, byte for byte.
+        #[test]
+        fn info() {
+            let output = exec(&mut offline_client(), "info", &[]).expect("info renders errors");
+            assert_eq!(output, OFFLINE_REFUSAL);
+        }
+
+        /// `confirm` pre-flights the Indexer before touching the stored
+        /// proposal, so the refusal needs no proposal and costs no proving.
+        #[test]
+        fn confirm() {
+            assert_refuses_offline_in_output(&mut offline_client(), "confirm", &[]);
+        }
+
+        /// `transmit` pre-flights the Indexer before resolving txids, so
+        /// even an unknown txid refuses on connectivity first.
+        #[test]
+        fn transmit() {
+            let txid = "ab".repeat(32);
+            assert_refuses_offline_in_output(&mut offline_client(), "transmit", &[&txid]);
+        }
+
+        /// `quicksend` proposes and signs offline (both Indexerless
+        /// capabilities), then refuses at the transmit stage: the wallet
+        /// does the work it can and leaks nothing.
+        #[test]
+        fn quicksend() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            assert_refuses_offline_in_output(&mut client, "quicksend", &[&address, "50000"]);
+        }
+
+        /// `quickshield` mirrors `quicksend`: the shield proposal and its
+        /// signing succeed offline, and the transmit stage refuses.
+        #[test]
+        fn quickshield() {
+            assert_refuses_offline_in_output(&mut funded_offline_client(), "quickshield", &[]);
+        }
+
+        /// `migrate` syncs before building anything, so the refusal
+        /// arrives from the sync pre-flight with no proving spent.
+        #[test]
+        fn migrate() {
+            assert_refuses_offline_via_err(&mut funded_offline_client(), "migrate", &[]);
+        }
+
+        #[test]
+        fn migration_continue() {
+            assert_refuses_offline_via_err(
+                &mut funded_offline_client(),
+                "migration",
+                &["continue"],
+            );
+        }
+
+        #[test]
+        fn migration_execute() {
+            assert_refuses_offline_via_err(&mut funded_offline_client(), "migration", &["execute"]);
+        }
+
+        #[test]
+        fn migration_auto() {
+            assert_refuses_offline_via_err(&mut funded_offline_client(), "migration", &["auto"]);
+        }
+
+        /// `current_price` is mixnet-only (ADR 0011): an offline session
+        /// never bootstraps the mixnet, so the fetch refuses from the
+        /// unattached mode — a typed refusal, zero traffic.
+        #[cfg(feature = "nym")]
+        #[test]
+        fn current_price_refuses_from_the_unattached_mixnet() {
+            let output = exec(&mut offline_client(), "current_price", &[])
+                .expect("current_price renders refusals");
+            assert!(
+                output.contains("error: the Nym mixnet is not enabled"),
+                "{output}"
+            );
+        }
+
+        /// Without the nym feature there is no price fetch at all: the
+        /// command says so instead of touching the network.
+        #[cfg(not(feature = "nym"))]
+        #[test]
+        fn current_price_has_no_fetch_to_offer() {
+            let output = exec(&mut offline_client(), "current_price", &[])
+                .expect("current_price explains the absent fetch");
+            assert!(output.contains("no price fetch"), "{output}");
         }
     }
 }

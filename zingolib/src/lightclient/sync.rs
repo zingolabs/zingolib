@@ -19,7 +19,7 @@ use super::LightClient;
 use super::SyncResult;
 use super::error::LightClientError;
 
-const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);
+use zingo_netutils::time::SYNC_START_TIMEOUT;
 
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the

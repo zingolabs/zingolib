@@ -1,6 +1,6 @@
 //! Queue and prioritise fetch requests to fetch data from the server
 
-use std::{ops::Range, time::Duration};
+use std::ops::Range;
 
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -17,8 +17,7 @@ use zingo_netutils::{
 
 use crate::client::FetchRequest;
 
-const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
-const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
+use zingo_netutils::time::{HEAVY_UNARY_TIMEOUT, UNARY_RPC_TIMEOUT};
 
 use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 

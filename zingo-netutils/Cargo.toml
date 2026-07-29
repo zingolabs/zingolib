@@ -49,10 +49,14 @@ tokio = { workspace = true, optional = true, features = [
     "io-std",
     "io-util",
 ] }
+zingo-net-diag = { version = "0.1.0", path = "../zingo-net-diag", optional = true }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
+# Exposes `time::test`, the temporal parameters owned by tests. Enabled by
+# downstream crates' dev-dependencies only, never by a production build.
+testutils = []
 # Wallet-side SOCKS5-dialing transmit (ADR 0011, consumption model A). Light —
 # no nym-sdk, so it resolves in the main workspace's lockfile. The wallet
 # enables this to route a transaction through the spawned nym-proxy's local
@@ -67,6 +71,10 @@ nym = [
     # The proxy binary health-gates readiness with a real GetLightdInfo round
     # trip through the mixnet, which lives in the socks5-transmit module.
     "socks5-transmit",
+    # The provider connect race reports its exhausted attempts as typed
+    # zingo-net-diag records (issue #2562). Std-only and zero-dependency, so
+    # it resolves in this crate's own lockfile without coupling.
+    "dep:zingo-net-diag",
 ]
 
 # The spawnable mixnet proxy process (ADR 0011, consumption model A). Built

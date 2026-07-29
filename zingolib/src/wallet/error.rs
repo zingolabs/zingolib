@@ -55,6 +55,12 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// The wallet holds notes whose spend status sync has not yet confirmed.
+    #[error(
+        "Sync incomplete: the wallet's notes await spend-status confirmation. \
+         Complete sync and retry."
+    )]
+    SyncIncomplete,
     /// Maximum number of accounts already in use.
     #[error("Maximum number of accounts already in use.")]
     AccountCreationFailed,
@@ -135,12 +141,19 @@ pub enum WalletError {
     WalletAlreadyCreated,
 }
 
-/// Price error
+/// Price error. Exists only in nym builds: the mixnet-only price rule
+/// (ADR 0011, amendment 2026-07-28) leaves other builds with no fetch and
+/// therefore no fetch failures.
+#[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// Price error
     #[error("price error. {0}")]
     PriceError(#[from] zingo_price::PriceError),
+    /// Every source in the three-source race failed; the report names each
+    /// source's typed failure with its cause chain.
+    #[error("price race failed. {0}")]
+    RaceFailed(#[from] zingo_price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,

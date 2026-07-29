@@ -4982,10 +4982,12 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol 0.10.0",
+ "zingo-net-diag",
  "zingo-netutils",
  "zingo-status",
  "zingo_common_components",
  "zingo_grpc_proxy",
+ "zingo_test_vectors",
  "zingolib",
  "zip32",
 ]
@@ -5005,6 +5007,10 @@ dependencies = [
  "zcash_keys",
  "zcash_protocol 0.10.0",
 ]
+
+[[package]]
+name = "zingo-net-diag"
+version = "0.1.0"
 
 [[package]]
 name = "zingo-netutils"
@@ -5028,6 +5034,7 @@ name = "zingo-price"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "futures",
  "reqwest",
  "rust_decimal",
  "rustls 0.23.40",
@@ -5036,6 +5043,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "zcash_encoding",
+ "zingo-net-diag",
 ]
 
 [[package]]
@@ -5102,6 +5110,7 @@ dependencies = [
  "secp256k1 0.31.1",
  "secrecy",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "shardtree",
  "tempfile",
@@ -5121,6 +5130,7 @@ dependencies = [
  "zcash_protocol 0.10.0",
  "zcash_transparent 0.9.0",
  "zingo-memo",
+ "zingo-net-diag",
  "zingo-netutils",
  "zingo-price",
  "zingo-status",
