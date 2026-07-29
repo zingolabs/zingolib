@@ -509,11 +509,9 @@ impl ClientBuilder {
         overwrite: bool,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_create_config(wallet_config);
-        let mut lightclient = LightClient::new(config, overwrite).await.unwrap();
-        // Every scenario client records the deliberate clearnet consent at
-        // this one construction funnel: an unconsented five-state wallet
-        // refuses its first send (see `consent_to_clearnet`).
-        consent_to_clearnet(&mut lightclient).await;
+        let mut lightclient = LightClient::new_clearnet_consented(config, overwrite)
+            .await
+            .unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await
@@ -1011,22 +1009,6 @@ pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     (local_net, client_builder)
 }
 
-/// Records the deliberate clearnet consent a regtest scenario client needs
-/// before it may transmit. The five-state wallet refuses an unconsented
-/// send — a never-enabled client is Unattached, and absence is never
-/// consent (ADR 0011) — so these scenarios land each sending client in
-/// SwitchedOff first, exactly as a `--no-mixnet` session would.
-///
-/// Delegates to zingolib unconditionally rather than keying on this
-/// crate's own `nym` feature: feature unification can enable
-/// `zingolib/nym` from any workspace member — zingo-cli carries it as a
-/// default feature (ADR 0026) — and a local cfg would compile the consent
-/// out exactly when the refusal is compiled in. zingolib's own feature
-/// decides whether the act records anything.
-async fn consent_to_clearnet(client: &mut zingolib::lightclient::LightClient) {
-    client.consent_to_clearnet_for_tests().await;
-}
-
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
@@ -1060,7 +1042,6 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
     let mut faucet = client_builder.build_faucet(true).await;
-    consent_to_clearnet(&mut faucet).await;
     let recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -1109,8 +1090,6 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
-    consent_to_clearnet(&mut recipient).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
@@ -1177,7 +1156,6 @@ pub async fn funded_transparent_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;

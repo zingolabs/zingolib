@@ -749,6 +749,16 @@ impl LightClient {
         #[cfg(feature = "nym")]
         self.disable_mixnet().await;
     }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_clearnet_consented(
+        config: ClientConfig,
+        overwrite: bool,
+    ) -> Result<Self, LightClientError> {
+        let mut client = Self::new(config, overwrite).await?;
+        client.consent_to_clearnet_for_tests().await;
+        Ok(client)
+    }
 }
 
 /// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
