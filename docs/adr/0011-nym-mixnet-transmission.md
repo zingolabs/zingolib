@@ -447,3 +447,28 @@ becomes a plain match on unattached-or-died-or-failure; and a recreated
 wallet on a live session reports unattached rather than off, so the second
 fail-open path the review identified (a configure re-run on the same
 backend instance) closes by construction.
+
+## Amendment (2026-07-28): the price fetch returns to mixnet-only
+
+The 2026-07-27 amendment above, which restored a clearnet default for
+the price fetch, is superseded; the 2026-07-23 rule is reinstated in
+full. The consumer-convergence audit of 2026-07-28 supplied the
+deciding evidence: with routing policy left "entirely in the caller,"
+both shipping consumers got it wrong in the same direction. zingo-cli's
+price command advertises the mixnet method while calling only the
+clearnet one, and zingo-mobile fetches over clearnet while its own
+disclaimer tells the user the mixnet covers price-fetch. A per-caller
+choice that every caller fumbles identically is not a policy; it is a
+leak with extra steps.
+
+The reinstated rule: the price fetch travels only over the mixnet. In a
+nym build, the shared session driver refuses the fetch in every Mixnet
+Mode state except ready — including switched off, whose consent covers
+Transmission and never price, because price contacts a third party
+outside the Zcash ecosystem and carries no availability argument. A
+build without the nym feature compiles no fetch at all. zingo-pc, which
+today ships no nym stack, consequently loses its price display until it
+adopts the converged stack; that consequence is accepted deliberately,
+as an incentive to converge rather than a cost to engineer around. The
+`MixnetPriceFetch` route evidence survives as the fetch's only success
+shape.
