@@ -9,14 +9,14 @@
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
 //! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
-//! deliberate [`MixnetProxy::stop`] tears down to `Unattached`; the consented
+//! deliberate `MixnetProxy::stop` tears down to `Unattached`; the consented
 //! `SwitchedOff` is the wallet slot's to record, never this transport's.
 //!
 //! # The attached transport
 //!
 //! The spawned child is the desktop instance of a general rule (ADR 0011's
 //! mobile amendment): the transport meets the wallet at a runtime boundary
-//! carrying a SOCKS5 endpoint and a liveness signal. [`MixnetProxy::attach`]
+//! carrying a SOCKS5 endpoint and a liveness signal. `MixnetProxy::attach`
 //! is the other instance — a platform (a mobile app hosting the proxy as a
 //! dynamic library) hands the wallet an already-running local SOCKS5
 //! address. Readiness is gated on a data round trip through the endpoint,
@@ -90,7 +90,7 @@ pub enum MixnetProxyError {
     /// The spawned child exposed no stdin to hold open as the liveness pipe.
     #[error("the nym-proxy child exposed no stdin")]
     NoStdin,
-    /// The address handed to [`MixnetProxy::attach`] is not a socket address.
+    /// The address handed to `MixnetProxy::attach` is not a socket address.
     #[error("the attached SOCKS5 address '{addr}' does not parse as a socket address")]
     InvalidAddress {
         /// The address that failed to parse.
