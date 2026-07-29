@@ -23,6 +23,10 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use clap::{self, Arg};
 use log::{error, info};
+// The mixnet narration task is the only debug/warn logger; the imports
+// follow the feature.
+#[cfg(feature = "nym")]
+use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
@@ -740,44 +744,83 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
         );
     }
 
-    // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
-    // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected.
-    // The off-state is never persisted, so this runs every launch. Offline
-    // sessions never transmit and skip the bootstrap. A spawn failure fails
-    // closed: the session aborts rather than quietly transmitting over clearnet.
-    //
-    // A --no-mixnet session records the startup opt-out as the explicit act
-    // that reaches SwitchedOff (ADR 0024, consent at start): the session
-    // transmits over clearnet as informed consent, exactly as an in-session
-    // `nym off` would arrange — never by silently remaining unattached, whose
-    // mode refuses the mixnet-only surfaces.
+    // The session driver call at the go-online moment (ADR 0024, decision
+    // 2): zingolib owns the forced-on policy, the consent-at-start
+    // semantics (--no-mixnet is the explicit act that reaches SwitchedOff),
+    // and the provisioning precedence; this consumer supplies only its
+    // platform hints and its per-session start policy. A provisioning
+    // failure fails closed: the session aborts rather than quietly
+    // transmitting over clearnet. Offline sessions never transmit and skip
+    // the driver entirely.
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
-        if filled_template.no_mixnet {
-            RT.block_on(lightclient.disable_mixnet());
-            info!(
+        use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
+        let policy = if filled_template.no_mixnet {
+            MixnetStartPolicy::OptedOutThisSession
+        } else {
+            MixnetStartPolicy::ForcedOn
+        };
+        RT.block_on(lightclient.start_mixnet_session(
+            ProvisionStrategy::Spawn(commands::spawn_hints(
+                filled_template.nym_proxy_path.as_deref(),
+            )),
+            policy,
+        ))
+        .map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
+                 connected session; install the nym-proxy binary, pass --nym-proxy <path>, set \
+                 $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this session.",
+            ))
+        })?;
+        match policy {
+            MixnetStartPolicy::OptedOutThisSession => info!(
                 "Mixnet Mode switched off by --no-mixnet; send and price-fetch use clearnet this \
                  session."
-            );
-        } else {
-            let path = std::path::PathBuf::from(commands::resolve_proxy_path(
-                filled_template.nym_proxy_path.as_deref(),
-            ));
-            RT.block_on(lightclient.enable_mixnet(&path)).map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to start the Nym mixnet proxy at '{}': {e}. Mixnet Mode is required \
-                     for a connected session; install the nym-proxy binary, pass --nym-proxy \
-                     <path>, set $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet \
-                     this session.",
-                    path.display()
-                ))
-            })?;
-            info!(
-                "Mixnet Mode enabling; the nym proxy at {} is bootstrapping. Send and \
-                 price-fetch become available once it is ready (see `nym status`).",
-                path.display()
-            );
+            ),
+            MixnetStartPolicy::ForcedOn => info!(
+                "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
+                 become available once it is ready (see `nym status`)."
+            ),
         }
+        // Narrate Mixnet Mode transitions from the session's status
+        // subscription (push, not poll): mode changes at info/warn through
+        // the standard log path, bootstrap progress at debug. Rendering is
+        // this consumer's own (ADR 0024, decision 8) — variant matching,
+        // never prose matching.
+        let mut status_rx = lightclient.subscribe_mixnet_status();
+        RT.spawn(async move {
+            let mut last_mode = status_rx.borrow().mode;
+            while status_rx.changed().await.is_ok() {
+                let status = status_rx.borrow_and_update().clone();
+                if status.mode == last_mode {
+                    if let Some(detail) = &status.bootstrap_detail {
+                        debug!("nym bootstrap: {detail}");
+                    }
+                    continue;
+                }
+                last_mode = status.mode;
+                match status.mode {
+                    zingolib::nym::MixnetMode::Ready => info!(
+                        "Mixnet Mode ready; send and price-fetch route over the mixnet \
+                         (see `nym status`)."
+                    ),
+                    zingolib::nym::MixnetMode::Died => {
+                        let cause = status
+                            .death
+                            .as_ref()
+                            .and_then(|death| death.detail.as_ref())
+                            .map(|detail| format!(": {detail}"))
+                            .unwrap_or_default();
+                        warn!(
+                            "The mixnet transport died{cause}. Send and price-fetch refuse \
+                             until you re-enable it with `nym on`."
+                        );
+                    }
+                    other => info!("Mixnet Mode is now {other}."),
+                }
+            }
+        });
     }
 
     if filled_template.sync {

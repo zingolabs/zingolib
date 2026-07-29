@@ -735,19 +735,26 @@ impl Command for NymCommand {
     }
 }
 
-/// Resolve the `nym-proxy` binary path by handing this consumer's platform
-/// hints — the explicit flag value and the executable-sibling bundled
-/// directory (where the `bundle-nym-proxy` workbench tool places the
-/// binary) — to [`zingolib::nym::provision`], which owns the precedence
-/// rule and its tests (ADR 0024). Shared by the `nym on` command and the
-/// forced-on-at-startup policy.
+/// This consumer's platform hints for provisioning the `nym-proxy` binary:
+/// the explicit flag value and the executable-sibling bundled directory
+/// (where the `bundle-nym-proxy` workbench tool places the binary).
+/// [`zingolib::nym::provision`] owns the precedence rule and its tests
+/// (ADR 0024); this names only what zingolib cannot know by itself. Shared
+/// by the session driver call at startup and the `nym on` command.
 #[cfg(feature = "nym")]
-pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
+pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::SpawnHints<'_> {
     use zingolib::nym::provision::{self, SpawnHints};
-    provision::resolve_proxy_path(&SpawnHints {
+    SpawnHints {
         explicit,
         bundled_dir: provision::executable_sibling_dir(),
-    })
+    }
+}
+
+/// Resolve the `nym-proxy` binary path from this consumer's
+/// [`spawn_hints`], for the `nym on` command's in-session enable.
+#[cfg(feature = "nym")]
+pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
+    zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
 /// Typed failure of the `nym` command family. Each variant exists only in

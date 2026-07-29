@@ -13,12 +13,15 @@
 
 pub mod broadcast;
 pub mod broadcast_indexers;
+pub mod driver;
 mod mode;
 pub mod probe;
 pub mod provision;
 pub mod route;
 pub mod supervisor;
 
+pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
+pub(crate) use driver::{StatusPublisher, status_publisher};
 pub(crate) use mode::MixnetSlot;
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};

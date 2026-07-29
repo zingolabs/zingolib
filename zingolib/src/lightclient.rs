@@ -164,6 +164,14 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: crate::nym::MixnetSlot,
+    /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
+    /// the one shared watch every subscriber reads. Transport transitions
+    /// publish from the supervisor's tasks, slot transitions from the
+    /// `&mut` methods here; the channel outlives any individual transport,
+    /// so an enable after a disable publishes into the same channel a
+    /// subscriber already holds.
+    #[cfg(feature = "nym")]
+    mixnet_status: crate::nym::StatusPublisher,
 }
 
 impl LightClient {
@@ -234,6 +242,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::nym::status_publisher(),
         })
     }
 
@@ -268,6 +278,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::nym::status_publisher(),
         }
     }
 
@@ -323,6 +335,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::nym::status_publisher(),
         })
     }
 
@@ -732,9 +746,23 @@ impl LightClient {
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        self.mixnet_slot =
-            crate::nym::MixnetSlot::Attached(crate::nym::MixnetProxy::spawn(binary_path)?);
-        Ok(())
+        match crate::nym::MixnetProxy::spawn(
+            binary_path,
+            std::sync::Arc::clone(&self.mixnet_status),
+        ) {
+            Ok(proxy) => {
+                // The spawn already published Bootstrapping into the session
+                // channel; nothing further to announce here.
+                self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
+                Ok(())
+            }
+            Err(error) => {
+                // A failed enable leaves Unattached (the user's enable revoked
+                // any standing clearnet consent); subscribers must see it.
+                self.publish_mixnet_slot_state();
+                Err(error)
+            }
+        }
     }
 
     /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5
@@ -750,9 +778,19 @@ impl LightClient {
         socks5_addr: &str,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        self.mixnet_slot =
-            crate::nym::MixnetSlot::Attached(crate::nym::MixnetProxy::attach(socks5_addr)?);
-        Ok(())
+        match crate::nym::MixnetProxy::attach(
+            socks5_addr,
+            std::sync::Arc::clone(&self.mixnet_status),
+        ) {
+            Ok(proxy) => {
+                self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
+                Ok(())
+            }
+            Err(error) => {
+                self.publish_mixnet_slot_state();
+                Err(error)
+            }
+        }
     }
 
     /// Disable Mixnet Mode. This is a deliberate, per-session choice — the
@@ -762,6 +800,69 @@ impl LightClient {
     pub async fn disable_mixnet(&mut self) {
         self.vacate_mixnet_slot().await;
         self.mixnet_slot = crate::nym::MixnetSlot::SwitchedOff;
+        self.publish_mixnet_slot_state();
+    }
+
+    /// Publish the slot's current state into the session status channel.
+    /// Called after a slot transition settles — never mid-replacement, so
+    /// subscribers see deliberate states only, not the transient unattached
+    /// between a vacate and its successor.
+    fn publish_mixnet_slot_state(&self) {
+        self.mixnet_status
+            .send_replace(crate::nym::MixnetStatus::slot_only(self.mixnet_slot.mode()));
+    }
+
+    /// The driver entry of the Mixnet Mode session policy (ADR 0024,
+    /// decision 2): the one call a session makes at its go-online moment.
+    /// Under [`MixnetStartPolicy::ForcedOn`](crate::nym::MixnetStartPolicy)
+    /// the transport is provisioned by `strategy` — the bundled binary
+    /// spawned from the consumer's platform hints, or an attach to a
+    /// platform-hosted endpoint — forcing the mode on so the bootstrap
+    /// overlaps sync. Under
+    /// [`MixnetStartPolicy::OptedOutThisSession`](crate::nym::MixnetStartPolicy)
+    /// the startup opt-out is recorded as the explicit act that reaches
+    /// switched off, and nothing is provisioned. A provisioning failure is
+    /// returned typed to the caller that expressed the go-online intent and
+    /// leaves the mode unattached: refusal, never a silent clearnet.
+    ///
+    /// Recovery stays explicit (the recovery predicate is
+    /// [`MixnetMode::needs_recovery`](crate::nym::MixnetMode::needs_recovery)):
+    /// this driver never respawns on its own, and the only wallet-side
+    /// clocks remain the supervisor's.
+    pub async fn start_mixnet_session(
+        &mut self,
+        strategy: crate::nym::ProvisionStrategy<'_>,
+        policy: crate::nym::MixnetStartPolicy,
+    ) -> Result<(), crate::nym::MixnetProxyError> {
+        match policy {
+            crate::nym::MixnetStartPolicy::OptedOutThisSession => {
+                self.disable_mixnet().await;
+                Ok(())
+            }
+            crate::nym::MixnetStartPolicy::ForcedOn => match strategy {
+                crate::nym::ProvisionStrategy::Spawn(hints) => {
+                    let path = crate::nym::provision::resolve_proxy_path(&hints);
+                    log::info!("mixnet session start: spawning nym-proxy at {path}");
+                    self.enable_mixnet(std::path::Path::new(&path)).await
+                }
+                crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
+                    self.attach_mixnet(socks5_addr).await
+                }
+            },
+        }
+    }
+
+    /// Subscribe to Mixnet Mode: the receiving half of the session's one
+    /// status channel, delivering a typed
+    /// [`MixnetStatus`](crate::nym::MixnetStatus) snapshot on every
+    /// transition. Push replaces poll (ADR 0024, decision 2): no consumer
+    /// cadence exists, and the channel's keep-only-latest semantics are the
+    /// publication-sequencing guard. The receiver is independent of this
+    /// client borrow and survives enable/disable cycles.
+    pub fn subscribe_mixnet_status(
+        &self,
+    ) -> tokio::sync::watch::Receiver<crate::nym::MixnetStatus> {
+        self.mixnet_status.subscribe()
     }
 
     /// The current Mixnet Mode, read from the transport slot:
@@ -1176,6 +1277,153 @@ mod tests {
                 other => panic!("the timeout must arrive typed: {other}"),
             }
             drop(listener);
+        }
+    }
+
+    /// The session driver's contract (ADR 0024, decision 2).
+    ///
+    /// The driver entry is the one call a session makes at its go-online
+    /// moment; these tests pin its consent-at-start semantics, its typed
+    /// refusal on a failed provisioning, the push delivery of every
+    /// transition through the session's one status channel, and the
+    /// Died-only recovery predicate.
+    #[cfg(feature = "nym")]
+    mod session_driver_contract {
+        use crate::lightclient::LightClient;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        fn wallet() -> crate::wallet::LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// The driver entry honors the startup opt-out (ADR 0024, consent
+        /// at start): OptedOutThisSession lands SwitchedOff without
+        /// provisioning anything — the strategy is never exercised — and
+        /// the transition reaches subscribers through the session channel.
+        #[tokio::test]
+        async fn the_driver_records_the_startup_opt_out_and_publishes_it() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            let subscriber = client.subscribe_mixnet_status();
+            assert_eq!(
+                subscriber.borrow().mode,
+                crate::nym::MixnetMode::Unattached,
+                "the channel opens in the ground state"
+            );
+
+            client
+                .start_mixnet_session(
+                    // A hint set that resolves to no real binary: the
+                    // opt-out branch must never try to spawn it.
+                    crate::nym::ProvisionStrategy::Spawn(
+                        crate::nym::provision::SpawnHints::default(),
+                    ),
+                    crate::nym::MixnetStartPolicy::OptedOutThisSession,
+                )
+                .await
+                .expect("the opt-out provisions nothing and cannot fail");
+
+            assert_eq!(client.mixnet_mode(), crate::nym::MixnetMode::SwitchedOff);
+            assert_eq!(
+                subscriber.borrow().mode,
+                crate::nym::MixnetMode::SwitchedOff,
+                "the slot transition must reach subscribers"
+            );
+        }
+
+        /// A forced-on attach to a malformed address fails typed and leaves
+        /// Unattached — refusal, never clearnet — and publishes the settled
+        /// state so a subscriber cannot be left staring at a stale mode.
+        #[tokio::test]
+        async fn a_failed_forced_on_start_publishes_unattached() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            let subscriber = client.subscribe_mixnet_status();
+
+            let error = client
+                .start_mixnet_session(
+                    crate::nym::ProvisionStrategy::Attach {
+                        socks5_addr: "not-a-socket-address",
+                    },
+                    crate::nym::MixnetStartPolicy::ForcedOn,
+                )
+                .await
+                .expect_err("a malformed attach address must refuse");
+            assert!(matches!(
+                error,
+                crate::nym::MixnetProxyError::InvalidAddress { .. }
+            ));
+
+            assert_eq!(client.mixnet_mode(), crate::nym::MixnetMode::Unattached);
+            assert_eq!(
+                subscriber.borrow().mode,
+                crate::nym::MixnetMode::Unattached,
+                "the failed start's settled state must reach subscribers"
+            );
+        }
+
+        /// The attached transport's lifecycle reaches subscribers end to
+        /// end: a forced-on attach to a refusing localhost port publishes
+        /// bootstrapping, then died with the typed readiness failure — all
+        /// pushed, never polled. A deliberate disable afterwards publishes
+        /// SwitchedOff and, because stop() awaits the aborted watcher, no
+        /// stale death can be published over it.
+        #[tokio::test]
+        async fn attach_lifecycle_and_disable_reach_subscribers_in_order() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut subscriber = client.subscribe_mixnet_status();
+
+            client
+                .start_mixnet_session(
+                    // Port 9 (discard) refuses: readiness fails fast and
+                    // the driver lands Died.
+                    crate::nym::ProvisionStrategy::Attach {
+                        socks5_addr: "127.0.0.1:9",
+                    },
+                    crate::nym::MixnetStartPolicy::ForcedOn,
+                )
+                .await
+                .expect("a well-formed address attaches");
+
+            let died = subscriber
+                .wait_for(|status| status.mode == crate::nym::MixnetMode::Died)
+                .await
+                .expect("the publisher outlives the wait")
+                .clone();
+            assert!(
+                died.death.and_then(|report| report.detail).is_some(),
+                "an attach readiness failure must publish its typed cause"
+            );
+
+            client.disable_mixnet().await;
+            assert_eq!(
+                subscriber.borrow_and_update().mode,
+                crate::nym::MixnetMode::SwitchedOff
+            );
+            tokio::task::yield_now().await;
+            assert!(
+                !subscriber.has_changed().expect("the publisher is alive"),
+                "no stale transport publication may follow the deliberate disable"
+            );
+        }
+
+        /// The recovery predicate is Died only: the ground state carries no
+        /// online intent (a wallet may never have consented to
+        /// connectivity), switched off is consent revocation's territory,
+        /// and the live states need no repair. Exhaustive over ALL so a new
+        /// state must take a position.
+        #[test]
+        fn the_recovery_predicate_is_died_only() {
+            for mode in crate::nym::MixnetMode::ALL {
+                assert_eq!(
+                    mode.needs_recovery(),
+                    matches!(mode, crate::nym::MixnetMode::Died),
+                    "{mode} must {}need recovery",
+                    if matches!(mode, crate::nym::MixnetMode::Died) {
+                        ""
+                    } else {
+                        "not "
+                    }
+                );
+            }
         }
     }
 }

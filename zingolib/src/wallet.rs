@@ -21,7 +21,11 @@ use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
-use error::{KeyError, PriceError, WalletError};
+use error::{KeyError, WalletError};
+// The one PriceError-returning method is nym-gated (the mixnet-only price
+// rule), so its import follows the feature.
+#[cfg(feature = "nym")]
+use error::PriceError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
