@@ -106,16 +106,16 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for FanoutError<E
 /// `report` receives a succinct progress line whenever the race's shape
 /// changes (a launch or an arm failure), rendering the planner's own
 /// [`RaceProgress`] snapshot for display.
-pub(crate) async fn fanout_broadcast<A, F, E, R, P>(
+pub(crate) async fn fanout_broadcast<A, F, E, R, P, T>(
     indexers: &[Uri],
     rng: &mut R,
     cap: usize,
     run_arm: A,
     report: P,
-) -> Result<String, FanoutError<E>>
+) -> Result<T, FanoutError<E>>
 where
     A: Fn(Uri) -> F,
-    F: Future<Output = Result<String, E>>,
+    F: Future<Output = Result<T, E>>,
     E: std::fmt::Display,
     R: Rng + ?Sized,
     P: Fn(String),

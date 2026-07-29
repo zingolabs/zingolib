@@ -45,6 +45,10 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# The offline-contract tests build Indexerless clients from synthetic
+# wallets, so every command's offline behavior is pinned without a network.
+zingolib = { workspace = true, features = ["testutils"] }
+zingo_test_vectors = { workspace = true }
 # The heartbeat and log-file tests read their temporal parameters from
 # `time::test`.
 zingo-netutils = { workspace = true, features = ["testutils"] }

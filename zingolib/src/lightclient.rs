@@ -99,17 +99,25 @@ impl WalletMeta {
     }
 }
 
-/// A successfully fetched ZEC price, attested with the route it traveled.
+/// A successfully fetched ZEC price, attested with the route it traveled,
+/// the source that answered, and the time the answer took.
 ///
-/// The attestation is the mixnet tunnel's local SOCKS5 endpoint the fetch
-/// went through. It rides the success value — not a log — so every consumer
-/// of [`LightClient::update_current_price`] holds per-fetch
-/// evidence that this fetch ran over the mixnet (ADR 0011).
+/// The route attestation is the mixnet tunnel's local SOCKS5 endpoint the
+/// fetch went through. It rides the success value — not a log — so every
+/// consumer of [`LightClient::update_current_price`] holds per-fetch
+/// evidence that this fetch ran over the mixnet (ADR 0011). The source and
+/// round trip ride beside it: the fetch races all three price sources and
+/// reports the one whose answer arrived first.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
     pub usd: f32,
+    /// The price source whose answer won the three-source race.
+    pub source: zingo_price::PriceSource,
+    /// Wall-clock time from dispatching the race to the winning answer,
+    /// tunnel traversal included.
+    pub round_trip: std::time::Duration,
     /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
     /// through.
     pub via_socks5: String,
@@ -635,7 +643,11 @@ impl LightClient {
     /// availability argument earns it a clearnet tier. A build without the
     /// `nym` feature has no price fetch at all.
     ///
-    /// The returned fetch carries the tunnel endpoint it traveled through, so
+    /// The fetch races all three price sources (Gemini, Kraken, CoinGecko)
+    /// through the tunnel and takes the first answer; only when every
+    /// source fails does it report an error, naming each source's typed
+    /// failure. The returned fetch carries the tunnel endpoint it traveled
+    /// through, the winning source, and the race's round-trip time, so
     /// every consumer holds per-fetch evidence of the route rather than
     /// trusting the method name alone.
     #[cfg(feature = "nym")]
@@ -651,13 +663,19 @@ impl LightClient {
         // polling-blackout remedy), so a hung tunnel can no longer freeze
         // every wallet-state observer. The route was resolved above and
         // could die mid-fetch; the fetch itself then reports that as a
-        // typed transport failure rather than anything falling back.
-        let price = zingo_price::fetch_current_price(Some(&socks5_addr))
+        // typed transport failure rather than anything falling back. All
+        // three sources race through the tunnel; the first answer wins and
+        // the losing legs are cancelled (zingo-mobile parity).
+        let dispatched = std::time::Instant::now();
+        let raced = zingo_price::race_current_price(Some(&socks5_addr))
             .await
             .map_err(crate::wallet::error::PriceError::from)?;
-        self.wallet().write().await.record_price_update(price);
+        let round_trip = dispatched.elapsed();
+        self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {
-            usd: price.price_usd,
+            usd: raced.price.price_usd,
+            source: raced.source,
+            round_trip,
             via_socks5: socks5_addr,
         })
     }
