@@ -904,6 +904,16 @@ impl MockNet {
             )
             .await
             .expect("sapling-only address generation succeeds");
+        // Mock-net clients run with Mixnet Mode switched on, so every
+        // chain-mock send walks the fail-closed route resolver and the
+        // fan-out orchestration instead of quietly consenting to clearnet.
+        // The address is never dialed: the transmit path pairs this slot
+        // state with arms that submit over the mock indexer's channel.
+        // Without the nym feature there is no mixnet and sends stay
+        // clearnet, so the same tests cover both routes across the
+        // feature matrix.
+        #[cfg(feature = "nym")]
+        lightclient.switch_on_mixnet_for_tests("127.0.0.1:1").await;
         lightclient
     }
 }

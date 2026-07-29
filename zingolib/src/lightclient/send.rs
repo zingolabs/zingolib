@@ -308,6 +308,61 @@ async fn mixnet_fanout_transmit(
     .map_err(|error| error.to_string())
 }
 
+/// The chain-mock twin of [`mixnet_fanout_transmit`], paired with the
+/// test-attached slot state behind
+/// [`LightClient::switch_on_mixnet_for_tests`]: the witness draw, the
+/// escalation rounds, and the cap run for real over the curated Broadcast
+/// Indexer pool, while each arm's bytes travel the mock indexer's channel
+/// instead of a SOCKS5 tunnel. The tunnel's byte transport is pinned by
+/// zingo-netutils' own tests, so no packet leaves the process here.
+#[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+async fn mock_fanout_transmit(
+    indexer: &zingo_netutils::GrpcIndexer,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+    progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
+) -> Result<String, String> {
+    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
+    use crate::nym::broadcast_indexers::eligible_witnesses;
+
+    let witnesses = eligible_witnesses(indexer.uri()).map_err(|e| e.to_string())?;
+    let run_arm = |witness: http::Uri| {
+        let target = ClearnetTarget(indexer.clone());
+        let tx_bytes = tx_bytes.to_vec();
+        let txid = *txid;
+        let host = witness
+            .host()
+            .map_or_else(|| witness.to_string(), str::to_string);
+        async move {
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
+                &target,
+                &tx_bytes,
+                height,
+                &txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("witness {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(status)| status.to_string());
+            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
+            outcome
+        }
+    };
+
+    fanout_broadcast(
+        &witnesses,
+        &mut rand::rngs::OsRng,
+        MAX_BROADCAST_WITNESSES,
+        run_arm,
+        |line| progress.set(format!("mixnet fan-out: {line}")),
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
 impl LightClient {
     async fn send(
         &mut self,
@@ -568,6 +623,16 @@ impl LightClient {
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<String> = None;
 
+        // A test-attached slot pairs its Ready route with arms that submit
+        // over the mock indexer's channel; a live Ready session keeps the
+        // SOCKS5 fan-out. Production builds carry no test slot state, so
+        // this distinction does not exist there.
+        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+        let mock_arms = matches!(
+            self.mixnet_slot,
+            crate::nym::MixnetSlot::AttachedForTests { .. }
+        );
+
         // Narrate the transmission into the side channel; the scope clears it
         // on every exit so no stale line outlives this call.
         let progress = self.transmit_progress.clone();
@@ -611,7 +676,31 @@ impl LightClient {
             // once in `transmit::resilient_transmit`; the clearnet path runs it
             // directly and the mixnet path runs it per fan-out arm. Wallet-state
             // effects stay here, around the pure transmission.
-            let txid_from_server = match transmit_one_transaction(
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            let transmit_outcome = if mock_arms {
+                mock_fanout_transmit(
+                    &indexer,
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+            } else {
+                transmit_one_transaction(
+                    socks5_proxy.as_deref(),
+                    &indexer,
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+            };
+            #[cfg(not(all(feature = "nym", any(test, feature = "testutils"))))]
+            let transmit_outcome = transmit_one_transaction(
                 socks5_proxy.as_deref(),
                 &indexer,
                 &transaction_bytes,
@@ -620,8 +709,8 @@ impl LightClient {
                 &progress,
                 &history,
             )
-            .await
-            {
+            .await;
+            let txid_from_server = match transmit_outcome {
                 Ok(server_txid) => server_txid,
                 Err(message) => {
                     pepper_sync::set_transactions_failed(
