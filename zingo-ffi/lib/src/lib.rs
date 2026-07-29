@@ -110,6 +110,8 @@ pub enum ZingolibError {
     MigrationSplit(String),
     #[error("Error: migration: {0}")]
     Migration(String),
+    #[error("Error: mixnet: {0}")]
+    Mixnet(String),
 }
 
 impl ZingolibError {
@@ -153,8 +155,19 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::FileError(_) => ZingolibError::Save(text),
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::PriceError(_) => {
+        LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
             ZingolibError::Read(text)
+        }
+        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
+        // A deliberate verdict (#1229): exhausting the eligible Broadcast
+        // Indexers is a server-topology problem, not a mixnet refusal —
+        // switching the synchronization endpoint changes eligibility, so
+        // the app's switch-and-retry routing can genuinely help. Mapping it
+        // to Mixnet would stamp it with the owned refusal marker and turn
+        // it never-retry.
+        LightClientError::NoEligibleBroadcastIndexer => ZingolibError::Indexer(text),
+        LightClientError::MigrationBroadcastTargetIsSyncEndpoint { .. } => {
+            ZingolibError::Migration(text)
         }
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
@@ -846,6 +859,39 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
             map_wallet_save(wallet.save())
         })
     })
+}
+
+/// The classification seam contract (#1229): the app routes send failures
+/// by our own error variants' display prefixes, so each zingolib failure
+/// must land in the variant whose routing verdict it deserves. A mixnet
+/// refusal is never-retry; the excluded-indexer exhaustion is a
+/// server-topology problem where switching servers genuinely changes
+/// eligibility, so it must NOT carry the mixnet marker.
+#[cfg(test)]
+mod ffi_error_routing_tests {
+    use super::*;
+
+    #[test]
+    fn a_mixnet_refusal_maps_to_the_owned_mixnet_marker() {
+        let mapped = ffi_error(LightClientError::MixnetNotReady(
+            zingolib::nym::MixnetNotReady::Bootstrapping,
+        ));
+        assert!(
+            matches!(&mapped, ZingolibError::Mixnet(_)),
+            "a refusal must carry the owned mixnet marker: {mapped:?}"
+        );
+        assert!(mapped.to_string().starts_with("Error: mixnet:"));
+    }
+
+    #[test]
+    fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
+        let mapped = ffi_error(LightClientError::NoEligibleBroadcastIndexer);
+        assert!(
+            matches!(&mapped, ZingolibError::Indexer(_)),
+            "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
+        );
+        assert!(mapped.to_string().starts_with("Error: indexer:"));
+    }
 }
 
 /// The save-path contract (zingolabs/zingo-mobile#1151; audit Issue Q), now
@@ -3127,4 +3173,129 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
             Ok(object! { "cancelled" => true }.pretty(2))
         })
     })
+}
+
+/// The Mixnet Mode tri-state-plus-died as the strings the app layer shows.
+fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
+    match mode {
+        zingolib::nym::MixnetMode::Off => "off",
+        zingolib::nym::MixnetMode::Bootstrapping => "bootstrapping",
+        zingolib::nym::MixnetMode::Ready => "ready",
+        zingolib::nym::MixnetMode::Died => "died",
+    }
+}
+
+/// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5 endpoint
+/// (the UniFFI proxy shim's address). Readiness is validated by a data round
+/// trip; poll [`mixnet_mode`] for `bootstrapping` -> `ready`, or `died`.
+pub fn attach_mixnet(socks5_addr: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            RT.block_on(async move {
+                lightclient
+                    .attach_mixnet(&socks5_addr)
+                    .await
+                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                Ok(
+                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                        .pretty(2),
+                )
+            })
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Enable Mixnet Mode by spawning the bundled nym-proxy binary at
+/// `proxy_path` (the exec fallback; Android-attached and iOS builds use
+/// [`attach_mixnet`] instead).
+pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            RT.block_on(async move {
+                lightclient
+                    .enable_mixnet(std::path::Path::new(&proxy_path))
+                    .await
+                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                Ok(
+                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                        .pretty(2),
+                )
+            })
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// Disable Mixnet Mode: the user's deliberate per-session consent to
+/// clearnet for the send and price surfaces.
+pub fn disable_mixnet() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async move {
+                lightclient.disable_mixnet().await;
+                object! { "mixnet_mode" => "off" }.pretty(2)
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The current Mixnet Mode: `off`, `bootstrapping`, `ready` (with the local
+/// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
+/// [`attach_mixnet`] or [`enable_mixnet`] to recover).
+pub fn mixnet_mode() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            let mut status = object! {
+                "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()),
+            };
+            if let Some(addr) = lightclient.mixnet_socks5_addr() {
+                status["socks5_addr"] = addr.into();
+            }
+            Ok(status.pretty(2))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The proxy's latest bootstrap progress line while Mixnet Mode is
+/// bootstrapping, so the app can narrate the connect race; empty otherwise.
+pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
+            Ok(object! { "detail" => detail }.pretty(2))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The canonical IP-correlation disclaimer (ZIP-0318): Mixnet Mode covers only
+/// transaction broadcast and price-fetch, and synchronization still exposes
+/// the client IP to the sync indexer. One constant from zingolib so every
+/// frontend renders the same text; infallible because it needs no wallet and
+/// has no failure path.
+pub fn mixnet_ip_correlation_disclaimer() -> String {
+    zingolib::nym::IP_CORRELATION_DISCLAIMER.to_string()
 }

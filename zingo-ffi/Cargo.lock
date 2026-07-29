@@ -1015,7 +1015,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -1049,7 +1049,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2279,7 +2279,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "bip32",
  "byteorder",
@@ -3754,6 +3754,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-socks"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7e2948f60dbe26b35f2c7fb74ac2854c1fddded0fe9d7548fcc674a246f7615"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3845,9 +3857,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.3+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
+checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
  "winnow 1.0.4",
 ]
@@ -4655,7 +4667,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.13.0"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "bech32",
  "bs58",
@@ -4791,7 +4803,7 @@ dependencies = [
 [[package]]
 name = "zcash_pool_migration"
 version = "0.1.0-rc.3"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "corez",
  "getset",
@@ -4835,7 +4847,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.30.0"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
@@ -4899,7 +4911,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.10.1"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "corez",
  "hex",
@@ -4960,7 +4972,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.10.0"
-source = "git+https://github.com/zcash/librustzcash.git#e0b48bb5493cad423ba0f8d7b5efa52b1c67033f"
+source = "git+https://github.com/zcash/librustzcash.git#a00f4a7a88647bc5a0af532c1a23aafa576f0b53"
 dependencies = [
  "bip32",
  "bs58",
@@ -5110,7 +5122,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "zcash_address 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_encoding",
@@ -5135,21 +5147,25 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "http",
+ "hyper-util",
  "lightwallet-protocol",
  "rustls 0.23.42",
  "thiserror 2.0.19",
+ "tokio",
  "tokio-rustls",
+ "tokio-socks",
  "tokio-stream",
  "tonic",
+ "tower",
 ]
 
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -5164,7 +5180,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "byteorder",
  "zcash_protocol 0.10.0",
@@ -5187,7 +5203,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b22
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5246,7 +5262,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#79d575bf99612ac93fb4986bdc1e6d8f398c05ac"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#3d2f2aa0c9d38df9eb35952a24494fb28493409c"
 dependencies = [
  "http",
  "nonempty",

@@ -20,7 +20,8 @@ enum ZingolibError {
     "MigrationConsentStale",
     "MigrationCadenceFixed",
     "MigrationSplit",
-    "Migration"
+    "Migration",
+    "Mixnet"
 };
 
 namespace zingo {
@@ -273,4 +274,25 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string cancel_ironwood_migration();
+
+  [Throws=ZingolibError]
+  string attach_mixnet(
+    string socks5_addr
+  );
+
+  [Throws=ZingolibError]
+  string enable_mixnet(
+    string proxy_path
+  );
+
+  [Throws=ZingolibError]
+  string disable_mixnet();
+
+  [Throws=ZingolibError]
+  string mixnet_mode();
+
+  [Throws=ZingolibError]
+  string mixnet_bootstrap_detail();
+
+  string mixnet_ip_correlation_disclaimer();
 };
