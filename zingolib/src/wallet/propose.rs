@@ -23,7 +23,10 @@ use crate::{
     config::ChainType,
     data::proposal::{ProportionalFeeProposal, ZingoProposal},
 };
-use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
+use pepper_sync::{
+    keys::transparent::TransparentScope,
+    sync::{ScanPriority, ScanRange},
+};
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -207,40 +210,39 @@ impl LightWallet {
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 
-    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
-    /// `Scanned`, `ScannedWithoutMapping` or `RefetchingNullifiers` priority).
+    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges whose
+    /// priority satisfies [`ScanPriority::is_scanned`]).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
     ///
+    /// The horizon *withholds* a note when the note's confirmation height lies below it. A spending
+    /// transaction can be mined only at or above the block that mined the note, so a note at or
+    /// above the horizon has had its entire spend window scanned, and the absence of a discovered
+    /// spend proves the note unspent. For a note below the horizon, the unscanned gap may conceal
+    /// a spend, so the strict form of [`Self::spendable_notes`] omits the note rather than vouch
+    /// for it. Withholding asserts nothing about the note; it records only that the wallet does
+    /// not yet know.
+    ///
     /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
     /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
     /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
     pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
-        if let Some(scan_range) = self
-            .sync_state
-            .scan_ranges()
-            .iter()
-            .rev()
-            .find(|scan_range| {
-                if all_spends_known {
-                    scan_range.priority() >= ScanPriority::FoundNote
-                        || scan_range.priority() == ScanPriority::Scanning
-                } else {
-                    scan_range.priority() != ScanPriority::Scanned
-                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
-                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
-                }
-            })
-        {
-            Some(scan_range.block_range().end)
-        } else {
-            self.sync_state
-                .scan_ranges()
-                .first()
-                .map(|range| range.block_range().start)
-        }
+        let mut scan_ranges_top_to_bottom = self.sync_state.scan_ranges().iter().rev();
+        let awaits_spend_detection = |scan_range: &&ScanRange| {
+            if all_spends_known {
+                scan_range.priority() >= ScanPriority::FoundNote
+                    || scan_range.priority() == ScanPriority::Scanning
+            } else {
+                !scan_range.priority().is_scanned()
+            }
+        };
+        let highest_range_awaiting_detection =
+            scan_ranges_top_to_bottom.find(awaits_spend_detection);
+        highest_range_awaiting_detection
+            .map(|awaiting_range| awaiting_range.block_range().end)
+            .or_else(|| self.sync_state.wallet_birthday())
     }
 
     /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.

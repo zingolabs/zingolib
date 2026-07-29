@@ -487,22 +487,73 @@ fn split_into(
 impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
+    ///
+    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// withholds every V2 note the anchor would otherwise offer.
+    ///
+    /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete
     #[allow(clippy::result_large_err)]
     pub(crate) fn migration_note_values(
         &self,
         account: zip32::AccountId,
     ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
-        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        let known_unspent = self.anchored_v2_known_unspent(account, anchor_height)?;
+        let not_known_spent = self.anchored_v2_not_known_spent(account, anchor_height)?;
+        // The two sets differ only in the spend-confirmation filter, so
+        // an empty first with a non-empty second means spend detection
+        // is incomplete below the recorded tip for every note.
+        if known_unspent.is_empty() && !not_known_spent.is_empty() {
+            return Err(crate::wallet::error::WalletError::SyncIncomplete);
+        }
+        Ok(known_unspent)
+    }
+
+    /// The values of the account's anchored V2 notes that sync has proven
+    /// unspent: every block in each note's possible spend window is scanned
+    /// and no spend appeared. Only this set is safe to plan spends from.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_known_unspent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, false)
+    }
+
+    /// The values of the account's anchored V2 notes with no recorded
+    /// spending transaction: the known-unspent set plus the notes whose
+    /// spend status sync cannot yet vouch for. A superset of
+    /// [`Self::anchored_v2_known_unspent`]; the difference is exactly the
+    /// notes awaiting spend detection.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_not_known_spent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, true)
+    }
+
+    /// The shared query behind the named pair above; callers reach it
+    /// through them so the spend-certainty mode always has a name.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_values(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+        include_potentially_spent: bool,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
+
         Ok(self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
                 &[],
                 account,
-                false,
+                include_potentially_spent,
             )?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)

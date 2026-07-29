@@ -59,10 +59,11 @@ use zingo_netutils::{NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
 
-/// The indexer the attach readiness gate round-trips through. No wallet data
-/// travels — a bare `GetLightdInfo` — and the target mirrors the spawned
-/// binary's health-check indexer.
-const ATTACH_HEALTH_INDEXER: &str = "https://zec.rocks:443";
+/// The indexer the attach readiness gate round-trips through: the census's
+/// shared health target, the same one the spawned binary's gate uses (one
+/// owner, issue #2565's rule; the census pins it to an active member). No
+/// wallet data travels — a bare `GetLightdInfo`.
+const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
 
 /// Readiness attempts against the attached endpoint before declaring it
 /// dead. Unlike the spawned binary's health gate, attach cannot redraw a
@@ -105,29 +106,39 @@ struct ProxyState {
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
-    /// Why the transport died, when [`MixnetMode::Died`] and the watcher
-    /// held a typed cause: the failed readiness round trip or liveness
-    /// probe, as the taxonomy record with its cause chain intact
-    /// (`docs/agents/net-diag-design.md`). The mode enum itself is
-    /// unchanged; this rides beside it.
-    death_detail: Option<zingo_net_diag::NetOpFailure>,
-    /// When the death latched, for every death (a spawned child's closed
-    /// pipe carries no cause but still has a moment). The latch is sticky
-    /// by design (proxy-owner-remediates), so without this a consumer
-    /// cannot distinguish a stale verdict from a fresh one (issue #2564).
-    death_at: Option<std::time::SystemTime>,
+    /// The one death latch: its moment and, when the watcher held one, the
+    /// typed cause (`docs/agents/net-diag-design.md`). A single field so a
+    /// cause can never exist without its moment (the #2569 review); the
+    /// latch is sticky by design (proxy-owner-remediates, issue #2564),
+    /// and the mode enum itself is unchanged.
+    death: Option<DeathReport>,
 }
 
 /// One latched death, read whole: when it happened and, when the watcher
 /// held one, the typed cause. The timestamp is always present because every
 /// death has a moment; the detail is `None` for a spawned child's closed
 /// stdout pipe, whose diagnostic is the child's own stderr.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeathReport {
-    /// When the death latched.
+    /// When the death latched, by the system clock — renderable as wall
+    /// time and FFI-crossable, unlike a monotonic instant, at the price of
+    /// NTP steps. Staleness math goes through [`DeathReport::age`], which
+    /// absorbs a stepped clock.
     pub at: std::time::SystemTime,
     /// The typed cause, when one was held.
     pub detail: Option<zingo_net_diag::NetOpFailure>,
+}
+
+impl DeathReport {
+    /// How long ago the death latched, measured against `now`. The system
+    /// clock can step between the latch and the read, so a moment reading
+    /// later than `now` clamps to zero: staleness never errors and never
+    /// goes negative. Consumers rendering "died N minutes ago" go through
+    /// this rather than subtracting timestamps themselves.
+    pub fn age(&self, now: std::time::SystemTime) -> std::time::Duration {
+        now.duration_since(self.at)
+            .unwrap_or(std::time::Duration::ZERO)
+    }
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
@@ -186,8 +197,7 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
-            death_detail: None,
-            death_at: None,
+            death: None,
         }));
         let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state)));
         Ok(MixnetProxy {
@@ -218,8 +228,7 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
-            death_detail: None,
-            death_at: None,
+            death: None,
         }));
         let addr = socks5_addr.to_string();
         let probe_addr = addr.clone();
@@ -267,12 +276,9 @@ impl MixnetProxy {
     /// mode, and `None` for a spawned child's death (a closed stdout pipe
     /// carries no cause; the child's own stderr is the diagnostic there).
     pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
-        let guarded = self.state.lock().expect("proxy state mutex");
-        if guarded.mode == MixnetMode::Died {
-            guarded.death_detail.clone()
-        } else {
-            None
-        }
+        // Derived from the one latch, so this accessor and death_report
+        // cannot disagree (the #2569 review).
+        self.death_report().and_then(|report| report.detail)
     }
 
     /// The latched death read whole — its moment, and its typed cause when
@@ -283,10 +289,7 @@ impl MixnetProxy {
     pub fn death_report(&self) -> Option<DeathReport> {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == MixnetMode::Died {
-            guarded.death_at.map(|at| DeathReport {
-                at,
-                detail: guarded.death_detail.clone(),
-            })
+            guarded.death.clone()
         } else {
             None
         }
@@ -391,8 +394,10 @@ async fn drive_attached_state<RFut, P, PFut>(
         guarded.mode = MixnetMode::Died;
         guarded.socks5_addr = None;
         guarded.bootstrap_detail = None;
-        guarded.death_detail = Some(cause);
-        guarded.death_at = Some(std::time::SystemTime::now());
+        guarded.death = Some(DeathReport {
+            at: std::time::SystemTime::now(),
+            detail: Some(cause),
+        });
     };
 
     if let Err(failure) = readiness.await {
@@ -453,7 +458,11 @@ async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyStat
     guarded.mode = MixnetMode::Died;
     guarded.socks5_addr = None;
     guarded.bootstrap_detail = None;
-    guarded.death_at = Some(std::time::SystemTime::now());
+    // A closed pipe has no cause to hold, but every death has a moment.
+    guarded.death = Some(DeathReport {
+        at: std::time::SystemTime::now(),
+        detail: None,
+    });
 }
 
 /// Extract the SOCKS5 address from a child stdout line, if it is the
@@ -483,8 +492,7 @@ mod tests {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
-            death_detail: None,
-            death_at: None,
+            death: None,
         }))
     }
 
@@ -660,9 +668,13 @@ mod tests {
             s.socks5_addr.is_none(),
             "the dead proxy's address must be cleared so nothing dials it"
         );
+        let latch = s
+            .death
+            .as_ref()
+            .expect("even a causeless death (closed pipe) must latch its moment");
         assert!(
-            s.death_at.is_some(),
-            "even a causeless death (closed pipe) must latch its moment"
+            latch.detail.is_none(),
+            "a closed pipe carries no cause; its diagnostic is the child's stderr"
         );
     }
 
@@ -693,7 +705,7 @@ mod tests {
         assert_eq!(s.mode, MixnetMode::Died, "readiness failure is death");
         assert!(s.socks5_addr.is_none(), "no address may be published");
         assert_eq!(
-            s.death_detail,
+            s.death.as_ref().and_then(|latch| latch.detail.clone()),
             Some(readiness_failure("no data through the endpoint")),
             "the death must carry the typed readiness failure"
         );
@@ -823,6 +835,62 @@ mod tests {
         }
     }
 
+    /// HYPOTHESIS (the #2569 review): staleness math survives a stepping
+    /// clock — [`DeathReport::age`] clamps a latch moment reading later
+    /// than now (an NTP step between the latch and the read) to zero.
+    /// Falsified if age panics on a future moment or reports it nonzero.
+    #[test]
+    fn death_age_clamps_a_stepping_clock_to_zero() {
+        let epoch = std::time::SystemTime::UNIX_EPOCH;
+        let now = epoch + std::time::Duration::from_secs(100);
+        let latched_before = DeathReport {
+            at: epoch + std::time::Duration::from_secs(40),
+            detail: None,
+        };
+        assert_eq!(latched_before.age(now), std::time::Duration::from_secs(60));
+        let latched_in_the_future = DeathReport {
+            at: now + std::time::Duration::from_secs(10),
+            detail: None,
+        };
+        assert_eq!(
+            latched_in_the_future.age(now),
+            std::time::Duration::ZERO,
+            "a stepped clock reads as zero age, never an error"
+        );
+    }
+
+    /// HYPOTHESIS (the #2569 review): the two death accessors derive from
+    /// one latch and can never disagree — whenever the mode is `Died`,
+    /// `death_detail()` equals the detail inside `death_report()`, whether
+    /// the death carried a cause (attach failure) or none (closed pipe).
+    /// The folded latch makes a cause without a moment unrepresentable;
+    /// this pins the derivation over every representable death.
+    #[tokio::test]
+    async fn the_death_accessors_cannot_disagree() {
+        let state = bootstrapping();
+        let proxy = proxy_over(&state);
+        let deaths = [
+            Some(readiness_failure("an attach failure with its moment")),
+            None,
+        ];
+        for detail in deaths {
+            {
+                let mut guarded = state.lock().unwrap();
+                guarded.mode = MixnetMode::Died;
+                guarded.death = Some(DeathReport {
+                    at: std::time::SystemTime::UNIX_EPOCH,
+                    detail: detail.clone(),
+                });
+            }
+            assert_eq!(
+                proxy.death_detail(),
+                proxy.death_report().and_then(|report| report.detail),
+                "one latch, one answer: the detail must never outrun the report"
+            );
+            assert_eq!(proxy.death_detail(), detail);
+        }
+    }
+
     /// HYPOTHESIS (issue #2565's drift-test pattern): the named readiness
     /// budget equals the gate it summarizes — every attempt's round-trip
     /// bound plus the pauses between attempts. Falsified if any of the
@@ -848,8 +916,10 @@ mod tests {
         {
             let mut guarded = state.lock().unwrap();
             guarded.mode = MixnetMode::Died;
-            guarded.death_detail = Some(readiness_failure("no data through the endpoint"));
-            guarded.death_at = Some(std::time::SystemTime::UNIX_EPOCH);
+            guarded.death = Some(DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail: Some(readiness_failure("no data through the endpoint")),
+            });
         }
         let proxy = proxy_over(&state);
         let report = proxy.death_report().expect("a died transport reports");
@@ -885,7 +955,10 @@ mod tests {
         {
             let mut guarded = state.lock().unwrap();
             guarded.mode = MixnetMode::Died;
-            guarded.death_detail = Some(readiness_failure("no data through the endpoint"));
+            guarded.death = Some(DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail: Some(readiness_failure("no data through the endpoint")),
+            });
         }
         let proxy = proxy_over(&state);
         assert_eq!(

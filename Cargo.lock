@@ -5033,6 +5033,7 @@ name = "zingo-price"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "futures",
  "reqwest",
  "rust_decimal",
  "rustls 0.23.40",

@@ -37,6 +37,15 @@ use std::time::Duration;
 /// binary's three draws (3 × 30 s = 90 s of 120 s).
 pub const MIXNET_ROUND_TRIP_BOUND: Duration = Duration::from_secs(30);
 
+/// How many gateway draws the spawned `nym-proxy` binary attempts before
+/// giving up: each failure redraws a fresh set of gateways, so this is the
+/// number of distinct mixnet paths tried, each bounded by
+/// [`MIXNET_ROUND_TRIP_BOUND`]. Lives in the census — not as a private
+/// literal in the binary — so the lifecycle relation test below can name
+/// it (the #2569 review): the full draw sequence must fit inside
+/// [`NYM_LIFECYCLE_TIMEOUT`].
+pub const MIXNET_HEALTH_DRAWS: u32 = 3;
+
 /// Bound on one loopback exchange with the local SOCKS5 listener: the wallet
 /// supervisor's liveness probe (a bare TCP dial) and the mobile shim's
 /// liveness monitor (a SOCKS5 method-selection round trip) both address the
@@ -103,6 +112,24 @@ pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
 // ---------------------------------------------------------------------------
 // The gRPC data path (sync and send)
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// HYPOTHESIS (issue #2565's drift-test pattern, the #2569 review):
+    /// every one of the spawned binary's health draws fits inside the nym
+    /// lifecycle budget, with the draw count named rather than implied.
+    /// Falsified if [`MIXNET_ROUND_TRIP_BOUND`] is retuned past what
+    /// [`NYM_LIFECYCLE_TIMEOUT`] can hold for the full draw count.
+    #[test]
+    fn the_health_draws_fit_inside_the_lifecycle() {
+        assert!(
+            MIXNET_ROUND_TRIP_BOUND * MIXNET_HEALTH_DRAWS <= NYM_LIFECYCLE_TIMEOUT,
+            "retune the round-trip bound with the lifecycle, never apart"
+        );
+    }
+}
 
 /// Bound on one ordinary unary indexer request: the wallet's default
 /// patience for a single gRPC call on the send and query paths.
