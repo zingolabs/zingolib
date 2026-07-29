@@ -101,18 +101,19 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 struct ClearnetTarget(zingo_netutils::GrpcIndexer);
 
 impl TransmitTarget for ClearnetTarget {
+    type Failure = zingo_netutils::Status;
+
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
+    ) -> impl Future<Output = Result<String, zingo_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
         async move {
             client
                 .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
                 .await
-                .map_err(|e| format!("{e:?}"))
         }
     }
 
@@ -147,11 +148,13 @@ struct SocksTarget {
 
 #[cfg(feature = "nym")]
 impl TransmitTarget for SocksTarget {
+    type Failure = zingo_netutils::Socks5TransmitError;
+
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
+    ) -> impl Future<Output = Result<String, zingo_netutils::Socks5TransmitError>> + Send {
         let socks5_addr = self.socks5_addr.clone();
         let indexer = self.indexer.clone();
         let data = raw_tx.to_vec();
@@ -164,7 +167,6 @@ impl TransmitTarget for SocksTarget {
                 DEFAULT_REQUEST_TIMEOUT,
             )
             .await
-            .map_err(|e| e.to_string())
         }
     }
 
@@ -205,6 +207,9 @@ async fn transmit_one_transaction(
                 .host()
                 .map_or_else(|| indexer.uri().to_string(), str::to_string);
             let started = std::time::Instant::now();
+            // The typed status is rendered only at this boundary, which is
+            // the send path's existing prose seam (the NotYetTyped backlog);
+            // below it the failure travels whole.
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
                 tx_bytes,
@@ -214,7 +219,7 @@ async fn transmit_one_transaction(
                 |event| progress.set(format!("indexer {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message);
+            .map_err(|TransmitFailed(status)| status.to_string());
             record_send_attempt(history, &host, AttemptRoute::Clearnet, started, &outcome);
             outcome
         }
@@ -273,6 +278,9 @@ async fn mixnet_fanout_transmit(
                 indexer,
             };
             let started = std::time::Instant::now();
+            // The arm's failure becomes the taxonomy record — stage by typed
+            // match, cause chain captured layer by layer, target the witness
+            // host — which the fan-out collects whole per witness.
             let outcome = resilient_transmit(
                 &target,
                 &tx_bytes,
@@ -282,8 +290,9 @@ async fn mixnet_fanout_transmit(
                 |event| progress.set(format!("witness {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message);
-            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
+            .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
+            let rendered = outcome.clone().map_err(|failure| failure.to_string());
+            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &rendered);
             outcome
         }
     };

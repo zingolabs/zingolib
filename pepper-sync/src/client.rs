@@ -32,7 +32,7 @@ pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
-const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
+use zingo_netutils::time::STREAM_MSG_TIMEOUT;
 
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,

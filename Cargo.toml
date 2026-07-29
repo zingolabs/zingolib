@@ -4,6 +4,7 @@ members = [
     "pepper-sync",
     "zingo-cli",
     "zingo-memo",
+    "zingo-net-diag",
     "zingo-price",
     "zingo-status",
     "zingolib",
@@ -24,6 +25,7 @@ resolver = "2"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
 # zingo-memo = "0.1.1"
+zingo-net-diag = { path = "zingo-net-diag" }
 zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 # zingo-status = "0.2.1"

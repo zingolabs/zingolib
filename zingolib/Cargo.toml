@@ -86,12 +86,15 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
 ], optional = true }
 tokio-stream = { workspace = true, optional = true }
 zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
+zingo-net-diag.workspace = true
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
+# The nym tests read their temporal parameters from `time::test`.
+zingo-netutils = { workspace = true, features = ["testutils"] }
 # `test-util` enables paused-time tests (`start_paused`) for the attached-
 # transport falsifiers; dev-only, so the shipped graph is unchanged.
 tokio = { workspace = true, features = ["full", "test-util"] }

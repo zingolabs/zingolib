@@ -46,8 +46,7 @@ use crate::wallet::migration::{
 pub mod broadcast_grpc;
 pub mod broadcast_route;
 
-/// How long to wait between sync polls while a note-splitting round confirms.
-const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
+use zingo_netutils::time::CONFIRMATION_POLL_INTERVAL;
 /// Give up waiting for a note-splitting round after this many polls.
 const MAX_CONFIRMATION_POLLS: usize = 720;
 /// A migration replans after every round. A real plan converges in

@@ -40,12 +40,7 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-/// The cadence of the transmit heartbeat. A transmission can legitimately run
-/// for minutes (mixnet round trips, per-arm retries, serially gated fan-out
-/// rounds, queued-verdict probes), so every transmitting command prints the
-/// transmission's latest progress line at this interval while it waits. A send
-/// that completes before the first tick stays silent.
-const TRANSMIT_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+use zingo_netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
 /// Awaits `operation`, emitting a heartbeat every
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
@@ -843,10 +838,8 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
     }
 }
 
-/// How long each probe leg may take. Generous for the mixnet leg's tunnel
-/// establishment. A hanging exit is reported as a timeout, not waited out.
 #[cfg(feature = "nym")]
-const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+use zingo_netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one paired probe: the two legs side by side, so a mixnet-specific
 /// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
@@ -854,8 +847,11 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 #[cfg(feature = "nym")]
 fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
-        Ok(summary) => format!("ok in {}ms: {summary}", leg.millis),
-        Err(detail) => format!("FAILED after {}ms: {detail}", leg.millis),
+        Ok(success) => format!(
+            "ok in {}ms: chain {}, height {}",
+            leg.millis, success.chain, success.height
+        ),
+        Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
     let mixnet = match &probe.mixnet {
         Some(mixnet_leg) => leg(mixnet_leg),
@@ -1054,7 +1050,7 @@ fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, N
             }
             NymSubCommand::Probe { target } => {
                 let probes = lightclient
-                    .probe_broadcast_indexers(target, PROBE_TIMEOUT)
+                    .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
                     .await;
                 Ok(probes
                     .iter()
@@ -3311,7 +3307,7 @@ mod transmit_heartbeat {
             "confirm",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(5)),
+            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
         )
         .await;
         let () = out;
@@ -3602,31 +3598,40 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn paired_probe_renders_both_legs_side_by_side() {
-        use zingolib::nym::probe::{PairedProbe, ProbeLeg};
+        use zingo_net_diag::{NetOpFailure, NetOpStage};
+        use zingolib::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
 
+        let tip = ProbeSuccess {
+            chain: "main".to_string(),
+            height: 3_420_400,
+        };
         let mixnet_specific = PairedProbe {
             host: "carover0.xyz".to_string(),
             clearnet: ProbeLeg {
-                outcome: Ok("chain main, height 3420400".to_string()),
+                outcome: Ok(tip.clone()),
                 millis: 210,
             },
             mixnet: Some(ProbeLeg {
-                outcome: Err(
-                    "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
-                        .to_string(),
-                ),
+                outcome: Err(NetOpFailure {
+                    stage: NetOpStage::SocksHandshake,
+                    target: "carover0.xyz".to_string(),
+                    cause_chain: vec![
+                        "the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+                            .to_string(),
+                    ],
+                }),
                 millis: 20_000,
             }),
         };
         assert_eq!(
             render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
+            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
 
         let proxy_not_ready = PairedProbe {
             host: "zec.rocks".to_string(),
             clearnet: ProbeLeg {
-                outcome: Ok("chain main, height 3420400".to_string()),
+                outcome: Ok(tip),
                 millis: 180,
             },
             mixnet: None,

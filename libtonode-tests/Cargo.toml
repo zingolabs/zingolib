@@ -44,7 +44,8 @@ zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
-zingo-netutils = { workspace = true }
+# `testutils` exposes `time::test`, the tests' temporal parameters.
+zingo-netutils = { workspace = true, features = ["testutils"] }
 zingo-status = { workspace = true }
 zingo_test_vectors = { workspace = true }
 zip32 = { workspace = true }

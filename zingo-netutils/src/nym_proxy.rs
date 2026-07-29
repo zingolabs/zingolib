@@ -38,10 +38,10 @@ use std::{
     collections::HashMap,
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Duration,
 };
 
 use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
+use zingo_net_diag::{NetOpFailure, NetOpStage};
 
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
@@ -58,31 +58,9 @@ const MAX_PROVIDER_ATTEMPTS: usize = 10;
 /// parallelism is deliberately narrow.
 const MAX_PARALLEL_CONNECTS: usize = 3;
 
-/// How long the hedged bootstrap stays quiet before launching another
-/// provider in parallel. A responsive provider typically connects in well
-/// under ten seconds, so an attempt this old is worth hedging against
-/// without yet giving up on it.
-const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
-
-/// Overall timeout for `start()` and `reconnect()` to prevent infinite hangs.
-///
-/// Nym SDK connection attempts can block indefinitely if a gateway is
-/// unresponsive. This timeout caps total wall-clock time for the entire
-/// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
-const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Timeout for a single provider connect attempt.
-///
-/// Without this bound, one unresponsive provider hangs
-/// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
-/// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds. Six full
-/// attempts fit inside the lifecycle budget.
-const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-
-/// Timeout for the provider-discovery API query, which is otherwise
-/// unbounded for the same reason as the connect attempts.
-const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+use crate::time::{
+    DISCOVERY_TIMEOUT, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
+};
 
 /// Embedded Nym SOCKS5 proxy that routes traffic through the Nym mixnet.
 ///
@@ -134,7 +112,10 @@ impl NymProxy {
     /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binds a fresh port, since a
     /// timed-out arm may still hold the port it was given. A loser that
     /// finishes connecting after the winner is disconnected, not leaked.
-    /// Shared by [`Self::start`] and [`Self::reconnect`].
+    /// Each arm's failure is classified at this seam into a typed
+    /// [`NetOpFailure`] (issue #2562), and a lost race surfaces them all in
+    /// [`NymProxyError::AttemptsExhausted`]. Shared by [`Self::start`] and
+    /// [`Self::reconnect`].
     async fn connect_across_providers(
         providers: &[String],
         mut on_progress: impl FnMut(String),
@@ -148,33 +129,38 @@ impl NymProxy {
             },
             |candidate| {
                 let provider = providers[candidate].clone();
+                let target = short_provider_name(providers, candidate);
                 async move {
-                    let port = Self::find_available_port().map_err(|e| e.to_string())?;
-                    tokio::time::timeout(
+                    let port = Self::find_available_port()
+                        .map_err(|e| provider_attempt_failure(&e, &target))?;
+                    match tokio::time::timeout(
                         PER_ATTEMPT_CONNECT_TIMEOUT,
                         Self::start_with_config(&provider, port),
                     )
                     .await
-                    .map_err(|_| {
-                        NymProxyError::AttemptTimeout(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs())
-                            .to_string()
-                    })?
-                    .map_err(|e| e.to_string())
+                    {
+                        Err(_elapsed) => Err(provider_attempt_failure(
+                            &NymProxyError::AttemptTimeout(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs()),
+                            &target,
+                        )),
+                        Ok(outcome) => outcome.map_err(|e| provider_attempt_failure(&e, &target)),
+                    }
                 }
             },
             |second_winner: NymProxy| async move { second_winner.disconnect().await },
+            // A panicked arm task died mid-connect; its record carries the
+            // panic text as the single-layer cause.
+            |candidate, text| {
+                NetOpFailure::message(
+                    NetOpStage::RemoteConnect,
+                    short_provider_name(providers, candidate),
+                    text,
+                )
+            },
             |progress| on_progress(progress.to_string()),
         )
         .await
-        .map_err(|race| {
-            if race.launched() == 0 {
-                NymProxyError::NoProvider
-            } else {
-                NymProxyError::AttemptsExhausted(
-                    race.failure_summary(|i| short_provider_name(providers, i)),
-                )
-            }
-        })
+        .map_err(race_loss_error)
     }
 
     /// Start with a specific exit gateway provider address.
@@ -340,6 +326,54 @@ impl NymProxy {
     }
 }
 
+/// The producer classifier for one raced connect arm: a pure, total match
+/// from the arm's [`NymProxyError`] to its taxonomy stage
+/// (`docs/agents/net-diag-design.md`). Classification lives at this seam
+/// because this crate owns the error type. The match covers every variant,
+/// but per arm only the port draw ([`NymProxyError::DiscoveryApi`]), the
+/// client construction, the mixnet registration, and the per-attempt
+/// timeout actually occur.
+fn provider_attempt_stage(error: &NymProxyError) -> NetOpStage {
+    match error {
+        // Client construction, the local port draw, and discovery all fail
+        // before this arm touches the network.
+        NymProxyError::Build(_) | NymProxyError::DiscoveryApi(_) | NymProxyError::NoProvider => {
+            NetOpStage::RouteResolution
+        }
+        // Registering with the provider's gateway is the arm's remote
+        // connect. An exhausted race never occurs per arm; it summarizes
+        // the connects it is made of, so it classifies with them.
+        NymProxyError::Connect(_) | NymProxyError::AttemptsExhausted { .. } => {
+            NetOpStage::RemoteConnect
+        }
+        NymProxyError::ConnectivityCheck(_) => NetOpStage::TunnelTransport,
+        NymProxyError::AttemptTimeout(secs) => NetOpStage::TimedOut {
+            after_ms: secs * 1000,
+        },
+    }
+}
+
+/// One arm's typed failure record: the classified stage, the shortened
+/// provider name as the target, and the error's cause chain captured layer
+/// by layer.
+fn provider_attempt_failure(error: &NymProxyError, target: &str) -> NetOpFailure {
+    NetOpFailure::from_error(provider_attempt_stage(error), target, error)
+}
+
+/// The terminal error of a lost race: [`NymProxyError::NoProvider`] when
+/// nothing was ever contacted, otherwise the typed per-provider attempts
+/// carried whole into [`NymProxyError::AttemptsExhausted`].
+fn race_loss_error(lost: LostRace<NetOpFailure>) -> NymProxyError {
+    if lost.launched == 0 {
+        NymProxyError::NoProvider
+    } else {
+        NymProxyError::AttemptsExhausted {
+            attempts: lost.launched,
+            failures: lost.failures,
+        }
+    }
+}
+
 /// A provider mix-address shortened for an error summary: the full base58
 /// `Recipient` form runs to hundreds of characters, and ten of them would
 /// drown the failure it is naming.
@@ -354,36 +388,53 @@ fn short_provider_name(providers: &[String], candidate: usize) -> String {
     }
 }
 
+/// A lost race's terminal account: how many distinct candidates were
+/// contacted, and every arm's typed failure in completion order. The driver
+/// retains the failures whole (the planner keeps only the rendered line
+/// each one fed to its progress narration), mirroring the broadcast
+/// fan-out's shape (issue #2562).
+#[derive(Debug)]
+struct LostRace<E> {
+    /// Distinct candidates contacted before the race was lost.
+    launched: usize,
+    /// Every arm's failure, untouched, in completion order.
+    failures: Vec<E>,
+}
+
 /// Execute a pure racing plan ([`crate::arm_race`]) over real tokio tasks:
 /// launch arms as the planner directs, keep at most one pending hedge timer,
 /// feed completions back as events, and stop at the first winner, aborting
 /// the arms still in flight and handing any arm that had already finished as
 /// a second winner to `abandon` rather than leaking it. A lost race returns
-/// the final [`RaceState`], which carries every attempt's failure for the
-/// caller's summary.
-async fn drive_race<T, F, Fut, D, DFut>(
+/// a [`LostRace`] carrying every attempt's typed failure. A panicked arm is
+/// a failed arm; `describe_panic` renders its record from the candidate
+/// index and the join error's text.
+async fn drive_race<T, E, F, Fut, D, DFut>(
     candidates: usize,
     cap: usize,
     policy: LaunchPolicy,
     launch: F,
     abandon: D,
+    describe_panic: impl Fn(usize, String) -> E,
     mut on_progress: impl FnMut(RaceProgress),
-) -> Result<T, RaceState>
+) -> Result<T, LostRace<E>>
 where
     T: Send + 'static,
+    E: std::fmt::Display + Send + 'static,
     F: Fn(usize) -> Fut,
-    Fut: Future<Output = Result<T, String>> + Send + 'static,
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
     D: Fn(T) -> DFut,
     DFut: Future<Output = ()>,
 {
     let mut race = RaceState::new(candidates, cap, policy);
-    let mut arms: tokio::task::JoinSet<(usize, Result<T, String>)> = tokio::task::JoinSet::new();
+    let mut arms: tokio::task::JoinSet<(usize, Result<T, E>)> = tokio::task::JoinSet::new();
     let mut arm_candidates: HashMap<tokio::task::Id, usize> = HashMap::new();
     let mut hedge_deadline: Option<tokio::time::Instant> = None;
     let mut lost = false;
+    let mut failures: Vec<E> = Vec::new();
 
     let apply = |actions: Vec<RaceAction>,
-                 arms: &mut tokio::task::JoinSet<(usize, Result<T, String>)>,
+                 arms: &mut tokio::task::JoinSet<(usize, Result<T, E>)>,
                  arm_candidates: &mut HashMap<tokio::task::Id, usize>,
                  hedge_deadline: &mut Option<tokio::time::Instant>,
                  lost: &mut bool| {
@@ -413,14 +464,22 @@ where
 
     loop {
         if lost {
-            return Err(race);
+            return Err(LostRace {
+                launched: race.launched(),
+                failures,
+            });
         }
         tokio::select! {
             // Prefer completions over the hedge timer, so a finished arm is
             // never preempted by a simultaneous timer firing.
             biased;
             joined = arms.join_next_with_id() => {
-                let Some(joined) = joined else { return Err(race) };
+                let Some(joined) = joined else {
+                    return Err(LostRace {
+                        launched: race.launched(),
+                        failures,
+                    });
+                };
                 let (candidate, outcome) = match joined {
                     Ok((id, (candidate, outcome))) => {
                         arm_candidates.remove(&id);
@@ -432,7 +491,8 @@ where
                         let candidate = arm_candidates
                             .remove(&join_error.id())
                             .unwrap_or(usize::MAX);
-                        (candidate, Err(format!("arm task failed: {join_error}")))
+                        let text = format!("arm task failed: {join_error}");
+                        (candidate, Err(describe_panic(candidate, text)))
                     }
                 };
                 match outcome {
@@ -446,13 +506,20 @@ where
                         return Ok(winner);
                     }
                     Err(error) => {
+                        // The planner's event wants a rendered line for its
+                        // progress narration; the typed failure is retained
+                        // whole for the terminal account.
                         apply(
-                            race.on_event(RaceEvent::ArmFailed { candidate, error }),
+                            race.on_event(RaceEvent::ArmFailed {
+                                candidate,
+                                error: error.to_string(),
+                            }),
                             &mut arms,
                             &mut arm_candidates,
                             &mut hedge_deadline,
                             &mut lost,
                         );
+                        failures.push(error);
                         on_progress(race.progress());
                     }
                 }
@@ -491,6 +558,8 @@ fn time_entropy_seed() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     // The scheme-stripping and retry-engine logic is tested in
@@ -513,6 +582,11 @@ mod tests {
 
     async fn no_abandon(_: &str) {}
 
+    /// The tests race `String`-failing arms; a panic's record is its text.
+    fn panic_text(_: usize, text: String) -> String {
+        text
+    }
+
     /// HYPOTHESIS: a provider whose connect hangs costs only the hedge
     /// interval before a parallel arm can win, not the per-attempt timeout,
     /// and never the lifecycle budget (the regression behind live 120s
@@ -533,6 +607,7 @@ mod tests {
                 }
             },
             no_abandon,
+            panic_text,
             |_| {},
         )
         .await
@@ -574,6 +649,7 @@ mod tests {
                 }
             },
             no_abandon,
+            panic_text,
             |_| {},
         )
         .await
@@ -586,24 +662,34 @@ mod tests {
     }
 
     /// HYPOTHESIS: a lost race accounts for EVERY attempt, down to the first
-    /// failure, the information the retired retry engine discarded.
-    /// Falsified if any attempt's failure is missing from the summary.
+    /// failure, the information the retired retry engine discarded — and it
+    /// accounts for them as typed records, not a joined sentence (issue
+    /// #2562). Falsified if any attempt's failure is missing or flattened.
     #[tokio::test(start_paused = true)]
     async fn a_lost_race_accounts_for_every_attempt() {
-        let race = drive_race(
+        let lost = drive_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
             hedged(MAX_PARALLEL_CONNECTS),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
+            panic_text,
             |_| {},
         )
         .await
         .expect_err("both providers refuse");
 
-        let summary = race.failure_summary(|i| format!("p{i}"));
-        assert!(summary.contains("p0: candidate 0 refused"), "{summary}");
-        assert!(summary.contains("p1: candidate 1 refused"), "{summary}");
+        assert_eq!(lost.launched, 2, "both candidates were contacted");
+        assert!(
+            lost.failures.contains(&"candidate 0 refused".to_string()),
+            "{:?}",
+            lost.failures
+        );
+        assert!(
+            lost.failures.contains(&"candidate 1 refused".to_string()),
+            "{:?}",
+            lost.failures
+        );
     }
 
     /// HYPOTHESIS: when two arms finish as winners in the same instant,
@@ -633,6 +719,7 @@ mod tests {
                 let sink = std::sync::Arc::clone(&sink);
                 async move { sink.lock().unwrap().push(second_winner) }
             },
+            panic_text,
             |_| {},
         )
         .await
@@ -658,6 +745,7 @@ mod tests {
             hedged(MAX_PARALLEL_CONNECTS),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
+            panic_text,
             move |progress| sink.lock().unwrap().push(progress.to_string()),
         )
         .await;
@@ -679,6 +767,63 @@ mod tests {
         assert!(shortened.ends_with('…'));
         assert_eq!(short_provider_name(&providers, 1), "short");
         assert_eq!(short_provider_name(&providers, 9), "provider 9");
+    }
+
+    /// The per-arm classifier is a pure, total match (issue #2562): the
+    /// constructible variants pin their stages, the timeout carries its
+    /// bound in milliseconds, and the record captures the target and the
+    /// cause chain.
+    #[test]
+    fn provider_attempt_failures_classify_stage_target_and_chain() {
+        let timeout = NymProxyError::AttemptTimeout(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs());
+        let failure = provider_attempt_failure(&timeout, "Emq7Gc3PLdp…");
+        assert_eq!(
+            failure.stage,
+            NetOpStage::TimedOut {
+                after_ms: PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() * 1000
+            }
+        );
+        assert_eq!(failure.target, "Emq7Gc3PLdp…");
+        assert_eq!(failure.cause_chain, vec![timeout.to_string()]);
+
+        // The port draw fails before the arm touches the network.
+        let port_draw =
+            NymProxyError::DiscoveryApi("failed to find available port: denied".to_string());
+        assert_eq!(
+            provider_attempt_stage(&port_draw),
+            NetOpStage::RouteResolution
+        );
+        let tunnel = NymProxyError::ConnectivityCheck("no data".to_string());
+        assert_eq!(provider_attempt_stage(&tunnel), NetOpStage::TunnelTransport);
+    }
+
+    /// A lost race maps to `NoProvider` only when nothing was contacted;
+    /// otherwise the typed attempts are carried whole into
+    /// `AttemptsExhausted`, never flattened (issue #2562).
+    #[test]
+    fn a_race_loss_carries_its_typed_attempts_whole() {
+        assert!(matches!(
+            race_loss_error(LostRace {
+                launched: 0,
+                failures: Vec::new(),
+            }),
+            NymProxyError::NoProvider
+        ));
+
+        let records = vec![
+            NetOpFailure::message(NetOpStage::RemoteConnect, "p0", "gateway refused"),
+            NetOpFailure::message(NetOpStage::TimedOut { after_ms: 20_000 }, "p1", "timed out"),
+        ];
+        match race_loss_error(LostRace {
+            launched: 2,
+            failures: records.clone(),
+        }) {
+            NymProxyError::AttemptsExhausted { attempts, failures } => {
+                assert_eq!(attempts, 2);
+                assert_eq!(failures, records, "the records survive untouched");
+            }
+            other => panic!("expected AttemptsExhausted, got {other:?}"),
+        }
     }
 
     // Integration tests below require a live Nym network. Run with:

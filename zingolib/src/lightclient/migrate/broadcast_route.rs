@@ -94,7 +94,7 @@ impl BroadcastClient for MixnetBroadcastClient {
             indexer,
             &raw_tx,
             u64::from(u32::from(expiry_height)),
-            super::broadcast_grpc::SUBMIT_TIMEOUT,
+            super::broadcast_grpc::MIGRATION_SUBMIT_TIMEOUT,
         )
         .await
         .map_err(|error| {
