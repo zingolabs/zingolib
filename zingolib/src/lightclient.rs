@@ -808,8 +808,14 @@ impl LightClient {
     /// subscribers see deliberate states only, not the transient unattached
     /// between a vacate and its successor.
     fn publish_mixnet_slot_state(&self) {
-        self.mixnet_status
-            .send_replace(crate::nym::MixnetStatus::slot_only(self.mixnet_slot.mode()));
+        self.mixnet_status.send_replace(crate::nym::MixnetStatus {
+            mode: self.mixnet_slot.mode(),
+            // None for the true slot states; the pinned address of a test
+            // stand-in, whose Ready must not publish addressless.
+            socks5_addr: self.mixnet_slot.socks5_addr(),
+            bootstrap_detail: None,
+            death: None,
+        });
     }
 
     /// The driver entry of the Mixnet Mode session policy (ADR 0024,
@@ -892,6 +898,9 @@ impl LightClient {
         self.mixnet_slot = crate::nym::MixnetSlot::AttachedForTests {
             socks5_addr: socks5_addr.to_string(),
         };
+        // Every slot transition publishes (the one-shared-watch invariant),
+        // the stand-in included.
+        self.publish_mixnet_slot_state();
     }
 
     /// The proxy's latest bootstrap progress line while Mixnet Mode is
