@@ -968,7 +968,7 @@ fn render_history(
 
 /// Render the `nym status` line for a Mixnet Mode, the live bootstrap
 /// progress while bootstrapping, and the local SOCKS5 address when ready.
-/// Pure, so the user-facing tri-state strings are pinned by unit tests and
+/// Pure, so the user-facing mode strings are pinned by unit tests and
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
@@ -979,7 +979,13 @@ fn render_status(
     use zingolib::nym::MixnetMode;
 
     match mode {
-        MixnetMode::Off => "Mixnet Mode: off (send and price-fetch use clearnet)".to_string(),
+        MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
+             and no consent to clearnet has been given: send and price-fetch refuse. Run \
+             `nym on` to enable the mixnet, or `nym off` to use clearnet."
+            .to_string(),
+        MixnetMode::SwitchedOff => {
+            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
+        }
         MixnetMode::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
                 "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
@@ -3732,15 +3738,22 @@ mod nym_command_parsing {
         );
     }
 
-    /// Pins the `nym status` tri-state strings via the pure renderer.
+    /// Pins the `nym status` mode strings via the pure renderer.
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
         use zingolib::nym::MixnetMode;
 
         assert_eq!(
-            render_status(MixnetMode::Off, None, None),
-            "Mixnet Mode: off (send and price-fetch use clearnet)"
+            render_status(MixnetMode::Unattached, None, None),
+            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
+             clearnet has been given: send and price-fetch refuse. Run `nym on` to enable \
+             the mixnet, or `nym off` to use clearnet.",
+            "absence is not consent: unattached names refusal, never clearnet"
+        );
+        assert_eq!(
+            render_status(MixnetMode::SwitchedOff, None, None),
+            "Mixnet Mode: switched off (send and price-fetch use clearnet)"
         );
         assert_eq!(
             render_status(MixnetMode::Bootstrapping, None, None),
@@ -3760,7 +3773,8 @@ mod nym_command_parsing {
             render_status(MixnetMode::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
              refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
-            "a died proxy is reported distinctly from off, and tells the user how to recover"
+            "a died proxy is reported distinctly from switched off, and tells the user how to \
+             recover"
         );
     }
 
@@ -3801,7 +3815,8 @@ mod nym_command_parsing {
         use zingolib::nym::MixnetMode;
 
         for mode in [
-            MixnetMode::Off,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
             MixnetMode::Bootstrapping,
             MixnetMode::Ready,
             MixnetMode::Died,

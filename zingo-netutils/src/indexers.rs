@@ -19,6 +19,7 @@
 //! - every URI is `https` with an explicit port (no completion rules);
 //! - exactly one non-obsolete default per chain;
 //! - no duplicate URIs.
+//!
 //! Mixnet-side selection (webpki-chained certs only, 443 preferred,
 //! operator disjointness from the sync indexer) is policy and lives with
 //! the wallet's gates, which read this data.

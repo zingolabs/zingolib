@@ -1,8 +1,8 @@
 //! Nym mixnet IP-obfuscation transport for the Transmission and price-fetch
 //! surfaces, seam B of `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
-//! This module holds the mixnet control and policy logic: the [`MixnetMode`]
-//! tri-state, the fail-closed [`route`] resolver shared by every mixnet-only
+//! This module holds the mixnet control and policy logic: the five-state
+//! [`MixnetMode`], the fail-closed [`route`] resolver shared by every mixnet-only
 //! surface, the escalating fan-out [`broadcast`] over an injected per-arm
 //! runner and random-number generator, the curated Broadcast Indexer list, and
 //! the [`supervisor`] that owns the spawned `nym-proxy` child. The fan-out
@@ -18,6 +18,7 @@ pub mod probe;
 pub mod route;
 pub mod supervisor;
 
+pub(crate) use mode::MixnetSlot;
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};

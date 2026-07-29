@@ -108,6 +108,7 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
     "grpc_proxy_server",
 ] }
 zingo_test_vectors = { workspace = true }
+serde_json.workspace = true
 
 [badges]
 maintenance = { status = "actively-developed" }
