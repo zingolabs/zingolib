@@ -776,9 +776,21 @@ impl LightClient {
 
     /// The local SOCKS5 address while Mixnet Mode is ready.
     pub fn mixnet_socks5_addr(&self) -> Option<String> {
-        self.mixnet_slot
-            .proxy()
-            .and_then(|proxy| proxy.socks5_addr())
+        self.mixnet_slot.socks5_addr()
+    }
+
+    /// Switch Mixnet Mode on for a chain-mock test: the slot reports
+    /// [`MixnetMode::Ready`](crate::nym::MixnetMode) at `socks5_addr` with no
+    /// child, watcher, or probe behind it, so the test walks the same
+    /// fail-closed route resolver and fan-out orchestration a live Ready
+    /// session does. The transmit path pairs this slot state with arms that
+    /// submit over the mock indexer's channel; the address is never dialed.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn switch_on_mixnet_for_tests(&mut self, socks5_addr: &str) {
+        self.vacate_mixnet_slot().await;
+        self.mixnet_slot = crate::nym::MixnetSlot::AttachedForTests {
+            socks5_addr: socks5_addr.to_string(),
+        };
     }
 
     /// The proxy's latest bootstrap progress line while Mixnet Mode is
