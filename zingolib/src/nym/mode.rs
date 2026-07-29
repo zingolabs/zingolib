@@ -128,6 +128,18 @@ pub(crate) enum MixnetSlot {
     /// A spawned or attached transport, in whatever lifecycle state it
     /// reports (bootstrapping, ready, or died).
     Attached(MixnetProxy),
+    /// A stand-in transport for chain-mock tests: reports
+    /// [`MixnetMode::Ready`] at the given address without a child, watcher,
+    /// or probe, so the tests exercise the fail-closed route resolver and
+    /// the fan-out orchestration for real. Only
+    /// `LightClient::switch_on_mixnet_for_tests` constructs it, and the
+    /// transmit path pairs it with arms that submit over the mock indexer's
+    /// channel — the address is never dialed.
+    #[cfg(any(test, feature = "testutils"))]
+    AttachedForTests {
+        /// The address the route resolver hands to Ready-mode surfaces.
+        socks5_addr: String,
+    },
 }
 
 impl MixnetSlot {
@@ -138,6 +150,8 @@ impl MixnetSlot {
             MixnetSlot::Unattached => MixnetMode::Unattached,
             MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
             MixnetSlot::Attached(proxy) => proxy.mode(),
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
         }
     }
 
@@ -146,6 +160,20 @@ impl MixnetSlot {
         match self {
             MixnetSlot::Attached(proxy) => Some(proxy),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { .. } => None,
+        }
+    }
+
+    /// The local SOCKS5 address the route resolver hands to Ready-mode
+    /// surfaces, wherever the slot keeps it: the transport's announced
+    /// address when one is attached, the pinned address of a test stand-in.
+    pub(crate) fn socks5_addr(&self) -> Option<String> {
+        match self {
+            MixnetSlot::Attached(proxy) => proxy.socks5_addr(),
+            MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { socks5_addr } => Some(socks5_addr.clone()),
         }
     }
 }
