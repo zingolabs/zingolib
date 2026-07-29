@@ -28,3 +28,11 @@ http.workspace = true
 zip32.workspace = true
 tokio = { workspace = true, features = ["net", "time", "rt", "io-util", "sync", "macros"] }
 zingo-netutils.workspace = true
+
+[features]
+# Regtest scenario clients transmit over clearnet as recorded consent: the
+# five-state wallet refuses an unconsented send (MixnetNotReady, ADR 0011),
+# so nym-feature consumers (zingo-mobile's integration harness) enable this
+# to have the scenarios record the deliberate switch-off before their
+# funding sends.
+nym = ["zingolib/nym"]

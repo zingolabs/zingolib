@@ -26,7 +26,11 @@ pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
 # zingo-memo = "0.1.1"
 zingo-net-diag = { path = "zingo-net-diag" }
-zingo-price = { path = "zingo-price" }
+# default-features = false: the fetch machinery (socks5-fetch) is opt-in;
+# zingolib re-enables it only under its `nym` feature (the mixnet-only
+# price rule). The crate's own default keeps the fetch for standalone
+# builds and tests.
+zingo-price = { path = "zingo-price", default-features = false }
 zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 # zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }

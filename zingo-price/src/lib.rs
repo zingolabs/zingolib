@@ -6,21 +6,32 @@
 //! wants to hide the client IP from the price source passes a local SOCKS5
 //! proxy address (the Nym mixnet transport, ADR 0011) and the request is
 //! routed through it instead.
+//!
+//! The whole fetch surface — and every dependency it needs — sits behind
+//! the `socks5-fetch` feature (on by default for this crate alone).
+//! Without it the crate is the storage-only data model: [`Price`] and
+//! [`PriceList`] with their wallet-file serialization. This is the
+//! dependency half of the mixnet-only price rule (ADR 0011, amendment
+//! 2026-07-28): a wallet build without the mixnet compiles no fetch.
 
+#[cfg(feature = "socks5-fetch")]
+use std::time::Duration;
 use std::{
     collections::HashSet,
     io::{Read, Write},
-    time::Duration,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+#[cfg(feature = "socks5-fetch")]
 use serde::Deserialize;
 use zcash_encoding::{Optional, Vector};
+#[cfg(feature = "socks5-fetch")]
 use zingo_net_diag::{NetOpFailure, NetOpStage, chain_texts};
 
 /// Errors with price requests and parsing.
 // TODO: remove unused when historical data is implemented
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// The HTTP request failed. The typed [`NetOpFailure`] names the stage
@@ -70,6 +81,7 @@ pub enum PriceError {
     UnexpectedShape(&'static str),
 }
 
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Deserialize)]
 struct CurrentPriceResponse {
     price: String,
@@ -158,6 +170,7 @@ impl PriceList {
     /// transport); `None` fetches over clearnet. The caller decides which
     /// route to use. The fetched price is recorded on `self` as
     /// [`Self::current_price`].
+    #[cfg(feature = "socks5-fetch")]
     pub async fn update_current_price(
         &mut self,
         socks5_proxy: Option<&str>,
@@ -245,6 +258,7 @@ impl PriceList {
 /// kept). Required because reqwest is built with `rustls-tls-no-provider`.
 /// Mirrors `zingo_netutils::ensure_default_crypto_provider`, which cannot be
 /// used here: zingo-netutils sits above this crate in the dependency graph.
+#[cfg(feature = "socks5-fetch")]
 fn ensure_default_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -254,13 +268,16 @@ fn ensure_default_crypto_provider() {
 /// How many trades the fetch requests from the price source. Eleven, so the
 /// median of the sorted list is a robust current price. [`GEMINI_ZECUSD_URL`]
 /// embeds this value; a test pins the two together.
+#[cfg(feature = "socks5-fetch")]
 const TRADES_REQUESTED: usize = 11;
 
 /// The median position in the sorted trades list.
+#[cfg(feature = "socks5-fetch")]
 const MEDIAN_INDEX: usize = TRADES_REQUESTED / 2;
 
 /// The public price source: Gemini's recent-trades endpoint for the ZEC/USD
 /// pair, requesting [`TRADES_REQUESTED`] trades.
+#[cfg(feature = "socks5-fetch")]
 const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_trades=11";
 
 /// The client-side bound on the whole request. Twenty seconds keeps the
@@ -268,9 +285,11 @@ const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_t
 /// ends (and releases whatever holds it) before or shortly after the UI
 /// gives up. A hang through a half-dead tunnel becomes a typed
 /// [`NetOpStage::TimedOut`] failure instead of an unbounded wait.
+#[cfg(feature = "socks5-fetch")]
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// The client-side bound on establishing the connection alone.
+#[cfg(feature = "socks5-fetch")]
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Fetch the current price of ZEC in USD from the public price source,
@@ -283,6 +302,7 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// side effects, so a caller can run it without holding any wallet lock and
 /// store the result under a briefly-held lock afterwards (the net-diag
 /// polling-blackout remedy).
+#[cfg(feature = "socks5-fetch")]
 pub async fn fetch_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
     fetch_current_price_from(PriceSource::Gemini, socks5_proxy).await
 }
@@ -291,6 +311,7 @@ pub async fn fetch_current_price(socks5_proxy: Option<&str>) -> Result<Price, Pr
 /// through a local SOCKS5 proxy (`socks5h://`, so hostname resolution
 /// happens at the proxy). The same lock-free contract as
 /// [`fetch_current_price`] applies.
+#[cfg(feature = "socks5-fetch")]
 pub async fn fetch_current_price_from(
     source: PriceSource,
     socks5_proxy: Option<&str>,
@@ -307,6 +328,7 @@ pub async fn fetch_current_price_from(
 
 /// The winning answer of the three-source race: the price and the source
 /// that answered first.
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Clone, Copy)]
 pub struct RacedPrice {
     /// The first price to arrive.
@@ -318,6 +340,7 @@ pub struct RacedPrice {
 /// Every source in the race failed. Each failure keeps its source's name
 /// beside the typed error, and the rendered report carries every cause
 /// chain, so a total outage is diagnosable per operator.
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, thiserror::Error)]
 #[error("every price source failed. {}", self.report())]
 pub struct PriceRaceFailure {
@@ -325,6 +348,7 @@ pub struct PriceRaceFailure {
     pub failures: Vec<(PriceSource, PriceError)>,
 }
 
+#[cfg(feature = "socks5-fetch")]
 impl PriceRaceFailure {
     /// One line per source: its name, its error, and the full cause chain.
     pub fn report(&self) -> String {
@@ -349,6 +373,7 @@ impl PriceRaceFailure {
 /// losing fetches are cancelled. When every source fails, the error names
 /// each source's typed failure. Bounded by [`REQUEST_TIMEOUT`] per leg, so
 /// the whole race settles within the single-fetch bound.
+#[cfg(feature = "socks5-fetch")]
 pub async fn race_current_price(
     socks5_proxy: Option<&str>,
 ) -> Result<RacedPrice, PriceRaceFailure> {
@@ -367,6 +392,7 @@ pub async fn race_current_price(
 
 /// The race mechanism, URL-injectable for tests. First `Ok` wins and
 /// aborts the rest; all-fail collects every typed failure.
+#[cfg(feature = "socks5-fetch")]
 async fn race_sources(
     socks5_proxy: Option<&str>,
     entries: [(PriceSource, String); 3],
@@ -405,15 +431,18 @@ async fn race_sources(
 
 /// Kraken's public recent-trades endpoint for the ZEC/USD pair, requesting
 /// [`TRADES_REQUESTED`] trades so the Gemini median contract transfers.
+#[cfg(feature = "socks5-fetch")]
 const KRAKEN_ZECUSD_URL: &str = "https://api.kraken.com/0/public/Trades?pair=ZECUSD&count=11";
 
 /// CoinGecko's simple-price endpoint for ZEC in USD. An aggregator spot
 /// value with its update time; there are no trades to take a median of.
+#[cfg(feature = "socks5-fetch")]
 const COINGECKO_ZECUSD_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd&include_last_updated_at=true";
 
 /// The public price sources, each an independent operator and failure
 /// domain. Rotation order is the declaration order, wrapping; the caller
 /// owning rotation policy decides when to advance.
+#[cfg(feature = "socks5-fetch")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PriceSource {
     /// Gemini's recent-trades endpoint, median of eleven trades.
@@ -424,6 +453,7 @@ pub enum PriceSource {
     CoinGecko,
 }
 
+#[cfg(feature = "socks5-fetch")]
 impl PriceSource {
     /// The next source in rotation order, wrapping at the end.
     pub fn next(self) -> PriceSource {
@@ -463,6 +493,7 @@ impl PriceSource {
 
 /// The median of a sorted trades list, guarded so a structurally short
 /// response is a typed refusal, never an index panic.
+#[cfg(feature = "socks5-fetch")]
 fn median_price(mut trades: Vec<Price>) -> Result<Price, PriceError> {
     trades.sort_by(|a, b| {
         a.price_usd
@@ -476,6 +507,7 @@ fn median_price(mut trades: Vec<Price>) -> Result<Price, PriceError> {
         .ok_or(PriceError::InsufficientTrades { received })
 }
 
+#[cfg(feature = "socks5-fetch")]
 fn parse_gemini_trades(body: &str) -> Result<Price, PriceError> {
     let responses: Vec<CurrentPriceResponse> = serde_json::from_str(body)?;
     let trades = responses
@@ -494,6 +526,7 @@ fn parse_gemini_trades(body: &str) -> Result<Price, PriceError> {
     median_price(trades)
 }
 
+#[cfg(feature = "socks5-fetch")]
 fn parse_kraken_trades(body: &str) -> Result<Price, PriceError> {
     let envelope: serde_json::Value = serde_json::from_str(body)?;
     if let Some(reported) = envelope["error"].as_array()
@@ -540,17 +573,20 @@ fn parse_kraken_trades(body: &str) -> Result<Price, PriceError> {
     median_price(trades)
 }
 
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Deserialize)]
 struct CoinGeckoZecQuote {
     usd: f32,
     last_updated_at: u32,
 }
 
+#[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Deserialize)]
 struct CoinGeckoSimplePrice {
     zcash: CoinGeckoZecQuote,
 }
 
+#[cfg(feature = "socks5-fetch")]
 fn parse_coingecko_simple(body: &str) -> Result<Price, PriceError> {
     let quote: CoinGeckoSimplePrice = serde_json::from_str(body)?;
     if !quote.zcash.usd.is_finite() {
@@ -566,6 +602,7 @@ fn parse_coingecko_simple(body: &str) -> Result<Price, PriceError> {
 /// extracted into a plain struct so the classification table is a pure
 /// function testable with fabricated inputs (a `reqwest::Error` cannot be
 /// constructed by hand).
+#[cfg(feature = "socks5-fetch")]
 #[derive(Clone, Copy, Debug, Default)]
 struct RequestSignals {
     is_timeout: bool,
@@ -574,6 +611,7 @@ struct RequestSignals {
     is_decode_or_body: bool,
 }
 
+#[cfg(feature = "socks5-fetch")]
 impl RequestSignals {
     fn of(error: &reqwest::Error) -> Self {
         RequestSignals {
@@ -595,6 +633,7 @@ impl RequestSignals {
 /// handshake and is `TunnelTransport`. Chain-text inspection here is
 /// classification input as the design's table specifies, not a decision on
 /// the rendered stability contract.
+#[cfg(feature = "socks5-fetch")]
 fn classify_stage(
     signals: RequestSignals,
     chain: &[String],
@@ -640,6 +679,7 @@ fn classify_stage(
 /// local stages, the price URL otherwise), cause chain captured layer by
 /// layer. The `reqwest::Error` itself travels beside it, untouched, in
 /// [`PriceError::RequestFailed`].
+#[cfg(feature = "socks5-fetch")]
 fn classify_request(
     error: &reqwest::Error,
     socks5_proxy: Option<&str>,
@@ -666,7 +706,7 @@ fn classify_request(
 ///
 /// Production callers go through [`fetch_current_price`]; tests point `url`
 /// at a local server and shrink the bounds.
-#[cfg(test)]
+#[cfg(all(test, feature = "socks5-fetch"))]
 async fn get_current_price(
     socks5_proxy: Option<&str>,
     url: &str,
@@ -687,6 +727,7 @@ async fn get_current_price(
 /// the source's parser. Transport failures classify through the net-diag
 /// table; a body that arrives but does not parse is the parser's typed
 /// refusal.
+#[cfg(feature = "socks5-fetch")]
 async fn get_source_price(
     source: PriceSource,
     socks5_proxy: Option<&str>,
@@ -718,7 +759,7 @@ async fn get_source_price(
     source.parse(&body)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "socks5-fetch"))]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

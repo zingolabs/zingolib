@@ -1007,6 +1007,20 @@ pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     (local_net, client_builder)
 }
 
+/// Records the deliberate clearnet consent a regtest scenario client needs
+/// before it may transmit. The five-state wallet refuses an unconsented
+/// send — a never-enabled client is Unattached, and absence is never
+/// consent (ADR 0011) — so a nym-feature build of these scenarios lands
+/// each sending client in SwitchedOff first, exactly as a `--no-mixnet`
+/// session would. Without the feature the wallet has no mixnet surface and
+/// nothing needs recording.
+#[cfg(feature = "nym")]
+async fn consent_to_clearnet(client: &mut zingolib::lightclient::LightClient) {
+    client.disable_mixnet().await;
+}
+#[cfg(not(feature = "nym"))]
+async fn consent_to_clearnet(_client: &mut zingolib::lightclient::LightClient) {}
+
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
@@ -1040,6 +1054,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
     let mut faucet = client_builder.build_faucet(true).await;
+    consent_to_clearnet(&mut faucet).await;
     let recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -1088,6 +1103,8 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             true,
         )
         .await;
+    consent_to_clearnet(&mut faucet).await;
+    consent_to_clearnet(&mut recipient).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
@@ -1154,6 +1171,7 @@ pub async fn funded_transparent_mobileclient(
             true,
         )
         .await;
+    consent_to_clearnet(&mut faucet).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
