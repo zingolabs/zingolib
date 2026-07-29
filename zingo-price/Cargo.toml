@@ -8,6 +8,26 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[features]
+# The fetch machinery: reqwest + TLS + the net-diag classification. On by
+# default so the standalone crate builds and tests its whole surface;
+# zingolib depends on this crate with default features off and re-enables
+# the fetch only under its `nym` feature, per the mixnet-only price rule
+# (ADR 0011, amendment 2026-07-28) — a wallet build without the mixnet
+# compiles no fetch, and no fetch dependencies either. Without this
+# feature the crate is the storage-only price data model.
+default = ["socks5-fetch"]
+socks5-fetch = [
+    "dep:reqwest",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:rust_decimal",
+    "dep:thiserror",
+    "dep:zingo-net-diag",
+    "dep:futures",
+]
+
 [dependencies]
 zcash_encoding = { workspace = true }
 
@@ -17,19 +37,19 @@ byteorder = { workspace = true }
 # rustls CryptoProvider; the fetch path installs aws-lc-rs (first-install-wins)
 # before requesting. The `socks` feature backs the optional Nym mixnet route;
 # the fetch defaults to clearnet.
-reqwest = { workspace = true, default-features = false, features = [
+reqwest = { workspace = true, optional = true, default-features = false, features = [
     "cookies",
     "rustls-tls-webpki-roots-no-provider",
     "json",
     "socks",
 ] }
-rust_decimal = { workspace = true }
-rustls = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-zingo-net-diag.workspace = true
-futures.workspace = true
+rust_decimal = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+zingo-net-diag = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
