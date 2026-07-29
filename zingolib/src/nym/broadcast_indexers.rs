@@ -113,8 +113,17 @@ pub(crate) struct NoEligibleWitnesses {
 /// Refuses with [`NoEligibleWitnesses`] if the exclusion empties the pool,
 /// so a misconfigured list fails closed instead of silently broadcasting to
 /// the sync indexer.
-pub(crate) fn eligible_witnesses(sync_indexer: &Uri) -> Result<Vec<Uri>, NoEligibleWitnesses> {
-    eligible_from(broadcast_indexers(), sync_indexer)
+///
+/// An Indexerless session passes `None`: it has no accumulating sync
+/// operator to exclude, so the ADR 0022 invariant holds vacuously over the
+/// full pool (ruling 2026-07-29).
+pub(crate) fn eligible_witnesses(
+    sync_indexer: Option<&Uri>,
+) -> Result<Vec<Uri>, NoEligibleWitnesses> {
+    match sync_indexer {
+        Some(sync_indexer) => eligible_from(broadcast_indexers(), sync_indexer),
+        None => Ok(broadcast_indexers()),
+    }
 }
 
 /// Pure core of [`eligible_witnesses`], over an arbitrary pool for
@@ -241,7 +250,7 @@ mod tests {
         // ever weakens to exact-URI matching: the accumulating party is the
         // operator (ADR 0022).
         let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
-        let pool = eligible_witnesses(&sync).expect("ten operators remain");
+        let pool = eligible_witnesses(Some(&sync)).expect("ten operators remain");
         assert_eq!(pool.len(), BROADCAST_INDEXERS.len() - 1);
         assert!(
             pool.iter()
@@ -253,7 +262,13 @@ mod tests {
     #[test]
     fn a_sync_indexer_outside_the_pool_excludes_nothing() {
         let sync: Uri = "https://my.private.indexer.example:443".parse().unwrap();
-        let pool = eligible_witnesses(&sync).expect("nothing to exclude");
+        let pool = eligible_witnesses(Some(&sync)).expect("nothing to exclude");
+        assert_eq!(pool.len(), BROADCAST_INDEXERS.len());
+    }
+
+    #[test]
+    fn an_indexerless_session_draws_from_the_full_pool() {
+        let pool = eligible_witnesses(None).expect("nothing to exclude");
         assert_eq!(pool.len(), BROADCAST_INDEXERS.len());
     }
 

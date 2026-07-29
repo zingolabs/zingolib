@@ -23,12 +23,16 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use clap::{self, Arg};
 use log::{error, info};
+// The mixnet narration task is the only debug/warn logger; the imports
+// follow the feature.
+#[cfg(feature = "nym")]
+use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use zingolib::netutils::Indexer as _;
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
@@ -81,6 +85,20 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with_all(["server", "waitsync"])
                 .help("Run the session in Offline mode: no Indexer is ever configured. Local operations (addresses, balances, history, proposing) work; sync, transmission, and server commands are unavailable."))
+            .arg(Arg::new("online")
+                .long("online")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("offline")
+                .help("Consent to go online this session (Connectivity Consent). First boot is offline by design; this flag, --remember-online, an explicit --server, or a stored standing consent takes a session online. The choice is not persisted."))
+            .arg(Arg::new("remember-online")
+                .long("remember-online")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with_all(["offline", "forget-online"])
+                .help("Consent to go online this session AND store the choice beside the wallet, so future sessions attach to the network automatically. Undo with --forget-online."))
+            .arg(Arg::new("forget-online")
+                .long("forget-online")
+                .action(clap::ArgAction::SetTrue)
+                .help("Remove the stored standing Connectivity Consent before deciding this session's connectivity. Without another consent act the session then runs offline."))
             .arg(Arg::new("no-mixnet")
                 .long("no-mixnet")
                 .action(clap::ArgAction::SetTrue)
@@ -287,17 +305,17 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     let send_command =
         |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
 
-    let mut chain_name = String::new();
+    // The prompt's chain label comes from local config, not the server. An
+    // `info` round trip here blocked the first prompt behind the cold mixnet
+    // tunnel (up to MIXNET_ROUND_TRIP_BOUND), and an offline session got a
+    // refusal instead of a name, leaving the prompt's parens empty.
+    let chain_name = match cli_config.chaintype {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    };
 
     loop {
-        if chain_name.is_empty() {
-            let info = send_command("info".to_string(), vec![]);
-            chain_name = json::parse(&info)
-                .map(|mut json_info| json_info.remove("chain_name"))
-                .ok()
-                .and_then(|name| name.as_str().map(ToString::to_string))
-                .unwrap_or_default();
-        }
         // Read the height first
         let height = json::parse(&send_command(
             "height".to_string(),
@@ -407,14 +425,8 @@ pub(crate) fn command_loop(
                 }
             };
             // The Offline-mode pin: this session never configures an Indexer.
-            if communication_mode == CommunicationMode::Offline && cmd == "change_server" {
-                resp_transmitter
-                    .send(
-                        "Error: this session is in Offline mode; no Indexer may be configured. \
-                         Restart without --offline to change servers."
-                            .to_string(),
-                    )
-                    .unwrap();
+            if let Some(refusal) = offline_mode_refusal(communication_mode, &cmd) {
+                resp_transmitter.send(refusal).unwrap();
                 continue;
             }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
@@ -485,14 +497,121 @@ enum CommunicationMode {
     Offline,
 }
 
-/// Determines the communication mode from parsed CLI arguments: the
-/// `--offline` flag pins the session to Offline mode.
-fn get_communication_mode(matches: &clap::ArgMatches) -> CommunicationMode {
-    if matches.get_flag("offline") {
-        CommunicationMode::Offline
-    } else {
-        CommunicationMode::Online
+/// The Offline-mode pin at the REPL dispatch (issue #2286): an Offline
+/// session never configures an Indexer, so `change_server` is refused
+/// before it reaches command execution. Returns the refusal to send in
+/// place of executing `cmd`, or `None` when the command may proceed.
+/// Pure, so the pin is testable without a REPL thread.
+fn offline_mode_refusal(communication_mode: CommunicationMode, cmd: &str) -> Option<String> {
+    (communication_mode == CommunicationMode::Offline && cmd == "change_server").then(|| {
+        "Error: this session is in Offline mode; no Indexer may be configured. \
+         Restart without --offline to change servers."
+            .to_string()
+    })
+}
+
+/// One session's connectivity verdict (ADR 0025): how the launch acts and
+/// the stored standing choice combine. Pure, so the precedence is pinned
+/// by unit tests without touching a filesystem.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConnectivityDecision {
+    /// `--offline`: the deliberate zero-traffic session contract.
+    DeliberateOffline,
+    /// A consent act — this launch's or the stored standing choice —
+    /// authorizes the connection; `store` additionally records the
+    /// standing choice for future sessions.
+    Online { store: bool },
+    /// No consent exists anywhere: the session runs offline, and the
+    /// first-boot notice names the acts that would take it online.
+    UnconsentedOffline,
+}
+
+/// Combines the launch acts with the stored choice (ADR 0025): the
+/// deliberate `--offline` wins over everything, a launch act (`--online`,
+/// `--remember-online`, an explicit `--server`) over the store, the store
+/// alone sustains the connection, and nothing else goes online.
+fn decide_connectivity(
+    offline: bool,
+    online: bool,
+    remember_online: bool,
+    explicit_server: bool,
+    stored: zingolib::connectivity::ConnectivityConsent,
+) -> ConnectivityDecision {
+    if offline {
+        return ConnectivityDecision::DeliberateOffline;
     }
+    if remember_online {
+        return ConnectivityDecision::Online { store: true };
+    }
+    if online || explicit_server {
+        return ConnectivityDecision::Online { store: false };
+    }
+    match stored {
+        zingolib::connectivity::ConnectivityConsent::StandingOnline => {
+            ConnectivityDecision::Online { store: false }
+        }
+        zingolib::connectivity::ConnectivityConsent::Unrecorded => {
+            ConnectivityDecision::UnconsentedOffline
+        }
+    }
+}
+
+/// The session's data directory: `--data-dir`, or the `wallets` directory
+/// under the working directory. Shared by the Connectivity Consent record
+/// and the wallet path, which must agree on where "beside the wallet" is.
+fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
+    matches
+        .get_one::<String>("data-dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("wallets"))
+}
+
+/// Determines the communication mode from the parsed arguments and the
+/// stored Connectivity Consent (ADR 0025), performing the acts' effects:
+/// `--forget-online` removes the record before the decision,
+/// `--remember-online` stores it, and a session with no consent anywhere
+/// runs offline behind a notice naming the ways online.
+fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+    let data_dir = data_dir_from(matches);
+    if matches.get_flag("forget-online") {
+        zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
+        eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
+    }
+    let explicit_server =
+        matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+    let decision = decide_connectivity(
+        matches.get_flag("offline"),
+        matches.get_flag("online"),
+        matches.get_flag("remember-online"),
+        explicit_server,
+        zingolib::connectivity::load_connectivity_consent(&data_dir),
+    );
+    Ok(match decision {
+        ConnectivityDecision::DeliberateOffline => CommunicationMode::Offline,
+        ConnectivityDecision::Online { store } => {
+            if store {
+                zingolib::connectivity::store_standing_online(&data_dir)?;
+                eprintln!(
+                    "Standing Connectivity Consent stored in '{}'; future sessions attach \
+                     to the network automatically. Undo with --forget-online.",
+                    data_dir
+                        .join(zingolib::connectivity::CONNECTIVITY_CONSENT_FILE)
+                        .display()
+                );
+            }
+            CommunicationMode::Online
+        }
+        ConnectivityDecision::UnconsentedOffline => {
+            eprintln!(
+                "No Connectivity Consent is recorded, so this session runs offline: local \
+                 operations work and nothing touches the network. To go online, pass --online \
+                 (this session only), --remember-online (store the choice for future \
+                 sessions), or --server <uri>. Pass --offline to run offline deliberately and \
+                 silence this notice."
+            );
+            CommunicationMode::Offline
+        }
+    })
 }
 
 /// All CLI-derived configuration needed to create a [`LightClient`] and
@@ -567,11 +686,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
-            PathBuf::from(dir.clone())
-        } else {
-            PathBuf::from("wallets")
-        };
+        let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         // Offline mode never resolves a server, since resolution probes the
         // network, and the session's contract is that no Indexer is ever
@@ -662,7 +777,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = match filled_template.server.clone() {
             Some(server) => RT
                 .block_on(async move {
-                    zingo_netutils::GrpcIndexer::new(server)
+                    zingolib::netutils::GrpcIndexer::new(server)
                         .await
                         .map_err(|e| format!("{e:?}"))?
                         .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
@@ -740,31 +855,83 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
         );
     }
 
-    // Forced-on-at-startup (ADR 0011): a connected session enables Mixnet Mode
-    // eagerly, so the bootstrap overlaps sync and send/price-fetch are protected,
-    // unless the user opts out with --no-mixnet. The off-state is never
-    // persisted, so this runs every launch. Offline sessions never transmit and
-    // skip the bootstrap. A spawn failure fails closed: the session aborts
-    // rather than quietly transmitting over clearnet.
+    // The session driver call at the go-online moment (ADR 0024, decision
+    // 2): zingolib owns the forced-on policy, the consent-at-start
+    // semantics (--no-mixnet is the explicit act that reaches SwitchedOff),
+    // and the provisioning precedence; this consumer supplies only its
+    // platform hints and its per-session start policy. A provisioning
+    // failure fails closed: the session aborts rather than quietly
+    // transmitting over clearnet. Offline sessions never transmit and skip
+    // the driver entirely.
     #[cfg(feature = "nym")]
-    if filled_template.communication_mode == CommunicationMode::Online && !filled_template.no_mixnet
-    {
-        let path = std::path::PathBuf::from(commands::resolve_proxy_path(
-            filled_template.nym_proxy_path.as_deref(),
-        ));
-        RT.block_on(lightclient.enable_mixnet(&path)).map_err(|e| {
+    if filled_template.communication_mode == CommunicationMode::Online {
+        use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
+        let policy = if filled_template.no_mixnet {
+            MixnetStartPolicy::OptedOutThisSession
+        } else {
+            MixnetStartPolicy::ForcedOn
+        };
+        RT.block_on(lightclient.start_mixnet_session(
+            ProvisionStrategy::Spawn(commands::spawn_hints(
+                filled_template.nym_proxy_path.as_deref(),
+            )),
+            policy,
+        ))
+        .map_err(|e| {
             std::io::Error::other(format!(
-                "Failed to start the Nym mixnet proxy at '{}': {e}. Mixnet Mode is required for a \
+                "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
                  connected session; install the nym-proxy binary, pass --nym-proxy <path>, set \
                  $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this session.",
-                path.display()
             ))
         })?;
-        info!(
-            "Mixnet Mode enabling; the nym proxy at {} is bootstrapping. Send and price-fetch \
-             become available once it is ready (see `nym status`).",
-            path.display()
-        );
+        match policy {
+            MixnetStartPolicy::OptedOutThisSession => info!(
+                "Mixnet Mode switched off by --no-mixnet; send and price-fetch use clearnet this \
+                 session."
+            ),
+            MixnetStartPolicy::ForcedOn => info!(
+                "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
+                 become available once it is ready (see `nym status`)."
+            ),
+        }
+        // Narrate Mixnet Mode transitions from the session's status
+        // subscription (push, not poll): mode changes at info/warn through
+        // the standard log path, bootstrap progress at debug. Rendering is
+        // this consumer's own (ADR 0024, decision 8) — variant matching,
+        // never prose matching.
+        let mut status_rx = lightclient.subscribe_mixnet_status();
+        RT.spawn(async move {
+            let mut last_mode = status_rx.borrow().mode;
+            while status_rx.changed().await.is_ok() {
+                let status = status_rx.borrow_and_update().clone();
+                if status.mode == last_mode {
+                    if let Some(detail) = &status.bootstrap_detail {
+                        debug!("nym bootstrap: {detail}");
+                    }
+                    continue;
+                }
+                last_mode = status.mode;
+                match status.mode {
+                    zingolib::nym::MixnetMode::Ready => info!(
+                        "Mixnet Mode ready; send and price-fetch route over the mixnet \
+                         (see `nym status`)."
+                    ),
+                    zingolib::nym::MixnetMode::Died => {
+                        let cause = status
+                            .death
+                            .as_ref()
+                            .and_then(|death| death.detail.as_ref())
+                            .map(|detail| format!(": {detail}"))
+                            .unwrap_or_default();
+                        warn!(
+                            "The mixnet transport died{cause}. Send and price-fetch refuse \
+                             until you re-enable it with `nym on`."
+                        );
+                    }
+                    other => info!("Mixnet Mode is now {other}."),
+                }
+            }
+        });
     }
 
     if filled_template.sync {
@@ -906,7 +1073,7 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<()> {
     let mode = get_mode_of_operation(&matches);
-    let communication_mode = get_communication_mode(&matches);
+    let communication_mode = get_communication_mode(&matches)?;
     let cli_config =
         ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)
