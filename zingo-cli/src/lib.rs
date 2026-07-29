@@ -29,10 +29,10 @@ use log::{error, info};
 use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use zingolib::netutils::Indexer as _;
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
@@ -770,7 +770,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = match filled_template.server.clone() {
             Some(server) => RT
                 .block_on(async move {
-                    zingo_netutils::GrpcIndexer::new(server)
+                    zingolib::netutils::GrpcIndexer::new(server)
                         .await
                         .map_err(|e| format!("{e:?}"))?
                         .get_latest_block(DEFAULT_REQUEST_TIMEOUT)

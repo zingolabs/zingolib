@@ -40,7 +40,7 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-use zingo_netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
+use zingolib::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
 /// Awaits `operation`, emitting a heartbeat every
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
@@ -826,7 +826,7 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
 }
 
 #[cfg(feature = "nym")]
-use zingo_netutils::time::PROBE_LEG_TIMEOUT;
+use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one paired probe: the two legs side by side, so a mixnet-specific
 /// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by

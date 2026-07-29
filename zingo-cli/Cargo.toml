@@ -15,7 +15,10 @@ nym-diary = ["zingolib/nym-diary"]
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
+# No direct zingo-netutils dependency: this consumer funnels through
+# zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
+# dev-dependency below reaches netutils' test scaffolding directly, which
+# ships nothing and creates no duplicate copy.
 zingolib = { workspace = true }
 
 zcash_address = { workspace = true }
