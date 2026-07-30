@@ -39,7 +39,10 @@ pub(crate) fn get_compact_prev_hash(compact_block: &CompactBlock) -> BlockHash {
 /// This function will panic if `compact_block.height` is not representable within a
 /// `u32`.
 pub(crate) fn get_compact_height(compact_block: &CompactBlock) -> BlockHeight {
-    compact_block.height.try_into().unwrap()
+    compact_block.height.try_into().expect(
+        "no valid chain height exceeds u32::MAX, so this u64 wire value came from a \
+         malicious or broken indexer; sync dies loudly rather than trust it",
+    )
 }
 
 /// Returns the [`BlockHeader`] for this block if present.
