@@ -6,7 +6,8 @@ use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
-use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
+use zcash_protocol::{PoolType, ShieldedPool};
+use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, GetSubtreeRootsArg};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
@@ -665,4 +666,160 @@ async fn indexer_converges_with_validator_after_block_generation() {
              validator tip {validator_height} despite the convergence barrier"
         );
     }
+}
+
+/// The serving invariant pepper-sync's `check_tree_size` relies on, verified
+/// directly against the wire: per block and per shielded pool, the outputs
+/// served in `vtx` account exactly for the growth of the commitment tree
+/// size in `chain_metadata`. A consistent sweep alongside a failing wallet
+/// scan clears the indexer and points at the scanner or at stale persisted
+/// wallet state.
+#[tokio::test]
+async fn served_outputs_match_chain_metadata_deltas() {
+    let (local_net, mut faucet) = scenarios::faucet(
+        PoolType::IRONWOOD,
+        scenarios::default_test_activation_heights(),
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    // A send adds a multi-action ironwood bundle beyond the one-action
+    // coinbase blocks.
+    let self_address = get_base_address_macro!(faucet, "unified");
+    scenarios::send_and_bump(
+        &local_net,
+        &mut faucet,
+        vec![(self_address.as_str(), 100_000, None)],
+    )
+    .await;
+
+    let mut grpc_client = GrpcIndexer::new(faucet.indexer_uri().expect("client is connected"))
+        .await
+        .unwrap();
+    let tip = grpc_client
+        .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+        .await
+        .unwrap()
+        .height;
+
+    let mut stream = grpc_client
+        .get_block_range(
+            BlockRange {
+                start: Some(BlockId {
+                    height: 1,
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height: tip,
+                    hash: vec![],
+                }),
+                // Empty means the legacy default: the server must include all
+                // shielded pools. This matches what pepper-sync sends.
+                pool_types: vec![],
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+        .unwrap();
+
+    let ironwood_activation = u64::from(scenarios::IRONWOOD_COINBASE_START_HEIGHT);
+    let mut mismatches = Vec::new();
+    let mut prev: Option<zingo_netutils::lightwallet_protocol::ChainMetadata> = None;
+    let mut ironwood_served_total = 0u64;
+    let mut first_nonzero_ironwood_metadata: Option<u64> = None;
+    let mut first_served_ironwood_action: Option<u64> = None;
+
+    while let Some(block) = stream.message().await.unwrap() {
+        let metadata = block.chain_metadata.unwrap_or_else(|| {
+            panic!(
+                "indexer serves no chain_metadata at height {}; pepper-sync \
+                 cannot verify tree sizes against this server",
+                block.height
+            )
+        });
+
+        let sapling_served = u64::from(pepper_sync::test_support::block::shielded_output_count(
+            &block,
+            ShieldedPool::Sapling,
+        ));
+        let orchard_served = u64::from(pepper_sync::test_support::block::shielded_output_count(
+            &block,
+            ShieldedPool::Orchard,
+        ));
+        let ironwood_served = u64::from(pepper_sync::test_support::block::shielded_output_count(
+            &block,
+            ShieldedPool::Ironwood,
+        ));
+
+        if metadata.ironwood_commitment_tree_size > 0 {
+            first_nonzero_ironwood_metadata.get_or_insert(block.height);
+        }
+        if ironwood_served > 0 {
+            first_served_ironwood_action.get_or_insert(block.height);
+        }
+        ironwood_served_total += ironwood_served;
+
+        if let Some(prev) = prev {
+            for (pool, served, size, prev_size) in [
+                (
+                    "sapling",
+                    sapling_served,
+                    metadata.sapling_commitment_tree_size,
+                    prev.sapling_commitment_tree_size,
+                ),
+                (
+                    "orchard",
+                    orchard_served,
+                    metadata.orchard_commitment_tree_size,
+                    prev.orchard_commitment_tree_size,
+                ),
+                (
+                    "ironwood",
+                    ironwood_served,
+                    metadata.ironwood_commitment_tree_size,
+                    prev.ironwood_commitment_tree_size,
+                ),
+            ] {
+                let metadata_delta = i64::from(size) - i64::from(prev_size);
+                if metadata_delta != served as i64 {
+                    mismatches.push(format!(
+                        "height {}: {pool} metadata delta {metadata_delta} but \
+                         {served} outputs served in vtx",
+                        block.height
+                    ));
+                }
+            }
+        }
+        prev = Some(metadata);
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "indexer served blocks where chain_metadata growth does not match the \
+         outputs present in vtx; the serving side drops outputs or misreports \
+         tree sizes:\n{}",
+        mismatches.join("\n"),
+    );
+
+    // The sweep must actually exercise ironwood serving, otherwise the delta
+    // checks above pass vacuously on an indexer that serves neither ironwood
+    // actions nor ironwood metadata.
+    assert_eq!(
+        first_nonzero_ironwood_metadata,
+        Some(ironwood_activation),
+        "ironwood metadata should first appear at the activation-height \
+         coinbase block"
+    );
+    assert_eq!(
+        first_served_ironwood_action,
+        Some(ironwood_activation),
+        "the activation-height coinbase block should serve an ironwood action"
+    );
+    // At least one coinbase action per post-activation block, plus the
+    // multi-action send bundle.
+    assert!(
+        ironwood_served_total > tip - ironwood_activation + 1,
+        "expected coinbase plus send-bundle ironwood actions, served only \
+         {ironwood_served_total} across blocks [{ironwood_activation}, {tip}]"
+    );
 }

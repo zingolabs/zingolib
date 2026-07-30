@@ -547,7 +547,7 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
-    use zingo_netutils::lightwallet_protocol::ChainMetadata;
+    use zingo_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
 
@@ -600,5 +600,141 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// A placeholder action that parses but decrypts to nothing: enough to
+    /// be counted by the scanner without building a real note.
+    fn compact_ironwood_action() -> CompactOrchardAction {
+        CompactOrchardAction {
+            nullifier: vec![0; 32],
+            cmx: vec![0; 32],
+            ephemeral_key: vec![0; 32],
+            ciphertext: vec![0; 52],
+        }
+    }
+
+    fn block_with_served_ironwood_actions(
+        action_count: usize,
+        metadata_ironwood_size: u32,
+    ) -> CompactBlock {
+        CompactBlock {
+            height: 100,
+            hash: vec![1; 32],
+            prev_hash: vec![0; 32],
+            time: 0,
+            header: vec![],
+            vtx: vec![CompactTx {
+                index: 0,
+                txid: vec![3; 32],
+                fee: 0,
+                spends: vec![],
+                outputs: vec![],
+                actions: vec![],
+                ironwood_actions: (0..action_count)
+                    .map(|_| compact_ironwood_action())
+                    .collect(),
+                vin: vec![],
+                vout: vec![],
+            }],
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: 10,
+                orchard_commitment_tree_size: 10,
+                ironwood_commitment_tree_size: metadata_ironwood_size,
+            }),
+        }
+    }
+
+    fn initial_scan_data(ironwood_initial_tree_size: u32) -> InitialScanData {
+        InitialScanData {
+            start_seam_block: None,
+            end_seam_block: None,
+            sapling_initial_tree_size: 10,
+            orchard_initial_tree_size: 10,
+            ironwood_initial_tree_size,
+        }
+    }
+
+    /// A block's calculated tree size is the scan baseline plus every output
+    /// served on the wire, for ironwood exactly as for orchard.
+    #[test]
+    fn ironwood_calculated_size_counts_served_actions() {
+        let scan_data = scan_compact_blocks(
+            vec![block_with_served_ironwood_actions(5, 105)],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(100),
+            100,
+        )
+        .unwrap();
+
+        let tree_bounds = scan_data
+            .wallet_blocks
+            .values()
+            .next()
+            .unwrap()
+            .tree_bounds();
+        assert_eq!(tree_bounds.ironwood_initial_tree_size, 100);
+        assert_eq!(tree_bounds.ironwood_final_tree_size, 105);
+    }
+
+    /// A baseline understating the true tree size below the range must fail
+    /// the scan at the first served action, escaping the metadata-zero
+    /// tolerance. Note positions and witnesses derive from the same
+    /// baseline, so scanning past the mismatch would corrupt them silently.
+    #[test]
+    fn understated_ironwood_baseline_is_rejected() {
+        let result = scan_compact_blocks(
+            vec![block_with_served_ironwood_actions(5, 105)],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(0),
+            100,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                block_metadata_size: 105,
+                calculated_size: 5,
+            })
+        ));
+    }
+
+    /// Zero ironwood seam bounds against first-block metadata proving a
+    /// populated tree mark a pool the persisted bounds never tracked, so the
+    /// baseline must be re-derived from that metadata (final size minus the
+    /// block's served outputs) instead of trusted into the understated
+    /// baseline `understated_ironwood_baseline_is_rejected` rejects. A
+    /// genuinely empty tree (metadata also zero) keeps its zero baseline.
+    #[tokio::test]
+    async fn zero_ironwood_seam_bounds_rebase_from_first_block_metadata() {
+        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
+        let initial_scan_data = InitialScanData::new(
+            fetch_request_sender,
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &block_with_served_ironwood_actions(5, 105),
+            Some(wallet_block_with_ironwood_size(0)),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(initial_scan_data.sapling_initial_tree_size, 10);
+        assert_eq!(initial_scan_data.orchard_initial_tree_size, 10);
+        assert_eq!(initial_scan_data.ironwood_initial_tree_size, 100);
+
+        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
+        let pre_activation = InitialScanData::new(
+            fetch_request_sender,
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &block_with_served_ironwood_actions(0, 0),
+            Some(wallet_block_with_ironwood_size(0)),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(pre_activation.ironwood_initial_tree_size, 0);
     }
 }
