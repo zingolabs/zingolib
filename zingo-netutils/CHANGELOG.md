@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GrpcIndexer`'s private channel field renamed `clear_net_client` →
   `client`: construction now decides the transport, so the field may hold
   a tunnel-dialed channel.
+- **Breaking:** the wholesale `pub use lightwallet_protocol` re-export is
+  replaced by a curated facade module of the same path, carrying the
+  protocol's message types and the generated server trait pair (for mock
+  indexers) but not the generated client stub. Consumers hold a
+  `GrpcIndexer` and speak through the `Indexer` trait; existing message-type
+  import paths are unchanged.
 
 ### Removed
 

@@ -30,7 +30,9 @@ use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
-use lightwallet_protocol::{CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter};
+use ::lightwallet_protocol::{
+    CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter,
+};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data

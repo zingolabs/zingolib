@@ -11,8 +11,11 @@
 //!
 //! All proto types come from
 //! [`lightwallet-protocol`](https://crates.io/crates/lightwallet-protocol)
-//! and are re-exported via `pub use lightwallet_protocol` so consumers do
-//! not need an additional dependency.
+//! and the message types are re-exported through the curated
+//! [`lightwallet_protocol`] facade module so consumers do not need an
+//! additional dependency. The generated client stub is deliberately not
+//! re-exported: consumers hold a [`GrpcIndexer`] and speak through the
+//! [`Indexer`] trait, so the transport stays chosen at construction.
 //!
 //! # Feature gates
 //!
@@ -30,14 +33,14 @@ use std::time::Duration;
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
-use lightwallet_protocol::{
+use ::lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot, TreeState,
     TxFilter,
 };
 
 #[cfg(feature = "ping-very-insecure")]
-use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
+use ::lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod crypto;
 pub mod error;
@@ -62,8 +65,24 @@ pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
 pub use error::*;
-pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
+
+/// The lightwallet gRPC protocol's message types, re-exported so consumers
+/// need no direct `lightwallet-protocol` dependency. Curated, not the whole
+/// crate: the generated client stub stays out, because consumers hold a
+/// [`GrpcIndexer`] whose transport is chosen at construction and speak
+/// through the [`Indexer`] trait. The generated server trait pair stays in
+/// for mock indexers that implement the service.
+pub mod lightwallet_protocol {
+    pub use ::lightwallet_protocol::{
+        Address, AddressList, Balance, BlockId, BlockRange, ChainMetadata, ChainSpec, CompactBlock,
+        CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend, CompactTx, CompactTxIn,
+        CompactTxStreamer, CompactTxStreamerServer, Duration, Empty, GetAddressUtxosArg,
+        GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest, GetSubtreeRootsArg,
+        LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,
+        TransparentAddressBlockFilter, TreeState, TxFilter, TxOut,
+    };
+}
 
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;

@@ -8,7 +8,7 @@
 
 use std::{future::Future, time::Duration};
 
-use lightwallet_protocol::{
+use ::lightwallet_protocol::{
     Address, AddressList, Balance, GetAddressUtxosArg, GetAddressUtxosReply,
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
