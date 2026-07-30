@@ -10,7 +10,10 @@ use tokio::sync::mpsc;
 use incrementalmerkletree::Position;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    ShieldedPool,
+    consensus::{self, BlockHeight},
+};
 use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
@@ -50,10 +53,20 @@ impl InitialScanData {
     {
         let (sapling_initial_tree_size, orchard_initial_tree_size, ironwood_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
+                let prev_bounds = prev.tree_bounds();
+                let ironwood_initial_tree_size = if prev_bounds.ironwood_final_tree_size == 0 {
+                    first_block.chain_metadata.map_or(0, |chain_metadata| {
+                        chain_metadata.ironwood_commitment_tree_size.saturating_sub(
+                            block::shielded_output_count(first_block, ShieldedPool::Ironwood),
+                        )
+                    })
+                } else {
+                    prev_bounds.ironwood_final_tree_size
+                };
                 (
-                    prev.tree_bounds().sapling_final_tree_size,
-                    prev.tree_bounds().orchard_final_tree_size,
-                    prev.tree_bounds().ironwood_final_tree_size,
+                    prev_bounds.sapling_final_tree_size,
+                    prev_bounds.orchard_final_tree_size,
+                    ironwood_initial_tree_size,
                 )
             } else {
                 let tree_bounds = compact_blocks::calculate_block_tree_bounds(
