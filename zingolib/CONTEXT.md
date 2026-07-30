@@ -112,7 +112,9 @@
 
 **LightClient** — The user-facing entry point. Owns the connection to the Indexer, manages the sync lifecycle, and exposes operations such as send, shield, rescan, and balance.
 
-**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
+**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingo_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same Lightwallet Protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
+
+**Lightwallet Protocol** — The one gRPC protocol every Indexer speaks (the wire service named `CompactTxStreamer`, lightwalletd's lineage): compact scan data, chain view, transaction fetch, and Transmission all travel it. The protocol is single; the distinctions above it — Sync Indexer, Broadcast Indexer — are roles assigned by wallet policy, never dialects of the wire. Wallet-side code speaks it through an Indexer abstraction whose transport, clearnet or the mixnet tunnel, is chosen when the connection is constructed. *Avoid*: CompactTxStreamer as a domain term (it names the wire service only); lightwalletd protocol (names the legacy implementation, not the protocol).
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
