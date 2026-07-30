@@ -58,8 +58,9 @@ use crate::wallet::output::OutputRef;
 /// Attestation of one transmitted transaction: the route the bytes
 /// traveled, the endpoint that accepted them, and the transmission's
 /// round-trip time. It rides the success value — not a log — the same
-/// doctrine as [`crate::lightclient::MixnetPriceFetch`] (ADR 0011), so
-/// every consumer of a send holds per-transaction evidence of the route.
+/// doctrine as the nym-gated `MixnetPriceFetch` price attestation
+/// (ADR 0011), so every consumer of a send holds per-transaction
+/// evidence of the route.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransmitReport {
     /// The transmitted transaction.
