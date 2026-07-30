@@ -16,6 +16,7 @@ use tokio::{
 
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
@@ -25,8 +26,8 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    scan::get_compact_block_height,
     sync::{self, ScanPriority, ScanRange},
+    utils::block,
     wallet::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
@@ -442,20 +443,17 @@ where
                     };
 
                     if fetch_nullifiers_only {
-                        current_block_sapling_nullifier_count = compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.spends.len());
+                        current_block_sapling_nullifier_count =
+                            block::shielded_input_count(&compact_block, ShieldedPool::Sapling)
+                                as usize;
                         batch_sapling_nullifier_count += current_block_sapling_nullifier_count;
-                        current_block_orchard_nullifier_count = compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        current_block_orchard_nullifier_count =
+                            block::shielded_input_count(&compact_block, ShieldedPool::Orchard)
+                                as usize;
                         batch_orchard_nullifier_count += current_block_orchard_nullifier_count;
                         current_block_ironwood_nullifier_count =
-                            compact_block.vtx.iter().fold(0, |acc, transaction| {
-                                acc + transaction.ironwood_actions.len()
-                            });
+                            block::shielded_input_count(&compact_block, ShieldedPool::Ironwood)
+                                as usize;
                         batch_ironwood_nullifier_count += current_block_ironwood_nullifier_count;
                     } else {
                         if let Some(block) = previous_task_last_block.as_ref()
@@ -481,7 +479,7 @@ where
                             );
                             first_batch = false;
                         }
-                        if get_compact_block_height(&compact_block)
+                        if block::get_compact_height(&compact_block)
                             == scan_task.scan_range.block_range().end - 1
                         {
                             previous_task_last_block = Some(
@@ -494,20 +492,17 @@ where
                             );
                         }
 
-                        current_block_sapling_output_count = compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.outputs.len());
+                        current_block_sapling_output_count =
+                            block::shielded_output_count(&compact_block, ShieldedPool::Sapling)
+                                as usize;
                         batch_sapling_output_count += current_block_sapling_output_count;
-                        current_block_orchard_output_count = compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        current_block_orchard_output_count =
+                            block::shielded_output_count(&compact_block, ShieldedPool::Orchard)
+                                as usize;
                         batch_orchard_output_count += current_block_orchard_output_count;
                         current_block_ironwood_output_count =
-                            compact_block.vtx.iter().fold(0, |acc, transaction| {
-                                acc + transaction.ironwood_actions.len()
-                            });
+                            block::shielded_output_count(&compact_block, ShieldedPool::Ironwood)
+                                as usize;
                         batch_ironwood_output_count += current_block_ironwood_output_count;
                     }
 
@@ -520,14 +515,14 @@ where
                             + batch_ironwood_nullifier_count
                             > MAX_BATCH_NULLIFIERS)
                         && scan_task.scan_range.block_range().start
-                            != get_compact_block_height(&compact_block)
+                            != block::get_compact_height(&compact_block)
                     {
                         let (full_batch, new_batch) = scan_task
                             .clone()
                             .split(
                                 &consensus_parameters,
                                 fetch_request_sender.clone(),
-                                get_compact_block_height(&compact_block),
+                                block::get_compact_height(&compact_block),
                             )
                             .await?;
 
@@ -542,7 +537,7 @@ where
                         batch_ironwood_nullifier_count = current_block_ironwood_nullifier_count;
                     }
 
-                    retry_height = get_compact_block_height(&compact_block) + 1;
+                    retry_height = block::get_compact_height(&compact_block) + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
@@ -785,7 +780,7 @@ impl ScanTask {
         let mut lower_compact_blocks = self.compact_blocks;
         let upper_compact_blocks = if let Some(index) = lower_compact_blocks
             .iter()
-            .position(|block| get_compact_block_height(block) == block_height)
+            .position(|block| block::get_compact_height(block) == block_height)
         {
             lower_compact_blocks.split_off(index)
         } else {

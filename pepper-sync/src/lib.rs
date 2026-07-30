@@ -122,6 +122,45 @@ pub use sync::set_transactions_failed;
 pub use sync::sync;
 pub use sync::sync_status;
 
+#[cfg(any(test, feature = "test-features"))]
+pub mod test_support {
+    //! Test-only access to the per-pool counting contract, for test crates
+    //! auditing served blocks against the same arithmetic the scanner uses.
+
+    /// Per-transaction counts.
+    pub mod transaction {
+        use zcash_protocol::ShieldedPool;
+        use zingo_netutils::lightwallet_protocol::CompactTx;
+
+        /// Counts the outputs `compact_tx` appends to `pool`'s note commitment tree.
+        pub fn shielded_output_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
+            crate::utils::transaction::shielded_output_count(compact_tx, pool)
+        }
+
+        /// Counts the shielded inputs `compact_tx` spends from `pool`.
+        pub fn shielded_input_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
+            crate::utils::transaction::shielded_input_count(compact_tx, pool)
+        }
+    }
+
+    /// Per-block counts: compositions of the [`transaction`] operations of
+    /// the same name over `vtx`.
+    pub mod block {
+        use zcash_protocol::ShieldedPool;
+        use zingo_netutils::lightwallet_protocol::CompactBlock;
+
+        /// Counts the outputs `compact_block` appends to `pool`'s note commitment tree.
+        pub fn shielded_output_count(compact_block: &CompactBlock, pool: ShieldedPool) -> u32 {
+            crate::utils::block::shielded_output_count(compact_block, pool)
+        }
+
+        /// Counts the shielded inputs `compact_block` spends from `pool`.
+        pub fn shielded_input_count(compact_block: &CompactBlock, pool: ShieldedPool) -> u32 {
+            crate::utils::block::shielded_input_count(compact_block, pool)
+        }
+    }
+}
+
 #[cfg(test)]
 mod mocks;
 
