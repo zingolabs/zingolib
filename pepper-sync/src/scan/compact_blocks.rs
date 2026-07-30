@@ -20,10 +20,7 @@ use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    utils::{
-        get_compact_action, get_compact_block_hash, get_compact_block_height,
-        get_compact_block_prev_hash, get_compact_output_description, get_compact_tx_txid,
-    },
+    utils::{block, get_compact_action, get_compact_output_description, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
@@ -80,21 +77,21 @@ where
         orchard_initial_tree_size = orchard_final_tree_size;
         ironwood_initial_tree_size = ironwood_final_tree_size;
 
-        let block_height = get_compact_block_height(block);
+        let block_height = block::get_compact_height(block);
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners.sapling.collect_results(
-                get_compact_block_hash(block),
-                get_compact_tx_txid(transaction),
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
             );
             let incoming_orchard_outputs = runners.orchard.collect_results(
-                get_compact_block_hash(block),
-                get_compact_tx_txid(transaction),
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
             );
             let incoming_ironwood_outputs = runners.ironwood.collect_results(
-                get_compact_block_hash(block),
-                get_compact_tx_txid(transaction),
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
             );
 
             // gather the txids of all transactions relevant to the wallet
@@ -124,7 +121,7 @@ where
 
             collect_nullifiers(
                 &mut nullifiers,
-                get_compact_block_height(block),
+                block::get_compact_height(block),
                 transaction,
             )?;
 
@@ -166,12 +163,12 @@ where
                 &mut decrypted_note_data.ironwood_nullifiers_and_positions,
             );
 
-            sapling_final_tree_size += u32::try_from(transaction.outputs.len())
-                .expect("should not be more than 2^32 outputs in a transaction");
-            orchard_final_tree_size += u32::try_from(transaction.actions.len())
-                .expect("should not be more than 2^32 outputs in a transaction");
-            ironwood_final_tree_size += u32::try_from(transaction.ironwood_actions.len())
-                .expect("should not be more than 2^32 outputs in a transaction");
+            sapling_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Sapling);
+            orchard_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Orchard);
+            ironwood_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Ironwood);
         }
 
         set_checkpoint_retentions(
@@ -188,11 +185,15 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: get_compact_block_height(block),
-            block_hash: get_compact_block_hash(block),
-            prev_hash: get_compact_block_prev_hash(block),
+            block_height: block::get_compact_height(block),
+            block_hash: block::get_compact_hash(block),
+            prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
-            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
+            txids: block
+                .vtx
+                .iter()
+                .map(transaction::get_compact_txid)
+                .collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
@@ -254,26 +255,26 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && get_compact_block_height(block) != prev_height + 1
+            && block::get_compact_height(block) != prev_height + 1
         {
             return Err(ContinuityError::HeightDiscontinuity {
-                height: get_compact_block_height(block),
+                height: block::get_compact_height(block),
                 previous_block_height: prev_height,
             });
         }
 
         if let Some(prev_hash) = prev_hash
-            && get_compact_block_prev_hash(block) != prev_hash
+            && block::get_compact_prev_hash(block) != prev_hash
         {
             return Err(ContinuityError::HashDiscontinuity {
-                height: get_compact_block_height(block),
-                prev_hash: get_compact_block_prev_hash(block),
+                height: block::get_compact_height(block),
+                prev_hash: block::get_compact_prev_hash(block),
                 previous_block_hash: prev_hash,
             });
         }
 
-        prev_height = Some(get_compact_block_height(block));
-        prev_hash = Some(get_compact_block_hash(block));
+        prev_height = Some(block::get_compact_height(block));
+        prev_hash = Some(block::get_compact_hash(block));
     }
 
     if let Some(end_seam_block) = end_seam_block {
@@ -475,11 +476,11 @@ pub(crate) async fn calculate_block_tree_bounds(
                 .activation_height(consensus::NetworkUpgrade::Sapling)
                 .expect("should have some sapling activation height");
 
-            match get_compact_block_height(compact_block).cmp(&sapling_activation_height) {
+            match block::get_compact_height(compact_block).cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
                     let frontiers = client::get_frontiers(
                         fetch_request_sender.clone(),
-                        get_compact_block_height(compact_block),
+                        block::get_compact_height(compact_block),
                     )
                     .await?;
                     (
@@ -505,27 +506,9 @@ pub(crate) async fn calculate_block_tree_bounds(
             }
         };
 
-    let sapling_output_count: u32 = compact_block
-        .vtx
-        .iter()
-        .map(|tx| tx.outputs.len())
-        .sum::<usize>()
-        .try_into()
-        .expect("Sapling output count cannot exceed a u32");
-    let orchard_output_count: u32 = compact_block
-        .vtx
-        .iter()
-        .map(|tx| tx.actions.len())
-        .sum::<usize>()
-        .try_into()
-        .expect("Sapling output count cannot exceed a u32");
-    let ironwood_output_count: u32 = compact_block
-        .vtx
-        .iter()
-        .map(|tx| tx.ironwood_actions.len())
-        .sum::<usize>()
-        .try_into()
-        .expect("Ironwood output count cannot exceed a u32");
+    let sapling_output_count = block::shielded_output_count(compact_block, ShieldedPool::Sapling);
+    let orchard_output_count = block::shielded_output_count(compact_block, ShieldedPool::Orchard);
+    let ironwood_output_count = block::shielded_output_count(compact_block, ShieldedPool::Ironwood);
 
     Ok(TreeBounds {
         sapling_initial_tree_size: sapling_final_tree_size.saturating_sub(sapling_output_count),

@@ -2,10 +2,12 @@ use std::{num::NonZeroU32, time::Duration};
 
 use incrementalmerkletree::Position;
 use pepper_sync::sync::ScanPriority;
+use pepper_sync::test_support::block;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::PoolType;
+use zcash_protocol::ShieldedPool::{Ironwood, Orchard, Sapling};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, GetSubtreeRootsArg};
 use zingo_netutils::{GrpcIndexer, Indexer};
@@ -738,13 +740,9 @@ async fn served_outputs_match_chain_metadata_deltas() {
             )
         });
 
-        let sapling_served: u64 = block.vtx.iter().map(|tx| tx.outputs.len() as u64).sum();
-        let orchard_served: u64 = block.vtx.iter().map(|tx| tx.actions.len() as u64).sum();
-        let ironwood_served: u64 = block
-            .vtx
-            .iter()
-            .map(|tx| tx.ironwood_actions.len() as u64)
-            .sum();
+        let sapling_served = u64::from(block::shielded_output_count(&block, Sapling));
+        let orchard_served = u64::from(block::shielded_output_count(&block, Orchard));
+        let ironwood_served = u64::from(block::shielded_output_count(&block, Ironwood));
 
         if metadata.ironwood_commitment_tree_size > 0 {
             first_nonzero_ironwood_metadata.get_or_insert(block.height);

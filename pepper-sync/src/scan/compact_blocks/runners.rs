@@ -23,11 +23,10 @@ use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps;
 use crate::keys::ScanningKeys;
+use crate::utils::block;
 use crate::utils::get_compact_action;
-use crate::utils::get_compact_block_hash;
-use crate::utils::get_compact_block_height;
 use crate::utils::get_compact_output_description;
-use crate::utils::get_compact_tx_txid;
+use crate::utils::transaction;
 use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<
@@ -118,12 +117,12 @@ where
     where
         P: consensus::Parameters + Send + 'static,
     {
-        let block_hash = get_compact_block_hash(&block);
-        let block_height = get_compact_block_height(&block);
+        let block_hash = block::get_compact_hash(&block);
+        let block_height = block::get_compact_height(&block);
         let zip212_enforcement = zip212_enforcement(params, block_height);
 
         for tx in block.vtx {
-            let txid = get_compact_tx_txid(&tx);
+            let txid = transaction::get_compact_txid(&tx);
 
             self.sapling.add_outputs(
                 block_hash,
