@@ -34,7 +34,6 @@ use crate::{
     },
 };
 use pepper_sync::{
-    chain::ChainParameters,
     config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     wallet::{
@@ -338,7 +337,7 @@ impl LightWallet {
         }
 
         // setup targetted scanning from zingo 1.x transaction data
-        let mut sync_state = SyncState::new(ChainParameters::of(&chain_type));
+        let mut sync_state = SyncState::new();
         pepper_sync::add_scan_targets(
             &mut sync_state,
             &transactions
@@ -597,7 +596,7 @@ impl LightWallet {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
         let shard_trees = ShardTrees::read(&mut reader)?;
-        let sync_state = SyncState::read(&mut reader, ChainParameters::of(&chain_type))?;
+        let sync_state = SyncState::read(&mut reader)?;
 
         let wallet_settings = if version >= 33 {
             let sync_config = SyncConfig::read(&mut reader)?;

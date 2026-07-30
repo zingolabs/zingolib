@@ -31,12 +31,11 @@ use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
-    chain::ChainParameters,
     keys::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_REORG_ALLOWANCE, ScanCoverage, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -91,43 +90,18 @@ impl ScanTarget {
 
 impl SyncState {
     fn serialized_version() -> u8 {
-        // Version 5 appends a coverage byte to each scan range.
         // Version 4 inserts the ironwood shard ranges after the orchard ones.
-        5
+        4
     }
 
-    /// Deserialize into `reader`.
-    ///
-    /// The chain is supplied rather than stored: resolving it from the
-    /// wallet's configured chain on every load means a wallet cannot carry
-    /// activation heights that disagree with the chain it is opened
-    /// against.
-    pub fn read<R: Read>(
-        mut reader: R,
-        chain_parameters: ChainParameters,
-    ) -> std::io::Result<Self> {
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u8()?;
         let scan_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let priority = match version {
-                5.. => match r.read_u8()? {
-                    0 => Ok(ScanPriority::RefetchingNullifiers),
-                    1 => Ok(ScanPriority::Scanning),
-                    2 => Ok(ScanPriority::Scanned),
-                    3 => Ok(ScanPriority::ScannedWithoutMapping),
-                    4 => Ok(ScanPriority::Historic),
-                    5 => Ok(ScanPriority::RescanForCoverage),
-                    6 => Ok(ScanPriority::OpenAdjacent),
-                    7 => Ok(ScanPriority::FoundNote),
-                    8 => Ok(ScanPriority::ChainTip),
-                    9 => Ok(ScanPriority::Verify),
-                    _ => Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "invalid scan priority",
-                    )),
-                }?,
-                3 | 4 => match r.read_u8()? {
+                3.. => match r.read_u8()? {
                     0 => Ok(ScanPriority::RefetchingNullifiers),
                     1 => Ok(ScanPriority::Scanning),
                     2 => Ok(ScanPriority::Scanned),
@@ -171,22 +145,7 @@ impl SyncState {
                 }?,
             };
 
-            // Ranges written before the coverage byte existed say nothing
-            // about what their scan extracted, so they are judged from the
-            // wallet's own evidence once and the verdict recorded.
-            let coverage = if version >= 5 {
-                ScanCoverage::from_byte(r.read_u8()?).ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid scan coverage")
-                })?
-            } else {
-                ScanCoverage::LEGACY
-            };
-
-            Ok(ScanRange::from_parts_with_coverage(
-                start..end,
-                priority,
-                coverage,
-            ))
+            Ok(ScanRange::from_parts(start..end, priority))
         })?;
         let sapling_shard_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
@@ -234,7 +193,6 @@ impl SyncState {
             ironwood_shard_ranges,
             scan_targets,
             initial_sync_state: InitialSyncState::new(),
-            chain_parameters,
         })
     }
 
@@ -244,8 +202,7 @@ impl SyncState {
         Vector::write(&mut writer, self.scan_ranges(), |w, scan_range| {
             w.write_u32::<LittleEndian>(scan_range.block_range().start.into())?;
             w.write_u32::<LittleEndian>(scan_range.block_range().end.into())?;
-            w.write_u8(scan_range.priority() as u8)?;
-            w.write_u8(scan_range.coverage().to_byte())
+            w.write_u8(scan_range.priority() as u8)
         })?;
         Vector::write(&mut writer, &self.sapling_shard_ranges, |w, shard_range| {
             w.write_u32::<LittleEndian>(shard_range.start.into())?;
@@ -1404,11 +1361,6 @@ impl ShardTrees {
 mod tests {
     use super::*;
 
-    /// The chain is not serialized, so any chain reads a blob equally well.
-    fn main_chain() -> ChainParameters {
-        ChainParameters::of(&consensus::MAIN_NETWORK)
-    }
-
     // Helper: build a minimal v3 SyncState byte blob (no ironwood_shard_ranges).
     // Format: version(1) | scan_ranges[0] | sapling_shard_ranges[0] |
     //         orchard_shard_ranges[0] | scan_targets[0]
@@ -1425,14 +1377,13 @@ mod tests {
     #[test]
     fn sync_state_v3_reads_with_empty_ironwood_ranges() {
         let bytes = v3_sync_state_bytes();
-        let sync_state =
-            SyncState::read(bytes.as_slice(), main_chain()).expect("v3 should read cleanly");
+        let sync_state = SyncState::read(bytes.as_slice()).expect("v3 should read cleanly");
         assert!(sync_state.ironwood_shard_ranges().is_empty());
     }
 
     #[test]
     fn sync_state_v4_roundtrip_preserves_ironwood_ranges() {
-        let mut state = SyncState::new(main_chain());
+        let mut state = SyncState::new();
         state.ironwood_shard_ranges = vec![
             BlockHeight::from_u32(100)..BlockHeight::from_u32(200),
             BlockHeight::from_u32(300)..BlockHeight::from_u32(400),
@@ -1443,8 +1394,7 @@ mod tests {
         ));
         let mut bytes = Vec::new();
         state.write(&mut bytes).expect("write should succeed");
-        let recovered =
-            SyncState::read(bytes.as_slice(), main_chain()).expect("read should succeed");
+        let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
         assert_eq!(recovered.ironwood_shard_ranges, state.ironwood_shard_ranges);
         assert_eq!(recovered.scan_ranges, state.scan_ranges);
     }
@@ -1488,86 +1438,6 @@ mod tests {
         out.write_u32::<LittleEndian>(orchard_initial).unwrap();
         out.write_u32::<LittleEndian>(orchard_final).unwrap();
         out
-    }
-
-    /// A scan range written before the coverage byte existed says nothing
-    /// about what its scan extracted, so it must read back as legacy and be
-    /// judged from evidence rather than assumed current.
-    #[test]
-    fn sync_state_v4_reads_scan_ranges_as_legacy_coverage() {
-        let mut bytes = Vec::new();
-        bytes.write_u8(4).unwrap();
-        Vector::write(
-            &mut bytes,
-            &[(1000u32, 1010u32, 2u8)],
-            |w, &(start, end, priority)| {
-                w.write_u32::<LittleEndian>(start)?;
-                w.write_u32::<LittleEndian>(end)?;
-                w.write_u8(priority)
-            },
-        )
-        .unwrap();
-        for _ in 0..3 {
-            Vector::write(&mut bytes, &[] as &[()], |_, _| Ok(())).unwrap();
-        }
-        Vector::write(&mut bytes, &[] as &[()], |_, _| Ok(())).unwrap();
-
-        let sync_state = SyncState::read(bytes.as_slice(), main_chain()).expect("v4 should read");
-
-        assert_eq!(sync_state.scan_ranges().len(), 1);
-        assert_eq!(sync_state.scan_ranges()[0].coverage(), ScanCoverage::LEGACY);
-        assert_eq!(
-            sync_state.scan_ranges()[0].priority(),
-            ScanPriority::Scanned
-        );
-    }
-
-    /// Coverage survives a save and load, so a verdict already reached is not
-    /// re-judged after a restart.
-    #[test]
-    fn sync_state_v5_roundtrip_preserves_coverage() {
-        let mut state = SyncState::new(main_chain());
-        state.scan_ranges = vec![
-            ScanRange::from_parts_with_coverage(
-                BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
-                ScanPriority::Scanned,
-                ScanCoverage::LEGACY,
-            ),
-            ScanRange::from_parts_with_coverage(
-                BlockHeight::from_u32(10)..BlockHeight::from_u32(20),
-                ScanPriority::RescanForCoverage,
-                ScanCoverage::CURRENT,
-            ),
-        ];
-        let mut bytes = Vec::new();
-        state.write(&mut bytes).unwrap();
-
-        let recovered =
-            SyncState::read(bytes.as_slice(), main_chain()).expect("read should succeed");
-
-        assert_eq!(
-            recovered
-                .scan_ranges()
-                .iter()
-                .map(|range| (range.priority(), range.coverage()))
-                .collect::<Vec<_>>(),
-            vec![
-                (ScanPriority::Scanned, ScanCoverage::LEGACY),
-                (ScanPriority::RescanForCoverage, ScanCoverage::CURRENT),
-            ]
-        );
-    }
-
-    /// A range written by a scanner with an epoch this build cannot see
-    /// cannot be judged against requirements it cannot know, so the read is
-    /// refused rather than silently treated as legacy.
-    #[test]
-    fn unknown_scan_coverage_is_refused() {
-        assert!(ScanCoverage::from_byte(ScanCoverage::CURRENT.to_byte() + 1).is_none());
-        assert_eq!(
-            ScanCoverage::from_byte(ScanCoverage::LEGACY.to_byte()),
-            Some(ScanCoverage::LEGACY)
-        );
     }
 
     #[test]

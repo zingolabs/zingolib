@@ -43,6 +43,13 @@ where
         "critical non-recoverable truncation error at height {0} due to missing {1} shard tree checkpoints. wallet data cleared. rescan required."
     )]
     TruncationError(BlockHeight, PoolType),
+    /// One pool's recorded history could not account for the commitment
+    /// tree the chain reports, so that pool was reopened for rescanning
+    /// from the given height. The session ends here; the next one rescans.
+    #[error(
+        "{1} history could not account for the chain's commitment tree. that pool has been reopened for scanning from height {0}. the next sync rescans it."
+    )]
+    PoolHistoryReopened(BlockHeight, PoolType),
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
@@ -63,6 +70,10 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             // Network/server issues. Retrying may help, especially with a different server.
             SyncError::ServerError(e) => e.recommend_same_server(),
             SyncError::MempoolError(_) => true,
+            // Not the server's doing, but the wallet has already reopened
+            // the pool it could not account for, so the next sync against
+            // this same server makes progress.
+            SyncError::PoolHistoryReopened(..) => true,
 
             // Local or configuration errors. Retrying won't help.
             SyncError::ScanError(_)
@@ -132,6 +143,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
 
             SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
+
+            // The wallet has already reopened the pool it could not account
+            // for, so syncing again against the same server is exactly the
+            // recovery.
+            SyncError::PoolHistoryReopened(..) => SyncRecoveryObservables::MaybeRecoverableServer,
 
             SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
@@ -384,6 +400,17 @@ mod tests {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
                 assert!(e.recommend_same_server());
             }
+
+            /// The wallet has already reopened the pool, so the very next
+            /// sync against this same server performs the rescan. Reporting
+            /// this as a reason to change server would send wallets hunting
+            /// for a server that was never at fault.
+            #[test]
+            fn pool_history_reopened() {
+                let e: TestSyncError =
+                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
+                assert!(e.recommend_same_server());
+            }
         }
     }
 
@@ -480,6 +507,18 @@ mod tests {
             #[test]
             fn mempool_error() {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            /// Syncing again is the recovery, so this must never be reported
+            /// as needing the user to intervene.
+            #[test]
+            fn pool_history_reopened() {
+                let e: TestSyncError =
+                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::MaybeRecoverableServer

@@ -2459,7 +2459,7 @@ mod tests {
     /// clearing paths), and survives any evolution of `clear_all`. One test
     /// red with the other green names the layer that changed.
     mod no_sync_data_preserves_migration_state {
-        use pepper_sync::{chain::ChainParameters, wallet::SyncState};
+        use pepper_sync::wallet::SyncState;
 
         use super::*;
         use crate::lightclient::error::LightClientError;
@@ -2518,7 +2518,7 @@ mod tests {
         #[tokio::test]
         async fn via_empty_sync_state() {
             broadcast_error_must_preserve_the_state(|wallet| {
-                wallet.sync_state = SyncState::new(ChainParameters::of(&wallet.chain_type()));
+                wallet.sync_state = SyncState::new();
             })
             .await;
         }

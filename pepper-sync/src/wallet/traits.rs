@@ -359,6 +359,24 @@ pub trait SyncShardTrees: SyncWallet {
         Ok(())
     }
 
+    /// Replaces one pool's shard tree with an empty tree, leaving the other
+    /// pools alone.
+    ///
+    /// The empty tree is that pool's correct state at its own activation, so
+    /// this is the rollback a pool needs when its recorded history cannot be
+    /// trusted and no checkpoint survives to roll back to.
+    fn clear_pool_shard_tree(&mut self, pool: ShieldedPool) -> Result<(), SyncError<Self::Error>> {
+        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+        tracing::info!("Clearing {pool:?} shard tree.");
+        match pool {
+            ShieldedPool::Sapling => shard_trees.sapling = empty_shard_tree(),
+            ShieldedPool::Orchard => shard_trees.orchard = empty_shard_tree(),
+            ShieldedPool::Ironwood => shard_trees.ironwood = empty_shard_tree(),
+        }
+
+        Ok(())
+    }
+
     /// Removes all shard tree data above the given `truncate_height`:
     /// each tree rolls back to its checkpoint at that height, stays
     /// untouched because it records nothing above it, or, holding state

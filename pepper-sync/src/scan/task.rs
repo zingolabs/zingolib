@@ -291,9 +291,7 @@ where
                 nullifier_map_limit_exceeded,
             )? {
                 batcher.add_scan_task(scan_task);
-            } else if wallet.get_sync_state()?.scan_complete()
-                && sync::state::coverage_settled(wallet)?
-            {
+            } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.shutdown();
             }
         }

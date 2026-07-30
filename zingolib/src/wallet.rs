@@ -11,7 +11,6 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use pepper_sync::chain::ChainParameters;
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
 use pepper_sync::{
@@ -245,7 +244,7 @@ impl LightWallet {
             nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
             shard_trees: ShardTrees::new(),
-            sync_state: SyncState::new(ChainParameters::of(&chain_type)),
+            sync_state: SyncState::new(),
             wallet_settings,
             price_list: PriceList::new(),
             migration: None,
@@ -485,7 +484,7 @@ impl LightWallet {
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
         let chain_height_opt = self.sync_state.last_known_chain_height();
-        self.sync_state = SyncState::new(ChainParameters::of(&self.chain_type));
+        self.sync_state = SyncState::new();
         if let Some(chain_height) = chain_height_opt {
             pepper_sync::add_scan_targets(
                 &mut self.sync_state,

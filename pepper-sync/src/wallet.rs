@@ -35,7 +35,6 @@ use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
-    chain::ChainParameters,
     client::FetchRequest,
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
@@ -150,17 +149,12 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
-    /// The chain being synced. Not serialized: it is resolved from the
-    /// wallet's configured chain on load, so a wallet can never carry
-    /// activation heights that disagree with the chain it is opened
-    /// against.
-    pub(crate) chain_parameters: ChainParameters,
 }
 
 impl SyncState {
-    /// Create new `SyncState` for the given chain.
+    /// Create new `SyncState`
     #[must_use]
-    pub fn new(chain_parameters: ChainParameters) -> Self {
+    pub fn new() -> Self {
         SyncState {
             scan_ranges: Vec::new(),
             sapling_shard_ranges: Vec::new(),
@@ -168,25 +162,7 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
-            chain_parameters,
         }
-    }
-
-    /// The chain being synced.
-    ///
-    /// Sync decisions that depend on the chain read it from here rather
-    /// than taking it as an argument, so they cannot be asked about one
-    /// wallet using another chain's parameters.
-    #[must_use]
-    pub fn chain_parameters(&self) -> &ChainParameters {
-        &self.chain_parameters
-    }
-
-    /// The activation of `pool` on the chain being synced, or `None` where
-    /// the pool never activates.
-    #[must_use]
-    pub fn pool_activation(&self, pool: ShieldedPool) -> Option<PoolActivation> {
-        PoolActivation::of(&self.chain_parameters, pool)
     }
 
     /// Scan ranges
@@ -273,6 +249,12 @@ impl SyncState {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
+    }
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -806,19 +788,10 @@ impl WalletTransaction {
 
 #[cfg(any(test, feature = "test-features"))]
 impl SyncState {
-    /// Creates sync state with the given scan ranges on mainnet, for tests
-    /// whose subject does not depend on activation heights.
+    /// Creates sync state with the given scan ranges, for tests exercising
+    /// spendability/witness gating without a chain.
     pub fn new_for_test(scan_ranges: Vec<ScanRange>) -> Self {
-        Self::new_for_test_on(
-            ChainParameters::of(&zcash_protocol::consensus::MAIN_NETWORK),
-            scan_ranges,
-        )
-    }
-
-    /// As [`Self::new_for_test`], on a chosen chain, for tests whose
-    /// subject is an activation height.
-    pub fn new_for_test_on(chain_parameters: ChainParameters, scan_ranges: Vec<ScanRange>) -> Self {
-        let mut sync_state = Self::new(chain_parameters);
+        let mut sync_state = Self::new();
         sync_state.scan_ranges = scan_ranges;
         sync_state
     }
@@ -1711,17 +1684,16 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     }
 }
 
-/// Reduces `wallet` to the state a build that did not track ironwood would
-/// have left, reproducing each pre-ironwood read-path default: zero
-/// ironwood tree sizes in every stored block, no ironwood notes, nullifiers
-/// or shard ranges, and a freshly emptied ironwood shard tree.
+/// Reduces the wallet to what a build that never tracked `pool` would have
+/// left behind: the very same scanned ranges, and none of that pool's data.
 ///
-/// Scan-range priorities are deliberately left alone: such a build recorded
-/// its ranges as fully scanned, so nothing marks the ironwood history as
-/// owed. Their coverage is reset to [`ScanCoverage::LEGACY`], which is what
-/// ranges written before the coverage byte read back as.
+/// This is the state a wallet reaches by syncing across a pool's activation
+/// on a build that predates the pool, which is not otherwise constructible
+/// from outside. Scan-range priorities are deliberately untouched, since the
+/// defect being reproduced is precisely that the ranges still claim to be
+/// scanned.
 #[cfg(any(test, feature = "test-features"))]
-pub fn strip_ironwood_tracking_for_test<W>(wallet: &mut W) -> Result<(), W::Error>
+pub fn strip_pool_tracking_for_test<W>(wallet: &mut W, pool: ShieldedPool) -> Result<(), W::Error>
 where
     W: traits::SyncWallet
         + traits::SyncBlocks
@@ -1730,23 +1702,59 @@ where
         + traits::SyncShardTrees,
 {
     for block in wallet.get_wallet_blocks_mut()?.values_mut() {
-        block.tree_bounds.ironwood_initial_tree_size = 0;
-        block.tree_bounds.ironwood_final_tree_size = 0;
+        let tree_bounds = &mut block.tree_bounds;
+        match pool {
+            ShieldedPool::Sapling => {
+                tree_bounds.sapling_initial_tree_size = 0;
+                tree_bounds.sapling_final_tree_size = 0;
+            }
+            ShieldedPool::Orchard => {
+                tree_bounds.orchard_initial_tree_size = 0;
+                tree_bounds.orchard_final_tree_size = 0;
+            }
+            ShieldedPool::Ironwood => {
+                tree_bounds.ironwood_initial_tree_size = 0;
+                tree_bounds.ironwood_final_tree_size = 0;
+            }
+        }
     }
     for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-        transaction.ironwood_notes.clear();
-        transaction.outgoing_ironwood_notes.clear();
+        match pool {
+            ShieldedPool::Sapling => {
+                transaction.sapling_notes.clear();
+                transaction.outgoing_sapling_notes.clear();
+            }
+            ShieldedPool::Orchard => {
+                transaction.orchard_notes.clear();
+                transaction.outgoing_orchard_notes.clear();
+            }
+            ShieldedPool::Ironwood => {
+                transaction.ironwood_notes.clear();
+                transaction.outgoing_ironwood_notes.clear();
+            }
+        }
     }
-    wallet.get_nullifiers_mut()?.ironwood.clear();
-    wallet.get_shard_trees_mut()?.ironwood = ShardTrees::new().ironwood;
+
+    let nullifiers = wallet.get_nullifiers_mut()?;
+    match pool {
+        ShieldedPool::Sapling => nullifiers.sapling.clear(),
+        ShieldedPool::Orchard => nullifiers.orchard.clear(),
+        ShieldedPool::Ironwood => nullifiers.ironwood.clear(),
+    }
+
+    let empty = ShardTrees::new();
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    match pool {
+        ShieldedPool::Sapling => shard_trees.sapling = empty.sapling,
+        ShieldedPool::Orchard => shard_trees.orchard = empty.orchard,
+        ShieldedPool::Ironwood => shard_trees.ironwood = empty.ironwood,
+    }
+
     let sync_state = wallet.get_sync_state_mut()?;
-    sync_state.ironwood_shard_ranges.clear();
-    for scan_range in &mut sync_state.scan_ranges {
-        *scan_range = ScanRange::from_parts_with_coverage(
-            scan_range.block_range().clone(),
-            scan_range.priority(),
-            crate::sync::ScanCoverage::LEGACY,
-        );
+    match pool {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
     }
 
     Ok(())

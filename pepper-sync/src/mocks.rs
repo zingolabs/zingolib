@@ -113,9 +113,7 @@ impl Default for MockWalletBuilder {
     fn default() -> Self {
         MockWalletBuilder {
             birthday: BlockHeight::from_u32(0),
-            sync_state: SyncState::new(crate::chain::ChainParameters::of(
-                &zcash_protocol::consensus::MAIN_NETWORK,
-            )),
+            sync_state: SyncState::new(),
             get_sync_state_patch: None,
             get_birthday_patch: None,
             wallet_blocks: BTreeMap::new(),

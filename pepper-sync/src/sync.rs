@@ -13,8 +13,8 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
@@ -36,8 +36,8 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{
-    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, ScanTarget, SyncMode,
-    SyncState, WalletBlock, WalletTransaction,
+    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
+    ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 
@@ -91,13 +91,6 @@ pub struct SyncStatus {
     /// both shielded pools. Zero when sync has never started, and also when
     /// the range from birthday to chain height contains no shielded outputs.
     pub total_outputs: u64,
-    /// Whether the wallet holds blocks that were scanned without ironwood
-    /// tracking, proven by a scan this session having to re-derive its
-    /// ironwood baseline. While set, the ironwood history below those
-    /// blocks is incomplete: the balance may understate the wallet's
-    /// ironwood notes, and those ranges need rescanning. Sync itself still
-    /// completes, so this is independent of [`SyncStatus::is_complete`].
-    pub ironwood_coverage_incomplete: bool,
 }
 
 impl SyncStatus {
@@ -124,15 +117,7 @@ impl std::fmt::Display for SyncStatus {
             f,
             "percentage complete: {}",
             self.percentage_total_outputs_scanned
-        )?;
-        if self.ironwood_coverage_incomplete {
-            write!(
-                f,
-                " (ironwood history incomplete: balance may understate ironwood notes until the affected ranges are rescanned)"
-            )?;
-        }
-
-        Ok(())
+        )
     }
 }
 
@@ -167,7 +152,6 @@ impl From<SyncStatus> for json::JsonValue {
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
             "total_outputs_scanned" => value.total_outputs_scanned,
             "total_outputs" => value.total_outputs,
-            "ironwood_coverage_incomplete" => value.ironwood_coverage_incomplete,
         }
     }
 }
@@ -240,13 +224,6 @@ pub enum ScanPriority {
     ScannedWithoutMapping,
     /// Block ranges to be scanned to advance the fully-scanned height.
     Historic,
-    /// Block ranges whose blocks were scanned, but by a scanner that did not
-    /// extract everything the current one does. They are rescanned for the
-    /// missing extraction only: the pools their scan already covered are left
-    /// as they are. Ranked above `Historic` so the wallet stops owing work
-    /// before it backfills, and walked lowest height first so each range
-    /// inherits sound tree sizes from the range below it.
-    RescanForCoverage,
     /// Block ranges adjacent to heights at which the user opened the wallet.
     OpenAdjacent,
     /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
@@ -272,15 +249,6 @@ impl ScanPriority {
         )
     }
 
-    /// Whether this priority marks a range awaiting a rescan for extraction
-    /// its original scan did not perform. Deliberately not
-    /// [`Self::is_scanned`]: the wallet does not hold what a current scan of
-    /// those blocks would have found, so reporting them scanned would let
-    /// spends and balances be drawn from history known to be partial.
-    pub fn awaits_coverage_rescan(self) -> bool {
-        matches!(self, ScanPriority::RescanForCoverage)
-    }
-
     /// Whether this priority marks a range whose blocks have been scanned but
     /// whose nullifiers still await mapping or refetching for final spend
     /// detection.
@@ -292,63 +260,11 @@ impl ScanPriority {
     }
 }
 
-/// What a scan extracted from the blocks it covered.
-///
-/// Scanned-ness alone does not say what was taken from a block, so a range
-/// scanned before the engine tracked a pool is indistinguishable from one
-/// scanned after unless the range records it. Epochs are monotone: a later
-/// one extracts everything an earlier one did and more, so a plain
-/// comparison decides whether a range still owes work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ScanCoverage(u8);
-
-impl ScanCoverage {
-    /// A scan that predates this marker. What it extracted is unknown, so it
-    /// is judged once against the wallet's own evidence and the verdict
-    /// recorded, rather than re-judged every session.
-    pub const LEGACY: Self = ScanCoverage(0);
-
-    /// What the current scanner extracts: sapling, orchard and ironwood.
-    pub const CURRENT: Self = ScanCoverage(1);
-
-    /// The serialized form.
-    #[must_use]
-    pub fn to_byte(self) -> u8 {
-        self.0
-    }
-
-    /// Reads a serialized coverage, rejecting an epoch this build does not
-    /// know: a range written by a newer scanner cannot be judged against
-    /// requirements this build cannot see.
-    #[must_use]
-    pub fn from_byte(byte: u8) -> Option<Self> {
-        (byte <= Self::CURRENT.0).then_some(ScanCoverage(byte))
-    }
-
-    /// The lowest height at which this coverage is not enough, given the
-    /// chain's pool activations, or `None` where it lacks nothing.
-    ///
-    /// One entry per epoch step. [`Self::LEGACY`] may predate ironwood
-    /// tracking, so it owes work from the ironwood activation upward; a new
-    /// epoch adds its own pool's activation here.
-    #[must_use]
-    pub fn floor(self, sync_state: &crate::wallet::SyncState) -> Option<BlockHeight> {
-        if self >= Self::CURRENT {
-            return None;
-        }
-
-        sync_state
-            .pool_activation(ShieldedPool::Ironwood)
-            .map(|activation| activation.height())
-    }
-}
-
 /// A range of blocks to be scanned, along with its associated priority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRange {
     block_range: Range<BlockHeight>,
     priority: ScanPriority,
-    coverage: ScanCoverage,
 }
 
 impl std::fmt::Display for ScanRange {
@@ -362,22 +278,9 @@ impl std::fmt::Display for ScanRange {
 }
 
 impl ScanRange {
-    /// Constructs a scan range from its constituent parts, covered by what
-    /// the current scanner extracts. Correct for every range this build
-    /// creates: whatever it goes on to scan, it scans with this engine.
+    /// Constructs a scan range from its constituent parts.
     #[must_use]
     pub fn from_parts(block_range: Range<BlockHeight>, priority: ScanPriority) -> Self {
-        Self::from_parts_with_coverage(block_range, priority, ScanCoverage::CURRENT)
-    }
-
-    /// As [`Self::from_parts`], with the coverage stated. Deserialization
-    /// uses this to carry forward what an earlier build recorded.
-    #[must_use]
-    pub fn from_parts_with_coverage(
-        block_range: Range<BlockHeight>,
-        priority: ScanPriority,
-        coverage: ScanCoverage,
-    ) -> Self {
         assert!(
             block_range.end >= block_range.start,
             "{block_range:?} is invalid for ScanRange({priority:?})",
@@ -385,14 +288,7 @@ impl ScanRange {
         ScanRange {
             block_range,
             priority,
-            coverage,
         }
-    }
-
-    /// What the scan of this range extracted.
-    #[must_use]
-    pub fn coverage(&self) -> ScanCoverage {
-        self.coverage
     }
 
     /// Returns the range of block heights to be scanned.
@@ -431,7 +327,6 @@ impl ScanRange {
             Some(ScanRange {
                 block_range: self.block_range.start.max(block_height)..self.block_range.end,
                 priority: self.priority,
-                coverage: self.coverage,
             })
         }
     }
@@ -447,7 +342,6 @@ impl ScanRange {
             Some(ScanRange {
                 block_range: self.block_range.start..self.block_range.end.min(block_height),
                 priority: self.priority,
-                coverage: self.coverage,
             })
         }
     }
@@ -461,12 +355,10 @@ impl ScanRange {
             ScanRange {
                 block_range: self.block_range.start..p,
                 priority: self.priority,
-                coverage: self.coverage,
             },
             ScanRange {
                 block_range: p..self.block_range.end,
                 priority: self.priority,
-                coverage: self.coverage,
             },
         ))
     }
@@ -897,8 +789,6 @@ where
         total_orchard_outputs_scanned,
         total_ironwood_outputs_scanned,
     ) = state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
-    let ironwood_coverage_incomplete =
-        state::ironwood_coverage_incomplete(wallet).map_err(SyncStatusError::WalletError)?;
     let total_outputs_scanned = output_pool_total(
         total_sapling_outputs_scanned,
         total_orchard_outputs_scanned,
@@ -926,7 +816,6 @@ where
             percentage_total_outputs_scanned: 0.0,
             total_outputs_scanned: 0,
             total_outputs: 0,
-            ironwood_coverage_incomplete,
         });
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
@@ -1060,7 +949,6 @@ where
         percentage_total_outputs_scanned,
         total_outputs_scanned,
         total_outputs,
-        ironwood_coverage_incomplete,
     })
 }
 
@@ -1650,10 +1538,96 @@ where
                 scan_results?;
             }
         }
+        Err(ScanError::IncorrectTreeSize {
+            shielded_protocol: PoolType::Shielded(pool),
+            block_metadata_size,
+            calculated_size,
+        }) => {
+            tracing::warn!(
+                "{pool:?} history recorded a commitment tree of {calculated_size} where the chain \
+                 reports {block_metadata_size}."
+            );
+            return Err(reopen_pool_history(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                wallet,
+                pool,
+            )
+            .await?);
+        }
         Err(e) => return Err(e.into()),
     }
 
     Ok(())
+}
+
+/// Reopens one pool's history for scanning, after its recorded commitment
+/// tree could not account for the chain's.
+///
+/// Only that pool is disturbed. Its tree is replaced by the state the chain
+/// itself dictates, and every scanned range above that point is reopened, so
+/// the next session rebuilds the pool's history from evidence rather than
+/// from the record that was found wanting. The other pools keep their trees
+/// and are rescanned harmlessly alongside it, since re-inserting note
+/// commitments the tree already holds merges rather than conflicts.
+///
+/// The rescan begins at the later of the pool's activation and the wallet's
+/// birthday, both derived rather than assumed, so the work is bounded by the
+/// pool's own existence on this chain and by the wallet's own lifetime. At
+/// the birthday the pool's tree is whatever the chain says, fetched as a
+/// frontier; at an activation above the birthday it is empty.
+///
+/// Returns the error that ends the session. The wallet is saved first, so
+/// the reopening survives even if the caller never syncs again.
+async fn reopen_pool_history<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+    pool: ShieldedPool,
+) -> Result<SyncError<W::Error>, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+    let Some(activation) = PoolActivation::of(consensus_parameters, pool) else {
+        // A pool the chain never activates cannot have been served, so it
+        // cannot be the one that disagreed.
+        panic!("{pool:?} reported a tree size on a chain that never activates it");
+    };
+    let rescan_from = activation.max_with(birthday);
+
+    wallet.clear_pool_shard_tree(pool)?;
+    let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    let retention = Retention::Checkpoint {
+        id: birthday,
+        marking: Marking::None,
+    };
+    match pool {
+        ShieldedPool::Sapling => shard_trees
+            .sapling
+            .insert_frontier(frontiers.final_sapling_tree().clone(), retention),
+        ShieldedPool::Orchard => shard_trees
+            .orchard
+            .insert_frontier(frontiers.final_orchard_tree().clone(), retention),
+        ShieldedPool::Ironwood => shard_trees
+            .ironwood
+            .insert_frontier(frontiers.final_ironwood_tree().clone(), retention),
+    }
+    .expect("infallible");
+
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    state::reopen_scan_ranges_from(sync_state, rescan_from);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(SyncError::PoolHistoryReopened(
+        rescan_from,
+        PoolType::Shielded(pool),
+    ))
 }
 
 /// Processes mempool transaction.
@@ -2441,7 +2415,6 @@ mod test {
                 percentage_total_outputs_scanned: 0.0,
                 total_outputs_scanned: 0,
                 total_outputs: 0,
-                ironwood_coverage_incomplete: false,
             }
         }
 
@@ -2759,78 +2732,6 @@ mod test {
                 status.percentage_total_outputs_scanned,
                 expected_percentage,
             );
-        }
-
-        /// The incomplete-coverage claim reaches consumers through
-        /// `sync_status` as soon as a range is awaiting a coverage rescan,
-        /// and the wallet does NOT report itself complete while one is
-        /// outstanding: it does not hold what a current scan of those blocks
-        /// would have found, so a consumer must not draw a final balance
-        /// from it.
-        #[tokio::test]
-        async fn incomplete_ironwood_coverage_is_reported() {
-            let mut sync_state = SyncState::new_for_test(vec![
-                ScanRange::from_parts(
-                    BlockHeight::from_u32(3_500_000)..BlockHeight::from_u32(3_500_010),
-                    ScanPriority::RescanForCoverage,
-                ),
-                ScanRange::from_parts(
-                    BlockHeight::from_u32(3_500_010)..BlockHeight::from_u32(3_500_020),
-                    ScanPriority::Scanned,
-                ),
-            ]);
-            sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(3_500_000);
-
-            let wallet = MockWalletBuilder::new()
-                .sync_state(sync_state)
-                .wallet_blocks(BTreeMap::from([
-                    (
-                        BlockHeight::from_u32(3_500_010),
-                        block(3_500_010, flat_bounds(100, 200, 40)),
-                    ),
-                    (
-                        BlockHeight::from_u32(3_500_019),
-                        block(3_500_019, flat_bounds(103, 205, 45)),
-                    ),
-                ]))
-                .create_mock_wallet();
-
-            let status = sync_status(&wallet).await.unwrap();
-
-            assert!(status.ironwood_coverage_incomplete);
-            assert!(
-                !status.is_complete(),
-                "a wallet owing a coverage rescan must not report itself synced"
-            );
-        }
-
-        /// With every range fully covered, nothing is claimed.
-        #[tokio::test]
-        async fn complete_ironwood_coverage_is_not_reported() {
-            let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
-                BlockHeight::from_u32(3_500_000)..BlockHeight::from_u32(3_500_010),
-                ScanPriority::Scanned,
-            )]);
-            sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(3_500_000);
-
-            let wallet = MockWalletBuilder::new()
-                .sync_state(sync_state)
-                .wallet_blocks(BTreeMap::from([
-                    (
-                        BlockHeight::from_u32(3_500_000),
-                        block(3_500_000, flat_bounds(100, 200, 40)),
-                    ),
-                    (
-                        BlockHeight::from_u32(3_500_009),
-                        block(3_500_009, flat_bounds(103, 205, 45)),
-                    ),
-                ]))
-                .create_mock_wallet();
-
-            let status = sync_status(&wallet).await.unwrap();
-
-            assert!(!status.ironwood_coverage_incomplete);
-            assert!(status.is_complete());
         }
     }
 
@@ -3180,7 +3081,10 @@ mod test {
                     DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState::new_for_test(lkch);
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
                 let res =
@@ -3208,7 +3112,10 @@ mod test {
                     BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState::new_for_test(lkch);
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
                 let chain_height = BlockHeight::from_u32(4);
@@ -3226,7 +3133,10 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState::new_for_test(lkch);
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -3239,7 +3149,10 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState::new_for_test(lkch);
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -3250,7 +3163,10 @@ mod test {
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
-                let state = SyncState::new_for_test(lkch);
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
@@ -3363,10 +3279,13 @@ mod test {
 
         /// Creates a mock wallet with all blocks scanned up to `chain_height`.
         fn wallet_at_height(chain_height: u32, transactions: Vec<WalletTransaction>) -> MockWallet {
-            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
-                BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
-                ScanPriority::Scanned,
-            )]);
+            let sync_state = SyncState {
+                scan_ranges: vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
+                    ScanPriority::Scanned,
+                )],
+                ..Default::default()
+            };
             let wallet_transactions: HashMap<TxId, WalletTransaction> = transactions
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
