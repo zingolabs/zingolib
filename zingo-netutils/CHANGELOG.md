@@ -9,9 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GrpcIndexer::new_via_socks5` (behind `socks5-transmit`): constructs the
+  indexer over a channel dialed through the local SOCKS5 proxy — the mixnet
+  tunnel — so every `Indexer`/`TransparentIndexer` RPC on that instance
+  travels the mixnet. Keeps the 5.0.1 promise that nym-enabled clients
+  "will also be held by `GrpcIndexer`", with the transport chosen at
+  construction instead of per call.
+
 ### Changed
 
+- `GrpcIndexer`'s private channel field renamed `clear_net_client` →
+  `client`: construction now decides the transport, so the field may hold
+  a tunnel-dialed channel.
+
 ### Removed
+
+- `GrpcIndexer::get_clear_net_client`: it had no callers, and its name
+  promises a clearnet channel the type no longer guarantees.
 
 ### Deprecated
 

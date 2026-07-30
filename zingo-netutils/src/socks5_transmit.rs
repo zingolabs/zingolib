@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use http::Uri;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
@@ -318,7 +318,7 @@ pub async fn get_lightd_info_via_socks5(
 /// into an opaque "transport error", so the connector deposits the typed
 /// failure in a slot this function reads back in preference to tonic's
 /// rendering.
-async fn connect_via_socks5(
+pub(crate) async fn connect_via_socks5(
     socks5_addr: &str,
     indexer: &Uri,
     timeout: Duration,
@@ -346,31 +346,25 @@ async fn connect_via_socks5(
     let destination = format!("{host}:{port}");
     let socks5_addr = socks5_addr.to_string();
 
-    let endpoint = Endpoint::from_shared(indexer.to_string())
-        .map_err(|e| Socks5TransmitError::TunnelTransport {
-            destination: destination.clone(),
-            detail: error_chain(&e),
-            source: Some(e),
-        })?
-        .tcp_nodelay(true)
-        // `connect_timeout` bounds the channel establishment — critically
-        // the TLS handshake tonic runs on top of the SOCKS5 tunnel, which
-        // the connector's own per-phase timeouts do not cover. Without this
-        // a witness that completes the tunnel but stalls the handshake
-        // (observed: a lightwalletd on a non-standard port the mixnet exit
-        // mishandles) hangs for minutes instead of failing over. The RPC
-        // itself is deliberately NOT bounded here: tonic's channel timeout
-        // would surface as an opaque status racing the callers' own typed
-        // bound, so each via_socks5 operation wraps its RPC in
-        // `tokio::time::timeout` and classifies the elapse as
-        // [`Socks5TransmitError::TimedOut`] (issue #2564).
-        .connect_timeout(timeout)
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| Socks5TransmitError::TunnelTransport {
-            destination: destination.clone(),
-            detail: error_chain(&e),
-            source: Some(e),
-        })?;
+    let endpoint =
+        crate::channel_endpoint(indexer, Some(ClientTlsConfig::new().with_webpki_roots()))
+            .map_err(|e| Socks5TransmitError::TunnelTransport {
+                destination: destination.clone(),
+                detail: error_chain(&e),
+                source: Some(e),
+            })?
+            // `connect_timeout` bounds the channel establishment — critically
+            // the TLS handshake tonic runs on top of the SOCKS5 tunnel, which
+            // the connector's own per-phase timeouts do not cover. Without this
+            // a witness that completes the tunnel but stalls the handshake
+            // (observed: a lightwalletd on a non-standard port the mixnet exit
+            // mishandles) hangs for minutes instead of failing over. The RPC
+            // itself is deliberately NOT bounded here: tonic's channel timeout
+            // would surface as an opaque status racing the callers' own typed
+            // bound, so each via_socks5 operation wraps its RPC in
+            // `tokio::time::timeout` and classifies the elapse as
+            // [`Socks5TransmitError::TimedOut`] (issue #2564).
+            .connect_timeout(timeout);
 
     let phase_error: Arc<Mutex<Option<Socks5TransmitError>>> = Arc::default();
     let connector_phase = phase_error.clone();

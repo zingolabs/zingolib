@@ -108,6 +108,27 @@ fn client_tls_config() -> ClientTlsConfig {
     ClientTlsConfig::new().with_webpki_roots()
 }
 
+pub(crate) fn channel_endpoint(
+    uri: &http::Uri,
+    tls: Option<ClientTlsConfig>,
+) -> Result<Endpoint, tonic::transport::Error> {
+    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+    match tls {
+        Some(config) => endpoint.tls_config(config),
+        None => Ok(endpoint),
+    }
+}
+
+fn clearnet_endpoint(uri: &http::Uri) -> Result<Endpoint, GetClientError> {
+    let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+    if scheme != "http" && scheme != "https" {
+        return Err(GetClientError::InvalidScheme);
+    }
+    uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+    let tls = (scheme == "https").then(client_tls_config);
+    Ok(channel_endpoint(uri, tls)?)
+}
+
 /// Trait for communicating with a Zcash chain indexer.
 ///
 /// Implementors provide access to a server speaking the lightwallet gRPC protocol.
@@ -271,80 +292,51 @@ pub trait Indexer {
 }
 
 /// gRPC-backed [`Indexer`] that connects to a Zcash chain indexer (server).
+/// The channel's transport is fixed at construction: [`Self::new`] and
+/// [`Self::new_lazy`] dial clearnet, while `new_via_socks5` dials through
+/// the local mixnet tunnel, so every RPC the indexer performs travels the
+/// transport its constructor chose.
 #[derive(Debug, Clone)]
 pub struct GrpcIndexer {
     uri: http::Uri,
-    clear_net_client: CompactTxStreamerClient<Channel>,
+    client: CompactTxStreamerClient<Channel>,
 }
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
+        let channel = clearnet_endpoint(&uri)?.connect().await?;
+        let client = CompactTxStreamerClient::new(channel);
 
-        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect().await?;
-        let clear_net_client = CompactTxStreamerClient::new(channel);
+        Ok(Self { uri, client })
+    }
 
-        Ok(Self {
-            uri,
-            clear_net_client,
-        })
+    /// As [`Self::new`], but the channel dials through the local SOCKS5
+    /// proxy at `socks5_addr` — the mixnet tunnel — so every RPC this
+    /// indexer performs travels over the mixnet. https-only, like the
+    /// transmit path; `timeout` bounds tunnel and TLS establishment.
+    #[cfg(feature = "socks5-transmit")]
+    pub async fn new_via_socks5(
+        uri: http::Uri,
+        socks5_addr: &str,
+        timeout: Duration,
+    ) -> Result<Self, Socks5TransmitError> {
+        let client = socks5_transmit::connect_via_socks5(socks5_addr, &uri, timeout).await?;
+        Ok(Self { uri, client })
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
     /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
+        let channel = clearnet_endpoint(&uri)?.connect_lazy();
+        let client = CompactTxStreamerClient::new(channel);
 
-        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect_lazy();
-        let clear_net_client = CompactTxStreamerClient::new(channel);
-
-        Ok(Self {
-            uri,
-            clear_net_client,
-        })
+        Ok(Self { uri, client })
     }
 
     /// Returns URI the gRPC client(s) are connected to.
     pub fn uri(&self) -> &http::Uri {
         &self.uri
-    }
-
-    /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_clear_net_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.clear_net_client.clone()
     }
 }
 
@@ -435,21 +427,13 @@ impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_lightd_info(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_lightd_info(request).await?.into_inner())
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
         let mut request = Request::new(ChainSpec {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_latest_block(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_latest_block(request).await?.into_inner())
     }
 
     async fn send_transaction(
@@ -459,11 +443,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<String, tonic::Status> {
         let mut request = Request::new(tx);
         request.set_timeout(timeout);
-        let sendresponse = self
-            .clear_net_client
-            .send_transaction(request)
-            .await?
-            .into_inner();
+        let sendresponse = self.client.send_transaction(request).await?.into_inner();
         // The clearnet path keeps its historical error text: the bare server
         // message, without the code prefix `SendRejection` renders.
         parse_send_response(sendresponse.error_code, sendresponse.error_message)
@@ -477,11 +457,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_tree_state(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_tree_state(request).await?.into_inner())
     }
 
     async fn get_block(
@@ -491,7 +467,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<CompactBlock, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_block(request).await?.into_inner())
+        Ok(self.client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -503,7 +479,7 @@ impl Indexer for GrpcIndexer {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
         Ok(self
-            .clear_net_client
+            .client
             .get_block_nullifiers(request)
             .await?
             .into_inner())
@@ -516,11 +492,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
         let mut request = Request::new(range);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_block_range(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_block_range(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -532,7 +504,7 @@ impl Indexer for GrpcIndexer {
         let mut request = Request::new(range);
         request.set_timeout(timeout);
         Ok(self
-            .clear_net_client
+            .client
             .get_block_range_nullifiers(request)
             .await?
             .into_inner())
@@ -545,11 +517,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<RawTransaction, tonic::Status> {
         let mut request = Request::new(filter);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_transaction(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_transaction(request).await?.into_inner())
     }
 
     async fn get_mempool_tx(
@@ -559,11 +527,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
         let mut request = Request::new(request);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_mempool_tx(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_mempool_tx(request).await?.into_inner())
     }
 
     async fn get_mempool_stream(
@@ -572,11 +536,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_mempool_stream(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_mempool_stream(request).await?.into_inner())
     }
 
     async fn get_latest_tree_state(
@@ -586,7 +546,7 @@ impl Indexer for GrpcIndexer {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
         Ok(self
-            .clear_net_client
+            .client
             .get_latest_tree_state(request)
             .await?
             .into_inner())
@@ -599,11 +559,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
         let mut request = Request::new(arg);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_subtree_roots(request)
-            .await?
-            .into_inner())
+        Ok(self.client.get_subtree_roots(request).await?.into_inner())
     }
 
     #[cfg(feature = "ping-very-insecure")]
@@ -614,7 +570,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<PingResponse, tonic::Status> {
         let mut request = Request::new(duration);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.ping(request).await?.into_inner())
+        Ok(self.client.ping(request).await?.into_inner())
     }
 }
 
@@ -934,15 +890,10 @@ mod tests {
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
-        let endpoint = tonic::transport::Endpoint::from_shared(uri.to_string())
-            .expect("endpoint")
-            .tcp_nodelay(true);
+        let endpoint =
+            channel_endpoint(&uri, Some(client_tls_config())).expect("tls endpoint builds");
 
-        let connect_res = endpoint
-            .tls_config(client_tls_config())
-            .expect("tls_config failed")
-            .connect()
-            .await;
+        let connect_res = endpoint.connect().await;
 
         // A gRPC (HTTP/2) client must not succeed against an HTTP/1.1-only TLS server.
         assert!(
