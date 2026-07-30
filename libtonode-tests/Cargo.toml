@@ -35,7 +35,7 @@ http = { workspace = true }
 incrementalmerkletree.workspace = true
 itertools = { workspace = true }
 json = { workspace = true }
-pepper-sync = { workspace = true }
+pepper-sync = { workspace = true, features = ["test-features"] }
 shardtree.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true

@@ -35,6 +35,7 @@ use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
+    chain::ChainParameters,
     client::FetchRequest,
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
@@ -149,12 +150,17 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
+    /// The chain being synced. Not serialized: it is resolved from the
+    /// wallet's configured chain on load, so a wallet can never carry
+    /// activation heights that disagree with the chain it is opened
+    /// against.
+    pub(crate) chain_parameters: ChainParameters,
 }
 
 impl SyncState {
-    /// Create new `SyncState`
+    /// Create new `SyncState` for the given chain.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(chain_parameters: ChainParameters) -> Self {
         SyncState {
             scan_ranges: Vec::new(),
             sapling_shard_ranges: Vec::new(),
@@ -162,7 +168,25 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
+            chain_parameters,
         }
+    }
+
+    /// The chain being synced.
+    ///
+    /// Sync decisions that depend on the chain read it from here rather
+    /// than taking it as an argument, so they cannot be asked about one
+    /// wallet using another chain's parameters.
+    #[must_use]
+    pub fn chain_parameters(&self) -> &ChainParameters {
+        &self.chain_parameters
+    }
+
+    /// The activation of `pool` on the chain being synced, or `None` where
+    /// the pool never activates.
+    #[must_use]
+    pub fn pool_activation(&self, pool: ShieldedPool) -> Option<PoolActivation> {
+        PoolActivation::of(&self.chain_parameters, pool)
     }
 
     /// Scan ranges
@@ -249,12 +273,6 @@ impl SyncState {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
-    }
-}
-
-impl Default for SyncState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -788,10 +806,19 @@ impl WalletTransaction {
 
 #[cfg(any(test, feature = "test-features"))]
 impl SyncState {
-    /// Creates sync state with the given scan ranges, for tests exercising
-    /// spendability/witness gating without a chain.
+    /// Creates sync state with the given scan ranges on mainnet, for tests
+    /// whose subject does not depend on activation heights.
     pub fn new_for_test(scan_ranges: Vec<ScanRange>) -> Self {
-        let mut sync_state = Self::new();
+        Self::new_for_test_on(
+            ChainParameters::of(&zcash_protocol::consensus::MAIN_NETWORK),
+            scan_ranges,
+        )
+    }
+
+    /// As [`Self::new_for_test`], on a chosen chain, for tests whose
+    /// subject is an activation height.
+    pub fn new_for_test_on(chain_parameters: ChainParameters, scan_ranges: Vec<ScanRange>) -> Self {
+        let mut sync_state = Self::new(chain_parameters);
         sync_state.scan_ranges = scan_ranges;
         sync_state
     }
@@ -1682,6 +1709,47 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_ironwood_notes
     }
+}
+
+/// Reduces `wallet` to the state a build that did not track ironwood would
+/// have left, reproducing each pre-ironwood read-path default: zero
+/// ironwood tree sizes in every stored block, no ironwood notes, nullifiers
+/// or shard ranges, and a freshly emptied ironwood shard tree.
+///
+/// Scan-range priorities are deliberately left alone: such a build recorded
+/// its ranges as fully scanned, so nothing marks the ironwood history as
+/// owed. Their coverage is reset to [`ScanCoverage::LEGACY`], which is what
+/// ranges written before the coverage byte read back as.
+#[cfg(any(test, feature = "test-features"))]
+pub fn strip_ironwood_tracking_for_test<W>(wallet: &mut W) -> Result<(), W::Error>
+where
+    W: traits::SyncWallet
+        + traits::SyncBlocks
+        + traits::SyncTransactions
+        + traits::SyncNullifiers
+        + traits::SyncShardTrees,
+{
+    for block in wallet.get_wallet_blocks_mut()?.values_mut() {
+        block.tree_bounds.ironwood_initial_tree_size = 0;
+        block.tree_bounds.ironwood_final_tree_size = 0;
+    }
+    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+        transaction.ironwood_notes.clear();
+        transaction.outgoing_ironwood_notes.clear();
+    }
+    wallet.get_nullifiers_mut()?.ironwood.clear();
+    wallet.get_shard_trees_mut()?.ironwood = ShardTrees::new().ironwood;
+    let sync_state = wallet.get_sync_state_mut()?;
+    sync_state.ironwood_shard_ranges.clear();
+    for scan_range in &mut sync_state.scan_ranges {
+        *scan_range = ScanRange::from_parts_with_coverage(
+            scan_range.block_range().clone(),
+            scan_range.priority(),
+            crate::sync::ScanCoverage::LEGACY,
+        );
+    }
+
+    Ok(())
 }
 
 // TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error

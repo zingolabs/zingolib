@@ -753,4 +753,46 @@ mod tests {
 
         assert_eq!(pre_activation.ironwood_initial_tree_size, 0);
     }
+
+    /// A stored block that already records a populated ironwood tree is
+    /// authoritative: its size is taken as the baseline untouched, and no
+    /// incomplete-coverage claim is made about the wallet.
+    #[tokio::test]
+    async fn populated_ironwood_seam_bounds_are_trusted() {
+        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
+        let initial_scan_data = InitialScanData::new(
+            fetch_request_sender,
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &block_with_served_ironwood_actions(5, 105),
+            Some(wallet_block_with_ironwood_size(100)),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(initial_scan_data.ironwood_initial_tree_size, 100);
+    }
+
+    /// Without chain metadata a zero stored size and a genuinely empty pool
+    /// are indistinguishable, so the stored size stands. Nothing is lost by
+    /// keeping it: `check_tree_size` returns early on such a block, so no
+    /// tree-size check can fire against the baseline either.
+    #[tokio::test]
+    async fn zero_ironwood_seam_bounds_stand_without_block_metadata() {
+        let mut first_block = block_with_served_ironwood_actions(5, 105);
+        first_block.chain_metadata = None;
+
+        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
+        let initial_scan_data = InitialScanData::new(
+            fetch_request_sender,
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &first_block,
+            Some(wallet_block_with_ironwood_size(0)),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(initial_scan_data.ironwood_initial_tree_size, 0);
+    }
 }

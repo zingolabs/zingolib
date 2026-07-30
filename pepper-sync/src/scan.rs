@@ -37,6 +37,36 @@ struct InitialScanData {
     ironwood_initial_tree_size: u32,
 }
 
+/// The ironwood baseline to use in place of a stored predecessor block's
+/// `stored_size`, or `None` when that size stands.
+///
+/// A block written before the wallet tracked ironwood records a zero size,
+/// which is indistinguishable from an empty pool. `first_block`'s metadata
+/// settles which it is: a populated tree there proves the zero is untracked
+/// state rather than an empty pool, so the baseline is re-derived from that
+/// metadata. Without metadata the two cases remain indistinguishable, and
+/// the stored size is kept because no tree-size check can fire against it
+/// either.
+fn rebased_ironwood_baseline(stored_size: u32, first_block: &CompactBlock) -> Option<u32> {
+    if stored_size != 0 {
+        return None;
+    }
+    let metadata_size = first_block
+        .chain_metadata
+        .map(|chain_metadata| chain_metadata.ironwood_commitment_tree_size)
+        .filter(|&size| size != 0)?;
+    let served_outputs = u32::try_from(
+        first_block
+            .vtx
+            .iter()
+            .map(|transaction| transaction.ironwood_actions.len())
+            .sum::<usize>(),
+    )
+    .expect("should not be more than 2^32 outputs in a block");
+
+    Some(metadata_size.saturating_sub(served_outputs))
+}
+
 impl InitialScanData {
     async fn new<P>(
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -50,10 +80,23 @@ impl InitialScanData {
     {
         let (sapling_initial_tree_size, orchard_initial_tree_size, ironwood_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
+                let stored_ironwood_size = prev.tree_bounds().ironwood_final_tree_size;
+                let rebased = rebased_ironwood_baseline(stored_ironwood_size, first_block);
+                if let Some(baseline) = rebased {
+                    tracing::warn!(
+                        "block {} records no ironwood tree size while block {} reports a populated \
+                     tree. re-deriving the ironwood scan baseline as {}: that block and those \
+                     below it were scanned without ironwood tracking and need rescanning.",
+                        prev.block_height(),
+                        get_compact_block_height(first_block),
+                        baseline,
+                    );
+                }
+
                 (
                     prev.tree_bounds().sapling_final_tree_size,
                     prev.tree_bounds().orchard_final_tree_size,
-                    prev.tree_bounds().ironwood_final_tree_size,
+                    rebased.unwrap_or(stored_ironwood_size),
                 )
             } else {
                 let tree_bounds = compact_blocks::calculate_block_tree_bounds(
@@ -256,13 +299,28 @@ where
         .await
         .expect("task panicked");
 
+    // A coverage rescan commits only the extraction the range was missing.
+    // Its sapling and orchard leaves are already in those trees from the
+    // original scan, so re-inserting them would rewrite state that was never
+    // in question; the ironwood region it fills is empty, so those leaves are
+    // pure growth.
+    let coverage_rescan = scan_range.priority() == ScanPriority::RescanForCoverage;
+
     Ok(ScanResults {
         nullifiers,
         outpoints,
         scanned_blocks: wallet_blocks,
         wallet_transactions,
-        sapling_located_trees,
-        orchard_located_trees,
+        sapling_located_trees: if coverage_rescan {
+            Vec::new()
+        } else {
+            sapling_located_trees
+        },
+        orchard_located_trees: if coverage_rescan {
+            Vec::new()
+        } else {
+            orchard_located_trees
+        },
         ironwood_located_trees,
     })
 }

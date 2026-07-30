@@ -37,7 +37,10 @@ zcash_encoding = { workspace = true, optional = true }
 zcash_keys.workspace = true
 zcash_note_encryption.workspace = true
 zcash_primitives.workspace = true
-zcash_protocol.workspace = true
+# local-consensus: `chain::ChainParameters` carries activation heights in a
+# `LocalNetwork`, so that a new network upgrade fails to compile there rather
+# than silently resolving as never activated.
+zcash_protocol = { workspace = true, features = ["local-consensus"] }
 zcash_transparent.workspace = true
 
 # Protocol

@@ -19,7 +19,7 @@ use crate::{
     error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
-    sync::ScanRange,
+    sync::{ScanCoverage, ScanRange},
     wallet::{
         InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
@@ -131,16 +131,23 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
         let mut peekable_ranges = filtered_ranges.iter().peekable();
         while let Some((index, range)) = peekable_ranges.next() {
             if let Some((next_index, next_range)) = peekable_ranges.peek() {
-                if range.block_range().end == next_range.block_range().start {
+                // Ranges whose scans extracted different things must stay
+                // apart. Fusing them would attribute the newer scan's
+                // coverage to the older one's blocks, erasing the only record
+                // that those blocks still owe work.
+                if range.block_range().end == next_range.block_range().start
+                    && range.coverage() == next_range.coverage()
+                {
                     assert!(*next_index == *index + 1);
                     sync_state.scan_ranges.splice(
                         *index..=*next_index,
-                        vec![ScanRange::from_parts(
+                        vec![ScanRange::from_parts_with_coverage(
                             Range {
                                 start: range.block_range().start,
                                 end: next_range.block_range().end,
                             },
                             scan_priority,
+                            range.coverage(),
                         )],
                     );
                     continue 'main;
@@ -177,7 +184,9 @@ fn create_scan_range(
 /// If `truncate_height` is zero, the sync state will be cleared completely.
 pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
     if truncate_height == zcash_protocol::consensus::H0 {
-        *sync_state = SyncState::new();
+        // Clearing the wallet's scan progress does not change which chain
+        // it is on, so the chain carries over into the fresh state.
+        *sync_state = SyncState::new(*sync_state.chain_parameters());
     }
     let Some((index, range_to_split)) = sync_state
         .scan_ranges()
@@ -731,7 +740,7 @@ fn select_scan_range(
     // if the selected range is of `ScannedWithoutMapping` priority, set the range to `RefetchingNullifiers` priority
     // instead of `Scanning`.
     let selected_block_range = match selected_priority {
-        ScanPriority::Historic => {
+        ScanPriority::Historic | ScanPriority::RescanForCoverage => {
             let shard_block_range = determine_block_range(
                 consensus_parameters,
                 sync_state,
@@ -930,6 +939,263 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         })
+}
+
+/// Whether the wallet owes no further extraction, having judged every range
+/// whose coverage predates this build.
+///
+/// Called in place of the bare [`SyncState::scan_complete`] check, once
+/// scanning has otherwise drained, so that a range found owing reopens work
+/// the same session rather than the next one. Every scanned range above the
+/// lowest demoted range has its nullifiers refetched, because a note this
+/// heal discovers may have been spent up there while the wallet held no note
+/// to match the spend against and the observation was pruned unmatched.
+///
+/// Returning false leaves the demoted ranges for the batcher to pick up on
+/// its next pass. This terminates because a completed rescan is stamped with
+/// the current coverage, so the set of unjudged ranges strictly shrinks.
+pub(crate) fn coverage_settled<W>(wallet: &mut W) -> Result<bool, W::Error>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    match judge_legacy_coverage(wallet)? {
+        Some(lowest_demoted) => {
+            refetch_nullifiers_above(wallet.get_sync_state_mut()?, lowest_demoted);
+            Ok(false)
+        }
+        None => Ok(true),
+    }
+}
+
+/// Judges every scanned range whose coverage predates this build and
+/// records the verdict, so no range is judged twice.
+///
+/// A range owing work is demoted to [`ScanPriority::RescanForCoverage`]. A
+/// range found sound is stamped with the current coverage and never
+/// reconsidered. Returns the lowest height demoted, if any.
+///
+/// The evidence is the range's own blocks weighed against
+/// [`ChainEvidence`]. Above the ironwood activation a stored block reporting
+/// no ironwood tree could only have been written by a scanner that did not
+/// track the pool, since the wallet computes that size from the outputs the
+/// block served, or by an honest scanner on a chain holding no ironwood
+/// output at or below that height.
+fn judge_legacy_coverage<W>(wallet: &mut W) -> Result<Option<BlockHeight>, W::Error>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let unjudged: Vec<usize> = wallet
+        .get_sync_state()?
+        .scan_ranges()
+        .iter()
+        .enumerate()
+        .filter(|(_, scan_range)| {
+            scan_range.priority().is_scanned() && scan_range.coverage() < ScanCoverage::CURRENT
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if unjudged.is_empty() {
+        return Ok(None);
+    }
+
+    let chain_evidence = chain_evidence(wallet)?;
+    let mut lowest_demoted = None;
+    for index in unjudged {
+        let scan_range = wallet.get_sync_state()?.scan_ranges()[index].clone();
+        let verdict = judge(wallet, &scan_range, chain_evidence)?;
+
+        let sync_state = wallet.get_sync_state_mut()?;
+        match verdict {
+            Verdict::Owing => {
+                sync_state.scan_ranges[index] = ScanRange::from_parts_with_coverage(
+                    scan_range.block_range().clone(),
+                    ScanPriority::RescanForCoverage,
+                    scan_range.coverage(),
+                );
+                lowest_demoted = Some(match lowest_demoted {
+                    Some(lowest) => cmp::min(lowest, scan_range.block_range().start),
+                    None => scan_range.block_range().start,
+                });
+            }
+            Verdict::Sound => {
+                sync_state.scan_ranges[index] = ScanRange::from_parts_with_coverage(
+                    scan_range.block_range().clone(),
+                    scan_range.priority(),
+                    ScanCoverage::CURRENT,
+                );
+            }
+            // Deliberately unrecorded: stamping here would settle the range
+            // as sound on the strength of a block the wallet could not read,
+            // and it would never be reconsidered.
+            Verdict::Undecidable => (),
+        }
+    }
+
+    Ok(lowest_demoted)
+}
+
+/// What can be concluded about one range's coverage.
+enum Verdict {
+    /// Its scan lacked nothing that matters, or nothing it covered is in the
+    /// era at all.
+    Sound,
+    /// Its scan omitted extraction the blocks it covered actually held.
+    Owing,
+    /// Nothing can be concluded, because the wallet could not read the block
+    /// that decides it.
+    Undecidable,
+}
+
+/// Judges one range.
+///
+/// A range reporting an in-era zero on a chain that holds ironwood is judged
+/// owing even where that zero is honest, which happens when every ironwood
+/// output on the chain lies above the range. The error runs only in that
+/// direction: an era holding nothing is rescanned, and an era holding
+/// something is never left unscanned.
+fn judge<W>(
+    wallet: &W,
+    scan_range: &ScanRange,
+    chain_evidence: ChainEvidence,
+) -> Result<Verdict, W::Error>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let Some(floor) = scan_range.coverage().floor(wallet.get_sync_state()?) else {
+        return Ok(Verdict::Sound);
+    };
+    if scan_range.block_range().end - 1 < floor {
+        return Ok(Verdict::Sound);
+    }
+
+    let in_era: Vec<BlockHeight> = retained_blocks(wallet, scan_range)
+        .filter(|&block| block >= floor)
+        .collect();
+    if in_era.is_empty() {
+        // The range reaches into the era but none of its blocks survive, so
+        // there is nothing to judge it from. Reading a sound verdict out of
+        // that is the inference this refuses to make.
+        return Ok(Verdict::Undecidable);
+    }
+    if !in_era
+        .into_iter()
+        .any(|block| block_lacks_ironwood(wallet, block))
+    {
+        return Ok(Verdict::Sound);
+    }
+
+    Ok(match chain_evidence {
+        ChainEvidence::IronwoodInUse => Verdict::Owing,
+        ChainEvidence::NoIronwood => Verdict::Sound,
+        ChainEvidence::Unreadable => Verdict::Undecidable,
+    })
+}
+
+/// The blocks of `scan_range` the wallet still holds. Pruning retains the
+/// bounds of every scanned range, so both are available even far behind the
+/// frontier; a range that has since been merged or split may retain more.
+fn retained_blocks<'a, W>(
+    wallet: &'a W,
+    scan_range: &'a ScanRange,
+) -> impl Iterator<Item = BlockHeight> + 'a
+where
+    W: SyncBlocks,
+{
+    [
+        scan_range.block_range().start,
+        scan_range.block_range().end - 1,
+    ]
+    .into_iter()
+    .filter(|&block| wallet.get_wallet_block(block).is_ok())
+}
+
+fn block_lacks_ironwood<W>(wallet: &W, block: BlockHeight) -> bool
+where
+    W: SyncBlocks,
+{
+    wallet
+        .get_wallet_block(block)
+        .is_ok_and(|block| block.tree_bounds().ironwood_final_tree_size == 0)
+}
+
+/// What the chain itself says about ironwood.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChainEvidence {
+    /// An ironwood output exists somewhere at or below the wallet's highest
+    /// block, so a stored block reporting none is not necessarily honest.
+    IronwoodInUse,
+    /// No ironwood output exists anywhere at or below the wallet's highest
+    /// block, so no history below it can have missed one.
+    NoIronwood,
+    /// The deciding block could not be read.
+    Unreadable,
+}
+
+/// Weighs the highest block the wallet holds.
+///
+/// Judging runs only once scanning has drained, so that block is the chain
+/// tip. Ironwood tree sizes are cumulative, so the size recorded there is
+/// nonzero if the chain holds even one ironwood output at any height below.
+/// A zero is therefore proof of absence rather than absence of proof, and the
+/// two are distinguished from each other and from an unreadable block,
+/// because inferring absence from a failed read is the one thing that could
+/// wrongly settle a range forever.
+fn chain_evidence<W>(wallet: &W) -> Result<ChainEvidence, W::Error>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let Some(highest) = wallet
+        .get_sync_state()?
+        .scan_ranges()
+        .iter()
+        .flat_map(|scan_range| retained_blocks(wallet, scan_range))
+        .max()
+    else {
+        return Ok(ChainEvidence::Unreadable);
+    };
+
+    Ok(match wallet.get_wallet_block(highest) {
+        Ok(block) if block.tree_bounds().ironwood_final_tree_size > 0 => {
+            ChainEvidence::IronwoodInUse
+        }
+        Ok(_) => ChainEvidence::NoIronwood,
+        Err(_) => ChainEvidence::Unreadable,
+    })
+}
+
+/// Marks every `Scanned` range above `lowest_demoted` for nullifier refetch.
+///
+/// Spend detection consumes a nullifier observation by matching it against a
+/// note the wallet already holds, and drops it otherwise. A note recovered
+/// from history below therefore has no record of a spend that happened above
+/// it, and a plain `Scanned` range is otherwise taken as proof of
+/// unspentness. Refetching restores the observations so the recovered notes
+/// can be matched, and costs no trial decryption.
+fn refetch_nullifiers_above(sync_state: &mut SyncState, lowest_demoted: BlockHeight) {
+    for scan_range in &mut sync_state.scan_ranges {
+        if scan_range.priority() == ScanPriority::Scanned
+            && scan_range.block_range().start > lowest_demoted
+        {
+            *scan_range = ScanRange::from_parts_with_coverage(
+                scan_range.block_range().clone(),
+                ScanPriority::ScannedWithoutMapping,
+                scan_range.coverage(),
+            );
+        }
+    }
+}
+
+/// Whether any range is awaiting a rescan for coverage its original scan did
+/// not perform, so the wallet's ironwood history is knowingly partial.
+pub(super) fn ironwood_coverage_incomplete<W>(wallet: &W) -> Result<bool, W::Error>
+where
+    W: SyncWallet,
+{
+    Ok(wallet
+        .get_sync_state()?
+        .scan_ranges()
+        .iter()
+        .any(|scan_range| scan_range.priority().awaits_coverage_rescan()))
 }
 
 pub(super) fn calculate_scanned_outputs<W>(wallet: &W) -> Result<(u32, u32, u32), W::Error>
@@ -1141,7 +1407,7 @@ mod tests {
                 ..Default::default()
             }
         }
-        let mut sync_state = SyncState::new();
+        let mut sync_state = SyncState::new_for_test(Vec::new());
         add_shard_ranges(
             &BASE_NETWORK,
             ShieldedPool::Orchard,
@@ -1208,7 +1474,7 @@ mod tests {
     };
 
     fn sync_state_with_ranges(birthday: u32, tip: u32) -> SyncState {
-        let mut s = SyncState::new();
+        let mut s = SyncState::new_for_test(Vec::new());
         s.scan_ranges = vec![ScanRange::from_parts(
             BlockHeight::from_u32(birthday)..BlockHeight::from_u32(tip + 1),
             ScanPriority::Historic,
@@ -1314,7 +1580,7 @@ mod tests {
 
     #[test]
     fn truncate_scan_ranges() {
-        let mut sync_state = SyncState::new();
+        let mut sync_state = SyncState::new_for_test(Vec::new());
         sync_state.scan_ranges = vec![
             ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
             ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
@@ -1332,5 +1598,346 @@ mod tests {
                 ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
             ]
         );
+    }
+
+    /// Coverage a range's scan did not perform is judged once from the
+    /// wallet's own state, with no network and no chain handed in alongside
+    /// the wallet, and the verdict recorded so it is never judged twice.
+    mod untracked_ironwood_history {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+
+        use crate::{
+            chain::ChainParameters,
+            mocks::{MockWallet, MockWalletBuilder},
+            sync::{
+                ScanCoverage, ScanPriority, ScanRange,
+                state::{coverage_settled, judge_legacy_coverage, merge_scan_ranges},
+            },
+            wallet::{SyncState, TreeBounds, WalletBlock, traits::SyncWallet},
+        };
+
+        /// Ironwood activates at 100, so a range above it is inside the era.
+        const IRONWOOD_AT_100: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(100)),
+        };
+
+        const NO_IRONWOOD: LocalNetwork = LocalNetwork {
+            nu6_3: None,
+            ..IRONWOOD_AT_100
+        };
+
+        fn block(height: u32, ironwood_size: u32) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 10,
+                    sapling_final_tree_size: 10,
+                    orchard_initial_tree_size: 20,
+                    orchard_final_tree_size: 20,
+                    ironwood_initial_tree_size: ironwood_size,
+                    ironwood_final_tree_size: ironwood_size,
+                },
+            }
+        }
+
+        fn legacy_scanned(range: std::ops::Range<u32>) -> ScanRange {
+            ScanRange::from_parts_with_coverage(
+                BlockHeight::from_u32(range.start)..BlockHeight::from_u32(range.end),
+                ScanPriority::Scanned,
+                ScanCoverage::LEGACY,
+            )
+        }
+
+        /// A wallet on `network` whose ranges are all recorded as scanned with
+        /// legacy coverage, each range's retained bounds reporting the given
+        /// ironwood size.
+        fn scanned_wallet(
+            network: &LocalNetwork,
+            ranges: Vec<(std::ops::Range<u32>, u32)>,
+        ) -> MockWallet {
+            let scan_ranges = ranges
+                .iter()
+                .map(|(range, _)| legacy_scanned(range.clone()))
+                .collect();
+            let wallet_blocks = ranges
+                .iter()
+                .flat_map(|(range, ironwood_size)| {
+                    [
+                        (
+                            BlockHeight::from_u32(range.start),
+                            block(range.start, *ironwood_size),
+                        ),
+                        (
+                            BlockHeight::from_u32(range.end - 1),
+                            block(range.end - 1, *ironwood_size),
+                        ),
+                    ]
+                })
+                .collect::<BTreeMap<_, _>>();
+
+            MockWalletBuilder::new()
+                .sync_state(SyncState::new_for_test_on(
+                    ChainParameters::of(network),
+                    scan_ranges,
+                ))
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet()
+        }
+
+        fn priorities(wallet: &MockWallet) -> Vec<ScanPriority> {
+            wallet
+                .get_sync_state()
+                .unwrap()
+                .scan_ranges()
+                .iter()
+                .map(ScanRange::priority)
+                .collect()
+        }
+
+        fn coverages(wallet: &MockWallet) -> Vec<ScanCoverage> {
+            wallet
+                .get_sync_state()
+                .unwrap()
+                .scan_ranges()
+                .iter()
+                .map(ScanRange::coverage)
+                .collect()
+        }
+
+        /// Blocks above the activation reporting no ironwood tree, on a chain
+        /// where another block proves the pool is in use, could only have been
+        /// written by a scanner that did not track it. Only the owing range is
+        /// demoted, and its start is returned so the nullifier refetch above
+        /// it can be scheduled.
+        #[test]
+        fn range_owing_ironwood_extraction_is_demoted() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(100..110, 0), (200..210, 40)]);
+
+            let lowest = judge_legacy_coverage(&mut wallet).unwrap();
+
+            assert_eq!(lowest, Some(BlockHeight::from_u32(100)));
+            assert_eq!(
+                priorities(&wallet),
+                vec![ScanPriority::RescanForCoverage, ScanPriority::Scanned]
+            );
+        }
+
+        /// A range found sound is stamped, and a range found owing keeps its
+        /// legacy coverage until the rescan that discharges it completes. The
+        /// stamp is what stops every session re-judging the same range.
+        #[test]
+        fn verdicts_are_recorded_so_judging_happens_once() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(100..110, 0), (200..210, 40)]);
+
+            judge_legacy_coverage(&mut wallet).unwrap();
+
+            assert_eq!(
+                coverages(&wallet),
+                vec![ScanCoverage::LEGACY, ScanCoverage::CURRENT]
+            );
+            // The demoted range is already scheduled, so it drops out of
+            // judging entirely rather than being demoted a second time. Its
+            // coverage stays legacy until the rescan discharges it.
+            assert_eq!(judge_legacy_coverage(&mut wallet).unwrap(), None);
+            assert_eq!(
+                priorities(&wallet),
+                vec![ScanPriority::RescanForCoverage, ScanPriority::Scanned]
+            );
+
+            let sound_only = &mut scanned_wallet(&IRONWOOD_AT_100, vec![(200..210, 40)]);
+            judge_legacy_coverage(sound_only).unwrap();
+
+            assert_eq!(
+                judge_legacy_coverage(sound_only).unwrap(),
+                None,
+                "a range already judged sound is not judged again"
+            );
+        }
+
+        /// Ironwood tree sizes are cumulative, so a zero at the wallet's
+        /// highest block proves the chain holds no ironwood output at any
+        /// height below it. No history below can then have missed one, so the
+        /// range is judged sound and settled rather than rescanned.
+        #[test]
+        fn zero_ironwood_at_the_highest_block_settles_the_range_as_sound() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(100..110, 0)]);
+
+            assert_eq!(judge_legacy_coverage(&mut wallet).unwrap(), None);
+            assert_eq!(priorities(&wallet), vec![ScanPriority::Scanned]);
+            assert_eq!(
+                coverages(&wallet),
+                vec![ScanCoverage::CURRENT],
+                "a chain proven to hold no ironwood settles, rather than \
+                 being re-judged every session"
+            );
+        }
+
+        /// A range reaching into the era whose blocks have all been pruned
+        /// offers no evidence either way. Stamping it sound would settle it
+        /// forever on the strength of a block that was never read, so it is
+        /// left unjudged instead.
+        #[test]
+        fn range_in_the_era_without_retained_blocks_is_left_unjudged() {
+            let mut wallet = MockWalletBuilder::new()
+                .sync_state(SyncState::new_for_test_on(
+                    ChainParameters::of(&IRONWOOD_AT_100),
+                    vec![legacy_scanned(100..110)],
+                ))
+                .create_mock_wallet();
+
+            assert_eq!(judge_legacy_coverage(&mut wallet).unwrap(), None);
+            assert_eq!(
+                coverages(&wallet),
+                vec![ScanCoverage::LEGACY],
+                "unjudged, so a later session can judge it once blocks exist"
+            );
+        }
+
+        /// Below the activation the pool does not exist yet, so a zero is the
+        /// truth and the history is complete as it stands.
+        #[test]
+        fn zero_ironwood_below_activation_is_not_demoted() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(10..90, 0), (200..210, 40)]);
+
+            assert_eq!(judge_legacy_coverage(&mut wallet).unwrap(), None);
+            assert_eq!(
+                priorities(&wallet),
+                vec![ScanPriority::Scanned, ScanPriority::Scanned]
+            );
+        }
+
+        /// Without an activation there is no era to owe anything for.
+        #[test]
+        fn zero_ironwood_without_activation_is_not_demoted() {
+            let mut wallet = scanned_wallet(&NO_IRONWOOD, vec![(100..110, 0), (200..210, 40)]);
+
+            assert_eq!(judge_legacy_coverage(&mut wallet).unwrap(), None);
+        }
+
+        /// Merging must not fuse ranges whose scans extracted different
+        /// things. Fusing them would attribute the newer scan's coverage to
+        /// the older one's blocks, and since only the range bounds are
+        /// retained, the evidence would then be pruned away with them.
+        #[test]
+        fn merging_does_not_fuse_across_coverage() {
+            let mut sync_state = SyncState::new_for_test_on(
+                ChainParameters::of(&IRONWOOD_AT_100),
+                vec![
+                    legacy_scanned(100..110),
+                    ScanRange::from_parts(
+                        BlockHeight::from_u32(110)..BlockHeight::from_u32(120),
+                        ScanPriority::Scanned,
+                    ),
+                ],
+            );
+
+            merge_scan_ranges(&mut sync_state, ScanPriority::Scanned);
+
+            assert_eq!(
+                sync_state.scan_ranges().len(),
+                2,
+                "adjacent scanned ranges of unequal coverage must stay apart"
+            );
+            assert_eq!(
+                coverages_of(&sync_state),
+                vec![ScanCoverage::LEGACY, ScanCoverage::CURRENT]
+            );
+        }
+
+        /// Equal coverage still merges, so the fix does not fragment the
+        /// range list in ordinary operation.
+        #[test]
+        fn merging_still_fuses_equal_coverage() {
+            let mut sync_state = SyncState::new_for_test_on(
+                ChainParameters::of(&IRONWOOD_AT_100),
+                vec![legacy_scanned(100..110), legacy_scanned(110..120)],
+            );
+
+            merge_scan_ranges(&mut sync_state, ScanPriority::Scanned);
+
+            assert_eq!(sync_state.scan_ranges().len(), 1);
+            assert_eq!(coverages_of(&sync_state), vec![ScanCoverage::LEGACY]);
+        }
+
+        fn coverages_of(sync_state: &SyncState) -> Vec<ScanCoverage> {
+            sync_state
+                .scan_ranges()
+                .iter()
+                .map(ScanRange::coverage)
+                .collect()
+        }
+
+        /// A note recovered from history below may have been spent in a range
+        /// above it, whose nullifier observation was dropped unmatched
+        /// because the wallet held no note to match it against. Those ranges
+        /// must be marked for nullifier refetch, and ranges below the heal
+        /// must be left alone.
+        #[test]
+        fn nullifiers_are_refetched_above_the_healed_range() {
+            let mut wallet = scanned_wallet(
+                &IRONWOOD_AT_100,
+                vec![(50..60, 0), (100..110, 0), (200..210, 40), (300..310, 40)],
+            );
+
+            coverage_settled(&mut wallet).unwrap();
+
+            assert_eq!(
+                priorities(&wallet),
+                vec![
+                    ScanPriority::Scanned,
+                    ScanPriority::RescanForCoverage,
+                    ScanPriority::ScannedWithoutMapping,
+                    ScanPriority::ScannedWithoutMapping,
+                ]
+            );
+        }
+
+        /// The scanner shuts down on this answer, so work owed must read as
+        /// unsettled. Reporting settled here is what once deferred the heal to
+        /// a later session.
+        #[test]
+        fn work_owed_leaves_coverage_unsettled() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(100..110, 0), (200..210, 40)]);
+
+            assert!(!coverage_settled(&mut wallet).unwrap());
+            assert_eq!(
+                priorities(&wallet),
+                vec![
+                    ScanPriority::RescanForCoverage,
+                    ScanPriority::ScannedWithoutMapping
+                ],
+                "the demoted range and the refetch above it are what the \
+                 scanner picks up next"
+            );
+        }
+
+        /// Once every range is judged the answer must settle, or the session
+        /// would never shut down.
+        #[test]
+        fn nothing_owed_settles_coverage() {
+            let mut wallet = scanned_wallet(&IRONWOOD_AT_100, vec![(100..110, 0), (200..210, 40)]);
+
+            assert!(!coverage_settled(&mut wallet).unwrap());
+            assert!(
+                coverage_settled(&mut wallet).unwrap(),
+                "a range already demoted is scheduled, not owed again"
+            );
+        }
     }
 }
