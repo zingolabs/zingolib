@@ -51,7 +51,7 @@ async fn sync_mainnet_test() {
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     lightclient.sync().await.unwrap();
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    let mut interval = tokio::time::interval(zingo_netutils::time::test::SETTLE_POLL_INTERVAL);
     loop {
         interval.tick().await;
         {

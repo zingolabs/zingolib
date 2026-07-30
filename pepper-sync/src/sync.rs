@@ -1318,16 +1318,12 @@ fn drain_verdict(
     connected_for: Option<Duration>,
     poll_elapsed: Duration,
 ) -> DrainVerdict {
-    /// The pre-c90f8d309 unconditional sleep, demoted to worst case: a
-    /// stream that never connects must not hold the session open.
-    const CEILING: Duration = Duration::from_secs(1);
-    /// One settle window after subscription.
-    const SETTLE: Duration = Duration::from_millis(200);
+    use zingo_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 
     if unprocessed_mempool_transactions > 0 {
         return DrainVerdict::Reenter;
     }
-    if poll_elapsed >= CEILING {
+    if poll_elapsed >= MEMPOOL_DRAIN_CEILING {
         return if scan_workers == 0 {
             DrainVerdict::Shutdown
         } else {
@@ -1335,7 +1331,7 @@ fn drain_verdict(
         };
     }
     match connected_for {
-        Some(age) if age >= SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        Some(age) if age >= MEMPOOL_DRAIN_SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
         _ => DrainVerdict::KeepPolling,
     }
 }

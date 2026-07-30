@@ -584,8 +584,6 @@ impl LightWallet {
         account_id: zip32::AccountId,
         include_potentially_spent_notes: bool,
     ) -> Result<Zatoshis, BalanceError> {
-        // Zero while ironwood notes carry no positions, which is right
-        // because those notes are not witnessable.
         let ironwood_balance = match self
             .spendable_balance::<IronwoodNote>(account_id, include_potentially_spent_notes)
         {

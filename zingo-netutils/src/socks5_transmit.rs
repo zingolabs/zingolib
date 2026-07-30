@@ -99,6 +99,18 @@ pub enum Socks5TransmitError {
         #[source]
         status: tonic::Status,
     },
+    /// The tunnel and channel were established but the RPC did not complete
+    /// within the client-side bound. Distinct from [`Self::Rpc`]: no status
+    /// arrived — the client gave up waiting, which at mixnet latencies means
+    /// "slow", not "the server answered". The bound rides along so the
+    /// taxonomy's timed-out stage can carry it (issue #2564).
+    #[error("the rpc to {destination} did not complete within {after:.1?}")]
+    TimedOut {
+        /// The destination `host:port` the RPC targeted.
+        destination: String,
+        /// The client-side bound that elapsed.
+        after: Duration,
+    },
     /// The indexer heard the submission and rejected it on its merits: a
     /// lightwalletd `SendResponse` with a nonzero error code, carried with
     /// both its fields. Never a failover candidate, since another witness would
@@ -154,6 +166,7 @@ impl Socks5TransmitError {
             Socks5TransmitError::ProxyUnreachable { .. }
             | Socks5TransmitError::TunnelRefused { .. }
             | Socks5TransmitError::TunnelTransport { .. }
+            | Socks5TransmitError::TimedOut { .. }
             | Socks5TransmitError::InsecureScheme { .. } => true,
         }
     }
@@ -205,6 +218,26 @@ fn status_disposition(code: tonic::Code) -> StatusDisposition {
     }
 }
 
+/// Bound `rpc` by `after`, typing an elapse as
+/// [`Socks5TransmitError::TimedOut`] against `destination`. The one
+/// client-side RPC bound on this path — the channel deliberately carries
+/// none (see [`connect_via_socks5`]), so this timer is never raced for the
+/// classification.
+async fn bounded_rpc<T>(
+    destination: String,
+    after: Duration,
+    rpc: impl std::future::Future<Output = Result<tonic::Response<T>, tonic::Status>>,
+) -> Result<T, Socks5TransmitError> {
+    match tokio::time::timeout(after, rpc).await {
+        Err(_elapsed) => Err(Socks5TransmitError::TimedOut { destination, after }),
+        Ok(Ok(response)) => Ok(response.into_inner()),
+        Ok(Err(status)) => Err(Socks5TransmitError::Rpc {
+            destination,
+            status,
+        }),
+    }
+}
+
 /// The `host:port` a tunnel to `indexer` targets (https default 443).
 fn destination_of(indexer: &Uri) -> String {
     format!(
@@ -236,14 +269,14 @@ pub async fn send_transaction_via_socks5(
     });
     request.set_timeout(timeout);
 
-    let response = client
-        .send_transaction(request)
-        .await
-        .map_err(|status| Socks5TransmitError::Rpc {
-            destination: destination_of(indexer),
-            status,
-        })?
-        .into_inner();
+    // The client-side RPC bound: an elapse is typed as its own variant, so
+    // a slow round trip is never misread as the server answering.
+    let response = bounded_rpc(
+        destination_of(indexer),
+        timeout,
+        client.send_transaction(request),
+    )
+    .await?;
 
     // lightwalletd convention: error_code 0 means accepted, and error_message
     // carries the txid (sometimes quote-wrapped). One shared interpretation
@@ -266,14 +299,12 @@ pub async fn get_lightd_info_via_socks5(
     let mut client = connect_via_socks5(socks5_addr, indexer, timeout).await?;
     let mut request = tonic::Request::new(Empty {});
     request.set_timeout(timeout);
-    client
-        .get_lightd_info(request)
-        .await
-        .map(tonic::Response::into_inner)
-        .map_err(|status| Socks5TransmitError::Rpc {
-            destination: destination_of(indexer),
-            status,
-        })
+    bounded_rpc(
+        destination_of(indexer),
+        timeout,
+        client.get_lightd_info(request),
+    )
+    .await
 }
 
 /// Build a gRPC client to `indexer` dialed through the local SOCKS5 proxy at
@@ -322,14 +353,17 @@ async fn connect_via_socks5(
             source: Some(e),
         })?
         .tcp_nodelay(true)
-        // `timeout` bounds each RPC; `connect_timeout` bounds the channel
-        // establishment — critically the TLS handshake tonic runs on top of
-        // the SOCKS5 tunnel, which the connector's own per-phase timeouts do
-        // not cover. Without this a witness that completes the tunnel but
-        // stalls the handshake (observed: a lightwalletd on a non-standard
-        // port the mixnet exit mishandles) hangs for minutes instead of
-        // failing over.
-        .timeout(timeout)
+        // `connect_timeout` bounds the channel establishment — critically
+        // the TLS handshake tonic runs on top of the SOCKS5 tunnel, which
+        // the connector's own per-phase timeouts do not cover. Without this
+        // a witness that completes the tunnel but stalls the handshake
+        // (observed: a lightwalletd on a non-standard port the mixnet exit
+        // mishandles) hangs for minutes instead of failing over. The RPC
+        // itself is deliberately NOT bounded here: tonic's channel timeout
+        // would surface as an opaque status racing the callers' own typed
+        // bound, so each via_socks5 operation wraps its RPC in
+        // `tokio::time::timeout` and classifies the elapse as
+        // [`Socks5TransmitError::TimedOut`] (issue #2564).
         .connect_timeout(timeout)
         .tls_config(ClientTlsConfig::new().with_webpki_roots())
         .map_err(|e| Socks5TransmitError::TunnelTransport {
@@ -428,15 +462,65 @@ pub async fn transaction_known_via_socks5(
         hash: txid_hash.to_vec(),
     });
     request.set_timeout(timeout);
-    client.get_transaction(request).await.is_ok()
+    bounded_rpc(
+        destination_of(indexer),
+        timeout,
+        client.get_transaction(request),
+    )
+    .await
+    .is_ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use crate::time::test::MOCK_OP_BOUND;
+
     fn an_indexer() -> Uri {
         "https://indexer.example:443".parse().expect("static uri")
+    }
+
+    /// HYPOTHESIS: an RPC that never answers lands the typed timeout with the
+    /// exact bound and destination, proven on paused time so no wall clock
+    /// passes. Falsified if the elapse surfaces as any other variant or the
+    /// record loses the bound. (The full tunnel-and-TLS path cannot stall in
+    /// a unit test — the connector pins webpki roots by the https-only rule —
+    /// so the bounding seam itself is the unit under test; the Android field
+    /// run of issue #2564 is the end-to-end witness.)
+    #[tokio::test(start_paused = true)]
+    async fn a_stalled_rpc_lands_the_typed_timeout() {
+        let outcome = bounded_rpc::<()>(
+            "indexer.example:443".to_string(),
+            MOCK_OP_BOUND,
+            std::future::pending(),
+        )
+        .await;
+        match outcome {
+            Err(Socks5TransmitError::TimedOut { destination, after }) => {
+                assert_eq!(destination, "indexer.example:443");
+                assert_eq!(after, MOCK_OP_BOUND);
+            }
+            other => panic!("expected the typed timeout, got {other:?}"),
+        }
+    }
+
+    /// HYPOTHESIS: an elapsed client bound is typed as its own variant, reads
+    /// as a failover candidate (a slow round trip is worth another witness,
+    /// never a verdict), and renders the bound it carries. Falsified if the
+    /// variant is misread as final or loses the bound.
+    #[test]
+    fn a_timed_out_rpc_is_a_failover_candidate_and_names_its_bound() {
+        let err = Socks5TransmitError::TimedOut {
+            destination: "indexer.example:443".to_string(),
+            after: MOCK_OP_BOUND,
+        };
+        assert!(err.is_failover_candidate());
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("did not complete within"),
+            "rendering must say the client gave up waiting: {rendered}"
+        );
     }
 
     fn an_rpc_error(code: tonic::Code) -> Socks5TransmitError {
@@ -567,10 +651,9 @@ mod tests {
     #[tokio::test]
     async fn a_non_https_indexer_is_refused() {
         let http = "http://indexer.example:9067".parse().expect("static uri");
-        let err =
-            send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("http must be refused");
+        let err = send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("http must be refused");
         assert!(
             matches!(err, Socks5TransmitError::InsecureScheme { .. }),
             "expected InsecureScheme, got: {err}"
@@ -588,10 +671,9 @@ mod tests {
         let addr = listener.local_addr().expect("local addr").to_string();
         drop(listener);
 
-        let err =
-            send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("no proxy is listening");
+        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("no proxy is listening");
         assert!(
             matches!(err, Socks5TransmitError::ProxyUnreachable { .. }),
             "expected ProxyUnreachable, got: {err}"
@@ -616,10 +698,9 @@ mod tests {
             }
         });
 
-        let err =
-            send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, Duration::from_secs(5))
-                .await
-                .expect_err("the handshake dies");
+        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("the handshake dies");
         assert!(
             matches!(err, Socks5TransmitError::TunnelRefused { .. }),
             "expected TunnelRefused, got: {err}"

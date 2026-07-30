@@ -3,13 +3,14 @@
 //! The wallet cannot link the mixnet transport in-process, so it bundles the
 //! `nym-proxy` binary and spawns it as a child. This supervisor owns that
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
-//! the child announces on stdout, and drives the tri-state
-//! [`MixnetMode`]. While the child is starting the
+//! the child announces on stdout, and drives the transport's lifecycle
+//! states of [`MixnetMode`]. While the child is starting the
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
 //! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
-//! deliberate [`MixnetProxy::stop`] yields `Off`.
+//! deliberate [`MixnetProxy::stop`] tears down to `Unattached`; the consented
+//! `SwitchedOff` is the wallet slot's to record, never this transport's.
 //!
 //! # The attached transport
 //!
@@ -51,32 +52,25 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
+use zingo_netutils::time::{
+    ATTACH_HEALTH_RETRY_PAUSE, ATTACH_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND, MIXNET_ROUND_TRIP_BOUND,
+};
 use zingo_netutils::{NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
+use crate::nym::driver::{MixnetStatus, StatusPublisher};
 
-/// The indexer the attach readiness gate round-trips through. No wallet data
-/// travels — a bare `GetLightdInfo` — and the target mirrors the spawned
-/// binary's health-check indexer.
-const ATTACH_HEALTH_INDEXER: &str = "https://zec.rocks:443";
-
-/// Bound on one attach readiness round trip.
-const ATTACH_HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
+/// The indexer the attach readiness gate round-trips through: the census's
+/// shared health target, the same one the spawned binary's gate uses (one
+/// owner, issue #2565's rule; the census pins it to an active member). No
+/// wallet data travels — a bare `GetLightdInfo`.
+const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
 
 /// Readiness attempts against the attached endpoint before declaring it
 /// dead. Unlike the spawned binary's health gate, attach cannot redraw a
 /// mixnet path — the platform owns the endpoint — so retrying buys recovery
 /// only from a transient blip, and two attempts suffice.
 const ATTACH_HEALTH_ATTEMPTS: usize = 2;
-
-/// Pause between attach readiness attempts.
-const ATTACH_HEALTH_RETRY_PAUSE: Duration = Duration::from_secs(1);
-
-/// Cadence of the liveness probe against an attached endpoint.
-const ATTACH_PROBE_INTERVAL: Duration = Duration::from_secs(30);
-
-/// Bound on one liveness probe connect.
-const ATTACH_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A failure starting the mixnet proxy child process or attaching to a
 /// platform-hosted endpoint.
@@ -113,6 +107,59 @@ struct ProxyState {
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
+    /// The one death latch: its moment and, when the watcher held one, the
+    /// typed cause (`docs/agents/net-diag-design.md`). A single field so a
+    /// cause can never exist without its moment (the #2569 review); the
+    /// latch is sticky by design (proxy-owner-remediates, issue #2564),
+    /// and the mode enum itself is unchanged.
+    death: Option<DeathReport>,
+}
+
+impl ProxyState {
+    /// The subscriber-facing snapshot of this state, published into the
+    /// session's status channel on every transition.
+    fn snapshot(&self) -> MixnetStatus {
+        MixnetStatus {
+            mode: self.mode,
+            socks5_addr: self.socks5_addr.clone(),
+            bootstrap_detail: self.bootstrap_detail.clone(),
+            death: self.death.clone(),
+        }
+    }
+}
+
+/// Publish `guarded`'s snapshot into the session channel. Called while the
+/// caller still holds the [`ProxyState`] lock, so publications reach
+/// subscribers in exactly the order the state changed.
+fn publish_locked(guarded: &ProxyState, publisher: &StatusPublisher) {
+    publisher.send_replace(guarded.snapshot());
+}
+
+/// One latched death, read whole: when it happened and, when the watcher
+/// held one, the typed cause. The timestamp is always present because every
+/// death has a moment; the detail is `None` for a spawned child's closed
+/// stdout pipe, whose diagnostic is the child's own stderr.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeathReport {
+    /// When the death latched, by the system clock — renderable as wall
+    /// time and FFI-crossable, unlike a monotonic instant, at the price of
+    /// NTP steps. Staleness math goes through [`DeathReport::age`], which
+    /// absorbs a stepped clock.
+    pub at: std::time::SystemTime,
+    /// The typed cause, when one was held.
+    pub detail: Option<zingo_net_diag::NetOpFailure>,
+}
+
+impl DeathReport {
+    /// How long ago the death latched, measured against `now`. The system
+    /// clock can step between the latch and the read, so a moment reading
+    /// later than `now` clamps to zero: staleness never errors and never
+    /// goes negative. Consumers rendering "died N minutes ago" go through
+    /// this rather than subtracting timestamps themselves.
+    pub fn age(&self, now: std::time::SystemTime) -> std::time::Duration {
+        now.duration_since(self.at)
+            .unwrap_or(std::time::Duration::ZERO)
+    }
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
@@ -144,11 +191,16 @@ enum Transport {
 
 impl MixnetProxy {
     /// Spawn the `nym-proxy` binary at `binary_path`. Returns immediately with
-    /// mode [`MixnetMode::Bootstrapping`]. Poll [`Self::mode`] for readiness.
+    /// mode [`MixnetMode::Bootstrapping`], published into `publisher` along
+    /// with every later transition; poll [`Self::mode`] or subscribe to the
+    /// session channel for readiness.
     /// The child is killed if this supervisor is dropped, spawned in its own
     /// process group (terminal signals do not reach it) with its stdin piped
     /// (its closure is how the child learns the parent is gone).
-    pub fn spawn(binary_path: &Path) -> Result<Self, MixnetProxyError> {
+    pub(crate) fn spawn(
+        binary_path: &Path,
+        publisher: StatusPublisher,
+    ) -> Result<Self, MixnetProxyError> {
         let mut command = Command::new(binary_path);
         command
             .stdin(Stdio::piped())
@@ -171,8 +223,10 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
+            death: None,
         }));
-        let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state)));
+        publish_locked(&state.lock().expect("proxy state mutex"), &publisher);
+        let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state), publisher));
         Ok(MixnetProxy {
             state,
             transport: Transport::Spawned {
@@ -190,8 +244,12 @@ impl MixnetProxy {
     /// endpoint — never a bare TCP connect — and liveness is thereafter
     /// observed by a periodic probe. A failure of either lands
     /// [`MixnetMode::Died`], so an attached transport refuses rather than
-    /// falls back to clearnet, exactly like a spawned one.
-    pub fn attach(socks5_addr: &str) -> Result<Self, MixnetProxyError> {
+    /// falls back to clearnet, exactly like a spawned one. Every transition
+    /// is published into `publisher`.
+    pub(crate) fn attach(
+        socks5_addr: &str,
+        publisher: StatusPublisher,
+    ) -> Result<Self, MixnetProxyError> {
         if socks5_addr.parse::<SocketAddr>().is_err() {
             return Err(MixnetProxyError::InvalidAddress {
                 addr: socks5_addr.to_string(),
@@ -201,7 +259,9 @@ impl MixnetProxy {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
+            death: None,
         }));
+        publish_locked(&state.lock().expect("proxy state mutex"), &publisher);
         let addr = socks5_addr.to_string();
         let probe_addr = addr.clone();
         let driver = tokio::spawn(drive_attached_state(
@@ -210,6 +270,7 @@ impl MixnetProxy {
             attach_readiness(addr),
             move || endpoint_alive(probe_addr.clone()),
             ATTACH_PROBE_INTERVAL,
+            publisher,
         ));
         Ok(MixnetProxy {
             state,
@@ -217,7 +278,7 @@ impl MixnetProxy {
         })
     }
 
-    /// The current tri-state.
+    /// The transport's current lifecycle state.
     pub fn mode(&self) -> MixnetMode {
         self.state.lock().expect("proxy state mutex").mode
     }
@@ -242,32 +303,73 @@ impl MixnetProxy {
             .clone()
     }
 
+    /// Why the transport died, while the mode is [`MixnetMode::Died`] and
+    /// the watcher held a typed cause: which stage failed, against what
+    /// target, with the cause chain as a vector. `None` in every other
+    /// mode, and `None` for a spawned child's death (a closed stdout pipe
+    /// carries no cause; the child's own stderr is the diagnostic there).
+    pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
+        // Derived from the one latch, so this accessor and death_report
+        // cannot disagree (the #2569 review).
+        self.death_report().and_then(|report| report.detail)
+    }
+
+    /// The latched death read whole — its moment, and its typed cause when
+    /// one was held — while the mode is [`MixnetMode::Died`]; `None` in
+    /// every other mode. The sticky latch (proxy-owner-remediates) makes
+    /// the timestamp the difference between "attach timed out twenty
+    /// minutes ago" and "the proxy is gone now" (issue #2564).
+    pub fn death_report(&self) -> Option<DeathReport> {
+        let guarded = self.state.lock().expect("proxy state mutex");
+        if guarded.mode == MixnetMode::Died {
+            guarded.death.clone()
+        } else {
+            None
+        }
+    }
+
     /// Shut the transport down deliberately and mark the mode
-    /// [`MixnetMode::Off`]. The watcher task is aborted BEFORE the teardown,
-    /// so this deliberate `Off` is never overwritten by the watcher's `Died`.
-    pub async fn stop(self) {
+    /// [`MixnetMode::Unattached`]: the transport is gone, and a deliberate
+    /// stop is neither a death nor the user's clearnet consent
+    /// (`SwitchedOff` is the wallet's to record, never a torn-down
+    /// transport's). The watcher task is aborted — and AWAITED, so a final
+    /// synchronous segment already running cannot publish a stale `Died`
+    /// after this returns — before the teardown; any stale reader of the
+    /// handle refuses rather than routes. Deliberately publishes nothing:
+    /// the slot owner that called this publishes the settled state
+    /// (switched off, or the next transport's bootstrapping), so
+    /// subscribers never glimpse a transient unattached between two
+    /// deliberate states.
+    pub(crate) async fn stop(self) {
         match self.transport {
             Transport::Spawned {
                 mut child, reader, ..
             } => {
                 reader.abort();
+                let _ = reader.await;
                 let _ = child.kill().await;
             }
-            Transport::Attached { driver } => driver.abort(),
+            Transport::Attached { driver } => {
+                driver.abort();
+                let _ = driver.await;
+            }
         }
-        self.state.lock().expect("proxy state mutex").mode = MixnetMode::Off;
+        self.state.lock().expect("proxy state mutex").mode = MixnetMode::Unattached;
     }
 }
 
 /// The attach readiness gate: a real data round trip through the endpoint to
 /// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
 /// listener that accepts TCP proves nothing about the mixnet carrying data —
-/// the lesson behind the spawned binary's health gate.
-async fn attach_readiness(socks5_addr: String) -> Result<(), String> {
+/// the lesson behind the spawned binary's health gate. The last attempt's
+/// failure is returned typed: stage by typed match over the transmit error,
+/// target the local endpoint for pre-tunnel stages and the health indexer
+/// beyond, cause chain captured layer by layer.
+async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
-    let mut last_failure = String::new();
+    let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_HEALTH_RETRY_PAUSE).await;
@@ -275,15 +377,25 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), String> {
         match zingo_netutils::get_lightd_info_via_socks5(
             &socks5_addr,
             &indexer,
-            ATTACH_HEALTH_TIMEOUT,
+            MIXNET_ROUND_TRIP_BOUND,
         )
         .await
         {
             Ok(_) => return Ok(()),
-            Err(error) => last_failure = error.to_string(),
+            Err(error) => {
+                let stage = crate::nym::socks5_transmit_stage(&error);
+                let target = match stage {
+                    zingo_net_diag::NetOpStage::LocalProxyConnect
+                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.as_str(),
+                    _ => ATTACH_HEALTH_INDEXER,
+                };
+                last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
+                    stage, target, &error,
+                ));
+            }
         }
     }
-    Err(last_failure)
+    Err(last_failure.expect("at least one readiness attempt ran"))
 }
 
 /// One liveness probe: can the endpoint still be dialed? Local and cheap —
@@ -292,7 +404,7 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), String> {
 async fn endpoint_alive(socks5_addr: String) -> bool {
     matches!(
         tokio::time::timeout(
-            ATTACH_PROBE_TIMEOUT,
+            LOOPBACK_DIAL_BOUND,
             tokio::net::TcpStream::connect(&socks5_addr),
         )
         .await,
@@ -306,40 +418,54 @@ async fn endpoint_alive(socks5_addr: String) -> bool {
 /// liveness probe runs every `interval`; a failed probe lands `Died` and
 /// clears the address, exactly as a closed stdout pipe does for a spawned
 /// child. Generic over both effects so the transitions are unit-tested on
-/// paused time without a network; only [`MixnetProxy::stop`] sets `Off`, and
-/// it aborts this task first.
+/// paused time without a network; only [`MixnetProxy::stop`] tears down to
+/// `Unattached`, and it aborts this task first.
 async fn drive_attached_state<RFut, P, PFut>(
     state: Arc<Mutex<ProxyState>>,
     socks5_addr: String,
     readiness: RFut,
     mut probe: P,
     interval: Duration,
+    publisher: StatusPublisher,
 ) where
-    RFut: Future<Output = Result<(), String>>,
+    RFut: Future<Output = Result<(), zingo_net_diag::NetOpFailure>>,
     P: FnMut() -> PFut,
     PFut: Future<Output = bool>,
 {
-    let die = |state: &Arc<Mutex<ProxyState>>| {
+    let die = |state: &Arc<Mutex<ProxyState>>, cause: zingo_net_diag::NetOpFailure| {
         let mut guarded = state.lock().expect("proxy state mutex");
         guarded.mode = MixnetMode::Died;
         guarded.socks5_addr = None;
         guarded.bootstrap_detail = None;
+        guarded.death = Some(DeathReport {
+            at: std::time::SystemTime::now(),
+            detail: Some(cause),
+        });
+        publish_locked(&guarded, &publisher);
     };
 
-    if readiness.await.is_err() {
-        die(&state);
+    if let Err(failure) = readiness.await {
+        die(&state, failure);
         return;
     }
     {
         let mut guarded = state.lock().expect("proxy state mutex");
-        guarded.socks5_addr = Some(socks5_addr);
+        guarded.socks5_addr = Some(socks5_addr.clone());
         guarded.bootstrap_detail = None;
         guarded.mode = MixnetMode::Ready;
+        publish_locked(&guarded, &publisher);
     }
     loop {
         tokio::time::sleep(interval).await;
         if !probe().await {
-            die(&state);
+            die(
+                &state,
+                zingo_net_diag::NetOpFailure::message(
+                    zingo_net_diag::NetOpStage::LocalProxyConnect,
+                    &socks5_addr,
+                    "the liveness probe could not dial the attached endpoint",
+                ),
+            );
             return;
         }
     }
@@ -349,12 +475,17 @@ async fn drive_attached_state<RFut, P, PFut>(
 /// the mode to `Ready`, progress lines update the live bootstrap detail, and,
 /// the key coupling change, reading continues *past* `Ready` so a later close
 /// is observed. When stdout closes at all, whether before or after the address
-/// arrived, the mode becomes `Died`: an unexpected loss of the proxy, not a
-/// consented `Off`. Only [`MixnetProxy::stop`] sets `Off`, and it aborts this
-/// task first so its deliberate `Off` is never overwritten by this `Died`.
+/// arrived, the mode becomes `Died`: an unexpected loss of the proxy, never
+/// a consented clearnet. Only [`MixnetProxy::stop`] tears down to
+/// `Unattached`, and it aborts this task first so a deliberate stop is never
+/// overwritten by this `Died`.
 /// Generic over the reader so the state machine is unit-tested without a
 /// process.
-async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyState>>) {
+async fn drive_state<R: AsyncRead + Unpin>(
+    stdout: R,
+    state: Arc<Mutex<ProxyState>>,
+    publisher: StatusPublisher,
+) {
     let mut lines = BufReader::new(stdout).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(addr) = parse_socks5_addr_line(&line) {
@@ -362,11 +493,14 @@ async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyStat
             guarded.socks5_addr = Some(addr.to_string());
             guarded.bootstrap_detail = None;
             guarded.mode = MixnetMode::Ready;
+            publish_locked(&guarded, &publisher);
             // Keep reading: a close after this must be observed as Died.
             continue;
         }
         if let Some(detail) = parse_status_line(&line) {
-            state.lock().expect("proxy state mutex").bootstrap_detail = Some(detail.to_string());
+            let mut guarded = state.lock().expect("proxy state mutex");
+            guarded.bootstrap_detail = Some(detail.to_string());
+            publish_locked(&guarded, &publisher);
         }
     }
     // Stdout closed. The child exited without a deliberate stop(), so the
@@ -376,6 +510,12 @@ async fn drive_state<R: AsyncRead + Unpin>(stdout: R, state: Arc<Mutex<ProxyStat
     guarded.mode = MixnetMode::Died;
     guarded.socks5_addr = None;
     guarded.bootstrap_detail = None;
+    // A closed pipe has no cause to hold, but every death has a moment.
+    guarded.death = Some(DeathReport {
+        at: std::time::SystemTime::now(),
+        detail: None,
+    });
+    publish_locked(&guarded, &publisher);
 }
 
 /// Extract the SOCKS5 address from a child stdout line, if it is the
@@ -405,7 +545,23 @@ mod tests {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
             bootstrap_detail: None,
+            death: None,
         }))
+    }
+
+    /// A throwaway session channel for tests that exercise the state
+    /// machine without asserting on publications.
+    fn test_publisher() -> StatusPublisher {
+        crate::nym::status_publisher()
+    }
+
+    /// A fabricated readiness failure for the attach falsifiers.
+    fn readiness_failure(text: &str) -> zingo_net_diag::NetOpFailure {
+        zingo_net_diag::NetOpFailure::message(
+            zingo_net_diag::NetOpStage::TunnelTransport,
+            "zec.rocks:443",
+            text,
+        )
     }
 
     /// A reader that yields `bytes` once and then stays pending forever, never
@@ -446,7 +602,11 @@ mod tests {
     /// returns the observed state without the stream ever closing.
     async fn state_over_open_stream(bytes: &[u8]) -> ProxyState {
         let state = bootstrapping();
-        let handle = tokio::spawn(drive_state(OpenAfter::new(bytes), Arc::clone(&state)));
+        let handle = tokio::spawn(drive_state(
+            OpenAfter::new(bytes),
+            Arc::clone(&state),
+            test_publisher(),
+        ));
         for _ in 0..1000 {
             if state.lock().unwrap().mode != MixnetMode::Bootstrapping {
                 break;
@@ -536,13 +696,14 @@ mod tests {
         drive_state(
             b"failed to reach any gateway\n".as_slice(),
             Arc::clone(&state),
+            test_publisher(),
         )
         .await;
         let s = state.lock().unwrap();
         assert_eq!(
             s.mode,
             MixnetMode::Died,
-            "a proxy that closes without an address died; it is not consented Off"
+            "a proxy that closes without an address died; it is never consented clearnet"
         );
         assert!(s.socks5_addr.is_none());
     }
@@ -559,6 +720,7 @@ mod tests {
         drive_state(
             b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
             Arc::clone(&state),
+            test_publisher(),
         )
         .await;
         let s = state.lock().unwrap();
@@ -570,6 +732,14 @@ mod tests {
         assert!(
             s.socks5_addr.is_none(),
             "the dead proxy's address must be cleared so nothing dials it"
+        );
+        let latch = s
+            .death
+            .as_ref()
+            .expect("even a causeless death (closed pipe) must latch its moment");
+        assert!(
+            latch.detail.is_none(),
+            "a closed pipe carries no cause; its diagnostic is the child's stderr"
         );
     }
 
@@ -588,17 +758,23 @@ mod tests {
         drive_attached_state(
             Arc::clone(&state),
             "127.0.0.1:1080".to_string(),
-            std::future::ready(Err("no data through the endpoint".to_string())),
+            std::future::ready(Err(readiness_failure("no data through the endpoint"))),
             move || {
                 *probed_flag.lock().unwrap() = true;
                 std::future::ready(true)
             },
             Duration::from_secs(30),
+            test_publisher(),
         )
         .await;
         let s = state.lock().unwrap();
         assert_eq!(s.mode, MixnetMode::Died, "readiness failure is death");
         assert!(s.socks5_addr.is_none(), "no address may be published");
+        assert_eq!(
+            s.death.as_ref().and_then(|latch| latch.detail.clone()),
+            Some(readiness_failure("no data through the endpoint")),
+            "the death must carry the typed readiness failure"
+        );
         assert!(
             !*probed.lock().unwrap(),
             "liveness probing must not start for an endpoint that never became ready"
@@ -636,6 +812,7 @@ mod tests {
                 std::future::ready(calls < 3)
             },
             Duration::from_secs(30),
+            test_publisher(),
         )
         .await;
 
@@ -655,20 +832,31 @@ mod tests {
     }
 
     /// HYPOTHESIS: attach validates the address synchronously, and stop() on
-    /// an attached transport is the deliberate Off — never Died. Falsified
-    /// if a malformed address is accepted, or if a stopped attachment
-    /// reports anything but Off.
+    /// an attached transport is a deliberate teardown to Unattached — never
+    /// Died, and never the wallet's SwitchedOff. Falsified if a malformed
+    /// address is accepted, or if a live attachment reports anything but the
+    /// transport lifecycle states.
     #[tokio::test]
-    async fn attach_validates_the_address_and_stop_is_a_deliberate_off() {
+    async fn attach_validates_the_address_and_stop_is_a_deliberate_teardown() {
         assert!(matches!(
-            MixnetProxy::attach("not-a-socket-address"),
+            MixnetProxy::attach("not-a-socket-address", test_publisher()),
             Err(MixnetProxyError::InvalidAddress { .. })
         ));
 
         // A refusing localhost endpoint: readiness will fail, but stop() must
         // win regardless of where the driver is when it lands.
-        let proxy = MixnetProxy::attach("127.0.0.1:9").expect("a valid address attaches");
-        assert_ne!(proxy.mode(), MixnetMode::Off, "attach never starts Off");
+        let proxy =
+            MixnetProxy::attach("127.0.0.1:9", test_publisher()).expect("a valid address attaches");
+        // The readiness gate races this assert (a refused port can land Died
+        // fast), so assert only what is invariant: a live attachment is in
+        // the transport lifecycle, never in a wallet slot state.
+        assert!(
+            !matches!(
+                proxy.mode(),
+                MixnetMode::Unattached | MixnetMode::SwitchedOff
+            ),
+            "a live attachment never reports a slot state"
+        );
         proxy.stop().await;
     }
 
@@ -684,7 +872,8 @@ mod tests {
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.
-        let proxy = MixnetProxy::attach("127.0.0.1:9").expect("a valid address attaches");
+        let proxy =
+            MixnetProxy::attach("127.0.0.1:9", test_publisher()).expect("a valid address attaches");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while proxy.mode() != MixnetMode::Died {
             assert!(
@@ -699,5 +888,243 @@ mod tests {
             "a died attachment must refuse, never route"
         );
         proxy.stop().await;
+    }
+
+    // ----- session-channel publication falsifiers (the driver arc) -----
+
+    /// HYPOTHESIS: transport transitions are published into the session
+    /// channel as they happen — a subscriber observes Ready with the
+    /// address while the stream is still open — without polling any pull
+    /// accessor. Falsified if the channel stays at its initial value or
+    /// lags the state machine.
+    #[tokio::test]
+    async fn transitions_reach_the_session_channel() {
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        let state = bootstrapping();
+        let handle = tokio::spawn(drive_state(
+            OpenAfter::new(b"SOCKS5_ADDR=127.0.0.1:43210\n"),
+            Arc::clone(&state),
+            Arc::clone(&publisher),
+        ));
+        {
+            let ready = receiver
+                .wait_for(|status| status.mode == MixnetMode::Ready)
+                .await
+                .expect("the publisher outlives the wait");
+            assert_eq!(ready.socks5_addr.as_deref(), Some("127.0.0.1:43210"));
+        }
+        handle.abort();
+    }
+
+    /// HYPOTHESIS: a spawned child's death is published whole — mode Died,
+    /// address cleared, the causeless latch present — so a subscriber needs
+    /// no pull accessor to learn the transport is gone. Falsified if the
+    /// published snapshot omits the latch or leaves the dead address set.
+    #[tokio::test]
+    async fn a_death_is_published_whole() {
+        let publisher = test_publisher();
+        let receiver = publisher.subscribe();
+        let state = bootstrapping();
+        drive_state(
+            b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
+            Arc::clone(&state),
+            Arc::clone(&publisher),
+        )
+        .await;
+        let latest = receiver.borrow().clone();
+        assert_eq!(latest.mode, MixnetMode::Died);
+        assert!(
+            latest.socks5_addr.is_none(),
+            "the dead proxy's address must not be published"
+        );
+        let death = latest
+            .death
+            .expect("every published death carries its latch");
+        assert!(death.detail.is_none(), "a closed pipe carries no cause");
+    }
+
+    // ----- the death-detail accessor's mode gate (issue #2563) -----
+
+    /// A `MixnetProxy` over a fabricated state, with an inert attached
+    /// driver: the accessor under test reads only the state, so the
+    /// transport variant carries no behavior here.
+    fn proxy_over(state: &Arc<Mutex<ProxyState>>) -> MixnetProxy {
+        MixnetProxy {
+            state: Arc::clone(state),
+            transport: Transport::Attached {
+                driver: tokio::spawn(std::future::ready(())),
+            },
+        }
+    }
+
+    /// HYPOTHESIS (the #2569 review): staleness math survives a stepping
+    /// clock — [`DeathReport::age`] clamps a latch moment reading later
+    /// than now (an NTP step between the latch and the read) to zero.
+    /// Falsified if age panics on a future moment or reports it nonzero.
+    #[test]
+    fn death_age_clamps_a_stepping_clock_to_zero() {
+        let epoch = std::time::SystemTime::UNIX_EPOCH;
+        let now = epoch + std::time::Duration::from_secs(100);
+        let latched_before = DeathReport {
+            at: epoch + std::time::Duration::from_secs(40),
+            detail: None,
+        };
+        assert_eq!(latched_before.age(now), std::time::Duration::from_secs(60));
+        let latched_in_the_future = DeathReport {
+            at: now + std::time::Duration::from_secs(10),
+            detail: None,
+        };
+        assert_eq!(
+            latched_in_the_future.age(now),
+            std::time::Duration::ZERO,
+            "a stepped clock reads as zero age, never an error"
+        );
+    }
+
+    /// HYPOTHESIS (the #2569 review): the two death accessors derive from
+    /// one latch and can never disagree — whenever the mode is `Died`,
+    /// `death_detail()` equals the detail inside `death_report()`, whether
+    /// the death carried a cause (attach failure) or none (closed pipe).
+    /// The folded latch makes a cause without a moment unrepresentable;
+    /// this pins the derivation over every representable death.
+    #[tokio::test]
+    async fn the_death_accessors_cannot_disagree() {
+        let state = bootstrapping();
+        let proxy = proxy_over(&state);
+        let deaths = [
+            Some(readiness_failure("an attach failure with its moment")),
+            None,
+        ];
+        for detail in deaths {
+            {
+                let mut guarded = state.lock().unwrap();
+                guarded.mode = MixnetMode::Died;
+                guarded.death = Some(DeathReport {
+                    at: std::time::SystemTime::UNIX_EPOCH,
+                    detail: detail.clone(),
+                });
+            }
+            assert_eq!(
+                proxy.death_detail(),
+                proxy.death_report().and_then(|report| report.detail),
+                "one latch, one answer: the detail must never outrun the report"
+            );
+            assert_eq!(proxy.death_detail(), detail);
+        }
+    }
+
+    /// HYPOTHESIS (issue #2565's drift-test pattern): the named readiness
+    /// budget equals the gate it summarizes — every attempt's round-trip
+    /// bound plus the pauses between attempts. Falsified if any of the
+    /// three constants is retuned without the others.
+    #[test]
+    fn the_readiness_budget_is_the_sum_of_its_gate() {
+        let attempts = u32::try_from(ATTACH_HEALTH_ATTEMPTS).expect("a small count");
+        assert_eq!(
+            zingo_netutils::time::ATTACH_READINESS_BUDGET,
+            MIXNET_ROUND_TRIP_BOUND * attempts + ATTACH_HEALTH_RETRY_PAUSE * (attempts - 1),
+            "retune the budget with its gate, never apart"
+        );
+    }
+
+    /// HYPOTHESIS (issue #2564): a death latches its moment, `death_report`
+    /// surfaces moment and cause together while the mode is `Died`, and the
+    /// report is gated exactly like the detail. Falsified if a died mode
+    /// with a recorded moment yields no report, or a stale report leaks out
+    /// of another mode.
+    #[tokio::test]
+    async fn death_report_carries_the_latch_moment_and_respects_the_mode_gate() {
+        let state = bootstrapping();
+        {
+            let mut guarded = state.lock().unwrap();
+            guarded.mode = MixnetMode::Died;
+            guarded.death = Some(DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail: Some(readiness_failure("no data through the endpoint")),
+            });
+        }
+        let proxy = proxy_over(&state);
+        let report = proxy.death_report().expect("a died transport reports");
+        assert_eq!(report.at, std::time::SystemTime::UNIX_EPOCH);
+        assert_eq!(
+            report.detail,
+            Some(readiness_failure("no data through the endpoint"))
+        );
+
+        for stale_mode in [
+            MixnetMode::Ready,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
+        ] {
+            state.lock().unwrap().mode = stale_mode;
+            assert_eq!(
+                proxy.death_report(),
+                None,
+                "a stale report must not leak out of {stale_mode:?}"
+            );
+        }
+    }
+
+    /// HYPOTHESIS (the Connection Doctor's contract, issue #2563):
+    /// `death_detail` surfaces the recorded cause whole while the mode is
+    /// `Died`, and `None` in every other mode even when a stale record
+    /// remains in the state. Falsified if a stale record leaks out of a
+    /// mode that is not `Died`.
+    #[tokio::test]
+    async fn death_detail_is_gated_on_the_died_mode() {
+        let state = bootstrapping();
+        {
+            let mut guarded = state.lock().unwrap();
+            guarded.mode = MixnetMode::Died;
+            guarded.death = Some(DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail: Some(readiness_failure("no data through the endpoint")),
+            });
+        }
+        let proxy = proxy_over(&state);
+        assert_eq!(
+            proxy.death_detail(),
+            Some(readiness_failure("no data through the endpoint")),
+            "a died transport surfaces its typed cause whole"
+        );
+
+        for stale_mode in [
+            MixnetMode::Ready,
+            MixnetMode::Bootstrapping,
+            MixnetMode::Unattached,
+            MixnetMode::SwitchedOff,
+        ] {
+            state.lock().unwrap().mode = stale_mode;
+            assert_eq!(
+                proxy.death_detail(),
+                None,
+                "a stale record must not leak out of {stale_mode:?}"
+            );
+        }
+    }
+
+    /// HYPOTHESIS (issue #2563): a spawned child's death — a closed stdout
+    /// pipe — carries no typed cause, and the accessor answers `None`
+    /// rather than a fabricated record. Falsified if the death path invents
+    /// a cause.
+    #[tokio::test]
+    async fn a_spawned_childs_death_surfaces_no_fabricated_cause() {
+        let state = bootstrapping();
+        // Address announced (Ready), then stdout closes: the child exited.
+        drive_state(
+            b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
+            Arc::clone(&state),
+            test_publisher(),
+        )
+        .await;
+        let proxy = proxy_over(&state);
+        assert_eq!(proxy.mode(), MixnetMode::Died);
+        assert_eq!(
+            proxy.death_detail(),
+            None,
+            "a closed stdout pipe carries no cause; nothing may be fabricated"
+        );
     }
 }

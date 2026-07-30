@@ -15,7 +15,10 @@ nym-diary = ["zingolib/nym-diary"]
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
+# No direct zingo-netutils dependency: this consumer funnels through
+# zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
+# dev-dependency below reaches netutils' test scaffolding directly, which
+# ships nothing and creates no duplicate copy.
 zingolib = { workspace = true }
 
 zcash_address = { workspace = true }
@@ -42,8 +45,16 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# The offline-contract tests build Indexerless clients from synthetic
+# wallets, so every command's offline behavior is pinned without a network.
+zingolib = { workspace = true, features = ["testutils"] }
+zingo_test_vectors = { workspace = true }
+# The heartbeat and log-file tests read their temporal parameters from
+# `time::test`.
+zingo-netutils = { workspace = true, features = ["testutils"] }
 # test-util powers the paused-clock heartbeat tests.
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
+zingo-net-diag.workspace = true
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

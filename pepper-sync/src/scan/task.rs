@@ -38,8 +38,7 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
 
-const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
 pub(crate) enum ScannerState {
     Verification,
@@ -621,7 +620,7 @@ where
             .take()
             .expect("batcher should always have a handle to take!");
 
-        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+        match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(join_res) => join_res.expect("task panicked")?,
             Err(_) => {
                 handle.abort();
@@ -731,7 +730,7 @@ where
             .take()
             .expect("worker should always have a handle to take!");
 
-        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+        match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res,
             Err(_) => {
                 handle.abort();

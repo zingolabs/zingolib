@@ -21,12 +21,9 @@
 use std::{net::SocketAddr, sync::Mutex, time::Duration};
 
 use tokio::runtime::Runtime;
+use zingo_netutils::time::{LIVENESS_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND};
 use zingo_netutils::NymProxy;
 
-/// How often the liveness monitor probes the local SOCKS5 listener.
-const LIVENESS_PROBE_INTERVAL: Duration = Duration::from_secs(15);
-/// How long one probe may take before it counts as a failure.
-const LIVENESS_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Consecutive probe failures required before the proxy is declared dead,
 /// so one transient hiccup does not kill an attached session.
 const LIVENESS_PROBE_STRIKES: u32 = 2;
@@ -208,7 +205,7 @@ impl MixnetProxyHandle {
                     endpoint.clone(),
                     observer,
                     LIVENESS_PROBE_INTERVAL,
-                    LIVENESS_PROBE_TIMEOUT,
+                    LOOPBACK_DIAL_BOUND,
                     LIVENESS_PROBE_STRIKES,
                 ))
                 .abort_handle()
@@ -292,12 +289,12 @@ mod tests {
         (endpoint, serving)
     }
 
-    const TEST_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
+    use zingo_netutils::time::test::MONITOR_PROBE_TIMEOUT;
 
     #[tokio::test]
     async fn probe_passes_a_listener_that_completes_the_handshake() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
-        socks5_handshake_probe(&endpoint, TEST_PROBE_TIMEOUT)
+        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
             .await
             .expect("healthy handshake must pass the probe");
         serving.abort();
@@ -308,7 +305,7 @@ mod tests {
         // 0xff is SOCKS5 for "no acceptable method" — the listener is alive
         // but no longer serving, which must read as dead.
         let (endpoint, serving) = mock_socks5_listener([0x05, 0xff]).await;
-        socks5_handshake_probe(&endpoint, TEST_PROBE_TIMEOUT)
+        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
             .await
             .expect_err("a refusing listener must fail the probe");
         serving.abort();
@@ -320,7 +317,7 @@ mod tests {
         serving.abort();
         // The port is now free again; connecting must be refused.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        socks5_handshake_probe(&endpoint, TEST_PROBE_TIMEOUT)
+        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
             .await
             .expect_err("a dead listener must fail the probe");
     }
@@ -336,7 +333,7 @@ mod tests {
         }
     }
 
-    const TEST_PROBE_INTERVAL: Duration = Duration::from_millis(30);
+    use zingo_netutils::time::test::MONITOR_PROBE_INTERVAL;
 
     #[tokio::test]
     async fn monitor_reports_death_exactly_once_after_the_listener_dies() {
@@ -345,18 +342,18 @@ mod tests {
         let monitor = tokio::spawn(monitor_liveness(
             endpoint,
             Box::new(Arc::clone(&observer)),
-            TEST_PROBE_INTERVAL,
-            TEST_PROBE_TIMEOUT,
+            MONITOR_PROBE_INTERVAL,
+            MONITOR_PROBE_TIMEOUT,
             LIVENESS_PROBE_STRIKES,
         ));
         // Several healthy intervals pass without a death report.
-        tokio::time::sleep(TEST_PROBE_INTERVAL * 4).await;
+        tokio::time::sleep(MONITOR_PROBE_INTERVAL * 4).await;
         assert!(observer.deaths.lock().unwrap().is_empty());
 
         serving.abort();
         // The monitor ends itself after reporting; that is the at-most-once
         // guarantee, and joining it proves the report happened.
-        tokio::time::timeout(Duration::from_secs(5), monitor)
+        tokio::time::timeout(zingo_netutils::time::test::MOCK_OP_BOUND, monitor)
             .await
             .expect("monitor must report within the strike window")
             .expect("monitor task must end cleanly");

@@ -7,13 +7,15 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 
 # store_all_checkpoints_in_verification_window builds its ~116-block
 # chain on the first run per machine (or under
-# ZINGO_REGENERATE_CHAIN_CACHE): 507s measured solo, which clears the
-# default 600s ceiling with no margin for container contention (this
-# file documents 5-7x stretch under load). Replay runs (~24s) fit the
-# normal budget untouched.
+# ZINGO_REGENERATE_CHAIN_CACHE): 507s measured solo on 2026-07-08, and
+# 1165s on a green CI shard on 2026-07-29, whose sibling run was killed
+# at the previous 1200s ceiling minutes later (runs 30419601214 and
+# 30420777014). The build's cost grows with the wallet stack, so the
+# ceiling carries ~50% headroom over the latest CI measurement. Replay
+# runs (~24s) fit the normal budget untouched.
 [[profile.default.overrides]]
 filter = 'test(store_all_checkpoints_in_verification_window)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
+slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
 
 # unavailable_boundary_tree_state_skips_without_sync mines and scans a
 # ~235-block leap past the first migration bucket boundary (test-injected
@@ -54,7 +56,7 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 # Same first-run build allowance as the default profile (see above).
 [[profile.ci.overrides]]
 filter = 'test(store_all_checkpoints_in_verification_window)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
+slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
 
 # Same boundary-leap allowance as the default profile (see above).
 [[profile.ci.overrides]]

@@ -35,27 +35,12 @@
 #![forbid(unsafe_code)]
 
 use std::io::Write as _;
-use std::time::Duration;
-
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
     NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
+    indexers::MIXNET_HEALTH_INDEXER,
+    time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
-
-/// The indexer contacted to prove the mixnet actually carries data before the
-/// proxy announces readiness. Reached only over the mixnet, and `GetLightdInfo`
-/// carries no wallet data, so this leaks nothing about the user. A widely
-/// deployed, reliable mainnet endpoint. Contacting it is a health probe, not a
-/// wallet operation. (A future refinement could rotate this across a set.)
-const HEALTH_CHECK_INDEXER: &str = "https://zec.rocks:443";
-
-/// Per-attempt bound on the health round trip. A dead path stalls the TLS
-/// handshake, so this must fire well within the mixnet's own lifecycle cap.
-const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// How many draws to try before giving up. Each failure redraws a fresh set of
-/// gateways, so this is the number of distinct mixnet paths attempted.
-const MAX_HEALTH_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -106,24 +91,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// stdout so `nym status` shows the verification. Returns an error only when
 /// every draw fails, which the caller turns into a non-zero exit.
 async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Error>> {
-    let indexer: http::Uri = HEALTH_CHECK_INDEXER.parse()?;
-    for attempt in 1..=MAX_HEALTH_ATTEMPTS {
+    let indexer: http::Uri = MIXNET_HEALTH_INDEXER.parse()?;
+    for attempt in 1..=MIXNET_HEALTH_DRAWS {
         report(format!(
-            "verifying the mixnet path (attempt {attempt}/{MAX_HEALTH_ATTEMPTS})"
+            "verifying the mixnet path (attempt {attempt}/{MIXNET_HEALTH_DRAWS})"
         ));
-        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, HEALTH_CHECK_TIMEOUT).await
+        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, MIXNET_ROUND_TRIP_BOUND)
+            .await
         {
             Ok(_) => {
                 report("mixnet path verified".to_string());
                 return Ok(());
             }
-            Err(e) if attempt < MAX_HEALTH_ATTEMPTS => {
+            Err(e) if attempt < MIXNET_HEALTH_DRAWS => {
                 report(format!("mixnet path unverified ({e}); redrawing gateways"));
                 proxy.reconnect().await?;
             }
             Err(e) => {
                 return Err(format!(
-                    "the mixnet path failed verification after {MAX_HEALTH_ATTEMPTS} draws: {e}"
+                    "the mixnet path failed verification after {MIXNET_HEALTH_DRAWS} draws: {e}"
                 )
                 .into());
             }

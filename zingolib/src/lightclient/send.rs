@@ -55,6 +55,69 @@ use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
+/// Attestation of one transmitted transaction: the route the bytes
+/// traveled, the endpoint that accepted them, and the transmission's
+/// round-trip time. It rides the success value — not a log — the same
+/// doctrine as the nym-gated `MixnetPriceFetch` price attestation
+/// (ADR 0011), so every consumer of a send holds per-transaction
+/// evidence of the route.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransmitReport {
+    /// The transmitted transaction.
+    pub txid: TxId,
+    /// The route the transaction traveled and the endpoint that accepted
+    /// it.
+    pub route: TransmitRoute,
+    /// Wall-clock time from dispatching the transmission to its delivery
+    /// confirmation, retries and fan-out escalation included.
+    pub round_trip: std::time::Duration,
+}
+
+/// Resolves whether a transmission runs over the mixnet tunnel (`Some`
+/// SOCKS5 address) or clearnet through the configured sync indexer
+/// (`None`), from the session's connectivity and its Mixnet Mode route.
+///
+/// An Indexerless session transmits only over a ready mixnet (ruling
+/// 2026-07-29): the Broadcast Witness fan-out needs no sync indexer, so
+/// the ADR 0022 exclusion holds vacuously. A mixnet-less offline session
+/// keeps the typed [`LightClientError::Offline`] refusal — an unattached
+/// mixnet carries no online intent — while attached-but-not-ready states
+/// (bootstrapping, died) surface their own typed error, so the caller
+/// learns to wait or repair rather than to connect an indexer.
+#[cfg(feature = "nym")]
+fn resolve_transmit_route(
+    has_indexer: bool,
+    route: Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady>,
+) -> Result<Option<String>, LightClientError> {
+    use crate::nym::{MixnetNotReady, MixnetRoute};
+    match (has_indexer, route) {
+        (_, Ok(MixnetRoute::Mixnet(socks5_addr))) => Ok(Some(socks5_addr)),
+        (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
+        (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
+        (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
+        (_, Err(e)) => Err(LightClientError::MixnetNotReady(e)),
+    }
+}
+
+/// The route one transmitted transaction traveled (ADR 0011).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransmitRoute {
+    /// Clearnet submission through the session's configured sync indexer.
+    Clearnet {
+        /// The sync indexer's host.
+        indexer: String,
+    },
+    /// Mixnet fan-out over the Broadcast Witnesses (ADR 0022), reached
+    /// through the local SOCKS5 tunnel endpoint.
+    Mixnet {
+        /// The host of the Broadcast Witness whose delivery confirmation
+        /// won the fan-out.
+        witness: String,
+        /// The local SOCKS5 endpoint of the mixnet tunnel.
+        via_socks5: String,
+    },
+}
+
 /// ZIP 203: `nExpiryHeight` values at or above this threshold are
 /// interpreted as a block time rather than a block height, so a
 /// transaction's expiry height must stay strictly below it.
@@ -101,18 +164,19 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 struct ClearnetTarget(zingo_netutils::GrpcIndexer);
 
 impl TransmitTarget for ClearnetTarget {
+    type Failure = zingo_netutils::Status;
+
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
+    ) -> impl Future<Output = Result<String, zingo_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
         async move {
             client
                 .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
                 .await
-                .map_err(|e| format!("{e:?}"))
         }
     }
 
@@ -147,11 +211,13 @@ struct SocksTarget {
 
 #[cfg(feature = "nym")]
 impl TransmitTarget for SocksTarget {
+    type Failure = zingo_netutils::Socks5TransmitError;
+
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
+    ) -> impl Future<Output = Result<String, zingo_netutils::Socks5TransmitError>> + Send {
         let socks5_addr = self.socks5_addr.clone();
         let indexer = self.indexer.clone();
         let data = raw_tx.to_vec();
@@ -164,7 +230,6 @@ impl TransmitTarget for SocksTarget {
                 DEFAULT_REQUEST_TIMEOUT,
             )
             .await
-            .map_err(|e| e.to_string())
         }
     }
 
@@ -191,20 +256,28 @@ impl TransmitTarget for SocksTarget {
 /// failure message.
 async fn transmit_one_transaction(
     socks5_proxy: Option<&str>,
-    indexer: &zingo_netutils::GrpcIndexer,
+    indexer: Option<&zingo_netutils::GrpcIndexer>,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
-) -> Result<String, String> {
+) -> Result<(String, TransmitRoute), String> {
     match socks5_proxy {
         None => {
+            // The route resolver refuses an Indexerless clearnet route
+            // before any transaction is built, so this arm always holds one.
+            let Some(indexer) = indexer else {
+                return Err("clearnet transmission requires a configured indexer".to_string());
+            };
             let host = indexer
                 .uri()
                 .host()
                 .map_or_else(|| indexer.uri().to_string(), str::to_string);
             let started = std::time::Instant::now();
+            // The typed status is rendered only at this boundary, which is
+            // the send path's existing prose seam (the NotYetTyped backlog);
+            // below it the failure travels whole.
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
                 tx_bytes,
@@ -214,23 +287,30 @@ async fn transmit_one_transaction(
                 |event| progress.set(format!("indexer {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message);
+            .map_err(|TransmitFailed(status)| status.to_string());
             record_send_attempt(history, &host, AttemptRoute::Clearnet, started, &outcome);
-            outcome
+            outcome.map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
         }
         #[cfg(feature = "nym")]
-        Some(socks5_addr) => {
-            mixnet_fanout_transmit(
-                socks5_addr,
-                indexer.uri(),
-                tx_bytes,
-                height,
-                txid,
-                progress,
-                history,
+        Some(socks5_addr) => mixnet_fanout_transmit(
+            socks5_addr,
+            indexer.map(|indexer| indexer.uri()),
+            tx_bytes,
+            height,
+            txid,
+            progress,
+            history,
+        )
+        .await
+        .map(|(server_txid, witness)| {
+            (
+                server_txid,
+                TransmitRoute::Mixnet {
+                    witness,
+                    via_socks5: socks5_addr.to_string(),
+                },
             )
-            .await
-        }
+        }),
         #[cfg(not(feature = "nym"))]
         Some(_) => Err("a mixnet route requires the nym feature".to_string()),
     }
@@ -249,13 +329,13 @@ async fn transmit_one_transaction(
 #[cfg(feature = "nym")]
 async fn mixnet_fanout_transmit(
     socks5_addr: &str,
-    sync_indexer: &http::Uri,
+    sync_indexer: Option<&http::Uri>,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
     use crate::nym::broadcast_indexers::eligible_witnesses;
 
@@ -273,6 +353,9 @@ async fn mixnet_fanout_transmit(
                 indexer,
             };
             let started = std::time::Instant::now();
+            // The arm's failure becomes the taxonomy record — stage by typed
+            // match, cause chain captured layer by layer, target the witness
+            // host — which the fan-out collects whole per witness.
             let outcome = resilient_transmit(
                 &target,
                 &tx_bytes,
@@ -282,9 +365,10 @@ async fn mixnet_fanout_transmit(
                 |event| progress.set(format!("witness {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(message)| message);
-            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
-            outcome
+            .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
+            let rendered = outcome.clone().map_err(|failure| failure.to_string());
+            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &rendered);
+            outcome.map(|server_txid| (server_txid, host))
         }
     };
 
@@ -299,14 +383,80 @@ async fn mixnet_fanout_transmit(
     .map_err(|error| error.to_string())
 }
 
+/// The chain-mock twin of [`mixnet_fanout_transmit`], paired with the
+/// test-attached slot state behind
+/// [`LightClient::switch_on_mixnet_for_tests`]: the witness draw, the
+/// escalation rounds, and the cap run for real over the curated Broadcast
+/// Indexer pool, while each arm's bytes travel the mock indexer's channel
+/// instead of a SOCKS5 tunnel. The tunnel's byte transport is pinned by
+/// zingo-netutils' own tests, so no packet leaves the process here.
+#[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+async fn mock_fanout_transmit(
+    indexer: &zingo_netutils::GrpcIndexer,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+    progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
+) -> Result<(String, String), String> {
+    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
+    use crate::nym::broadcast_indexers::eligible_witnesses;
+
+    let witnesses = eligible_witnesses(Some(indexer.uri())).map_err(|e| e.to_string())?;
+    let run_arm = |witness: http::Uri| {
+        let target = ClearnetTarget(indexer.clone());
+        let tx_bytes = tx_bytes.to_vec();
+        let txid = *txid;
+        let host = witness
+            .host()
+            .map_or_else(|| witness.to_string(), str::to_string);
+        async move {
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
+                &target,
+                &tx_bytes,
+                height,
+                &txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("witness {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(status)| status.to_string());
+            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
+            outcome.map(|server_txid| (server_txid, host))
+        }
+    };
+
+    fanout_broadcast(
+        &witnesses,
+        &mut rand::rngs::OsRng,
+        MAX_BROADCAST_WITNESSES,
+        run_arm,
+        |line| progress.set(format!("mixnet fan-out: {line}")),
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
 impl LightClient {
     async fn send(
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        self.preflight_transmit()?;
+        let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
+        // An Indexerless calculation cannot trust the wallet's stale chain
+        // view for an ordinary tip-plus-delta expiry, so it takes the
+        // epoch-limit retarget the offline-signing flow uses (issue #2455).
+        let proposal = if indexerless {
+            let chain_type = wallet.chain_type();
+            retarget_for_offline_signing(&proposal, &chain_type)
+                .map_err(SendError::RetargetError)?
+        } else {
+            proposal
+        };
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
             .calculate_transactions(proposal, sending_account)
@@ -353,7 +503,7 @@ impl LightClient {
         &mut self,
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         let calculated_txids = self
             .wallet()
             .write()
@@ -379,7 +529,7 @@ impl LightClient {
         self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
-            let txids = match proposal {
+            let reports = match proposal {
                 ZingoProposal::Send {
                     proposal,
                     sending_account,
@@ -392,7 +542,7 @@ impl LightClient {
 
             self.release_proposal_pause(resume_sync);
 
-            txids
+            reports.map(|reports| reports.map(|report| report.txid))
         } else {
             Err(SendError::NoStoredProposal.into())
         }
@@ -470,6 +620,23 @@ impl LightClient {
         result.map_err(LightClientError::from)
     }
 
+    /// Pre-flights the transmission route without transmitting, so a route
+    /// that would refuse is caught before any transaction is built and no
+    /// freshly Calculated transaction is stranded. The same resolution
+    /// [`Self::transmit_transactions`] performs for real: clearnet demands
+    /// the configured indexer, and an Indexerless session passes only with
+    /// a ready mixnet (ruling 2026-07-29).
+    fn preflight_transmit(&self) -> Result<(), LightClientError> {
+        #[cfg(feature = "nym")]
+        {
+            resolve_transmit_route(self.indexer.is_some(), self.mixnet_route()).map(|_| ())
+        }
+        #[cfg(not(feature = "nym"))]
+        {
+            self.require_indexer().map(|_| ())
+        }
+    }
+
     /// Transmits previously calculated transactions to the Indexer, in the
     /// given order, the transmission half of the offline-signing flow.
     /// Requires an Indexer. An Indexerless attempt fails with
@@ -479,7 +646,9 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.transmit_transactions(calculated_txids).await
+        self.transmit_transactions(calculated_txids)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
@@ -494,6 +663,20 @@ impl LightClient {
         account_id: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.quick_send_reported(request, account_id, resume_sync)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
+    }
+
+    /// [`Self::quick_send`] with the transmission attested: each
+    /// transaction's [`TransmitReport`] carries the route it traveled, the
+    /// endpoint that accepted it, and the transmission's round-trip time.
+    pub async fn quick_send_reported(
+        &mut self,
+        request: TransactionRequest,
+        account_id: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
         let guard = self.pause_sync_scoped().ok();
@@ -503,7 +686,7 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .map_err(SendError::ProposeSendError);
-        let txids = match proposal_result {
+        let reports = match proposal_result {
             Ok(proposal) => self.send(proposal, account_id).await,
             Err(e) => Err(e.into()),
         };
@@ -513,7 +696,7 @@ impl LightClient {
             guard.disarm();
         }
 
-        txids
+        reports
     }
 
     /// Shields all transparent funds skipping proposal confirmation. The
@@ -535,7 +718,9 @@ impl LightClient {
             .create_shield_proposal(account_id)
             .map_err(SendError::ProposeShieldError)?;
 
-        self.shield(proposal, account_id).await
+        self.shield(proposal, account_id)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -543,21 +728,34 @@ impl LightClient {
     pub(crate) async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let indexer = self.require_indexer()?.clone();
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let indexer = self.indexer.clone();
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
         // `Clearnet` submits through the configured indexer; `Mixnet(addr)`
-        // routes the fan-out through the SOCKS5 proxy; `Bootstrapping` fails
-        // closed here, before any submission, rather than leaking to clearnet.
-        // Without the `nym` feature there is no mixnet, so the route is clearnet.
+        // routes the fan-out through the SOCKS5 proxy — with or without a
+        // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
+        // here, before any submission, rather than leaking to clearnet.
+        // Without the `nym` feature there is no mixnet, so the route is
+        // clearnet and demands the indexer.
         #[cfg(feature = "nym")]
-        let socks5_proxy: Option<String> = match self.mixnet_route()? {
-            crate::nym::MixnetRoute::Clearnet => None,
-            crate::nym::MixnetRoute::Mixnet(socks5_addr) => Some(socks5_addr),
-        };
+        let socks5_proxy: Option<String> =
+            resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<String> = None;
+        if socks5_proxy.is_none() && indexer.is_none() {
+            return Err(LightClientError::Offline);
+        }
+
+        // A test-attached slot pairs its Ready route with arms that submit
+        // over the mock indexer's channel; a live Ready session keeps the
+        // SOCKS5 fan-out. Production builds carry no test slot state, so
+        // this distinction does not exist there.
+        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+        let mock_arms = matches!(
+            self.mixnet_slot,
+            crate::nym::MixnetSlot::AttachedForTests { .. }
+        );
 
         // Narrate the transmission into the side channel; the scope clears it
         // on every exit so no stale line outlives this call.
@@ -565,6 +763,7 @@ impl LightClient {
         let _progress_scope = TransmitProgressScope(progress.clone());
         let history = self.indexer_history.clone();
         let total = calculated_txids.len();
+        let mut reports: Vec<TransmitReport> = Vec::with_capacity(total);
 
         let mut wallet = self.wallet().write().await;
         for (index, txid) in calculated_txids.iter().enumerate() {
@@ -602,18 +801,54 @@ impl LightClient {
             // once in `transmit::resilient_transmit`; the clearnet path runs it
             // directly and the mixnet path runs it per fan-out arm. Wallet-state
             // effects stay here, around the pure transmission.
-            let txid_from_server = match transmit_one_transaction(
+            let dispatched = std::time::Instant::now();
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            let transmit_outcome = if mock_arms {
+                mock_fanout_transmit(
+                    indexer
+                        .as_ref()
+                        .expect("the test-attached slot always carries a mock indexer"),
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+                .map(|(server_txid, witness)| {
+                    (
+                        server_txid,
+                        TransmitRoute::Mixnet {
+                            witness,
+                            via_socks5: socks5_proxy.clone().unwrap_or_default(),
+                        },
+                    )
+                })
+            } else {
+                transmit_one_transaction(
+                    socks5_proxy.as_deref(),
+                    indexer.as_ref(),
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+            };
+            #[cfg(not(all(feature = "nym", any(test, feature = "testutils"))))]
+            let transmit_outcome = transmit_one_transaction(
                 socks5_proxy.as_deref(),
-                &indexer,
+                indexer.as_ref(),
                 &transaction_bytes,
                 height.into(),
                 txid,
                 &progress,
                 &history,
             )
-            .await
-            {
-                Ok(server_txid) => server_txid,
+            .await;
+            let (txid_from_server, route) = match transmit_outcome {
+                Ok(server_txid_and_route) => server_txid_and_route,
                 Err(message) => {
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
@@ -654,9 +889,15 @@ impl LightClient {
             // and the two are mutually exclusive in practice.
             self.immediate_migration_progress.set_sent(index as u32 + 1);
             self.split_progress.set_sent(index as u32 + 1);
+
+            reports.push(TransmitReport {
+                txid: *txid,
+                route,
+                round_trip: dispatched.elapsed(),
+            });
         }
 
-        Ok(calculated_txids)
+        Ok(NonEmpty::from_vec(reports).expect("one report per calculated transaction"))
     }
 }
 

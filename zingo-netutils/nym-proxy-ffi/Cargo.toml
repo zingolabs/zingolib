@@ -23,3 +23,5 @@ thiserror = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The tests read their temporal parameters from `time::test`.
+zingo-netutils = { path = "..", features = ["testutils"] }

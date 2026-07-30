@@ -5,8 +5,6 @@
 //! not depend on the network stack. Each submit builds a fresh connection to
 //! its own URI, so parts never travel over the synchronization channel.
 
-use std::time::Duration;
-
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::Indexer as _;
@@ -14,7 +12,7 @@ use zingo_netutils::lightwallet_protocol::RawTransaction;
 
 use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
 
-pub(super) const SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) use zingo_netutils::time::MIGRATION_SUBMIT_TIMEOUT;
 
 /// Submits parts over gRPC and can do nothing else.
 pub struct GrpcBroadcastClient {
@@ -44,7 +42,7 @@ impl BroadcastClient for GrpcBroadcastClient {
                     data: raw_tx,
                     height: u64::from(u32::from(expiry_height)),
                 },
-                SUBMIT_TIMEOUT,
+                MIGRATION_SUBMIT_TIMEOUT,
             )
             .await
             .map_err(|status| BroadcastError::Rejected(status.to_string()))?;
