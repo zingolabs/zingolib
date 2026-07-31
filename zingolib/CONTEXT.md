@@ -153,6 +153,20 @@
 
 **Performance Level** — Controls batch size and nullifier map scope: `Low`, `Medium`, `High`, or `Maximum`.
 
+**Qualified Range** — The range of block heights a scanner is designed to handle: every epoch whose blocks the running pepper-sync release can correctly count, bound, and decrypt. Its upper bound is the mainnet activation height of the first network upgrade the release cannot process (today NU7), and it grows only when pepper-sync gains the processing capability, never merely because upstream announces the upgrade. A block outside the Qualified Range must never be scanned or attested; the scanner's refusal is `UnqualifiedToScanBlocks`, and the per-session tip check is the branch-ID guard. *Avoid*: valid range, supported range, competence.
+
+**Unqualified** — Outside a Qualified Range. An unqualified *scanner* is one whose Qualified Range does not cover the wallet or chain before it: it refuses, touching nothing. Unqualified *data* is a wallet entry recorded at a height outside its writer's Qualified Range: a qualified scanner quarantines it and heals by rescan. *Avoid*: invalid, stale (both blur whether the scanner or the data is at fault).
+
+**Valid Epochs** — The block ranges of a wallet whose entries are trustworthy: those recorded within their writers' Qualified Ranges. A verdict computed at load from per-entry provenance against the current activation table, never persisted.
+
+**Seam Block** — The wallet block adjacent to a scan range — just below its start or at its end — whose recorded state testifies to continuity and tree sizes at the range boundary. A scan trusts its seams outright, so a seam carrying Unqualified testimony poisons every scan that borders it.
+
+**Quarantine** — The state of a wallet entry detected as Unqualified: retained in the wallet but barred from serving as a Seam Block or any other testimony, and preserved byte-for-byte across saves, until a session with a confirmed Indexer at or above the wallet's height evicts it and rescans its range. *Avoid*: eviction at read time (destroys data the wallet may not yet be able to replace).
+
+**Tolerant Read** — A deserializer that accepts an older format version and silently manufactures defaults for its missing fields, erasing the evidence of what the writer knew. In this domain a Tolerant Read is a defect wherever the manufactured value can serve as testimony, because it launders Unqualified data into current-looking records.
+
+**Live-Lock** — A failure mode in which the sync engine keeps running — dispatching, failing, re-planning — while no scan range ever reaches a terminal state, so sync makes no forward progress without ever blocking. Distinct from a deadlock, where tasks block forever.
+
 ---
 
 ## Send Flow

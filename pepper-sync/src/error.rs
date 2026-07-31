@@ -30,6 +30,11 @@ where
     /// Chain error.
     #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
     ChainError(u32, u32, u32),
+    /// The chain tip's consensus branch lies outside the scanner's qualified range.
+    #[error(
+        "chain tip consensus branch id {0:#010x} is outside this scanner's qualified range. upgrade the wallet software to sync this chain."
+    )]
+    TipOutsideQualifiedRange(u32),
     /// Birthday below sapling error.
     #[error(
         "birthday {0} below sapling activation height {1}. pre-sapling wallets are not supported!"
@@ -79,6 +84,7 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::ScanError(_)
             | SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
+            | SyncError::TipOutsideQualifiedRange(..)
             | SyncError::BirthdayBelowSapling(..)
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
@@ -108,6 +114,7 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
+            | ServerError::MalformedConsensusBranchId(_)
             | ServerError::GenesisBlockOnly => false,
         }
     }
@@ -151,6 +158,7 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
 
             SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
+            | SyncError::TipOutsideQualifiedRange(..)
             | SyncError::BirthdayBelowSapling(..)
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
@@ -171,7 +179,10 @@ impl ServerError {
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
-            | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
+            | ServerError::ChainVerificationError
+            | ServerError::MalformedConsensusBranchId(_) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
@@ -354,6 +365,9 @@ pub enum ServerError {
     /// Server reports only the genesis block exists.
     #[error("server reports only the genesis block exists.")]
     GenesisBlockOnly,
+    /// Server returned a consensus branch ID that is not valid hexadecimal.
+    #[error("server returned malformed consensus branch id. {0}")]
+    MalformedConsensusBranchId(String),
 }
 
 /// Sync mode error.
@@ -452,6 +466,12 @@ mod tests {
             fn genesis_block_only() {
                 assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
             }
+
+            #[test]
+            fn malformed_consensus_branch_id() {
+                let e = ServerError::MalformedConsensusBranchId("not-hex".to_string());
+                assert!(!e.recommend_same_server());
+            }
         }
 
         mod sync_error {
@@ -473,6 +493,12 @@ mod tests {
             #[test]
             fn chain_error() {
                 let e: TestSyncError = SyncError::ChainError(100, 50, 50);
+                assert!(!e.recommend_same_server());
+            }
+
+            #[test]
+            fn tip_outside_qualified_range() {
+                let e: TestSyncError = SyncError::TipOutsideQualifiedRange(0xffff_ffff);
                 assert!(!e.recommend_same_server());
             }
 
@@ -583,6 +609,15 @@ mod tests {
             }
 
             #[test]
+            fn malformed_consensus_branch_id() {
+                let e = ServerError::MalformedConsensusBranchId("not-hex".to_string());
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
             fn sync_error_from_invalid_frontier() {
                 let e: TestSyncError =
                     ServerError::InvalidFrontier(std::io::Error::other("bad")).into();
@@ -623,6 +658,12 @@ mod tests {
             #[test]
             fn chain_error() {
                 let e: TestSyncError = SyncError::ChainError(100, 50, 50);
+                assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+            }
+
+            #[test]
+            fn tip_outside_qualified_range() {
+                let e: TestSyncError = SyncError::TipOutsideQualifiedRange(0xffff_ffff);
                 assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
             }
 

@@ -435,6 +435,7 @@ where
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
+    verify_tip_within_qualified_range(fetch_request_sender.clone()).await?;
     let last_known_chain_height = checked_wallet_height(
         &mut *wallet.write().await,
         chain_height,
@@ -705,6 +706,54 @@ where
 ///       * the maximum number of blocks the wallet can truncate during re-org detection
 ///   (2) Sapling Activation Height:
 ///       * the lower bound on the wallet birthday
+async fn verify_tip_within_qualified_range<E>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+) -> Result<(), SyncError<E>>
+where
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    let lightd_info = client::get_lightd_info(fetch_request_sender)
+        .await
+        .map_err(SyncError::ServerError)?;
+
+    qualified_range_admits_tip(&lightd_info.consensus_branch_id)
+}
+
+fn qualified_range_admits_tip<E>(consensus_branch_id: &str) -> Result<(), SyncError<E>>
+where
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    let branch_id_value = consensus_branch_id.trim();
+    let branch_id_value = branch_id_value
+        .strip_prefix("0x")
+        .unwrap_or(branch_id_value);
+    let branch_id_value = u32::from_str_radix(branch_id_value, 16).map_err(|_| {
+        SyncError::ServerError(ServerError::MalformedConsensusBranchId(
+            consensus_branch_id.to_string(),
+        ))
+    })?;
+
+    // Exhaustive over the compiled `BranchId`: a branch the enum cannot name is
+    // a chain epoch this scanner is not qualified for, and a future upstream
+    // variant must not compile until its qualification is decided here.
+    match consensus::BranchId::try_from(branch_id_value) {
+        Ok(
+            consensus::BranchId::Sprout
+            | consensus::BranchId::Overwinter
+            | consensus::BranchId::Sapling
+            | consensus::BranchId::Blossom
+            | consensus::BranchId::Heartwood
+            | consensus::BranchId::Canopy
+            | consensus::BranchId::Nu5
+            | consensus::BranchId::Nu6
+            | consensus::BranchId::Nu6_1
+            | consensus::BranchId::Nu6_2
+            | consensus::BranchId::Nu6_3,
+        ) => Ok(()),
+        Err(_) => Err(SyncError::TipOutsideQualifiedRange(branch_id_value)),
+    }
+}
+
 fn checked_wallet_height<W, P>(
     wallet: &mut W,
     chain_height: BlockHeight,
@@ -3023,6 +3072,61 @@ mod test {
                     .unwrap()
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+        }
+    }
+
+    mod qualified_range {
+        use crate::{
+            error::{ServerError, SyncError},
+            sync::qualified_range_admits_tip,
+        };
+
+        type TestSyncError = SyncError<String>;
+
+        const NU6_3_BRANCH_ID_HEX: &str = "37a5165b";
+
+        #[test]
+        fn nu6_3_branch_is_within_qualified_range() {
+            assert!(qualified_range_admits_tip::<String>(NU6_3_BRANCH_ID_HEX).is_ok());
+        }
+
+        #[test]
+        fn prefixed_hex_is_accepted() {
+            let prefixed = format!("0x{NU6_3_BRANCH_ID_HEX}");
+            assert!(qualified_range_admits_tip::<String>(&prefixed).is_ok());
+        }
+
+        #[test]
+        fn unknown_branch_is_outside_qualified_range() {
+            let result: Result<(), TestSyncError> = qualified_range_admits_tip("ffffffff");
+            assert!(matches!(
+                result,
+                Err(SyncError::TipOutsideQualifiedRange(0xffff_ffff))
+            ));
+        }
+
+        #[test]
+        fn malformed_branch_id_is_a_server_error() {
+            let result: Result<(), TestSyncError> = qualified_range_admits_tip("not-hex");
+            assert!(matches!(
+                result,
+                Err(SyncError::ServerError(
+                    ServerError::MalformedConsensusBranchId(_)
+                ))
+            ));
+        }
+
+        #[test]
+        fn canary_no_upgrade_beyond_nu6_3_has_a_mainnet_activation_height() {
+            use zcash_protocol::consensus::{BlockHeight, BranchId, MAIN_NETWORK};
+            assert_eq!(
+                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(u32::MAX)),
+                BranchId::Nu6_3,
+                "upstream has minted a mainnet activation height for an upgrade beyond \
+                 NU6.3, so the qualified range now has a concrete upper bound. Implement \
+                 the height-bounded scan planning for the Some(_) case before retiring \
+                 this canary."
             );
         }
     }
