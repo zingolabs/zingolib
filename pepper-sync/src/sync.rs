@@ -37,7 +37,7 @@ use crate::wallet::traits::{
 };
 use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
-    ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
+    ScanTarget, SyncMode, SyncState, TreeBoundsProvenance, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 
@@ -436,6 +436,7 @@ where
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     verify_tip_within_qualified_range(fetch_request_sender.clone()).await?;
+    heal_unqualified_written_data(consensus_parameters, &mut *wallet.write().await, chain_height)?;
     let last_known_chain_height = checked_wallet_height(
         &mut *wallet.write().await,
         chain_height,
@@ -719,6 +720,59 @@ where
     qualified_range_admits_tip(&lightd_info.consensus_branch_id)
 }
 
+fn heal_unqualified_written_data<W, P>(
+    consensus_parameters: &P,
+    wallet: &mut W,
+    chain_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    P: consensus::Parameters,
+{
+    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    let Some(wallet_height) = sync_state.last_known_chain_height() else {
+        return Ok(());
+    };
+    if chain_height < wallet_height {
+        return Ok(());
+    }
+
+    let Some(truncate_height) = unqualified_written_truncation_height(
+        consensus_parameters,
+        wallet.get_wallet_blocks_mut().map_err(SyncError::WalletError)?,
+    ) else {
+        return Ok(());
+    };
+
+    tracing::info!(
+        "unqualified written data found above height {}. truncating and rescanning.",
+        u32::from(truncate_height),
+    );
+    targeted_truncate_wallet_height(wallet, truncate_height)?;
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(())
+}
+
+fn unqualified_written_truncation_height<P>(
+    consensus_parameters: &P,
+    wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Option<BlockHeight>
+where
+    P: consensus::Parameters,
+{
+    let ironwood_activation =
+        consensus_parameters.activation_height(consensus::NetworkUpgrade::Nu6_3)?;
+
+    wallet_blocks
+        .values()
+        .any(|block| {
+            block.tree_bounds().provenance == TreeBoundsProvenance::PreIronwood
+                && block.block_height() >= ironwood_activation
+        })
+        .then(|| BlockHeight::from_u32(u32::from(ironwood_activation).saturating_sub(1)))
+}
+
 fn qualified_range_admits_tip<E>(consensus_branch_id: &str) -> Result<(), SyncError<E>>
 where
     E: std::fmt::Debug + std::fmt::Display,
@@ -778,13 +832,7 @@ where
             }
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
-            truncate_wallet_data(wallet, chain_height)?;
-            truncate_scan_ranges(
-                chain_height,
-                wallet
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-            );
+            targeted_truncate_wallet_height(wallet, chain_height)?;
             wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
@@ -1754,6 +1802,26 @@ where
 /// [`truncate::plan_truncation`] from the wallet state, the shard-tree
 /// state, and the truncation target. This function only applies the
 /// returned plan.
+/// Truncates all wallet stores, derived state, and scan-range accounting to
+/// the targeted height. The reorg handler instead truncates wallet data alone,
+/// because that flow re-prioritises scan ranges for verification rather than
+/// truncating them.
+fn targeted_truncate_wallet_height<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    truncate_wallet_data(wallet, truncate_height)?;
+    truncate_scan_ranges(
+        truncate_height,
+        wallet.get_sync_state_mut().map_err(SyncError::WalletError)?,
+    );
+
+    Ok(())
+}
+
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
@@ -1837,13 +1905,7 @@ where
                 })
         })
         .collect::<Vec<_>>();
-    truncate_wallet_data(wallet, consensus::H0)?;
-    truncate_scan_ranges(
-        consensus::H0,
-        wallet
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-    );
+    targeted_truncate_wallet_height(wallet, consensus::H0)?;
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
@@ -2533,7 +2595,10 @@ mod test {
         use crate::mocks::MockWalletBuilder;
         use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
         use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
-        use crate::wallet::{ShardTrees, SyncState, TreeBounds, WalletBlock, traits::SyncBlocks};
+        use crate::wallet::{
+            ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
+            traits::SyncBlocks,
+        };
 
         /// A wallet block carrying only what truncation reads: its height.
         fn block(height: u32) -> WalletBlock {
@@ -2550,6 +2615,7 @@ mod test {
                     orchard_final_tree_size: 0,
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
+                    provenance: TreeBoundsProvenance::Ironwood,
                 },
             }
         }
@@ -2676,7 +2742,7 @@ mod test {
 
         use crate::mocks::MockWalletBuilder;
         use crate::sync::{ScanPriority, ScanRange, sync_status};
-        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+        use crate::wallet::{SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock};
 
         /// A wallet block carrying only what tree-bounds accounting
         /// reads: its height and tree sizes.
@@ -2701,6 +2767,7 @@ mod test {
                 orchard_final_tree_size: orchard,
                 ironwood_initial_tree_size: ironwood,
                 ironwood_final_tree_size: ironwood,
+                provenance: TreeBoundsProvenance::Ironwood,
             }
         }
 
@@ -2723,6 +2790,7 @@ mod test {
                 orchard_final_tree_size: 220,
                 ironwood_initial_tree_size: 300,
                 ironwood_final_tree_size: 340,
+                provenance: TreeBoundsProvenance::Ironwood,
             };
             sync_state
                 .initial_sync_state
@@ -3072,6 +3140,185 @@ mod test {
                     .unwrap()
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+        }
+    }
+
+    /// The healing contract of [`crate::sync::heal_unqualified_written_data`]:
+    /// given a valid indexer at or above the wallet's height, unqualified
+    /// written testimony is healed by truncation to the last qualified
+    /// writer height; a shorter indexer defers healing untouched.
+    mod unqualified_written_healing {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::local_consensus::LocalNetwork;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
+        use crate::sync::{
+            ScanPriority, ScanRange, heal_unqualified_written_data,
+            unqualified_written_truncation_height,
+        };
+        use crate::wallet::{
+            ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
+            traits::{SyncBlocks, SyncWallet},
+        };
+
+        const IRONWOOD_AT_9: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(9)),
+        };
+
+        fn block(height: u32, provenance: TreeBoundsProvenance) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                    provenance,
+                },
+            }
+        }
+
+        /// A wallet synced through height 10 whose blocks at and above
+        /// `poison_start` carry pre-ironwood provenance.
+        fn wallet_poisoned_from(poison_start: u32) -> crate::mocks::MockWallet {
+            let wallet_blocks: BTreeMap<_, _> = (6..=10u32)
+                .map(|height| {
+                    let provenance = if height >= poison_start {
+                        TreeBoundsProvenance::PreIronwood
+                    } else {
+                        TreeBoundsProvenance::Ironwood
+                    };
+                    (BlockHeight::from_u32(height), block(height, provenance))
+                })
+                .collect();
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(6)..BlockHeight::from_u32(11),
+                ScanPriority::Scanned,
+            )]);
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .sapling
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+                assert_eq!(
+                    shard_trees
+                        .orchard
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(6))
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .shard_trees(shard_trees)
+                .create_mock_wallet()
+        }
+
+        #[test]
+        fn taller_indexer_heals_to_last_qualified_writer_height() {
+            let mut wallet = wallet_poisoned_from(9);
+
+            heal_unqualified_written_data(&IRONWOOD_AT_9, &mut wallet, BlockHeight::from_u32(12))
+                .unwrap();
+
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(8)).is_ok());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(9)).is_err());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(10)).is_err());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().last_known_chain_height(),
+                Some(BlockHeight::from_u32(8))
+            );
+        }
+
+        #[test]
+        fn shorter_indexer_defers_healing() {
+            let mut wallet = wallet_poisoned_from(9);
+
+            heal_unqualified_written_data(&IRONWOOD_AT_9, &mut wallet, BlockHeight::from_u32(8))
+                .unwrap();
+
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(10)).is_ok());
+        }
+
+        #[test]
+        fn qualified_written_wallet_is_untouched() {
+            let mut wallet = wallet_poisoned_from(11);
+
+            heal_unqualified_written_data(&IRONWOOD_AT_9, &mut wallet, BlockHeight::from_u32(12))
+                .unwrap();
+
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(10)).is_ok());
+        }
+
+        #[test]
+        fn pre_ironwood_testimony_below_activation_is_qualified() {
+            let blocks: BTreeMap<_, _> = (6..=8u32)
+                .map(|height| {
+                    (
+                        BlockHeight::from_u32(height),
+                        block(height, TreeBoundsProvenance::PreIronwood),
+                    )
+                })
+                .collect();
+
+            assert_eq!(
+                unqualified_written_truncation_height(&IRONWOOD_AT_9, &blocks),
+                None
+            );
+        }
+
+        #[test]
+        fn chain_without_ironwood_has_no_unqualified_data() {
+            const NO_NU6_3: LocalNetwork = LocalNetwork {
+                overwinter: Some(BlockHeight::from_u32(1)),
+                sapling: Some(BlockHeight::from_u32(1)),
+                blossom: Some(BlockHeight::from_u32(1)),
+                heartwood: Some(BlockHeight::from_u32(1)),
+                canopy: Some(BlockHeight::from_u32(1)),
+                nu5: Some(BlockHeight::from_u32(1)),
+                nu6: Some(BlockHeight::from_u32(1)),
+                nu6_1: Some(BlockHeight::from_u32(1)),
+                nu6_2: Some(BlockHeight::from_u32(1)),
+                nu6_3: None,
+            };
+            let blocks: BTreeMap<_, _> = (6..=10u32)
+                .map(|height| {
+                    (
+                        BlockHeight::from_u32(height),
+                        block(height, TreeBoundsProvenance::PreIronwood),
+                    )
+                })
+                .collect();
+
+            assert_eq!(
+                unqualified_written_truncation_height(&NO_NU6_3, &blocks),
+                None
             );
         }
     }
