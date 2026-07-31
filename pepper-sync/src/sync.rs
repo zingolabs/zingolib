@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::time::{Duration, SystemTime};
 
+use shardtree::ShardTree;
 use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
@@ -1547,7 +1548,7 @@ where
                 "{pool:?} history recorded a commitment tree of {calculated_size} where the chain \
                  reports {block_metadata_size}."
             );
-            return Err(reopen_pool_history(
+            return Err(truncate_to_pool_activation_height(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
@@ -1561,62 +1562,76 @@ where
     Ok(())
 }
 
-/// Reopens one pool's history for scanning, after its recorded commitment
-/// tree could not account for the chain's.
+/// Truncates the wallet back to the `target_pool` activation height.
 ///
-/// Only that pool is disturbed. Its tree is replaced by the state the chain
-/// itself dictates, and every scanned range above that point is reopened, so
-/// the next session rebuilds the pool's history from evidence rather than
-/// from the record that was found wanting. The other pools keep their trees
-/// and are rescanned harmlessly alongside it, since re-inserting note
-/// commitments the tree already holds merges rather than conflicts.
+/// Wallet blocks, transactions, nullifiers and outpoints are all cleared at or above the target pool's activation
+/// height.
 ///
-/// The rescan begins at the later of the pool's activation and the wallet's
-/// birthday, both derived rather than assumed, so the work is bounded by the
-/// pool's own existence on this chain and by the wallet's own lifetime. At
-/// the birthday the pool's tree is whatever the chain says, fetched as a
-/// frontier; at an activation above the birthday it is empty.
-///
-/// Returns the error that ends the session. The wallet is saved first, so
-/// the reopening survives even if the caller never syncs again.
-async fn reopen_pool_history<W>(
+/// The target pool and any pool that came in a later network upgrade have their shard trees cleared. Any earlier
+/// pool's will truncate back to the earliest checkpoint above the target pool's acitvation height. This means that
+/// some shard tree data above the target pool's activation height may be retained in the wallet. However, in the
+/// case of an older version of the sync engine scanning blocks from a new incompatible pool epoch, all shard tree data
+/// for earlier pool's will be correct. Re-insertion of this shard tree data on rescan will not cause any issues.
+async fn truncate_to_pool_activation_height<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
-    pool: ShieldedPool,
+    target_pool: ShieldedPool,
 ) -> Result<SyncError<W::Error>, SyncError<W::Error>>
 where
-    W: SyncWallet + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
-    let Some(activation) = PoolActivation::of(consensus_parameters, pool) else {
+    let Some(activation) = PoolActivation::of(consensus_parameters, target_pool) else {
         // A pool the chain never activates cannot have been served, so it
         // cannot be the one that disagreed.
-        panic!("{pool:?} reported a tree size on a chain that never activates it");
+        panic!("{target_pool:?} reported a tree size on a chain that never activates it");
     };
     let rescan_from = activation.max_with(birthday);
 
-    wallet.clear_pool_shard_tree(pool)?;
+    truncate_stores(wallet, rescan_from - 1, false)?;
+
     let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
-    let shard_trees = wallet
-        .get_shard_trees_mut()
-        .map_err(SyncError::WalletError)?;
     let retention = Retention::Checkpoint {
         id: birthday,
         marking: Marking::None,
     };
-    match pool {
-        ShieldedPool::Sapling => shard_trees
-            .sapling
-            .insert_frontier(frontiers.final_sapling_tree().clone(), retention),
-        ShieldedPool::Orchard => shard_trees
-            .orchard
-            .insert_frontier(frontiers.final_orchard_tree().clone(), retention),
-        ShieldedPool::Ironwood => shard_trees
-            .ironwood
-            .insert_frontier(frontiers.final_ironwood_tree().clone(), retention),
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    for pool in [
+        ShieldedPool::Sapling,
+        ShieldedPool::Orchard,
+        ShieldedPool::Ironwood,
+    ] {
+        if target_pool >= pool {
+            shard_trees.clear_pool(pool);
+            match pool {
+                ShieldedPool::Sapling => shard_trees
+                    .sapling
+                    .insert_frontier(frontiers.final_sapling_tree().clone(), retention),
+                ShieldedPool::Orchard => shard_trees
+                    .orchard
+                    .insert_frontier(frontiers.final_orchard_tree().clone(), retention),
+                ShieldedPool::Ironwood => shard_trees
+                    .ironwood
+                    .insert_frontier(frontiers.final_ironwood_tree().clone(), retention),
+            }
+            .expect("infallible");
+        } else {
+            match pool {
+                ShieldedPool::Sapling => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.sapling)?;
+                }
+                ShieldedPool::Orchard => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.orchard)?;
+                }
+                ShieldedPool::Ironwood => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.ironwood)?;
+                }
+            }
+        }
     }
-    .expect("infallible");
 
     let sync_state = wallet
         .get_sync_state_mut()
@@ -1626,8 +1641,42 @@ where
 
     Ok(SyncError::PoolHistoryReopened(
         rescan_from,
-        PoolType::Shielded(pool),
+        PoolType::Shielded(target_pool),
     ))
+}
+
+/// Truncate the shard tree to the lowest checkpoint equal to or above the `target_height`.
+///
+/// If all checkpoints are below target height, do not truncate. Shard tree data at the target height is
+/// never removed, only data above the target height.
+fn truncate_tree_to_next_checkpoint<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    target_height: BlockHeight,
+    tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> Result<(), shardtree::error::ShardTreeError<S::Error>>
+where
+    S: ShardStore<CheckpointId = BlockHeight>,
+    S::H: incrementalmerkletree::Hashable + Clone + PartialEq,
+    S::CheckpointId: Clone + std::fmt::Debug + Ord,
+{
+    let mut truncation_height = None;
+    tree.store()
+        .for_each_checkpoint((MAX_REORG_ALLOWANCE + 1) as usize, |height, _| {
+            if truncation_height.is_some() {
+                return Ok(());
+            }
+
+            if *height >= target_height {
+                truncation_height = Some(*height);
+            }
+
+            Ok(())
+        })
+        .expect("infallible");
+    if let Some(h) = truncation_height {
+        tree.truncate_to_checkpoint(&h)?;
+    }
+
+    Ok(())
 }
 
 /// Processes mempool transaction.
@@ -1726,11 +1775,11 @@ where
     match truncate::plan_truncation(wallet_state, truncate_height) {
         truncate::TruncationPlan::NoOp => Ok(()),
         truncate::TruncationPlan::ClearAll => {
-            truncate_stores(wallet, consensus::H0)?;
+            truncate_stores(wallet, consensus::H0, true)?;
             wallet.clear_shard_trees()
         }
         truncate::TruncationPlan::Truncate { height } => {
-            truncate_stores(wallet, height)?;
+            truncate_stores(wallet, height, true)?;
             match wallet.truncate_shard_trees(height) {
                 Ok(()) => Ok(()),
                 Err(SyncError::TruncationError(height, pooltype)) => {
@@ -1746,9 +1795,13 @@ where
 
 /// Removes wallet blocks, transactions, nullifiers and outpoints above the
 /// given `truncate_height`.
+///
+/// If `set_truncated_transactions_failed` is set, transactions will not be removed from the wallet but their status
+/// will be updated to `Failed`.
 fn truncate_stores<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
+    set_truncated_transactions_failed: bool,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
@@ -1757,7 +1810,7 @@ where
         .truncate_wallet_blocks(truncate_height)
         .map_err(SyncError::WalletError)?;
     wallet
-        .truncate_wallet_transactions(truncate_height)
+        .truncate_wallet_transactions(truncate_height, set_truncated_transactions_failed)
         .map_err(SyncError::WalletError)?;
     wallet
         .truncate_nullifiers(truncate_height)
