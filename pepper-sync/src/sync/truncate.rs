@@ -43,13 +43,11 @@ use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::error::SyncError;
 use crate::wallet::{
-    ScanTarget,
+    ScanTarget, SyncState,
     traits::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
 };
-
-use super::state::truncate_scan_ranges;
 
 /// The wallet state a truncation decision reads: where scanning began
 /// and how far it has reached.
@@ -226,6 +224,35 @@ where
     truncate_wallet_data(wallet, truncate_height)
 }
 
+/// Splits the range containing [`truncate_height` + 1] and removes all ranges containing block heights above
+/// `truncate_height`.
+/// If `truncate_height` is zero, the sync state will be cleared completely.
+fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
+    if truncate_height == consensus::H0 {
+        *sync_state = SyncState::new();
+    }
+    let Some((index, range_to_split)) = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .find(|(_index, range)| range.block_range().contains(&(truncate_height + 1)))
+    else {
+        return;
+    };
+
+    if let Some((first_segment, second_segment)) = range_to_split.split_at(truncate_height + 1) {
+        let split_ranges = vec![first_segment, second_segment];
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
+    }
+
+    let truncated_scan_ranges = sync_state.scan_ranges[..sync_state
+        .scan_ranges()
+        .partition_point(|range| range.block_range().start <= truncate_height)]
+        .to_vec();
+    sync_state.scan_ranges = truncated_scan_ranges;
+}
+
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
@@ -329,7 +356,30 @@ where
 mod test {
     use super::*;
     use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
+    use crate::sync::{ScanPriority, ScanRange};
     use crate::wallet::ShardTrees;
+
+    #[test]
+    fn truncate_scan_ranges_splits_and_drops_above_target() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+            ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+            ScanRange::from_parts(200.into()..299.into(), ScanPriority::Historic),
+            ScanRange::from_parts(300.into()..399.into(), ScanPriority::Historic),
+        ];
+
+        truncate_scan_ranges(250.into(), &mut sync_state);
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+                ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
+            ]
+        );
+    }
 
     fn wallet_state() -> WalletTruncationState {
         WalletTruncationState {
