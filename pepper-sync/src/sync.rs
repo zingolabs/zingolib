@@ -1,12 +1,14 @@
 //! Entrypoint for sync engine
 
 use std::collections::{BTreeMap, HashMap};
+use std::convert::Infallible;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::time::{Duration, SystemTime};
 
 use shardtree::ShardTree;
+use shardtree::store::memory::MemoryShardStore;
 use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
@@ -32,6 +34,7 @@ use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
+use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::state::truncate_scan_ranges;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
@@ -1661,14 +1664,12 @@ where
 ///
 /// If all checkpoints are below target height, do not truncate. Shard tree data at the target height is
 /// never removed, only data above the target height.
-fn truncate_tree_to_next_checkpoint<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+fn truncate_tree_to_next_checkpoint<H, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     target_height: BlockHeight,
-    tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
-) -> Result<(), shardtree::error::ShardTreeError<S::Error>>
+    tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
+) -> Result<(), shardtree::error::ShardTreeError<Infallible>>
 where
-    S: ShardStore<CheckpointId = BlockHeight>,
-    S::H: incrementalmerkletree::Hashable + Clone + PartialEq,
-    S::CheckpointId: Clone + std::fmt::Debug + Ord,
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
 {
     let mut truncation_height = None;
     tree.store()
@@ -1685,7 +1686,10 @@ where
         })
         .expect("infallible");
     if let Some(h) = truncation_height {
-        tree.truncate_to_checkpoint(&h)?;
+        match tree.rollback_to_checkpoint(h)? {
+            RollbackOutcome::RolledBack => (),
+            RollbackOutcome::NoSuchCheckpoint => panic!("checkpoint must exist in this scope"),
+        }
     }
 
     Ok(())
