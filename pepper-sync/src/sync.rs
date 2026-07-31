@@ -31,7 +31,6 @@ use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
-use crate::sync::state::truncate_scan_ranges;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -436,7 +435,11 @@ where
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     verify_tip_within_qualified_range(fetch_request_sender.clone()).await?;
-    heal_unqualified_written_data(consensus_parameters, &mut *wallet.write().await, chain_height)?;
+    heal_unqualified_written_data(
+        consensus_parameters,
+        &mut *wallet.write().await,
+        chain_height,
+    )?;
     let last_known_chain_height = checked_wallet_height(
         &mut *wallet.write().await,
         chain_height,
@@ -739,7 +742,9 @@ where
 
     let Some(truncate_height) = unqualified_written_truncation_height(
         consensus_parameters,
-        wallet.get_wallet_blocks_mut().map_err(SyncError::WalletError)?,
+        wallet
+            .get_wallet_blocks_mut()
+            .map_err(SyncError::WalletError)?,
     ) else {
         return Ok(());
     };
@@ -748,7 +753,7 @@ where
         "unqualified written data found above height {}. truncating and rescanning.",
         u32::from(truncate_height),
     );
-    targeted_truncate_wallet_height(wallet, truncate_height)?;
+    truncate::targeted_truncate_wallet_height(wallet, truncate_height)?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
@@ -832,7 +837,7 @@ where
             }
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
-            targeted_truncate_wallet_height(wallet, chain_height)?;
+            truncate::targeted_truncate_wallet_height(wallet, chain_height)?;
             wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
@@ -1617,12 +1622,15 @@ where
                 if initial_reorg_detection_start_height - current_reorg_detection_start_height
                     > MAX_REORG_ALLOWANCE
                 {
-                    clear_wallet_data(wallet)?;
+                    truncate::clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
                 }
 
-                truncate_wallet_data(wallet, current_reorg_detection_start_height - 1)?;
+                truncate::truncate_data_for_verification(
+                    wallet,
+                    current_reorg_detection_start_height - 1,
+                )?;
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1803,123 +1811,6 @@ where
 /// [`truncate::plan_truncation`] from the wallet state, the shard-tree
 /// state, and the truncation target. This function only applies the
 /// returned plan.
-/// Truncates all wallet stores, derived state, and scan-range accounting to
-/// the targeted height. The reorg handler instead truncates wallet data alone,
-/// because that flow re-prioritises scan ranges for verification rather than
-/// truncating them.
-fn targeted_truncate_wallet_height<W>(
-    wallet: &mut W,
-    truncate_height: BlockHeight,
-) -> Result<(), SyncError<W::Error>>
-where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
-{
-    truncate_wallet_data(wallet, truncate_height)?;
-    truncate_scan_ranges(
-        truncate_height,
-        wallet.get_sync_state_mut().map_err(SyncError::WalletError)?,
-    );
-
-    Ok(())
-}
-
-fn truncate_wallet_data<W>(
-    wallet: &mut W,
-    truncate_height: BlockHeight,
-) -> Result<(), SyncError<W::Error>>
-where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
-{
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    let wallet_state = truncate::WalletTruncationState {
-        birthday: sync_state
-            .wallet_birthday()
-            .expect("should be non-empty in this scope"),
-        highest_scanned_height: sync_state
-            .highest_scanned_height()
-            .expect("should be non-empty in this scope"),
-    };
-    match truncate::plan_truncation(wallet_state, truncate_height) {
-        truncate::TruncationPlan::NoOp => Ok(()),
-        truncate::TruncationPlan::ClearAll => {
-            truncate_stores(wallet, consensus::H0)?;
-            wallet.clear_shard_trees()
-        }
-        truncate::TruncationPlan::Truncate { height } => {
-            truncate_stores(wallet, height)?;
-            match wallet.truncate_shard_trees(height) {
-                Ok(()) => Ok(()),
-                Err(SyncError::TruncationError(height, pooltype)) => {
-                    clear_wallet_data(wallet)?;
-
-                    Err(SyncError::TruncationError(height, pooltype))
-                }
-                Err(e) => Err(e),
-            }
-        }
-    }
-}
-
-/// Removes wallet blocks, transactions, nullifiers and outpoints above the
-/// given `truncate_height`.
-fn truncate_stores<W>(
-    wallet: &mut W,
-    truncate_height: BlockHeight,
-) -> Result<(), SyncError<W::Error>>
-where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
-{
-    wallet
-        .truncate_wallet_blocks(truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_wallet_transactions(truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_nullifiers(truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_outpoints(truncate_height)
-        .map_err(SyncError::WalletError)?;
-
-    Ok(())
-}
-
-fn clear_wallet_data<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
-where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
-{
-    let scan_targets = wallet
-        .get_wallet_transactions()
-        .map_err(SyncError::WalletError)?
-        .values()
-        .filter_map(|transaction| {
-            transaction
-                .status()
-                .get_confirmed_height()
-                .map(|height| ScanTarget {
-                    block_height: height,
-                    txid: transaction.txid(),
-                    narrow_scan_area: true,
-                })
-        })
-        .collect::<Vec<_>>();
-    targeted_truncate_wallet_height(wallet, consensus::H0)?;
-    wallet
-        .get_wallet_transactions_mut()
-        .map_err(SyncError::WalletError)?
-        .clear();
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    add_scan_targets(sync_state, &scan_targets);
-    wallet.set_save_flag().map_err(SyncError::WalletError)?;
-
-    Ok(())
-}
-
 /// Updates the wallet with data from `scan_results`
 #[allow(clippy::too_many_arguments)]
 async fn update_wallet_data<W>(
@@ -2580,7 +2471,7 @@ mod test {
         }
     }
 
-    /// The truncation contract of [`crate::sync::truncate_wallet_data`]:
+    /// The truncation contract of [`crate::sync::truncate::truncate_data_for_verification`]:
     /// a reorg truncation rolls every store back to the truncate height,
     /// and a shard tree that records nothing above that height (such as
     /// the empty ironwood tree a pre-ironwood (v0) wallet blob migrates
@@ -2595,10 +2486,10 @@ mod test {
 
         use crate::mocks::MockWalletBuilder;
         use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
-        use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
+        use crate::sync::{ScanPriority, ScanRange, truncate::truncate_data_for_verification};
         use crate::wallet::{
-            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance,
-            WalletBlock, traits::SyncBlocks,
+            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
+            traits::SyncBlocks,
         };
 
         /// A wallet block carrying only what truncation reads: its height.
@@ -2675,7 +2566,7 @@ mod test {
             let mut wallet = synced_wallet(shard_trees);
 
             // A routine two-block reorg rolls the wallet back to height 8.
-            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+            let result = truncate_data_for_verification(&mut wallet, BlockHeight::from_u32(8));
 
             assert!(
                 result.is_ok(),
@@ -2717,7 +2608,7 @@ mod test {
             }
             let mut wallet = synced_wallet(shard_trees);
 
-            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+            let result = truncate_data_for_verification(&mut wallet, BlockHeight::from_u32(8));
 
             assert!(matches!(
                 result,
@@ -3168,8 +3059,7 @@ mod test {
             unqualified_written_truncation_height,
         };
         use crate::wallet::{
-            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance,
-            WalletBlock,
+            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
             traits::{SyncBlocks, SyncWallet},
         };
 

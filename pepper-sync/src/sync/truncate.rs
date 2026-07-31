@@ -41,6 +41,16 @@ use shardtree::store::ShardStore;
 use shardtree::store::memory::MemoryShardStore;
 use zcash_protocol::consensus::{self, BlockHeight};
 
+use crate::error::SyncError;
+use crate::wallet::{
+    ScanTarget,
+    traits::{
+        SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+    },
+};
+
+use super::state::truncate_scan_ranges;
+
 /// The wallet state a truncation decision reads: where scanning began
 /// and how far it has reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +181,146 @@ pub(crate) fn plan_pool_truncation(
         }
         _ => PoolTruncation::Untouched,
     }
+}
+
+/// Truncates all wallet stores, derived state, and scan-range accounting to
+/// the targeted height.
+///
+/// This is the paired entry point: every flow in which the wallet's claimed
+/// height itself is wrong (the wallet-above-chain reset, healing unqualified
+/// written data, the clear-all recovery) rewinds range accounting together
+/// with the data through this function.
+pub(super) fn targeted_truncate_wallet_height<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    truncate_wallet_data(wallet, truncate_height)?;
+    truncate_scan_ranges(
+        truncate_height,
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+    );
+
+    Ok(())
+}
+
+/// Truncates wallet data alone, leaving scan-range accounting untouched.
+///
+/// Solely for reorg fork-finding: the caller has already re-prioritised the
+/// affected span for verification, so range coverage must survive the data
+/// rewind. Every other flow pairs the range rewind with the data through
+/// [`targeted_truncate_wallet_height`].
+pub(super) fn truncate_data_for_verification<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    truncate_wallet_data(wallet, truncate_height)
+}
+
+fn truncate_wallet_data<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    let wallet_state = WalletTruncationState {
+        birthday: sync_state
+            .wallet_birthday()
+            .expect("should be non-empty in this scope"),
+        highest_scanned_height: sync_state
+            .highest_scanned_height()
+            .expect("should be non-empty in this scope"),
+    };
+    match plan_truncation(wallet_state, truncate_height) {
+        TruncationPlan::NoOp => Ok(()),
+        TruncationPlan::ClearAll => {
+            truncate_stores(wallet, consensus::H0)?;
+            wallet.clear_shard_trees()
+        }
+        TruncationPlan::Truncate { height } => {
+            truncate_stores(wallet, height)?;
+            match wallet.truncate_shard_trees(height) {
+                Ok(()) => Ok(()),
+                Err(SyncError::TruncationError(height, pooltype)) => {
+                    clear_wallet_data(wallet)?;
+
+                    Err(SyncError::TruncationError(height, pooltype))
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
+/// Removes wallet blocks, transactions, nullifiers and outpoints above the
+/// given `truncate_height`.
+fn truncate_stores<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+{
+    wallet
+        .truncate_wallet_blocks(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_wallet_transactions(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_nullifiers(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_outpoints(truncate_height)
+        .map_err(SyncError::WalletError)?;
+
+    Ok(())
+}
+
+/// Resets every store to empty while retaining the confirmed transactions'
+/// heights and txids as scan targets, so the forced rescan can find them.
+pub(super) fn clear_wallet_data<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    let scan_targets = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?
+        .values()
+        .filter_map(|transaction| {
+            transaction
+                .status()
+                .get_confirmed_height()
+                .map(|height| ScanTarget {
+                    block_height: height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: true,
+                })
+        })
+        .collect::<Vec<_>>();
+    targeted_truncate_wallet_height(wallet, consensus::H0)?;
+    wallet
+        .get_wallet_transactions_mut()
+        .map_err(SyncError::WalletError)?
+        .clear();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    super::add_scan_targets(sync_state, &scan_targets);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -56,8 +56,8 @@ impl InitialScanData {
                 let revoked = seam_bounds.revoked_testimony;
                 // A pre-Ironwood seam never attested an ironwood tree; its
                 // manufactured zeroes must not serve as testimony either.
-                let ironwood_untrusted = revoked.ironwood
-                    || seam_bounds.provenance == TreeBoundsProvenance::PreIronwood;
+                let ironwood_untrusted =
+                    revoked.ironwood || seam_bounds.provenance == TreeBoundsProvenance::PreIronwood;
                 if revoked.sapling || revoked.orchard || ironwood_untrusted {
                     let chain_bounds = compact_blocks::calculate_block_tree_bounds(
                         consensus_parameters,
