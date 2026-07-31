@@ -187,9 +187,11 @@ pub(crate) fn plan_pool_truncation(
 /// the targeted height.
 ///
 /// This is the paired entry point: every flow in which the wallet's claimed
-/// height itself is wrong (the wallet-above-chain reset, healing unqualified
-/// written data, the clear-all recovery) rewinds range accounting together
-/// with the data through this function.
+/// height itself is wrong rewinds range accounting together with the data
+/// through this function:
+/// 1. the wallet-above-chain reset
+/// 2. healing unqualified written data
+/// 3. the clear-all recovery
 pub(super) fn targeted_truncate_wallet_height<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,

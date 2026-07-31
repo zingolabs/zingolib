@@ -159,9 +159,13 @@
 
 **Valid Epochs** — The block ranges of a wallet whose entries are trustworthy: those recorded within their writers' Qualified Ranges. A verdict computed at load from per-entry provenance against the current activation table, never persisted.
 
-**Seam Block** — The wallet block adjacent to a scan range — just below its start or at its end — whose recorded state testifies to continuity and tree sizes at the range boundary. A scan trusts its seams outright, so a seam carrying Unqualified testimony poisons every scan that borders it.
+**Seam Block** — The wallet block adjacent to a scan range — just below its start or at its end — whose recorded state testifies to continuity and tree sizes at the range boundary. A scan trusts its seams outright, so a seam carrying Unqualified or otherwise Condemned testimony poisons every scan that borders it; a seam with Revoked Testimony is refused, never consulted.
 
-**Quarantine** — The state of a wallet entry detected as Unqualified: retained in the wallet but barred from serving as a Seam Block or any other testimony, and preserved byte-for-byte across saves, until a session with a confirmed Indexer at or above the wallet's height evicts it and rescans its range. *Avoid*: eviction at read time (destroys data the wallet may not yet be able to replace).
+**Condemnation** — The judgment that a wallet record's testimony fails to account for the chain, by whichever channel discovers it: the load-time provenance verdict that finds an entry Unqualified written, or a scan-time contradiction between the record and the chain's reported state. Condemnation revokes the record's testimony at the moment of judgment; a record is never condemned and then left standing as evidence, because a healing pass that consults the record it condemned reproduces its own trigger. *Avoid*: reopening as a synonym (reopening is a response to a Condemnation, not the judgment itself).
+
+**Revoked Testimony** — The standing of a Condemned record: it remains in the wallet, but no scan, seam, or verdict may cite it, and the revocation survives saves so that no later session reinstates the record as evidence. Quarantine is its load-time form.
+
+**Quarantine** — The load-time form of Revoked Testimony: the state of a wallet entry detected as Unqualified, retained in the wallet but barred from serving as a Seam Block or any other testimony, and preserved byte-for-byte across saves, until a session with a confirmed Indexer at or above the wallet's height evicts it and rescans its range. *Avoid*: eviction at read time (destroys data the wallet may not yet be able to replace).
 
 **Tolerant Read** — A deserializer that accepts an older format version and silently manufactures defaults for its missing fields, erasing the evidence of what the writer knew. In this domain a Tolerant Read is a defect wherever the manufactured value can serve as testimony, because it launders Unqualified data into current-looking records.
 
