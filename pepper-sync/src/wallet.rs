@@ -39,7 +39,8 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::{ScanPriority, ScanRange},
+    shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     utils::{
         get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
         get_compact_tx_txid,
@@ -1796,9 +1797,24 @@ impl ShardTrees {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            sapling: traits::empty_shard_tree(),
-            orchard: traits::empty_shard_tree(),
-            ironwood: traits::empty_shard_tree(),
+            sapling: empty_shard_tree(),
+            orchard: empty_shard_tree(),
+            ironwood: empty_shard_tree(),
+        }
+    }
+
+    /// Replaces one pool's shard tree with an empty tree, leaving the other
+    /// pools alone.
+    ///
+    /// The empty tree is that pool's correct state at its own activation, so
+    /// this is the rollback a pool needs when its recorded history cannot be
+    /// trusted and no checkpoint survives to roll back to.
+    pub(crate) fn clear_pool(&mut self, pool: ShieldedPool) {
+        tracing::info!("Clearing {pool:?} shard tree.");
+        match pool {
+            ShieldedPool::Sapling => self.sapling = empty_shard_tree(),
+            ShieldedPool::Orchard => self.orchard = empty_shard_tree(),
+            ShieldedPool::Ironwood => self.ironwood = empty_shard_tree(),
         }
     }
 }
@@ -1807,6 +1823,25 @@ impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An empty shard tree with the crate's standard checkpoint retention and
+/// the zero-height checkpoint that every fresh tree must carry.
+pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+-> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    let mut tree = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+
+    // `NotAboveNewest` is impossible on an empty checkpoint store.
+    assert_eq!(
+        tree.append_checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail"),
+        CheckpointAppendOutcome::Appended
+    );
+
+    tree
 }
 
 use shardtree::store::ShardStore;
