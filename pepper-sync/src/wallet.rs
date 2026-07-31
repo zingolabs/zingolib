@@ -109,6 +109,7 @@ impl InitialSyncState {
                 orchard_final_tree_size: 0,
                 ironwood_initial_tree_size: 0,
                 ironwood_final_tree_size: 0,
+                provenance: TreeBoundsProvenance::Ironwood,
             },
             previously_scanned_blocks: 0,
             previously_scanned_sapling_outputs: 0,
@@ -297,6 +298,15 @@ impl SyncMode {
     }
 }
 
+/// The greatest epoch understood by the wallet software that wrote a [`TreeBounds`] record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeBoundsProvenance {
+    /// Written by software that predates Ironwood: the record carries no ironwood testimony.
+    PreIronwood,
+    /// Written by software qualified through the Ironwood epoch.
+    Ironwood,
+}
+
 /// Initial and final tree sizes.
 #[derive(Debug, Clone, Copy)]
 #[allow(missing_docs)]
@@ -307,6 +317,7 @@ pub struct TreeBounds {
     pub orchard_final_tree_size: u32,
     pub ironwood_initial_tree_size: u32,
     pub ironwood_final_tree_size: u32,
+    pub provenance: TreeBoundsProvenance,
 }
 
 /// Output ID for a given pool type.

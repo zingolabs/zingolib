@@ -43,7 +43,8 @@ use super::{
     InitialSyncState, IronwoodNote, KeyIdInterface, NullifierMap, OrchardNote,
     OutgoingIronwoodNote, OutgoingNote, OutgoingNoteInterface, OutgoingOrchardNote,
     OutgoingSaplingNote, OutputId, OutputInterface, SaplingNote, ShardTrees, SyncState,
-    TransparentCoin, TreeBounds, WalletBlock, WalletNote, WalletTransaction,
+    TransparentCoin, TreeBounds, TreeBoundsProvenance, WalletBlock, WalletNote,
+    WalletTransaction,
 };
 
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
@@ -241,13 +242,14 @@ impl TreeBounds {
         let sapling_final_tree_size = reader.read_u32::<LittleEndian>()?;
         let orchard_initial_tree_size = reader.read_u32::<LittleEndian>()?;
         let orchard_final_tree_size = reader.read_u32::<LittleEndian>()?;
-        let (ironwood_initial_tree_size, ironwood_final_tree_size) = if version >= 1 {
+        let (ironwood_initial_tree_size, ironwood_final_tree_size, provenance) = if version >= 1 {
             (
                 reader.read_u32::<LittleEndian>()?,
                 reader.read_u32::<LittleEndian>()?,
+                TreeBoundsProvenance::Ironwood,
             )
         } else {
-            (0, 0)
+            (0, 0, TreeBoundsProvenance::PreIronwood)
         };
 
         Ok(Self {
@@ -257,18 +259,30 @@ impl TreeBounds {
             orchard_final_tree_size,
             ironwood_initial_tree_size,
             ironwood_final_tree_size,
+            provenance,
         })
     }
 
     /// Serialize into `writer`
+    ///
+    /// The record's provenance is round-tripped: a pre-Ironwood record writes back in the
+    /// pre-Ironwood layout, so a save never upgrades a provenance marker it did not verify.
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
+        match self.provenance {
+            TreeBoundsProvenance::PreIronwood => writer.write_u8(0)?,
+            TreeBoundsProvenance::Ironwood => writer.write_u8(Self::serialized_version())?,
+        }
         writer.write_u32::<LittleEndian>(self.sapling_initial_tree_size)?;
         writer.write_u32::<LittleEndian>(self.sapling_final_tree_size)?;
         writer.write_u32::<LittleEndian>(self.orchard_initial_tree_size)?;
         writer.write_u32::<LittleEndian>(self.orchard_final_tree_size)?;
-        writer.write_u32::<LittleEndian>(self.ironwood_initial_tree_size)?;
-        writer.write_u32::<LittleEndian>(self.ironwood_final_tree_size)
+        match self.provenance {
+            TreeBoundsProvenance::PreIronwood => Ok(()),
+            TreeBoundsProvenance::Ironwood => {
+                writer.write_u32::<LittleEndian>(self.ironwood_initial_tree_size)?;
+                writer.write_u32::<LittleEndian>(self.ironwood_final_tree_size)
+            }
+        }
     }
 }
 
@@ -1459,27 +1473,15 @@ mod tests {
             orchard_final_tree_size: 4,
             ironwood_initial_tree_size: 5,
             ironwood_final_tree_size: 6,
+            provenance: TreeBoundsProvenance::Ironwood,
         };
         let mut bytes = Vec::new();
         bounds.write(&mut bytes).expect("write should succeed");
         let recovered = TreeBounds::read(bytes.as_slice()).expect("read should succeed");
         assert_eq!(recovered.ironwood_initial_tree_size, 5);
         assert_eq!(recovered.ironwood_final_tree_size, 6);
+        assert_eq!(recovered.provenance, TreeBoundsProvenance::Ironwood);
     }
-
-    const IRONWOOD_NETWORK: zcash_protocol::local_consensus::LocalNetwork =
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(100)),
-        };
 
     fn wallet_block_bytes(block_height: u32, tree_bounds_bytes: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -1494,29 +1496,22 @@ mod tests {
     }
 
     #[test]
-    fn wallet_block_with_v0_tree_bounds_above_ironwood_activation_fails_to_read() {
-        use zcash_protocol::consensus::Parameters;
-        let ironwood_activation = IRONWOOD_NETWORK
-            .activation_height(consensus::NetworkUpgrade::Nu6_3)
-            .expect("network activates ironwood");
-        let bytes = wallet_block_bytes(
-            u32::from(ironwood_activation) + 1,
-            &v0_tree_bounds_bytes(10, 20, 30, 40),
+    fn wallet_block_with_v0_tree_bounds_reads_with_pre_ironwood_provenance() {
+        let bytes = wallet_block_bytes(100_000, &v0_tree_bounds_bytes(10, 20, 30, 40));
+        let block = WalletBlock::read(bytes.as_slice()).expect("v0 block should read");
+        assert_eq!(
+            block.tree_bounds().provenance,
+            TreeBoundsProvenance::PreIronwood
         );
-        assert!(WalletBlock::read(bytes.as_slice()).is_err());
     }
 
     #[test]
-    fn wallet_block_with_v0_tree_bounds_below_ironwood_activation_reads() {
-        use zcash_protocol::consensus::Parameters;
-        let ironwood_activation = IRONWOOD_NETWORK
-            .activation_height(consensus::NetworkUpgrade::Nu6_3)
-            .expect("network activates ironwood");
-        let bytes = wallet_block_bytes(
-            u32::from(ironwood_activation) - 1,
-            &v0_tree_bounds_bytes(10, 20, 30, 40),
-        );
-        assert!(WalletBlock::read(bytes.as_slice()).is_ok());
+    fn pre_ironwood_tree_bounds_write_round_trips_byte_for_byte() {
+        let original = v0_tree_bounds_bytes(10, 20, 30, 40);
+        let bounds = TreeBounds::read(original.as_slice()).expect("v0 should read cleanly");
+        let mut rewritten = Vec::new();
+        bounds.write(&mut rewritten).expect("write should succeed");
+        assert_eq!(rewritten, original);
     }
 
     #[test]

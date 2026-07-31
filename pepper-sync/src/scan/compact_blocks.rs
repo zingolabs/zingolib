@@ -24,7 +24,7 @@ use crate::{
         get_compact_action, get_compact_block_hash, get_compact_block_height,
         get_compact_block_prev_hash, get_compact_output_description, get_compact_tx_txid,
     },
-    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
+    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, TreeBoundsProvenance, WalletBlock},
     witness::WitnessData,
 };
 
@@ -200,6 +200,7 @@ where
                 orchard_final_tree_size,
                 ironwood_initial_tree_size,
                 ironwood_final_tree_size,
+                provenance: TreeBoundsProvenance::Ironwood,
             },
         };
 
@@ -560,6 +561,7 @@ pub(crate) async fn calculate_block_tree_bounds(
         orchard_final_tree_size,
         ironwood_initial_tree_size: ironwood_final_tree_size.saturating_sub(ironwood_output_count),
         ironwood_final_tree_size,
+        provenance: TreeBoundsProvenance::Ironwood,
     })
 }
 
@@ -607,6 +609,7 @@ mod tests {
                 orchard_final_tree_size: 10,
                 ironwood_initial_tree_size: size,
                 ironwood_final_tree_size: size,
+                provenance: TreeBoundsProvenance::Ironwood,
             },
         }
     }
@@ -880,6 +883,7 @@ mod tests {
                 orchard_final_tree_size: 10,
                 ironwood_initial_tree_size: 0,
                 ironwood_final_tree_size: 0,
+                provenance: TreeBoundsProvenance::Ironwood,
             },
         };
 

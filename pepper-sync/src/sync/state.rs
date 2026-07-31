@@ -21,7 +21,8 @@ use crate::{
     scan::task::ScanTask,
     sync::ScanRange,
     wallet::{
-        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
+        InitialSyncState, ScanTarget, SyncState, TreeBounds, TreeBoundsProvenance,
+        WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
@@ -911,6 +912,7 @@ where
             orchard_final_tree_size: chain_tip_orchard_final_tree_size,
             ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
             ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
+            provenance: TreeBoundsProvenance::Ironwood,
         },
         previously_scanned_blocks,
         previously_scanned_sapling_outputs,
@@ -1028,6 +1030,7 @@ where
         orchard_final_tree_size: end_block.tree_bounds().orchard_final_tree_size,
         ironwood_initial_tree_size: start_block.tree_bounds().ironwood_initial_tree_size,
         ironwood_final_tree_size: end_block.tree_bounds().ironwood_final_tree_size,
+        provenance: TreeBoundsProvenance::Ironwood,
     })
 }
 
