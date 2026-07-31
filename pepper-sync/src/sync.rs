@@ -1588,6 +1588,17 @@ where
         panic!("{target_pool:?} reported a tree size on a chain that never activates it");
     };
     let rescan_from = activation.max_with(birthday);
+    let rescan_targets = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?
+        .values()
+        .filter(|&transaction| transaction.status().is_confirmed_after_or_at(&rescan_from))
+        .map(|transaction| ScanTarget {
+            block_height: transaction.status().get_height(),
+            txid: transaction.txid(),
+            narrow_scan_area: true,
+        })
+        .collect::<Vec<_>>();
 
     truncate_stores(wallet, rescan_from - 1, false)?;
 
@@ -1637,6 +1648,7 @@ where
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
     state::reopen_scan_ranges_from(sync_state, rescan_from);
+    add_scan_targets(sync_state, &rescan_targets);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(SyncError::PoolHistoryReopened(
