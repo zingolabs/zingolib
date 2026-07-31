@@ -19,7 +19,9 @@ use crate::{
     error::{ScanError, ServerError},
     sync::ScanPriority,
     utils::{get_compact_block_height, get_compact_tx_txid},
-    wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
+    wallet::{
+        NullifierMap, OutputId, ScanTarget, TreeBoundsProvenance, WalletBlock, WalletTransaction,
+    },
     witness::{self, LocatedTreeData, WitnessData},
 };
 
@@ -50,11 +52,43 @@ impl InitialScanData {
     {
         let (sapling_initial_tree_size, orchard_initial_tree_size, ironwood_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
-                (
-                    prev.tree_bounds().sapling_final_tree_size,
-                    prev.tree_bounds().orchard_final_tree_size,
-                    prev.tree_bounds().ironwood_final_tree_size,
-                )
+                let seam_bounds = prev.tree_bounds();
+                let revoked = seam_bounds.revoked_testimony;
+                // A pre-Ironwood seam never attested an ironwood tree; its
+                // manufactured zeroes must not serve as testimony either.
+                let ironwood_untrusted = revoked.ironwood
+                    || seam_bounds.provenance == TreeBoundsProvenance::PreIronwood;
+                if revoked.sapling || revoked.orchard || ironwood_untrusted {
+                    let chain_bounds = compact_blocks::calculate_block_tree_bounds(
+                        consensus_parameters,
+                        fetch_request_sender,
+                        first_block,
+                    )
+                    .await?;
+                    (
+                        if revoked.sapling {
+                            chain_bounds.sapling_initial_tree_size
+                        } else {
+                            seam_bounds.sapling_final_tree_size
+                        },
+                        if revoked.orchard {
+                            chain_bounds.orchard_initial_tree_size
+                        } else {
+                            seam_bounds.orchard_final_tree_size
+                        },
+                        if ironwood_untrusted {
+                            chain_bounds.ironwood_initial_tree_size
+                        } else {
+                            seam_bounds.ironwood_final_tree_size
+                        },
+                    )
+                } else {
+                    (
+                        seam_bounds.sapling_final_tree_size,
+                        seam_bounds.orchard_final_tree_size,
+                        seam_bounds.ironwood_final_tree_size,
+                    )
+                }
             } else {
                 let tree_bounds = compact_blocks::calculate_block_tree_bounds(
                     consensus_parameters,

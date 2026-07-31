@@ -1683,7 +1683,7 @@ async fn reopen_pool_history<W>(
     pool: ShieldedPool,
 ) -> Result<SyncError<W::Error>, SyncError<W::Error>>
 where
-    W: SyncWallet + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncShardTrees,
 {
     let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
     let Some(activation) = PoolActivation::of(consensus_parameters, pool) else {
@@ -1694,6 +1694,7 @@ where
     let rescan_from = activation.max_with(birthday);
 
     wallet.clear_pool_shard_tree(pool)?;
+    crate::wallet::revoke_pool_bounds_testimony(wallet, pool).map_err(SyncError::WalletError)?;
     let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
     let shard_trees = wallet
         .get_shard_trees_mut()
@@ -2596,8 +2597,8 @@ mod test {
         use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
         use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
         use crate::wallet::{
-            ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
-            traits::SyncBlocks,
+            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance,
+            WalletBlock, traits::SyncBlocks,
         };
 
         /// A wallet block carrying only what truncation reads: its height.
@@ -2616,6 +2617,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                     provenance: TreeBoundsProvenance::Ironwood,
+                    revoked_testimony: RevokedTestimony::NONE,
                 },
             }
         }
@@ -2742,7 +2744,9 @@ mod test {
 
         use crate::mocks::MockWalletBuilder;
         use crate::sync::{ScanPriority, ScanRange, sync_status};
-        use crate::wallet::{SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock};
+        use crate::wallet::{
+            RevokedTestimony, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
+        };
 
         /// A wallet block carrying only what tree-bounds accounting
         /// reads: its height and tree sizes.
@@ -2768,6 +2772,7 @@ mod test {
                 ironwood_initial_tree_size: ironwood,
                 ironwood_final_tree_size: ironwood,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony::NONE,
             }
         }
 
@@ -2791,6 +2796,7 @@ mod test {
                 ironwood_initial_tree_size: 300,
                 ironwood_final_tree_size: 340,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony::NONE,
             };
             sync_state
                 .initial_sync_state
@@ -3162,7 +3168,8 @@ mod test {
             unqualified_written_truncation_height,
         };
         use crate::wallet::{
-            ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
+            RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance,
+            WalletBlock,
             traits::{SyncBlocks, SyncWallet},
         };
 
@@ -3194,6 +3201,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                     provenance,
+                    revoked_testimony: RevokedTestimony::NONE,
                 },
             }
         }

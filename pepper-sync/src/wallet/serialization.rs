@@ -42,8 +42,8 @@ use crate::{
 use super::{
     InitialSyncState, IronwoodNote, KeyIdInterface, NullifierMap, OrchardNote,
     OutgoingIronwoodNote, OutgoingNote, OutgoingNoteInterface, OutgoingOrchardNote,
-    OutgoingSaplingNote, OutputId, OutputInterface, SaplingNote, ShardTrees, SyncState,
-    TransparentCoin, TreeBounds, TreeBoundsProvenance, WalletBlock, WalletNote,
+    OutgoingSaplingNote, OutputId, OutputInterface, RevokedTestimony, SaplingNote, ShardTrees,
+    SyncState, TransparentCoin, TreeBounds, TreeBoundsProvenance, WalletBlock, WalletNote,
     WalletTransaction,
 };
 
@@ -232,7 +232,8 @@ impl SyncState {
 impl TreeBounds {
     fn serialized_version() -> u8 {
         // Version 1 appends the ironwood tree sizes.
-        1
+        // Version 2 appends the revoked-testimony flags.
+        2
     }
 
     /// Deserialize into `reader`
@@ -251,6 +252,15 @@ impl TreeBounds {
         } else {
             (0, 0, TreeBoundsProvenance::PreIronwood)
         };
+        let revoked_testimony = if version >= 2 {
+            RevokedTestimony {
+                sapling: reader.read_u8()? != 0,
+                orchard: reader.read_u8()? != 0,
+                ironwood: reader.read_u8()? != 0,
+            }
+        } else {
+            RevokedTestimony::NONE
+        };
 
         Ok(Self {
             sapling_initial_tree_size,
@@ -260,6 +270,7 @@ impl TreeBounds {
             ironwood_initial_tree_size,
             ironwood_final_tree_size,
             provenance,
+            revoked_testimony,
         })
     }
 
@@ -280,7 +291,10 @@ impl TreeBounds {
             TreeBoundsProvenance::PreIronwood => Ok(()),
             TreeBoundsProvenance::Ironwood => {
                 writer.write_u32::<LittleEndian>(self.ironwood_initial_tree_size)?;
-                writer.write_u32::<LittleEndian>(self.ironwood_final_tree_size)
+                writer.write_u32::<LittleEndian>(self.ironwood_final_tree_size)?;
+                writer.write_u8(u8::from(self.revoked_testimony.sapling))?;
+                writer.write_u8(u8::from(self.revoked_testimony.orchard))?;
+                writer.write_u8(u8::from(self.revoked_testimony.ironwood))
             }
         }
     }
@@ -1465,7 +1479,7 @@ mod tests {
     }
 
     #[test]
-    fn tree_bounds_v1_roundtrip() {
+    fn tree_bounds_roundtrip_preserves_sizes_provenance_and_revocation() {
         let bounds = TreeBounds {
             sapling_initial_tree_size: 1,
             sapling_final_tree_size: 2,
@@ -1474,6 +1488,11 @@ mod tests {
             ironwood_initial_tree_size: 5,
             ironwood_final_tree_size: 6,
             provenance: TreeBoundsProvenance::Ironwood,
+            revoked_testimony: RevokedTestimony {
+                sapling: false,
+                orchard: true,
+                ironwood: true,
+            },
         };
         let mut bytes = Vec::new();
         bounds.write(&mut bytes).expect("write should succeed");
@@ -1481,6 +1500,26 @@ mod tests {
         assert_eq!(recovered.ironwood_initial_tree_size, 5);
         assert_eq!(recovered.ironwood_final_tree_size, 6);
         assert_eq!(recovered.provenance, TreeBoundsProvenance::Ironwood);
+        assert_eq!(recovered.revoked_testimony, bounds.revoked_testimony);
+    }
+
+    // Helper: build a v1 TreeBounds byte blob (ironwood sizes, no revocation flags).
+    fn v1_tree_bounds_bytes() -> Vec<u8> {
+        let mut out = Vec::new();
+        out.write_u8(1).unwrap();
+        for size in [1u32, 2, 3, 4, 5, 6] {
+            out.write_u32::<LittleEndian>(size).unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn tree_bounds_v1_reads_with_no_revoked_testimony() {
+        let bounds =
+            TreeBounds::read(v1_tree_bounds_bytes().as_slice()).expect("v1 should read cleanly");
+        assert_eq!(bounds.provenance, TreeBoundsProvenance::Ironwood);
+        assert_eq!(bounds.revoked_testimony, RevokedTestimony::NONE);
+        assert_eq!(bounds.ironwood_final_tree_size, 6);
     }
 
     fn wallet_block_bytes(block_height: u32, tree_bounds_bytes: &[u8]) -> Vec<u8> {

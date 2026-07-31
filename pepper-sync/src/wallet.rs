@@ -110,6 +110,7 @@ impl InitialSyncState {
                 ironwood_initial_tree_size: 0,
                 ironwood_final_tree_size: 0,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony::NONE,
             },
             previously_scanned_blocks: 0,
             previously_scanned_sapling_outputs: 0,
@@ -307,6 +308,37 @@ pub enum TreeBoundsProvenance {
     Ironwood,
 }
 
+/// Per-pool revocation of a [`TreeBounds`] record's testimony.
+///
+/// A revoked pool's tree sizes remain in the record but must never be trusted
+/// as seam testimony; reopening a pool's history revokes that pool in every
+/// surviving wallet block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(missing_docs)]
+pub struct RevokedTestimony {
+    pub sapling: bool,
+    pub orchard: bool,
+    pub ironwood: bool,
+}
+
+impl RevokedTestimony {
+    /// No pool's testimony is revoked.
+    pub const NONE: Self = RevokedTestimony {
+        sapling: false,
+        orchard: false,
+        ironwood: false,
+    };
+
+    /// Revokes the given pool's testimony.
+    pub fn revoke(&mut self, pool: ShieldedPool) {
+        match pool {
+            ShieldedPool::Sapling => self.sapling = true,
+            ShieldedPool::Orchard => self.orchard = true,
+            ShieldedPool::Ironwood => self.ironwood = true,
+        }
+    }
+}
+
 /// Initial and final tree sizes.
 #[derive(Debug, Clone, Copy)]
 #[allow(missing_docs)]
@@ -318,6 +350,7 @@ pub struct TreeBounds {
     pub ironwood_initial_tree_size: u32,
     pub ironwood_final_tree_size: u32,
     pub provenance: TreeBoundsProvenance,
+    pub revoked_testimony: RevokedTestimony,
 }
 
 /// Output ID for a given pool type.
@@ -1693,6 +1726,22 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_ironwood_notes
     }
+}
+
+/// Revokes the given pool's tree-bounds testimony in every surviving wallet
+/// block, so no future seam can trust the condemned record.
+pub(crate) fn revoke_pool_bounds_testimony<W>(
+    wallet: &mut W,
+    pool: ShieldedPool,
+) -> Result<(), W::Error>
+where
+    W: traits::SyncBlocks,
+{
+    for block in wallet.get_wallet_blocks_mut()?.values_mut() {
+        block.tree_bounds.revoked_testimony.revoke(pool);
+    }
+
+    Ok(())
 }
 
 /// Reduces the wallet to what a build that never tracked `pool` would have

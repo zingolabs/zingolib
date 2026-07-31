@@ -24,7 +24,10 @@ use crate::{
         get_compact_action, get_compact_block_hash, get_compact_block_height,
         get_compact_block_prev_hash, get_compact_output_description, get_compact_tx_txid,
     },
-    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, TreeBoundsProvenance, WalletBlock},
+    wallet::{
+        NullifierMap, OutputId, RevokedTestimony, ScanTarget, TreeBounds, TreeBoundsProvenance,
+        WalletBlock,
+    },
     witness::WitnessData,
 };
 
@@ -201,6 +204,7 @@ where
                 ironwood_initial_tree_size,
                 ironwood_final_tree_size,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony::NONE,
             },
         };
 
@@ -562,6 +566,7 @@ pub(crate) async fn calculate_block_tree_bounds(
         ironwood_initial_tree_size: ironwood_final_tree_size.saturating_sub(ironwood_output_count),
         ironwood_final_tree_size,
         provenance: TreeBoundsProvenance::Ironwood,
+        revoked_testimony: RevokedTestimony::NONE,
     })
 }
 
@@ -610,6 +615,7 @@ mod tests {
                 ironwood_initial_tree_size: size,
                 ironwood_final_tree_size: size,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony::NONE,
             },
         }
     }
@@ -867,8 +873,9 @@ mod tests {
             nu6_3: Some(BlockHeight::from_u32(1)),
         };
 
-        // A block scanned without ironwood tracking: by height 99 the chain
-        // holds 100 ironwood commitments, the record says zero. Its hash
+        // A block whose ironwood record the reopening condemned and revoked:
+        // by height 99 the chain holds 100 ironwood commitments, the record
+        // says zero, and the strip marked that testimony revoked. Its hash
         // chains to `block_with_served_ironwood_actions` at height 100.
         let condemned_block = WalletBlock {
             block_height: BlockHeight::from_u32(99),
@@ -884,6 +891,11 @@ mod tests {
                 ironwood_initial_tree_size: 0,
                 ironwood_final_tree_size: 0,
                 provenance: TreeBoundsProvenance::Ironwood,
+                revoked_testimony: RevokedTestimony {
+                    sapling: false,
+                    orchard: false,
+                    ironwood: true,
+                },
             },
         };
 
