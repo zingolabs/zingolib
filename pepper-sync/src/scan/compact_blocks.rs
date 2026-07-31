@@ -825,4 +825,124 @@ mod tests {
             })
         ));
     }
+
+    /// After a pool's history is reopened, the rescan is dispatched over the
+    /// very blocks whose record the reopening condemned:
+    /// `create_scan_task` seams each chunk on the surviving wallet block
+    /// below it, and the scan trusts that seam's tree bounds over the
+    /// chain metadata served with the compact blocks. A chunk seamed on a
+    /// condemned block therefore reproduces the exact `IncorrectTreeSize`
+    /// that caused the reopening, which reopens the history again and ends
+    /// the session: whenever the reopened history spans more than one
+    /// chunk, the healing loop closes without progress.
+    ///
+    /// The sync state below is the post-reopening contract of
+    /// `reopen_scan_ranges_from` (previously scanned ranges returned to
+    /// `Historic`), and the two `create_scan_task` calls are the dispatches
+    /// the two concurrent scan workers receive. The assertion states the
+    /// property the healing needs in order to make progress: rescanning the
+    /// second chunk must not reproduce the reopening error.
+    #[tokio::test]
+    async fn rescan_after_reopening_must_not_reproduce_the_reopening_error() {
+        use std::collections::BTreeMap;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::state::create_scan_task;
+        use crate::sync::{ScanPriority, ScanRange};
+        use crate::wallet::SyncState;
+
+        let regtest = zcash_protocol::local_consensus::LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+
+        // A block scanned without ironwood tracking: by height 99 the chain
+        // holds 100 ironwood commitments, the record says zero. Its hash
+        // chains to `block_with_served_ironwood_actions` at height 100.
+        let condemned_block = WalletBlock {
+            block_height: BlockHeight::from_u32(99),
+            block_hash: BlockHash([0; 32]),
+            prev_hash: BlockHash([9; 32]),
+            time: 0,
+            txids: vec![],
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size: 10,
+                sapling_final_tree_size: 10,
+                orchard_initial_tree_size: 10,
+                orchard_final_tree_size: 10,
+                ironwood_initial_tree_size: 0,
+                ironwood_final_tree_size: 0,
+            },
+        };
+
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(
+                BlockHeight::from_u32(90)..BlockHeight::from_u32(100),
+                ScanPriority::Historic,
+            ),
+            ScanRange::from_parts(
+                BlockHeight::from_u32(100)..BlockHeight::from_u32(102),
+                ScanPriority::Historic,
+            ),
+        ];
+
+        let mut wallet = MockWalletBuilder::new()
+            .birthday(BlockHeight::from_u32(90))
+            .sync_state(sync_state)
+            .wallet_blocks(BTreeMap::from([(
+                BlockHeight::from_u32(99),
+                condemned_block,
+            )]))
+            .create_mock_wallet();
+
+        let first_chunk = create_scan_task(&regtest, &mut wallet, false)
+            .unwrap()
+            .expect("the lowest reopened chunk is dispatched");
+        assert!(first_chunk.start_seam_block.is_none());
+        let second_chunk = create_scan_task(&regtest, &mut wallet, false)
+            .unwrap()
+            .expect("the next chunk is dispatched while the first is still scanning");
+
+        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
+        let initial_scan_data = InitialScanData::new(
+            fetch_request_sender,
+            &regtest,
+            &block_with_served_ironwood_actions(5, 105),
+            second_chunk.start_seam_block,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let result = scan_compact_blocks(
+            vec![block_with_served_ironwood_actions(5, 105)],
+            &regtest,
+            &HashMap::new(),
+            initial_scan_data,
+            100,
+        );
+
+        if let Err(ScanError::IncorrectTreeSize {
+            shielded_protocol,
+            block_metadata_size,
+            calculated_size,
+        }) = result
+        {
+            panic!(
+                "the reopened rescan reproduced the reopening error \
+                 ({shielded_protocol} history recorded {calculated_size} where the chain \
+                 reports {block_metadata_size}): reopening recreates this exact state, \
+                 so the healing loop never completes"
+            );
+        }
+    }
 }
