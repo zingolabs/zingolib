@@ -19,7 +19,7 @@ use zip32::AccountId;
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
+use crate::sync::truncate::{self, PoolTruncation};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
     Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
@@ -383,7 +383,7 @@ pub trait SyncShardTrees: SyncWallet {
     /// it cannot roll back, aborts with
     /// [`SyncError::TruncationError`] so the caller can fall back to the
     /// clear-and-rescan recovery. Each tree's outcome is decided by the
-    /// pure per-pool rule `plan_pool_truncation` over facts read here
+    /// pure per-pool rule `truncate::plan_pool` over facts read here
     /// at the point of application (see [`crate::sync::truncate`]).
     fn truncate_shard_trees(
         &mut self,
@@ -412,7 +412,7 @@ where
 }
 
 /// Truncates one pool's shard tree: reads the tree's facts, decides its
-/// outcome through the pure per-pool rule ([`plan_pool_truncation`]),
+/// outcome through the pure per-pool rule ([`truncate::plan_pool`]),
 /// and applies it.
 ///
 /// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
@@ -430,7 +430,7 @@ where
     H: Hashable + Clone + PartialEq,
     E: std::fmt::Debug + std::fmt::Display,
 {
-    match plan_pool_truncation(tree_facts(tree, truncate_height), truncate_height) {
+    match truncate::plan_pool(truncate::tree_facts(tree, truncate_height), truncate_height) {
         PoolTruncation::Untouched => Ok(()),
         PoolTruncation::ToCheckpoint { checkpoint } => {
             match tree.rollback_to_checkpoint(checkpoint)? {

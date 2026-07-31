@@ -753,7 +753,7 @@ where
         "unqualified written data found above height {}. truncating and rescanning.",
         u32::from(truncate_height),
     );
-    truncate::targeted_truncate_wallet_height(wallet, truncate_height)?;
+    truncate::targeted_wallet_height(wallet, truncate_height)?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
@@ -837,7 +837,7 @@ where
             }
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
-            truncate::targeted_truncate_wallet_height(wallet, chain_height)?;
+            truncate::targeted_wallet_height(wallet, chain_height)?;
             wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
@@ -1627,10 +1627,7 @@ where
                     return Err(ServerError::ChainVerificationError.into());
                 }
 
-                truncate::truncate_data_for_verification(
-                    wallet,
-                    current_reorg_detection_start_height - 1,
-                )?;
+                truncate::data_for_verification(wallet, current_reorg_detection_start_height - 1)?;
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1808,7 +1805,7 @@ where
 /// Removes wallet blocks, transactions, nullifiers, outpoints and shard tree data above the given `truncate_height`.
 ///
 /// The decision of what a correct truncation does is made purely by
-/// [`truncate::plan_truncation`] from the wallet state, the shard-tree
+/// [`truncate::plan`] from the wallet state, the shard-tree
 /// state, and the truncation target. This function only applies the
 /// returned plan.
 /// Updates the wallet with data from `scan_results`
@@ -2471,7 +2468,7 @@ mod test {
         }
     }
 
-    /// The truncation contract of [`crate::sync::truncate::truncate_data_for_verification`]:
+    /// The truncation contract of [`crate::sync::truncate::data_for_verification`]:
     /// a reorg truncation rolls every store back to the truncate height,
     /// and a shard tree that records nothing above that height (such as
     /// the empty ironwood tree a pre-ironwood (v0) wallet blob migrates
@@ -2486,7 +2483,7 @@ mod test {
 
         use crate::mocks::MockWalletBuilder;
         use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
-        use crate::sync::{ScanPriority, ScanRange, truncate::truncate_data_for_verification};
+        use crate::sync::{ScanPriority, ScanRange, truncate};
         use crate::wallet::{
             RevokedTestimony, ShardTrees, SyncState, TreeBounds, TreeBoundsProvenance, WalletBlock,
             traits::SyncBlocks,
@@ -2566,7 +2563,7 @@ mod test {
             let mut wallet = synced_wallet(shard_trees);
 
             // A routine two-block reorg rolls the wallet back to height 8.
-            let result = truncate_data_for_verification(&mut wallet, BlockHeight::from_u32(8));
+            let result = truncate::data_for_verification(&mut wallet, BlockHeight::from_u32(8));
 
             assert!(
                 result.is_ok(),
@@ -2608,7 +2605,7 @@ mod test {
             }
             let mut wallet = synced_wallet(shard_trees);
 
-            let result = truncate_data_for_verification(&mut wallet, BlockHeight::from_u32(8));
+            let result = truncate::data_for_verification(&mut wallet, BlockHeight::from_u32(8));
 
             assert!(matches!(
                 result,
