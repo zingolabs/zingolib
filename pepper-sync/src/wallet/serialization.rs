@@ -1467,6 +1467,58 @@ mod tests {
         assert_eq!(recovered.ironwood_final_tree_size, 6);
     }
 
+    const IRONWOOD_NETWORK: zcash_protocol::local_consensus::LocalNetwork =
+        zcash_protocol::local_consensus::LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(100)),
+        };
+
+    fn wallet_block_bytes(block_height: u32, tree_bounds_bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.write_u8(0).unwrap();
+        out.write_u32::<LittleEndian>(block_height).unwrap();
+        out.write_all(&[1u8; 32]).unwrap();
+        out.write_all(&[2u8; 32]).unwrap();
+        out.write_u32::<LittleEndian>(0).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        out.write_all(tree_bounds_bytes).unwrap();
+        out
+    }
+
+    #[test]
+    fn wallet_block_with_v0_tree_bounds_above_ironwood_activation_fails_to_read() {
+        use zcash_protocol::consensus::Parameters;
+        let ironwood_activation = IRONWOOD_NETWORK
+            .activation_height(consensus::NetworkUpgrade::Nu6_3)
+            .expect("network activates ironwood");
+        let bytes = wallet_block_bytes(
+            u32::from(ironwood_activation) + 1,
+            &v0_tree_bounds_bytes(10, 20, 30, 40),
+        );
+        assert!(WalletBlock::read(bytes.as_slice()).is_err());
+    }
+
+    #[test]
+    fn wallet_block_with_v0_tree_bounds_below_ironwood_activation_reads() {
+        use zcash_protocol::consensus::Parameters;
+        let ironwood_activation = IRONWOOD_NETWORK
+            .activation_height(consensus::NetworkUpgrade::Nu6_3)
+            .expect("network activates ironwood");
+        let bytes = wallet_block_bytes(
+            u32::from(ironwood_activation) - 1,
+            &v0_tree_bounds_bytes(10, 20, 30, 40),
+        );
+        assert!(WalletBlock::read(bytes.as_slice()).is_ok());
+    }
+
     #[test]
     fn shardtree_roundtrip_keeps_newest_checkpoints() {
         let mut shard_trees = ShardTrees::new();

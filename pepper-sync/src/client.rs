@@ -17,7 +17,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
-        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
+        BlockId, CompactBlock, GetAddressUtxosReply, LightdInfo, RawTransaction, TreeState,
     },
 };
 
@@ -53,6 +53,8 @@ async fn next_stream_item<T>(
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
+    /// Gets the server metadata, including the consensus branch ID at the chain tip.
+    LightdInfo(oneshot::Sender<Result<LightdInfo, tonic::Status>>),
     /// Gets  a compact block of the given block height.
     CompactBlock(
         oneshot::Sender<Result<CompactBlock, tonic::Status>>,
@@ -112,6 +114,23 @@ pub(crate) async fn get_chain_height(
         .map_err(ServerError::RequestFailed)?;
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
+}
+
+/// Gets the server metadata, including the consensus branch ID at the chain tip.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub(crate) async fn get_lightd_info(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+) -> Result<LightdInfo, ServerError> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::LightdInfo(reply_sender))
+        .map_err(|_| ServerError::FetcherDropped)?;
+
+    reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)?
+        .map_err(ServerError::RequestFailed)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
