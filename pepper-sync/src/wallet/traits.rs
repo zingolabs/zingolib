@@ -18,7 +18,7 @@ use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
+use crate::shardtree_ext::{CheckpointAppendOutcome, RollbackOutcome, ShardTreeExt};
 use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
@@ -402,13 +402,23 @@ pub trait SyncShardTrees: SyncWallet {
     }
 }
 
-/// An empty shard tree with the crate's standard checkpoint retention.
-fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+/// An empty shard tree with the crate's standard checkpoint retention and
+/// the zero-height checkpoint that every fresh tree must carry.
+pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
 -> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
 where
     H: Hashable + Clone + PartialEq,
 {
-    ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize)
+    let mut tree = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+
+    // `NotAboveNewest` is impossible on an empty checkpoint store.
+    assert_eq!(
+        tree.append_checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail"),
+        CheckpointAppendOutcome::Appended
+    );
+
+    tree
 }
 
 /// Truncates one pool's shard tree: reads the tree's facts, decides its

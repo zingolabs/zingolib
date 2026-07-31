@@ -39,8 +39,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    shardtree_ext::ShardTreeExt,
-    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
+    sync::{ScanPriority, ScanRange},
     utils::{
         get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
         get_compact_tx_txid,
@@ -1796,29 +1795,10 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-
-        // These trees are freshly created, so the initial checkpoint must
-        // be `Appended`; a `NotAboveNewest` here would break the
-        // initialization invariant that `add_initial_frontier` and
-        // truncation planning rely on.
-        for tree_checkpoint in [
-            sapling.append_checkpoint(BlockHeight::from_u32(0)),
-            orchard.append_checkpoint(BlockHeight::from_u32(0)),
-            ironwood.append_checkpoint(BlockHeight::from_u32(0)),
-        ] {
-            assert_eq!(
-                tree_checkpoint.expect("should never fail"),
-                crate::shardtree_ext::CheckpointAppendOutcome::Appended
-            );
-        }
-
         Self {
-            sapling,
-            orchard,
-            ironwood,
+            sapling: traits::empty_shard_tree(),
+            orchard: traits::empty_shard_tree(),
+            ironwood: traits::empty_shard_tree(),
         }
     }
 }
