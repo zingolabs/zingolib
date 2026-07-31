@@ -18,7 +18,7 @@ use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
     sync::ScanPriority,
-    utils::{get_compact_block_height, get_compact_tx_txid},
+    utils::{block, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -159,7 +159,7 @@ where
             for transaction in &block.vtx {
                 collect_nullifiers(
                     &mut nullifiers,
-                    get_compact_block_height(block),
+                    block::get_compact_height(block),
                     transaction,
                 )?;
             }
@@ -284,7 +284,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );
@@ -308,7 +308,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );
@@ -332,7 +332,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );

@@ -41,10 +41,7 @@ use crate::{
     scan::compact_blocks::calculate_block_tree_bounds,
     shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
-    utils::{
-        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
-        get_compact_tx_txid,
-    },
+    utils::{block, transaction},
     witness,
 };
 
@@ -420,11 +417,15 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: get_compact_block_height(block),
-            block_hash: get_compact_block_hash(block),
-            prev_hash: get_compact_block_prev_hash(block),
+            block_height: block::get_compact_height(block),
+            block_hash: block::get_compact_hash(block),
+            prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
-            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
+            txids: block
+                .vtx
+                .iter()
+                .map(transaction::get_compact_txid)
+                .collect(),
             tree_bounds,
         })
     }
