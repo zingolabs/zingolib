@@ -65,23 +65,60 @@ fn git_path_query(flag: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
+fn descriptor(raw: &str, tag_prefix: &str, part: &str) -> String {
+    let (body, dirty) = match raw.strip_suffix("-dirty") {
+        Some(stripped) => (stripped, true),
+        None => (raw, false),
+    };
+    let fields: Vec<&str> = body.rsplitn(3, '-').collect();
+    let formatted = match fields.as_slice() {
+        [hash, count, tag]
+            if hash.starts_with('g') && count.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            let ver = tag.strip_prefix(tag_prefix).unwrap_or(tag);
+            let hash5: String = hash[1..].chars().take(5).collect();
+            if *count == "0" {
+                format!("{part}_{ver}")
+            } else {
+                format!("{part}_{ver}_{count}_{hash5}")
+            }
+        }
+        _ => {
+            let hash5: String = body.chars().take(5).collect();
+            format!("{part}_{hash5}")
+        }
+    };
+    if dirty {
+        format!("{formatted}_dirty")
+    } else {
+        formatted
+    }
+}
+
 fn git_description() {
     // No network here: a build must describe the state it builds from,
     // and the tags already fetched are part of that state. (The
     // previous `git fetch --tags` on every rerun was both a per-build
     // network round-trip and a source of description drift.)
     let description = Command::new("git")
-        .args(["describe", "--dirty", "--always", "--long"])
+        .args([
+            "describe",
+            "--dirty",
+            "--always",
+            "--long",
+            "--match=zingolib_v*",
+        ])
         .output()
         .ok()
         .filter(|output| output.status.success())
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|stdout| stdout.trim_end().to_string())
         .filter(|description| !description.is_empty())
+        .map(|raw| descriptor(&raw, "zingolib_v", "zl"))
         // Outside a usable git checkout (published crate, bind-mounted
         // container workspace with unresolved ownership), fall back to
         // the crate version rather than embedding an empty string.
-        .unwrap_or_else(|| format!("v{}", env::var("CARGO_PKG_VERSION").unwrap_or_default()));
+        .unwrap_or_else(|| format!("zl_{}", env::var("CARGO_PKG_VERSION").unwrap_or_default()));
 
     // Write the git description to a file which will be included in the crate
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -89,10 +126,10 @@ fn git_description() {
     let mut f = File::create(dest_path).unwrap();
     writeln!(
         f,
-        "/// The result of running 'git describe' at compile time:\n\
-        /// The most recent tag name, the number\n\
-        /// of commits above it, and the hash of\n\
-        /// the most recent commit\n\
+        "/// The build descriptor derived from 'git describe' at compile time:\n\
+        /// `zl_<ver>[_<numcommit>_<hash5>][_dirty]`, where the bracketed\n\
+        /// fields are elided when the build sits exactly on its\n\
+        /// `zingolib_v<ver>` release tag\n\
         pub fn git_description() -> &'static str {{\"{description}\"}}"
     )
     .unwrap();
