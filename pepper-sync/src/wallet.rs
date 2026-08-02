@@ -39,7 +39,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    shardtree_ext::ShardTreeExt,
+    shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     utils::{block, transaction},
     witness,
@@ -1685,6 +1685,82 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     }
 }
 
+/// Reduces the wallet to what a build that never tracked `pool` would have
+/// left behind: the very same scanned ranges, and none of that pool's data.
+///
+/// This is the state a wallet reaches by syncing across a pool's activation
+/// on a build that predates the pool, which is not otherwise constructible
+/// from outside. Scan-range priorities are deliberately untouched, since the
+/// defect being reproduced is precisely that the ranges still claim to be
+/// scanned.
+#[cfg(any(test, feature = "test-features"))]
+pub fn strip_pool_tracking_for_test<W>(wallet: &mut W, pool: ShieldedPool) -> Result<(), W::Error>
+where
+    W: traits::SyncWallet
+        + traits::SyncBlocks
+        + traits::SyncTransactions
+        + traits::SyncNullifiers
+        + traits::SyncShardTrees,
+{
+    for block in wallet.get_wallet_blocks_mut()?.values_mut() {
+        let tree_bounds = &mut block.tree_bounds;
+        match pool {
+            ShieldedPool::Sapling => {
+                tree_bounds.sapling_initial_tree_size = 0;
+                tree_bounds.sapling_final_tree_size = 0;
+            }
+            ShieldedPool::Orchard => {
+                tree_bounds.orchard_initial_tree_size = 0;
+                tree_bounds.orchard_final_tree_size = 0;
+            }
+            ShieldedPool::Ironwood => {
+                tree_bounds.ironwood_initial_tree_size = 0;
+                tree_bounds.ironwood_final_tree_size = 0;
+            }
+        }
+    }
+    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+        match pool {
+            ShieldedPool::Sapling => {
+                transaction.sapling_notes.clear();
+                transaction.outgoing_sapling_notes.clear();
+            }
+            ShieldedPool::Orchard => {
+                transaction.orchard_notes.clear();
+                transaction.outgoing_orchard_notes.clear();
+            }
+            ShieldedPool::Ironwood => {
+                transaction.ironwood_notes.clear();
+                transaction.outgoing_ironwood_notes.clear();
+            }
+        }
+    }
+
+    let nullifiers = wallet.get_nullifiers_mut()?;
+    match pool {
+        ShieldedPool::Sapling => nullifiers.sapling.clear(),
+        ShieldedPool::Orchard => nullifiers.orchard.clear(),
+        ShieldedPool::Ironwood => nullifiers.ironwood.clear(),
+    }
+
+    let empty = ShardTrees::new();
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    match pool {
+        ShieldedPool::Sapling => shard_trees.sapling = empty.sapling,
+        ShieldedPool::Orchard => shard_trees.orchard = empty.orchard,
+        ShieldedPool::Ironwood => shard_trees.ironwood = empty.ironwood,
+    }
+
+    let sync_state = wallet.get_sync_state_mut()?;
+    match pool {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
+
+    Ok(())
+}
+
 // TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
 // handling will need to replace expects
 /// Type alias for sapling memory shard store
@@ -1721,29 +1797,25 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-
-        // These trees are freshly created, so the initial checkpoint must
-        // be `Appended`; a `NotAboveNewest` here would break the
-        // initialization invariant that `add_initial_frontier` and
-        // truncation planning rely on.
-        for tree_checkpoint in [
-            sapling.append_checkpoint(BlockHeight::from_u32(0)),
-            orchard.append_checkpoint(BlockHeight::from_u32(0)),
-            ironwood.append_checkpoint(BlockHeight::from_u32(0)),
-        ] {
-            assert_eq!(
-                tree_checkpoint.expect("should never fail"),
-                crate::shardtree_ext::CheckpointAppendOutcome::Appended
-            );
-        }
-
         Self {
-            sapling,
-            orchard,
-            ironwood,
+            sapling: empty_shard_tree(),
+            orchard: empty_shard_tree(),
+            ironwood: empty_shard_tree(),
+        }
+    }
+
+    /// Replaces one pool's shard tree with an empty tree, leaving the other
+    /// pools alone.
+    ///
+    /// The empty tree is that pool's correct state at its own activation, so
+    /// this is the rollback a pool needs when its recorded history cannot be
+    /// trusted and no checkpoint survives to roll back to.
+    pub(crate) fn clear_pool(&mut self, pool: ShieldedPool) {
+        tracing::info!("Clearing {pool:?} shard tree.");
+        match pool {
+            ShieldedPool::Sapling => self.sapling = empty_shard_tree(),
+            ShieldedPool::Orchard => self.orchard = empty_shard_tree(),
+            ShieldedPool::Ironwood => self.ironwood = empty_shard_tree(),
         }
     }
 }
@@ -1752,6 +1824,25 @@ impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An empty shard tree with the crate's standard checkpoint retention and
+/// the zero-height checkpoint that every fresh tree must carry.
+pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+-> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    let mut tree = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+
+    // `NotAboveNewest` is impossible on an empty checkpoint store.
+    assert_eq!(
+        tree.append_checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail"),
+        CheckpointAppendOutcome::Appended
+    );
+
+    tree
 }
 
 use shardtree::store::ShardStore;

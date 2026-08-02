@@ -1049,6 +1049,39 @@ pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protoc
     shard_ranges.pop();
 }
 
+/// Reopens for scanning every scanned range at or above `from_height`,
+/// splitting the range that straddles it.
+///
+/// `Historic` is the priority a range carries when it has never been
+/// scanned, which is what a range whose recorded history cannot be trusted
+/// has effectively become. Historic ranges are selected lowest first, so the
+/// rescan works upward and each range takes its tree-size baseline from a
+/// range below that the same rescan has already corrected.
+///
+/// Ranges being scanned right now are left alone, since their results are
+/// already in flight against the bounds they were dispatched with.
+pub(super) fn reopen_scan_ranges_from(sync_state: &mut SyncState, from_height: BlockHeight) {
+    if let Some((index, range_to_split)) = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .find(|(_index, range)| range.block_range().contains(&from_height))
+        && let Some((below, above)) = range_to_split.split_at(from_height)
+    {
+        sync_state
+            .scan_ranges
+            .splice(index..=index, vec![below, above]);
+    }
+
+    for scan_range in &mut sync_state.scan_ranges {
+        if scan_range.block_range().start >= from_height && scan_range.priority().is_scanned() {
+            *scan_range =
+                ScanRange::from_parts(scan_range.block_range().clone(), ScanPriority::Historic);
+        }
+    }
+}
+
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedPool,
@@ -1330,6 +1363,58 @@ mod tests {
                 ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
                 ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
                 ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
+            ]
+        );
+    }
+
+    /// Reopening splits the range straddling the height and returns every
+    /// scanned range above it to `Historic`. History below is left scanned,
+    /// since a pool's record below its own first commitment is not in
+    /// question, and a range being scanned right now is left alone because
+    /// its results are already in flight against the bounds it was
+    /// dispatched with.
+    #[test]
+    fn reopen_scan_ranges_from() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..100.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(100.into()..200.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(200.into()..300.into(), ScanPriority::ScannedWithoutMapping),
+            ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
+        ];
+
+        super::reopen_scan_ranges_from(&mut sync_state, 150.into());
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..100.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(100.into()..150.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(150.into()..200.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..300.into(), ScanPriority::Historic),
+                ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
+            ]
+        );
+    }
+
+    /// A height at or below everything the wallet holds reopens all of it,
+    /// which is what a pool whose activation precedes the wallet's birthday
+    /// requires.
+    #[test]
+    fn reopen_scan_ranges_from_below_the_wallet() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(100.into()..200.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(200.into()..300.into(), ScanPriority::Scanned),
+        ];
+
+        super::reopen_scan_ranges_from(&mut sync_state, 1.into());
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(100.into()..200.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..300.into(), ScanPriority::Historic),
             ]
         );
     }

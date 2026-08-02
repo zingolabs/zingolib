@@ -18,12 +18,13 @@ use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
+use crate::reset_spends;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
     Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
-    WalletTransaction,
+    WalletTransaction, empty_shard_tree,
 };
 use crate::witness::LocatedTreeData;
 use crate::{SyncDomain, client, sync::set_transactions_failed_unchecked};
@@ -152,6 +153,7 @@ pub trait SyncTransactions: SyncWallet {
     fn truncate_wallet_transactions(
         &mut self,
         truncate_height: BlockHeight,
+        set_truncated_transactions_failed: bool,
     ) -> Result<(), Self::Error> {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
@@ -160,7 +162,13 @@ pub trait SyncTransactions: SyncWallet {
             .map(|tx| tx.transaction().txid())
             .collect();
 
-        set_transactions_failed_unchecked(self.get_wallet_transactions_mut()?, invalid_txids);
+        if set_truncated_transactions_failed {
+            set_transactions_failed_unchecked(self.get_wallet_transactions_mut()?, invalid_txids);
+        } else {
+            let wallet_transactions = self.get_wallet_transactions_mut()?;
+            wallet_transactions.retain(|txid, _| !invalid_txids.contains(txid));
+            reset_spends(wallet_transactions, invalid_txids);
+        }
 
         Ok(())
     }
@@ -382,15 +390,6 @@ pub trait SyncShardTrees: SyncWallet {
 
         Ok(())
     }
-}
-
-/// An empty shard tree with the crate's standard checkpoint retention.
-fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
--> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
-where
-    H: Hashable + Clone + PartialEq,
-{
-    ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize)
 }
 
 /// Truncates one pool's shard tree: reads the tree's facts, decides its
