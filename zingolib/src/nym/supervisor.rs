@@ -139,15 +139,39 @@ fn publish_locked(guarded: &ProxyState, publisher: &StatusPublisher) {
 /// held one, the typed cause. The timestamp is always present because every
 /// death has a moment; the detail is `None` for a spawned child's closed
 /// stdout pipe, whose diagnostic is the child's own stderr.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeathReport {
     /// When the death latched, by the system clock — renderable as wall
     /// time and FFI-crossable, unlike a monotonic instant, at the price of
     /// NTP steps. Staleness math goes through [`DeathReport::age`], which
-    /// absorbs a stepped clock.
+    /// absorbs a stepped clock. Crosses the wire as milliseconds since the
+    /// Unix epoch (a JS `Date` on the far side), not serde's default
+    /// `{secs,nanos}` pair.
+    #[serde(with = "at_millis")]
     pub at: std::time::SystemTime,
     /// The typed cause, when one was held.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub detail: Option<zingo_net_diag::NetOpFailure>,
+}
+
+/// serde codec for [`DeathReport::at`]: milliseconds since the Unix epoch as a
+/// `u64`. A pre-epoch instant (a clock set absurdly wrong) serializes as 0
+/// rather than erroring, since the timestamp is diagnostic, not load-bearing.
+mod at_millis {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    pub fn serialize<S: serde::Serializer>(at: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
+        let ms = at
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        s.serialize_u64(ms)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<SystemTime, D::Error> {
+        let ms = <u64 as serde::Deserialize>::deserialize(d)?;
+        Ok(UNIX_EPOCH + Duration::from_millis(ms))
+    }
 }
 
 impl DeathReport {

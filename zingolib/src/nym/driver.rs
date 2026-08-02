@@ -20,20 +20,25 @@ use crate::nym::{DeathReport, MixnetMode};
 /// evidence scoped to it. Every field beyond the mode is `None` outside
 /// the one mode it belongs to, exactly as the pull accessors are gated.
 ///
-/// In-process-plain by ratified decision (2026-07-28): the wire
-/// serialization of this snapshot — and its golden pins — is minted in the
-/// boundary-carrier phase, when out-of-process consumers exist to pin
-/// against. The fields are chosen so serde bolts on without reshaping.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// This is the wire snapshot the neon boundary carries to zingo-pc, the
+/// boundary-carrier consumer ADR 0024 sequences last. The serde form omits
+/// every absent field, so the `mode` token alone discriminates and each state
+/// carries only its own evidence. The wire is pinned by the `wire_contract`
+/// golden test below, the same way [`MixnetMode`]'s five tokens are pinned in
+/// `mode.rs`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MixnetStatus {
     /// The Mixnet Mode at this observation.
     pub mode: MixnetMode,
     /// The local SOCKS5 address, present exactly while ready.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub socks5_addr: Option<String>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub bootstrap_detail: Option<String>,
     /// The latched death read whole, present only while died.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub death: Option<DeathReport>,
 }
 
@@ -96,4 +101,123 @@ pub enum ProvisionStrategy<'a> {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
     },
+}
+
+/// The golden wire pins for the status snapshot (ADR 0024, the boundary-carrier
+/// mint). Each state is pinned literally in both directions: serializing the
+/// canonical value produces exactly the bytes, and those bytes lift back to the
+/// value. A drift here is a breaking change to zingo-pc's neon boundary, the
+/// same contract `mode.rs`'s `wire_contract` keeps for the five mode tokens.
+#[cfg(test)]
+mod wire_contract {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use zingo_net_diag::{NetOpFailure, NetOpStage};
+
+    use super::MixnetStatus;
+    use crate::nym::{DeathReport, MixnetMode};
+
+    // A fixed latch moment (2025-07-30T18:26:40Z) so the death pins are
+    // deterministic; the wire carries it as milliseconds since the epoch.
+    fn fixed_at() -> std::time::SystemTime {
+        UNIX_EPOCH + Duration::from_millis(1_753_900_000_000)
+    }
+
+    fn pin(status: &MixnetStatus, json: &str) {
+        assert_eq!(serde_json::to_string(status).unwrap(), json);
+        assert_eq!(&serde_json::from_str::<MixnetStatus>(json).unwrap(), status);
+    }
+
+    #[test]
+    fn unattached_carries_only_its_token() {
+        pin(
+            &MixnetStatus::slot_only(MixnetMode::Unattached),
+            r#"{"mode":"unattached"}"#,
+        );
+    }
+
+    #[test]
+    fn switched_off_carries_only_its_token() {
+        pin(
+            &MixnetStatus::slot_only(MixnetMode::SwitchedOff),
+            r#"{"mode":"switched_off"}"#,
+        );
+    }
+
+    #[test]
+    fn bootstrapping_carries_its_narration() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Bootstrapping,
+                socks5_addr: None,
+                bootstrap_detail: Some("connecting to gateway".into()),
+                death: None,
+            },
+            r#"{"mode":"bootstrapping","bootstrap_detail":"connecting to gateway"}"#,
+        );
+    }
+
+    #[test]
+    fn ready_carries_its_socks5_addr() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Ready,
+                socks5_addr: Some("127.0.0.1:1080".into()),
+                bootstrap_detail: None,
+                death: None,
+            },
+            r#"{"mode":"ready","socks5_addr":"127.0.0.1:1080"}"#,
+        );
+    }
+
+    #[test]
+    fn died_carries_a_typed_cause() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Died,
+                socks5_addr: None,
+                bootstrap_detail: None,
+                death: Some(DeathReport {
+                    at: fixed_at(),
+                    detail: Some(NetOpFailure {
+                        stage: NetOpStage::TimedOut { after_ms: 25000 },
+                        target: "https://indexer.example:443".into(),
+                        cause_chain: vec!["deadline elapsed".into()],
+                    }),
+                }),
+            },
+            r#"{"mode":"died","death":{"at":1753900000000,"detail":{"stage":{"timed-out":{"after_ms":25000}},"target":"https://indexer.example:443","cause_chain":["deadline elapsed"]}}}"#,
+        );
+    }
+
+    #[test]
+    fn died_without_a_held_cause_omits_the_detail() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Died,
+                socks5_addr: None,
+                bootstrap_detail: None,
+                death: Some(DeathReport {
+                    at: fixed_at(),
+                    detail: None,
+                }),
+            },
+            r#"{"mode":"died","death":{"at":1753900000000}}"#,
+        );
+    }
+
+    #[test]
+    fn a_unit_stage_is_its_kebab_token_not_a_substring() {
+        // The discriminant is the same kebab token Display keeps, so a consumer
+        // matches the variant; the cause chain stays layered, never joined.
+        let failure = NetOpFailure {
+            stage: NetOpStage::RemoteTls,
+            target: "https://indexer.example:443".into(),
+            cause_chain: vec!["handshake failed".into(), "certificate expired".into()],
+        };
+        assert_eq!(
+            serde_json::to_string(&failure).unwrap(),
+            r#"{"stage":"remote-tls","target":"https://indexer.example:443","cause_chain":["handshake failed","certificate expired"]}"#,
+        );
+    }
 }
