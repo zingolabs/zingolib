@@ -12,11 +12,6 @@ exclude = ["nym-host"]
 resolver = "2"
 
 [workspace.dependencies]
-# TEMPORARY pin (send-over-nym step 4, zingolib#2505): the mixnet attach seam
-# was built against zingolib's `nym_mobile_adoption` branch, since deleted.
-# Pinned by rev to that branch's head so the arc still resolves and builds;
-# later stacked PRs advance the pin along zingolib's own history. The `nym`
-# feature enables the Mixnet Mode surface.
 zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
     "nym",
 ] }
