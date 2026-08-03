@@ -209,11 +209,11 @@ mod wire_contract {
     #[test]
     fn a_hostile_at_lifts_to_a_result_not_a_panic() {
         // u64::MAX milliseconds since the epoch overflows Windows'
-        // SystemTime representation, so there the codec's unchecked
-        // `UNIX_EPOCH + Duration` panics inside serde; Linux absorbs the
-        // same value. The contract under test is that hostile wire always
-        // reaches a Result — which verdict it gets may differ by platform
-        // until the codec adopts a checked add or a uniform bound.
+        // SystemTime representation while Linux absorbs it, so the codec's
+        // checked add may legitimately return either verdict by platform.
+        // The contract under test is only that hostile wire always reaches
+        // a Result, never a panic — the failure an unchecked
+        // `UNIX_EPOCH + Duration` exhibited on Windows.
         let hostile = format!(r#"{{"mode":"died","death":{{"at":{}}}}}"#, u64::MAX);
         let _ = serde_json::from_str::<MixnetStatus>(&hostile);
     }

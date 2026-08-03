@@ -157,6 +157,9 @@ pub struct DeathReport {
 /// serde codec for [`DeathReport::at`]: milliseconds since the Unix epoch as a
 /// `u64`. A pre-epoch instant (a clock set absurdly wrong) serializes as 0
 /// rather than erroring, since the timestamp is diagnostic, not load-bearing.
+/// Lifting is checked the same way: a millisecond count the platform's
+/// `SystemTime` cannot represent (Windows overflows far below `u64::MAX`)
+/// is refused as a deserialization error, never a panic.
 mod at_millis {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -170,7 +173,9 @@ mod at_millis {
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<SystemTime, D::Error> {
         let ms = <u64 as serde::Deserialize>::deserialize(d)?;
-        Ok(UNIX_EPOCH + Duration::from_millis(ms))
+        UNIX_EPOCH
+            .checked_add(Duration::from_millis(ms))
+            .ok_or_else(|| serde::de::Error::custom("death timestamp out of range"))
     }
 }
 
