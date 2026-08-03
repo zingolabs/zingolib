@@ -302,7 +302,10 @@ mod wire_contract {
                 | NetOpStage::PayloadDecode
                 | NetOpStage::TimedOut { .. } => {}
             }
-            assert_eq!(serde_json::to_string(stage).unwrap(), format!("\"{stage}\""));
+            assert_eq!(
+                serde_json::to_string(stage).unwrap(),
+                format!("\"{stage}\"")
+            );
         }
         // The one fielded variant: the discriminant is still Display's
         // token; the bound rides as a field, not parenthesized text.
