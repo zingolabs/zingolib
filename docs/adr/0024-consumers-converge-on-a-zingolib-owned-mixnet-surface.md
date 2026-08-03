@@ -112,3 +112,46 @@ lands there; it warrants an immediate issue independent of this
 record. Golden wire fixtures multiply across three repos and must stay
 byte-identical; the shim's existing three-language pattern is the
 template.
+
+## Amendment (2026-08-03): zingo-viewmodel becomes the funnel dependency
+
+The Considered-options section rejected a shared consumer-facing crate
+"while zingo-viewmodel remains unmerged." That condition is now being
+dissolved deliberately. The editorial layer will be re-extracted on a
+fresh branch off dev, so the crate is born conformant to this record
+rather than rebased across the mint's relocation; the stale
+`view-model` and `viewmodel-crate` branches and PR #2497 serve as an
+inventory of what belongs in the editorial layer, never as a rebase
+base.
+
+The retarget fires when the extraction's seed slice merges to dev,
+not when the last projection moves in. The seed's re-export spine is
+built consumer-complete, from an audit of what zingo-cli,
+zingo-mobile, and zingo-pc actually import from zingolib, so each
+governed consumer repoints exactly once; later slices are additive
+behind an already-standing funnel. From that merge, rule 7 reads:
+consumers declare exactly one wallet dependency, zingo-viewmodel at a
+git rev, never a branch. zingo-viewmodel re-exports the wire mint, the session driver's
+consumer surface, and whatever zingolib items consumers legitimately
+need, exactly as zingolib re-exports netutils items today; it
+re-exports and projects, it never redefines. Rules 1 through 6 and 8
+are untouched: zingolib remains the mint and the policy owner, the
+viewmodel owns only the editorial projection, and consumers own only
+rendering. The side-by-side alternative — consumers holding both a
+zingolib and a zingo-viewmodel dependency — was rejected because two
+pins can drift, and drift recreates the netutils failure mode one
+layer up: duplicate compiles of shared types, and golden fixtures
+silently pinning different revisions of the same wire.
+
+The retargeted rule remains what the original was: a contract over the
+consumers this project governs, not a property the compiler enforces.
+Every item the viewmodel re-exports must stay public in zingolib, so a
+direct zingolib dependency remains possible for anyone. Enforcement
+lives in the governed consumers' manifests and CI — the golden wire
+fixtures and the reference consumer's canary build — where a violation
+is a reviewable diff. The privacy ratchet remains the instrument that
+shrinks the bypassable surface, ratcheting zingolib's public API down
+toward what the viewmodel actually consumes. The Reference Consumer's
+ADR 0028 exemption carries over unchanged: it tracks workspace HEAD by
+path, now through zingo-viewmodel. Until the re-extraction merges,
+rule 7 stands as originally written.
