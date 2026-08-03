@@ -300,6 +300,10 @@ fn check_continuity(
     Ok(())
 }
 
+/// Checks every pool's commitment tree size against the chain.
+///
+/// A zero metadata size is also the protobuf default of a server that does
+/// not report the pool.
 fn check_tree_size(
     compact_block: &CompactBlock,
     wallet_block: &WalletBlock,
@@ -307,47 +311,45 @@ fn check_tree_size(
     let Some(chain_metadata) = &compact_block.chain_metadata else {
         return Ok(());
     };
-    let matched = |pool, block_metadata_size, calculated_size| {
-        if block_metadata_size == calculated_size {
-            Ok(())
-        } else {
-            Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(pool),
-                block_metadata_size,
-                calculated_size,
-            })
-        }
-    };
+    let tree_bounds = wallet_block.tree_bounds();
 
-    matched(
-        ShieldedPool::Sapling,
-        chain_metadata.sapling_commitment_tree_size,
-        wallet_block.tree_bounds().sapling_final_tree_size,
-    )?;
-    matched(
-        ShieldedPool::Orchard,
-        chain_metadata.orchard_commitment_tree_size,
-        wallet_block.tree_bounds().orchard_final_tree_size,
-    )?;
-    // Ironwood tolerates a zero on either side while parts of the ecosystem
-    // do not serve ironwood data (wallet blocks synced before ironwood
-    // tracking carry zero sizes, and servers without support send zero
-    // metadata against real actions): warn instead of failing sync until
-    // ironwood serving is universal. Two nonzero sizes disagreeing is
-    // neither of those cases: both sides are actively tracking the pool, so
-    // the mismatch is corruption and is rejected exactly as for the other
-    // pools.
-    let metadata_size = chain_metadata.ironwood_commitment_tree_size;
-    let calculated_size = wallet_block.tree_bounds().ironwood_final_tree_size;
-    if metadata_size != 0 && calculated_size != 0 {
-        matched(ShieldedPool::Ironwood, metadata_size, calculated_size)?;
-    } else if metadata_size != calculated_size {
-        tracing::warn!(
-            "ironwood tree size mismatch at block {}.\nwallet block: {}\ncompact block metadata: {}",
-            wallet_block.block_height(),
+    for (pool, metadata_size, calculated_size) in [
+        (
+            ShieldedPool::Sapling,
+            chain_metadata.sapling_commitment_tree_size,
+            tree_bounds.sapling_final_tree_size,
+        ),
+        (
+            ShieldedPool::Orchard,
+            chain_metadata.orchard_commitment_tree_size,
+            tree_bounds.orchard_final_tree_size,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            chain_metadata.ironwood_commitment_tree_size,
+            tree_bounds.ironwood_final_tree_size,
+        ),
+    ] {
+        if metadata_size == calculated_size {
+            continue;
+        }
+
+        if metadata_size == 0 {
+            tracing::warn!(
+                "{pool:?} chain metadata reports no tree size at block {} against a wallet size \
+                 of {calculated_size}: either this server does not report the {pool:?} tree size, \
+                 or the wallet's record overstates a pool the chain holds nothing of. The next \
+                 block with a reported size decides.",
+                wallet_block.block_height(),
+            );
+            continue;
+        }
+
+        return Err(ScanError::IncorrectTreeSize {
+            shielded_protocol: PoolType::Shielded(pool),
+            block_metadata_size: metadata_size,
             calculated_size,
-            metadata_size
-        );
+        });
     }
 
     Ok(())
@@ -587,7 +589,8 @@ mod tests {
 
     /// A server actively serving ironwood metadata (nonzero) that disagrees
     /// with the wallet's own nonzero calculation is corruption, not the
-    /// known "server does not serve ironwood yet" case (metadata zero).
+    /// known "server does not report the ironwood tree size" case (metadata
+    /// zero).
     /// Validation must reject it exactly as it does for sapling and orchard.
     #[test]
     fn nonzero_ironwood_tree_size_mismatch_is_rejected() {
@@ -701,40 +704,80 @@ mod tests {
         ));
     }
 
-    /// Zero ironwood seam bounds against first-block metadata proving a
-    /// populated tree mark a pool the persisted bounds never tracked, so the
-    /// baseline must be re-derived from that metadata (final size minus the
-    /// block's served outputs) instead of trusted into the understated
-    /// baseline `understated_ironwood_baseline_is_rejected` rejects. A
-    /// genuinely empty tree (metadata also zero) keeps its zero baseline.
-    #[tokio::test]
-    async fn zero_ironwood_seam_bounds_rebase_from_first_block_metadata() {
-        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
-        let initial_scan_data = InitialScanData::new(
-            fetch_request_sender,
-            &zcash_protocol::consensus::MAIN_NETWORK,
-            &block_with_served_ironwood_actions(5, 105),
-            Some(wallet_block_with_ironwood_size(0)),
-            None,
-        )
-        .await
-        .unwrap();
+    fn block_with_served_orchard_actions(
+        action_count: usize,
+        metadata_orchard_size: u32,
+    ) -> CompactBlock {
+        let mut compact_block = block_with_served_ironwood_actions(0, 10);
+        compact_block.vtx[0].actions = (0..action_count)
+            .map(|_| compact_ironwood_action())
+            .collect();
+        compact_block
+            .chain_metadata
+            .as_mut()
+            .expect("the helper always builds metadata")
+            .orchard_commitment_tree_size = metadata_orchard_size;
+        compact_block
+    }
 
-        assert_eq!(initial_scan_data.sapling_initial_tree_size, 10);
-        assert_eq!(initial_scan_data.orchard_initial_tree_size, 10);
-        assert_eq!(initial_scan_data.ironwood_initial_tree_size, 100);
+    /// A wallet whose history never tracked a pool records no tree for it,
+    /// so its blocks report zero where the chain reports a populated tree.
+    /// That is the wallet's record failing to account for the chain, and it
+    /// must be named rather than tolerated: tolerating it leaves the notes
+    /// in that history undetected and the balance understating the wallet.
+    #[test]
+    fn untracked_pool_history_is_rejected() {
+        let compact_block = compact_block_with_ironwood_size(1354);
+        let wallet_block = wallet_block_with_ironwood_size(0);
 
-        let (fetch_request_sender, _receiver) = mpsc::unbounded_channel();
-        let pre_activation = InitialScanData::new(
-            fetch_request_sender,
-            &zcash_protocol::consensus::MAIN_NETWORK,
-            &block_with_served_ironwood_actions(0, 0),
-            Some(wallet_block_with_ironwood_size(0)),
-            None,
-        )
-        .await
-        .unwrap();
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                block_metadata_size: 1354,
+                calculated_size: 0,
+            })
+        ));
+    }
 
-        assert_eq!(pre_activation.ironwood_initial_tree_size, 0);
+    /// The same reasoning, for a pool that activated long before this build:
+    /// nothing about it depends on which pool is newest, on an activation
+    /// height, or on a network.
+    #[test]
+    fn untracked_pool_history_is_rejected_for_every_pool() {
+        let compact_block = block_with_served_orchard_actions(0, 1354);
+        let wallet_block = wallet_block_with_ironwood_size(10);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
+                block_metadata_size: 1354,
+                calculated_size: 10,
+            })
+        ));
+    }
+
+    /// A server that does not report a pool's tree size leaves it at zero
+    /// while the block still carries that pool's outputs. Failing sync there
+    /// would strand every wallet using such a server, and the wallet's own
+    /// record is not what is at fault, so this is tolerated.
+    #[test]
+    fn an_unreported_tree_size_does_not_fail_the_scan() {
+        let compact_block = block_with_served_ironwood_actions(5, 0);
+        let wallet_block = wallet_block_with_ironwood_size(5);
+
+        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
+    }
+
+    /// The wallet's count is cumulative, so against a non-reporting server
+    /// the mismatch persists onto blocks that serve no outputs of their
+    /// own; rejecting those would loop reopen-and-rescan forever.
+    #[test]
+    fn an_unreported_tree_size_is_tolerated_on_blocks_without_outputs() {
+        let compact_block = block_with_served_ironwood_actions(0, 0);
+        let wallet_block = wallet_block_with_ironwood_size(7);
+
+        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
     }
 }

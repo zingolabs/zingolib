@@ -25,7 +25,9 @@ use zingolib::{
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
 };
-use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
+use zingolib_testutils::scenarios::{
+    self, IndexerConvergence, increase_height_and_wait_for_client,
+};
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]
@@ -668,6 +670,127 @@ async fn indexer_converges_with_validator_after_block_generation() {
              validator tip {validator_height} despite the convergence barrier"
         );
     }
+}
+
+/// A wallet holding blocks that were scanned without tracking a pool must
+/// still end up with the notes those blocks contain. Nothing in such a
+/// wallet asks for them: the ranges are recorded as fully scanned, so the
+/// notes remain lost and the balance silently understates what the wallet
+/// owns.
+///
+/// The wallet's own recorded commitment tree for the pool is what gives it
+/// away, because it cannot account for the tree the chain reports. Nothing
+/// about that reasoning is particular to one pool, one activation height or
+/// one network, so it is exercised for each pool a wallet can be funded in.
+async fn notes_in_untracked_history_are_recovered(pool: PoolType) {
+    let shielded_pool = match pool {
+        PoolType::ORCHARD => zcash_protocol::ShieldedPool::Orchard,
+        PoolType::IRONWOOD => zcash_protocol::ShieldedPool::Ironwood,
+        other => panic!("{other} is not a pool a recipient can be funded in"),
+    };
+    let balance = async |client: &LightClient| -> u64 {
+        let balance = client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .expect("a synced client reports a balance");
+        match shielded_pool {
+            zcash_protocol::ShieldedPool::Orchard => balance.confirmed_orchard_balance,
+            zcash_protocol::ShieldedPool::Ironwood => balance.confirmed_ironwood_balance,
+            zcash_protocol::ShieldedPool::Sapling => balance.confirmed_sapling_balance,
+        }
+        .map(zcash_protocol::value::Zatoshis::into_u64)
+        .unwrap_or(0)
+    };
+
+    let fixture = scenarios::default_test_activation_heights();
+    let activation_heights = zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(match shielded_pool {
+            zcash_protocol::ShieldedPool::Ironwood => fixture.nu6_3(),
+            _ => None,
+        })
+        .set_nu7(None)
+        .build();
+
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
+        pool,
+        activation_heights,
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+    scenarios::send_and_bump(
+        &local_net,
+        &mut faucet,
+        vec![(recipient_address.as_str(), 100_000, None)],
+    )
+    .await;
+    scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
+
+    let funded_balance = balance(&recipient).await;
+    assert!(
+        funded_balance > 0,
+        "the recipient must hold a {pool} note before its history is stripped"
+    );
+
+    // Reduce the wallet to what a build that never tracked the pool would
+    // have left: the very same scanned ranges, none of the pool's data.
+    {
+        let wallet = recipient.wallet();
+        let mut wallet = wallet.write().await;
+        pepper_sync::wallet::strip_pool_tracking_for_test(&mut *wallet, shielded_pool)
+            .expect("stripping a local wallet is infallible");
+    }
+    assert_eq!(
+        balance(&recipient).await,
+        0,
+        "stripping must actually remove the note that recovery is then judged by"
+    );
+
+    // Mining gives the wallet a block whose metadata it must account for.
+    // The barrier is held here rather than by a syncing helper, so the
+    // sessions below are counted exactly.
+    let target = scenarios::generate_n_blocks_return_new_height(&local_net, 2).await;
+    local_net.converge(target).await;
+
+    // The first session finds the pool's recorded tree wanting and reopens
+    // its history, ending there rather than reporting a sync that would have
+    // left the notes lost.
+    let reopened = recipient.sync_and_await().await;
+    assert!(
+        reopened.is_err(),
+        "a wallet whose {pool} history cannot account for the chain must not \
+         report a successful sync: {reopened:?}"
+    );
+
+    // The second session rescans the reopened history and recovers the note.
+    scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
+
+    assert_eq!(
+        balance(&recipient).await,
+        funded_balance,
+        "the {pool} note was left lost in history that was scanned without \
+         {pool} tracking",
+    );
+}
+
+#[tokio::test]
+async fn ironwood_notes_in_untracked_history_are_recovered() {
+    notes_in_untracked_history_are_recovered(PoolType::IRONWOOD).await;
+}
+
+#[tokio::test]
+async fn orchard_notes_in_untracked_history_are_recovered() {
+    notes_in_untracked_history_are_recovered(PoolType::ORCHARD).await;
 }
 
 /// The serving invariant pepper-sync's `check_tree_size` relies on, verified
