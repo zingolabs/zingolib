@@ -27,19 +27,59 @@ use crate::nym::{DeathReport, MixnetMode};
 /// golden test below, the same way [`MixnetMode`]'s five tokens are pinned in
 /// `mode.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "RawMixnetStatus")]
 pub struct MixnetStatus {
     /// The Mixnet Mode at this observation.
     pub mode: MixnetMode,
     /// The local SOCKS5 address, present exactly while ready.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub socks5_addr: Option<String>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bootstrap_detail: Option<String>,
     /// The latched death read whole, present only while died.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub death: Option<DeathReport>,
+}
+
+/// The lifted form before mode-scoping. serde reads the fields through this
+/// mirror, then [`TryFrom`] refuses any evidence outside its one mode, so a
+/// hand-built wire cannot smuggle, say, a death into a ready snapshot.
+#[derive(serde::Deserialize)]
+struct RawMixnetStatus {
+    mode: MixnetMode,
+    #[serde(default)]
+    socks5_addr: Option<String>,
+    #[serde(default)]
+    bootstrap_detail: Option<String>,
+    #[serde(default)]
+    death: Option<DeathReport>,
+}
+
+impl TryFrom<RawMixnetStatus> for MixnetStatus {
+    type Error = String;
+
+    fn try_from(raw: RawMixnetStatus) -> Result<Self, Self::Error> {
+        fn stray(field: &str, mode: MixnetMode) -> String {
+            format!("{field} is not evidence for mode {}", mode.as_str())
+        }
+        if raw.socks5_addr.is_some() && raw.mode != MixnetMode::Ready {
+            return Err(stray("socks5_addr", raw.mode));
+        }
+        if raw.bootstrap_detail.is_some() && raw.mode != MixnetMode::Bootstrapping {
+            return Err(stray("bootstrap_detail", raw.mode));
+        }
+        if raw.death.is_some() && raw.mode != MixnetMode::Died {
+            return Err(stray("death", raw.mode));
+        }
+        Ok(MixnetStatus {
+            mode: raw.mode,
+            socks5_addr: raw.socks5_addr,
+            bootstrap_detail: raw.bootstrap_detail,
+            death: raw.death,
+        })
+    }
 }
 
 impl MixnetStatus {
@@ -216,6 +256,60 @@ mod wire_contract {
         // `UNIX_EPOCH + Duration` exhibited on Windows.
         let hostile = format!(r#"{{"mode":"died","death":{{"at":{}}}}}"#, u64::MAX);
         let _ = serde_json::from_str::<MixnetStatus>(&hostile);
+    }
+
+    #[test]
+    fn stray_evidence_is_refused() {
+        // Each field lifts only inside its one mode; anywhere else the
+        // wire is refused rather than silently carried, keeping the
+        // struct's mode-scoping invariant true on both directions.
+        for hostile in [
+            r#"{"mode":"unattached","socks5_addr":"127.0.0.1:1080"}"#,
+            r#"{"mode":"ready","bootstrap_detail":"connecting to gateway"}"#,
+            r#"{"mode":"bootstrapping","death":{"at":0}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<MixnetStatus>(hostile).is_err(),
+                "lifted stray evidence: {hostile}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_stage_token_is_its_display_mint() {
+        // Display's kebab rendering is the mint; the serde discriminant
+        // must never drift from it. The match makes the list exhaustive:
+        // a new variant fails to compile here until its token is pinned.
+        let unit_stages = [
+            NetOpStage::RouteResolution,
+            NetOpStage::RemoteConnect,
+            NetOpStage::LocalProxyConnect,
+            NetOpStage::SocksHandshake,
+            NetOpStage::TunnelTransport,
+            NetOpStage::RemoteTls,
+            NetOpStage::RemoteHttp,
+            NetOpStage::PayloadDecode,
+        ];
+        for stage in &unit_stages {
+            match stage {
+                NetOpStage::RouteResolution
+                | NetOpStage::RemoteConnect
+                | NetOpStage::LocalProxyConnect
+                | NetOpStage::SocksHandshake
+                | NetOpStage::TunnelTransport
+                | NetOpStage::RemoteTls
+                | NetOpStage::RemoteHttp
+                | NetOpStage::PayloadDecode
+                | NetOpStage::TimedOut { .. } => {}
+            }
+            assert_eq!(serde_json::to_string(stage).unwrap(), format!("\"{stage}\""));
+        }
+        // The one fielded variant: the discriminant is still Display's
+        // token; the bound rides as a field, not parenthesized text.
+        assert_eq!(
+            serde_json::to_string(&NetOpStage::TimedOut { after_ms: 7 }).unwrap(),
+            r#"{"timed-out":{"after_ms":7}}"#,
+        );
     }
 
     #[test]

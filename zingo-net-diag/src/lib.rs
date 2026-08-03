@@ -79,7 +79,10 @@ use std::fmt;
 /// Kept deliberately small: two adjacent stages with a documented boundary
 /// beat five precise ones nobody can produce. The [`fmt::Display`] rendering
 /// is kebab-case (`remote-tls`, `timed-out(25000ms)`) and is part of the
-/// stability contract described on [`NetOpFailure`].
+/// stability contract described on [`NetOpFailure`]. Behind the `serde`
+/// feature the wire discriminant is minted from the same kebab tokens by
+/// `rename_all`, and zingolib's `nym::driver::wire_contract` pins every
+/// variant's token against its `Display` rendering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
