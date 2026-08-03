@@ -36,6 +36,7 @@ mod unit_test_twins {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingo_viewmodel::{LightClientViewModelExt as _, SentValueTransfer, ValueTransferKind};
     use zingolib::config::WalletConfig;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
@@ -48,8 +49,7 @@ mod unit_test_twins {
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary;
     use zingolib::wallet::summary::data::{
-        BasicNoteSummary, OutgoingNoteSummary, SendType, SentValueTransfer, TransactionKind,
-        TransactionSummary, ValueTransferKind,
+        BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
     };
     use zingolib::{check_client_balances, get_base_address_macro};
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};

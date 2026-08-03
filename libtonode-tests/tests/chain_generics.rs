@@ -9,11 +9,12 @@ mod chain_generics {
     // here), keeping chain-level coverage of that machinery.
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
+    use zingo_viewmodel::testutils::create_various_value_transfers;
     use zingolib::testutils::chain_generics::fixtures;
 
     #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
-        fixtures::create_various_value_transfers::<LibtonodeEnvironment>().await;
+        create_various_value_transfers::<LibtonodeEnvironment>().await;
     }
     #[tokio::test]
     async fn send_shield_cycle() {

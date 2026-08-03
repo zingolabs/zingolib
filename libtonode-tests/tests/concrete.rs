@@ -545,15 +545,15 @@ async fn sync_all_expressible_epochs() {
 }
 use pepper_sync::wallet::{OrchardNote, SaplingNote};
 use zcash_local_net::validator::Validator;
+use zingo_viewmodel::{
+    LightClientViewModelExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::testutils::build_fvks_from_unified_keystore;
 use zingolib::wallet::error::CalculateTransactionError;
 use zingolib::wallet::output::SpendStatus;
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
-};
 
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
