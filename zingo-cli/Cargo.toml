@@ -6,20 +6,22 @@ edition = "2024"
 [features]
 # Compile in the Nym mixnet transport so `nym on|off|status` can drive it.
 # Off by default; the command reports the feature is absent when it is not set.
-nym = ["zingolib/nym"]
+nym = ["zingo-viewmodel/nym"]
 # Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
 # in to recording and `nym history` can display it. Off by default; without
 # it the flag warns and records nothing.
-nym-diary = ["zingolib/nym-diary"]
+nym-diary = ["zingo-viewmodel/nym-diary"]
 
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-# No direct zingo-netutils dependency: this consumer funnels through
-# zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
-# dev-dependency below reaches netutils' test scaffolding directly, which
-# ships nothing and creates no duplicate copy.
-zingolib = { workspace = true }
+# The single wallet dependency (ADR 0024 rule 7, amendment 2026-08-03):
+# this consumer funnels through zingo-viewmodel, whose modules mirror
+# zingolib's surface path-for-path and add the editorial extension
+# traits. No direct zingolib or zingo-netutils dependency; the
+# dev-dependency below reaches netutils' test scaffolding directly,
+# which ships nothing and creates no duplicate copy.
+zingo-viewmodel = { workspace = true }
 
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
@@ -47,7 +49,7 @@ thiserror.workspace = true
 tempfile = { workspace = true }
 # The offline-contract tests build Indexerless clients from synthetic
 # wallets, so every command's offline behavior is pinned without a network.
-zingolib = { workspace = true, features = ["testutils"] }
+zingo-viewmodel = { workspace = true, features = ["testutils"] }
 zingo_test_vectors = { workspace = true }
 # The heartbeat and log-file tests read their temporal parameters from
 # `time::test`.

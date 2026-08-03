@@ -11,15 +11,15 @@ use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface}
 use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
+use zingo_viewmodel::{
+    LightClientViewModelExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::migration::{
     BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
     PartState, RecommendedAction, SigningStrategy, bucket_index,
-};
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,

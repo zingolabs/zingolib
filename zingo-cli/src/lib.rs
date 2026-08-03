@@ -29,11 +29,11 @@ use log::{error, info};
 use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
-use zingolib::data::PollReport;
-use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
-use zingolib::netutils::Indexer as _;
-use zingolib::wallet::WalletSettings;
+use zingo_viewmodel::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
+use zingo_viewmodel::data::PollReport;
+use zingo_viewmodel::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use zingo_viewmodel::netutils::Indexer as _;
+use zingo_viewmodel::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
 
@@ -79,7 +79,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .value_name("server")
                 .help("Indexer server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
+                .default_value(zingo_viewmodel::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("offline")
                 .long("offline")
                 .action(clap::ArgAction::SetTrue)
@@ -535,7 +535,7 @@ fn decide_connectivity(
     online: bool,
     remember_online: bool,
     explicit_server: bool,
-    stored: zingolib::connectivity::ConnectivityConsent,
+    stored: zingo_viewmodel::connectivity::ConnectivityConsent,
 ) -> ConnectivityDecision {
     if offline {
         return ConnectivityDecision::DeliberateOffline;
@@ -547,10 +547,10 @@ fn decide_connectivity(
         return ConnectivityDecision::Online { store: false };
     }
     match stored {
-        zingolib::connectivity::ConnectivityConsent::StandingOnline => {
+        zingo_viewmodel::connectivity::ConnectivityConsent::StandingOnline => {
             ConnectivityDecision::Online { store: false }
         }
-        zingolib::connectivity::ConnectivityConsent::Unrecorded => {
+        zingo_viewmodel::connectivity::ConnectivityConsent::Unrecorded => {
             ConnectivityDecision::UnconsentedOffline
         }
     }
@@ -574,7 +574,7 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
-        zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
+        zingo_viewmodel::connectivity::forget_connectivity_consent(&data_dir)?;
         eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
     }
     let explicit_server =
@@ -584,18 +584,18 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
         matches.get_flag("online"),
         matches.get_flag("remember-online"),
         explicit_server,
-        zingolib::connectivity::load_connectivity_consent(&data_dir),
+        zingo_viewmodel::connectivity::load_connectivity_consent(&data_dir),
     );
     Ok(match decision {
         ConnectivityDecision::DeliberateOffline => CommunicationMode::Offline,
         ConnectivityDecision::Online { store } => {
             if store {
-                zingolib::connectivity::store_standing_online(&data_dir)?;
+                zingo_viewmodel::connectivity::store_standing_online(&data_dir)?;
                 eprintln!(
                     "Standing Connectivity Consent stored in '{}'; future sessions attach \
                      to the network automatically. Undo with --forget-online.",
                     data_dir
-                        .join(zingolib::connectivity::CONNECTIVITY_CONSENT_FILE)
+                        .join(zingo_viewmodel::connectivity::CONNECTIVITY_CONSENT_FILE)
                         .display()
                 );
             }
@@ -777,7 +777,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         let chain_height = match filled_template.server.clone() {
             Some(server) => RT
                 .block_on(async move {
-                    zingolib::netutils::GrpcIndexer::new(server)
+                    zingo_viewmodel::netutils::GrpcIndexer::new(server)
                         .await
                         .map_err(|e| format!("{e:?}"))?
                         .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
@@ -792,7 +792,7 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
             // the library that generated it.
             None => match u32::try_from(filled_template.birthday) {
                 Ok(birthday) if birthday > 0 => birthday,
-                _ => zingolib::config::lib_birthday(filled_template.chaintype),
+                _ => zingo_viewmodel::config::lib_birthday(filled_template.chaintype),
             },
         };
 
@@ -865,7 +865,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     // the driver entirely.
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
-        use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
+        use zingo_viewmodel::nym::{MixnetStartPolicy, ProvisionStrategy};
         let policy = if filled_template.no_mixnet {
             MixnetStartPolicy::OptedOutThisSession
         } else {
@@ -912,11 +912,11 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::nym::MixnetMode::Ready => info!(
+                    zingo_viewmodel::nym::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `nym status`)."
                     ),
-                    zingolib::nym::MixnetMode::Died => {
+                    zingo_viewmodel::nym::MixnetMode::Died => {
                         let cause = status
                             .death
                             .as_ref()
@@ -969,15 +969,16 @@ fn print_salvaged_recovery_info(
 ) -> std::io::Result<()> {
     let wallet_path = cli_config.data_dir.clone().join(DEFAULT_WALLET_NAME);
     let wallet_file = std::fs::File::open(&wallet_path)?;
-    let recovery_info =
-        zingolib::wallet::LightWallet::read_recovery_info(std::io::BufReader::new(wallet_file))
-            .map_err(|salvage_error| {
-                std::io::Error::other(format!(
-                    "failed to load the wallet ({startup_error}), \
+    let recovery_info = zingo_viewmodel::wallet::LightWallet::read_recovery_info(
+        std::io::BufReader::new(wallet_file),
+    )
+    .map_err(|salvage_error| {
+        std::io::Error::other(format!(
+            "failed to load the wallet ({startup_error}), \
                      and salvaging recovery info from the file prefix also failed: \
                      {salvage_error}"
-                ))
-            })?;
+        ))
+    })?;
     eprintln!(
         "The wallet file could not be fully loaded ({startup_error}); \
          showing recovery info salvaged from its prefix."
