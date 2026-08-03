@@ -226,18 +226,6 @@ impl TransactionSummary {
             .collect()
     }
 
-    #[must_use]
-    pub fn balance_delta(&self) -> Option<i64> {
-        match self.kind {
-            TransactionKind::Sent(SendType::Send) => {
-                self.fee.map(|fee| -((self.value + fee) as i64))
-            }
-            TransactionKind::Sent(SendType::Shield | SendType::SendToSelf) => {
-                self.fee.map(|fee| -(fee as i64))
-            }
-            TransactionKind::Received => Some(self.value as i64),
-        }
-    }
     /// Prepares the fields in the summary for display
     #[must_use]
     pub fn prepare_for_display(
