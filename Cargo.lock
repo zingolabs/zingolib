@@ -5011,6 +5011,9 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "zingo-netutils"
