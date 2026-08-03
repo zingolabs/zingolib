@@ -5,33 +5,17 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 [[profile.default.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 
-# store_all_checkpoints_in_verification_window builds its ~116-block
-# chain on the first run per machine (or under
-# ZINGO_REGENERATE_CHAIN_CACHE): 507s measured solo on 2026-07-08, and
-# 1165s on a green CI shard on 2026-07-29, whose sibling run was killed
-# at the previous 1200s ceiling minutes later (runs 30419601214 and
-# 30420777014). The build's cost grows with the wallet stack, so the
-# ceiling carries ~50% headroom over the latest CI measurement. Replay
-# runs (~24s) fit the normal budget untouched.
+# Builds a ~116-block chain.
 [[profile.default.overrides]]
 filter = 'test(store_all_checkpoints_in_verification_window)'
 slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
 
-# unavailable_boundary_tree_state_skips_without_sync mines and scans a
-# ~235-block leap past the first migration bucket boundary (test-injected
-# modulus 128, plus the 100-block checkpoint retention). Every leap block
-# pays a halo2 miner address, so block assembly dominates: measured
-# ~2.7s/block in container runs, which needs the same doubled ceiling as
-# the chain-cache build above.
+# Mines and scans a ~235-block leap past the first migration bucket boundary.
 [[profile.default.overrides]]
 filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
-# The long-chain heavies measured 392-582s on 2026-07-21 across container
-# and CI runs — inside 20% of the default 600s ceiling, so any runner
-# contention tips them over (observed three times that day: two loaded
-# hosts and one CI shard). Same doubled ceiling as above; their typical
-# unloaded runs finish far inside it.
+# Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
 filter = '''
 test(mempool_spend_balance_and_note_status_accounting)
@@ -53,17 +37,17 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 [[profile.ci.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 
-# Same first-run build allowance as the default profile (see above).
+# Builds a ~116-block chain.
 [[profile.ci.overrides]]
 filter = 'test(store_all_checkpoints_in_verification_window)'
 slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
 
-# Same boundary-leap allowance as the default profile (see above).
+# Mines and scans a ~235-block leap past the first migration bucket boundary.
 [[profile.ci.overrides]]
 filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
-# Same long-chain-heavies allowance as the default profile (see above).
+# Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]
 filter = '''
 test(mempool_spend_balance_and_note_status_accounting)

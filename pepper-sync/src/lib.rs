@@ -9,7 +9,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
 - Spend-before-sync, combines the shard roots with high priority chain tip scanning to enable spending of notes as they are scanned.
 - Speed, trial decryption and tree building are computed in parallel and a multi-task architecture maximizes throughput for fetching and scanning.
 - Scan by shards, uses subtree metadata to create scan ranges that contain all note commitments to each shard to enable faster spending of decrypted outputs.
-- Fixed memory batching, each scan worker receives a batch with a fixed number of outputs for stable memory usage.
+- Fixed memory loading, each scan worker receives a load of whole blocks whose combined output count stays within a fixed budget for stable memory usage.
 - Pause/resume and stop, the sync engine can be paused to allow the wallet to perform time critical tasks that would require the acquisition of the wallet lock multiple times in quick succession. It can also be stopped before the wallet is fully synchronized.
 
 ## Terminology
@@ -33,11 +33,11 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
 8. Set the first 10 blocks after the highest previously scanned blocks to "verify" priority to check for re-org.
 
 ## Scanning
-1. If the "batcher" task is idle, set the highest priority scan range to "Scanning" priority and send it to the "batcher" task. If the scan priority is "Historic", first split an orchard shard range off the lower end. If the lowest unscanned range is of "ScannedWithoutMapping" priority, prioritize this range and set it to "RefetchingNullifiers" priority. If all scan ranges in the wallet's sync state are "scanned", shutdown the sync process.
-2. Batch the scan range:
-  2a. Stream compact blocks from server until a fixed threshold of outputs is reached. If the entire scan range is batched, the "batcher" task goes idle.
-  2b. Store the batch and wait until it is taken by an idle "scan worker" before returning to step 2a
-3. Scan each batch:
+1. If the "loader" task is idle, set the highest priority scan range to "Scanning" priority and send it to the "loader" task. If the scan priority is "Historic", first split an orchard shard range off the lower end. If the lowest unscanned range is of "ScannedWithoutMapping" priority, prioritize this range and set it to "RefetchingNullifiers" priority. If all scan ranges in the wallet's sync state are "scanned", shutdown the sync process.
+2. Load the scan range:
+  2a. Stream compact blocks from server, cutting a load at the last whole block that keeps the output budget unexceeded. If the entire scan range is loaded, the "loader" task goes idle.
+  2b. Store the load and wait until it is taken by an idle "scan worker" before returning to step 2a
+3. Scan each load:
   3a. Check block hash and height continuity
   3b. Collect all inputs in each compact block to populate the nullifier maps and outpoint maps for spend detection
   3c. Trial decrypt all notes in each compact block
@@ -56,7 +56,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
   4g. Check output id of all coins in wallet against the outpoint map. If a spend is found, update the coin's spend status and set the surrounding narrow range of blocks to "found note" priority
   4h. Check derived nullifiers of all notes in wallet against the nullifier map. If a spend is found, update the note's spend status and set the surrounding shard range of its corresponding shielded protocol to "found note" priority
   4i. Add wallet blocks to the wallet. Only retaining blocks at scan ranges bounds, blocks containing relevant transactions to the wallet or blocks within the max verification window of the highest scanned block in the wallet
-  4j. Set the scan range containing the batch of scanned blocks to "scanned" priority
+  4j. Set the scan range containing the load of scanned blocks to "scanned" priority
   4k. Merge all adjacent scanned ranges together
   4l. Clean wallet of data that is no longer relevant
 5. Scan mempool transactions.
@@ -72,14 +72,14 @@ After the sync process is initialized, it will be in a state of verification, on
 
 ### Performance Level
 - Low
--- Number of outputs per batch is quartered
+-- Output budget per scan load is quartered
 -- Nullifier map only contains chain tip
 - Medium
 -- Nullifier map only contains chain tip
 - High
 -- Nullifier map has a large maximum size
 - Maximum
--- Number of outputs per batch is quadrupled
+-- Output budget per scan load is quadrupled
 -- Nullifier map has no maximum size
 
 "#]

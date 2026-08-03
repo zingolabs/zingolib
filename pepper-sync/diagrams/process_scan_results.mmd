@@ -9,7 +9,7 @@ flowchart TD
   P6 --> P7["Check coins output ids vs outpoint map; if spent: mark coin and set surrounding narrow block range -> 'found note'"]
   P7 --> P8["Check notes derived nullifiers vs nullifier map; if spent: mark note and set surrounding shard range -> 'found note'"]
   P8 --> P9["Add wallet blocks; retain only: range bounds, blocks with relevant txs, and within max verification window of highest scanned block"]
-  P9 --> P10["Mark scan range containing this batch -> 'scanned'"]
+  P9 --> P10["Mark scan range containing this load -> 'scanned'"]
   P10 --> P11["Merge adjacent 'scanned' ranges"]
   P11 --> P12["Clean wallet data no longer relevant"]
   P12 --> END([End])

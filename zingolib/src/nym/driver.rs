@@ -20,21 +20,66 @@ use crate::nym::{DeathReport, MixnetMode};
 /// evidence scoped to it. Every field beyond the mode is `None` outside
 /// the one mode it belongs to, exactly as the pull accessors are gated.
 ///
-/// In-process-plain by ratified decision (2026-07-28): the wire
-/// serialization of this snapshot — and its golden pins — is minted in the
-/// boundary-carrier phase, when out-of-process consumers exist to pin
-/// against. The fields are chosen so serde bolts on without reshaping.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// This is the wire snapshot the neon boundary carries to zingo-pc, the
+/// boundary-carrier consumer ADR 0024 sequences last. The serde form omits
+/// every absent field, so the `mode` token alone discriminates and each state
+/// carries only its own evidence. The wire is pinned by the `wire_contract`
+/// golden test below, the same way [`MixnetMode`]'s five tokens are pinned in
+/// `mode.rs`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "RawMixnetStatus")]
 pub struct MixnetStatus {
     /// The Mixnet Mode at this observation.
     pub mode: MixnetMode,
     /// The local SOCKS5 address, present exactly while ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub socks5_addr: Option<String>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bootstrap_detail: Option<String>,
     /// The latched death read whole, present only while died.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub death: Option<DeathReport>,
+}
+
+/// The lifted form before mode-scoping. serde reads the fields through this
+/// mirror, then [`TryFrom`] refuses any evidence outside its one mode, so a
+/// hand-built wire cannot smuggle, say, a death into a ready snapshot.
+#[derive(serde::Deserialize)]
+struct RawMixnetStatus {
+    mode: MixnetMode,
+    #[serde(default)]
+    socks5_addr: Option<String>,
+    #[serde(default)]
+    bootstrap_detail: Option<String>,
+    #[serde(default)]
+    death: Option<DeathReport>,
+}
+
+impl TryFrom<RawMixnetStatus> for MixnetStatus {
+    type Error = String;
+
+    fn try_from(raw: RawMixnetStatus) -> Result<Self, Self::Error> {
+        fn stray(field: &str, mode: MixnetMode) -> String {
+            format!("{field} is not evidence for mode {}", mode.as_str())
+        }
+        if raw.socks5_addr.is_some() && raw.mode != MixnetMode::Ready {
+            return Err(stray("socks5_addr", raw.mode));
+        }
+        if raw.bootstrap_detail.is_some() && raw.mode != MixnetMode::Bootstrapping {
+            return Err(stray("bootstrap_detail", raw.mode));
+        }
+        if raw.death.is_some() && raw.mode != MixnetMode::Died {
+            return Err(stray("death", raw.mode));
+        }
+        Ok(MixnetStatus {
+            mode: raw.mode,
+            socks5_addr: raw.socks5_addr,
+            bootstrap_detail: raw.bootstrap_detail,
+            death: raw.death,
+        })
+    }
 }
 
 impl MixnetStatus {
@@ -96,4 +141,192 @@ pub enum ProvisionStrategy<'a> {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
     },
+}
+
+/// The golden wire pins for the status snapshot (ADR 0024, the boundary-carrier
+/// mint). Each state is pinned literally in both directions: serializing the
+/// canonical value produces exactly the bytes, and those bytes lift back to the
+/// value. A drift here is a breaking change to zingo-pc's neon boundary, the
+/// same contract `mode.rs`'s `wire_contract` keeps for the five mode tokens.
+#[cfg(test)]
+mod wire_contract {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use zingo_net_diag::{NetOpFailure, NetOpStage};
+
+    use super::MixnetStatus;
+    use crate::nym::{DeathReport, MixnetMode};
+
+    // A fixed latch moment (2025-07-30T18:26:40Z) so the death pins are
+    // deterministic; the wire carries it as milliseconds since the epoch.
+    fn fixed_at() -> std::time::SystemTime {
+        UNIX_EPOCH + Duration::from_millis(1_753_900_000_000)
+    }
+
+    fn pin(status: &MixnetStatus, json: &str) {
+        assert_eq!(serde_json::to_string(status).unwrap(), json);
+        assert_eq!(&serde_json::from_str::<MixnetStatus>(json).unwrap(), status);
+    }
+
+    #[test]
+    fn unattached_carries_only_its_token() {
+        pin(
+            &MixnetStatus::slot_only(MixnetMode::Unattached),
+            r#"{"mode":"unattached"}"#,
+        );
+    }
+
+    #[test]
+    fn switched_off_carries_only_its_token() {
+        pin(
+            &MixnetStatus::slot_only(MixnetMode::SwitchedOff),
+            r#"{"mode":"switched_off"}"#,
+        );
+    }
+
+    #[test]
+    fn bootstrapping_carries_its_narration() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Bootstrapping,
+                socks5_addr: None,
+                bootstrap_detail: Some("connecting to gateway".into()),
+                death: None,
+            },
+            r#"{"mode":"bootstrapping","bootstrap_detail":"connecting to gateway"}"#,
+        );
+    }
+
+    #[test]
+    fn ready_carries_its_socks5_addr() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Ready,
+                socks5_addr: Some("127.0.0.1:1080".into()),
+                bootstrap_detail: None,
+                death: None,
+            },
+            r#"{"mode":"ready","socks5_addr":"127.0.0.1:1080"}"#,
+        );
+    }
+
+    #[test]
+    fn died_carries_a_typed_cause() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Died,
+                socks5_addr: None,
+                bootstrap_detail: None,
+                death: Some(DeathReport {
+                    at: fixed_at(),
+                    detail: Some(NetOpFailure {
+                        stage: NetOpStage::TimedOut { after_ms: 25000 },
+                        target: "https://indexer.example:443".into(),
+                        cause_chain: vec!["deadline elapsed".into()],
+                    }),
+                }),
+            },
+            r#"{"mode":"died","death":{"at":1753900000000,"detail":{"stage":{"timed-out":{"after_ms":25000}},"target":"https://indexer.example:443","cause_chain":["deadline elapsed"]}}}"#,
+        );
+    }
+
+    #[test]
+    fn died_without_a_held_cause_omits_the_detail() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Died,
+                socks5_addr: None,
+                bootstrap_detail: None,
+                death: Some(DeathReport {
+                    at: fixed_at(),
+                    detail: None,
+                }),
+            },
+            r#"{"mode":"died","death":{"at":1753900000000}}"#,
+        );
+    }
+
+    #[test]
+    fn a_hostile_at_lifts_to_a_result_not_a_panic() {
+        // u64::MAX milliseconds since the epoch overflows Windows'
+        // SystemTime representation while Linux absorbs it, so the codec's
+        // checked add may legitimately return either verdict by platform.
+        // The contract under test is only that hostile wire always reaches
+        // a Result, never a panic — the failure an unchecked
+        // `UNIX_EPOCH + Duration` exhibited on Windows.
+        let hostile = format!(r#"{{"mode":"died","death":{{"at":{}}}}}"#, u64::MAX);
+        let _ = serde_json::from_str::<MixnetStatus>(&hostile);
+    }
+
+    #[test]
+    fn stray_evidence_is_refused() {
+        // Each field lifts only inside its one mode; anywhere else the
+        // wire is refused rather than silently carried, keeping the
+        // struct's mode-scoping invariant true on both directions.
+        for hostile in [
+            r#"{"mode":"unattached","socks5_addr":"127.0.0.1:1080"}"#,
+            r#"{"mode":"ready","bootstrap_detail":"connecting to gateway"}"#,
+            r#"{"mode":"bootstrapping","death":{"at":0}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<MixnetStatus>(hostile).is_err(),
+                "lifted stray evidence: {hostile}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_stage_token_is_its_display_mint() {
+        // Display's kebab rendering is the mint; the serde discriminant
+        // must never drift from it. The match makes the list exhaustive:
+        // a new variant fails to compile here until its token is pinned.
+        let unit_stages = [
+            NetOpStage::RouteResolution,
+            NetOpStage::RemoteConnect,
+            NetOpStage::LocalProxyConnect,
+            NetOpStage::SocksHandshake,
+            NetOpStage::TunnelTransport,
+            NetOpStage::RemoteTls,
+            NetOpStage::RemoteHttp,
+            NetOpStage::PayloadDecode,
+        ];
+        for stage in &unit_stages {
+            match stage {
+                NetOpStage::RouteResolution
+                | NetOpStage::RemoteConnect
+                | NetOpStage::LocalProxyConnect
+                | NetOpStage::SocksHandshake
+                | NetOpStage::TunnelTransport
+                | NetOpStage::RemoteTls
+                | NetOpStage::RemoteHttp
+                | NetOpStage::PayloadDecode
+                | NetOpStage::TimedOut { .. } => {}
+            }
+            assert_eq!(
+                serde_json::to_string(stage).unwrap(),
+                format!("\"{stage}\"")
+            );
+        }
+        // The one fielded variant: the discriminant is still Display's
+        // token; the bound rides as a field, not parenthesized text.
+        assert_eq!(
+            serde_json::to_string(&NetOpStage::TimedOut { after_ms: 7 }).unwrap(),
+            r#"{"timed-out":{"after_ms":7}}"#,
+        );
+    }
+
+    #[test]
+    fn a_unit_stage_is_its_kebab_token_not_a_substring() {
+        // The discriminant is the same kebab token Display keeps, so a consumer
+        // matches the variant; the cause chain stays layered, never joined.
+        let failure = NetOpFailure {
+            stage: NetOpStage::RemoteTls,
+            target: "https://indexer.example:443".into(),
+            cause_chain: vec!["handshake failed".into(), "certificate expired".into()],
+        };
+        assert_eq!(
+            serde_json::to_string(&failure).unwrap(),
+            r#"{"stage":"remote-tls","target":"https://indexer.example:443","cause_chain":["handshake failed","certificate expired"]}"#,
+        );
+    }
 }
