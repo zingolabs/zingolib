@@ -49,6 +49,22 @@ fn shielded_pool_value_transfers(
         .collect()
 }
 
+fn self_send_value_transfer(
+    transaction: &TransactionSummary,
+    kind: SelfSendValueTransfer,
+    value: u64,
+    memos: Vec<String>,
+) -> ValueTransfer {
+    ValueTransfer::from_summary(
+        transaction,
+        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(kind)),
+        value,
+        None,
+        transaction.pools_received(),
+        memos,
+    )
+}
+
 /// Pairs each note with `pool`, for chaining outgoing notes across pools.
 fn tag_pool(
     notes: &[OutgoingNoteSummary],
@@ -343,14 +359,10 @@ impl LightWallet {
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
                     let memos = transaction.received_memos();
                     if !memos.is_empty() {
-                        value_transfers.push(ValueTransfer::from_summary(
+                        value_transfers.push(self_send_value_transfer(
                             &transaction,
-                            ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::MemoToSelf,
-                            )),
-                            0,
-                            None,
-                            transaction.pools_received(),
+                            SelfSendValueTransfer::MemoToSelf,
+                            transaction.received_memo_value(),
                             memos,
                         ));
                     }
@@ -379,12 +391,10 @@ impl LightWallet {
                     } else {
                         SelfSendValueTransfer::Basic
                     };
-                    value_transfers.push(ValueTransfer::from_summary(
+                    value_transfers.push(self_send_value_transfer(
                         &transaction,
-                        ValueTransferKind::Sent(SentValueTransfer::SendToSelf(self_send_kind)),
-                        0,
-                        None,
-                        transaction.pools_received(),
+                        self_send_kind,
+                        transaction.self_received_value(),
                         memos,
                     ));
 
