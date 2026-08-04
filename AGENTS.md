@@ -3,6 +3,7 @@
 ## MUST DO ALWAYS
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
+- Never define by absence, not in documentation nor doc-comments.
 
 ## Writing & Code Style
 

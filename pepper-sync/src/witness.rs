@@ -112,18 +112,8 @@ where
         .len()
 }
 
-/// The index to resume subtree-root fetching from: the count of stored
-/// roots, minus one when the newest stored shard is still a bare
-/// server-fetched root (a single leaf node, no scanned contents).
-///
-/// Subtree roots are written with no checkpoint, so a bare root is the
-/// one shard-store state a reorg can invalidate without any checkpoint
-/// witnessing it: truncation planning cannot see it (its facts are
-/// checkpoints), and a count-based resume would never refetch it. Each
-/// session therefore refetches the newest bare root and `put_shard`
-/// replaces it if the chain moved, making the resume self-healing. A
-/// shard that scanning has populated is left alone: its heights carry
-/// checkpoints, and truncation judges them.
+/// Returns the index to resume subtree-root fetching from for `shard_tree`:
+/// its stored-root count, less one when its newest stored root is bare
 pub(crate) fn subtree_fetch_start_index<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) -> u32

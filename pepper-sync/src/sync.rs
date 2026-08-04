@@ -1263,7 +1263,7 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // add missing block bounds in the case that nullifier batch limit was reached and the fetch nullifier
+                // add missing block bounds in the case that the load's nullifier budget was reached and the fetch nullifier
                 // scan range was split.
                 let full_refetching_nullifiers_range = wallet
                     .get_sync_state()
