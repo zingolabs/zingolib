@@ -9,9 +9,12 @@
 //! live versions are never removed. They eventually move to a gated
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
+use std::str::FromStr as _;
+
 use pepper_sync::wallet::IronwoodNote;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
+use zcash_protocol::memo::Memo;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
@@ -274,7 +277,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             recipient_initial_funds,
             SpendStatus::Spent(placeholder_txid),
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -309,7 +312,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             99_960_000,
             SpendStatus::TransmittedSpent(placeholder_txid),
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -319,7 +322,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_sapling_notes: vec![OutgoingNoteSummary {
             output_index: 0,
             value: first_send_to_sapling,
-            memo: None,
+            memo: Memo::Empty,
             recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
             recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
             account_id: zip32::AccountId::ZERO,
@@ -345,7 +348,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             99_925_000,
             SpendStatus::Unspent,
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -432,7 +435,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             recipient_second_funding,
             SpendStatus::Spent(placeholder_txid),
             0,
-            Some("Second wave incoming".to_string()),
+            Memo::from_str("Second wave incoming").unwrap(),
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -475,7 +478,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             965_000,
             SpendStatus::Spent(placeholder_txid),
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -499,7 +502,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             99_885_000,
             SpendStatus::Unspent,
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
@@ -509,7 +512,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_sapling_notes: vec![OutgoingNoteSummary {
             output_index: 0,
             value: second_send_to_sapling,
-            memo: None,
+            memo: Memo::Empty,
             recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
             recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
             account_id: zip32::AccountId::ZERO,
@@ -542,7 +545,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             930_000,
             SpendStatus::Unspent,
             0,
-            None,
+            Memo::Empty,
         )],
         orchard_notes: vec![],
         sapling_notes: vec![],
