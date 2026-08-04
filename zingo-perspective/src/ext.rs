@@ -200,13 +200,16 @@ pub trait LightWalletPerspectiveExt {
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError>;
 
-    /// TODO: Add Doc Comment Here!
+    /// The total memo bytes sent to each recipient address, rolled up over
+    /// the wallet's external sends.
     async fn do_total_memobytes_to_address(&self) -> Result<TotalMemoBytesToAddress, SummaryError>;
 
-    /// TODO: Add Doc Comment Here!
+    /// The number of external sends the wallet has made to each recipient
+    /// address.
     async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError>;
 
-    /// TODO: Add Doc Comment Here!
+    /// The total value sent to each recipient address, rolled up over the
+    /// wallet's external sends.
     async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError>;
 }
 
