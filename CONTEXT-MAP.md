@@ -12,13 +12,13 @@ sync engine, send flow, and consumers (zingo-mobile, zingo-cli).
 
 - Glossary: [`zingolib/CONTEXT.md`](zingolib/CONTEXT.md)
 
-## View-model domain
+## Perspective domain
 
 The presentation domain: the editorial reductions consumers show to
 users, derived from the wallet-library domain's canonical data, and
 the funnel dependency governed consumers declare.
 
-- Glossary: [`zingo-viewmodel/CONTEXT.md`](zingo-viewmodel/CONTEXT.md)
+- Glossary: [`zingo-perspective/CONTEXT.md`](zingo-perspective/CONTEXT.md)
 
 ## Test infrastructure
 

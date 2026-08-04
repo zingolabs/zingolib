@@ -1,10 +1,12 @@
-# View-model domain
+# Perspective domain
 
 The presentation domain of the wallet stack: the editorial reductions
 consumers (zingo-mobile, zingo-pc, zingo-cli) show to users, derived
 from the wallet-library domain's canonical data. A reduction belongs
 here whenever two reasonable consumers could legitimately want a
 different answer; the wallet library keeps only Canonical Reductions.
+The crate is zingo-perspective, singular by ruling: one house
+perspective, N renderers.
 
 ## Language
 

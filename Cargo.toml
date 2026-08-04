@@ -5,9 +5,9 @@ members = [
     "zingo-cli",
     "zingo-memo",
     "zingo-net-diag",
+    "zingo-perspective",
     "zingo-price",
     "zingo-status",
-    "zingo-viewmodel",
     "zingolib",
     "zingolib_testutils",
 ]
@@ -34,7 +34,7 @@ zingo-net-diag = { path = "zingo-net-diag" }
 zingo-price = { path = "zingo-price", default-features = false }
 zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 # zingo-status = "0.2.1"
-zingo-viewmodel = { path = "zingo-viewmodel" }
+zingo-perspective = { path = "zingo-perspective" }
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests

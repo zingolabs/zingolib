@@ -26,7 +26,7 @@ pub mod finsight;
 pub mod testutils;
 pub mod value_transfer;
 
-pub use ext::{LightClientViewModelExt, LightWalletViewModelExt};
+pub use ext::{LightClientPerspectiveExt, LightWalletPerspectiveExt};
 pub use value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
 };

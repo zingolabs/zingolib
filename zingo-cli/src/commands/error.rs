@@ -14,9 +14,9 @@ pub(crate) enum CommandError {
     MissingKey(String),
     InvalidArguments,
     IncompatibleMemo,
-    InvalidMemo(zingo_viewmodel::wallet::utils::MemoError),
+    InvalidMemo(zingo_perspective::wallet::utils::MemoError),
     NonJsonNumberForAmount(String),
-    ConversionFailed(zingo_viewmodel::utils::error::ConversionError),
+    ConversionFailed(zingo_perspective::utils::error::ConversionError),
     MissingZenniesForZingoFlag,
     ZenniesFlagNonBool(String),
 }

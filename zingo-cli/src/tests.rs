@@ -576,7 +576,7 @@ mod config_template {
         get_mode_of_operation,
     };
     use std::path::PathBuf;
-    use zingo_viewmodel::config::ChainType;
+    use zingo_perspective::config::ChainType;
 
     /// Helper: parse args, determine mode and communication mode, and call fill.
     fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
@@ -587,7 +587,7 @@ mod config_template {
     }
 
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
-    fn fill_and_build(args: &[&str]) -> zingo_viewmodel::config::ClientConfig {
+    fn fill_and_build(args: &[&str]) -> zingo_perspective::config::ClientConfig {
         build_zingo_config(&fill(args).unwrap()).unwrap()
     }
 
@@ -639,8 +639,8 @@ mod config_template {
             let config = build_zingo_config(&filled).unwrap();
             assert!(matches!(
                 config.wallet_config(),
-                zingo_viewmodel::config::WalletConfig::NewSeed { chain_height, .. }
-                    if chain_height == zingo_viewmodel::config::lib_birthday(ChainType::Mainnet)
+                zingo_perspective::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == zingo_perspective::config::lib_birthday(ChainType::Mainnet)
             ));
         }
 
@@ -661,7 +661,7 @@ mod config_template {
             let config = build_zingo_config(&filled).unwrap();
             assert!(matches!(
                 config.wallet_config(),
-                zingo_viewmodel::config::WalletConfig::NewSeed { chain_height, .. }
+                zingo_perspective::config::WalletConfig::NewSeed { chain_height, .. }
                     if chain_height == 3_500_000
             ));
         }
@@ -790,7 +790,7 @@ mod config_template {
         use super::*;
         use pepper_sync::config::PerformanceLevel;
         use std::num::NonZeroU32;
-        use zingo_viewmodel::{
+        use zingo_perspective::{
             config::WalletConfig,
             wallet::{SyncConfig, TransparentAddressDiscovery},
         };
@@ -813,7 +813,7 @@ mod config_template {
             ]);
             let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
-                uri.starts_with(zingo_viewmodel::config::DEFAULT_INDEXER_URI),
+                uri.starts_with(zingo_perspective::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
             );
         }
@@ -881,7 +881,7 @@ mod config_template {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                     birthday: 1,
-                    wallet_settings: zingo_viewmodel::wallet::WalletSettings {
+                    wallet_settings: zingo_perspective::wallet::WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                             performance_level: PerformanceLevel::High,

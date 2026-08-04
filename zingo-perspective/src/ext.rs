@@ -186,7 +186,7 @@ async fn value_transfer_by_to_address(
 /// names, signatures, and output shapes zingolib's wallet exposed before
 /// the extraction.
 #[allow(async_fn_in_trait)]
-pub trait LightWalletViewModelExt {
+pub trait LightWalletPerspectiveExt {
     /// Provides a list of value transfers related to this capability.
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     async fn value_transfers(
@@ -210,7 +210,7 @@ pub trait LightWalletViewModelExt {
     async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError>;
 }
 
-impl LightWalletViewModelExt for LightWallet {
+impl LightWalletPerspectiveExt for LightWallet {
     async fn value_transfers(
         &self,
         sort_highest_to_lowest: bool,
@@ -378,32 +378,32 @@ impl LightWalletViewModelExt for LightWallet {
 /// The editorial reductions over [`LightClient`], carrying the method
 /// names and signatures zingolib's light client exposed before the
 /// extraction: each method locks the wallet and delegates to
-/// [`LightWalletViewModelExt`].
+/// [`LightWalletPerspectiveExt`].
 #[allow(async_fn_in_trait)]
-pub trait LightClientViewModelExt {
-    /// Wrapper for [`LightWalletViewModelExt::value_transfers`].
+pub trait LightClientPerspectiveExt {
+    /// Wrapper for [`LightWalletPerspectiveExt::value_transfers`].
     async fn value_transfers(
         &self,
         sort_highest_to_lowest: bool,
     ) -> Result<ValueTransfers, SummaryError>;
 
-    /// Wrapper for [`LightWalletViewModelExt::messages_containing`].
+    /// Wrapper for [`LightWalletPerspectiveExt::messages_containing`].
     async fn messages_containing(
         &self,
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError>;
 
-    /// Wrapper for [`LightWalletViewModelExt::do_total_memobytes_to_address`].
+    /// Wrapper for [`LightWalletPerspectiveExt::do_total_memobytes_to_address`].
     async fn do_total_memobytes_to_address(&self) -> Result<TotalMemoBytesToAddress, SummaryError>;
 
-    /// Wrapper for [`LightWalletViewModelExt::do_total_spends_to_address`].
+    /// Wrapper for [`LightWalletPerspectiveExt::do_total_spends_to_address`].
     async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError>;
 
-    /// Wrapper for [`LightWalletViewModelExt::do_total_value_to_address`].
+    /// Wrapper for [`LightWalletPerspectiveExt::do_total_value_to_address`].
     async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError>;
 }
 
-impl LightClientViewModelExt for LightClient {
+impl LightClientPerspectiveExt for LightClient {
     async fn value_transfers(
         &self,
         sort_highest_to_lowest: bool,

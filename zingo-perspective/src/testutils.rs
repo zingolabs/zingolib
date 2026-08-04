@@ -9,7 +9,7 @@ use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::with_assertions;
 use zingolib::testutils::lightclient::get_base_address;
 
-use crate::ext::LightClientViewModelExt as _;
+use crate::ext::LightClientPerspectiveExt as _;
 use crate::value_transfer::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind};
 
 /// Fixture for testing various vt transactions

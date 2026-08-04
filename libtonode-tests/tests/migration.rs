@@ -11,8 +11,8 @@ use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface}
 use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
-use zingo_viewmodel::{
-    LightClientViewModelExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+use zingo_perspective::{
+    LightClientPerspectiveExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
