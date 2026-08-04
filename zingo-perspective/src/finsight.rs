@@ -16,6 +16,54 @@ pub struct TotalSendsToAddress(pub std::collections::HashMap<String, u64>);
 #[derive(Debug)]
 pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, usize>);
 
+/// Every finsight rollup, built from a single pass over the value
+/// transfers, for consumers that want more than one rollup without
+/// re-deriving the value transfers for each.
+pub struct Finsight {
+    /// Every external send's value, grouped by recipient address.
+    pub values_sent_to_address: ValuesSentToAddress,
+    /// The total memo bytes sent to each recipient address.
+    pub total_memobytes_to_address: TotalMemoBytesToAddress,
+}
+
+impl ValuesSentToAddress {
+    /// The total value sent to each address.
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    /// use zingo_perspective::finsight::ValuesSentToAddress;
+    ///
+    /// let values = ValuesSentToAddress(HashMap::from([("zs1x".to_string(), vec![100, 250])]));
+    /// assert_eq!(values.total_value().0["zs1x"], 350);
+    /// ```
+    pub fn total_value(&self) -> TotalValueToAddress {
+        TotalValueToAddress(
+            self.0
+                .iter()
+                .map(|(address, values)| (address.clone(), values.iter().sum()))
+                .collect(),
+        )
+    }
+
+    /// The number of sends to each address.
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    /// use zingo_perspective::finsight::ValuesSentToAddress;
+    ///
+    /// let values = ValuesSentToAddress(HashMap::from([("zs1x".to_string(), vec![100, 250])]));
+    /// assert_eq!(values.total_sends().0["zs1x"], 2);
+    /// ```
+    pub fn total_sends(&self) -> TotalSendsToAddress {
+        TotalSendsToAddress(
+            self.0
+                .iter()
+                .map(|(address, values)| (address.clone(), values.len() as u64))
+                .collect(),
+        )
+    }
+}
+
 impl From<TotalMemoBytesToAddress> for json::JsonValue {
     fn from(value: TotalMemoBytesToAddress) -> Self {
         let mut jsonified = json::object!();

@@ -17,7 +17,8 @@ use zingolib::wallet::summary::data::{
 };
 
 use crate::finsight::{
-    TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress, ValuesSentToAddress,
+    Finsight, TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress,
+    ValuesSentToAddress,
 };
 use crate::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
@@ -161,25 +162,28 @@ fn create_send_value_transfers(
     Ok(value_transfers)
 }
 
-async fn value_transfer_by_to_address(
-    wallet: &LightWallet,
-) -> Result<ValuesSentToAddress, SummaryError> {
-    let value_transfers = wallet.value_transfers(false).await?;
-    let mut amount_by_address = HashMap::new();
-    for value_transfer in &value_transfers {
+fn finsight_from(value_transfers: &ValueTransfers) -> Finsight {
+    let mut values_by_address: HashMap<String, Vec<u64>> = HashMap::new();
+    let mut memobytes_by_address: HashMap<String, usize> = HashMap::new();
+    for value_transfer in value_transfers.iter() {
         if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind {
             let address = value_transfer
                 .recipient_address
                 .clone()
                 .expect("sent value transfer should always have a recipient_address");
-            amount_by_address
-                .entry(address)
-                .and_modify(|e: &mut Vec<u64>| e.push(value_transfer.value))
-                .or_insert(vec![value_transfer.value]);
+            values_by_address
+                .entry(address.clone())
+                .or_default()
+                .push(value_transfer.value);
+            *memobytes_by_address.entry(address).or_default() +=
+                value_transfer.memos.iter().map(String::len).sum::<usize>();
         }
     }
 
-    Ok(ValuesSentToAddress(amount_by_address))
+    Finsight {
+        values_sent_to_address: ValuesSentToAddress(values_by_address),
+        total_memobytes_to_address: TotalMemoBytesToAddress(memobytes_by_address),
+    }
 }
 
 /// The editorial reductions over [`LightWallet`], carrying the method
@@ -199,6 +203,11 @@ pub trait LightWalletPerspectiveExt {
         &self,
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError>;
+
+    /// Every finsight rollup from one derivation of the value transfers;
+    /// the per-rollup methods below re-derive them on each call, so a
+    /// consumer wanting several rollups should take them from here.
+    async fn finsight(&self) -> Result<Finsight, SummaryError>;
 
     /// The total memo bytes sent to each recipient address, rolled up over
     /// the wallet's external sends.
@@ -336,45 +345,21 @@ impl LightWalletPerspectiveExt for LightWallet {
         Ok(value_transfers)
     }
 
+    async fn finsight(&self) -> Result<Finsight, SummaryError> {
+        let value_transfers = self.value_transfers(false).await?;
+        Ok(finsight_from(&value_transfers))
+    }
+
     async fn do_total_memobytes_to_address(&self) -> Result<TotalMemoBytesToAddress, SummaryError> {
-        let value_transfers = self.value_transfers(true).await?;
-        let mut memobytes_by_address = HashMap::new();
-        for value_transfer in &value_transfers {
-            if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind {
-                let address = value_transfer
-                    .recipient_address
-                    .clone()
-                    .expect("sent value transfer should always have a recipient_address");
-                let bytes = value_transfer.memos.iter().fold(0, |sum, m| sum + m.len());
-                memobytes_by_address
-                    .entry(address)
-                    .and_modify(|e| *e += bytes)
-                    .or_insert(bytes);
-            }
-        }
-        Ok(TotalMemoBytesToAddress(memobytes_by_address))
+        Ok(self.finsight().await?.total_memobytes_to_address)
     }
 
     async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
-        let values_sent_to_addresses = value_transfer_by_to_address(self).await?;
-        let mut by_address_number_sends = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let number_sends = values_sent_to_addresses.0[key].len() as u64;
-            by_address_number_sends.insert(key.clone(), number_sends);
-        }
-
-        Ok(TotalSendsToAddress(by_address_number_sends))
+        Ok(self.finsight().await?.values_sent_to_address.total_sends())
     }
 
     async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
-        let values_sent_to_addresses = value_transfer_by_to_address(self).await?;
-        let mut by_address_total = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let sum = values_sent_to_addresses.0[key].iter().sum();
-            by_address_total.insert(key.clone(), sum);
-        }
-
-        Ok(TotalValueToAddress(by_address_total))
+        Ok(self.finsight().await?.values_sent_to_address.total_value())
     }
 }
 
@@ -395,6 +380,9 @@ pub trait LightClientPerspectiveExt {
         &self,
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError>;
+
+    /// Wrapper for [`LightWalletPerspectiveExt::finsight`].
+    async fn finsight(&self) -> Result<Finsight, SummaryError>;
 
     /// Wrapper for [`LightWalletPerspectiveExt::do_total_memobytes_to_address`].
     async fn do_total_memobytes_to_address(&self) -> Result<TotalMemoBytesToAddress, SummaryError>;
@@ -423,6 +411,10 @@ impl LightClientPerspectiveExt for LightClient {
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError> {
         self.wallet().read().await.messages_containing(filter).await
+    }
+
+    async fn finsight(&self) -> Result<Finsight, SummaryError> {
+        self.wallet().read().await.finsight().await
     }
 
     async fn do_total_memobytes_to_address(&self) -> Result<TotalMemoBytesToAddress, SummaryError> {
