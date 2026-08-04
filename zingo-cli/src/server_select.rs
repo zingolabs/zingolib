@@ -1,15 +1,15 @@
 //! Dynamic server selection via `get_info()` against a curated list of indexers.
 //!
 //! When no `--server` is specified, we call `get_info()` on each URI in
-//! `zingo_viewmodel::netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
+//! `zingo_perspective::netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
 //! measure response time, and return the responsive servers sorted
 //! from fastest to slowest.
 
 use std::time::{Duration, Instant};
 
 use crate::commands::RT;
-use zingo_viewmodel::netutils::indexers::MOST_UP_INDEXER_URIS;
-use zingo_viewmodel::netutils::{GrpcIndexer, Indexer as _};
+use zingo_perspective::netutils::indexers::MOST_UP_INDEXER_URIS;
+use zingo_perspective::netutils::{GrpcIndexer, Indexer as _};
 
 /// A server that responded successfully to `get_info()`, with its measured latency.
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub(crate) struct RankedServer {
 ///
 /// Uses a per-server timeout so one slow server doesn't block the rest.
 pub(crate) fn select_servers() -> Vec<RankedServer> {
-    use zingo_viewmodel::netutils::time::SERVER_RANKING_TIMEOUT;
+    use zingo_perspective::netutils::time::SERVER_RANKING_TIMEOUT;
 
     let uris: Vec<http::Uri> = MOST_UP_INDEXER_URIS
         .iter()
@@ -88,7 +88,7 @@ pub(crate) fn resolve_server(
 ) -> Result<(http::Uri, Vec<RankedServer>), http::uri::InvalidUri> {
     if let Some(explicit) = matches.get_one::<http::Uri>("server") {
         Ok((
-            zingo_viewmodel::config::construct_indexer_uri(Some(explicit.to_string()))?,
+            zingo_perspective::config::construct_indexer_uri(Some(explicit.to_string()))?,
             vec![],
         ))
     } else {
@@ -96,7 +96,7 @@ pub(crate) fn resolve_server(
         let server = if let Some(best) = ranked.first() {
             best.uri.clone()
         } else {
-            zingo_viewmodel::config::construct_indexer_uri(None)?
+            zingo_perspective::config::construct_indexer_uri(None)?
         };
         Ok((server, ranked))
     }

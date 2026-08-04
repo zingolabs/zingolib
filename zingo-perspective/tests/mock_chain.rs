@@ -11,8 +11,8 @@
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 
-use zingo_viewmodel::LightClientViewModelExt as _;
-use zingo_viewmodel::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind};
+use zingo_perspective::LightClientPerspectiveExt as _;
+use zingo_perspective::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind};
 use zingolib::check_client_balances;
 use zingolib::testutils::lightclient::{from_inputs, get_base_address};
 use zingolib::testutils::mock_indexer::{MockNet, faucet_funding_transaction};

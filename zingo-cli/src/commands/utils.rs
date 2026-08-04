@@ -7,9 +7,9 @@ use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
 use crate::commands::error::CommandError;
-use zingo_viewmodel::data::receivers::Receivers;
-use zingo_viewmodel::utils::conversion::{address_from_str, zatoshis_from_u64};
-use zingo_viewmodel::wallet;
+use zingo_perspective::data::receivers::Receivers;
+use zingo_perspective::utils::conversion::{address_from_str, zatoshis_from_u64};
+use zingo_perspective::wallet;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
@@ -35,7 +35,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
                 let memo = memo_from_json(j)?;
                 check_memo_compatibility(&recipient_address, &memo)?;
 
-                Ok(zingo_viewmodel::data::receivers::Receiver {
+                Ok(zingo_perspective::data::receivers::Receiver {
                     recipient_address,
                     amount,
                     memo,
@@ -60,7 +60,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
         };
         check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![zingo_viewmodel::data::receivers::Receiver {
+        Ok(vec![zingo_perspective::data::receivers::Receiver {
             recipient_address,
             amount,
             memo,
@@ -221,7 +221,7 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
 
 #[cfg(test)]
 mod tests {
-    use zingo_viewmodel::{
+    use zingo_perspective::{
         data::receivers::Receiver,
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::memo_bytes_from_string},
@@ -242,7 +242,7 @@ mod tests {
         let send_args = &[address_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![zingo_viewmodel::data::receivers::Receiver {
+            vec![zingo_perspective::data::receivers::Receiver {
                 recipient_address: recipient_address.clone(),
                 amount,
                 memo: None

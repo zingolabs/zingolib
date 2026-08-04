@@ -7,7 +7,7 @@
 //! three `do_total_*` rollups. The extraction increments must reproduce
 //! them exactly; a diff here is a compatibility break, never a fixture to
 //! update. Do NOT regenerate the goldens while the extraction branch lives
-//! (`VIEWMODEL_BLESS_GOLDENS=1` exists only for the original capture).
+//! (`PERSPECTIVE_BLESS_GOLDENS=1` exists only for the original capture).
 //!
 //! One deliberate softening: the `do_total_*` structs are HashMap-backed,
 //! so their JSON key order is random per process — for those the harness
@@ -23,9 +23,9 @@ use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTr
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_perspective::LightWalletPerspectiveExt as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_test_vectors::seeds;
-use zingo_viewmodel::LightWalletViewModelExt as _;
 use zingolib::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
@@ -197,7 +197,7 @@ fn golden_path(name: &str) -> std::path::PathBuf {
 
 fn check_golden(name: &str, actual: &str) {
     let path = golden_path(name);
-    if std::env::var_os("VIEWMODEL_BLESS_GOLDENS").is_some() {
+    if std::env::var_os("PERSPECTIVE_BLESS_GOLDENS").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, actual).unwrap();
         return;

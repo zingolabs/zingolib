@@ -545,8 +545,8 @@ async fn sync_all_expressible_epochs() {
 }
 use pepper_sync::wallet::{OrchardNote, SaplingNote};
 use zcash_local_net::validator::Validator;
-use zingo_viewmodel::{
-    LightClientViewModelExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+use zingo_perspective::{
+    LightClientPerspectiveExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::lightclient::LightClient;

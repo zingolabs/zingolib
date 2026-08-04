@@ -1750,8 +1750,8 @@ dependencies = [
  "zcash_primitives 0.29.0",
  "zcash_protocol 0.10.0",
  "zingo-netutils",
+ "zingo-perspective",
  "zingo-status",
- "zingo-viewmodel",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -4985,8 +4985,8 @@ dependencies = [
  "zcash_protocol 0.10.0",
  "zingo-net-diag",
  "zingo-netutils",
+ "zingo-perspective",
  "zingo-status",
- "zingo-viewmodel",
  "zingo_common_components",
  "zingo_grpc_proxy",
  "zingo_test_vectors",
@@ -5034,6 +5034,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-perspective"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "incrementalmerkletree",
+ "json",
+ "orchard",
+ "pepper-sync",
+ "tokio",
+ "tracing",
+ "zcash_client_backend",
+ "zcash_primitives 0.29.0",
+ "zcash_protocol 0.10.0",
+ "zingo-status",
+ "zingo_common_components",
+ "zingo_test_vectors",
+ "zingolib",
+ "zip32",
+]
+
+[[package]]
 name = "zingo-price"
 version = "0.1.0"
 dependencies = [
@@ -5056,27 +5077,6 @@ version = "0.2.1"
 dependencies = [
  "byteorder",
  "zcash_protocol 0.10.0",
-]
-
-[[package]]
-name = "zingo-viewmodel"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "incrementalmerkletree",
- "json",
- "orchard",
- "pepper-sync",
- "tokio",
- "tracing",
- "zcash_client_backend",
- "zcash_primitives 0.29.0",
- "zcash_protocol 0.10.0",
- "zingo-status",
- "zingo_common_components",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
 ]
 
 [[package]]

@@ -14,11 +14,11 @@ use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTr
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_perspective::{
+    LightWalletPerspectiveExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_test_vectors::seeds;
-use zingo_viewmodel::{
-    LightWalletViewModelExt as _, SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
-};
 use zingolib::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;

@@ -9,7 +9,7 @@ mod chain_generics {
     // here), keeping chain-level coverage of that machinery.
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
-    use zingo_viewmodel::testutils::create_various_value_transfers;
+    use zingo_perspective::testutils::create_various_value_transfers;
     use zingolib::testutils::chain_generics::fixtures;
 
     #[tokio::test]

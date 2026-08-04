@@ -27,21 +27,21 @@ use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
-use zingo_viewmodel::LightClientViewModelExt as _;
-use zingo_viewmodel::data::{PollReport, proposal};
-use zingo_viewmodel::lightclient::LightClient;
-use zingo_viewmodel::lightclient::migrate::{
+use zingo_perspective::LightClientPerspectiveExt as _;
+use zingo_perspective::data::{PollReport, proposal};
+use zingo_perspective::lightclient::LightClient;
+use zingo_perspective::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingo_viewmodel::utils::conversion::txid_from_hex_encoded_str;
-use zingo_viewmodel::wallet::keys::WalletAddressRef;
-use zingo_viewmodel::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
-use zingo_viewmodel::wallet::migration::{self, MigrationPhase};
+use zingo_perspective::utils::conversion::txid_from_hex_encoded_str;
+use zingo_perspective::wallet::keys::WalletAddressRef;
+use zingo_perspective::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
+use zingo_perspective::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-use zingo_viewmodel::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
+use zingo_perspective::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
 /// Awaits `operation`, emitting a heartbeat every
 /// [`TRANSMIT_HEARTBEAT_INTERVAL`]: the latest line from `latest` (the
@@ -136,7 +136,7 @@ impl Command for GetVersionCommand {
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> Result<String, CommandError> {
-        Ok(zingo_viewmodel::git_description().to_string())
+        Ok(zingo_perspective::git_description().to_string())
     }
 }
 
@@ -292,12 +292,12 @@ impl Command for ParseAddressCommand {
             address: &str,
         ) -> Option<(
             zcash_client_backend::address::Address,
-            zingo_viewmodel::config::ChainType,
+            zingo_perspective::config::ChainType,
         )> {
             [
-                zingo_viewmodel::config::ChainType::Mainnet,
-                zingo_viewmodel::config::ChainType::Testnet,
-                zingo_viewmodel::config::ChainType::Regtest(ActivationHeights::default()),
+                zingo_perspective::config::ChainType::Mainnet,
+                zingo_perspective::config::ChainType::Testnet,
+                zingo_perspective::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -306,9 +306,9 @@ impl Command for ParseAddressCommand {
             if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
                 #[allow(unreachable_patterns)]
                 let chain_name_string = match chain_name {
-                    zingo_viewmodel::config::ChainType::Mainnet => "main",
-                    zingo_viewmodel::config::ChainType::Testnet => "test",
-                    zingo_viewmodel::config::ChainType::Regtest(_) => "regtest",
+                    zingo_perspective::config::ChainType::Mainnet => "main",
+                    zingo_perspective::config::ChainType::Testnet => "test",
+                    zingo_perspective::config::ChainType::Regtest(_) => "regtest",
                     _ => unreachable!("Invalid chain type"),
                 };
                 match recipient_address {
@@ -746,14 +746,14 @@ impl Command for NymCommand {
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
 /// the explicit flag value and the executable-sibling bundled directory
 /// (where the `bundle-nym-proxy` workbench tool places the binary).
-/// [`zingo_viewmodel::nym::provision`] owns the precedence rule and its tests
+/// [`zingo_perspective::nym::provision`] owns the precedence rule and its tests
 /// (ADR 0024); this names only what zingolib cannot know by itself. Shared
 /// by the session driver call at startup and the `nym on` command.
 #[cfg(feature = "nym")]
 pub(crate) fn spawn_hints(
     explicit: Option<&str>,
-) -> zingo_viewmodel::nym::provision::SpawnHints<'_> {
-    use zingo_viewmodel::nym::provision::{self, SpawnHints};
+) -> zingo_perspective::nym::provision::SpawnHints<'_> {
+    use zingo_perspective::nym::provision::{self, SpawnHints};
     SpawnHints {
         explicit,
         bundled_dir: provision::executable_sibling_dir(),
@@ -764,7 +764,7 @@ pub(crate) fn spawn_hints(
 /// [`spawn_hints`], for the `nym on` command's in-session enable.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    zingo_viewmodel::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
+    zingo_perspective::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
 /// Typed failure of the `nym` command family. Each variant exists only in
@@ -787,7 +787,7 @@ pub enum NymCommandError {
     #[error("failed to start the nym proxy at '{path}': {source}")]
     ProxyStart {
         path: String,
-        source: zingo_viewmodel::nym::MixnetProxyError,
+        source: zingo_perspective::nym::MixnetProxyError,
     },
 }
 
@@ -836,14 +836,14 @@ fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
 }
 
 #[cfg(feature = "nym")]
-use zingo_viewmodel::netutils::time::PROBE_LEG_TIMEOUT;
+use zingo_perspective::netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one paired probe: the two legs side by side, so a mixnet-specific
 /// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
 /// unit tests.
 #[cfg(feature = "nym")]
-fn render_paired_probe(probe: &zingo_viewmodel::nym::probe::PairedProbe) -> String {
-    let leg = |leg: &zingo_viewmodel::nym::probe::ProbeLeg| match &leg.outcome {
+fn render_paired_probe(probe: &zingo_perspective::nym::probe::PairedProbe) -> String {
+    let leg = |leg: &zingo_perspective::nym::probe::ProbeLeg| match &leg.outcome {
         Ok(success) => format!(
             "ok in {}ms: chain {}, height {}",
             leg.millis, success.chain, success.height
@@ -893,12 +893,12 @@ fn nym_history_command(_lightclient: &LightClient) -> String {
 /// a caller-supplied "now" so tests pin the ages.
 #[cfg(all(feature = "nym", feature = "nym-diary"))]
 fn render_history(
-    attempts: &[zingo_viewmodel::lightclient::indexer_history::IndexerAttempt],
+    attempts: &[zingo_perspective::lightclient::indexer_history::IndexerAttempt],
     now_unix_secs: u64,
 ) -> String {
     use std::collections::BTreeMap;
 
-    use zingo_viewmodel::lightclient::indexer_history::AttemptRoute;
+    use zingo_perspective::lightclient::indexer_history::AttemptRoute;
 
     if attempts.is_empty() {
         return "No indexer history recorded yet.".to_string();
@@ -969,11 +969,11 @@ fn render_history(
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
-    mode: zingo_viewmodel::nym::MixnetMode,
+    mode: zingo_perspective::nym::MixnetMode,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
-    use zingo_viewmodel::nym::MixnetMode;
+    use zingo_perspective::nym::MixnetMode;
 
     match mode {
         MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
@@ -1007,18 +1007,18 @@ fn render_status(
 /// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
 /// synchronization stays on the ordinary connector, so a bare "ready" must
 /// never be read as end-to-end IP protection. The canonical text lives in
-/// [`zingo_viewmodel::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
+/// [`zingo_perspective::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
 /// wording.
 #[cfg(feature = "nym")]
 fn render_status_with_disclaimer(
-    mode: zingo_viewmodel::nym::MixnetMode,
+    mode: zingo_perspective::nym::MixnetMode,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
     format!(
         "{}\n\n{}",
         render_status(mode, socks5_addr, bootstrap_detail),
-        zingo_viewmodel::nym::IP_CORRELATION_DISCLAIMER,
+        zingo_perspective::nym::IP_CORRELATION_DISCLAIMER,
     )
 }
 
@@ -1503,7 +1503,8 @@ impl Command for SendCommand {
             }
         };
         let request =
-            match zingo_viewmodel::data::receivers::transaction_request_from_receivers(receivers) {
+            match zingo_perspective::data::receivers::transaction_request_from_receivers(receivers)
+            {
                 Ok(request) => request,
                 Err(e) => {
                     return Err(CommandError::NotYetTyped(format!(
@@ -1517,7 +1518,7 @@ impl Command for SendCommand {
                 .await
             {
                 Ok(proposal) => {
-                    let fee = match zingo_viewmodel::data::proposal::total_fee(&proposal) {
+                    let fee = match zingo_perspective::data::proposal::total_fee(&proposal) {
                         Ok(fee) => fee,
                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
                     };
@@ -1631,7 +1632,8 @@ impl Command for QuickSendCommand {
             }
         };
         let request =
-            match zingo_viewmodel::data::receivers::transaction_request_from_receivers(receivers) {
+            match zingo_perspective::data::receivers::transaction_request_from_receivers(receivers)
+            {
                 Ok(request) => request,
                 Err(e) => {
                     return Err(CommandError::NotYetTyped(format!(
@@ -1667,9 +1669,9 @@ impl Command for QuickSendCommand {
 /// One transmitted transaction's attestation as JSON: the route it
 /// traveled, the endpoint that accepted it, and the round-trip time.
 fn render_transmit_report(
-    report: &zingo_viewmodel::lightclient::send::TransmitReport,
+    report: &zingo_perspective::lightclient::send::TransmitReport,
 ) -> json::JsonValue {
-    use zingo_viewmodel::lightclient::send::TransmitRoute;
+    use zingo_perspective::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
         TransmitRoute::Clearnet { indexer } => object! {
@@ -1948,7 +1950,7 @@ impl Command for TransmitCommand {
             } else {
                 match args
                     .iter()
-                    .map(|arg| zingo_viewmodel::utils::conversion::txid_from_hex_encoded_str(arg))
+                    .map(|arg| zingo_perspective::utils::conversion::txid_from_hex_encoded_str(arg))
                     .collect::<Result<Vec<_>, _>>()
                 {
                     Ok(txids) => txids,
@@ -2578,9 +2580,9 @@ pub enum MigrationCommandError {
     #[error("split expects a sub-command: plan | now. Type \"help split\" for usage.")]
     SplitUsage,
     #[error("sync failed: {0}")]
-    Sync(zingo_viewmodel::lightclient::error::LightClientError),
+    Sync(zingo_perspective::lightclient::error::LightClientError),
     #[error("{0}")]
-    Client(#[from] zingo_viewmodel::lightclient::error::LightClientError),
+    Client(#[from] zingo_perspective::lightclient::error::LightClientError),
 }
 
 /// A parsed migration command. Arguments parse completely
@@ -2940,10 +2942,10 @@ fn parse_split_args(args: &[&str]) -> Result<SplitSubCommand, MigrationCommandEr
 }
 
 /// Renders an in-flight execute batch snapshot as the heartbeat's detail
-/// line, the same [`zingo_viewmodel::lightclient::migrate::BatchStatus`] a mobile
+/// line, the same [`zingo_perspective::lightclient::migrate::BatchStatus`] a mobile
 /// progress screen polls during `execute_due_parts`.
-fn batch_progress_line(status: &zingo_viewmodel::lightclient::migrate::BatchStatus) -> String {
-    use zingo_viewmodel::lightclient::migrate::BatchPhase;
+fn batch_progress_line(status: &zingo_perspective::lightclient::migrate::BatchStatus) -> String {
+    use zingo_perspective::lightclient::migrate::BatchPhase;
     match status.phase {
         BatchPhase::Sending => format!(
             "resolved {}/{} (sent {})",
@@ -3632,7 +3634,7 @@ mod nym_command_parsing {
     #[test]
     fn paired_probe_renders_both_legs_side_by_side() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingo_viewmodel::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
+        use zingo_perspective::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
 
         let tip = ProbeSuccess {
             chain: "main".to_string(),
@@ -3681,7 +3683,7 @@ mod nym_command_parsing {
     #[cfg(all(feature = "nym", feature = "nym-diary"))]
     #[test]
     fn history_aggregates_per_host_and_route() {
-        use zingo_viewmodel::lightclient::indexer_history::{
+        use zingo_perspective::lightclient::indexer_history::{
             AttemptKind, AttemptRoute, FailureKind, IndexerAttempt,
         };
 
@@ -3723,7 +3725,7 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingo_viewmodel::nym::MixnetMode;
+        use zingo_perspective::nym::MixnetMode;
 
         assert_eq!(
             render_status(MixnetMode::Unattached, None, None),
@@ -3766,7 +3768,7 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingo_viewmodel::nym::MixnetMode;
+        use zingo_perspective::nym::MixnetMode;
 
         assert_eq!(
             render_status(
@@ -3793,7 +3795,7 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingo_viewmodel::nym::MixnetMode;
+        use zingo_perspective::nym::MixnetMode;
 
         for mode in [
             MixnetMode::Unattached,
@@ -3836,7 +3838,7 @@ mod offline_contract {
     //!   is never the obstacle (a domain failure such as "nothing to
     //!   shield" is legitimate; the Offline refusal is not); and
     //! - every connectivity-requiring command refuses offline with the one
-    //!   typed refusal, [`zingo_viewmodel::lightclient::error::LightClientError::Offline`],
+    //!   typed refusal, [`zingo_perspective::lightclient::error::LightClientError::Offline`],
     //!   rendered through the command's own error channel — never a hang, a
     //!   panic, or a silent clearnet fallback.
     //!
@@ -3852,8 +3854,8 @@ mod offline_contract {
     //! 0024 session driver), and the REPL-owned `servers` command likewise
     //! probes the network unguarded.
 
-    use zingo_viewmodel::lightclient::LightClient;
-    use zingo_viewmodel::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use zingo_perspective::lightclient::LightClient;
+    use zingo_perspective::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
     use super::{CommandError, RT, get_commands};
 

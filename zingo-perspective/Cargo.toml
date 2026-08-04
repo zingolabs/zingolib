@@ -1,5 +1,5 @@
 [package]
-name = "zingo-viewmodel"
+name = "zingo-perspective"
 description = "Editorial reductions over zingolib's canonical wallet data, and the single dependency consumers funnel through."
 version = "0.1.0"
 authors = ["<zingo@zingolabs.org>"]
