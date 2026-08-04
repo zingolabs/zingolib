@@ -320,26 +320,19 @@ impl LightWalletPerspectiveExt for LightWallet {
         // Filter out VTs where all memos are empty.
         value_transfers.retain(|vt| vt.memos.iter().any(|memo| !memo.is_empty()));
 
-        match filter {
-            Some(s) => {
-                value_transfers.retain(|vt| {
-                    if vt.memos.is_empty() {
-                        return false;
-                    }
-
-                    if vt.recipient_address == Some(s.to_string()) {
-                        true
-                    } else {
-                        for memo in &vt.memos {
-                            if memo.contains(s) {
-                                return true;
-                            }
+        if let Some(s) = filter {
+            value_transfers.retain(|vt| {
+                if vt.recipient_address == Some(s.to_string()) {
+                    true
+                } else {
+                    for memo in &vt.memos {
+                        if memo.contains(s) {
+                            return true;
                         }
-                        false
                     }
-                });
-            }
-            None => value_transfers.retain(|vt| !vt.memos.is_empty()),
+                    false
+                }
+            });
         }
 
         Ok(value_transfers)
