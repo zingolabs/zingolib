@@ -44,7 +44,7 @@
       "transaction_fee": 0,
       "zec_price": null,
       "kind": "memo-to-self",
-      "value": 0,
+      "value": 800000,
       "recipient_address": null,
       "pools_sent_from": [],
       "pools_received": [

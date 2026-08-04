@@ -35,7 +35,7 @@
     transaction fee: 0
     zec price: not available
     kind: send-to-self
-    value: 0
+    value: 800000
     recipient_address: not available
     pools_sent_from: 
     pools_received: Ironwood
@@ -64,7 +64,7 @@
     transaction fee: 0
     zec price: not available
     kind: memo-to-self
-    value: 0
+    value: 800000
     recipient_address: not available
     pools_sent_from: 
     pools_received: Ironwood
