@@ -132,7 +132,13 @@ not when the last projection moves in. The seed's re-export spine is
 built consumer-complete, from an audit of what zingo-cli,
 zingo-mobile, and zingo-pc actually import from zingolib, so each
 governed consumer repoints exactly once; later slices are additive
-behind an already-standing funnel. From that merge, rule 7 reads:
+behind an already-standing funnel. "Exactly once" counts
+dependencies, not edits: the rename is mechanical only for the
+mirrored surface, because the editorial types (the value-transfer
+and finsight types) leave zingolib entirely and live at the
+perspective crate root, so an editorial consumer also rewrites those
+import paths and adds the extension-trait imports at its editorial
+call sites. From that merge, rule 7 reads:
 consumers declare exactly one wallet dependency, zingo-perspective at
 a git rev, never a branch. zingo-perspective re-exports the wire
 mint, the session driver's consumer surface, and whatever zingolib

@@ -77,10 +77,6 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
-/// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
-/// original kept as the control): a zero-value receipt must surface as
-/// exactly one Received{0, Orchard} value transfer and must not perturb
-/// spendable arithmetic across a subsequent send.
 /// Mock-chain twin of libtonode `slow::list_value_transfers_check_fees`
 /// (live original kept as the control): a two-output cross-pool send to
 /// the wallet's own transparent and sapling addresses costs the exact
