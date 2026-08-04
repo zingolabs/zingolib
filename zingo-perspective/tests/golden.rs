@@ -6,8 +6,9 @@
 //! Display renderings of `value_transfers`, `messages_containing`, and the
 //! three `do_total_*` rollups. The extraction increments must reproduce
 //! them exactly; a diff here is a compatibility break, never a fixture to
-//! update. Do NOT regenerate the goldens while the extraction branch lives
-//! (`PERSPECTIVE_BLESS_GOLDENS=1` exists only for the original capture).
+//! update. The capture mechanism was removed after the original capture,
+//! so these files are never regenerated: a contract change that is truly
+//! intended must re-mint its golden rows by hand, in review.
 //!
 //! One deliberate softening: the `do_total_*` structs are HashMap-backed,
 //! so their JSON key order is random per process — for those the harness
@@ -197,11 +198,6 @@ fn golden_path(name: &str) -> std::path::PathBuf {
 
 fn check_golden(name: &str, actual: &str) {
     let path = golden_path(name);
-    if std::env::var_os("PERSPECTIVE_BLESS_GOLDENS").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, actual).unwrap();
-        return;
-    }
     let expected = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("golden {} unreadable: {error}", path.display()));
     assert_eq!(
