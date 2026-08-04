@@ -963,75 +963,16 @@ fn render_history(
     lines.join("\n")
 }
 
-/// Render the `nym status` line for a Mixnet Mode, the live bootstrap
-/// progress while bootstrapping, and the local SOCKS5 address when ready.
-/// Pure, so the user-facing mode strings are pinned by unit tests and
-/// reusable by any other frontend.
-#[cfg(feature = "nym")]
-fn render_status(
-    mode: zingo_perspective::nym::MixnetMode,
-    socks5_addr: Option<&str>,
-    bootstrap_detail: Option<&str>,
-) -> String {
-    use zingo_perspective::nym::MixnetMode;
-
-    match mode {
-        MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
-             and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `nym on` to enable the mixnet, or `nym off` to use clearnet."
-            .to_string(),
-        MixnetMode::SwitchedOff => {
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
-        }
-        MixnetMode::Bootstrapping => match bootstrap_detail {
-            Some(detail) => format!(
-                "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
-                 until ready)"
-            ),
-            None => "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
-                .to_string(),
-        },
-        MixnetMode::Ready => match socks5_addr {
-            Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
-            None => "Mixnet Mode: ready".to_string(),
-        },
-        MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
-             price-fetch refuse and will not fall back to clearnet. Run `nym on` to \
-             restart the proxy."
-            .to_string(),
-    }
-}
-
-/// The complete `nym status` output: the Mixnet Mode line followed by the
-/// IP-correlation disclaimer. The disclaimer always accompanies the status
-/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
-/// synchronization stays on the ordinary connector, so a bare "ready" must
-/// never be read as end-to-end IP protection. The canonical text lives in
-/// [`zingo_perspective::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
-/// wording.
-#[cfg(feature = "nym")]
-fn render_status_with_disclaimer(
-    mode: zingo_perspective::nym::MixnetMode,
-    socks5_addr: Option<&str>,
-    bootstrap_detail: Option<&str>,
-) -> String {
-    format!(
-        "{}\n\n{}",
-        render_status(mode, socks5_addr, bootstrap_detail),
-        zingo_perspective::nym::IP_CORRELATION_DISCLAIMER,
-    )
-}
-
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 fn nym_command(args: &[&str], lightclient: &mut LightClient) -> Result<String, NymCommandError> {
+    use zingo_perspective::mixnet::{MixnetStatusSnapshotExt, status_with_disclaimer};
+
     let subcommand = parse_nym_args(args)?;
     RT.block_on(async move {
         match subcommand {
-            NymSubCommand::Status => Ok(render_status_with_disclaimer(
-                lightclient.mixnet_mode(),
-                lightclient.mixnet_socks5_addr().as_deref(),
-                lightclient.mixnet_bootstrap_detail().as_deref(),
+            NymSubCommand::Status => Ok(status_with_disclaimer(
+                &lightclient.mixnet_status_snapshot(),
             )),
             NymSubCommand::On { path } => {
                 let path = resolve_proxy_path(path.as_deref());
@@ -3719,110 +3660,6 @@ mod nym_command_parsing {
             NymCommandError::FeatureAbsent.to_string(),
             "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
         );
-    }
-
-    /// Pins the `nym status` mode strings via the pure renderer.
-    #[cfg(feature = "nym")]
-    #[test]
-    fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingo_perspective::nym::MixnetMode;
-
-        assert_eq!(
-            render_status(MixnetMode::Unattached, None, None),
-            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `nym on` to enable \
-             the mixnet, or `nym off` to use clearnet.",
-            "absence is not consent: unattached names refusal, never clearnet"
-        );
-        assert_eq!(
-            render_status(MixnetMode::SwitchedOff, None, None),
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)"
-        );
-        assert_eq!(
-            render_status(MixnetMode::Bootstrapping, None, None),
-            "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
-        );
-        assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:43210"), None),
-            "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
-        );
-        assert_eq!(
-            render_status(MixnetMode::Ready, None, None),
-            "Mixnet Mode: ready",
-            "ready with no address yet still renders (the route resolver, \
-             not the renderer, refuses that state)"
-        );
-        assert_eq!(
-            render_status(MixnetMode::Died, None, None),
-            "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
-             refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
-            "a died proxy is reported distinctly from switched off, and tells the user how to \
-             recover"
-        );
-    }
-
-    /// HYPOTHESIS: live bootstrap progress reaches the `nym status` line, so
-    /// the connect race is narrated rather than an opaque wait. Falsified if
-    /// the detail is dropped by the renderer. The detail is shown only while
-    /// bootstrapping: a ready proxy has no bootstrap left to narrate.
-    #[cfg(feature = "nym")]
-    #[test]
-    fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingo_perspective::nym::MixnetMode;
-
-        assert_eq!(
-            render_status(
-                MixnetMode::Bootstrapping,
-                None,
-                Some("attempt 2/10: 2 in flight, 0 failed")
-            ),
-            "Mixnet Mode: bootstrapping, attempt 2/10: 2 in flight, 0 failed \
-             (send and price-fetch are unavailable until ready)"
-        );
-        assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:1"), Some("stale")),
-            "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
-            "a stale detail must not leak into the ready line"
-        );
-    }
-
-    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
-    /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
-    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
-    /// line is preserved verbatim as the first line. Falsified if the
-    /// disclaimer is dropped in any mode, no longer leads with the mode line,
-    /// or omits the sync/IP/indexer/balance risk it must name.
-    #[cfg(feature = "nym")]
-    #[test]
-    fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingo_perspective::nym::MixnetMode;
-
-        for mode in [
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Ready,
-            MixnetMode::Died,
-        ] {
-            let addr = Some("127.0.0.1:43210");
-            let out = render_status_with_disclaimer(mode, addr, None);
-            assert!(
-                out.starts_with(&render_status(mode, addr, None)),
-                "the mode line must lead the status output: {out}"
-            );
-            for phrase in [
-                "IP-correlation risk",
-                "synchronization",
-                "sync indexer",
-                "total balance",
-                "ZIP-0318",
-            ] {
-                assert!(
-                    out.contains(phrase),
-                    "the disclaimer must name {phrase:?} in mode {mode:?}: {out}"
-                );
-            }
-        }
     }
 }
 

@@ -19,6 +19,7 @@ testutils = ["zingolib/testutils", "dep:tracing"]
 [dependencies]
 chrono = { workspace = true }
 json = { workspace = true }
+serde_json.workspace = true
 tracing = { workspace = true, optional = true }
 zcash_protocol = { workspace = true }
 zingo-status = { workspace = true }

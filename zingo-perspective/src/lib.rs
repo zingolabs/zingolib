@@ -22,6 +22,8 @@
 
 pub mod ext;
 pub mod finsight;
+#[cfg(feature = "nym")]
+pub mod mixnet;
 #[cfg(feature = "testutils")]
 pub mod testutils;
 pub mod value_transfer;

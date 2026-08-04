@@ -5042,6 +5042,7 @@ dependencies = [
  "json",
  "orchard",
  "pepper-sync",
+ "serde_json",
  "tokio",
  "tracing",
  "zcash_client_backend",
