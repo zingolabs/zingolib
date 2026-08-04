@@ -18,7 +18,11 @@ The complement of the wallet-library domain's Canonical Reduction.
 2026-08-03): the single wallet dependency governed consumers declare.
 Its modules re-export the wallet library's consumer surface
 path-for-path, so a consumer repoints by renaming the dependency.
-The funnel re-exports and projects; it never redefines.
+The funnel re-exports and projects; it never redefines. The
+path-for-path guarantee covers only the shipped consumer surface:
+test scaffolding (`testutils`, `mocks`) is re-exported as a
+convenience with no path-stability promise, because test scaffolding
+is not a governed consumer (ruled 2026-08-03).
 
 **ValueTransfer** — A single directional movement of funds within a
 transaction, grouped by recipient: received, sent, shielded, or
