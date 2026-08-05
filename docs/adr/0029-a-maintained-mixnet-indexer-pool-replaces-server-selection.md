@@ -92,6 +92,21 @@ transports graduate into pool transports on success and are torn down
 on failure; pool transports stand for the client lifetime. No category
 shares an exit with another.
 
+The sync attach — bulk synchronization's single clearnet connection,
+the one moment the wallet shows an indexer its real IP (ADR 0027) — is
+aimed by a rule ratified 2026-08-05. The wallet draws uniformly at
+random over the pool's live operators: one ticket per operator, not
+per endpoint, because IP exposure accrues to the operating party, and
+endpoint-uniform sampling would hand the largest fleet most of the
+tickets. Any live endpoint of the drawn operator serves. The draw is
+sticky for the Sync Session and redrawn at the next, so exactly one
+operator sees the wallet's IP and sync cadence per session; an
+explicit user pin overrides the draw entirely. The randomness
+dissolves the ecosystem's default-server monoculture — every surveyed
+wallet today deterministically aims at the same operator — and, with
+ADR 0022, the draw also fixes which operator sits out witness duty for
+the session.
+
 ## Consequences
 
 The `server_select.rs` latency race is deleted rather than repaired,
@@ -102,11 +117,13 @@ is parameter plumbing over the existing candidate-list machinery, not a
 redesign.
 
 Bulk synchronization below the Mixnet Sync Window remains the one
-clearnet operation (ADR 0027), to exactly one indexer. How that sync
-indexer is chosen from the pool, and what `network on` reports while
-transports bootstrap and the pool fills, are open questions tracked by
-the rewrite; the session's standing recommendation for the former is a
-uniform random draw over the pool's live operators, sticky per session.
+clearnet operation (ADR 0027), to exactly one indexer, aimed by the
+sync-attach rule above. What `network on` reports while transports
+bootstrap and the pool fills is the rewrite's remaining open question.
+Whether an operator pair whose distinctness is unattested (two live
+endpoints serve a byte-identical custom lightwalletd build) should
+share one ticket in the sync draw is tracked with the census's
+attestation work.
 
 The mixnet's per-client throughput bounds what the pool may carry:
 control traffic, broadcast fan-out, witness duties (ADR 0022 draws its
