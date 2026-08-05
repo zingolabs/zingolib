@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- `wallet::summary::data::TransactionSummary::balance_delta` - the method had no
+  callers and misreported a Zennies-donating self-send: `transaction_kind`
+  exempts the donation address, so the `SendToSelf` arm reported only the fee
+  while the wallet also moves the donation. A future consumer should derive
+  balance deltas after the Zennies exemption moves to the viewmodel projection
+  (#2612).
 
 ## [5.0.0] - 2026-06-10
 
