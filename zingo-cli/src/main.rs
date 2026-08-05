@@ -81,11 +81,15 @@ fn handle_error(e: std::io::Error) {
     }
 }
 
-pub fn main() {
+pub fn main() -> std::process::ExitCode {
     zingolib::netutils::ensure_default_crypto_provider();
     let matches = parse_args_or_exit_for_help();
     init_tracing(&matches);
-    if let Err(e) = zingo_cli::run_cli(matches) {
-        handle_error(e);
+    match zingo_cli::run_cli(matches) {
+        Ok(code) => code,
+        Err(e) => {
+            handle_error(e);
+            std::process::ExitCode::FAILURE
+        }
     }
 }
