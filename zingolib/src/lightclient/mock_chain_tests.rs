@@ -81,9 +81,10 @@ async fn funded_send_confirms_on_the_mock_chain() {
 /// original kept as the control): a zero-value receipt must surface as
 /// exactly one Received{0, Orchard} value transfer and must not perturb
 /// spendable arithmetic across a subsequent send.
+#[cfg(feature = "perspective")]
 #[tokio::test]
 async fn zero_value_receipts() {
-    use crate::wallet::summary::data::{SentValueTransfer, ValueTransferKind};
+    use crate::perspective::value_transfer::{SentValueTransfer, ValueTransferKind};
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
@@ -966,14 +967,15 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
 /// memo (`MemoBytes::empty()`), so this pins the self-send classification
 /// order in `value_transfers()`: the migration predicate must win over the
 /// received-memo check regardless of how that memo decodes.
+#[cfg(feature = "perspective")]
 #[tokio::test]
 async fn immediate_migration_is_a_migration_value_transfer() {
     use zip32::AccountId;
 
-    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
-    use crate::wallet::summary::data::{
+    use crate::perspective::value_transfer::{
         SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
     };
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
 
     const NOTE_VALUE: u64 = 1_000_000;
     const TIP: u32 = 41;
@@ -1026,12 +1028,13 @@ async fn immediate_migration_is_a_migration_value_transfer() {
 /// memos, and the memo itself stays on the value transfer. This is the
 /// ordering pin for `value_transfers()`: before the reorder the memo check
 /// fired first and relabeled the migration `memo-to-self`.
+#[cfg(feature = "perspective")]
 #[tokio::test]
 async fn migration_with_memo_is_still_a_migration_value_transfer() {
-    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
-    use crate::wallet::summary::data::{
+    use crate::perspective::value_transfer::{
         SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
     };
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
 
     const NOTE_VALUE: u64 = 1_000_000;
     const TIP: u32 = 41;

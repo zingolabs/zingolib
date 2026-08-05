@@ -191,6 +191,8 @@
 
 ## Summary / Display
 
+**Perspective** — The library's single editorial reading of wallet history: the layer that derives presentation-facing statements (ValueTransfers, rollup totals) from the canonical record. The singular is load-bearing — one house perspective, many renderers: consumers render its statements and never re-derive them, and its outputs never feed wallet logic. Distinct from the canonical record it reads (TransactionSummary and the wallet's own state). *Avoid*: viewmodel (invites an MVVM misreading), opinions.
+
 **TransactionSummary** — A snapshot of a single wallet transaction for display purposes. Not used for internal wallet logic.
 
 **ValueTransfer** — A single directional movement of funds within a transaction: received, sent, shielded, or self-sent.
