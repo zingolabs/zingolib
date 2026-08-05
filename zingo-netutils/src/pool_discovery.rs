@@ -20,7 +20,9 @@ use crate::error::NymProxyError;
 use crate::indexers::{Indexer, IndexerChain, mixnet_eligible};
 use crate::mixnet_connect::seeded_shuffle;
 use crate::socks5_transmit::{Socks5TransmitError, get_lightd_info_via_socks5};
-use crate::time::{ATTACH_HEALTH_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT};
+use crate::time::{
+    ATTACH_HEALTH_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT,
+};
 
 /// A census endpoint that answered `GetLightdInfo` through its own exit.
 /// Holding the value holds the transport: dropping a `DiscoveredIndexer`
