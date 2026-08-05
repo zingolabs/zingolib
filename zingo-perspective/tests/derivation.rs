@@ -24,7 +24,28 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
-use common::{received_texts, regtest_wallet, sent};
+use common::{received, received_texts, regtest_wallet, sent};
+
+/// The canonical summaries carry every memo losslessly typed; the
+/// text-only policy is applied by this crate, never at construction.
+/// An arbitrary-bytes memo is present and typed on the transaction
+/// summary, while the derived value transfer shows no memo for it.
+#[tokio::test]
+async fn arbitrary_memo_is_carried_typed_and_hidden_editorially() {
+    let arbitrary = Memo::Arbitrary(Box::new([7u8; 511]));
+    let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+    wallet.wallet_transactions.insert(
+        TxId::from_bytes([1; 32]),
+        received(1, 10, std::slice::from_ref(&arbitrary)),
+    );
+
+    let summaries = wallet.transaction_summaries(false).await.unwrap();
+    assert_eq!(summaries.0[0].ironwood_notes[0].memo, arbitrary);
+
+    let value_transfers = wallet.value_transfers(true).await.unwrap();
+    assert_eq!(value_transfers.len(), 1);
+    assert!(value_transfers[0].memos.is_empty());
+}
 
 /// Migrated from libtonode `fast::filter_empty_messages`.
 #[tokio::test]
