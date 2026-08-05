@@ -226,6 +226,23 @@ impl TransactionSummary {
             .collect()
     }
 
+    pub(crate) fn self_received_value(&self) -> u64 {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter().map(|note| note.value))
+            .chain(self.transparent_coins.iter().map(|coin| coin.value))
+            .sum()
+    }
+
+    pub(crate) fn received_memo_value(&self) -> u64 {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter())
+            .filter(|note| note.memo.is_some())
+            .map(|note| note.value)
+            .sum()
+    }
+
     /// Prepares the fields in the summary for display
     #[must_use]
     pub fn prepare_for_display(
