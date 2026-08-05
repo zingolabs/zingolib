@@ -359,6 +359,29 @@ pub fn active(chain: IndexerChain) -> impl Iterator<Item = &'static Indexer> {
         .filter(move |indexer| indexer.chain == chain && !indexer.obsolete)
 }
 
+/// The chain's entries reachable over the mixnet: selectable members on
+/// port 443, the only port the exit policy carries (ADR 0029).
+///
+/// ```
+/// use zingo_netutils::indexers::{IndexerChain, mixnet_eligible};
+///
+/// let uris: Vec<&str> = mixnet_eligible(IndexerChain::Main)
+///     .map(|indexer| indexer.uri)
+///     .collect();
+/// assert!(uris.contains(&"https://zec.rocks:443"));
+/// assert!(uris.iter().all(|uri| uri.ends_with(":443")));
+/// ```
+pub fn mixnet_eligible(chain: IndexerChain) -> impl Iterator<Item = &'static Indexer> {
+    active(chain).filter(|indexer| {
+        indexer
+            .uri
+            .parse::<http::Uri>()
+            .ok()
+            .and_then(|uri| uri.port_u16())
+            == Some(443)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

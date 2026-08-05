@@ -83,6 +83,9 @@ mod nym_proxy;
 #[cfg(feature = "nym")]
 pub use nym_proxy::NymProxy;
 
+#[cfg(feature = "nym")]
+pub mod pool_discovery;
+
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]

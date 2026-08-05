@@ -163,6 +163,14 @@ impl NymProxy {
         .map_err(race_loss_error)
     }
 
+    /// The exit providers the Nym directory currently advertises, for
+    /// callers that assign exits themselves (the pool discovery's
+    /// uniform sampling without replacement, ADR 0029) instead of racing
+    /// [`Self::start`]'s hedged draw.
+    pub async fn discover_exit_providers() -> Result<Vec<String>, NymProxyError> {
+        Self::discover_providers(DEFAULT_NYM_API_URL).await
+    }
+
     /// Start with a specific exit gateway provider address.
     ///
     /// Use this to pin a specific Nym network requester instead of
