@@ -396,25 +396,6 @@ impl TransactionSummaries {
     pub fn iter(&self) -> std::slice::Iter<'_, TransactionSummary> {
         self.0.iter()
     }
-    /// Sum total of all fees paid in sending transactions
-    #[must_use]
-    pub fn paid_fees(&self) -> u64 {
-        self.iter()
-            .filter_map(|summary| {
-                if matches!(summary.kind, TransactionKind::Sent(_)) && summary.status.is_confirmed()
-                {
-                    summary.fee
-                } else {
-                    None
-                }
-            })
-            .sum()
-    }
-    /// A Vec of the txids
-    #[must_use]
-    pub fn txids(&self) -> Vec<TxId> {
-        self.iter().map(|summary| summary.txid).collect()
-    }
 }
 
 impl std::fmt::Display for TransactionSummaries {

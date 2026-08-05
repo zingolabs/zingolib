@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while the wallet also moves the donation. A future consumer should derive
   balance deltas after the Zennies exemption moves to the viewmodel projection
   (#2612).
+- `wallet::summary::data::TransactionSummaries::paid_fees` - its only caller was
+  the `get_fees_paid_by_client` testutils helper, which now sums the fees itself
+  (#2612).
+- `wallet::summary::data::TransactionSummaries::txids` - called only by test
+  code, which now inlines the one-line map (#2612).
 
 ## [5.0.0] - 2026-06-10
 
