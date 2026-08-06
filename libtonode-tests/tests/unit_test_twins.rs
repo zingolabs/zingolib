@@ -591,12 +591,8 @@ TransactionSummary {
             "{}",
             json::stringify_pretty(recipient.transaction_summaries(false).await.unwrap(), 4)
         );
-        let mut txids = recipient
-            .transaction_summaries(false)
-            .await
-            .unwrap()
-            .txids()
-            .into_iter();
+        let summaries = recipient.transaction_summaries(false).await.unwrap();
+        let mut txids = summaries.iter().map(|summary| summary.txid);
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
     #[tokio::test]

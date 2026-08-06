@@ -169,6 +169,10 @@
 
 **Two-phase Send** — The standard send path: `propose_send` (or `propose_shield`) followed by `send_stored_proposal`. Allows the caller to inspect the Proposal (e.g. fees) before committing. Proposing pauses the sync engine and the client holds that pause (a **SyncPauseGuard**) while the Proposal is stored, so the state proposed against cannot shift before the send builds it. The pause ends with the Proposal: `send_stored_proposal(resume_sync: true)` and `clear_proposal` (the decline path) restore the engine's prior mode, `resume_sync: false` leaves it paused for the caller, and a proposing call that fails restores the engine on its way out. `quick_send` / `quick_shield` are single-shot convenience wrappers that hold the pause for the span of one call. The pause's outside view is the Privacy section's **Quiescence Signature**, which today carries send timing; see that entry for the de-correlation requirement.
 
+**Narration** — Human-facing progress reporting emitted while a long-running operation is in flight: the transmit path's latest progress line, a migration batch's build/send counts, server probing. Narration is presentation, never data: it carries no parse contract, its wording may change in any release, and in zingo-cli it travels only on stderr, because stdout carries exactly the command's result (see `docs/adr/0031`). The library publishes narration pull-style through progress handles; each frontend decides its own cadence and rendering. *Avoid*: parsing narration lines (typed frontends poll the progress handles; machine consumers read the stdout result).
+
+**Transmit Heartbeat** — zingo-cli's liveness tick during a Transmission, migration broadcast, drain, or split: while the operation blocks the session, the heartbeat prints the latest Narration line with elapsed time at a fixed cadence, proving the process is alive so a user does not kill a slow mixnet send mid-broadcast. An operation that finishes before the first tick stays silent, and a tick with no progress line yet available still fires with a generic line: the contract is liveness first, Narration when it exists.
+
 ---
 
 ## Balance
@@ -256,6 +260,8 @@
 ## Consumers
 
 **zingolib** is a Rust library. Its primary integration surface is the `LightClient` API, consumed directly by other Rust crates and programs. One known consumer is **zingo-mobile**, which wraps `zingolib` via a UniFFI-generated FFI layer (Kotlin/Swift). `zingo-cli` is a power-user/developer CLI built on the same library.
+
+**Reference Consumer** — A consumer whose charter is to prove zingolib's consumer surface sufficient, not to serve users: it holds no funds and makes no product promises, and its own code is confined to a typed one-to-one projection of the surface, a provisioning adapter, and a renderer — no wallet logic, no policy, no minted strings. It builds against the workspace at HEAD so that a surface change which breaks the consumer contract fails in the merging pull request's CI rather than weeks later in another repo, and it is for that reason the one consumer exempt from ADR 0024's rev-pinning rule, which disciplines external consumers. The first Reference Consumer is the planned `zingo-tauri` desktop app. Ratified 2026-08-03. See `docs/adr/0028-the-reference-consumer-lives-in-repo-in-an-excluded-sub-workspace.md`.
 
 ---
 

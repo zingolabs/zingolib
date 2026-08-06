@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Removed
+- The unreachable `PriceError::DecimalError` variant and the `rust_decimal`
+  dependency that existed only to feed it. Price parsing has been float-based
+  since the fetch re-implementation, so nothing could construct the variant.
+  Its removal evicts twenty crates from the workspace lock file, among them
+  the never-compiled `syn 1.0.109`.
 
 ## [0.1.0] - 2026-06-10
 

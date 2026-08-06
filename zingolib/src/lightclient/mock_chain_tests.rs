@@ -242,11 +242,13 @@ async fn self_send_to_t_displays_as_one_transaction() {
     }
     recipient.sync_and_await().await.unwrap();
 
-    let txids = recipient
+    let txids: Vec<_> = recipient
         .transaction_summaries(false)
         .await
         .unwrap()
-        .txids();
+        .iter()
+        .map(|summary| summary.txid)
+        .collect();
     let unique: std::collections::HashSet<_> = txids.iter().collect();
     assert_eq!(
         unique.len(),
