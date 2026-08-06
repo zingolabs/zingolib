@@ -174,7 +174,7 @@ pub const TRANSMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long a transmitting command waits out a bootstrapping mixnet
 /// before the typed Bootstrapping refusal stands.
-pub const TRANSMIT_READINESS_BUDGET: Duration = Duration::from_secs(60);
+pub const TRANSMIT_READINESS_BUDGET: Duration = Duration::from_secs(90);
 
 /// The cadence at which a waiting transmitting command reports that the
 /// mixnet is still bootstrapping.
