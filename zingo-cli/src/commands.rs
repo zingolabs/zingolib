@@ -88,6 +88,22 @@ async fn transmit_narrated<T>(
     narrated(label, move || progress.latest(), operation).await
 }
 
+/// [`transmit_narrated`] for the operations whose whole result is a list of
+/// transaction ids, rendered here so the sandwich exists once.
+async fn transmit_txids<T: ToString, E: std::fmt::Display>(
+    label: &str,
+    progress: TransmitProgressHandle,
+    operation: impl Future<Output = Result<impl IntoIterator<Item = T>, E>>,
+) -> Result<String, CommandError> {
+    match transmit_narrated(label, progress, operation).await {
+        Ok(txids) => {
+            let txids: Vec<T> = txids.into_iter().collect();
+            Ok(object! { "txids" => txids_json(&txids) }.pretty(JSON_INDENT))
+        }
+        Err(e) => Err(not_yet_typed(e)),
+    }
+}
+
 /// Typed failure of a CLI command, rendered to prose exactly once, on
 /// stderr, at the dispatch seam.
 #[derive(Debug, thiserror::Error)]
@@ -114,14 +130,25 @@ fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
     ))
 }
 
+/// The indent width of every JSON object the CLI prints.
+const JSON_INDENT: u16 = 2;
+
+/// Wraps a failure's rendering in the transitional [`CommandError::NotYetTyped`] variant.
+fn not_yet_typed(e: impl std::fmt::Display) -> CommandError {
+    CommandError::NotYetTyped(e.to_string())
+}
+
 async fn addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(lightclient.unified_addresses_json().await.pretty(2))
+    Ok(lightclient
+        .unified_addresses_json()
+        .await
+        .pretty(JSON_INDENT))
 }
 
 async fn balance(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.account_balance(zip32::AccountId::ZERO).await {
         Ok(bal) => Ok(bal.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -134,8 +161,8 @@ async fn calculate(lightclient: &mut LightClient) -> Result<String, CommandError
         Ok(txids) => Ok(object! {
             "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -160,6 +187,67 @@ async fn change_server(
     }
 }
 
+/// Renders the wallet's judgment of an address into the `check_address` JSON.
+fn address_check_json(address_ref: Option<WalletAddressRef>) -> json::JsonValue {
+    address_ref.map_or(
+        json::object! { "is_wallet_address" => "false".to_string() },
+        |address_ref| match address_ref {
+            WalletAddressRef::Unified {
+                account_id,
+                address_index,
+                has_orchard,
+                has_sapling,
+                has_transparent,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "unified".to_string(),
+                "address_index" => address_index,
+                "account_id" => u32::from(account_id),
+                "has_orchard" => has_orchard,
+                "has_sapling" => has_sapling,
+                "has_transparent" => has_transparent,
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::OrchardInternal {
+                account_id,
+                diversifier_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "orchard_internal".to_string(),
+                "account_id" => u32::from(account_id),
+                "diversifier_index" => u128::from(diversifier_index).to_string(),
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::SaplingExternal {
+                account_id,
+                diversifier_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "sapling".to_string(),
+                "account_id" => u32::from(account_id),
+                "diversifier_index" => u128::from(diversifier_index).to_string(),
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::Transparent {
+                account_id,
+                scope,
+                address_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "transparent".to_string(),
+                "account_id" => u32::from(account_id),
+                "scope" => scope.to_string(),
+                "address_index" => address_index.index(),
+                "encoded_address" => encoded_address,
+            },
+        },
+    )
+}
+
 async fn check_address(
     address: &str,
     lightclient: &mut LightClient,
@@ -170,88 +258,23 @@ async fn check_address(
         .await
         .is_address_derived_by_keys(address)
     {
-        Ok(address_ref) => Ok(address_ref
-            .map_or(
-                json::object! { "is_wallet_address" => "false".to_string() },
-                |address_ref| match address_ref {
-                    WalletAddressRef::Unified {
-                        account_id,
-                        address_index,
-                        has_orchard,
-                        has_sapling,
-                        has_transparent,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "unified".to_string(),
-                        "address_index" => address_index,
-                        "account_id" => u32::from(account_id),
-                        "has_orchard" => has_orchard,
-                        "has_sapling" => has_sapling,
-                        "has_transparent" => has_transparent,
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::OrchardInternal {
-                        account_id,
-                        diversifier_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "orchard_internal".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "diversifier_index" => u128::from(diversifier_index).to_string(),
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::SaplingExternal {
-                        account_id,
-                        diversifier_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "sapling".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "diversifier_index" => u128::from(diversifier_index).to_string(),
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::Transparent {
-                        account_id,
-                        scope,
-                        address_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "transparent".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "scope" => scope.to_string(),
-                        "address_index" => address_index.index(),
-                        "encoded_address" => encoded_address,
-                    },
-                },
-            )
-            .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(address_ref) => Ok(address_check_json(address_ref).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn clear(lightclient: &mut LightClient) -> Result<String, CommandError> {
     lightclient.wallet().write().await.clear_all();
-    Ok(object! { "result" => "success" }.pretty(2))
+    Ok(object! { "result" => "success" }.pretty(JSON_INDENT))
 }
 
 async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    match transmit_narrated(
+    transmit_txids(
         "confirm",
         lightclient.transmit_progress_handle(),
         lightclient.send_stored_proposal(true),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
 #[cfg(feature = "nym")]
@@ -264,7 +287,7 @@ async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandE
             fetch.round_trip.as_millis(),
             fetch.via_socks5
         )),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -283,8 +306,8 @@ async fn delete(lightclient: &mut LightClient) -> Result<String, CommandError> {
             "result" => "success",
             "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8"),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -299,13 +322,13 @@ async fn export_ufvk(lightclient: &mut LightClient) -> Result<String, CommandErr
         .try_into()
     {
         Ok(ufvk) => ufvk,
-        Err(e) => return Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => return Err(not_yet_typed(e)),
     };
     Ok(object! {
         "ufvk" => ufvk.encode(&lightclient.chain_type()),
         "birthday" => lightclient.birthday()
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -320,7 +343,7 @@ async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
                 .map_or(0, u32::from)
         )
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 fn help(command: Option<&str>) -> Result<String, CommandError> {
@@ -329,8 +352,8 @@ fn help(command: Option<&str>) -> Result<String, CommandError> {
 
 async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.info().await {
-        Ok(info) => Ok(json::JsonValue::from(info).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(info) => Ok(json::JsonValue::from(info).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -351,15 +374,15 @@ async fn max_send_value(
         .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
         .await
     {
-        Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn memobytes_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.do_total_memobytes_to_address().await {
-        Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -368,8 +391,8 @@ async fn messages(
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
     match lightclient.messages_containing(filter).await {
-        Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -415,38 +438,26 @@ async fn new_address(
             "has_transparent" => unified_address.has_transparent(),
             "encoded_address" => unified_address.encode(&chain_type),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn new_taddress(lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn taddress(
+    lightclient: &mut LightClient,
+    enforce_gap: bool,
+) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
+    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_gap) {
         Ok((id, transparent_address)) => Ok(json::object! {
             "account" => u32::from(id.account_id()),
             "address_index" => id.address_index().index(),
             "scope" => id.scope().to_string(),
             "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
-}
-
-async fn new_taddress_allow_gap(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let chain_type = lightclient.chain_type();
-    let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
-        Ok((id, transparent_address)) => Ok(json::object! {
-            "account" => u32::from(id.account_id()),
-            "address_index" => id.address_index().index(),
-            "scope" => id.scope().to_string(),
-            "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -468,7 +479,7 @@ async fn notes(
         "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
         "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 async fn coins(
@@ -481,7 +492,7 @@ async fn coins(
             lightclient.wallet().read().await.coin_summaries(all_coins)
         ),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 async fn quicksend(
@@ -500,28 +511,21 @@ async fn quicksend(
     .await
     {
         Ok(reports) => Ok(object! {
-            "txids" => reports.iter().map(|report| report.txid.to_string()).collect::<Vec<_>>(),
+            "txids" => txids_json(&reports.iter().map(|report| report.txid).collect::<Vec<_>>()),
             "transmissions" => reports.iter().map(render_transmit_report).collect::<Vec<_>>(),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    match transmit_narrated(
+    transmit_txids(
         "quickshield",
         lightclient.transmit_progress_handle(),
         lightclient.quick_shield(zip32::AccountId::ZERO),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -558,14 +562,14 @@ async fn remove_transaction(
         .remove_failed_transaction(txid)
     {
         Ok(()) => Ok("Successfully removed failed transaction.".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn rescan(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.rescan().await {
         Ok(()) => Ok("Launching rescan...".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -610,10 +614,10 @@ async fn send(
         .await
     {
         Ok(proposal) => match zingolib::data::proposal::total_fee(&proposal) {
-            Ok(fee) => Ok(object! { "fee" => fee.into_u64() }.pretty(2)),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Ok(fee) => Ok(object! { "fee" => fee.into_u64() }.pretty(JSON_INDENT)),
+            Err(e) => Err(not_yet_typed(e)),
         },
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -629,24 +633,22 @@ async fn send_all(
         .await
     {
         Ok(proposal) => {
-            let amount = proposal::total_payment_amount(&proposal)
-                .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
-            let fee = proposal::total_fee(&proposal)
-                .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
+            let amount = proposal::total_payment_amount(&proposal).map_err(not_yet_typed)?;
+            let fee = proposal::total_fee(&proposal).map_err(not_yet_typed)?;
             Ok(object! {
                 "amount" => amount.into_u64(),
                 "fee" => fee.into_u64(),
             }
-            .pretty(2))
+            .pretty(JSON_INDENT))
         }
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.do_total_spends_to_address().await {
-        Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -740,9 +742,9 @@ async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
                 "value_to_shield" => value_to_shield.into_u64(),
                 "fee" => fee.into_u64(),
             }
-            .pretty(2))
+            .pretty(JSON_INDENT))
         }
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -750,11 +752,11 @@ async fn spendable_balance(lightclient: &mut LightClient) -> Result<String, Comm
     let wallet = lightclient.wallet().read().await;
     let spendable_balance = wallet
         .shielded_spendable_balance(zip32::AccountId::ZERO, false)
-        .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
+        .map_err(not_yet_typed)?;
     Ok(object! {
         "spendable_balance" => spendable_balance.into_u64(),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 /// A parsed `sync` command, its arguments parsed completely at the clap
@@ -777,22 +779,22 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             } else {
                 match lightclient.sync().await {
                     Ok(()) => Ok("Launching sync task...".to_string()),
-                    Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+                    Err(e) => Err(not_yet_typed(e)),
                 }
             }
         }
         SyncSubCommand::Pause => match lightclient.pause_sync() {
             Ok(()) => Ok("Pausing sync task...".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Stop => match lightclient.stop_sync() {
             Ok(()) => Ok("Stopping sync task...".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Status => {
             match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
-                Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
-                Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+                Ok(status) => Ok(json::JsonValue::from(status).pretty(JSON_INDENT)),
+                Err(e) => Err(not_yet_typed(e)),
             }
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {
@@ -800,20 +802,23 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
             PollReport::Ready(result) => match result {
                 Ok(sync_result) => Ok(sync_result.to_string()),
-                Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+                Err(e) => Err(not_yet_typed(e)),
             },
         },
     }
 }
 
 async fn t_addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(lightclient.transparent_addresses_json().await.pretty(2))
+    Ok(lightclient
+        .transparent_addresses_json()
+        .await
+        .pretty(JSON_INDENT))
 }
 
 async fn transactions(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.transaction_summaries(false).await {
         Ok(transactions) => Ok(transactions.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -848,32 +853,25 @@ async fn transmit(
         ));
     };
 
-    match transmit_narrated(
+    transmit_txids(
         "transmit",
         lightclient.transmit_progress_handle(),
         lightclient.transmit_calculated(txids),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
 async fn value_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.do_total_value_to_address().await {
-        Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 async fn value_transfers(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.value_transfers(false).await {
         Ok(value_transfers) => Ok(value_transfers.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -1488,7 +1486,7 @@ async fn run_migrate(lightclient: &mut LightClient) -> Result<String, MigrationC
         "part_txids" => txids_json(&summary.part_txids),
         "residual" => summary.residual,
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 /// Runs one `migration` sub-command.
@@ -1509,7 +1507,7 @@ async fn run_migration(
                 "residual" => plan.residual,
                 "plan_hash" => hex::encode(migration::plan_hash(&plan)),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Start {
             plan_hash,
@@ -1538,7 +1536,7 @@ async fn run_migration(
                     "round" => round,
                     "split_txids" => txids_json(&txids),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
                 SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
                     "Round confirmed; waiting for the anchor to reach its outputs. \
                      Sync and retry."
@@ -1547,7 +1545,7 @@ async fn run_migration(
                 SplitStep::AwaitingConfirmation { pending } => object! {
                     "awaiting_confirmation" => txids_json(&pending),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
                 SplitStep::SplittingComplete => {
                     "Note splitting complete; parts are scheduled.".to_string()
                 }
@@ -1590,7 +1588,7 @@ async fn run_migration(
                     .collect::<Vec<_>>(),
                 "halted" => report.halted,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Auto => {
             lightclient
@@ -1601,7 +1599,7 @@ async fn run_migration(
             if txids.is_empty() {
                 "No parts due yet.".to_string()
             } else {
-                object! { "broadcast" => txids_json(&txids) }.pretty(2)
+                object! { "broadcast" => txids_json(&txids) }.pretty(JSON_INDENT)
             }
         }
         MigrationSubCommand::Status => {
@@ -1630,7 +1628,7 @@ async fn run_migration(
                     "denominations" => batch.denominations.clone(),
                 }),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Windows => {
             let timeline = lightclient.window_timeline().await?;
@@ -1651,7 +1649,7 @@ async fn run_migration(
                         })
                         .collect::<Vec<_>>(),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
             }
         }
         MigrationSubCommand::Reconcile => {
@@ -1671,7 +1669,7 @@ async fn run_migration(
                     .map(|action| format!("{action:?}"))
                     .collect::<Vec<_>>(),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Catchup { spacing } => {
             let txids = transmit_narrated(
@@ -1683,7 +1681,7 @@ async fn run_migration(
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
-                object! { "part_txids" => txids_json(&txids) }.pretty(2)
+                object! { "part_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
             }
         }
         MigrationSubCommand::Cancel => {
@@ -1763,7 +1761,7 @@ async fn run_drain(
                 "fee" => plan.fee,
                 "residual" => plan.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         DrainSubCommand::Now => {
             let progress = lightclient.immediate_migration_progress_handle();
@@ -1779,7 +1777,7 @@ async fn run_drain(
                 "fee" => summary.fee,
                 "residual" => summary.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
     })
 }
@@ -1803,7 +1801,7 @@ async fn run_split(
                 "parts" => plan.parts.clone(),
                 "residual" => plan.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         SplitSubCommand::Now => {
             let progress = lightclient.split_progress_handle();
@@ -1815,7 +1813,7 @@ async fn run_split(
             .await?
             {
                 SplitOutcome::Round { txids } => {
-                    object! { "split_txids" => txids_json(&txids) }.pretty(2)
+                    object! { "split_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
                 }
                 SplitOutcome::AwaitingConfirmation => {
                     "A previous round has not confirmed yet; nothing was sent. Sync and retry."
@@ -2638,8 +2636,8 @@ pub(crate) async fn dispatch_parsed(
         CliCommand::Migrate => migrate(lightclient).await,
         CliCommand::Migration { sub } => migration(sub, lightclient).await,
         CliCommand::NewAddress { receivers } => new_address(receivers, lightclient).await,
-        CliCommand::NewTaddress => new_taddress(lightclient).await,
-        CliCommand::NewTaddressAllowGap => new_taddress_allow_gap(lightclient).await,
+        CliCommand::NewTaddress => taddress(lightclient, true).await,
+        CliCommand::NewTaddressAllowGap => taddress(lightclient, false).await,
         CliCommand::Notes { scope } => notes(scope, lightclient).await,
         #[cfg(feature = "nym")]
         CliCommand::Nym { sub } => nym(sub, lightclient).await,

@@ -1275,3 +1275,70 @@ mod offline_contract {
         }
     }
 }
+
+#[cfg(test)]
+mod pure_helpers {
+    //! Runtime-free checks of the pure rendering vocabulary: every function
+    //! here takes already-fetched values and returns its whole result.
+
+    use zingolib::wallet::keys::WalletAddressRef;
+
+    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+
+    /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
+    /// "Error: " prefix, so the edge renderer adds it exactly once.
+    #[test]
+    fn not_yet_typed_renders_the_message_unprefixed() {
+        assert_eq!(
+            not_yet_typed("no such wallet file").to_string(),
+            "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the ids render as a flat JSON array of their string
+    /// forms, in the order given.
+    #[test]
+    fn txids_json_renders_a_flat_ordered_array() {
+        assert_eq!(
+            txids_json(&["first", "second"]).dump(),
+            r#"["first","second"]"#
+        );
+    }
+
+    /// HYPOTHESIS: an underived address renders as the single
+    /// is_wallet_address=false field, with no address fields to mislead.
+    #[test]
+    fn address_check_json_renders_the_underived_case_bare() {
+        assert_eq!(
+            address_check_json(None).dump(),
+            r#"{"is_wallet_address":"false"}"#
+        );
+    }
+
+    /// HYPOTHESIS: a derived unified address renders its type, index, and
+    /// receiver flags alongside the encoding.
+    #[test]
+    fn address_check_json_renders_a_unified_derivation() {
+        let rendered = address_check_json(Some(WalletAddressRef::Unified {
+            account_id: zip32::AccountId::ZERO,
+            address_index: Some(3),
+            has_orchard: true,
+            has_sapling: false,
+            has_transparent: true,
+            encoded_address: "u1mocked".to_string(),
+        }))
+        .pretty(JSON_INDENT);
+        for expected in [
+            r#""is_wallet_address": "true""#,
+            r#""address_type": "unified""#,
+            r#""address_index": 3"#,
+            r#""account_id": 0"#,
+            r#""has_orchard": true"#,
+            r#""has_sapling": false"#,
+            r#""has_transparent": true"#,
+            r#""encoded_address": "u1mocked""#,
+        ] {
+            assert!(rendered.contains(expected), "{rendered}");
+        }
+    }
+}
