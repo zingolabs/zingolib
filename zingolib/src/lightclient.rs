@@ -46,6 +46,8 @@ pub mod migrate;
 pub mod offline;
 pub mod propose;
 pub mod save;
+#[cfg(feature = "nym")]
+pub mod select;
 pub mod send;
 pub mod sync;
 pub(crate) mod transmit;

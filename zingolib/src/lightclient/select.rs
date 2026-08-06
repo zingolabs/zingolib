@@ -1,0 +1,181 @@
+//! The Server-Selection Sweep runner (ADR 0034): the impure half that emits
+//! the survey and turns it into a sync indexer.
+//!
+//! The runner spawns a dedicated sweep proxy — its own `nym-proxy` child on
+//! its own status channel, so its bootstrap never churns the session's
+//! send/price-fetch transport and its Exit Node is distinct by construction.
+//! It surveys the candidates through that exit, hands the results to the
+//! pure [`sweep::select`], and drops the proxy, which recycles its exit: the
+//! transport that learned what was surveyed carries nothing after.
+#![forbid(unsafe_code)]
+
+use std::path::Path;
+use std::time::Duration;
+
+use http::Uri;
+
+use super::LightClient;
+use crate::nym::probe::ProbeSuccess;
+use crate::nym::sweep::{self, Selection, SurveyResult, SweepError};
+use crate::nym::{MixnetMode, MixnetProxy};
+
+/// Two blocks: the height tolerance around the observed median that counts
+/// as live (ADR 0034).
+pub const SWEEP_HEIGHT_TOLERANCE: u64 = 2;
+
+/// Why a Server-Selection Sweep produced no sync indexer.
+#[derive(Debug, thiserror::Error)]
+pub enum ServerSelectionError {
+    /// The dedicated sweep proxy could not be spawned.
+    #[error("the sweep proxy could not start: {0}")]
+    ProxyStart(#[source] crate::nym::MixnetProxyError),
+    /// The sweep proxy did not reach readiness: it died or exceeded its
+    /// bootstrap budget before any survey ran.
+    #[error("the sweep transport did not become ready: {0}")]
+    TransportUnready(String),
+    /// The survey ran but no sync indexer could be selected.
+    #[error(transparent)]
+    Selection(#[from] SweepError),
+}
+
+impl LightClient {
+    /// Run one Server-Selection Sweep (ADR 0034) over `candidates`, returning
+    /// the selected sync indexer, the transmit candidates that exclude its
+    /// operator, and the height-ordered live cohort.
+    ///
+    /// `binary_path` is the `nym-proxy` binary the dedicated sweep proxy
+    /// spawns from. `pin` is an explicit user server: it is surveyed like any
+    /// candidate and selected when live, and its absence from the live cohort
+    /// fails [`SweepError::DeadPin`] rather than falling back to the draw.
+    ///
+    /// The sweep proxy is dropped before this returns, recycling its exit.
+    pub async fn run_server_selection_sweep(
+        &self,
+        binary_path: &Path,
+        candidates: &[Uri],
+        pin: Option<&Uri>,
+    ) -> Result<Selection, ServerSelectionError> {
+        let chain = self.chain_type().to_string();
+        // A dedicated status channel: the sweep proxy's lifecycle is private
+        // to this call and must not touch the session's mixnet status.
+        let publisher = crate::nym::status_publisher();
+        let mut receiver = publisher.subscribe();
+        let proxy =
+            MixnetProxy::spawn(binary_path, publisher).map_err(ServerSelectionError::ProxyStart)?;
+
+        let socks5_addr = await_sweep_ready(&mut receiver).await?;
+        let results = survey(&socks5_addr, candidates, &self.indexer_history).await;
+
+        let selection = sweep::select(
+            &results,
+            &chain,
+            SWEEP_HEIGHT_TOLERANCE,
+            pin,
+            &mut rand::rngs::OsRng,
+        )?;
+
+        // Exit Recycling: dropping the dedicated proxy tears its exit down
+        // (the child is killed on drop), so no later traffic rides the exit
+        // that observed the survey.
+        drop(proxy);
+        Ok(selection)
+    }
+}
+
+/// Wait for the dedicated sweep proxy to reach `Ready` and yield its SOCKS5
+/// address, or fail typed when it dies or its bootstrap budget elapses.
+async fn await_sweep_ready(
+    receiver: &mut tokio::sync::watch::Receiver<crate::nym::MixnetStatus>,
+) -> Result<String, ServerSelectionError> {
+    let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
+    let outcome = tokio::time::timeout(budget, async {
+        loop {
+            {
+                let status = receiver.borrow_and_update();
+                match status.mode {
+                    MixnetMode::Ready => {
+                        if let Some(addr) = status.socks5_addr.clone() {
+                            return Ok(addr);
+                        }
+                    }
+                    MixnetMode::Died => {
+                        return Err(status
+                            .death
+                            .as_ref()
+                            .and_then(|d| d.detail.as_ref().map(std::string::ToString::to_string))
+                            .unwrap_or_else(|| {
+                                "the sweep proxy died during bootstrap".to_string()
+                            }));
+                    }
+                    MixnetMode::Unattached
+                    | MixnetMode::SwitchedOff
+                    | MixnetMode::Bootstrapping => {}
+                }
+            }
+            if receiver.changed().await.is_err() {
+                return Err("the sweep proxy status channel closed".to_string());
+            }
+        }
+    })
+    .await;
+    match outcome {
+        Ok(Ok(addr)) => Ok(addr),
+        Ok(Err(reason)) => Err(ServerSelectionError::TransportUnready(reason)),
+        Err(_elapsed) => Err(ServerSelectionError::TransportUnready(format!(
+            "no readiness within {}s",
+            budget.as_secs()
+        ))),
+    }
+}
+
+/// Survey every candidate over the sweep exit concurrently, recording each
+/// attempt in the indexer history like any probe.
+async fn survey(
+    socks5_addr: &str,
+    candidates: &[Uri],
+    history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
+) -> Vec<SurveyResult> {
+    let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
+    futures::future::join_all(candidates.iter().map(|uri| async move {
+        let reported = probe_one(socks5_addr, uri, timeout, history).await;
+        SurveyResult {
+            uri: uri.clone(),
+            reported,
+        }
+    }))
+    .await
+}
+
+/// One candidate's survey: `GetLightdInfo` over the sweep exit, its success
+/// mapped to the reported chain and height, any failure to `None`.
+async fn probe_one(
+    socks5_addr: &str,
+    uri: &Uri,
+    timeout: Duration,
+    history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
+) -> Option<ProbeSuccess> {
+    use crate::lightclient::indexer_history::{
+        AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
+    };
+    let host = uri.host().map_or_else(|| uri.to_string(), str::to_string);
+    let result = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, uri, timeout).await;
+    let (reported, outcome) = match &result {
+        Ok(info) => (
+            Some(ProbeSuccess {
+                chain: info.chain_name.clone(),
+                height: info.block_height,
+            }),
+            Ok(()),
+        ),
+        Err(error) => (None, Err(FailureKind::classify(&error.to_string()))),
+    };
+    history.record(&IndexerAttempt {
+        unix_secs: now_unix_secs(),
+        host,
+        route: AttemptRoute::Mixnet,
+        kind: AttemptKind::Probe,
+        millis: 0,
+        outcome,
+    });
+    reported
+}
