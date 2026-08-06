@@ -810,7 +810,13 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
     // In Offline mode no Indexer URI is configured: the client starts (and
     // stays) Indexerless.
     let builder = match filled_template.server.clone() {
-        Some(server) => builder.set_indexer_uri(server),
+        Some(server) => builder
+            .set_migration_broadcast(zingolib::wallet::migration::MigrationBroadcastConfig {
+                candidates: vec![server.clone()],
+                sync_endpoint:
+                    zingolib::wallet::migration::SyncEndpointBroadcast::AllowWithCorrelationConsent,
+            })
+            .set_indexer_uri(server),
         None => builder,
     };
 

@@ -7,24 +7,18 @@
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 //!
-//! Over the mixnet, each part is submitted to one Broadcast Indexer drawn at
-//! random per submission (Witness Rotation for migration parts), and the
-//! synchronization endpoint's *operator* is forbidden as a target (ADR
-//! 0022): a configured `migration_broadcast_uri` on the sync operator's
-//! domain is refused, and the random draw excludes that operator from the
-//! curated list through the same exclusion core the send fan-out uses, so a
-//! sync connection to a regional variant (`eu.zec.rocks`) still bars the
-//! operator's witness (`zec.rocks`). The clearnet opt-out path keeps its
-//! historical behavior, including the logged correlation warning when it
-//! must fall back to the sync endpoint.
+//! Each part is submitted to one endpoint drawn per submission from the caller's [`MigrationBroadcastConfig`] pool minus the synchronization operator, failing closed rather than falling back.
 
 use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
+use crate::wallet::migration::broadcast_config::{
+    BroadcastTarget, MigrationBroadcastConfig, SyncEndpointBroadcast, operator_domain,
+    same_operator,
+};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::broadcast_grpc::GrpcBroadcastClient;
 
-#[cfg(feature = "nym")]
 use crate::lightclient::error::LightClientError;
 
 /// The [`BroadcastClient`] the Mixnet Mode policy resolved for this session:
@@ -114,58 +108,63 @@ impl BroadcastClient for MixnetBroadcastClient {
     }
 }
 
-/// The mixnet targets migration parts may go to: the configured
-/// `migration_broadcast_uri` alone when set, otherwise the curated Broadcast
-/// Indexer pool, in both cases with the synchronization endpoint's operator
-/// forbidden (ADR 0022), so no server correlates a wallet's sync stream with
-/// its migration cohort. An exclusion that empties the pool refuses with a
-/// typed error rather than falling back.
-#[cfg(feature = "nym")]
+/// The caller's candidate pool minus the synchronization operator, refusing with [`LightClientError::NoEligibleBroadcastIndexer`] when that leaves nothing (unless [`SyncEndpointBroadcast::AllowWithCorrelationConsent`]).
 pub(crate) fn eligible_candidates(
-    configured: Option<http::Uri>,
+    config: &MigrationBroadcastConfig,
     sync_indexer: Option<&http::Uri>,
 ) -> Result<Vec<http::Uri>, LightClientError> {
-    candidates_from(
-        configured,
-        sync_indexer,
-        crate::nym::broadcast_indexers::broadcast_indexers(),
-    )
-}
-
-/// Pure core of [`eligible_candidates`], over an arbitrary pool for
-/// testability. The pool exclusion delegates to the sanctioned constructor's
-/// core (`eligible_from`), so the migration draw can never diverge from the
-/// send fan-out's operator-level exclusion semantics (ADR 0022).
-#[cfg(feature = "nym")]
-fn candidates_from(
-    configured: Option<http::Uri>,
-    sync_indexer: Option<&http::Uri>,
-    pool: Vec<http::Uri>,
-) -> Result<Vec<http::Uri>, LightClientError> {
-    use crate::nym::broadcast_indexers::{eligible_from, same_operator};
-
-    if let Some(configured) = configured {
-        let shares_sync_operator = configured
-            .host()
-            .zip(sync_indexer.and_then(http::Uri::host))
-            .is_some_and(|(candidate, sync)| same_operator(candidate, sync));
-        if shares_sync_operator {
-            return Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint {
-                host: configured.host().unwrap_or_default().to_string(),
-            });
-        }
-        return Ok(vec![configured]);
+    if config.candidates.is_empty() {
+        return Err(LightClientError::NoEligibleBroadcastIndexer);
     }
-    match sync_indexer {
-        Some(sync) => {
-            eligible_from(pool, sync).map_err(|_| LightClientError::NoEligibleBroadcastIndexer)
-        }
-        None if pool.is_empty() => Err(LightClientError::NoEligibleBroadcastIndexer),
-        None => Ok(pool),
+
+    // Applying operator-level exclusion to the caller's pool is the whole of
+    // the mechanism: the same `same_operator` predicate the send fan-out uses,
+    // so the migration draw can never diverge from it.
+    let eligible: Vec<http::Uri> = match sync_indexer {
+        Some(sync) => config
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                !candidate
+                    .host()
+                    .zip(sync.host())
+                    .is_some_and(|(candidate, sync)| same_operator(candidate, sync))
+            })
+            .cloned()
+            .collect(),
+        // No accumulating sync operator to exclude (an Indexerless session):
+        // the no-sync-operator invariant holds vacuously over the full pool.
+        None => config.candidates.clone(),
+    };
+    if !eligible.is_empty() {
+        return Ok(eligible);
+    }
+
+    // Every candidate is under the synchronization operator.
+    match config.sync_endpoint {
+        SyncEndpointBroadcast::Forbid => Err(LightClientError::NoEligibleBroadcastIndexer),
+        SyncEndpointBroadcast::AllowWithCorrelationConsent => Ok(config.candidates.clone()),
     }
 }
 
-#[cfg(all(test, feature = "nym"))]
+/// The eligible broadcast targets a plan discloses, in draw order with reachability unprobed, empty when nothing is eligible.
+pub(crate) fn broadcast_targets(
+    config: &MigrationBroadcastConfig,
+    sync_indexer: Option<&http::Uri>,
+) -> Vec<BroadcastTarget> {
+    eligible_candidates(config, sync_indexer)
+        .map(|uris| {
+            uris.into_iter()
+                .map(|uri| {
+                    let operator = uri.host().map(operator_domain).unwrap_or_default();
+                    BroadcastTarget::unprobed(uri, operator)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -173,18 +172,23 @@ mod tests {
         text.parse().expect("static uri")
     }
 
-    /// HYPOTHESIS: the sync endpoint's host is excluded from the random
-    /// pool, case-insensitively. Falsified if a migration part could be
-    /// drawn toward the server that also sees the wallet's sync stream.
+    fn forbid(candidates: Vec<http::Uri>) -> MigrationBroadcastConfig {
+        MigrationBroadcastConfig {
+            candidates,
+            sync_endpoint: SyncEndpointBroadcast::Forbid,
+        }
+    }
+
+    /// The sync operator is excluded case-insensitively, keeping the pool's own order.
     #[test]
-    fn the_sync_host_is_excluded_from_the_pool() {
-        let pool = vec![
+    fn the_sync_operator_is_excluded_from_the_pool() {
+        let config = forbid(vec![
             uri("https://zec.rocks:443"),
             uri("https://Sync.Example:443"),
             uri("https://other.example:443"),
-        ];
+        ]);
         let sync = uri("https://sync.example:443");
-        let candidates = candidates_from(None, Some(&sync), pool).expect("two remain");
+        let candidates = eligible_candidates(&config, Some(&sync)).expect("two remain");
         assert_eq!(
             candidates,
             vec![
@@ -194,106 +198,101 @@ mod tests {
         );
     }
 
-    /// HYPOTHESIS: exclusion is by operator, not exact host (ADR 0022). A
-    /// sync connection to a regional variant must still bar the operator's
-    /// listed witness. Falsified if the draw weakens to exact-host matching,
-    /// the regression PR #2527's review found on this path.
+    /// Exclusion is by operator, not exact host: a regional variant bars every host under the operator.
     #[test]
-    fn the_sync_operators_regional_variant_is_excluded_from_the_pool() {
-        let pool = vec![
+    fn the_sync_operators_regional_variant_excludes_the_operator() {
+        let config = forbid(vec![
             uri("https://zec.rocks:443"),
+            uri("https://na.zec.rocks:443"),
             uri("https://other.example:443"),
-        ];
+        ]);
         let sync = uri("https://eu.zec.rocks:443");
-        let candidates = candidates_from(None, Some(&sync), pool).expect("one remains");
+        let candidates = eligible_candidates(&config, Some(&sync)).expect("one remains");
         assert_eq!(candidates, vec![uri("https://other.example:443")]);
     }
 
-    /// HYPOTHESIS: a configured broadcast target equal to the sync endpoint
-    /// is refused outright, not silently accepted.
-    #[test]
-    fn a_configured_target_on_the_sync_host_is_refused() {
-        let sync = uri("https://sync.example:443");
-        let refused = candidates_from(
-            Some(uri("https://sync.example:9067")),
-            Some(&sync),
-            vec![uri("https://other.example:443")],
-        );
-        assert!(matches!(
-            refused,
-            Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint { host }) if host == "sync.example"
-        ));
-    }
-
-    /// HYPOTHESIS: the configured-target refusal is also operator-level: a
-    /// `migration_broadcast_uri` on the sync operator's regional variant is
-    /// refused, since both hosts are the same accumulating party (ADR 0022).
-    #[test]
-    fn a_configured_target_on_the_sync_operators_variant_is_refused() {
-        let sync = uri("https://zec.rocks:443");
-        let refused = candidates_from(
-            Some(uri("https://eu.zec.rocks:443")),
-            Some(&sync),
-            vec![uri("https://other.example:443")],
-        );
-        assert!(matches!(
-            refused,
-            Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint { host }) if host == "eu.zec.rocks"
-        ));
-    }
-
-    /// A configured target on a different host is the sole candidate. The
-    /// curated pool is not consulted.
-    #[test]
-    fn a_distinct_configured_target_is_the_sole_candidate() {
-        let sync = uri("https://sync.example:443");
-        let candidates = candidates_from(
-            Some(uri("https://dedicated.example:443")),
-            Some(&sync),
-            vec![uri("https://other.example:443")],
-        )
-        .expect("the override stands alone");
-        assert_eq!(candidates, vec![uri("https://dedicated.example:443")]);
-    }
-
-    /// With no sync endpoint configured there is nothing to exclude.
+    /// With no synchronization endpoint there is no operator to exclude, so the whole pool is eligible.
     #[test]
     fn no_sync_indexer_excludes_nothing() {
-        let pool = vec![uri("https://zec.rocks:443")];
+        let config = forbid(vec![uri("https://zec.rocks:443")]);
         assert_eq!(
-            candidates_from(None, None, pool.clone()).expect("unfiltered"),
-            pool
+            eligible_candidates(&config, None).expect("unfiltered"),
+            config.candidates
         );
     }
 
-    /// HYPOTHESIS: emptying the pool is a typed refusal, never an empty
-    /// silent no-op that would strand due parts without a diagnosis.
+    /// An empty candidate pool is a typed refusal, not a silent no-op.
     #[test]
-    fn an_emptied_pool_is_a_typed_refusal() {
-        let sync = uri("https://only.example:443");
-        let refused = candidates_from(None, Some(&sync), vec![uri("https://only.example:443")]);
+    fn an_empty_pool_is_a_typed_refusal() {
+        let refused = eligible_candidates(&forbid(vec![]), Some(&uri("https://sync.example:443")));
         assert!(matches!(
             refused,
             Err(LightClientError::NoEligibleBroadcastIndexer)
         ));
     }
 
-    /// The production wrapper draws from the curated list itself: syncing
-    /// against a curated operator's regional variant leaves the rest of the
-    /// pool, with that operator absent.
+    /// A pool of only the sync operator under `Forbid` refuses rather than falling back.
     #[test]
-    fn eligible_candidates_draws_the_curated_pool_minus_the_sync_operator() {
-        use crate::nym::broadcast_indexers::BROADCAST_INDEXERS;
+    fn only_the_sync_operator_under_forbid_refuses() {
+        let config = forbid(vec![
+            uri("https://zec.rocks:443"),
+            uri("https://eu.zec.rocks:443"),
+        ]);
+        let sync = uri("https://na.zec.rocks:443");
+        assert!(matches!(
+            eligible_candidates(&config, Some(&sync)),
+            Err(LightClientError::NoEligibleBroadcastIndexer)
+        ));
+    }
 
-        let sync = uri("https://eu.zec.rocks:443");
-        let candidates =
-            eligible_candidates(None, Some(&sync)).expect("the curated pool minus one operator");
-        assert_eq!(candidates.len(), BROADCAST_INDEXERS.len() - 1);
-        assert!(
-            candidates
-                .iter()
-                .all(|entry| !entry.host().unwrap().ends_with("zec.rocks")),
-            "the sync operator must be absent from the migration pool"
+    /// The same pool under `AllowWithCorrelationConsent` returns the sync operator's candidates.
+    #[test]
+    fn only_the_sync_operator_under_consent_returns_the_sync_candidates() {
+        let config = MigrationBroadcastConfig {
+            candidates: vec![
+                uri("https://zec.rocks:443"),
+                uri("https://eu.zec.rocks:443"),
+            ],
+            sync_endpoint: SyncEndpointBroadcast::AllowWithCorrelationConsent,
+        };
+        let sync = uri("https://na.zec.rocks:443");
+        let candidates = eligible_candidates(&config, Some(&sync)).expect("consent permits it");
+        assert_eq!(candidates, config.candidates);
+    }
+
+    /// The eligible set is a pure function of the pool and sync endpoint, order stable across calls.
+    #[test]
+    fn the_eligible_set_is_deterministic() {
+        let config = forbid(vec![
+            uri("https://a.example:443"),
+            uri("https://zec.rocks:443"),
+            uri("https://b.example:443"),
+        ]);
+        let sync = uri("https://zec.rocks:443");
+        let first = eligible_candidates(&config, Some(&sync)).expect("two remain");
+        let second = eligible_candidates(&config, Some(&sync)).expect("two remain");
+        assert_eq!(first, second);
+        assert_eq!(
+            first,
+            vec![uri("https://a.example:443"), uri("https://b.example:443")]
         );
+    }
+
+    /// Disclosed targets label each host's operator and leave reachability unprobed.
+    #[test]
+    fn broadcast_targets_label_the_operator_and_leave_reachability_unprobed() {
+        let config = forbid(vec![
+            uri("https://eu.zec.rocks:443"),
+            uri("https://other.example:443"),
+        ]);
+        let sync = uri("https://sync.example:443");
+        let targets = broadcast_targets(&config, Some(&sync));
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].operator, "zec.rocks");
+        assert_eq!(targets[1].operator, "other.example");
+        assert!(targets.iter().all(|t| t.reachable_over_mixnet.is_none()));
+
+        let empty = broadcast_targets(&forbid(vec![]), Some(&sync));
+        assert!(empty.is_empty());
     }
 }

@@ -45,6 +45,7 @@
 // (`parts::PartState`, `parts::SigningStrategy`, `split::plan_hash`);
 // their items are tightened individually instead.
 pub(crate) mod broadcast;
+pub mod broadcast_config;
 pub(crate) mod immediate;
 pub(crate) mod params;
 pub mod parts;
@@ -55,6 +56,9 @@ pub mod split;
 pub(crate) mod store;
 
 pub use broadcast::{BroadcastClient, BroadcastError};
+pub use broadcast_config::{
+    BroadcastTarget, MigrationBroadcastConfig, Reachability, SyncEndpointBroadcast,
+};
 pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx};
 pub use params::MigrationParams;
 pub use parts::{

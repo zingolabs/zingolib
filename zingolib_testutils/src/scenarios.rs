@@ -480,6 +480,11 @@ impl ClientBuilder {
         std::fs::create_dir(&conf_path).unwrap();
         ClientConfig::builder()
             .set_indexer_uri(self.server_id.clone())
+            .set_migration_broadcast(zingolib::wallet::migration::MigrationBroadcastConfig {
+                candidates: vec![self.server_id.clone()],
+                sync_endpoint:
+                    zingolib::wallet::migration::SyncEndpointBroadcast::AllowWithCorrelationConsent,
+            })
             .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
             .set_wallet_config(wallet_config)

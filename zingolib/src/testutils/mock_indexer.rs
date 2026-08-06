@@ -882,6 +882,11 @@ impl MockNet {
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_indexer_uri(self.indexer_uri.clone())
+            .set_migration_broadcast(crate::wallet::migration::MigrationBroadcastConfig {
+                candidates: vec![self.indexer_uri.clone()],
+                sync_endpoint:
+                    crate::wallet::migration::SyncEndpointBroadcast::AllowWithCorrelationConsent,
+            })
             .set_wallet_dir(wallet_dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: mnemonic.to_string(),

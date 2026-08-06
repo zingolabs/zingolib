@@ -68,25 +68,10 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("{0}")]
     MixnetNotReady(#[from] crate::nym::MixnetNotReady),
-    /// The configured migration broadcast target shares the synchronization
-    /// endpoint's host, which would let that server correlate the wallet's
-    /// sync stream with its migration cohort (ADR 0011, 2026-07-23).
-    #[cfg(feature = "nym")]
+    /// The caller's migration broadcast candidate pool held no target the draw could use.
     #[error(
-        "the migration broadcast target '{host}' is the synchronization endpoint; migration \
-         parts never go to the sync server. Configure a different migration_broadcast_uri or \
-         remove it to use the Broadcast Indexer rotation."
-    )]
-    MigrationBroadcastTargetIsSyncEndpoint {
-        /// The host both endpoints share.
-        host: String,
-    },
-    /// Excluding the synchronization endpoint left no Broadcast Indexer to
-    /// carry migration parts over the mixnet.
-    #[cfg(feature = "nym")]
-    #[error(
-        "no eligible Broadcast Indexer remains after excluding the synchronization endpoint's \
-         host from the curated list"
+        "no eligible broadcast target remains in the caller's candidate pool after excluding the \
+         synchronization endpoint's operator"
     )]
     NoEligibleBroadcastIndexer,
 }

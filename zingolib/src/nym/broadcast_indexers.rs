@@ -54,6 +54,8 @@
 
 use http::Uri;
 
+use crate::wallet::migration::broadcast_config::operator_domain;
+
 /// Curated broadcast targets (mainnet): the publicly reachable indexers found
 /// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
 /// those the mixnet can actually reach. See the module docs for provenance,
@@ -147,32 +149,6 @@ pub(crate) fn eligible_from(
         });
     }
     Ok(eligible)
-}
-
-/// Whether two hosts belong to the same accumulating operator: their
-/// operator keys match. This is the one predicate every transmission
-/// surface uses to compare a candidate against the sync indexer (ADR 0022).
-pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
-    operator_domain(host_a) == operator_domain(host_b)
-}
-
-/// The operator key of a host: its registrable parent domain, approximated as
-/// the last two dot-separated labels (the whole host when it has fewer),
-/// lowercased because DNS names compare case-insensitively. Two hosts with
-/// the same key are treated as one accumulating party. The approximation can
-/// only over-exclude (two unrelated hosts sharing a suffix collapse
-/// together), which merely shrinks the pool — it never lets the sync
-/// indexer's operator through.
-fn operator_domain(host: &str) -> String {
-    let host = host.to_ascii_lowercase();
-    let labels: Vec<&str> = host.rsplit('.').collect();
-    labels
-        .iter()
-        .take(2)
-        .rev()
-        .copied()
-        .collect::<Vec<_>>()
-        .join(".")
 }
 
 #[cfg(test)]

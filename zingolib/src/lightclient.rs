@@ -133,7 +133,7 @@ pub struct MixnetPriceFetch {
 /// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_broadcast: crate::wallet::migration::MigrationBroadcastConfig,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -231,7 +231,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_broadcast: config.migration_broadcast(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -267,7 +267,7 @@ impl LightClient {
         zingo_netutils::ensure_default_crypto_provider();
         LightClient {
             indexer: None,
-            migration_broadcast_uri: None,
+            migration_broadcast: crate::wallet::migration::MigrationBroadcastConfig::default(),
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
@@ -324,7 +324,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_broadcast: config.migration_broadcast(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,

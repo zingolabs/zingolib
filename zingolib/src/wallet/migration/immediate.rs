@@ -79,6 +79,8 @@ pub struct ImmediateMigrationPlan {
     /// worthwhile, in zatoshis: notes worth at most the sweep minimum, plus
     /// chunks whose output would not exceed it.
     pub residual: u64,
+    /// The eligible broadcast set for the migrate-now path, filled by the client layer.
+    pub broadcast_targets: Vec<super::BroadcastTarget>,
 }
 
 impl ImmediateMigrationPlan {

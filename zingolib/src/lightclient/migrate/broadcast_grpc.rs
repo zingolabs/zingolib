@@ -20,8 +20,8 @@ pub struct GrpcBroadcastClient {
 }
 
 impl GrpcBroadcastClient {
-    /// A client submitting to `uri`, ideally the dedicated
-    /// `migration_broadcast_uri` rather than the synchronization endpoint.
+    /// A client submitting to `uri`, an eligible broadcast candidate drawn
+    /// from the caller's pool rather than the synchronization endpoint.
     pub fn new(uri: http::Uri) -> Self {
         GrpcBroadcastClient { uri }
     }

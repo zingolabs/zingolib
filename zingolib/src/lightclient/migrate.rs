@@ -30,17 +30,18 @@ use nonempty::NonEmpty;
 use zcash_primitives::transaction::TxId;
 
 use crate::lightclient::LightClient;
-use crate::lightclient::error::{LightClientError, MigrationError};
+use crate::lightclient::error::{LightClientError, MigrationError, SendError, TransmissionError};
 use crate::lightclient::sync::SyncPauseGuard;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
-    BroadcastClient, BroadcastWindow, ChainView, ConsentBinding, ImmediateMigrationPlan,
-    MigrationMode, MigrationParams, MigrationPhase, MigrationPlan, MigrationState, PartId,
-    PartState, PrepareResult, RecommendedAction, ReconcileReport, SigningStrategy, WindowReport,
-    due_now_parts, plan_hash, plan_migration, plan_schedule, reconcile, schedule,
+    BroadcastClient, BroadcastTarget, BroadcastWindow, ChainView, ConsentBinding,
+    ImmediateMigrationPlan, MigrationMode, MigrationParams, MigrationPhase, MigrationPlan,
+    MigrationState, PartId, PartState, PrepareResult, RecommendedAction, ReconcileReport,
+    SigningStrategy, WindowReport, due_now_parts, plan_hash, plan_migration, plan_schedule,
+    reconcile, schedule,
 };
 
 pub mod broadcast_grpc;
@@ -583,8 +584,13 @@ impl LightClient {
         &self,
         account: zip32::AccountId,
     ) -> Result<MigrationPlan, LightClientError> {
-        let wallet = self.wallet().read().await;
-        Ok(wallet.plan_ironwood_migration_now(account)?)
+        let mut plan = {
+            let wallet = self.wallet().read().await;
+            wallet.plan_ironwood_migration_now(account)?
+        };
+
+        plan.broadcast_targets = self.broadcast_targets();
+        Ok(plan)
     }
 
     /// Records the user's consent to a proposed migration plan and persists
@@ -902,49 +908,81 @@ impl LightClient {
             .ok_or(MigrationError::NoMigration)?
     }
 
-    /// The broadcast-only client parts are submitted through, resolved by the
-    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
-    /// transmitting surface.
-    ///
-    /// While the mode is on, parts travel ONLY over the mixnet (failing
-    /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
-    /// proxy bootstraps or after it dies) to one Broadcast Indexer drawn at
-    /// random per submission, with the synchronization endpoint's operator
-    /// forbidden as a target (ADR 0022: a `migration_broadcast_uri` on the
-    /// sync operator's domain is refused, and the draw excludes that
-    /// operator). Clearnet carries parts only when the user deliberately
-    /// toggled the mode off, or in a build without the `nym` feature: then
-    /// the dedicated `migration_broadcast_uri` when configured, else the
-    /// synchronization endpoint with a logged correlation warning, else
-    /// [`LightClientError::Offline`] with no traffic emitted.
+    /// The broadcast client parts are submitted through, drawn per submission from the caller's eligible candidate pool over the mixnet (failing closed) or clearnet, never the synchronization endpoint.
     fn migration_broadcast_client(
         &self,
     ) -> Result<broadcast_route::RoutedBroadcastClient, LightClientError> {
         #[cfg(feature = "nym")]
         if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
-            let sync_indexer = self.indexer_uri();
             let candidates = broadcast_route::eligible_candidates(
-                self.migration_broadcast_uri.clone(),
-                sync_indexer.as_ref(),
+                &self.migration_broadcast,
+                self.indexer_uri().as_ref(),
             )?;
+
+            #[cfg(any(test, feature = "testutils"))]
+            if matches!(
+                self.mixnet_slot,
+                crate::nym::MixnetSlot::AttachedForTests { .. }
+            ) {
+                return Ok(broadcast_route::RoutedBroadcastClient::Clearnet(
+                    broadcast_grpc::GrpcBroadcastClient::new(Self::draw_eligible(candidates)?),
+                ));
+            }
             return Ok(broadcast_route::RoutedBroadcastClient::Mixnet(
                 broadcast_route::MixnetBroadcastClient::new(socks5_addr, candidates),
             ));
         }
 
-        let clearnet = match &self.migration_broadcast_uri {
-            Some(uri) => broadcast_grpc::GrpcBroadcastClient::new(uri.clone()),
-            None => {
-                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
-                log::warn!(
-                    "no dedicated migration broadcast endpoint configured; parts will be \
-                     broadcast to the synchronization endpoint, which lets that server \
-                     correlate synchronization with migration activity"
-                );
-                broadcast_grpc::GrpcBroadcastClient::new(indexer_uri)
+        let candidates = broadcast_route::eligible_candidates(
+            &self.migration_broadcast,
+            self.indexer_uri().as_ref(),
+        )?;
+        Ok(broadcast_route::RoutedBroadcastClient::Clearnet(
+            broadcast_grpc::GrpcBroadcastClient::new(Self::draw_eligible(candidates)?),
+        ))
+    }
+
+    /// Draws one target from an already-eligible candidate set.
+    fn draw_eligible(candidates: Vec<http::Uri>) -> Result<http::Uri, LightClientError> {
+        use rand::seq::SliceRandom as _;
+        candidates
+            .choose(&mut rand::rngs::OsRng)
+            .cloned()
+            .ok_or(LightClientError::NoEligibleBroadcastIndexer)
+    }
+
+    /// The eligible broadcast targets for the configured candidate pool, in draw order with reachability unprobed.
+    pub fn broadcast_targets(&self) -> Vec<BroadcastTarget> {
+        broadcast_route::broadcast_targets(&self.migration_broadcast, self.indexer_uri().as_ref())
+    }
+
+    /// Probes one candidate over the current mixnet route, failing closed while the mixnet is not ready.
+    #[cfg(feature = "nym")]
+    pub async fn probe_broadcast_target(
+        &self,
+        uri: &http::Uri,
+        timeout: Duration,
+    ) -> Result<crate::wallet::migration::Reachability, LightClientError> {
+        use crate::wallet::migration::Reachability;
+
+        let socks5_addr = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Mixnet(addr) => addr,
+            crate::nym::MixnetRoute::Clearnet => {
+                return Ok(Reachability::Unreachable {
+                    reason: "mixnet mode is off; mixnet reachability cannot be probed".to_string(),
+                });
             }
         };
-        Ok(broadcast_route::RoutedBroadcastClient::Clearnet(clearnet))
+        Ok(
+            match zingo_netutils::get_lightd_info_via_socks5(&socks5_addr, uri, timeout).await {
+                Ok(info) => Reachability::Reachable {
+                    height: info.block_height,
+                },
+                Err(error) => Reachability::Unreachable {
+                    reason: error.to_string(),
+                },
+            },
+        )
     }
 
     /// Materializes and broadcasts every part whose bucket window is open.
@@ -1594,8 +1632,13 @@ impl LightClient {
         &self,
         account: zip32::AccountId,
     ) -> Result<ImmediateMigrationPlan, LightClientError> {
-        let wallet = self.wallet().read().await;
-        Ok(wallet.plan_immediate_migration(account)?)
+        let mut plan = {
+            let wallet = self.wallet().read().await;
+            wallet.plan_immediate_migration(account)?
+        };
+
+        plan.broadcast_targets = self.broadcast_targets();
+        Ok(plan)
     }
 
     /// Spends every spendable Orchard note in `account` into the Ironwood pool,
@@ -1681,9 +1724,11 @@ impl LightClient {
             return Err(crate::wallet::error::WalletError::NothingToMigrate.into());
         }
 
+        let client = self.migration_broadcast_client()?;
+
         // Arm per-transaction progress for the poll side channel. The scope
         // guard owns an `Arc` clone (not a borrow of `self`), so it survives the
-        // `&mut self` `build_and_transmit` call and clears the snapshot on every
+        // `&mut self` `build_and_broadcast` call and clears the snapshot on every
         // exit: success, `?`-propagated error, or panic.
         self.immediate_migration_progress
             .begin(plan.transactions.len() as u32);
@@ -1691,9 +1736,13 @@ impl LightClient {
         let progress = self.immediate_migration_progress.clone();
 
         let txids = self
-            .build_and_transmit(&plan.transactions, sync, &progress, |wallet, planned| {
-                wallet.build_immediate_migration_transaction(account, planned)
-            })
+            .build_and_broadcast(
+                &plan.transactions,
+                sync,
+                &client,
+                &progress,
+                |wallet, planned| wallet.build_immediate_migration_transaction(account, planned),
+            )
             .await?;
 
         Ok(ImmediateMigrationSummary {
@@ -1897,6 +1946,82 @@ impl LightClient {
         }
 
         Ok(txids)
+    }
+
+    /// [`Self::build_and_transmit`]'s broadcast-routed twin for the immediate path, sharing its build-then-fail-unsent cleanup contract.
+    async fn build_and_broadcast<T>(
+        &mut self,
+        planned: &[T],
+        _sync: &SyncPauseGuard,
+        client: &impl BroadcastClient,
+        progress: &impl BuildProgressSink,
+        build: impl Fn(&mut LightWallet, &T) -> Result<TxId, WalletError>,
+    ) -> Result<Vec<TxId>, LightClientError> {
+        let txids = self.build_transactions(planned, progress, build).await?;
+
+        // Build is done; the submit loop below publishes "sent i/N".
+        progress.on_transmit();
+
+        if let Err(e) = self.broadcast_calculated_transactions(&txids, client).await {
+            self.fail_unsent_transactions(&txids).await;
+            return Err(e);
+        }
+        Ok(txids)
+    }
+
+    /// Submits already-built `Calculated` transactions through the broadcast client, marking each `Transmitted` on success.
+    async fn broadcast_calculated_transactions(
+        &mut self,
+        txids: &[TxId],
+        client: &impl BroadcastClient,
+    ) -> Result<(), LightClientError> {
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        let mut wallet = self.wallet().write().await;
+        for (index, txid) in txids.iter().enumerate() {
+            let calculated = wallet
+                .wallet_transactions
+                .get(txid)
+                .ok_or(WalletError::TransactionNotFound(*txid))?;
+            let status = calculated.status();
+            if !matches!(status, ConfirmationStatus::Calculated(_)) {
+                return Err(SendError::TransmissionError(
+                    TransmissionError::IncorrectTransactionStatus(*txid),
+                )
+                .into());
+            }
+            let height = status.get_height();
+
+            let mut raw_tx = Vec::new();
+            calculated
+                .transaction()
+                .write(&mut raw_tx)
+                .map_err(WalletError::TransactionWrite)?;
+
+            match client.submit(raw_tx, height).await {
+                Ok(_) => {
+                    wallet
+                        .wallet_transactions
+                        .get_mut(txid)
+                        .ok_or(WalletError::TransactionNotFound(*txid))?
+                        .update_status(
+                            ConfirmationStatus::Transmitted(height),
+                            crate::utils::now(),
+                            false,
+                        );
+                    wallet.save_required = true;
+                    // No-op unless the immediate migration armed its side channel.
+                    self.immediate_migration_progress.set_sent(index as u32 + 1);
+                }
+                Err(error) => {
+                    return Err(SendError::TransmissionError(
+                        TransmissionError::TransmissionFailed(error.to_string()),
+                    )
+                    .into());
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Builds every planned transaction under one wallet lock. On failure,
