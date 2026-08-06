@@ -824,6 +824,132 @@ mod network_command_parsing {
     }
 }
 
+#[cfg(all(test, feature = "nym"))]
+mod bootstrap_wait {
+    //! Paused-clock falsifiers for the `network on` bootstrap wait: the
+    //! 8-second heartbeat cadence, and the outcome reader over the status
+    //! subscription.
+    //!
+    //! Seam justification (ADR 0030): the `block_on` here is the one
+    //! `#[tokio::test]` generates to drive each async test body; a test
+    //! driver is a sync frontend, so it is an audited crossing.
+    #![allow(clippy::disallowed_methods)]
+
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use zingolib::netutils::time::BOOTSTRAP_HEARTBEAT_INTERVAL;
+    use zingolib::nym::{MixnetMode, MixnetStatus};
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome, with_heartbeat};
+
+    fn status(mode: MixnetMode) -> MixnetStatus {
+        MixnetStatus {
+            mode,
+            socks5_addr: None,
+            bootstrap_detail: None,
+            death: None,
+        }
+    }
+
+    /// HYPOTHESIS: a slow bootstrap is narrated every eight seconds, each
+    /// line carrying the latest detail and the elapsed seconds.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_bootstrap_heartbeats_on_the_eight_second_cadence() {
+        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = lines.clone();
+        with_heartbeat(
+            "network on",
+            BOOTSTRAP_HEARTBEAT_INTERVAL,
+            "bootstrapping",
+            || Some("connecting to the gateway".to_string()),
+            move |line| sink.lock().expect("line sink poisoned").push(line),
+            tokio::time::sleep(Duration::from_secs(20)),
+        )
+        .await;
+        let lines = lines.lock().expect("line sink poisoned").clone();
+        assert_eq!(
+            lines,
+            vec![
+                "network on: connecting to the gateway (8s elapsed)".to_string(),
+                "network on: connecting to the gateway (16s elapsed)".to_string(),
+            ]
+        );
+    }
+
+    /// HYPOTHESIS: the wait resolves `Ready` when the subscription reaches
+    /// the ready mode, even from an initial unattached snapshot.
+    #[tokio::test]
+    async fn ready_resolves_the_wait() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Bootstrapping))
+            .expect("the waiter holds the receiver");
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Ready))
+            .expect("the waiter holds the receiver");
+        assert_eq!(
+            waiter.await.expect("the waiter must not panic"),
+            BootstrapOutcome::Ready
+        );
+    }
+
+    /// HYPOTHESIS: a death during the wait resolves `Failed` with the died
+    /// report rather than hanging until a timeout.
+    #[tokio::test]
+    async fn death_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Died))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet transport died".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a fall back to unattached after bootstrapping began is a
+    /// failure, but the initial unattached snapshot is not — the wait must
+    /// survive subscribing before the driver flips to bootstrapping.
+    #[tokio::test]
+    async fn unattached_fails_only_after_bootstrapping_began() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Unattached))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the bootstrap ended in mode unattached".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a closed status channel resolves `Failed` instead of
+    /// waiting forever on a sender that will never speak again.
+    #[tokio::test]
+    async fn a_closed_channel_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        drop(tx);
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet status channel closed".to_string()
+            }
+        );
+    }
+}
+
 #[cfg(test)]
 mod offline_contract {
     //! The Offline-mode contract at the command surface (issue #2286,

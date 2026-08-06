@@ -188,6 +188,11 @@ pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// tick stays silent.
 pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
+/// An interactive `network on` blocks while the nym proxy bootstraps, so the
+/// command prints the latest bootstrap progress line at this interval while
+/// it waits.
+pub const BOOTSTRAP_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
+
 // ---------------------------------------------------------------------------
 // Diagnostics and server selection
 // ---------------------------------------------------------------------------
