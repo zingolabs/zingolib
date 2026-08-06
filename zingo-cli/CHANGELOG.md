@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that alters no command's output (ADR 0030).
 
 ### Removed
+- **Breaking.** The string-command plumbing left the library surface: the
+  `Command` and `ShortCircuitedCommand` traits, `HelpCommand`, and the
+  `get_commands`, `get_standalone_commands`, `get_wallet_commands`, and
+  `do_user_command_result` functions are gone. Dispatch now reads the static
+  command table of `CommandSpec` rows, and `do_user_command` remains the
+  string entry point (ADR 0030).
 
 ## [0.4.0] - 2026-06-10
 
