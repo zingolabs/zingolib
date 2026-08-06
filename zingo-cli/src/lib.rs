@@ -116,7 +116,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("indexer-diary")
                 .long("indexer-diary")
                 .action(clap::ArgAction::SetTrue)
-                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `nym history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
+                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `network history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -261,12 +261,12 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
 /// Formats the ranked server list for display by the `servers` command.
 fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
     let Some(server) = &cli_config.server else {
-        return "Offline mode: no server is configured this session.".to_string();
+        return "Last Known servers: none. This session is offline and probes nothing.".to_string();
     };
     if cli_config.ranked_servers.is_empty() {
         return format!("Server was set explicitly: {server}\nNo other servers were probed.");
     }
-    let mut out = String::from("Servers ranked by get_info() response time:\n");
+    let mut out = String::from("Last Known server ranking, from this session's launch probe:\n");
     for (i, r) in cli_config.ranked_servers.iter().enumerate() {
         let marker = if r.uri == *server { " (active)" } else { "" };
         out.push_str(&format!(
@@ -438,8 +438,24 @@ pub(crate) fn command_loop(
                     continue;
                 }
             };
-            // The Offline-mode pin: this session never configures an Indexer.
-            if let Some(refusal) = offline_mode_refusal(communication_mode, &command) {
+            // The Offline-mode pin reads the live client, not the launch
+            // snapshot: `network on` may have granted consent mid-session,
+            // and `network off` may have torn the session down to the
+            // unconsented posture. A deliberate `--offline` never lifts.
+            let live_mode = match communication_mode {
+                CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
+                _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
+                _ => CommunicationMode::UnconsentedOffline,
+            };
+            // `help` renders the live posture's surface: what a suppressed
+            // session does not offer, its help does not list.
+            if let commands::CliCommand::Help { command } = &command {
+                resp_transmitter
+                    .send(Ok(commands::format_help(live_mode, command.as_deref())))
+                    .unwrap();
+                continue;
+            }
+            if let Some(refusal) = offline_mode_refusal(live_mode, &command) {
                 resp_transmitter.send(Err(refusal)).unwrap();
                 continue;
             }
@@ -494,34 +510,69 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
 /// Selected at argument-parse time by the `--offline` flag and pinned for
 /// the life of the session (Offline mode, issue #2286).
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum CommunicationMode {
+pub(crate) enum CommunicationMode {
     /// Connected to a remote indexer for sync, send, etc.
     Online,
-    /// The session never configures an Indexer: the client remains
-    /// Indexerless, and only that state's capability set is available.
-    Offline,
+    /// `--offline`: the deliberate zero-traffic session that no in-session
+    /// act can lift; the whole network-requiring surface is suppressed.
+    DeliberateOffline,
+    /// No Connectivity Consent exists anywhere: the session runs offline
+    /// and `network on` remains its in-session consent act.
+    UnconsentedOffline,
 }
 
-/// The Offline-mode pin at the REPL dispatch: returns the refusal to send
-/// in place of executing `command` (an Offline session never configures an
-/// Indexer, so `change_server` is refused), or `None` when the command may
-/// proceed.
+/// The minted launch notice for a deliberate `--offline` session, naming
+/// the only exit.
+const DELIBERATE_OFFLINE_NOTICE: &str = "This session is deliberately offline (--offline): network-requiring \
+     commands are unavailable, and nothing touches the network. The only \
+     exit is to relaunch without --offline.";
+
+/// The Offline-mode gate at the dispatch boundary: returns the fully
+/// rendered refusal to send in place of executing a suppressed `command`,
+/// naming the live remedy, or `None` when the command may proceed.
 fn offline_mode_refusal(
     communication_mode: CommunicationMode,
     command: &commands::CliCommand,
 ) -> Option<String> {
-    (communication_mode == CommunicationMode::Offline
-        && matches!(command, commands::CliCommand::ChangeServer { .. }))
-    .then(|| {
-        "Error: this session is in Offline mode; no Indexer may be configured. \
-         Restart without --offline to change servers."
-            .to_string()
-    })
+    command
+        .suppressed(communication_mode)
+        .then(|| offline_refusal_text(communication_mode, &command.name()))
+}
+
+/// Renders the minted refusal for a suppressed command, naming the live
+/// remedy the posture leaves open.
+#[cfg(feature = "nym")]
+fn offline_refusal_text(communication_mode: CommunicationMode, name: &str) -> String {
+    match communication_mode {
+        CommunicationMode::DeliberateOffline => format!(
+            "Error: `{name}` requires network access, and --offline pins this session \
+             offline. The only exit is to relaunch without --offline."
+        ),
+        _ => format!(
+            "Error: `{name}` requires network access, and this session runs offline \
+             without Connectivity Consent. Grant consent for this session with \
+             `network on`, or relaunch with --online."
+        ),
+    }
+}
+
+/// Renders the minted refusal without the mixnet capability: Offline Mode
+/// is the only mode such a build can be in, so the remedy is a rebuild.
+#[cfg(not(feature = "nym"))]
+fn offline_refusal_text(_communication_mode: CommunicationMode, name: &str) -> String {
+    format!(
+        "Error: `{name}` requires network access, and this build has no mixnet \
+         capability, so Offline Mode is its only mode. Rebuild with default \
+         features (plain `cargo build`, or `makers run-cli`) to go online."
+    )
 }
 
 /// One session's connectivity verdict (ADR 0025): how the launch acts and
 /// the stored standing choice combine. Pure, so the precedence is pinned
-/// by unit tests without touching a filesystem.
+/// by unit tests without touching a filesystem. Exists only with the
+/// mixnet capability: without it there is no verdict to reach, because
+/// Offline Mode is the only mode (ADR 0026).
+#[cfg(feature = "nym")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConnectivityDecision {
     /// `--offline`: the deliberate zero-traffic session contract.
@@ -539,6 +590,7 @@ enum ConnectivityDecision {
 /// deliberate `--offline` wins over everything, a launch act (`--online`,
 /// `--remember-online`, an explicit `--server`) over the store, the store
 /// alone sustains the connection, and nothing else goes online.
+#[cfg(feature = "nym")]
 fn decide_connectivity(
     offline: bool,
     online: bool,
@@ -580,6 +632,7 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 /// `--forget-online` removes the record before the decision,
 /// `--remember-online` stores it, and a session with no consent anywhere
 /// runs offline behind a notice naming the ways online.
+#[cfg(feature = "nym")]
 fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
@@ -596,7 +649,10 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
         zingolib::connectivity::load_connectivity_consent(&data_dir),
     );
     Ok(match decision {
-        ConnectivityDecision::DeliberateOffline => CommunicationMode::Offline,
+        ConnectivityDecision::DeliberateOffline => {
+            eprintln!("{DELIBERATE_OFFLINE_NOTICE}");
+            CommunicationMode::DeliberateOffline
+        }
         ConnectivityDecision::Online { store } => {
             if store {
                 zingolib::connectivity::store_standing_online(&data_dir)?;
@@ -615,11 +671,51 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
                 "No Connectivity Consent is recorded, so this session runs offline: local \
                  operations work and nothing touches the network. To go online, pass --online \
                  (this session only), --remember-online (store the choice for future \
-                 sessions), or --server <uri>. Pass --offline to run offline deliberately and \
-                 silence this notice."
+                 sessions), or --server <uri>; in the session, `network on` also grants \
+                 consent and switches to ONLINE MODE. Pass --offline to run offline \
+                 deliberately and silence this notice."
             );
-            CommunicationMode::Offline
+            CommunicationMode::UnconsentedOffline
         }
+    })
+}
+
+/// The communication mode without the mixnet capability: Offline Mode is
+/// the only mode such a build can be in (ADR 0026). The online consent
+/// acts refuse loudly rather than silently degrade, and a stored standing
+/// consent is reported as inert. `--forget-online` still works, so an
+/// opt-out build can retire a stored consent.
+#[cfg(not(feature = "nym"))]
+fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+    let data_dir = data_dir_from(matches);
+    if matches.get_flag("forget-online") {
+        zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
+        eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
+    }
+    let explicit_server =
+        matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+    if matches.get_flag("online") || matches.get_flag("remember-online") || explicit_server {
+        return Err(std::io::Error::other(
+            "this build has no mixnet capability, so Offline Mode is its only mode; \
+             going online is not possible. Rebuild with default features (plain \
+             `cargo build`, or `makers run-cli`) to go online.",
+        ));
+    }
+    if matches!(
+        zingolib::connectivity::load_connectivity_consent(&data_dir),
+        zingolib::connectivity::ConnectivityConsent::StandingOnline
+    ) {
+        eprintln!(
+            "A standing Connectivity Consent is recorded, but this build has no mixnet \
+             capability: Offline Mode is its only mode, so the session runs offline. \
+             Rebuild with default features to honor the standing consent."
+        );
+    }
+    Ok(if matches.get_flag("offline") {
+        eprintln!("{DELIBERATE_OFFLINE_NOTICE}");
+        CommunicationMode::DeliberateOffline
+    } else {
+        CommunicationMode::UnconsentedOffline
     })
 }
 
@@ -701,7 +797,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         // network, and the session's contract is that no Indexer is ever
         // configured.
         let (server, ranked_servers) = match communication_mode {
-            CommunicationMode::Offline => (None, vec![]),
+            CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => {
+                (None, vec![])
+            }
             CommunicationMode::Online => {
                 let (server, ranked_servers) =
                     server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
@@ -862,7 +960,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     #[cfg(feature = "nym-diary")]
     if filled_template.indexer_diary {
         lightclient.set_indexer_diary(true);
-        info!("Indexer diary: recording send and probe outcomes this session (`nym history`).");
+        info!("Indexer diary: recording send and probe outcomes this session (`network history`).");
     }
     #[cfg(not(feature = "nym-diary"))]
     if filled_template.indexer_diary {
@@ -911,7 +1009,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
             ),
             MixnetStartPolicy::ForcedOn => info!(
                 "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
-                 become available once it is ready (see `nym status`)."
+                 become available once it is ready (see `network status`)."
             ),
         }
         // Narrate Mixnet Mode transitions from the session's status
@@ -934,7 +1032,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 match status.mode {
                     zingolib::nym::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
-                         (see `nym status`)."
+                         (see `network status`)."
                     ),
                     zingolib::nym::MixnetMode::Died => {
                         let cause = status
@@ -945,7 +1043,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                             .unwrap_or_default();
                         warn!(
                             "The mixnet transport died{cause}. Send and price-fetch refuse \
-                             until you re-enable it with `nym on`."
+                             until you re-enable it with `network on`."
                         );
                     }
                     other => info!("Mixnet Mode is now {other}."),
@@ -1100,6 +1198,35 @@ pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
     }
 }
 
+/// Reads the posture the parsed arguments imply without performing any
+/// consent act, for surfaces that render before startup.
+fn posture_preview(matches: &clap::ArgMatches) -> CommunicationMode {
+    #[cfg(feature = "nym")]
+    {
+        let explicit_server =
+            matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+        match decide_connectivity(
+            matches.get_flag("offline"),
+            matches.get_flag("online"),
+            matches.get_flag("remember-online"),
+            explicit_server,
+            zingolib::connectivity::load_connectivity_consent(&data_dir_from(matches)),
+        ) {
+            ConnectivityDecision::DeliberateOffline => CommunicationMode::DeliberateOffline,
+            ConnectivityDecision::Online { .. } => CommunicationMode::Online,
+            ConnectivityDecision::UnconsentedOffline => CommunicationMode::UnconsentedOffline,
+        }
+    }
+    #[cfg(not(feature = "nym"))]
+    {
+        if matches.get_flag("offline") {
+            CommunicationMode::DeliberateOffline
+        } else {
+            CommunicationMode::UnconsentedOffline
+        }
+    }
+}
+
 /// Returns help text if the parsed arguments indicate the `help` command,
 /// or `None` for all other modes. The caller is responsible for printing
 /// the text and exiting the process.
@@ -1107,7 +1234,10 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
     match get_mode_of_operation(matches) {
         ModeOfOperation::Command {
             command: commands::CliCommand::Help { command: named },
-        } => Some(commands::format_help(named.as_deref())),
+        } => Some(commands::format_help(
+            posture_preview(matches),
+            named.as_deref(),
+        )),
         _ => None,
     }
 }
