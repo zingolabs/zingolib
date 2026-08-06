@@ -496,7 +496,10 @@ async fn migrate(args: &[&str], lightclient: &mut LightClient) -> Result<String,
 }
 
 async fn migration(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migration(args, lightclient).await?)
+    use clap::Parser as _;
+    let MigrationCli { sub } = MigrationCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    Ok(run_migration(sub, lightclient).await?)
 }
 
 async fn new_address(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -698,30 +701,41 @@ async fn rescan(args: &[&str], lightclient: &mut LightClient) -> Result<String, 
     }
 }
 
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "save", no_binary_name = true)]
+struct SaveCli {
+    #[command(subcommand)]
+    sub: SaveSubCommand,
+}
+
+/// A parsed `save` command. Arguments parse completely into this enum,
+/// at the clap derive grammar, before any wallet access.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
+enum SaveSubCommand {
+    Run,
+    Check,
+    Shutdown,
+}
+
 async fn save(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "save command expects 1 argument. Type \"help save\" for usage.".to_string(),
-        ));
-    }
-    match args[0] {
-        "run" => {
+    use clap::Parser as _;
+    let SaveCli { sub } = SaveCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    match sub {
+        SaveSubCommand::Run => {
             lightclient.save_task().await;
             Ok("Launching save task...".to_string())
         }
-        "check" => match lightclient.check_save_error().await {
+        SaveSubCommand::Check => match lightclient.check_save_error().await {
             Ok(()) => Ok(String::new()),
             Err(e) => Err(CommandError::NotYetTyped(format!(
                 "save failed. {e}\nRestarting save task..."
             ))),
         },
-        "shutdown" => match lightclient.shutdown_save_task().await {
+        SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
             Ok(()) => Ok("Save task shutdown successfully.".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(format!("save failed. {e}"))),
         },
-        _ => Err(CommandError::NotYetTyped(
-            "invalid sub-command. Type \"help save\" for usage.".to_string(),
-        )),
     }
 }
 
@@ -872,15 +886,30 @@ async fn spendable_balance(
     .pretty(2))
 }
 
-async fn sync(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "sync command expects 1 argument. Type \"help sync\" for usage.".to_string(),
-        ));
-    }
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "sync", no_binary_name = true)]
+struct SyncCli {
+    #[command(subcommand)]
+    sub: SyncSubCommand,
+}
 
-    match args[0] {
-        "run" => {
+/// A parsed `sync` command. Arguments parse completely into this enum,
+/// at the clap derive grammar, before any wallet access.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
+enum SyncSubCommand {
+    Run,
+    Pause,
+    Stop,
+    Status,
+    Poll,
+}
+
+async fn sync(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+    use clap::Parser as _;
+    let SyncCli { sub } = SyncCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    match sub {
+        SyncSubCommand::Run => {
             if lightclient.sync_mode() == SyncMode::Paused {
                 lightclient.resume_sync().expect("sync should be paused");
                 Ok("Resuming sync task...".to_string())
@@ -891,19 +920,21 @@ async fn sync(args: &[&str], lightclient: &mut LightClient) -> Result<String, Co
                 }
             }
         }
-        "pause" => match lightclient.pause_sync() {
+        SyncSubCommand::Pause => match lightclient.pause_sync() {
             Ok(()) => Ok("Pausing sync task...".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
         },
-        "stop" => match lightclient.stop_sync() {
+        SyncSubCommand::Stop => match lightclient.stop_sync() {
             Ok(()) => Ok("Stopping sync task...".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
         },
-        "status" => match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
-            Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-        },
-        "poll" => match lightclient.poll_sync() {
+        SyncSubCommand::Status => {
+            match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
+                Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
+                Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            }
+        }
+        SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
             PollReport::Ready(result) => match result {
@@ -911,9 +942,6 @@ async fn sync(args: &[&str], lightclient: &mut LightClient) -> Result<String, Co
                 Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
             },
         },
-        _ => Err(CommandError::NotYetTyped(
-            "invalid sub-command. Type \"help sync\" for usage.".to_string(),
-        )),
     }
 }
 
@@ -1198,15 +1226,30 @@ fn parse_viewkey(args: &[&str]) -> Result<String, CommandError> {
 }
 
 async fn drain(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_drain(args, lightclient).await?)
+    use clap::Parser as _;
+    let DrainCli { sub } = DrainCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    Ok(run_drain(sub, lightclient).await?)
 }
 
 async fn split(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_split(args, lightclient).await?)
+    use clap::Parser as _;
+    let SplitCli { sub } = SplitCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    Ok(run_split(sub, lightclient).await?)
 }
 
+#[cfg(feature = "nym")]
 async fn nym(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(nym_command(args, lightclient).await?)
+    use clap::Parser as _;
+    let NymCli { sub } = NymCli::try_parse_from(args.iter().copied())
+        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    Ok(nym_command(sub.unwrap_or(NymSubCommand::Status), lightclient).await?)
+}
+
+#[cfg(not(feature = "nym"))]
+async fn nym(_args: &[&str], _lightclient: &mut LightClient) -> Result<String, CommandError> {
+    Err(CommandError::Nym(NymCommandError::FeatureAbsent))
 }
 
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
@@ -1233,17 +1276,10 @@ pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
 
 /// Typed failure of the `nym` command family. Each variant exists only in
 /// the build that can produce it, so the enum's shape follows the feature.
+/// The parse failures that once lived here are clap's now: arguments
+/// refuse at the derive grammar, before any wallet access.
 #[derive(Debug, thiserror::Error)]
 pub enum NymCommandError {
-    #[cfg(feature = "nym")]
-    #[error(
-        "unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off | \
-         nym probe [uri] | nym history"
-    )]
-    UnknownSubCommand(String),
-    #[cfg(feature = "nym")]
-    #[error("'{0}' is not a valid indexer uri to probe")]
-    InvalidProbeTarget(String),
     #[cfg(not(feature = "nym"))]
     #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
     FeatureAbsent,
@@ -1255,48 +1291,43 @@ pub enum NymCommandError {
     },
 }
 
-/// A parsed `nym` command. Arguments parse completely into this
-/// enum before any wallet access.
 #[cfg(feature = "nym")]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "nym", no_binary_name = true)]
+struct NymCli {
+    /// A bare `nym` reads as `nym status`.
+    #[command(subcommand)]
+    sub: Option<NymSubCommand>,
+}
+
+/// A parsed `nym` command. Arguments parse completely into this enum,
+/// at the clap derive grammar, before any wallet access.
+#[cfg(feature = "nym")]
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
 enum NymSubCommand {
     Status,
-    On { path: Option<String> },
+    On {
+        path: Option<String>,
+    },
     Off,
-    Probe { target: Option<http::Uri> },
+    Probe {
+        #[arg(value_parser = parse_probe_target)]
+        target: Option<http::Uri>,
+    },
     History,
 }
 
+/// https-only: the mixnet leg refuses a plaintext target at dial time,
+/// so the grammar rejects it up front with a clear message.
 #[cfg(feature = "nym")]
-fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
-    match args.first().copied() {
-        None | Some("status") => Ok(NymSubCommand::Status),
-        Some("on") => Ok(NymSubCommand::On {
-            path: args.get(1).map(|path| path.to_string()),
-        }),
-        Some("off") => Ok(NymSubCommand::Off),
-        Some("probe") => {
-            let target = args
-                .get(1)
-                .map(|raw| {
-                    let uri = raw
-                        .parse::<http::Uri>()
-                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))?;
-                    // https-only: the mixnet leg refuses a plaintext target at
-                    // dial time, so reject it up front with a clear message.
-                    if uri.scheme_str() != Some("https") {
-                        return Err(NymCommandError::InvalidProbeTarget(format!(
-                            "{raw} (indexers must be https)"
-                        )));
-                    }
-                    Ok(uri)
-                })
-                .transpose()?;
-            Ok(NymSubCommand::Probe { target })
-        }
-        Some("history") => Ok(NymSubCommand::History),
-        Some(other) => Err(NymCommandError::UnknownSubCommand(other.to_string())),
+fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
+    let uri = raw
+        .parse::<http::Uri>()
+        .map_err(|_| "not a valid indexer uri to probe".to_string())?;
+    if uri.scheme_str() != Some("https") {
+        return Err("indexers must be https".to_string());
     }
+    Ok(uri)
 }
 
 #[cfg(feature = "nym")]
@@ -1489,10 +1520,10 @@ fn render_status_with_disclaimer(
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 async fn nym_command(
-    args: &[&str],
+    sub: NymSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, NymCommandError> {
-    match parse_nym_args(args)? {
+    match sub {
         NymSubCommand::Status => Ok(render_status_with_disclaimer(
             lightclient.mixnet_mode(),
             lightclient.mixnet_socks5_addr().as_deref(),
@@ -1528,15 +1559,6 @@ async fn nym_command(
         }
         NymSubCommand::History => Ok(nym_history_command(lightclient)),
     }
-}
-
-/// The body of the `nym` command when the mixnet transport is not compiled in.
-#[cfg(not(feature = "nym"))]
-async fn nym_command(
-    _args: &[&str],
-    _lightclient: &mut LightClient,
-) -> Result<String, NymCommandError> {
-    Err(NymCommandError::FeatureAbsent)
 }
 
 /// One transmitted transaction's attestation as JSON: the route it
@@ -1578,46 +1600,36 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 }
 
 /// Typed failure of the migration command family, following the audit Issue-Q
-/// pattern PR #2464 established: the discriminant lives in the type,
-/// argument parsing happens before any wallet access, and prose is
-/// produced at exactly one rendering site per command. Each Display
-/// message is byte-identical to the in-band string it replaced, so no
-/// frontend observes the change.
+/// pattern PR #2464 established: the discriminant lives in the type, and
+/// prose is produced at exactly one rendering site per command. The parse
+/// failures that once lived here are clap's now: arguments refuse at the
+/// derive grammar, before any wallet access.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationCommandError {
     #[error("migrate command expects no arguments. Type \"help migrate\" for usage.")]
     UnexpectedArguments,
-    #[error("migration command expects a sub-command. Type \"help migration\" for usage.")]
-    MissingSubCommand,
-    #[error("invalid sub-command. Type \"help migration\" for usage.")]
-    InvalidSubCommand,
-    #[error("migration start expects the plan hash printed by \"migration plan\".")]
-    MissingPlanHash,
-    #[error("the plan hash must be 64 hex characters.")]
-    MalformedPlanHash,
-    #[error("--per-bucket expects a positive integer.")]
-    MalformedPerBucket,
-    #[error("cadence expects the number of parts per broadcast window.")]
-    MalformedCadence,
-    #[error("spacing must be a number of seconds.")]
-    MalformedSpacing,
-    #[error("drain expects a sub-command: plan | now. Type \"help drain\" for usage.")]
-    DrainUsage,
-    #[error("split expects a sub-command: plan | now. Type \"help split\" for usage.")]
-    SplitUsage,
     #[error("sync failed: {0}")]
     Sync(zingolib::lightclient::error::LightClientError),
     #[error("{0}")]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
-/// A parsed migration command. Arguments parse completely
-/// into this enum before any wallet access.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "migration", no_binary_name = true)]
+struct MigrationCli {
+    #[command(subcommand)]
+    sub: MigrationSubCommand,
+}
+
+/// A parsed migration command. Arguments parse completely into this
+/// enum, at the clap derive grammar, before any wallet access.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
 enum MigrationSubCommand {
     Plan,
     Start {
+        #[arg(value_parser = parse_plan_hash)]
         plan_hash: [u8; 32],
+        #[arg(long)]
         per_bucket: Option<u32>,
     },
     Continue,
@@ -1625,6 +1637,7 @@ enum MigrationSubCommand {
         per_bucket: u32,
     },
     Execute {
+        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
     Auto,
@@ -1632,78 +1645,24 @@ enum MigrationSubCommand {
     Windows,
     Reconcile,
     Catchup {
+        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
     Cancel,
 }
 
-/// Pure parser for the migration command family's arguments.
-fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationCommandError> {
-    let Some(sub_command) = args.first() else {
-        return Err(MigrationCommandError::MissingSubCommand);
-    };
-    match *sub_command {
-        "plan" => Ok(MigrationSubCommand::Plan),
-        "start" => {
-            let hash_hex = args.get(1).ok_or(MigrationCommandError::MissingPlanHash)?;
-            let plan_hash: [u8; 32] = hex::decode(hash_hex)
-                .ok()
-                .and_then(|bytes| bytes.try_into().ok())
-                .ok_or(MigrationCommandError::MalformedPlanHash)?;
-            let mut per_bucket = None;
-            let mut remaining = args[2..].iter();
-            while let Some(arg) = remaining.next() {
-                if *arg == "--per-bucket" {
-                    per_bucket = Some(
-                        remaining
-                            .next()
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .ok_or(MigrationCommandError::MalformedPerBucket)?,
-                    );
-                }
-            }
-            Ok(MigrationSubCommand::Start {
-                plan_hash,
-                per_bucket,
-            })
-        }
-        "continue" => Ok(MigrationSubCommand::Continue),
-        "cadence" => {
-            let per_bucket = args
-                .get(1)
-                .and_then(|value| value.parse::<u32>().ok())
-                .ok_or(MigrationCommandError::MalformedCadence)?;
-            Ok(MigrationSubCommand::Cadence { per_bucket })
-        }
-        "execute" => {
-            let spacing = match args.get(1) {
-                Some(seconds) => std::time::Duration::from_secs(
-                    seconds
-                        .parse::<u64>()
-                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
-                ),
-                None => std::time::Duration::from_secs(30),
-            };
-            Ok(MigrationSubCommand::Execute { spacing })
-        }
-        "auto" => Ok(MigrationSubCommand::Auto),
-        "status" => Ok(MigrationSubCommand::Status),
-        "windows" => Ok(MigrationSubCommand::Windows),
-        "reconcile" => Ok(MigrationSubCommand::Reconcile),
-        "catchup" => {
-            let spacing = match args.get(1) {
-                Some(seconds) => std::time::Duration::from_secs(
-                    seconds
-                        .parse::<u64>()
-                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
-                ),
-                None => std::time::Duration::from_secs(30),
-            };
-            Ok(MigrationSubCommand::Catchup { spacing })
-        }
-        "cancel" => Ok(MigrationSubCommand::Cancel),
-        _ => Err(MigrationCommandError::InvalidSubCommand),
-    }
+fn parse_plan_hash(hash_hex: &str) -> Result<[u8; 32], String> {
+    hex::decode(hash_hex)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| "the plan hash must be 64 hex characters".to_string())
+}
+
+fn parse_spacing(seconds: &str) -> Result<std::time::Duration, String> {
+    seconds
+        .parse::<u64>()
+        .map(std::time::Duration::from_secs)
+        .map_err(|_| "spacing must be a number of seconds".to_string())
 }
 
 /// Renders displayable ids as a JSON array of strings.
@@ -1740,10 +1699,10 @@ async fn run_migrate(
 
 /// Runs one `migration` sub-command.
 async fn run_migration(
-    args: &[&str],
+    sub: MigrationSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_migration_args(args)? {
+    Ok(match sub {
         MigrationSubCommand::Plan => {
             let plan = lightclient
                 .plan_ironwood_migration(zip32::AccountId::ZERO)
@@ -1940,36 +1899,32 @@ async fn run_migration(
     })
 }
 
-/// A parsed `drain` sub-command.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "drain", no_binary_name = true)]
+struct DrainCli {
+    #[command(subcommand)]
+    sub: DrainSubCommand,
+}
+
+/// A parsed `drain` sub-command, at the clap derive grammar.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
 enum DrainSubCommand {
     Plan,
     Now,
 }
 
-/// Pure parser for the drain command's arguments.
-fn parse_drain_args(args: &[&str]) -> Result<DrainSubCommand, MigrationCommandError> {
-    match args {
-        ["plan"] => Ok(DrainSubCommand::Plan),
-        ["now"] => Ok(DrainSubCommand::Now),
-        _ => Err(MigrationCommandError::DrainUsage),
-    }
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+#[command(name = "split", no_binary_name = true)]
+struct SplitCli {
+    #[command(subcommand)]
+    sub: SplitSubCommand,
 }
 
-/// A parsed `split` sub-command.
-#[derive(Debug, PartialEq, Eq)]
+/// A parsed `split` sub-command, at the clap derive grammar.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
 enum SplitSubCommand {
     Plan,
     Now,
-}
-
-/// Pure parser for the split command's arguments.
-fn parse_split_args(args: &[&str]) -> Result<SplitSubCommand, MigrationCommandError> {
-    match args {
-        ["plan"] => Ok(SplitSubCommand::Plan),
-        ["now"] => Ok(SplitSubCommand::Now),
-        _ => Err(MigrationCommandError::SplitUsage),
-    }
 }
 
 /// Renders an in-flight execute batch snapshot as the heartbeat's detail
@@ -2014,10 +1969,10 @@ fn split_progress_line(status: &SplitStatus) -> String {
 ///
 /// Returns the summary as JSON.
 async fn run_drain(
-    args: &[&str],
+    sub: DrainSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_drain_args(args)? {
+    Ok(match sub {
         DrainSubCommand::Plan => {
             let plan = lightclient
                 .plan_immediate_migration(zip32::AccountId::ZERO)
@@ -2055,10 +2010,10 @@ async fn run_drain(
 /// round, writing progress lines to stderr while it runs. It returns the
 /// round's txids, or a message explaining why nothing was sent.
 async fn run_split(
-    args: &[&str],
+    sub: SplitSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_split_args(args)? {
+    Ok(match sub {
         SplitSubCommand::Plan => {
             let plan = lightclient.plan_note_split(zip32::AccountId::ZERO).await?;
             object! {

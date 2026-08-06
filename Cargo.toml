@@ -138,7 +138,7 @@ shellwords = "1"
 
 ### OS hooks
 chrono = "0.4"
-clap = "4"
+clap = { version = "4.6.5", features = ["derive"] }
 dirs = "6"
 memuse = "0.2"
 rand = "0.8"

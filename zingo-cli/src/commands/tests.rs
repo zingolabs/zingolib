@@ -128,18 +128,24 @@ mod transmit_heartbeat {
 
 #[cfg(test)]
 mod migration_command_parsing {
-    //! Pins the pure argument parser and the byte-identity of the typed
-    //! errors' rendering with the in-band strings they replaced.
+    //! Pins the clap derive grammar of the `migration` family: typed
+    //! outcomes, the spacing defaults, and refusal at the parse boundary.
+    //! The byte-identity pins of the retired hand parser retired with it:
+    //! generated prose replaced the pinned strings (clap arc, ratified).
+
+    use clap::Parser as _;
 
     use super::super::*;
+
+    fn parse(args: &[&str]) -> Result<MigrationSubCommand, clap::Error> {
+        MigrationCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub)
+    }
 
     #[test]
     fn start_parses_hash_and_per_bucket() {
         let hash_hex = "11".repeat(32);
-        let parsed = parse_migration_args(&["start", &hash_hex, "--per-bucket", "3"])
-            .expect("well-formed arguments parse");
         assert_eq!(
-            parsed,
+            parse(&["start", &hash_hex, "--per-bucket", "3"]).expect("well-formed arguments parse"),
             MigrationSubCommand::Start {
                 plan_hash: [0x11; 32],
                 per_bucket: Some(3),
@@ -148,17 +154,14 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn malformed_plan_hash_is_typed() {
-        assert!(matches!(
-            parse_migration_args(&["start", "abc"]),
-            Err(MigrationCommandError::MalformedPlanHash)
-        ));
+    fn malformed_plan_hash_is_refused_at_parse() {
+        assert!(parse(&["start", "abc"]).is_err());
     }
 
     #[test]
     fn continue_parses_bare() {
         assert_eq!(
-            parse_migration_args(&["continue"]).expect("bare continue parses"),
+            parse(&["continue"]).expect("bare continue parses"),
             MigrationSubCommand::Continue
         );
     }
@@ -166,7 +169,7 @@ mod migration_command_parsing {
     #[test]
     fn windows_parses_bare() {
         assert_eq!(
-            parse_migration_args(&["windows"]).expect("bare windows parses"),
+            parse(&["windows"]).expect("bare windows parses"),
             MigrationSubCommand::Windows
         );
     }
@@ -174,25 +177,22 @@ mod migration_command_parsing {
     #[test]
     fn cadence_requires_a_count() {
         assert_eq!(
-            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
+            parse(&["cadence", "4"]).expect("well-formed cadence parses"),
             MigrationSubCommand::Cadence { per_bucket: 4 }
         );
-        assert!(matches!(
-            parse_migration_args(&["cadence"]),
-            Err(MigrationCommandError::MalformedCadence)
-        ));
+        assert!(parse(&["cadence"]).is_err());
     }
 
     #[test]
     fn execute_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
-            parse_migration_args(&["execute"]).expect("bare execute parses"),
+            parse(&["execute"]).expect("bare execute parses"),
             MigrationSubCommand::Execute {
                 spacing: std::time::Duration::from_secs(30),
             }
         );
         assert_eq!(
-            parse_migration_args(&["execute", "5"]).expect("spaced execute parses"),
+            parse(&["execute", "5"]).expect("spaced execute parses"),
             MigrationSubCommand::Execute {
                 spacing: std::time::Duration::from_secs(5),
             }
@@ -202,7 +202,7 @@ mod migration_command_parsing {
     #[test]
     fn catchup_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
-            parse_migration_args(&["catchup"]).expect("bare catchup parses"),
+            parse(&["catchup"]).expect("bare catchup parses"),
             MigrationSubCommand::Catchup {
                 spacing: std::time::Duration::from_secs(30),
             }
@@ -210,91 +210,77 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn errors_render_byte_identically_to_the_replaced_strings() {
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::MissingSubCommand),
-            "Error: migration command expects a sub-command. Type \"help migration\" for usage."
-        );
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::MalformedPerBucket),
-            "Error: --per-bucket expects a positive integer."
-        );
+    fn missing_and_unknown_subcommands_are_refused_at_parse() {
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["bogus"]).is_err());
     }
 }
 
 #[cfg(test)]
 mod drain_and_split_command_parsing {
-    //! Pins the pure argument parsers of the mobile-parity migration
-    //! commands: `drain` and `split` accept exactly `plan` or `now`.
+    //! Pins the clap derive grammars of the mobile-parity migration
+    //! commands: `drain` and `split` accept exactly `plan` or `now`,
+    //! refusing everything else at the parse boundary.
+
+    use clap::Parser as _;
 
     use super::super::*;
 
     #[test]
     fn drain_accepts_exactly_plan_or_now() {
+        let parse =
+            |args: &[&str]| DrainCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub);
         assert_eq!(
-            parse_drain_args(&["plan"]).expect("drain plan parses"),
+            parse(&["plan"]).expect("drain plan parses"),
             DrainSubCommand::Plan
         );
         assert_eq!(
-            parse_drain_args(&["now"]).expect("drain now parses"),
+            parse(&["now"]).expect("drain now parses"),
             DrainSubCommand::Now
         );
         for junk in [&[][..], &["bogus"][..], &["now", "extra"][..]] {
-            assert!(matches!(
-                parse_drain_args(junk),
-                Err(MigrationCommandError::DrainUsage)
-            ));
+            assert!(parse(junk).is_err());
         }
     }
 
     #[test]
     fn split_accepts_exactly_plan_or_now() {
+        let parse =
+            |args: &[&str]| SplitCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub);
         assert_eq!(
-            parse_split_args(&["plan"]).expect("split plan parses"),
+            parse(&["plan"]).expect("split plan parses"),
             SplitSubCommand::Plan
         );
         assert_eq!(
-            parse_split_args(&["now"]).expect("split now parses"),
+            parse(&["now"]).expect("split now parses"),
             SplitSubCommand::Now
         );
         for junk in [&[][..], &["bogus"][..], &["plan", "extra"][..]] {
-            assert!(matches!(
-                parse_split_args(junk),
-                Err(MigrationCommandError::SplitUsage)
-            ));
+            assert!(parse(junk).is_err());
         }
-    }
-
-    #[test]
-    fn usage_errors_render_with_help_pointers() {
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::DrainUsage),
-            "Error: drain expects a sub-command: plan | now. Type \"help drain\" for usage."
-        );
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::SplitUsage),
-            "Error: split expects a sub-command: plan | now. Type \"help split\" for usage."
-        );
     }
 }
 
 #[cfg(test)]
 mod nym_command_parsing {
-    //! Pins the pure argument parser and the byte-identity of the typed
-    //! errors' rendering with the in-band strings they replaced.
+    //! Pins the clap derive grammar of the `nym` family and the pure
+    //! renderers whose strings every frontend shares.
 
     use super::super::*;
 
     #[cfg(feature = "nym")]
+    fn parse(args: &[&str]) -> Result<Option<NymSubCommand>, clap::Error> {
+        use clap::Parser as _;
+        NymCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub)
+    }
+
+    #[cfg(feature = "nym")]
     #[test]
-    fn bare_and_status_both_parse_to_status() {
+    fn bare_parses_to_no_subcommand_and_status_to_status() {
+        assert_eq!(parse(&[]).expect("a bare nym parses"), None);
         assert_eq!(
-            parse_nym_args(&[]).expect("a bare nym parses"),
-            NymSubCommand::Status
-        );
-        assert_eq!(
-            parse_nym_args(&["status"]).expect("nym status parses"),
-            NymSubCommand::Status
+            parse(&["status"]).expect("nym status parses"),
+            Some(NymSubCommand::Status)
         );
     }
 
@@ -302,56 +288,44 @@ mod nym_command_parsing {
     #[test]
     fn on_captures_the_optional_path() {
         assert_eq!(
-            parse_nym_args(&["on"]).expect("bare nym on parses"),
-            NymSubCommand::On { path: None }
+            parse(&["on"]).expect("bare nym on parses"),
+            Some(NymSubCommand::On { path: None })
         );
         assert_eq!(
-            parse_nym_args(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
-            NymSubCommand::On {
+            parse(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
+            Some(NymSubCommand::On {
                 path: Some("/opt/nym-proxy".to_string()),
-            }
+            })
         );
     }
 
     #[cfg(feature = "nym")]
     #[test]
-    fn unknown_subcommand_renders_byte_identically_to_the_replaced_string() {
-        assert_eq!(
-            parse_nym_args(&["bogus"])
-                .expect_err("an unknown subcommand is typed")
-                .to_string(),
-            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off | \
-             nym probe [uri] | nym history"
-        );
+    fn unknown_subcommands_are_refused_at_parse() {
+        assert!(parse(&["bogus"]).is_err());
     }
 
     #[cfg(feature = "nym")]
     #[test]
     fn probe_parses_its_optional_target_and_rejects_junk() {
         assert_eq!(
-            parse_nym_args(&["probe"]).expect("bare probe parses"),
-            NymSubCommand::Probe { target: None }
+            parse(&["probe"]).expect("bare probe parses"),
+            Some(NymSubCommand::Probe { target: None })
         );
         assert_eq!(
-            parse_nym_args(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
-            NymSubCommand::Probe {
+            parse(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
+            Some(NymSubCommand::Probe {
                 target: Some("https://zec.rocks:443".parse().expect("static uri")),
-            }
+            })
         );
-        assert!(matches!(
-            parse_nym_args(&["probe", "not a uri"]),
-            Err(NymCommandError::InvalidProbeTarget(_))
-        ));
+        assert!(parse(&["probe", "not a uri"]).is_err());
         assert!(
-            matches!(
-                parse_nym_args(&["probe", "http://zec.rocks:9067"]),
-                Err(NymCommandError::InvalidProbeTarget(_))
-            ),
+            parse(&["probe", "http://zec.rocks:9067"]).is_err(),
             "a plaintext http target is refused: mixnet transmission is https-only"
         );
         assert_eq!(
-            parse_nym_args(&["history"]).expect("history parses"),
-            NymSubCommand::History
+            parse(&["history"]).expect("history parses"),
+            Some(NymSubCommand::History)
         );
     }
 
