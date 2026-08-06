@@ -40,24 +40,23 @@ pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new
 
 use zingolib::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
 
-async fn with_transmit_heartbeat<T>(
+async fn with_heartbeat<T>(
     label: &str,
+    interval: std::time::Duration,
+    fallback: &str,
     latest: impl Fn() -> Option<String>,
     mut emit: impl FnMut(String),
     operation: impl Future<Output = T>,
 ) -> T {
     let started = tokio::time::Instant::now();
-    let mut ticker = tokio::time::interval_at(
-        started + TRANSMIT_HEARTBEAT_INTERVAL,
-        TRANSMIT_HEARTBEAT_INTERVAL,
-    );
+    let mut ticker = tokio::time::interval_at(started + interval, interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut operation = std::pin::pin!(operation);
     loop {
         tokio::select! {
             output = &mut operation => return output,
             _ = ticker.tick() => {
-                let detail = latest().unwrap_or_else(|| "transmitting".to_string());
+                let detail = latest().unwrap_or_else(|| fallback.to_string());
                 emit(format!(
                     "{label}: {detail} ({}s elapsed)",
                     started.elapsed().as_secs()
@@ -65,6 +64,23 @@ async fn with_transmit_heartbeat<T>(
             }
         }
     }
+}
+
+async fn with_transmit_heartbeat<T>(
+    label: &str,
+    latest: impl Fn() -> Option<String>,
+    emit: impl FnMut(String),
+    operation: impl Future<Output = T>,
+) -> T {
+    with_heartbeat(
+        label,
+        TRANSMIT_HEARTBEAT_INTERVAL,
+        "transmitting",
+        latest,
+        emit,
+        operation,
+    )
+    .await
 }
 
 /// Runs `operation` under the transmit heartbeat with the stderr sink: the
@@ -1137,6 +1153,10 @@ pub enum NetworkCommandError {
         path: String,
         source: zingolib::nym::MixnetProxyError,
     },
+    /// The proxy spawned but its bootstrap reached a terminal failure while
+    /// the command waited; re-enabling spawns a fresh proxy.
+    #[error("the mixnet bootstrap failed: {report}. Re-enable with `network on`.")]
+    Bootstrap { report: String },
 }
 
 /// A parsed `network` command, its arguments parsed completely at the clap
@@ -1363,6 +1383,71 @@ fn render_status_with_disclaimer(
     )
 }
 
+/// The terminal readings of one bootstrap wait.
+#[cfg(feature = "nym")]
+#[derive(Debug, PartialEq, Eq)]
+enum BootstrapOutcome {
+    Ready,
+    Failed { report: String },
+}
+
+/// Waits on the status subscription until the bootstrap reaches a terminal
+/// mode, so `network on` reports an outcome instead of a promise to poll.
+#[cfg(feature = "nym")]
+async fn await_bootstrap_outcome(
+    mut rx: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
+) -> BootstrapOutcome {
+    use zingolib::nym::MixnetMode;
+    let mut was_bootstrapping = false;
+    loop {
+        let status = rx.borrow_and_update().clone();
+        match status.mode {
+            MixnetMode::Ready => return BootstrapOutcome::Ready,
+            MixnetMode::Died => {
+                let cause = status
+                    .death
+                    .as_ref()
+                    .and_then(|death| death.detail.as_ref())
+                    .map(|detail| format!(": {detail}"))
+                    .unwrap_or_default();
+                return BootstrapOutcome::Failed {
+                    report: format!("the mixnet transport died{cause}"),
+                };
+            }
+            MixnetMode::Bootstrapping => was_bootstrapping = true,
+            MixnetMode::Unattached | MixnetMode::SwitchedOff if was_bootstrapping => {
+                return BootstrapOutcome::Failed {
+                    report: format!("the bootstrap ended in mode {}", status.mode),
+                };
+            }
+            MixnetMode::Unattached | MixnetMode::SwitchedOff => {}
+        }
+        if rx.changed().await.is_err() {
+            return BootstrapOutcome::Failed {
+                report: "the mixnet status channel closed".to_string(),
+            };
+        }
+    }
+}
+
+/// Runs `operation` under the bootstrap heartbeat with the stderr sink.
+#[cfg(feature = "nym")]
+async fn narrated_bootstrap<T>(
+    label: &str,
+    latest: impl Fn() -> Option<String>,
+    operation: impl Future<Output = T>,
+) -> T {
+    with_heartbeat(
+        label,
+        zingolib::netutils::time::BOOTSTRAP_HEARTBEAT_INTERVAL,
+        "bootstrapping",
+        latest,
+        |line| eprintln!("{line}"),
+        operation,
+    )
+    .await
+}
+
 /// The body of the `network` command; the command exists only with the
 /// mixnet transport compiled in (ADR 0026).
 #[cfg(feature = "nym")]
@@ -1404,16 +1489,42 @@ async fn network_command(
                     path: path.clone(),
                     source,
                 })?;
-            let enabling = format!(
-                "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
-                 Run `network status` to check readiness."
-            );
+            // Block until the bootstrap resolves, narrating on the
+            // bootstrap heartbeat so the caller watches progress instead
+            // of polling `network status` by hand. The wait is bounded:
+            // the supervisor's own lifecycle timeout flips a stuck
+            // bootstrap to died, and the outer timeout is the backstop.
+            let rx = lightclient.subscribe_mixnet_status();
+            let detail_rx = rx.clone();
+            let outcome = narrated_bootstrap(
+                "network on",
+                move || detail_rx.borrow().bootstrap_detail.clone(),
+                tokio::time::timeout(
+                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
+                    await_bootstrap_outcome(rx),
+                ),
+            )
+            .await;
+            let readiness = match outcome {
+                Ok(BootstrapOutcome::Ready) => format!(
+                    "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
+                     price-fetch over the mixnet."
+                ),
+                Ok(BootstrapOutcome::Failed { report }) => {
+                    return Err(NetworkCommandError::Bootstrap { report });
+                }
+                Err(_elapsed) => format!(
+                    "Mixnet Mode still bootstrapping after {}s; run `network status` \
+                     to check readiness.",
+                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT.as_secs()
+                ),
+            };
             Ok(match went_online {
                 Some(server) => format!(
                     "WARNING: this consent act switched the session to ONLINE MODE \
-                     (this session only); indexer '{server}'. {enabling}"
+                     (this session only); indexer '{server}'. {readiness}"
                 ),
-                None => enabling,
+                None => readiness,
             })
         }
         NetworkSubCommand::Off => {
