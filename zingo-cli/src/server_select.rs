@@ -14,7 +14,10 @@ use std::time::{Duration, Instant};
 
 use crate::commands::RT;
 use zingolib::netutils::indexers::MOST_UP_INDEXER_URIS;
-use zingolib::netutils::{GrpcIndexer, Indexer as _};
+use zingolib::netutils::{GetClientError, GrpcIndexer, Indexer as _};
+
+#[cfg(test)]
+mod tests;
 
 /// A server that responded successfully to `get_info()`, with its measured latency.
 #[derive(Debug)]
@@ -23,11 +26,94 @@ pub(crate) struct RankedServer {
     pub latency: Duration,
 }
 
+/// One probed indexer that did not rank, and the stage that refused it.
+#[derive(Debug)]
+pub(crate) struct ProbeFailure {
+    pub uri: http::Uri,
+    pub stage: ProbeStage,
+}
+
+/// The probe stage that failed, carrying that stage's own error.
+#[derive(Debug)]
+pub(crate) enum ProbeStage {
+    /// Establishing the transport (DNS, TCP, TLS, HTTP/2) failed.
+    Connect(GetClientError),
+    /// The transport stood, but the `get_info` call itself failed.
+    Rpc(Box<dyn std::error::Error + Send + Sync>),
+    /// Nothing failed and nothing answered within the probe budget.
+    TimedOut(Duration),
+}
+
+impl std::fmt::Display for ProbeStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProbeStage::Connect(error) => write!(f, "connect failed: {}", error_chain(error)),
+            ProbeStage::Rpc(error) => write!(f, "get_info failed: {}", error_chain(&**error)),
+            ProbeStage::TimedOut(budget) => write!(f, "no answer within {budget:?}"),
+        }
+    }
+}
+
+/// Renders an error and its full source chain as one line, outermost cause first.
+fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut texts = vec![error.to_string()];
+    let mut cursor = error.source();
+    while let Some(source) = cursor {
+        texts.push(source.to_string());
+        cursor = source.source();
+    }
+    texts.join(": ")
+}
+
+/// Probes every URI concurrently within one shared budget and reports each
+/// outcome, the responders sorted fastest first.
+pub(crate) async fn probe_servers(
+    uris: Vec<http::Uri>,
+    budget: Duration,
+) -> (Vec<RankedServer>, Vec<ProbeFailure>) {
+    let mut handles = Vec::new();
+    for uri in uris {
+        handles.push(tokio::spawn(async move {
+            let start = Instant::now();
+            let outcome = tokio::time::timeout(budget, async {
+                let mut indexer = GrpcIndexer::new(uri.clone())
+                    .await
+                    .map_err(ProbeStage::Connect)?;
+                indexer
+                    .get_lightd_info(budget)
+                    .await
+                    .map_err(|status| ProbeStage::Rpc(Box::new(status)))?;
+                Ok(start.elapsed())
+            })
+            .await
+            .unwrap_or(Err(ProbeStage::TimedOut(budget)));
+            match outcome {
+                Ok(latency) => Ok(RankedServer { uri, latency }),
+                Err(stage) => Err(ProbeFailure { uri, stage }),
+            }
+        }));
+    }
+
+    let mut ranked = Vec::new();
+    let mut failures = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(server)) => ranked.push(server),
+            Ok(Err(failure)) => failures.push(failure),
+            Err(_join_error) => {}
+        }
+    }
+    ranked.sort_by_key(|r| r.latency);
+    (ranked, failures)
+}
+
 /// Calls `get_info()` on all curated indexer URIs concurrently and
 /// returns those that responded, sorted fastest to slowest.
 ///
 /// Uses a per-server timeout so one slow server doesn't block the rest.
-/// The probe narration goes to stderr (ADR 0031).
+/// The probe narration goes to stderr (ADR 0031), and every failed probe
+/// is narrated with its stage and full error chain, so an empty result
+/// carries its own root cause.
 pub(crate) async fn select_servers() -> Vec<RankedServer> {
     use zingolib::netutils::time::SERVER_RANKING_TIMEOUT;
 
@@ -38,36 +124,17 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
 
     eprintln!("No --server specified. Probing {} indexers...", uris.len());
 
-    let mut handles = Vec::new();
+    let (ranked, failures) = probe_servers(uris, SERVER_RANKING_TIMEOUT).await;
 
-    for uri in uris {
-        handles.push(tokio::spawn(async move {
-            let start = Instant::now();
-            let mut indexer = match GrpcIndexer::new(uri.clone()).await {
-                Ok(i) => i,
-                Err(_) => return None,
-            };
-            match indexer.get_lightd_info(SERVER_RANKING_TIMEOUT).await {
-                Ok(_info) => Some(RankedServer {
-                    uri,
-                    latency: start.elapsed(),
-                }),
-                _ => None,
-            }
-        }));
+    for failure in &failures {
+        eprintln!("  {}: {}", failure.uri, failure.stage);
     }
-
-    let mut ranked: Vec<RankedServer> = Vec::new();
-    for handle in handles {
-        if let Ok(Some(server)) = handle.await {
-            ranked.push(server);
-        }
-    }
-
-    ranked.sort_by_key(|r| r.latency);
-
     if ranked.is_empty() {
-        eprintln!("Warning: no indexers responded. Falling back to default.");
+        eprintln!(
+            "Warning: none of the {} probed indexers responded; every failure is \
+             listed above. Falling back to default.",
+            failures.len()
+        );
     } else {
         eprintln!(
             "Selected server: {} ({:?})",
