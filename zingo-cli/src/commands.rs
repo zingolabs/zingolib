@@ -1368,7 +1368,7 @@ enum BootstrapOutcome {
 /// Renders the bound Exit Nodes for the `network on` success report,
 /// shortening each identity for the terminal.
 #[cfg(feature = "nym")]
-fn render_exit_nodes(exits: &[String]) -> String {
+pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
     fn shorten(identity: &str) -> String {
         if identity.chars().count() > 15 {
             let head: String = identity.chars().take(12).collect();
