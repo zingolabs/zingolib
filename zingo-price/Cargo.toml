@@ -22,7 +22,7 @@ socks5-fetch = [
     "dep:rustls",
     "dep:serde",
     "dep:serde_json",
-    "dep:rust_decimal",
+
     "dep:thiserror",
     "dep:zingo-net-diag",
     "dep:futures",
@@ -43,7 +43,6 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
     "json",
     "socks",
 ] }
-rust_decimal = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }

@@ -64,9 +64,6 @@ pub enum PriceError {
     /// Price list start time not set. Call `PriceList::set_start_time`.
     #[error("price list start time has not been set.")]
     PriceListNotInitialized,
-    /// Decimal conversion error.
-    #[error("decimal conversion error. {0}")]
-    DecimalError(#[from] rust_decimal::Error),
     /// Invalid price.
     #[error("invalid price.")]
     InvalidPrice,
