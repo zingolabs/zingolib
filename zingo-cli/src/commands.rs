@@ -98,7 +98,7 @@ pub enum CommandError {
     #[error(transparent)]
     Nym(#[from] NymCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
-    ReplOnly(&'static str),
+    ReplOnly(String),
     /// Transitional quarantine for commands whose failure prose is not
     /// yet typed: the message is stored WITHOUT the "Error: " prefix
     /// (the renderer adds it). Every construction site is a candidate
@@ -342,11 +342,12 @@ fn as_strs(args: &[String]) -> Vec<&str> {
 }
 
 async fn max_send_value(
+    name: &str,
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
     let (address, zennies_for_zingo) =
-        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage("max_send_value", e))?;
+        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
         .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
         .await
@@ -484,12 +485,16 @@ async fn coins(
     .pretty(2))
 }
 
-async fn quicksend(args: &[String], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage("quicksend", e))?;
+async fn quicksend(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
-        .map_err(|e| usage("quicksend", e))?;
+        .map_err(|e| usage(name, e))?;
     match transmit_narrated(
-        "quicksend",
+        name,
         lightclient.transmit_progress_handle(),
         lightclient.quick_send_reported(request, zip32::AccountId::ZERO, true),
     )
@@ -593,10 +598,14 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
     }
 }
 
-async fn send(args: &[String], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage("send", e))?;
+async fn send(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
-        .map_err(|e| usage("send", e))?;
+        .map_err(|e| usage(name, e))?;
     match lightclient
         .propose_send(request, zip32::AccountId::ZERO)
         .await
@@ -609,9 +618,13 @@ async fn send(args: &[String], lightclient: &mut LightClient) -> Result<String, 
     }
 }
 
-async fn send_all(args: &[String], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn send_all(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
     let (address, zennies_for_zingo, memo) =
-        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage("sendall", e))?;
+        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
         .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
         .await
@@ -2661,6 +2674,7 @@ pub(crate) async fn dispatch_parsed(
     command: CliCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
+    let name = command.name();
     match command {
         CliCommand::Addresses => addresses(lightclient).await,
         CliCommand::Balance => balance(lightclient).await,
@@ -2678,7 +2692,7 @@ pub(crate) async fn dispatch_parsed(
         CliCommand::Height => height(lightclient).await,
         CliCommand::Help { command: named } => help(named.as_deref()),
         CliCommand::Info => info(lightclient).await,
-        CliCommand::MaxSendValue { args } => max_send_value(&args, lightclient).await,
+        CliCommand::MaxSendValue { args } => max_send_value(&name, &args, lightclient).await,
         CliCommand::MemobytesToAddress => memobytes_to_address(lightclient).await,
         CliCommand::Messages { filter } => messages(filter.as_deref(), lightclient).await,
         CliCommand::Migrate => migrate(lightclient).await,
@@ -2693,17 +2707,17 @@ pub(crate) async fn dispatch_parsed(
         CliCommand::Nym { .. } => nym(lightclient).await,
         CliCommand::ParseAddress { address } => parse_address(&address),
         CliCommand::ParseViewkey { viewkey } => parse_viewkey(&viewkey),
-        CliCommand::Quicksend { args } => quicksend(&args, lightclient).await,
+        CliCommand::Quicksend { args } => quicksend(&name, &args, lightclient).await,
         CliCommand::Quickshield => quickshield(lightclient).await,
         CliCommand::Quit => quit(lightclient).await,
         CliCommand::RecoveryInfo => recovery_info(lightclient).await,
         CliCommand::RemoveTransaction { txid } => remove_transaction(txid, lightclient).await,
         CliCommand::Rescan => rescan(lightclient).await,
         CliCommand::Save { sub } => save(sub, lightclient).await,
-        CliCommand::Send { args } => send(&args, lightclient).await,
-        CliCommand::SendAll { args } => send_all(&args, lightclient).await,
+        CliCommand::Send { args } => send(&name, &args, lightclient).await,
+        CliCommand::SendAll { args } => send_all(&name, &args, lightclient).await,
         CliCommand::SendsToAddress => sends_to_address(lightclient).await,
-        CliCommand::Servers => Err(CommandError::ReplOnly("servers")),
+        CliCommand::Servers => Err(CommandError::ReplOnly(name)),
         CliCommand::Settings { sub } => settings(sub, lightclient).await,
         CliCommand::Shield => shield(lightclient).await,
         CliCommand::SpendableBalance => spendable_balance(lightclient).await,
