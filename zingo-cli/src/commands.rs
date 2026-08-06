@@ -88,9 +88,8 @@ async fn transmit_narrated<T>(
     narrated(label, move || progress.latest(), operation).await
 }
 
-/// Typed failure of a CLI command. The dispatch seam renders these to
-/// prose exactly once, on stderr, for string frontends (ADR 0031). Typed
-/// frontends consume them directly via [`do_user_command_result`].
+/// Typed failure of a CLI command, rendered to prose exactly once, on
+/// stderr, at the dispatch seam.
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
     #[error(transparent)]
@@ -2801,20 +2800,4 @@ pub(crate) async fn dispatch_parsed(
         CliCommand::Version => version(),
         CliCommand::WalletKind => wallet_kind(lightclient).await,
     }
-}
-
-/// Dispatches a user command given as a name and string arguments: the
-/// string frontend over [`parse_command_tokens`] and [`dispatch_parsed`],
-/// kept for callers that hold only strings.
-#[allow(dead_code)]
-pub async fn do_user_command_result(
-    cmd: &str,
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    let tokens: Vec<String> = std::iter::once(cmd.to_ascii_lowercase())
-        .chain(args.iter().map(|arg| (*arg).to_string()))
-        .collect();
-    let command = parse_command_tokens(&tokens).map_err(CommandError::NotYetTyped)?;
-    dispatch_parsed(command, lightclient).await
 }

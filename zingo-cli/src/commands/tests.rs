@@ -819,7 +819,7 @@ mod offline_contract {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, do_user_command_result};
+    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -851,7 +851,12 @@ mod offline_contract {
         command: &str,
         args: &[&str],
     ) -> Result<String, CommandError> {
-        RT.block_on(do_user_command_result(command, args, client))
+        let tokens: Vec<String> = std::iter::once(command)
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        let parsed = parse_command_tokens(&tokens).map_err(CommandError::NotYetTyped)?;
+        RT.block_on(dispatch_parsed(parsed, client))
     }
 
     /// Asserts `command` succeeds offline and returns its output.
