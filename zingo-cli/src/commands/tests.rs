@@ -66,30 +66,6 @@ mod table_invariants {
             );
         }
     }
-
-    /// HYPOTHESIS: wherever a long help offers a Usage section, at least
-    /// one of its lines invokes the command by its minted name, so the
-    /// prose cannot silently drift from the grammar's single mint.
-    #[test]
-    fn usage_lines_invoke_the_minted_name() {
-        let model = CommandLine::command();
-        for sub in model.get_subcommands() {
-            let Some(long_about) = sub.get_long_about().map(ToString::to_string) else {
-                continue;
-            };
-            let Some((_, usage)) = long_about.split_once("Usage:") else {
-                continue;
-            };
-            let name = sub.get_name();
-            assert!(
-                usage
-                    .lines()
-                    .map(str::trim)
-                    .any(|line| line == name || line.starts_with(&format!("{name} "))),
-                "`{name}`'s Usage section never invokes it by its minted name:\n{long_about}"
-            );
-        }
-    }
 }
 
 #[cfg(test)]

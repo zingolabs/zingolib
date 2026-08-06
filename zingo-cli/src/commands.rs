@@ -1838,9 +1838,6 @@ pub(crate) enum CliCommand {
         about = "List unified addresses in the wallet.",
         long_about = indoc! {r"
             List the wallet's unified addresses.
-
-            Usage:
-            addresses
         "}
     )]
     Addresses,
@@ -1855,9 +1852,6 @@ pub(crate) enum CliCommand {
         about = "Returns block height wallet was created",
         long_about = indoc! {r"
             Print the height the wallet was created at.
-
-            Usage:
-            birthday
         "}
     )]
     Birthday,
@@ -1873,8 +1867,6 @@ pub(crate) enum CliCommand {
             "Treat a Calculated transaction as live value in flight until it is transmitted,\n",
             "expires, or another transaction spends its inputs.\n",
             "\n",
-            "Usage:\n",
-            "    calculate\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -1893,9 +1885,6 @@ pub(crate) enum CliCommand {
         long_about = concat!(
             "Change the indexer server.\n",
             "\n",
-            "Usage:\n",
-            "change_server <server_uri>\n",
-            "\n",
             "Example:\n",
             "change_server ",
             crate::examples::server_uri!(),
@@ -1910,9 +1899,6 @@ pub(crate) enum CliCommand {
         about = "Checks if the given encoded address is derived by the wallet's keys.",
         long_about = indoc! {r"
             Check whether an encoded address derives from the wallet's keys.
-
-            Usage:
-            check_address <encoded_address>
         "}
     )]
     CheckAddress { address: String },
@@ -1920,9 +1906,6 @@ pub(crate) enum CliCommand {
         about = "Clear the wallet state, rolling back the wallet to an empty state.",
         long_about = indoc! {r"
             Drop every note, coin and transaction, leaving the wallet to sync from scratch.
-
-            Usage:
-            clear
         "}
     )]
     Clear,
@@ -1930,9 +1913,6 @@ pub(crate) enum CliCommand {
         about = "Show the wallet's coins (transparent outputs).",
         long_about = indoc! {r"
             Show the wallet's coins (transparent outputs). `all` includes spent ones.
-
-            Usage:
-            coins [all]
         "}
     )]
     Coins {
@@ -1945,8 +1925,6 @@ pub(crate) enum CliCommand {
             "Build and transmit the latest proposal, then resume sync. Needs a proposal\n",
             "from 'send', 'send_all' or 'shield' first.\n",
             "\n",
-            "Usage:\n",
-            "    confirm\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -1973,9 +1951,6 @@ pub(crate) enum CliCommand {
             switched off — the clearnet consent covers sends, never price,
             because the price source is a third party outside the Zcash
             ecosystem. A build without the `nym` feature has no price fetch.
-
-            Usage:
-            current_price
         "}
     )]
     CurrentPrice,
@@ -1983,9 +1958,6 @@ pub(crate) enum CliCommand {
         about = "Delete wallet file from disk",
         long_about = indoc! {r"
             Delete the wallet file from disk.
-
-            Usage:
-            delete
         "}
     )]
     Delete,
@@ -2005,9 +1977,6 @@ pub(crate) enum CliCommand {
             `now` builds, signs and broadcasts. Sync first, since like any send this
             does not synchronize. Safe to repeat: a partial failure leaves the unsent
             notes spendable and a second run sends only the remainder.
-
-            Usage:
-            drain plan | now
         "}
     )]
     Drain {
@@ -2019,9 +1988,6 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Export the wallet's unified full viewing key. To back up spend capability,
             use `recovery_info` instead.
-
-            Usage:
-            export_ufvk
         "}
     )]
     ExportUfvk,
@@ -2029,9 +1995,6 @@ pub(crate) enum CliCommand {
         about = "Print the chain height as of the wallet's last request to the server.",
         long_about = indoc! {r"
             Print the chain height as of the wallet's last request to the server.
-
-            Usage:
-            height
         "}
     )]
     Height,
@@ -2039,9 +2002,6 @@ pub(crate) enum CliCommand {
         about = "Lists all available commands",
         long_about = indoc! {r"
             List every command, or show one command's help.
-
-            Usage:
-            help [command]
         "}
     )]
     Help { command: Option<String> },
@@ -2049,33 +2009,27 @@ pub(crate) enum CliCommand {
         about = "Get the indexer server's info",
         long_about = indoc! {r"
             Print the connected indexer's info.
-
-            Usage:
-            info
         "}
     )]
     Info,
     #[command(
         about = "Print the most the wallet can send to a given address.",
-        long_about = indoc! {r#"
+        long_about = indoc! {r"
             Print the most the wallet can send to an address: shielded spendable
             balance less the fee. Mid-sync this can trail the confirmed balance.
             `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
             address.
-
-            Usage:
-            max_send_value <address>
-            max_send_value { "address": "<address>", "zennies_for_zingo": <true|false> }
-        "#}
+        "},
+        override_usage = concat!(
+            "max_send_value <address>\n",
+            "       max_send_value { \"address\": \"<address>\", \"zennies_for_zingo\": <true|false> }",
+        )
     )]
     MaxSendValue { args: Vec<String> },
     #[command(
         about = "Show by address memo_bytes transfers for this seed.",
         long_about = indoc! {r"
             Print total memo bytes sent, keyed by address.
-
-            Usage:
-            memobytes_to_address
         "}
     )]
     MemobytesToAddress,
@@ -2086,9 +2040,6 @@ pub(crate) enum CliCommand {
             correspondent, any other string filters to memos containing it, and no
             argument shows every memo. Received messages are matched on the memo's
             reply-to address.
-
-            Usage:
-            messages [address | string]
         "}
     )]
     Messages {
@@ -2108,9 +2059,6 @@ pub(crate) enum CliCommand {
             alongside synchronization, so the server can correlate them with this
             wallet's activity. The `migration` command spreads them across
             anchor-height buckets instead.
-
-            Usage:
-            migrate
         "}
     )]
     Migrate,
@@ -2148,14 +2096,6 @@ pub(crate) enum CliCommand {
             with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
-
-            Usage:
-            migration plan
-            migration start <plan_hash> [--per-bucket N]
-            migration cadence <N>
-            migration execute [spacing_seconds]
-            migration catchup [spacing_seconds]
-            migration continue | auto | status | windows | reconcile | cancel
         "}
     )]
     Migration {
@@ -2167,47 +2107,35 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Create a new unified address, with an orchard receiver, a sapling one, or
             both. No transparent receivers: use `new_taddress` for those.
-
-            Usage:
-            new_address o | z | oz
         "}
     )]
     NewAddress {
-        #[arg(value_parser = parse_receiver_selection)]
+        #[arg(value_name = "o|z|oz", value_parser = parse_receiver_selection)]
         receivers: ReceiverSelection,
     },
     #[command(
         about = "Create a new transparent address.",
         long_about = indoc! {r"
             Create a new transparent address.
-
-            Usage:
-            new_taddress
         "}
     )]
     NewTaddress,
     #[command(
         about = "Create a new transparent address (even if the last one did not receive any funds).",
-        long_about = indoc! {r#"
+        long_about = indoc! {r"
             Create a new transparent address even if the last one never received funds.
 
             This bypasses the no-gap rule, which exists because recovery from seed may
             not discover addresses beyond a gap. Funds sent to skipped addresses can go
             missing after a restore unless you rescan or raise the gap limit, so you are
             taking on tracking the unused ones yourself.
-
-            Usage:
-            new_taddress_allow_gap
-        "#}
+        "}
     )]
     NewTaddressAllowGap,
     #[command(
         about = "Show the wallet's notes (shielded outputs).",
         long_about = indoc! {r"
             Show the wallet's notes (shielded outputs). `all` includes spent ones.
-
-            Usage:
-            notes [all]
         "}
     )]
     Notes {
@@ -2230,9 +2158,6 @@ pub(crate) enum CliCommand {
             failure is mixnet-specific, and its clearnet leg uses your real IP.
             `history` shows per-indexer attempts across sessions, and needs the
             nym-diary feature plus --indexer-diary.
-
-            Usage:
-            nym status | on [binary_path] | off | probe [uri] | history
         "}
     )]
     Nym {
@@ -2243,9 +2168,6 @@ pub(crate) enum CliCommand {
         about = "Parse an address",
         long_about = concat!(
             "Parse an address.\n",
-            "\n",
-            "Usage:\n",
-            "parse_address <address>\n",
             "\n",
             "Example\n",
             "parse_address ",
@@ -2258,9 +2180,6 @@ pub(crate) enum CliCommand {
         about = "Parse a view_key.",
         long_about = concat!(
             "Parse a viewing key.\n",
-            "\n",
-            "Usage:\n",
-            "parse_viewkey <viewing_key>\n",
             "\n",
             "Example\n",
             "parse_viewkey ",
@@ -2275,9 +2194,6 @@ pub(crate) enum CliCommand {
             "Send ZEC, fusing `send` and `confirm`. The fee comes out of your balance\n",
             "and you never see it before the transaction goes out.\n",
             "\n",
-            "Usage:\n",
-            "    quicksend <address> <zatoshis> \"<optional memo>\"\n",
-            "    quicksend '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    quicksend ",
             crate::examples::sapling_address!(),
@@ -2286,6 +2202,10 @@ pub(crate) enum CliCommand {
             " \"",
             crate::examples::memo!(),
             "\"\n",
+        ),
+        override_usage = concat!(
+            "quicksend <address> <zatoshis> \"<optional memo>\"\n",
+            "       quicksend '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'",
         )
     )]
     Quicksend { args: Vec<String> },
@@ -2295,9 +2215,6 @@ pub(crate) enum CliCommand {
             Shield transparent funds into the ironwood pool, fusing `shield` and
             `confirm`. The fee comes out of your balance and you never see it before
             the transaction goes out.
-
-            Usage:
-                quickshield
         "}
     )]
     Quickshield,
@@ -2306,9 +2223,6 @@ pub(crate) enum CliCommand {
         about = "Quit the light client, saving state to disk.",
         long_about = indoc! {r"
             Quit the light client, saving state to disk. `exit` is an alias.
-
-            Usage:
-            quit
         "}
     )]
     Quit,
@@ -2319,9 +2233,6 @@ pub(crate) enum CliCommand {
 
             The seed phrase recovers the whole wallet. Save it carefully, share it with
             nobody.
-
-            Usage:
-            recovery_info
         "}
     )]
     RecoveryInfo,
@@ -2330,9 +2241,6 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Remove a failed transaction from the wallet. Manual on purpose, so a failed
             send keeps its memos until you decide to drop them.
-
-            Usage:
-            remove_transaction <txid>
         "}
     )]
     RemoveTransaction {
@@ -2343,9 +2251,6 @@ pub(crate) enum CliCommand {
         about = "Clear all chain-derived wallet data and sync again from the birthday.",
         long_about = indoc! {r"
             Clear all chain-derived wallet data and sync again from the birthday.
-
-            Usage:
-            rescan
         "}
     )]
     Rescan,
@@ -2354,9 +2259,6 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Launch the task that persists the wallet as its state changes. Not meant to
             be called by hand.
-
-            Usage:
-            save run | check | shutdown
         "}
     )]
     Save {
@@ -2368,9 +2270,6 @@ pub(crate) enum CliCommand {
         long_about = concat!(
             "Propose a transfer of ZEC. Shows the fee, then 'confirm' broadcasts it.\n",
             "\n",
-            "Usage:\n",
-            "    send <address> <zatoshis> \"<optional memo>\"\n",
-            "    send '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -2380,6 +2279,10 @@ pub(crate) enum CliCommand {
             crate::examples::memo!(),
             "\"\n",
             "    confirm\n",
+        ),
+        override_usage = concat!(
+            "send <address> <zatoshis> \"<optional memo>\"\n",
+            "       send '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'",
         )
     )]
     Send { args: Vec<String> },
@@ -2392,9 +2295,6 @@ pub(crate) enum CliCommand {
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
-            "Usage:\n",
-            "    send_all <address> \"<optional memo>\"\n",
-            "    send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'\n",
             "Example:\n",
             "    send_all ",
             crate::examples::sapling_address!(),
@@ -2402,6 +2302,10 @@ pub(crate) enum CliCommand {
             crate::examples::send_all_memo!(),
             "\"\n",
             "    confirm\n",
+        ),
+        override_usage = concat!(
+            "send_all <address> \"<optional memo>\"\n",
+            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'",
         )
     )]
     SendAll { args: Vec<String> },
@@ -2409,15 +2313,12 @@ pub(crate) enum CliCommand {
         about = "Show by address number of sends for this seed.",
         long_about = indoc! {r"
             Print the number of sends, keyed by address.
-
-            Usage:
-            sends_to_address
         "}
     )]
     SendsToAddress,
     #[command(
         about = "Show ranked indexer servers and response times",
-        long_about = "Show ranked indexer servers and their get_info() response times.\nUsage: servers"
+        long_about = "Show ranked indexer servers and their get_info() response times."
     )]
     Servers,
     #[command(
@@ -2428,10 +2329,6 @@ pub(crate) enum CliCommand {
 
             performance        low | medium | high | maximum
             min_confirmations  1 or greater
-
-            Usage:
-            settings
-            settings performance high
         "}
     )]
     Settings {
@@ -2443,9 +2340,6 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Propose a shield of transparent funds into the ironwood pool. Shows the
             fee, then 'confirm' broadcasts it.
-
-            Usage:
-                shield
         "}
     )]
     Shield,
@@ -2453,9 +2347,6 @@ pub(crate) enum CliCommand {
         about = "Display the wallet's spendable balance.",
         long_about = indoc! {r"
             Print the wallet's spendable balance.
-
-            Usage:
-            spendable_balance
         "}
     )]
     SpendableBalance,
@@ -2476,9 +2367,6 @@ pub(crate) enum CliCommand {
             `now` runs one round. Sync first, and again between rounds until each
             round's self-sends confirm. It reports when a prior round is still
             confirming and when splitting is done.
-
-            Usage:
-            split plan | now
         "}
     )]
     Split {
@@ -2493,9 +2381,6 @@ pub(crate) enum CliCommand {
             `run` starts or resumes. `pause` halts scanning. `stop` shuts sync down
             early. `status` reports progress. `poll` returns the result once complete,
             and is not meant to be called by hand.
-
-            Usage:
-            sync run | pause | stop | status | poll
         "}
     )]
     Sync {
@@ -2506,9 +2391,6 @@ pub(crate) enum CliCommand {
         about = "List transparent addresses in the wallet.",
         long_about = indoc! {r"
             List the wallet's transparent addresses.
-
-            Usage:
-            t_addresses
         "}
     )]
     TAddresses,
@@ -2516,9 +2398,6 @@ pub(crate) enum CliCommand {
         about = "List the wallet's transaction summaries by block height.",
         long_about = indoc! {r"
             List the wallet's transaction summaries by block height.
-
-            Usage:
-            transactions
         "}
     )]
     Transactions,
@@ -2533,8 +2412,6 @@ pub(crate) enum CliCommand {
             "Anything you leave untransmitted stays live value in flight until it expires or\n",
             "its inputs are spent.\n",
             "\n",
-            "Usage:\n",
-            "    transmit [txid ...]\n",
             "Example:\n",
             "    transmit\n",
         )
@@ -2547,9 +2424,6 @@ pub(crate) enum CliCommand {
         about = "Show by address value transfers for this seed.",
         long_about = indoc! {r"
             Print total value sent, keyed by address.
-
-            Usage:
-            value_to_address
         "}
     )]
     ValueToAddress,
@@ -2558,9 +2432,6 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             List the wallet's value transfers, each one a transaction's notes to a
             single receiver.
-
-            Usage:
-            value_transfers
         "}
     )]
     ValueTransfers,
