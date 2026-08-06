@@ -1129,7 +1129,9 @@ pub enum NetworkCommandError {
     #[error("no indexer could be resolved for going online: {0}")]
     ServerResolution(#[from] http::uri::InvalidUri),
     /// The `network on` consent act selected an indexer, but the connection
-    /// failed; the session stays offline.
+    /// failed; the session stays offline. Reachable only from the
+    /// quarantined clearnet resolution.
+    #[cfg(feature = "clearnet-test-mode")]
     #[error("failed to connect to '{uri}' while switching to Online Mode: {source}")]
     GoOnline {
         uri: String,
@@ -1434,11 +1436,13 @@ async fn network_command(
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
-            // session only, resolving its indexer over the same curated
-            // ranking `--online` uses at launch — and only then, in the
-            // launch order, bootstraps the mixnet.
+            // session only by bootstrapping the mixnet. It engages no
+            // clearnet indexer link; the quarantined clearnet resolution
+            // survives only under `clearnet-test-mode`.
+            #[cfg(feature = "clearnet-test-mode")]
             let went_online = if lightclient.indexer_uri().is_none() {
-                let (server, _ranked) = crate::server_select::resolve_ranked_server().await?;
+                let (server, _ranked) =
+                    crate::server_select_clearnet::resolve_ranked_server().await?;
                 lightclient
                     .set_indexer_uri(server.clone())
                     .await
@@ -1450,6 +1454,8 @@ async fn network_command(
             } else {
                 None
             };
+            #[cfg(not(feature = "clearnet-test-mode"))]
+            let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
             lightclient
                 .enable_mixnet(std::path::Path::new(&path))

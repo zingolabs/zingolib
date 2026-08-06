@@ -15,7 +15,11 @@
 mod commands;
 mod examples;
 
-mod server_select;
+// The retired clearnet server-selection sweep. Never compiled by default:
+// the feature is the explicit review act (2026-08-06 ruling) that
+// re-incorporates any of it.
+#[cfg(feature = "clearnet-test-mode")]
+mod server_select_clearnet;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -258,7 +262,18 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
     ratio_indicator("Synced", "Synced", progress)
 }
 
+/// Formats the configured indexer for the `servers` command; the session
+/// probes nothing to answer it.
+#[cfg(not(feature = "clearnet-test-mode"))]
+fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+    match &cli_config.server {
+        Some(server) => format!("Configured indexer: {server}. Nothing was probed."),
+        None => "Configured indexer: none. This session is offline and probes nothing.".to_string(),
+    }
+}
+
 /// Formats the ranked server list for display by the `servers` command.
+#[cfg(feature = "clearnet-test-mode")]
 fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
     let Some(server) = &cli_config.server else {
         return "Last Known servers: none. This session is offline and probes nothing.".to_string();
@@ -734,8 +749,9 @@ pub(crate) struct ConfigTemplate {
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
+    #[cfg(feature = "clearnet-test-mode")]
     #[allow(dead_code)]
-    ranked_servers: Vec<server_select::RankedServer>,
+    ranked_servers: Vec<server_select_clearnet::RankedServer>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -793,28 +809,41 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
         let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        // Offline mode never resolves a server, since resolution probes the
-        // network, and the session's contract is that no Indexer is ever
-        // configured.
+        // Offline mode never resolves a server: the session's contract is
+        // that no Indexer is ever configured.
+        #[cfg(feature = "clearnet-test-mode")]
         let (server, ranked_servers) = match communication_mode {
             CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => {
                 (None, vec![])
             }
             CommunicationMode::Online => {
                 let (server, ranked_servers) =
-                    server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
-                // Test to make sure the server has all of scheme, host and port
-                if server.scheme_str().is_none()
-                    || server.host().is_none()
-                    || server.port().is_none()
-                {
-                    return Err(format!(
-                        "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-                    ));
-                }
+                    server_select_clearnet::resolve_server(&matches).map_err(|e| e.to_string())?;
                 (Some(server), ranked_servers)
             }
         };
+        // Without the quarantined sweep, resolution is pure: the `--server`
+        // value (explicit or clap's census default), never a probe.
+        #[cfg(not(feature = "clearnet-test-mode"))]
+        let server = match communication_mode {
+            CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => None,
+            CommunicationMode::Online => Some(
+                zingolib::config::construct_indexer_uri(
+                    matches
+                        .get_one::<http::Uri>("server")
+                        .map(std::string::ToString::to_string),
+                )
+                .map_err(|e| e.to_string())?,
+            ),
+        };
+        if let Some(server) = &server {
+            // Test to make sure the server has all of scheme, host and port
+            if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
+                return Err(format!(
+                    "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
+                ));
+            }
+        }
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -830,6 +859,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             mode,
             communication_mode,
             server,
+            #[cfg(feature = "clearnet-test-mode")]
             ranked_servers,
             seed,
             ufvk,
