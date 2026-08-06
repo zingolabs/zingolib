@@ -68,6 +68,11 @@ use zingo_common_components::protocol::ActivationHeights;
 
 const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+// Bounds the pending-URI redial inside run_sync, which holds the LIGHTCLIENT
+// write lock: every other FFI call waits behind it, so the dial gets seconds,
+// not the OS connect timeout.
+const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, thiserror::Error)]
 pub enum ZingolibError {
     #[error("Error: Lightclient is not initialized")]
@@ -348,6 +353,8 @@ lazy_static! {
 static BROADCAST_CONFIG: Lazy<RwLock<(Vec<http::Uri>, SyncEndpointBroadcast)>> =
     Lazy::new(|| RwLock::new((Vec::new(), SyncEndpointBroadcast::Forbid)));
 
+static PENDING_INDEXER_URI: Lazy<RwLock<Option<http::Uri>>> = Lazy::new(|| RwLock::new(None));
+
 // Live progress of the in-flight Phase 1 note-splitting round, the split-path
 // counterpart to DRAIN_PROGRESS. `quick_split` holds LIGHTCLIENT.write() for
 // its whole `block_on`, so a `split_status` poll reads this cloned
@@ -382,6 +389,9 @@ fn reset_lightclient() {
     with_lightclient_write(|slot| {
         *slot = None;
     });
+    if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
+        *pending = None;
+    }
 }
 
 fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
@@ -880,6 +890,31 @@ pub fn init_from_b64(
                     built = Some((l, params));
                     break;
                 }
+
+                Err(LightClientError::ClientError(_)) => {
+                    let mut offline_params = params;
+                    let pending_uri = offline_params.lightwalletd_uri.take();
+                    let config = match build_client_config(&offline_params, WalletConfig::Read) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            last_error = e;
+                            continue;
+                        }
+                    };
+                    match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
+                        Ok(l) => {
+                            if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
+                                *pending = pending_uri;
+                            }
+                            built = Some((l, offline_params));
+                            break;
+                        }
+                        Err(e) => {
+                            last_error = ZingolibError::init(e);
+                            continue;
+                        }
+                    }
+                }
                 Err(e) => {
                     last_error = ZingolibError::init(e);
                     continue;
@@ -1117,6 +1152,19 @@ mod init_error_channel_tests {
         assert!(
             matches!(error, ZingolibError::Init(_)),
             "the failure must be the typed Init variant: {error}"
+        );
+    }
+
+    #[test]
+    fn reset_clears_the_pending_indexer_uri() {
+        if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
+            *pending = Some(http::Uri::from_static("https://example.com:9067"));
+        }
+        reset_lightclient();
+        let pending = PENDING_INDEXER_URI.read().expect("pending uri lock");
+        assert!(
+            pending.is_none(),
+            "a client teardown must not leave a stale pending URI behind"
         );
     }
 
@@ -1657,8 +1705,33 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     })
 }
 
+/// One bounded redial of the URI left pending by `init_from_b64`'s
+/// Indexerless fallback. Success attaches the Indexer and clears the pending
+/// URI; failure leaves it for the next sync tick. A no-op when no URI is
+/// pending.
+fn attach_pending_indexer(lightclient: &mut LightClient) {
+    let pending_uri = PENDING_INDEXER_URI
+        .read()
+        .ok()
+        .and_then(|pending| pending.clone());
+    let Some(uri) = pending_uri else { return };
+    let attached = RT.block_on(async {
+        tokio::time::timeout(
+            PENDING_INDEXER_DIAL_TIMEOUT,
+            lightclient.set_indexer_uri(uri),
+        )
+        .await
+    });
+    if matches!(attached, Ok(Ok(())))
+        && let Ok(mut pending) = PENDING_INDEXER_URI.write()
+    {
+        *pending = None;
+    }
+}
+
 fn run_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
+        attach_pending_indexer(lightclient);
         if lightclient.sync_mode() == SyncMode::Paused {
             // resume_sync can race: sync_mode() was Paused a moment ago but the
             // task may have advanced before we got here. Return the error typed
@@ -1827,6 +1900,11 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
                 .set_indexer_uri(uri)
                 .await
                 .map_err(|e| ffi_error(e.into()))?;
+            // An explicit server choice supersedes any URI left pending by the
+            // init fallback.
+            if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
+                *pending = None;
+            }
             Ok("server set".to_string())
         })
     })
@@ -3275,9 +3353,7 @@ fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
         // A never-attached transport (spawn/attach failed) is not consent to
         // clearnet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
-        zingolib::nym::MixnetMode::Died | zingolib::nym::MixnetMode::Unattached => {
-            "died"
-        }
+        zingolib::nym::MixnetMode::Died | zingolib::nym::MixnetMode::Unattached => "died",
     }
 }
 
