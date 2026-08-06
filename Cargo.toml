@@ -133,7 +133,7 @@ thiserror = "2"
 append-only-vec = "0.1.7"
 itertools = "0.14"
 nonempty = "0.11.0"
-rustyline = "17.0.2"
+rustyline = "18.0.0"
 shellwords = "1"
 
 ### OS hooks
