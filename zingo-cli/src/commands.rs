@@ -2754,22 +2754,19 @@ impl CliCommand {
         }
     }
 
-    /// True when executing the command emits network traffic, so an
-    /// offline posture must refuse it at the dispatch gate.
-    pub(crate) fn requires_network(&self) -> bool {
+    /// True when executing the command reaches a transmit seam — a
+    /// transaction broadcast, the price fetch, or the mixnet probe — the
+    /// class the Online consent covers and the readiness gate holds.
+    pub(crate) fn transmits(&self) -> bool {
         match self {
-            CliCommand::ChangeServer { .. }
-            | CliCommand::Confirm
+            CliCommand::Confirm
             | CliCommand::CurrentPrice
-            | CliCommand::Info
             | CliCommand::Migrate
             | CliCommand::Quicksend { .. }
             | CliCommand::Quickshield
-            | CliCommand::Rescan
             | CliCommand::Transmit { .. } => true,
             #[cfg(feature = "nym")]
-            CliCommand::Network { .. } => true,
-            CliCommand::Sync { sub } => matches!(sub, SyncSubCommand::Run),
+            CliCommand::Network { sub } => matches!(sub, Some(NetworkSubCommand::Probe { .. })),
             CliCommand::Drain { sub } => matches!(sub, DrainSubCommand::Now),
             CliCommand::Split { sub } => matches!(sub, SplitSubCommand::Now),
             CliCommand::Migration { sub } => matches!(
@@ -2778,9 +2775,58 @@ impl CliCommand {
                     | MigrationSubCommand::Continue
                     | MigrationSubCommand::Execute { .. }
                     | MigrationSubCommand::Auto
-                    | MigrationSubCommand::Reconcile
                     | MigrationSubCommand::Catchup { .. }
             ),
+            CliCommand::Addresses
+            | CliCommand::Balance
+            | CliCommand::Birthday
+            | CliCommand::Calculate
+            | CliCommand::ChangeServer { .. }
+            | CliCommand::CheckAddress { .. }
+            | CliCommand::Clear
+            | CliCommand::Coins { .. }
+            | CliCommand::Delete
+            | CliCommand::ExportUfvk
+            | CliCommand::Height
+            | CliCommand::Help { .. }
+            | CliCommand::Info
+            | CliCommand::MaxSendValue { .. }
+            | CliCommand::MemobytesToAddress
+            | CliCommand::Messages { .. }
+            | CliCommand::NewAddress { .. }
+            | CliCommand::NewTaddress
+            | CliCommand::NewTaddressAllowGap
+            | CliCommand::Notes { .. }
+            | CliCommand::ParseAddress { .. }
+            | CliCommand::ParseViewkey { .. }
+            | CliCommand::Quit
+            | CliCommand::RecoveryInfo
+            | CliCommand::RemoveTransaction { .. }
+            | CliCommand::Rescan
+            | CliCommand::Save { .. }
+            | CliCommand::Send { .. }
+            | CliCommand::SendAll { .. }
+            | CliCommand::SendsToAddress
+            | CliCommand::Servers
+            | CliCommand::Settings { .. }
+            | CliCommand::Shield
+            | CliCommand::SpendableBalance
+            | CliCommand::Sync { .. }
+            | CliCommand::TAddresses
+            | CliCommand::Transactions
+            | CliCommand::ValueToAddress
+            | CliCommand::ValueTransfers
+            | CliCommand::Version
+            | CliCommand::WalletKind => false,
+        }
+    }
+
+    /// True when the command speaks to the sync Indexer over the session
+    /// route, so a missing Indexer refuses it with the typed Offline error.
+    pub(crate) fn requires_indexer(&self) -> bool {
+        match self {
+            CliCommand::ChangeServer { .. } | CliCommand::Info | CliCommand::Rescan => true,
+            CliCommand::Sync { sub } => matches!(sub, SyncSubCommand::Run),
             _ => false,
         }
     }
@@ -2791,13 +2837,19 @@ impl CliCommand {
     pub(crate) fn suppressed(&self, mode: crate::CommunicationMode) -> bool {
         match mode {
             crate::CommunicationMode::Online => false,
-            crate::CommunicationMode::DeliberateOffline => self.requires_network(),
+            crate::CommunicationMode::DeliberateOffline => {
+                #[cfg(feature = "nym")]
+                if matches!(self, CliCommand::Network { .. }) {
+                    return true;
+                }
+                self.transmits() || self.requires_indexer()
+            }
             crate::CommunicationMode::UnconsentedOffline => {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return false;
                 }
-                self.requires_network()
+                self.transmits() || self.requires_indexer()
             }
         }
     }
@@ -3012,6 +3064,10 @@ pub(crate) async fn dispatch_parsed(
     command: CliCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
+    #[cfg(feature = "nym")]
+    if command.transmits() {
+        wait_out_bootstrap(lightclient).await;
+    }
     let label = command.name();
     let peek = ProgressPeek::from_client(lightclient);
     with_heartbeat(
@@ -3023,6 +3079,37 @@ pub(crate) async fn dispatch_parsed(
         run_parsed(command, lightclient),
     )
     .await
+}
+
+/// While Mixnet Mode is Bootstrapping, wait for it to leave that state
+/// within the transmit readiness budget, reporting a heartbeat at each
+/// interval; every other mode returns at once, leaving the route
+/// resolver at the transmit seam as the sole refusal authority.
+#[cfg(feature = "nym")]
+async fn wait_out_bootstrap(lightclient: &LightClient) {
+    use zingolib::netutils::time::{TRANSMIT_HEARTBEAT_INTERVAL, TRANSMIT_READINESS_BUDGET};
+    use zingolib::nym::MixnetMode;
+
+    let mut status_rx = lightclient.subscribe_mixnet_status();
+    let started = tokio::time::Instant::now();
+    let deadline = started + TRANSMIT_READINESS_BUDGET;
+    while status_rx.borrow_and_update().mode == MixnetMode::Bootstrapping {
+        tokio::select! {
+            changed = status_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+            _ = tokio::time::sleep(TRANSMIT_HEARTBEAT_INTERVAL) => {
+                eprintln!(
+                    "the mixnet is bootstrapping ({}s of the {}s readiness budget)",
+                    started.elapsed().as_secs(),
+                    TRANSMIT_READINESS_BUDGET.as_secs(),
+                );
+            }
+            _ = tokio::time::sleep_until(deadline) => return,
+        }
+    }
 }
 
 /// The exhaustive match every frontend reaches, whether it parsed its
