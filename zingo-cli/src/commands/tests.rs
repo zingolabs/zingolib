@@ -30,9 +30,7 @@ mod table_invariants {
 
     /// HYPOTHESIS: wherever a long help offers a Usage section, at least
     /// one of its lines invokes the command by its minted name, so the
-    /// prose cannot silently drift from the grammar's single mint. The
-    /// duplication itself retires when clap generates usage from typed
-    /// arguments (the ratified follow-up arc); until then it is pinned.
+    /// prose cannot silently drift from the grammar's single mint.
     #[test]
     fn usage_lines_invoke_the_minted_name() {
         let model = CommandLine::command();
@@ -141,8 +139,6 @@ mod transmit_heartbeat {
 mod migration_command_parsing {
     //! Pins the clap derive grammar of the `migration` family: typed
     //! outcomes, the spacing defaults, and refusal at the parse boundary.
-    //! The byte-identity pins of the retired hand parser retired with it:
-    //! generated prose replaced the pinned strings (clap arc, ratified).
 
     use clap::Parser as _;
 
