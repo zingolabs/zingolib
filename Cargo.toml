@@ -65,7 +65,10 @@ orchard = "0.15.0"
 sapling-crypto = "0.7.0"
 shardtree = "0.7.0"
 zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0-rc.1", features = [
+# Exact-pinned: cargo treats later pre-releases (rc.7+) as compatible, and
+# those build on zcash_primitives 0.30, splitting HashSer away from this
+# workspace's 0.29 stack (see the crypto-common note above `exclude`).
+zcash_client_backend = { version = "=0.24.0-rc.1", features = [
     "orchard",
     "transparent-inputs",
 ] }
