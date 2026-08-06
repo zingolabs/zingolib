@@ -19,6 +19,7 @@ mod server_select;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use clap::{self, Arg};
@@ -35,7 +36,7 @@ use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::netutils::Indexer as _;
 use zingolib::wallet::WalletSettings;
 
-use crate::commands::{RT, ShortCircuitedCommand};
+use crate::commands::RT;
 
 pub(crate) mod version;
 
@@ -169,18 +170,19 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
     }
 }
 
-/// Performs the per-prompt housekeeping on the command-loop thread, where
-/// the [`LightClient`] lives: polls the sync task, reports any save-task
-/// failure, and returns the sync indicator to embed in the interactive
-/// prompt: `" [Syncing X / Y outputs]"` while sync is in progress,
-/// `" [Synced X / X outputs]"` when fully synced, `" [Sync error]"` on
-/// failure, or `" [Sync stopped at X / Y outputs]"` when no sync task is
-/// running and the wallet is not fully synced.
+/// Performs the per-prompt housekeeping, awaited on the command-loop
+/// thread where the [`LightClient`] lives: polls the sync task, reports
+/// any save-task failure, and returns the sync indicator to embed in the
+/// interactive prompt: `" [Syncing X / Y outputs]"` while sync is in
+/// progress, `" [Synced X / X outputs]"` when fully synced,
+/// `" [Sync error]"` on failure, or `" [Sync stopped at X / Y outputs]"`
+/// when no sync task is running and the wallet is not fully synced.
 ///
 /// Every outcome is classified from typed values ([`PollReport`],
 /// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
-/// a command's output string.
-fn prompt_indicator(lightclient: &mut LightClient) -> String {
+/// a command's output string. Every line this function prints is
+/// narration, so all of it goes to stderr (ADR 0031).
+async fn prompt_indicator(lightclient: &mut LightClient) -> String {
     let indicator = match lightclient.poll_sync() {
         PollReport::Ready(Err(e)) => {
             // The doubled "Sync error: Error:" is deliberate: it reproduces
@@ -191,13 +193,13 @@ fn prompt_indicator(lightclient: &mut LightClient) -> String {
             " [Sync error]".to_string()
         }
         PollReport::Ready(Ok(sync_result)) => {
-            println!("{sync_result}");
-            synced_indicator(scan_progress(lightclient))
+            eprintln!("{sync_result}");
+            synced_indicator(scan_progress(lightclient).await)
         }
-        PollReport::NotReady => syncing_indicator(scan_progress(lightclient)),
-        PollReport::NoHandle => idle_indicator(scan_progress(lightclient)),
+        PollReport::NotReady => syncing_indicator(scan_progress(lightclient).await),
+        PollReport::NoHandle => idle_indicator(scan_progress(lightclient).await),
     };
-    if let Err(e) = RT.block_on(lightclient.check_save_error()) {
+    if let Err(e) = lightclient.check_save_error().await {
         eprintln!("Error: save failed. {e}\nRestarting save task...");
     }
     indicator
@@ -214,17 +216,15 @@ struct ScanProgress {
 
 /// Reads the wallet's scan progress, or `None` if sync status is
 /// unavailable.
-fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
-    RT.block_on(async {
-        pepper_sync::sync_status(&*lightclient.wallet().read().await)
-            .await
-            .ok()
-            .map(|status| ScanProgress {
-                outputs_scanned: status.total_outputs_scanned,
-                total_outputs: status.total_outputs,
-                complete: status.is_complete(),
-            })
-    })
+async fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
+    pepper_sync::sync_status(&*lightclient.wallet().read().await)
+        .await
+        .ok()
+        .map(|status| ScanProgress {
+            outputs_scanned: status.total_outputs_scanned,
+            total_outputs: status.total_outputs,
+            complete: status.is_complete(),
+        })
 }
 
 /// Formats a prompt indicator: `" [{labeled} X / Y outputs]"` when the
@@ -286,24 +286,30 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     log::debug!("Ready!");
 
-    let send_request = |request: Request| -> String {
+    let send_request = |request: Request| -> Result<String, String> {
         let description = match &request {
             Request::Command(cmd, _) => cmd.clone(),
             Request::PromptIndicator => "prompt indicator".to_string(),
         };
-        ch.transmitter.send(request).unwrap();
+        if ch.transmitter.send(request).is_err() {
+            let e = format!("Error executing command {description}: the command loop has exited");
+            eprintln!("{e}");
+            error!("{e}");
+            return Err(e);
+        }
         match ch.receiver.recv() {
-            Ok(s) => s,
+            Ok(response) => response,
             Err(e) => {
                 let e = format!("Error executing command {description}: {e}");
                 eprintln!("{e}");
                 error!("{e}");
-                String::new()
+                Err(e)
             }
         }
     };
-    let send_command =
-        |cmd: String, args: Vec<String>| -> String { send_request(Request::Command(cmd, args)) };
+    let send_command = |cmd: String, args: Vec<String>| -> Result<String, String> {
+        send_request(Request::Command(cmd, args))
+    };
 
     // The prompt's chain label comes from local config, not the server. An
     // `info` round trip here blocked the first prompt behind the cold mixnet
@@ -317,15 +323,13 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     loop {
         // Read the height first
-        let height = json::parse(&send_command(
-            "height".to_string(),
-            vec!["false".to_string()],
-        ))
-        .unwrap()["height"]
-            .as_i64()
-            .unwrap();
+        let height = send_command("height".to_string(), vec![])
+            .ok()
+            .and_then(|s| json::parse(&s).ok())
+            .and_then(|v| v["height"].as_i64())
+            .unwrap_or(0);
 
-        let sync_indicator = send_request(Request::PromptIndicator);
+        let sync_indicator = send_request(Request::PromptIndicator).unwrap_or_default();
 
         let readline = rl.readline(&format!(
             "({chain_name}) Block:{height}{sync_indicator} >> "
@@ -355,7 +359,10 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
                     continue;
                 }
 
-                println!("{}", send_command(cmd, args));
+                match send_command(cmd, args) {
+                    Ok(output) => println!("{output}"),
+                    Err(rendered) => eprintln!("{rendered}"),
+                }
 
                 // Special check for Quit command.
                 if line == "quit" || line == "exit" {
@@ -387,7 +394,8 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 /// a response by sniffing its text (the in-band-error problem of issue
 /// zingolabs/zingolib#2446).
 enum Request {
-    /// Execute a user command. The reply is the command's output.
+    /// Execute a user command. The reply is `Ok` with the command's
+    /// output, or `Err` with the rendered error line.
     Command(String, Vec<String>),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
     /// typed calls on the loop thread. The reply is the sync indicator
@@ -395,23 +403,34 @@ enum Request {
     PromptIndicator,
 }
 
-/// A paired request/response channel for communicating with the background command loop.
+/// A paired request/response channel for communicating with the background
+/// command loop.
+///
+/// A response is `Ok` with the command's result, or `Err` with a fully
+/// rendered error line that already begins with `Error: `. The requester
+/// therefore learns of a failure from the variant, and never by reading
+/// the text (ADR 0031).
 struct CommandChannel {
     transmitter: Sender<Request>,
-    receiver: Receiver<String>,
+    receiver: Receiver<Result<String, String>>,
 }
 
 /// Spawns a background thread that listens for `(command, args)` messages,
 /// executes each command against the [`LightClient`], and sends the
-/// string response back through the returned [`CommandChannel`].
+/// response back through the returned [`CommandChannel`].
+///
+/// Each command crosses into async inside `commands::do_user_command`, and
+/// the per-prompt housekeeping crosses in the `block_on` below; the loop
+/// thread holds no other crossing (ADR 0030).
 ///
 /// The loop exits when it receives a `"quit"` or `"exit"` command.
+#[allow(clippy::disallowed_methods)]
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
     communication_mode: CommunicationMode,
 ) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<Request>();
-    let (resp_transmitter, resp_receiver) = channel::<String>();
+    let (resp_transmitter, resp_receiver) = channel::<Result<String, String>>();
 
     std::thread::spawn(move || {
         while let Ok(request) = command_receiver.recv() {
@@ -419,19 +438,20 @@ pub(crate) fn command_loop(
                 Request::Command(cmd, args) => (cmd, args),
                 Request::PromptIndicator => {
                     resp_transmitter
-                        .send(prompt_indicator(&mut lightclient))
+                        .send(Ok(RT.block_on(prompt_indicator(&mut lightclient))))
                         .unwrap();
                     continue;
                 }
             };
             // The Offline-mode pin: this session never configures an Indexer.
             if let Some(refusal) = offline_mode_refusal(communication_mode, &cmd) {
-                resp_transmitter.send(refusal).unwrap();
+                resp_transmitter.send(Err(refusal)).unwrap();
                 continue;
             }
             let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
 
-            let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
+            let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient)
+                .map_err(|e| format!("Error: {e}"));
             resp_transmitter.send(cmd_response).unwrap();
 
             if cmd == "quit" || cmd == "exit" {
@@ -740,9 +760,10 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
 /// Builds a `ClientConfig` from the filled config template.
 ///
-/// This is a pure function, with no I/O or side effects, and is the
-/// first testable seam inside the startup sequence.
-fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
+/// This is the first testable seam inside the startup sequence. Its only
+/// I/O is the chain-tip fetch that dates a brand-new wallet, which an
+/// Offline-mode session never performs.
+async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
     let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
@@ -773,19 +794,19 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         WalletConfig::Read
     } else {
         // Create client from a new wallet
-        println!("Creating a new wallet");
+        eprintln!("Creating a new wallet");
         let chain_height = match filled_template.server.clone() {
-            Some(server) => RT
-                .block_on(async move {
-                    zingolib::netutils::GrpcIndexer::new(server)
-                        .await
-                        .map_err(|e| format!("{e:?}"))?
-                        .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
-                        .await
-                        .map(|block_id| block_id.height as u32)
-                        .map_err(|e| format!("{e:?}"))
-                })
-                .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
+            Some(server) => async move {
+                zingolib::netutils::GrpcIndexer::new(server)
+                    .await
+                    .map_err(|e| format!("{e:?}"))?
+                    .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+                    .await
+                    .map(|block_id| block_id.height as u32)
+                    .map_err(|e| format!("{e:?}"))
+            }
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
             // Offline mode has no Indexer to ask for the chain tip; a
             // user-supplied birthday stands in for it, and absent that the
             // Library Birthday is a safe floor: a new seed cannot predate
@@ -819,14 +840,21 @@ fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<Clien
         .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
+#[allow(clippy::disallowed_methods)]
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
-    let config = build_zingo_config(filled_template)?;
+    let lightclient = RT.block_on(startup_async(filled_template))?;
+    Ok(command_loop(
+        lightclient,
+        filled_template.communication_mode,
+    ))
+}
 
-    let mut lightclient = RT.block_on(async move {
-        LightClient::new(config, false)
-            .await
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))
-    })?;
+async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<LightClient> {
+    let config = build_zingo_config(filled_template).await?;
+
+    let mut lightclient = LightClient::new(config, false)
+        .await
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages
@@ -871,19 +899,22 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
         } else {
             MixnetStartPolicy::ForcedOn
         };
-        RT.block_on(lightclient.start_mixnet_session(
-            ProvisionStrategy::Spawn(commands::spawn_hints(
-                filled_template.nym_proxy_path.as_deref(),
-            )),
-            policy,
-        ))
-        .map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
-                 connected session; install the nym-proxy binary, pass --nym-proxy <path>, set \
-                 $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this session.",
-            ))
-        })?;
+        lightclient
+            .start_mixnet_session(
+                ProvisionStrategy::Spawn(commands::spawn_hints(
+                    filled_template.nym_proxy_path.as_deref(),
+                )),
+                policy,
+            )
+            .await
+            .map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
+                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
+                     set $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this \
+                     session.",
+                ))
+            })?;
         match policy {
             MixnetStartPolicy::OptedOutThisSession => info!(
                 "Mixnet Mode switched off by --no-mixnet; send and price-fetch use clearnet this \
@@ -900,7 +931,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
         // this consumer's own (ADR 0024, decision 8) — variant matching,
         // never prose matching.
         let mut status_rx = lightclient.subscribe_mixnet_status();
-        RT.spawn(async move {
+        tokio::spawn(async move {
             let mut last_mode = status_rx.borrow().mode;
             while status_rx.changed().await.is_ok() {
                 let status = status_rx.borrow_and_update().clone();
@@ -935,29 +966,25 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     }
 
     if filled_template.sync {
-        let update = commands::do_user_command("sync", &["run"], &mut lightclient);
-        println!("{update}");
+        match commands::do_user_command_result("sync", &["run"], &mut lightclient).await {
+            Ok(update) => eprintln!("{update}"),
+            Err(e) => eprintln!("Error: {e}"),
+        }
     }
 
-    let update = commands::do_user_command("save", &["run"], &mut lightclient);
-    println!("{update}");
+    match commands::do_user_command_result("save", &["run"], &mut lightclient).await {
+        Ok(update) => eprintln!("{update}"),
+        Err(e) => eprintln!("Error: {e}"),
+    }
 
-    lightclient = RT.block_on(async move {
-        if filled_template.sync
-            && filled_template.waitsync
-            && let Err(e) = lightclient.await_sync().await
-        {
-            eprintln!("error: {e}");
-        }
+    if filled_template.sync
+        && filled_template.waitsync
+        && let Err(e) = lightclient.await_sync().await
+    {
+        eprintln!("error: {e}");
+    }
 
-        lightclient
-    });
-
-    // Start the command loop
-    Ok(command_loop(
-        lightclient,
-        filled_template.communication_mode,
-    ))
+    Ok(lightclient)
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for
@@ -986,46 +1013,68 @@ fn print_salvaged_recovery_info(
     Ok(())
 }
 
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
+fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<ExitCode> {
     let ch = match startup(cli_config) {
         Ok(ch) => ch,
         Err(startup_error) => {
             if let ModeOfOperation::Command { name, .. } = &cli_config.mode
                 && name == "recovery_info"
             {
-                return print_salvaged_recovery_info(cli_config, &startup_error);
+                return print_salvaged_recovery_info(cli_config, &startup_error)
+                    .map(|()| ExitCode::SUCCESS);
             }
             return Err(startup_error);
         }
     };
     match &cli_config.mode {
-        ModeOfOperation::Interactive => start_interactive(cli_config, ch),
+        ModeOfOperation::Interactive => {
+            start_interactive(cli_config, ch);
+            Ok(ExitCode::SUCCESS)
+        }
         ModeOfOperation::Command { name, args } => {
-            ch.transmitter
+            let exit_code = if ch
+                .transmitter
                 .send(Request::Command(name.clone(), args.clone()))
-                .unwrap();
-
-            match ch.receiver.recv() {
-                Ok(s) => println!("{s}"),
-                Err(e) => {
-                    let e = format!("Error executing command {name}: {e}");
-                    eprintln!("{e}");
-                    error!("{e}");
+                .is_err()
+            {
+                let e = format!("Error executing command {name}: the command loop has exited");
+                eprintln!("{e}");
+                error!("{e}");
+                ExitCode::FAILURE
+            } else {
+                match ch.receiver.recv() {
+                    Ok(Ok(output)) => {
+                        println!("{output}");
+                        ExitCode::SUCCESS
+                    }
+                    Ok(Err(rendered)) => {
+                        eprintln!("{rendered}");
+                        ExitCode::FAILURE
+                    }
+                    Err(e) => {
+                        let e = format!("Error executing command {name}: {e}");
+                        eprintln!("{e}");
+                        error!("{e}");
+                        ExitCode::FAILURE
+                    }
                 }
-            }
+            };
 
-            ch.transmitter
+            if ch
+                .transmitter
                 .send(Request::Command("quit".to_string(), vec![]))
-                .unwrap();
-            match ch.receiver.recv() {
-                Ok(s) => println!("{s}"),
-                Err(e) => {
-                    eprintln!("{e}");
+                .is_ok()
+            {
+                match ch.receiver.recv() {
+                    Ok(Ok(trailer)) => eprintln!("{trailer}"),
+                    Ok(Err(rendered)) => eprintln!("{rendered}"),
+                    Err(e) => eprintln!("{e}"),
                 }
             }
+
+            Ok(exit_code)
         }
     }
-    Ok(())
 }
 
 /// Returns `true` if the CLI will start the interactive REPL
@@ -1060,18 +1109,22 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
             .get_many::<String>("extra_args")
             .map(|v| v.cloned().collect())
             .unwrap_or_default();
-        Some(commands::HelpCommand::exec_without_lc(args))
+        Some(commands::format_help(
+            &args.iter().map(String::as_str).collect::<Vec<&str>>(),
+        ))
     } else {
         None
     }
 }
 
-/// Runs the CLI from pre-parsed arguments.
+/// Runs the CLI from pre-parsed arguments, returning the process exit code
+/// the session earned: `SUCCESS`, or `FAILURE` when a one-shot command
+/// fails (ADR 0031).
 ///
 /// This function never calls `std::process::exit` or reads `std::env::args`.
 /// The caller (the binary entry point) is responsible for parsing arguments,
 /// handling the help short-circuit, process-level setup, and error reporting.
-pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<()> {
+pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
     let mode = get_mode_of_operation(&matches);
     let communication_mode = get_communication_mode(&matches)?;
     let cli_config =
