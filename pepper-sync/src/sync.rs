@@ -434,6 +434,20 @@ where
         .await
     });
 
+    add_initial_frontier(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet.write().await,
+    )
+    .await?;
+    state::reset_scan_ranges(
+        wallet
+            .write()
+            .await
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+    );
+
     // pre-scan initialisation
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
@@ -445,6 +459,7 @@ where
         consensus_parameters,
     )?;
 
+    // get the wallet keys again when a new block is mined in case the wallet has created an account while syncing.
     let ufvks = wallet
         .read()
         .await
@@ -463,13 +478,6 @@ where
     .await?;
 
     update_subtree_roots(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        &mut *wallet.write().await,
-    )
-    .await?;
-
-    add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
         &mut *wallet.write().await,
@@ -504,8 +512,6 @@ where
         ufvks.clone(),
     );
     scanner.launch(config.performance_level);
-
-    // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
     let mut nullifier_map_limit_exceeded = false;
     let mut interval = tokio::time::interval(Duration::from_millis(50));

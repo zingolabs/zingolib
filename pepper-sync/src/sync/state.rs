@@ -75,7 +75,6 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    reset_scan_ranges(sync_state);
     create_scan_range(last_known_chain_height, chain_height, sync_state);
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
@@ -207,7 +206,7 @@ pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mu
 /// scanning.
 /// A range that was previously refetching nullifiers when sync was last interrupted is set to `ScannedWithoutMapping`
 /// so the nullifiers can be fetched again.
-fn reset_scan_ranges(sync_state: &mut SyncState) {
+pub(super) fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
         .iter()
