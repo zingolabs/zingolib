@@ -1004,13 +1004,12 @@ impl LightClient {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
 
-    /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
-    /// against every Broadcast Indexer when `target` is `None`. Indexers are
-    /// probed concurrently. Each probe runs `GetLightdInfo` over both routes
-    /// (the mixnet leg is skipped when the proxy is not ready) and appends
-    /// its outcomes to the cross-session indexer history. The clearnet leg
-    /// contacts indexers from the real IP, and this is a user-invoked
-    /// diagnostic, never an automatic path.
+    /// Runs the mixnet liveness probe against `target`, or against every
+    /// Broadcast Indexer when `target` is `None`. Indexers are probed
+    /// concurrently: each probe runs `GetLightdInfo` through the session's
+    /// SOCKS5 proxy and appends its outcome to the cross-session indexer
+    /// history. The probe has no clearnet leg and refuses while the mixnet
+    /// transport is not ready.
     pub async fn probe_broadcast_indexers(
         &self,
         target: Option<http::Uri>,
