@@ -2199,30 +2199,31 @@ pub(crate) enum CliCommand {
     #[cfg(feature = "nym")]
     #[command(
         about = "Control the network posture and mixnet transport; `network on` switches an \
-                 offline session to ONLINE MODE.",
+                 unconsented offline session to ONLINE MODE.",
         long_about = indoc! {r"
             Control the session's network posture and its mixnet transport
             (the mixnet is Nym; the name is implicit).
 
             With Mixnet Mode on, send and price-fetch route over the mixnet and
             fail closed while it bootstraps, never falling back to clearnet.
-            Turning it off is a deliberate choice to transmit over clearnet.
 
-            WARNING: in an offline session, `network on` is itself the consent
-            act: it switches the session to ONLINE MODE, for this session only.
-            The session selects an indexer over the same curated ranking that
-            `--online` uses at launch, and only then bootstraps the mixnet
-            (ADR 0026).
+            WARNING: in an unconsented offline session, `network on` is itself
+            the consent act: it switches the session to ONLINE MODE, for this
+            session only. The session selects an indexer over the same curated
+            ranking that `--online` uses at launch, and only then bootstraps
+            the mixnet (ADR 0026). A deliberate --offline session does not
+            offer this command; relaunch without --offline instead.
 
             `status` reports off, bootstrapping or ready. `on` starts the
             nym-proxy child, taking the binary from the given path, else
             $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
-            `off` reverts to clearnet without leaving ONLINE MODE. `probe` runs
-            GetLightdInfo over both routes side by side to tell whether a
-            failure is mixnet-specific, and its clearnet leg uses your real IP;
-            an offline session refuses it. `history` shows per-indexer attempts
-            across sessions, and needs the nym-diary feature plus
-            --indexer-diary.
+            `off` disconnects every network capability of the session, keeping
+            any stored standing consent; `network on` re-consents (ADR 0032).
+            `probe` runs GetLightdInfo over both routes side by side to tell
+            whether a failure is mixnet-specific, and its clearnet leg uses
+            your real IP; an offline session refuses it. `history` shows
+            per-indexer attempts across sessions, and needs the nym-diary
+            feature plus --indexer-diary.
         "}
     )]
     Network {
