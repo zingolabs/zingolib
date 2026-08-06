@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** The `--no-mixnet` flag is retired. A connected session
+  runs the mixnet unconditionally and fails closed; clearnet carries
+  sync alone. The clearnet server-selection sweep now compiles only
+  under the non-default `clearnet-test-mode` feature, and a default
+  build resolves its indexer from `--server` without probing.
 - Every dispatched command now narrates its latest progress line to stderr
   every eight seconds while it runs (`PROGRESS_HEARTBEAT_INTERVAL`), so no
   command is silent past one interval. The narration moved from individual

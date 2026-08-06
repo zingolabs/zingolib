@@ -109,10 +109,6 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
                 .long("forget-online")
                 .action(clap::ArgAction::SetTrue)
                 .help("Remove the stored standing Connectivity Consent before deciding this session's connectivity. Without another consent act the session then runs offline."))
-            .arg(Arg::new("no-mixnet")
-                .long("no-mixnet")
-                .action(clap::ArgAction::SetTrue)
-                .help("Do not force the Nym mixnet on at startup. Send and price-fetch then use clearnet for this session. Without this flag a connected session starts the mixnet automatically (requires the `nym` build feature)."))
             .arg(Arg::new("nym-proxy")
                 .long("nym-proxy")
                 .value_name("PATH")
@@ -759,10 +755,6 @@ pub(crate) struct ConfigTemplate {
     sync: bool,
     waitsync: bool,
     chaintype: ChainType,
-    /// `--no-mixnet`: opt out of forcing the Nym mixnet on at startup. Read
-    /// only by the forced-on policy, which the `nym` feature gates.
-    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-    no_mixnet: bool,
     /// `--nym-proxy`: an explicit path to the nym-proxy binary. Read only by
     /// the forced-on policy, which the `nym` feature gates.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
@@ -852,7 +844,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 
         let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
-        let no_mixnet = matches.get_flag("no-mixnet");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
         let indexer_diary = matches.get_flag("indexer-diary");
         Ok(Self {
@@ -868,7 +859,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             sync,
             waitsync,
             chaintype,
-            no_mixnet,
             nym_proxy_path,
             indexer_diary,
         })
@@ -1001,47 +991,35 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     // The session driver call at the go-online moment (ADR 0024, decision
-    // 2): zingolib owns the forced-on policy, the consent-at-start
-    // semantics (--no-mixnet is the explicit act that reaches SwitchedOff),
-    // and the provisioning precedence; this consumer supplies only its
-    // platform hints and its per-session start policy. A provisioning
-    // failure fails closed: the session aborts rather than quietly
-    // transmitting over clearnet. Offline sessions never transmit and skip
-    // the driver entirely.
+    // 2): zingolib owns the forced-on policy and the provisioning
+    // precedence; this consumer supplies only its platform hints. The
+    // mixnet is unconditional for a connected session — clearnet carries
+    // sync alone (2026-08-06 ruling) — so a provisioning failure fails
+    // closed: the session aborts rather than quietly transmitting over
+    // clearnet. Offline sessions never transmit and skip the driver
+    // entirely.
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
         use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
-        let policy = if filled_template.no_mixnet {
-            MixnetStartPolicy::OptedOutThisSession
-        } else {
-            MixnetStartPolicy::ForcedOn
-        };
         lightclient
             .start_mixnet_session(
                 ProvisionStrategy::Spawn(commands::spawn_hints(
                     filled_template.nym_proxy_path.as_deref(),
                 )),
-                policy,
+                MixnetStartPolicy::ForcedOn,
             )
             .await
             .map_err(|e| {
                 std::io::Error::other(format!(
                     "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
                      connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
-                     set $ZINGO_NYM_PROXY, or pass --no-mixnet to transmit over clearnet this \
-                     session.",
+                     or set $ZINGO_NYM_PROXY.",
                 ))
             })?;
-        match policy {
-            MixnetStartPolicy::OptedOutThisSession => info!(
-                "Mixnet Mode switched off by --no-mixnet; send and price-fetch use clearnet this \
-                 session."
-            ),
-            MixnetStartPolicy::ForcedOn => info!(
-                "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
-                 become available once it is ready (see `network status`)."
-            ),
-        }
+        info!(
+            "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
+             become available once it is ready (see `network status`)."
+        );
         // Narrate Mixnet Mode transitions from the session's status
         // subscription (push, not poll): mode changes at info/warn through
         // the standard log path, bootstrap progress at debug. Rendering is
