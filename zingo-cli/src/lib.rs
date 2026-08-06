@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod activation_heights_toml;
 mod commands;
 mod examples;
 
@@ -57,6 +58,15 @@ pub fn build_clap_app() -> clap::Command {
                 .value_name("CHAIN")
                 .help(
                     r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
+                ))
+            .arg(Arg::new("activation-heights")
+                .long("activation-heights")
+                .value_name("PATH")
+                .help(
+                    "Path to a TOML file of regtest activation heights (one optional \
+                     `<upgrade> = <height>` line per network upgrade; a missing key means the \
+                     upgrade never activates). Only valid with --chain regtest, replacing the \
+                     built-in default schedule."
                 ))
             .arg(Arg::new("seed")
                 .short('s')
@@ -732,6 +742,18 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
+        };
+        let chaintype = if let Some(heights_path) = matches.get_one::<String>("activation-heights")
+        {
+            if !matches!(chaintype, ChainType::Regtest(_)) {
+                return Err("--activation-heights is only valid with --chain regtest".to_string());
+            }
+            let toml_text = std::fs::read_to_string(heights_path).map_err(|e| {
+                format!("could not read --activation-heights file {heights_path}: {e}")
+            })?;
+            ChainType::Regtest(activation_heights_toml::parse(&toml_text)?)
+        } else {
+            chaintype
         };
 
         let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;

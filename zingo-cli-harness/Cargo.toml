@@ -1,0 +1,17 @@
+[package]
+name = "zingo-cli-harness"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+zcash_local_net = { workspace = true }
+
+zingo_test_vectors = { workspace = true }
+
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+zcash_address = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
