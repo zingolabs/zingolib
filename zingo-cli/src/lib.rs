@@ -116,7 +116,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("indexer-diary")
                 .long("indexer-diary")
                 .action(clap::ArgAction::SetTrue)
-                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `nym history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
+                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `network history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -438,8 +438,20 @@ pub(crate) fn command_loop(
                     continue;
                 }
             };
-            // The Offline-mode pin: this session never configures an Indexer.
-            if let Some(refusal) = offline_mode_refusal(communication_mode, &command) {
+            // The Offline-mode pin reads the live client, not the launch
+            // snapshot: `network on` may have granted consent mid-session
+            // and switched to Online Mode (ADR 0026).
+            #[cfg(feature = "nym")]
+            let live_mode = if lightclient.indexer_uri().is_some() {
+                CommunicationMode::Online
+            } else {
+                communication_mode
+            };
+            // Without the mixnet capability the launch snapshot is the
+            // whole story: Offline Mode is the only mode (ADR 0026).
+            #[cfg(not(feature = "nym"))]
+            let live_mode = communication_mode;
+            if let Some(refusal) = offline_mode_refusal(live_mode, &command) {
                 resp_transmitter.send(Err(refusal)).unwrap();
                 continue;
             }
@@ -506,6 +518,7 @@ enum CommunicationMode {
 /// in place of executing `command` (an Offline session never configures an
 /// Indexer, so `change_server` is refused), or `None` when the command may
 /// proceed.
+#[cfg(feature = "nym")]
 fn offline_mode_refusal(
     communication_mode: CommunicationMode,
     command: &commands::CliCommand,
@@ -514,14 +527,36 @@ fn offline_mode_refusal(
         && matches!(command, commands::CliCommand::ChangeServer { .. }))
     .then(|| {
         "Error: this session is in Offline mode; no Indexer may be configured. \
-         Restart without --offline to change servers."
+         Switch to ONLINE MODE with `network on`, or restart without --offline, \
+         to change servers."
+            .to_string()
+    })
+}
+
+/// The Offline-mode pin without the mixnet capability: Offline Mode is
+/// the only mode such a build can be in (ADR 0026), so `change_server`
+/// is refused unconditionally and no act can lift the refusal.
+#[cfg(not(feature = "nym"))]
+fn offline_mode_refusal(
+    communication_mode: CommunicationMode,
+    command: &commands::CliCommand,
+) -> Option<String> {
+    (communication_mode == CommunicationMode::Offline
+        && matches!(command, commands::CliCommand::ChangeServer { .. }))
+    .then(|| {
+        "Error: this build has no mixnet capability, so Offline Mode is its only \
+         mode; no Indexer may be configured. Rebuild with default features (plain \
+         `cargo build`, or `makers run-cli`) to go online."
             .to_string()
     })
 }
 
 /// One session's connectivity verdict (ADR 0025): how the launch acts and
 /// the stored standing choice combine. Pure, so the precedence is pinned
-/// by unit tests without touching a filesystem.
+/// by unit tests without touching a filesystem. Exists only with the
+/// mixnet capability: without it there is no verdict to reach, because
+/// Offline Mode is the only mode (ADR 0026).
+#[cfg(feature = "nym")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConnectivityDecision {
     /// `--offline`: the deliberate zero-traffic session contract.
@@ -539,6 +574,7 @@ enum ConnectivityDecision {
 /// deliberate `--offline` wins over everything, a launch act (`--online`,
 /// `--remember-online`, an explicit `--server`) over the store, the store
 /// alone sustains the connection, and nothing else goes online.
+#[cfg(feature = "nym")]
 fn decide_connectivity(
     offline: bool,
     online: bool,
@@ -580,6 +616,7 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 /// `--forget-online` removes the record before the decision,
 /// `--remember-online` stores it, and a session with no consent anywhere
 /// runs offline behind a notice naming the ways online.
+#[cfg(feature = "nym")]
 fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
@@ -615,12 +652,47 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
                 "No Connectivity Consent is recorded, so this session runs offline: local \
                  operations work and nothing touches the network. To go online, pass --online \
                  (this session only), --remember-online (store the choice for future \
-                 sessions), or --server <uri>. Pass --offline to run offline deliberately and \
-                 silence this notice."
+                 sessions), or --server <uri>; in the session, `network on` also grants \
+                 consent and switches to ONLINE MODE. Pass --offline to run offline \
+                 deliberately and silence this notice."
             );
             CommunicationMode::Offline
         }
     })
+}
+
+/// The communication mode without the mixnet capability: Offline Mode is
+/// the only mode such a build can be in (ADR 0026). The online consent
+/// acts refuse loudly rather than silently degrade, and a stored standing
+/// consent is reported as inert. `--forget-online` still works, so an
+/// opt-out build can retire a stored consent.
+#[cfg(not(feature = "nym"))]
+fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+    let data_dir = data_dir_from(matches);
+    if matches.get_flag("forget-online") {
+        zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
+        eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
+    }
+    let explicit_server =
+        matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+    if matches.get_flag("online") || matches.get_flag("remember-online") || explicit_server {
+        return Err(std::io::Error::other(
+            "this build has no mixnet capability, so Offline Mode is its only mode; \
+             going online is not possible. Rebuild with default features (plain \
+             `cargo build`, or `makers run-cli`) to go online.",
+        ));
+    }
+    if matches!(
+        zingolib::connectivity::load_connectivity_consent(&data_dir),
+        zingolib::connectivity::ConnectivityConsent::StandingOnline
+    ) {
+        eprintln!(
+            "A standing Connectivity Consent is recorded, but this build has no mixnet \
+             capability: Offline Mode is its only mode, so the session runs offline. \
+             Rebuild with default features to honor the standing consent."
+        );
+    }
+    Ok(CommunicationMode::Offline)
 }
 
 /// All CLI-derived configuration needed to create a [`LightClient`] and
@@ -862,7 +934,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     #[cfg(feature = "nym-diary")]
     if filled_template.indexer_diary {
         lightclient.set_indexer_diary(true);
-        info!("Indexer diary: recording send and probe outcomes this session (`nym history`).");
+        info!("Indexer diary: recording send and probe outcomes this session (`network history`).");
     }
     #[cfg(not(feature = "nym-diary"))]
     if filled_template.indexer_diary {
@@ -911,7 +983,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
             ),
             MixnetStartPolicy::ForcedOn => info!(
                 "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
-                 become available once it is ready (see `nym status`)."
+                 become available once it is ready (see `network status`)."
             ),
         }
         // Narrate Mixnet Mode transitions from the session's status
@@ -934,7 +1006,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 match status.mode {
                     zingolib::nym::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
-                         (see `nym status`)."
+                         (see `network status`)."
                     ),
                     zingolib::nym::MixnetMode::Died => {
                         let cause = status
@@ -945,7 +1017,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                             .unwrap_or_default();
                         warn!(
                             "The mixnet transport died{cause}. Send and price-fetch refuse \
-                             until you re-enable it with `nym on`."
+                             until you re-enable it with `network on`."
                         );
                     }
                     other => info!("Mixnet Mode is now {other}."),

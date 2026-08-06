@@ -99,12 +99,23 @@ pub(crate) fn resolve_server(
             vec![],
         ))
     } else {
-        let ranked = RT.block_on(select_servers());
-        let server = if let Some(best) = ranked.first() {
-            best.uri.clone()
-        } else {
-            zingolib::config::construct_indexer_uri(None)?
-        };
-        Ok((server, ranked))
+        RT.block_on(resolve_ranked_server())
     }
+}
+
+/// Resolves the indexer for a session going online without an explicit
+/// `--server`: probes the curated indexers and returns the fastest
+/// responder with the full ranked list, or the default indexer URI when
+/// none responded. Async, below the crate's single seam (ADR 0030), so
+/// launch-time resolution and the in-session `network on` consent act
+/// (ADR 0026) share it.
+pub(crate) async fn resolve_ranked_server()
+-> Result<(http::Uri, Vec<RankedServer>), http::uri::InvalidUri> {
+    let ranked = select_servers().await;
+    let server = if let Some(best) = ranked.first() {
+        best.uri.clone()
+    } else {
+        zingolib::config::construct_indexer_uri(None)?
+    };
+    Ok((server, ranked))
 }

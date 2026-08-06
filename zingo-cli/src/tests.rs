@@ -411,6 +411,7 @@ mod communication_mode {
 
     /// The per-session consent act: --online takes this session online and
     /// stores nothing, so the next default launch is offline again.
+    #[cfg(feature = "nym")]
     #[test]
     fn online_flag_consents_this_session_only() {
         let dir = scratch_dir();
@@ -427,6 +428,7 @@ mod communication_mode {
 
     /// Naming an endpoint is consenting to connect to it: an explicit
     /// --server is a consent act (ADR 0025).
+    #[cfg(feature = "nym")]
     #[test]
     fn an_explicit_server_is_a_consent_act() {
         let dir = scratch_dir();
@@ -438,6 +440,7 @@ mod communication_mode {
 
     /// The standing choice: --remember-online stores the consent, and a
     /// later launch with no acts attaches automatically.
+    #[cfg(feature = "nym")]
     #[test]
     fn remember_online_stores_the_standing_choice() {
         let dir = scratch_dir();
@@ -454,6 +457,7 @@ mod communication_mode {
 
     /// --forget-online removes the standing choice: the forgetting session
     /// runs offline (no other act was expressed), and so does the next.
+    #[cfg(feature = "nym")]
     #[test]
     fn forget_online_returns_the_store_to_first_boot() {
         let dir = scratch_dir();
@@ -467,6 +471,7 @@ mod communication_mode {
 
     /// Forgetting the store and consenting for the session compose: the
     /// launch goes online once while the standing choice dies.
+    #[cfg(feature = "nym")]
     #[test]
     fn forget_online_composes_with_a_session_act() {
         let dir = scratch_dir();
@@ -479,6 +484,7 @@ mod communication_mode {
     }
 
     /// The deliberate --offline outranks even a stored standing choice.
+    #[cfg(feature = "nym")]
     #[test]
     fn offline_flag_wins_over_the_stored_choice() {
         let dir = scratch_dir();
@@ -487,6 +493,60 @@ mod communication_mode {
             mode_with_dir(&dir, &["--offline"]),
             CommunicationMode::Offline
         );
+    }
+
+    /// Without the mixnet capability, Offline Mode is the only mode (ADR
+    /// 0026): every online act refuses, a stored standing consent is
+    /// inert, and `--forget-online` still retires it.
+    #[cfg(not(feature = "nym"))]
+    mod offline_only {
+        use super::*;
+
+        #[test]
+        fn every_online_act_refuses() {
+            let dir = scratch_dir();
+            for act in [
+                vec!["--online"],
+                vec!["--remember-online"],
+                vec!["--server", examples::SERVER_URI],
+            ] {
+                let mut args = vec![
+                    examples::BIN_NAME,
+                    "--data-dir",
+                    dir.path().to_str().expect("utf-8 temp path"),
+                ];
+                args.extend(act.iter());
+                let err = get_communication_mode(&parse(&args))
+                    .expect_err("an offline-only build must refuse every online act");
+                assert!(
+                    err.to_string().contains("Offline Mode is its only mode"),
+                    "{err}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_stored_standing_consent_is_inert() {
+            let dir = scratch_dir();
+            zingolib::connectivity::store_standing_online(dir.path())
+                .expect("the store writes in a scratch directory");
+            assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        }
+
+        #[test]
+        fn forget_online_still_retires_a_stored_consent() {
+            let dir = scratch_dir();
+            zingolib::connectivity::store_standing_online(dir.path())
+                .expect("the store writes in a scratch directory");
+            assert_eq!(
+                mode_with_dir(&dir, &["--forget-online"]),
+                CommunicationMode::Offline
+            );
+            assert!(matches!(
+                zingolib::connectivity::load_connectivity_consent(dir.path()),
+                zingolib::connectivity::ConnectivityConsent::Unrecorded
+            ));
+        }
     }
 
     #[test]
@@ -750,8 +810,14 @@ mod config_template {
 
     mod happy_paths {
         use super::*;
+        // Consumed only by the nym-gated `defaults` test: the offline-only
+        // build never reaches an Online communication mode (ADR 0026).
+        #[cfg(feature = "nym")]
         use crate::CommunicationMode;
 
+        /// An explicit `--server` is an online act, which only nym builds
+        /// accept (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn defaults() {
             let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
@@ -766,6 +832,10 @@ mod config_template {
             assert!(matches!(config.mode, ModeOfOperation::Interactive));
         }
 
+        /// `--online` exists as a consented act only in nym builds; the
+        /// offline-only build refuses it (ADR 0026), pinned in
+        /// `online_acts_refuse_in_the_offline_only_build`.
+        #[cfg(feature = "nym")]
         #[test]
         fn nosync_flag() {
             // --online keeps this a test of the flag, not of the offline
@@ -774,6 +844,9 @@ mod config_template {
             assert!(!config.sync);
         }
 
+        /// `--online` exists as a consented act only in nym builds; the
+        /// offline-only build refuses it (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn waitsync_flag() {
             let config = fill(&[examples::BIN_NAME, "--online", "--waitsync"]).unwrap();
@@ -859,6 +932,10 @@ mod config_template {
             assert!(err.contains("bogus"));
         }
 
+        /// The URI shape check sits on the online resolution path, which
+        /// only nym builds reach: the offline-only build refuses the
+        /// `--server` act before any URI is inspected (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn server_missing_port() {
             let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
@@ -879,6 +956,9 @@ mod config_template {
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
 
+        /// Going online at all requires the mixnet capability (ADR 0026),
+        /// so the propagation contract exists only in nym builds.
+        #[cfg(feature = "nym")]
         #[test]
         fn default_server_is_propagated() {
             // --online is the consent act (ADR 0025); the default server
@@ -898,6 +978,9 @@ mod config_template {
             );
         }
 
+        /// Going online at all requires the mixnet capability (ADR 0026),
+        /// so the propagation contract exists only in nym builds.
+        #[cfg(feature = "nym")]
         #[test]
         fn custom_server_is_propagated() {
             let zc = fill_and_build(&[
@@ -915,6 +998,26 @@ mod config_template {
                 "expected URI to start with {}, got: {uri}",
                 examples::SERVER_URI
             );
+        }
+
+        /// Without the mixnet capability, Offline Mode is the only mode
+        /// (ADR 0026): every online launch act refuses instead of
+        /// configuring a server.
+        #[cfg(not(feature = "nym"))]
+        #[test]
+        fn online_acts_refuse_in_the_offline_only_build() {
+            for act in [
+                vec!["--online"],
+                vec!["--remember-online"],
+                vec!["--server", examples::SERVER_URI],
+            ] {
+                let mut args = vec![examples::BIN_NAME];
+                args.extend(act.iter());
+                args.extend(["--seed", HOSPITAL_MUSEUM_SEED, "--birthday", "1"]);
+                let err =
+                    fill(&args).expect_err("an offline-only build must refuse every online act");
+                assert!(err.contains("Offline Mode is its only mode"), "{err}");
+            }
         }
 
         #[test]
@@ -983,6 +1086,9 @@ mod offline_mode_pin {
     use crate::commands::CliCommand;
     use crate::{CommunicationMode, offline_mode_refusal};
 
+    /// The refusal names the way out that matches the build: with the
+    /// mixnet capability the `network on` consent act can lift it
+    /// mid-session, without the capability nothing can (ADR 0026).
     #[test]
     fn offline_mode_refuses_change_server_before_dispatch() {
         let refusal = offline_mode_refusal(
@@ -990,10 +1096,19 @@ mod offline_mode_pin {
             &CliCommand::ChangeServer { uri: None },
         )
         .expect("an Offline session must refuse change_server");
+        #[cfg(feature = "nym")]
         assert_eq!(
             refusal,
             "Error: this session is in Offline mode; no Indexer may be configured. \
-             Restart without --offline to change servers."
+             Switch to ONLINE MODE with `network on`, or restart without --offline, \
+             to change servers."
+        );
+        #[cfg(not(feature = "nym"))]
+        assert_eq!(
+            refusal,
+            "Error: this build has no mixnet capability, so Offline Mode is its only \
+             mode; no Indexer may be configured. Rebuild with default features (plain \
+             `cargo build`, or `makers run-cli`) to go online."
         );
     }
 

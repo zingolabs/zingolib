@@ -539,34 +539,43 @@ mod typed_argument_parsing {
         assert!(parse(&["messages", "-1ZEC"]).is_err());
     }
 
-    /// HYPOTHESIS: every advertised `nym` subcommand parses in every build,
-    /// so a build without the feature refuses with the typed error instead
-    /// of a usage error.
+    /// HYPOTHESIS: the `network` command exists only with the mixnet
+    /// capability compiled in, so its subcommands parse there and nowhere
+    /// else.
+    #[cfg(feature = "nym")]
     #[test]
-    fn nym_subcommands_parse_in_every_build() {
+    fn network_subcommands_parse_with_the_capability() {
         assert_eq!(
-            parse(&["nym", "status"]).expect("nym status parses"),
-            CliCommand::Nym {
-                sub: Some(NymSubCommand::Status),
+            parse(&["network", "status"]).expect("network status parses"),
+            CliCommand::Network {
+                sub: Some(NetworkSubCommand::Status),
             }
         );
     }
+
+    /// HYPOTHESIS: the opt-out build's grammar has no `network` command,
+    /// so no command exists that could change the session's posture.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn network_is_absent_from_the_opt_out_grammar() {
+        assert!(parse(&["network", "status"]).is_err());
+    }
 }
 
-#[cfg(test)]
-mod nym_command_parsing {
-    //! Pins the clap derive grammar of the `nym` family and the pure
+#[cfg(all(test, feature = "nym"))]
+mod network_command_parsing {
+    //! Pins the clap derive grammar of the `network` family and the pure
     //! renderers whose strings every frontend shares.
 
     use super::super::*;
 
     #[cfg(feature = "nym")]
-    fn parse(args: &[&str]) -> Result<Option<NymSubCommand>, clap::Error> {
+    fn parse(args: &[&str]) -> Result<Option<NetworkSubCommand>, clap::Error> {
         use clap::Parser as _;
-        let line = std::iter::once("nym").chain(args.iter().copied());
+        let line = std::iter::once("network").chain(args.iter().copied());
         CommandLine::try_parse_from(line).map(|line| match line.command {
-            CliCommand::Nym { sub } => sub,
-            other => panic!("`nym` must parse to the nym family: {other:?}"),
+            CliCommand::Network { sub } => sub,
+            other => panic!("`network` must parse to the network family: {other:?}"),
         })
     }
 
@@ -575,8 +584,8 @@ mod nym_command_parsing {
     fn bare_parses_to_no_subcommand_and_status_to_status() {
         assert_eq!(parse(&[]).expect("a bare nym parses"), None);
         assert_eq!(
-            parse(&["status"]).expect("nym status parses"),
-            Some(NymSubCommand::Status)
+            parse(&["status"]).expect("network status parses"),
+            Some(NetworkSubCommand::Status)
         );
     }
 
@@ -584,12 +593,12 @@ mod nym_command_parsing {
     #[test]
     fn on_captures_the_optional_path() {
         assert_eq!(
-            parse(&["on"]).expect("bare nym on parses"),
-            Some(NymSubCommand::On { path: None })
+            parse(&["on"]).expect("bare network on parses"),
+            Some(NetworkSubCommand::On { path: None })
         );
         assert_eq!(
-            parse(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
-            Some(NymSubCommand::On {
+            parse(&["on", "/opt/nym-proxy"]).expect("network on with a path parses"),
+            Some(NetworkSubCommand::On {
                 path: Some("/opt/nym-proxy".to_string()),
             })
         );
@@ -606,11 +615,11 @@ mod nym_command_parsing {
     fn probe_parses_its_optional_target_and_rejects_junk() {
         assert_eq!(
             parse(&["probe"]).expect("bare probe parses"),
-            Some(NymSubCommand::Probe { target: None })
+            Some(NetworkSubCommand::Probe { target: None })
         );
         assert_eq!(
             parse(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
-            Some(NymSubCommand::Probe {
+            Some(NetworkSubCommand::Probe {
                 target: Some("https://zec.rocks:443".parse().expect("static uri")),
             })
         );
@@ -621,7 +630,7 @@ mod nym_command_parsing {
         );
         assert_eq!(
             parse(&["history"]).expect("history parses"),
-            Some(NymSubCommand::History)
+            Some(NetworkSubCommand::History)
         );
     }
 
@@ -710,16 +719,7 @@ mod nym_command_parsing {
         assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
 
-    #[cfg(not(feature = "nym"))]
-    #[test]
-    fn feature_absent_renders_byte_identically_to_the_replaced_string() {
-        assert_eq!(
-            NymCommandError::FeatureAbsent.to_string(),
-            "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
-        );
-    }
-
-    /// Pins the `nym status` mode strings via the pure renderer.
+    /// Pins the `network status` mode strings via the pure renderer.
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
@@ -728,8 +728,8 @@ mod nym_command_parsing {
         assert_eq!(
             render_status(MixnetMode::Unattached, None, None),
             "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `nym on` to enable \
-             the mixnet, or `nym off` to use clearnet.",
+             clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
+             the mixnet, or `network off` to use clearnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(
@@ -753,13 +753,13 @@ mod nym_command_parsing {
         assert_eq!(
             render_status(MixnetMode::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
-             refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
+             refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
              recover"
         );
     }
 
-    /// HYPOTHESIS: live bootstrap progress reaches the `nym status` line, so
+    /// HYPOTHESIS: live bootstrap progress reaches the `network status` line, so
     /// the connect race is narrated rather than an opaque wait. Falsified if
     /// the detail is dropped by the renderer. The detail is shown only while
     /// bootstrapping: a ready proxy has no bootstrap left to narrate.
@@ -784,7 +784,7 @@ mod nym_command_parsing {
         );
     }
 
-    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
+    /// HYPOTHESIS: `network status` always carries the IP-correlation disclaimer in
     /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
     /// protection while synchronization stays on clearnet (ZIP-0318). The mode
     /// line is preserved verbatim as the first line. Falsified if the
@@ -846,11 +846,13 @@ mod offline_contract {
     //! Deliberately untested, with the reasoning on record: `drain now`,
     //! `split now`, and `migration catchup` refuse at the transmit stage,
     //! whose pre-flight `transmit` and `quicksend` pin below (each extra
-    //! case would buy another proving run, not another guarantee); `nym on`
-    //! and `nym probe` currently carry NO offline gate (they would emit
-    //! traffic from an Offline session — a known gap tracked for the ADR
-    //! 0024 session driver), and the REPL-owned `servers` command likewise
-    //! probes the network unguarded.
+    //! case would buy another proving run, not another guarantee).
+    //! `network probe` refuses offline and is pinned below. `network on`
+    //! is deliberately untested here: it is the consent act that switches
+    //! an offline session to Online Mode (ADR 0026), and both its indexer
+    //! selection and the proxy bootstrap emit real traffic. The REPL-owned
+    //! `servers` command still probes the network unguarded; that gap
+    //! remains open.
 
     #![allow(clippy::disallowed_methods)]
 
@@ -944,19 +946,14 @@ mod offline_contract {
         );
     }
 
-    /// A build without the nym feature answers a well-formed `nym`
-    /// subcommand with the typed feature-absent refusal, not a usage error.
+    /// A build without the nym feature has no `network` command at all,
+    /// so the grammar itself refuses before any body could run.
     #[cfg(not(feature = "nym"))]
     #[test]
-    fn nym_refuses_with_the_typed_feature_absent_error() {
-        use super::super::NymCommandError;
-
-        let mut client = offline_client();
-        let error = exec(&mut client, "nym", &["status"]).expect_err("nym status must refuse");
-        assert!(matches!(
-            error,
-            CommandError::Nym(NymCommandError::FeatureAbsent)
-        ));
+    fn network_is_unknown_to_the_opt_out_build() {
+        let tokens: Vec<String> = ["network", "status"].map(String::from).into();
+        let error = parse_command_tokens(&tokens).expect_err("network status must refuse");
+        assert!(error.contains("unrecognized subcommand"), "{error}");
     }
 
     /// A fresh unified address from the wallet itself, so send-family tests
@@ -1231,13 +1228,21 @@ mod offline_contract {
             assert_unblocked_offline(&mut funded_offline_client(), "migration", &["windows"]);
         }
 
-        /// `nym status` reads the wallet's mode: an offline session never
+        /// `network status` reads the wallet's mode: an offline session never
         /// bootstraps the mixnet, so a fresh client reports unattached.
         #[cfg(feature = "nym")]
         #[test]
-        fn nym_status_reports_unattached() {
-            let output = assert_works_offline(&mut offline_client(), "nym", &["status"]);
+        fn network_status_reports_unattached() {
+            let output = assert_works_offline(&mut offline_client(), "network", &["status"]);
             assert!(output.contains("unattached"), "{output}");
+        }
+
+        /// `network probe` emits probe traffic and, unlike `network on`,
+        /// grants no consent: an Offline session refuses.
+        #[cfg(feature = "nym")]
+        #[test]
+        fn network_probe_refuses_offline() {
+            assert_refuses_offline_via_err(&mut offline_client(), "network", &["probe"]);
         }
 
         #[test]
@@ -1470,11 +1475,12 @@ mod finding_pins {
         assert_eq!(rendered, derived);
     }
 
-    const FAMILIES: [&str; 7] = [
+    const FAMILIES: &[&str] = &[
         "save",
         "settings",
         "sync",
-        "nym",
+        #[cfg(feature = "nym")]
+        "network",
         "migration",
         "drain",
         "split",
@@ -1484,7 +1490,7 @@ mod finding_pins {
     /// the grammar refuses.
     #[test]
     fn family_long_help_never_advertises_nested_help() {
-        for family in FAMILIES {
+        for &family in FAMILIES {
             let help = format_help(Some(family));
             assert!(
                 !help
@@ -1517,7 +1523,7 @@ mod finding_pins {
     /// `help <family>` lists no bare names.
     #[test]
     fn family_sub_commands_all_carry_abouts() {
-        for family in FAMILIES {
+        for &family in FAMILIES {
             let help = format_help(Some(family));
             let listing = help
                 .split("Commands:")
@@ -1590,20 +1596,20 @@ mod finding_pins {
         }
     }
 
-    /// HYPOTHESIS: in a build without the nym feature, a nym invocation
-    /// with arguments explains the feature is absent instead of grading
-    /// the arguments for a transport that was never compiled.
+    /// HYPOTHESIS: in a build without the nym feature the whole `network`
+    /// family sits outside the grammar, so an invocation with arguments
+    /// meets the unknown-command refusal and nothing ever grades them.
     #[cfg(not(feature = "nym"))]
     #[test]
-    fn nym_arguments_meet_the_absent_feature_not_the_grammar() {
+    fn network_arguments_meet_the_unknown_command_refusal() {
         use super::super::{CommandError, dispatch_parsed};
-        let rendered = match parse_command_tokens(&tokens(&["nym", "probe", "http://x.com"]))
+        let rendered = match parse_command_tokens(&tokens(&["network", "probe", "http://x.com"]))
             .map_err(CommandError::NotYetTyped)
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
         {
             Ok(output) => output,
             Err(error) => error.to_string(),
         };
-        assert!(rendered.contains("no Nym mixnet support"), "{rendered}");
+        assert!(rendered.contains("unrecognized subcommand"), "{rendered}");
     }
 }

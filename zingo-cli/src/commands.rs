@@ -110,8 +110,9 @@ async fn transmit_txids<T: ToString, E: std::fmt::Display>(
 pub enum CommandError {
     #[error(transparent)]
     Migration(#[from] MigrationCommandError),
+    #[cfg(feature = "nym")]
     #[error(transparent)]
-    Nym(#[from] NymCommandError),
+    Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
     /// Transitional quarantine for commands whose failure prose is not
@@ -294,8 +295,9 @@ async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandE
 #[cfg(not(feature = "nym"))]
 async fn current_price(_lightclient: &mut LightClient) -> Result<String, CommandError> {
     Ok(
-        "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011). \
-         Rebuild zingo-cli with `--features nym`."
+        "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011), \
+         and this build switched off the default mixnet support at build time. Rebuild with \
+         default features (plain `cargo build`, or `makers run-cli`) to compile it in."
             .to_string(),
     )
 }
@@ -1074,16 +1076,11 @@ async fn split(
 }
 
 #[cfg(feature = "nym")]
-async fn nym(
-    sub: Option<NymSubCommand>,
+async fn network(
+    sub: Option<NetworkSubCommand>,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    Ok(nym_command(sub.unwrap_or(NymSubCommand::Status), lightclient).await?)
-}
-
-#[cfg(not(feature = "nym"))]
-async fn nym(_lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Err(CommandError::Nym(NymCommandError::FeatureAbsent))
+    Ok(network_command(sub.unwrap_or(NetworkSubCommand::Status), lightclient).await?)
 }
 
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
@@ -1091,7 +1088,7 @@ async fn nym(_lightclient: &mut LightClient) -> Result<String, CommandError> {
 /// (where the `bundle-nym-proxy` workbench tool places the binary).
 /// [`zingolib::nym::provision`] owns the precedence rule and its tests
 /// (ADR 0024); this names only what zingolib cannot know by itself. Shared
-/// by the session driver call at startup and the `nym on` command.
+/// by the session driver call at startup and the `network on` command.
 #[cfg(feature = "nym")]
 pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::SpawnHints<'_> {
     use zingolib::nym::provision::{self, SpawnHints};
@@ -1102,20 +1099,39 @@ pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::S
 }
 
 /// Resolve the `nym-proxy` binary path from this consumer's
-/// [`spawn_hints`], for the `nym on` command's in-session enable.
+/// [`spawn_hints`], for the `network on` command's in-session enable.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
-/// Typed failure of the `nym` command family, each variant existing only
-/// in the build that can produce it.
+/// Typed failure of the `network` command family. The family exists only
+/// with the mixnet capability compiled in: a build without it has no
+/// `network` command, because Offline Mode is the only mode such a build
+/// can be in (ADR 0026).
+#[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
-pub enum NymCommandError {
-    #[cfg(not(feature = "nym"))]
-    #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
-    FeatureAbsent,
-    #[cfg(feature = "nym")]
+pub enum NetworkCommandError {
+    /// Always carries [`LightClientError::Offline`], zingolib's single
+    /// minted offline-refusal string: `network probe` would emit traffic,
+    /// which an Offline session forbids. Unlike `network on` — the consent
+    /// act that switches the session to Online Mode (ADR 0026) — probing
+    /// grants nothing.
+    ///
+    /// [`LightClientError::Offline`]: zingolib::lightclient::error::LightClientError::Offline
+    #[error(transparent)]
+    Offline(zingolib::lightclient::error::LightClientError),
+    /// The `network on` consent act could not resolve any indexer URI while
+    /// switching the session to Online Mode; the session stays offline.
+    #[error("no indexer could be resolved for going online: {0}")]
+    ServerResolution(#[from] http::uri::InvalidUri),
+    /// The `network on` consent act selected an indexer, but the connection
+    /// failed; the session stays offline.
+    #[error("failed to connect to '{uri}' while switching to Online Mode: {source}")]
+    GoOnline {
+        uri: String,
+        source: zingolib::netutils::GetClientError,
+    },
     #[error("failed to start the nym proxy at '{path}': {source}")]
     ProxyStart {
         path: String,
@@ -1123,10 +1139,10 @@ pub enum NymCommandError {
     },
 }
 
-/// A parsed `nym` command, its arguments parsed completely at the clap
+/// A parsed `network` command, its arguments parsed completely at the clap
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum NymSubCommand {
+pub(crate) enum NetworkSubCommand {
     #[command(about = "Report the mixnet state: off, bootstrapping, or ready")]
     Status,
     #[command(about = "Start the nym-proxy child and route transmissions through the mixnet")]
@@ -1185,7 +1201,7 @@ fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
     )
 }
 
-/// Renders the accumulated record for `nym history` when the indexer diary is
+/// Renders the accumulated record for `network history` when the indexer diary is
 /// compiled in, reminding an opted-out session how recording starts.
 #[cfg(all(feature = "nym", feature = "nym-diary"))]
 fn nym_history_command(lightclient: &LightClient) -> String {
@@ -1203,7 +1219,7 @@ fn nym_history_command(lightclient: &LightClient) -> String {
     rendered
 }
 
-/// The `nym history` body when the indexer diary is not compiled in.
+/// The `network history` body when the indexer diary is not compiled in.
 #[cfg(all(feature = "nym", not(feature = "nym-diary")))]
 fn nym_history_command(_lightclient: &LightClient) -> String {
     "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
@@ -1286,7 +1302,7 @@ fn render_history(
     lines.join("\n")
 }
 
-/// Render the `nym status` line for a Mixnet Mode, the live bootstrap
+/// Render the `network status` line for a Mixnet Mode, the live bootstrap
 /// progress while bootstrapping, and the local SOCKS5 address when ready.
 /// Pure, so the user-facing mode strings are pinned by unit tests and
 /// reusable by any other frontend.
@@ -1301,7 +1317,7 @@ fn render_status(
     match mode {
         MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
              and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `nym on` to enable the mixnet, or `nym off` to use clearnet."
+             `network on` to enable the mixnet, or `network off` to use clearnet."
             .to_string(),
         MixnetMode::SwitchedOff => {
             "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
@@ -1319,13 +1335,13 @@ fn render_status(
             None => "Mixnet Mode: ready".to_string(),
         },
         MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
-             price-fetch refuse and will not fall back to clearnet. Run `nym on` to \
+             price-fetch refuse and will not fall back to clearnet. Run `network on` to \
              restart the proxy."
             .to_string(),
     }
 }
 
-/// The complete `nym status` output: the Mixnet Mode line followed by the
+/// The complete `network status` output: the Mixnet Mode line followed by the
 /// IP-correlation disclaimer. The disclaimer always accompanies the status
 /// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
 /// synchronization stays on the ordinary connector, so a bare "ready" must
@@ -1345,37 +1361,71 @@ fn render_status_with_disclaimer(
     )
 }
 
-/// The body of the `nym` command when the mixnet transport is compiled in.
+/// The body of the `network` command; the command exists only with the
+/// mixnet transport compiled in (ADR 0026).
 #[cfg(feature = "nym")]
-async fn nym_command(
-    sub: NymSubCommand,
+async fn network_command(
+    sub: NetworkSubCommand,
     lightclient: &mut LightClient,
-) -> Result<String, NymCommandError> {
+) -> Result<String, NetworkCommandError> {
     match sub {
-        NymSubCommand::Status => Ok(render_status_with_disclaimer(
+        NetworkSubCommand::Status => Ok(render_status_with_disclaimer(
             lightclient.mixnet_mode(),
             lightclient.mixnet_socks5_addr().as_deref(),
             lightclient.mixnet_bootstrap_detail().as_deref(),
         )),
-        NymSubCommand::On { path } => {
+        NetworkSubCommand::On { path } => {
+            // In an offline session, `network on` is itself the
+            // Connectivity Consent act (ADR 0026, amending ADR 0025's
+            // act list): the session switches to Online Mode for this
+            // session only, resolving its indexer over the same curated
+            // ranking `--online` uses at launch — and only then, in the
+            // launch order, bootstraps the mixnet.
+            let went_online = if lightclient.indexer_uri().is_none() {
+                let (server, _ranked) = crate::server_select::resolve_ranked_server().await?;
+                lightclient
+                    .set_indexer_uri(server.clone())
+                    .await
+                    .map_err(|source| NetworkCommandError::GoOnline {
+                        uri: server.to_string(),
+                        source,
+                    })?;
+                Some(server)
+            } else {
+                None
+            };
             let path = resolve_proxy_path(path.as_deref());
             lightclient
                 .enable_mixnet(std::path::Path::new(&path))
                 .await
-                .map_err(|source| NymCommandError::ProxyStart {
+                .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
                     source,
                 })?;
-            Ok(format!(
+            let enabling = format!(
                 "Mixnet Mode enabling; the nym proxy at '{path}' is bootstrapping. \
-                 Run `nym status` to check readiness."
-            ))
+                 Run `network status` to check readiness."
+            );
+            Ok(match went_online {
+                Some(server) => format!(
+                    "WARNING: this consent act switched the session to ONLINE MODE \
+                     (this session only); indexer '{server}'. {enabling}"
+                ),
+                None => enabling,
+            })
         }
-        NymSubCommand::Off => {
+        NetworkSubCommand::Off => {
             lightclient.disable_mixnet().await;
             Ok("Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string())
         }
-        NymSubCommand::Probe { target } => {
+        NetworkSubCommand::Probe { target } => {
+            // Probing emits network traffic and, unlike `network on`,
+            // grants no consent; an Offline session refuses.
+            if lightclient.indexer_uri().is_none() {
+                return Err(NetworkCommandError::Offline(
+                    zingolib::lightclient::error::LightClientError::Offline,
+                ));
+            }
             let probes = lightclient
                 .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
                 .await;
@@ -1385,7 +1435,7 @@ async fn nym_command(
                 .collect::<Vec<_>>()
                 .join("\n"))
         }
-        NymSubCommand::History => Ok(nym_history_command(lightclient)),
+        NetworkSubCommand::History => Ok(nym_history_command(lightclient)),
     }
 }
 
@@ -2131,6 +2181,42 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         sub: MigrationSubCommand,
     },
+    // Without the mixnet capability there is no `network` command at all:
+    // Offline Mode is the only mode such a build can be in (ADR 0026), so
+    // no command may exist that could change the session's posture.
+    #[cfg(feature = "nym")]
+    #[command(
+        about = "Control the network posture and mixnet transport; `network on` switches an \
+                 offline session to ONLINE MODE.",
+        long_about = indoc! {r"
+            Control the session's network posture and its mixnet transport
+            (the mixnet is Nym; the name is implicit).
+
+            With Mixnet Mode on, send and price-fetch route over the mixnet and
+            fail closed while it bootstraps, never falling back to clearnet.
+            Turning it off is a deliberate choice to transmit over clearnet.
+
+            WARNING: in an offline session, `network on` is itself the consent
+            act: it switches the session to ONLINE MODE, for this session only.
+            The session selects an indexer over the same curated ranking that
+            `--online` uses at launch, and only then bootstraps the mixnet
+            (ADR 0026).
+
+            `status` reports off, bootstrapping or ready. `on` starts the
+            nym-proxy child, taking the binary from the given path, else
+            $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
+            `off` reverts to clearnet without leaving ONLINE MODE. `probe` runs
+            GetLightdInfo over both routes side by side to tell whether a
+            failure is mixnet-specific, and its clearnet leg uses your real IP;
+            an offline session refuses it. `history` shows per-indexer attempts
+            across sessions, and needs the nym-diary feature plus
+            --indexer-diary.
+        "}
+    )]
+    Network {
+        #[command(subcommand)]
+        sub: Option<NetworkSubCommand>,
+    },
     #[command(
         about = "Create a new unified address.",
         long_about = indoc! {r"
@@ -2170,28 +2256,6 @@ pub(crate) enum CliCommand {
     Notes {
         #[arg(value_enum)]
         scope: Option<OutputScope>,
-    },
-    #[command(
-        about = "Control the Nym mixnet transport (on/off/status/probe/history).",
-        long_about = indoc! {r"
-            Control the Nym mixnet transport for send and price-fetch.
-
-            With Mixnet Mode on, both route over the mixnet and fail closed while it
-            bootstraps, never falling back to clearnet. Turning it off is a deliberate
-            choice to transmit over clearnet.
-
-            `status` reports off, bootstrapping or ready. `on` starts the nym-proxy
-            child, taking the binary from the given path, else $ZINGO_NYM_PROXY, else
-            one bundled beside this binary, else PATH. `off` reverts to clearnet.
-            `probe` runs GetLightdInfo over both routes side by side to tell whether a
-            failure is mixnet-specific, and its clearnet leg uses your real IP.
-            `history` shows per-indexer attempts across sessions, and needs the
-            nym-diary feature plus --indexer-diary.
-        "}
-    )]
-    Nym {
-        #[command(subcommand)]
-        sub: Option<NymSubCommand>,
     },
     #[command(
         about = "Parse an address",
@@ -2507,11 +2571,12 @@ impl CliCommand {
             CliCommand::Messages { .. } => "Messages",
             CliCommand::Migrate => "Migrate",
             CliCommand::Migration { .. } => "Migration",
+            #[cfg(feature = "nym")]
+            CliCommand::Network { .. } => "Network",
             CliCommand::NewAddress { .. } => "NewAddress",
             CliCommand::NewTaddress => "NewTaddress",
             CliCommand::NewTaddressAllowGap => "NewTaddressAllowGap",
             CliCommand::Notes { .. } => "Notes",
-            CliCommand::Nym { .. } => "Nym",
             CliCommand::ParseAddress { .. } => "ParseAddress",
             CliCommand::ParseViewkey { .. } => "ParseViewkey",
             CliCommand::Quicksend { .. } => "Quicksend",
@@ -2567,6 +2632,8 @@ impl CliCommand {
             | CliCommand::ParseViewkey { .. }
             | CliCommand::Servers
             | CliCommand::Version => false,
+            #[cfg(feature = "nym")]
+            CliCommand::Network { .. } => true,
             CliCommand::Addresses
             | CliCommand::Balance
             | CliCommand::Birthday
@@ -2591,7 +2658,6 @@ impl CliCommand {
             | CliCommand::NewTaddress
             | CliCommand::NewTaddressAllowGap
             | CliCommand::Notes { .. }
-            | CliCommand::Nym { .. }
             | CliCommand::Quicksend { .. }
             | CliCommand::Quickshield
             | CliCommand::Quit
@@ -2698,6 +2764,8 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Migration {
             sub: MigrationSubCommand::Plan,
         },
+        #[cfg(feature = "nym")]
+        CliCommand::Network { sub: None },
         CliCommand::NewAddress {
             receivers: ReceiverSelection {
                 orchard: true,
@@ -2707,7 +2775,6 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::NewTaddress,
         CliCommand::NewTaddressAllowGap,
         CliCommand::Notes { scope: None },
-        CliCommand::Nym { sub: None },
         CliCommand::ParseAddress {
             address: String::new(),
         },
@@ -2843,9 +2910,7 @@ pub(crate) async fn dispatch_parsed(
         CliCommand::NewTaddressAllowGap => taddress(lightclient, false).await,
         CliCommand::Notes { scope } => notes(scope, lightclient).await,
         #[cfg(feature = "nym")]
-        CliCommand::Nym { sub } => nym(sub, lightclient).await,
-        #[cfg(not(feature = "nym"))]
-        CliCommand::Nym { .. } => nym(lightclient).await,
+        CliCommand::Network { sub } => network(sub, lightclient).await,
         CliCommand::ParseAddress { address } => parse_address(&address),
         CliCommand::ParseViewkey { viewkey } => parse_viewkey(&viewkey),
         CliCommand::Quicksend { args } => quicksend(&name, &args, lightclient).await,
