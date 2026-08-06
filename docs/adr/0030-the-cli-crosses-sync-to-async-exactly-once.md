@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-08-05
+amended: 2026-08-05
 ---
 
 # The CLI crosses sync to async exactly once, dispatching from a static command table
@@ -70,3 +71,21 @@ transmit heartbeat) becomes async-native and composable, which is what the
 `network on` consent flow of ADR 0026 needs. The failure contract for string
 frontends — what a failing command prints, and on which stream — is unblocked
 by this decision but is a separate ruling, recorded when ratified.
+
+## Amendment (2026-08-05): the clap grammar replaces the table
+
+The clap conversion (PR #2630) retired the registry machinery this record
+prescribes, having first built it as decided. The static `CommandSpec` slice,
+the `CommandBody` enum, and the `wallet!`/`standalone!` macros dissolved into
+a single `#[derive(clap::Subcommand)]` `CliCommand` enum: the variant
+identifier mints the command's name, typed fields carry its arguments, and
+dispatch is an exhaustive match, so the divergences the table was built to
+prevent remain impossible by construction. `do_user_command` is deleted. The
+command channel carries a parsed `CliCommand`, so no string dispatch exists
+below the seam at all.
+
+The core ruling stands unchanged. Command bodies are ordinary `async`
+functions returning typed results, the sync world crosses into async only at
+the audited seams (the command loop's two `block_on` calls, the startup
+driver, and the server-resolution entry), and the Clippy `disallowed-methods`
+rule continues to enforce the invariant everywhere else in the crate.

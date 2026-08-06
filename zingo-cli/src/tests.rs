@@ -10,6 +10,7 @@ fn parse(args: &[&str]) -> clap::ArgMatches {
 
 mod mode_of_operation {
     use super::*;
+    use crate::commands::CliCommand;
     use crate::{ModeOfOperation, get_mode_of_operation};
 
     fn assert_interactive(args: &[&str]) {
@@ -20,14 +21,11 @@ mod mode_of_operation {
         );
     }
 
-    fn assert_command(args: &[&str], expected_name: &str, expected_args: &[&str]) {
+    fn assert_command(args: &[&str], expected: CliCommand) {
         let matches = parse(args);
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command {
-                name: expected_name.to_string(),
-                args: expected_args.iter().map(|s| s.to_string()).collect(),
-            }
+            ModeOfOperation::Command { command: expected }
         );
     }
 
@@ -36,9 +34,27 @@ mod mode_of_operation {
         assert_interactive(&[examples::BIN_NAME]);
     }
 
+    /// A session flag binds before the command name and refuses after it.
+    #[test]
+    fn session_flags_precede_the_command_name() {
+        let matches = parse(&[examples::BIN_NAME, "--nosync", "balance"]);
+        assert!(matches.get_flag("nosync"));
+        assert_eq!(
+            get_mode_of_operation(&matches),
+            ModeOfOperation::Command {
+                command: CliCommand::Balance
+            }
+        );
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "balance", "--nosync"])
+                .is_err()
+        );
+    }
+
     #[test]
     fn command_without_extra_args() {
-        assert_command(&[examples::BIN_NAME, "balance"], "balance", &[]);
+        assert_command(&[examples::BIN_NAME, "balance"], CliCommand::Balance);
     }
 
     #[test]
@@ -50,8 +66,12 @@ mod mode_of_operation {
                 examples::SAPLING_ADDRESS,
                 examples::AMOUNT_ZATOSHIS,
             ],
-            "send",
-            &[examples::SAPLING_ADDRESS, examples::AMOUNT_ZATOSHIS],
+            CliCommand::Send {
+                args: vec![
+                    examples::SAPLING_ADDRESS.to_string(),
+                    examples::AMOUNT_ZATOSHIS.to_string(),
+                ],
+            },
         );
     }
 
@@ -60,7 +80,10 @@ mod mode_of_operation {
         // `help` is handled by `parse_args_or_exit_for_help` in main.rs before
         // `get_mode_of_operation` is called, but if it were passed through
         // it would produce a normal Command variant.
-        assert_command(&[examples::BIN_NAME, "help"], "help", &[]);
+        assert_command(
+            &[examples::BIN_NAME, "help"],
+            CliCommand::Help { command: None },
+        );
     }
 
     #[test]
@@ -70,15 +93,20 @@ mod mode_of_operation {
 
     #[test]
     fn flags_do_not_affect_mode_command() {
-        assert_command(&[examples::BIN_NAME, "--nosync", "balance"], "balance", &[]);
+        assert_command(
+            &[examples::BIN_NAME, "--nosync", "balance"],
+            CliCommand::Balance,
+        );
     }
 
     mod commands {
         use super::*;
+        use crate::commands::{SaveSubCommand, SyncSubCommand};
+        use zingolib::wallet::keys::unified::ReceiverSelection;
 
-        /// Assert that a command with no extra args parses correctly.
-        fn assert_no_arg_command(name: &str) {
-            assert_command(&[examples::BIN_NAME, name], name, &[]);
+        /// Assert that a command with no arguments parses to its variant.
+        fn assert_no_arg_command(name: &str, expected: CliCommand) {
+            assert_command(&[examples::BIN_NAME, name], expected);
         }
 
         #[test]
@@ -91,12 +119,13 @@ mod mode_of_operation {
                     examples::AMOUNT_ZATOSHIS,
                     examples::MEMO,
                 ],
-                "send",
-                &[
-                    examples::SAPLING_ADDRESS,
-                    examples::AMOUNT_ZATOSHIS,
-                    examples::MEMO,
-                ],
+                CliCommand::Send {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::AMOUNT_ZATOSHIS.to_string(),
+                        examples::MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -109,8 +138,12 @@ mod mode_of_operation {
                     examples::SAPLING_ADDRESS,
                     examples::SEND_ALL_MEMO,
                 ],
-                "send_all",
-                &[examples::SAPLING_ADDRESS, examples::SEND_ALL_MEMO],
+                CliCommand::SendAll {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::SEND_ALL_MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -124,12 +157,13 @@ mod mode_of_operation {
                     examples::AMOUNT_ZATOSHIS,
                     examples::MEMO,
                 ],
-                "quicksend",
-                &[
-                    examples::SAPLING_ADDRESS,
-                    examples::AMOUNT_ZATOSHIS,
-                    examples::MEMO,
-                ],
+                CliCommand::Quicksend {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::AMOUNT_ZATOSHIS.to_string(),
+                        examples::MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -141,8 +175,9 @@ mod mode_of_operation {
                     "parse_address",
                     examples::TRANSPARENT_ADDRESS,
                 ],
-                "parse_address",
-                &[examples::TRANSPARENT_ADDRESS],
+                CliCommand::ParseAddress {
+                    address: examples::TRANSPARENT_ADDRESS.to_string(),
+                },
             );
         }
 
@@ -154,8 +189,9 @@ mod mode_of_operation {
                     "parse_viewkey",
                     examples::UNIFIED_VIEWING_KEY,
                 ],
-                "parse_viewkey",
-                &[examples::UNIFIED_VIEWING_KEY],
+                CliCommand::ParseViewkey {
+                    viewkey: examples::UNIFIED_VIEWING_KEY.to_string(),
+                },
             );
         }
 
@@ -163,137 +199,173 @@ mod mode_of_operation {
         fn change_server() {
             assert_command(
                 &[examples::BIN_NAME, "change_server", examples::SERVER_URI],
-                "change_server",
-                &[examples::SERVER_URI],
+                CliCommand::ChangeServer {
+                    uri: Some(examples::SERVER_URI.parse().expect("a valid example uri")),
+                },
             );
         }
 
         #[test]
         fn sync() {
-            assert_command(&[examples::BIN_NAME, "sync", "run"], "sync", &["run"]);
+            assert_command(
+                &[examples::BIN_NAME, "sync", "run"],
+                CliCommand::Sync {
+                    sub: SyncSubCommand::Run,
+                },
+            );
         }
 
         #[test]
         fn new_address() {
             assert_command(
                 &[examples::BIN_NAME, "new_address", "o"],
-                "new_address",
-                &["o"],
+                CliCommand::NewAddress {
+                    receivers: ReceiverSelection {
+                        orchard: true,
+                        sapling: false,
+                    },
+                },
             );
         }
 
         #[test]
         fn balance() {
-            assert_no_arg_command("balance");
+            assert_no_arg_command("balance", CliCommand::Balance);
         }
 
         #[test]
         fn confirm() {
-            assert_no_arg_command("confirm");
+            assert_no_arg_command("confirm", CliCommand::Confirm);
         }
 
         #[test]
         fn calculate() {
-            assert_no_arg_command("calculate");
+            assert_no_arg_command("calculate", CliCommand::Calculate);
         }
 
         #[test]
         fn transmit() {
-            assert_no_arg_command("transmit");
+            assert_no_arg_command("transmit", CliCommand::Transmit { txids: vec![] });
         }
 
         #[test]
         fn transmit_with_txids() {
+            let txid = zingolib::utils::conversion::txid_from_hex_encoded_str(examples::TXID)
+                .expect("a valid example txid");
             assert_command(
                 &[examples::BIN_NAME, "transmit", examples::TXID],
-                "transmit",
-                &[examples::TXID],
+                CliCommand::Transmit { txids: vec![txid] },
             );
         }
 
         #[test]
         fn shield() {
-            assert_no_arg_command("shield");
+            assert_no_arg_command("shield", CliCommand::Shield);
         }
 
         #[test]
         fn height() {
-            assert_no_arg_command("height");
+            assert_no_arg_command("height", CliCommand::Height);
         }
 
         #[test]
         fn info() {
-            assert_no_arg_command("info");
+            assert_no_arg_command("info", CliCommand::Info);
         }
 
         #[test]
         fn addresses() {
-            assert_no_arg_command("addresses");
+            assert_no_arg_command("addresses", CliCommand::Addresses);
         }
 
+        /// `save` names its sub-command: the grammar requires one, so the
+        /// process's own argument parse refuses a bare `save`.
         #[test]
         fn save() {
-            assert_no_arg_command("save");
+            assert_command(
+                &[examples::BIN_NAME, "save", "run"],
+                CliCommand::Save {
+                    sub: SaveSubCommand::Run,
+                },
+            );
         }
 
         #[test]
         fn quit() {
-            assert_no_arg_command("quit");
+            assert_no_arg_command("quit", CliCommand::Quit);
+        }
+
+        /// `exit` is an alias of `quit`, so it parses to the same variant
+        /// and the one-shot flow quits cleanly instead of erroring.
+        #[test]
+        fn exit_is_an_alias_of_quit() {
+            assert_no_arg_command("exit", CliCommand::Quit);
         }
 
         #[test]
         fn notes() {
-            assert_no_arg_command("notes");
+            assert_no_arg_command("notes", CliCommand::Notes { scope: None });
         }
 
         #[test]
         fn version() {
-            assert_no_arg_command("version");
+            assert_no_arg_command("version", CliCommand::Version);
         }
 
         #[test]
         fn rescan() {
-            assert_no_arg_command("rescan");
+            assert_no_arg_command("rescan", CliCommand::Rescan);
         }
 
         #[test]
         fn export_ufvk() {
-            assert_no_arg_command("export_ufvk");
+            assert_no_arg_command("export_ufvk", CliCommand::ExportUfvk);
         }
 
         #[test]
         fn settings() {
-            assert_no_arg_command("settings");
+            assert_no_arg_command("settings", CliCommand::Settings { sub: None });
         }
 
         #[test]
         fn value_transfers() {
-            assert_no_arg_command("value_transfers");
+            assert_no_arg_command("value_transfers", CliCommand::ValueTransfers);
         }
 
         #[test]
         fn transactions() {
-            assert_no_arg_command("transactions");
+            assert_no_arg_command("transactions", CliCommand::Transactions);
         }
 
         #[test]
         fn quickshield() {
-            assert_no_arg_command("quickshield");
+            assert_no_arg_command("quickshield", CliCommand::Quickshield);
         }
 
         #[test]
         fn wallet_kind() {
-            assert_no_arg_command("wallet_kind");
+            assert_no_arg_command("wallet_kind", CliCommand::WalletKind);
         }
 
         #[test]
         fn birthday() {
-            assert_no_arg_command("birthday");
+            assert_no_arg_command("birthday", CliCommand::Birthday);
         }
 
         #[test]
         fn delete() {
-            assert_no_arg_command("delete");
+            assert_no_arg_command("delete", CliCommand::Delete);
+        }
+
+        /// A command the grammar does not know now refuses at the process's
+        /// own argument parse, before any wallet work begins.
+        #[test]
+        fn an_unknown_command_refuses_at_the_argument_parse() {
+            assert!(
+                build_clap_app()
+                    .try_get_matches_from([examples::BIN_NAME, "nonesuch"])
+                    .is_err()
+            );
         }
     }
 }
@@ -325,7 +397,10 @@ mod communication_mode {
     #[test]
     fn first_boot_without_consent_is_offline() {
         let dir = scratch_dir();
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     #[test]
@@ -333,12 +408,13 @@ mod communication_mode {
         let dir = scratch_dir();
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::Offline
+            CommunicationMode::DeliberateOffline
         );
     }
 
     /// The per-session consent act: --online takes this session online and
     /// stores nothing, so the next default launch is offline again.
+    #[cfg(feature = "nym")]
     #[test]
     fn online_flag_consents_this_session_only() {
         let dir = scratch_dir();
@@ -348,13 +424,14 @@ mod communication_mode {
         );
         assert_eq!(
             mode_with_dir(&dir, &[]),
-            CommunicationMode::Offline,
+            CommunicationMode::UnconsentedOffline,
             "an un-stored act must not outlive its session"
         );
     }
 
     /// Naming an endpoint is consenting to connect to it: an explicit
     /// --server is a consent act (ADR 0025).
+    #[cfg(feature = "nym")]
     #[test]
     fn an_explicit_server_is_a_consent_act() {
         let dir = scratch_dir();
@@ -366,6 +443,7 @@ mod communication_mode {
 
     /// The standing choice: --remember-online stores the consent, and a
     /// later launch with no acts attaches automatically.
+    #[cfg(feature = "nym")]
     #[test]
     fn remember_online_stores_the_standing_choice() {
         let dir = scratch_dir();
@@ -382,19 +460,24 @@ mod communication_mode {
 
     /// --forget-online removes the standing choice: the forgetting session
     /// runs offline (no other act was expressed), and so does the next.
+    #[cfg(feature = "nym")]
     #[test]
     fn forget_online_returns_the_store_to_first_boot() {
         let dir = scratch_dir();
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--forget-online"]),
-            CommunicationMode::Offline
+            CommunicationMode::UnconsentedOffline
         );
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     /// Forgetting the store and consenting for the session compose: the
     /// launch goes online once while the standing choice dies.
+    #[cfg(feature = "nym")]
     #[test]
     fn forget_online_composes_with_a_session_act() {
         let dir = scratch_dir();
@@ -403,18 +486,79 @@ mod communication_mode {
             mode_with_dir(&dir, &["--forget-online", "--online"]),
             CommunicationMode::Online
         );
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     /// The deliberate --offline outranks even a stored standing choice.
+    #[cfg(feature = "nym")]
     #[test]
     fn offline_flag_wins_over_the_stored_choice() {
         let dir = scratch_dir();
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::Offline
+            CommunicationMode::DeliberateOffline
         );
+    }
+
+    /// Without the mixnet capability, Offline Mode is the only mode (ADR
+    /// 0026): every online act refuses, a stored standing consent is
+    /// inert, and `--forget-online` still retires it.
+    #[cfg(not(feature = "nym"))]
+    mod offline_only {
+        use super::*;
+
+        #[test]
+        fn every_online_act_refuses() {
+            let dir = scratch_dir();
+            for act in [
+                vec!["--online"],
+                vec!["--remember-online"],
+                vec!["--server", examples::SERVER_URI],
+            ] {
+                let mut args = vec![
+                    examples::BIN_NAME,
+                    "--data-dir",
+                    dir.path().to_str().expect("utf-8 temp path"),
+                ];
+                args.extend(act.iter());
+                let err = get_communication_mode(&parse(&args))
+                    .expect_err("an offline-only build must refuse every online act");
+                assert!(
+                    err.to_string().contains("Offline Mode is its only mode"),
+                    "{err}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_stored_standing_consent_is_inert() {
+            let dir = scratch_dir();
+            zingolib::connectivity::store_standing_online(dir.path())
+                .expect("the store writes in a scratch directory");
+            assert_eq!(
+                mode_with_dir(&dir, &[]),
+                CommunicationMode::UnconsentedOffline
+            );
+        }
+
+        #[test]
+        fn forget_online_still_retires_a_stored_consent() {
+            let dir = scratch_dir();
+            zingolib::connectivity::store_standing_online(dir.path())
+                .expect("the store writes in a scratch directory");
+            assert_eq!(
+                mode_with_dir(&dir, &["--forget-online"]),
+                CommunicationMode::UnconsentedOffline
+            );
+            assert!(matches!(
+                zingolib::connectivity::load_connectivity_consent(dir.path()),
+                zingolib::connectivity::ConnectivityConsent::Unrecorded
+            ));
+        }
     }
 
     #[test]
@@ -607,7 +751,10 @@ mod config_template {
         #[test]
         fn fill_resolves_no_server_and_disables_sync() {
             let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
-            assert_eq!(config.communication_mode, CommunicationMode::Offline);
+            assert_eq!(
+                config.communication_mode,
+                CommunicationMode::DeliberateOffline
+            );
             assert!(config.server.is_none());
             assert!(!config.sync, "an Offline-mode session cannot sync");
         }
@@ -678,8 +825,14 @@ mod config_template {
 
     mod happy_paths {
         use super::*;
+        // Consumed only by the nym-gated `defaults` test: the offline-only
+        // build never reaches an Online communication mode (ADR 0026).
+        #[cfg(feature = "nym")]
         use crate::CommunicationMode;
 
+        /// An explicit `--server` is an online act, which only nym builds
+        /// accept (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn defaults() {
             let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
@@ -694,6 +847,10 @@ mod config_template {
             assert!(matches!(config.mode, ModeOfOperation::Interactive));
         }
 
+        /// `--online` exists as a consented act only in nym builds; the
+        /// offline-only build refuses it (ADR 0026), pinned in
+        /// `online_acts_refuse_in_the_offline_only_build`.
+        #[cfg(feature = "nym")]
         #[test]
         fn nosync_flag() {
             // --online keeps this a test of the flag, not of the offline
@@ -702,6 +859,9 @@ mod config_template {
             assert!(!config.sync);
         }
 
+        /// `--online` exists as a consented act only in nym builds; the
+        /// offline-only build refuses it (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn waitsync_flag() {
             let config = fill(&[examples::BIN_NAME, "--online", "--waitsync"]).unwrap();
@@ -740,8 +900,7 @@ mod config_template {
             assert_eq!(
                 config.mode,
                 ModeOfOperation::Command {
-                    name: "balance".to_string(),
-                    args: vec![],
+                    command: crate::commands::CliCommand::Balance,
                 }
             );
         }
@@ -788,6 +947,10 @@ mod config_template {
             assert!(err.contains("bogus"));
         }
 
+        /// The URI shape check sits on the online resolution path, which
+        /// only nym builds reach: the offline-only build refuses the
+        /// `--server` act before any URI is inspected (ADR 0026).
+        #[cfg(feature = "nym")]
         #[test]
         fn server_missing_port() {
             let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
@@ -808,6 +971,9 @@ mod config_template {
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
 
+        /// Going online at all requires the mixnet capability (ADR 0026),
+        /// so the propagation contract exists only in nym builds.
+        #[cfg(feature = "nym")]
         #[test]
         fn default_server_is_propagated() {
             // --online is the consent act (ADR 0025); the default server
@@ -827,6 +993,9 @@ mod config_template {
             );
         }
 
+        /// Going online at all requires the mixnet capability (ADR 0026),
+        /// so the propagation contract exists only in nym builds.
+        #[cfg(feature = "nym")]
         #[test]
         fn custom_server_is_propagated() {
             let zc = fill_and_build(&[
@@ -844,6 +1013,26 @@ mod config_template {
                 "expected URI to start with {}, got: {uri}",
                 examples::SERVER_URI
             );
+        }
+
+        /// Without the mixnet capability, Offline Mode is the only mode
+        /// (ADR 0026): every online launch act refuses instead of
+        /// configuring a server.
+        #[cfg(not(feature = "nym"))]
+        #[test]
+        fn online_acts_refuse_in_the_offline_only_build() {
+            for act in [
+                vec!["--online"],
+                vec!["--remember-online"],
+                vec!["--server", examples::SERVER_URI],
+            ] {
+                let mut args = vec![examples::BIN_NAME];
+                args.extend(act.iter());
+                args.extend(["--seed", HOSPITAL_MUSEUM_SEED, "--birthday", "1"]);
+                let err =
+                    fill(&args).expect_err("an offline-only build must refuse every online act");
+                assert!(err.contains("Offline Mode is its only mode"), "{err}");
+            }
         }
 
         #[test]
@@ -904,35 +1093,164 @@ mod config_template {
 }
 
 mod offline_mode_pin {
-    //! The REPL-dispatch half of the Offline-mode contract (issue #2286):
-    //! `change_server` is refused before command execution, since an
-    //! Offline session may never configure an Indexer. The command-surface
-    //! half lives in `commands::offline_contract`.
+    //! The dispatch half of the Offline-mode contract (ADR 0032): an
+    //! offline posture refuses the whole network-requiring surface before
+    //! command execution, naming the live remedy, and spares every
+    //! Indexerless capability. The command-surface half lives in
+    //! `commands::offline_contract`.
 
+    use crate::commands::{
+        CliCommand, DrainSubCommand, MigrationSubCommand, SplitSubCommand, SyncSubCommand,
+    };
     use crate::{CommunicationMode, offline_mode_refusal};
 
+    /// One sample per network-requiring shape the gate must refuse.
+    fn network_requiring() -> Vec<CliCommand> {
+        vec![
+            CliCommand::ChangeServer { uri: None },
+            CliCommand::Confirm,
+            CliCommand::CurrentPrice,
+            CliCommand::Info,
+            CliCommand::Migrate,
+            CliCommand::Quicksend { args: Vec::new() },
+            CliCommand::Quickshield,
+            CliCommand::Rescan,
+            CliCommand::Transmit { txids: Vec::new() },
+            CliCommand::Sync {
+                sub: SyncSubCommand::Run,
+            },
+            CliCommand::Drain {
+                sub: DrainSubCommand::Now,
+            },
+            CliCommand::Split {
+                sub: SplitSubCommand::Now,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Continue,
+            },
+        ]
+    }
+
+    /// One sample per Indexerless capability the gate must always spare.
+    fn indexerless() -> Vec<CliCommand> {
+        vec![
+            CliCommand::Balance,
+            CliCommand::Calculate,
+            CliCommand::Height,
+            CliCommand::Help { command: None },
+            CliCommand::Send { args: Vec::new() },
+            CliCommand::Servers,
+            CliCommand::Sync {
+                sub: SyncSubCommand::Status,
+            },
+            CliCommand::Drain {
+                sub: DrainSubCommand::Plan,
+            },
+            CliCommand::Split {
+                sub: SplitSubCommand::Plan,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Plan,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Status,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Windows,
+            },
+            CliCommand::Version,
+        ]
+    }
+
+    /// HYPOTHESIS: both offline postures refuse every network-requiring
+    /// command at the gate, and each refusal names the posture's remedy.
     #[test]
-    fn offline_mode_refuses_change_server_before_dispatch() {
-        let refusal = offline_mode_refusal(CommunicationMode::Offline, "change_server")
-            .expect("an Offline session must refuse change_server");
+    fn offline_postures_refuse_the_network_requiring_surface() {
+        for command in network_requiring() {
+            let deliberate = offline_mode_refusal(CommunicationMode::DeliberateOffline, &command)
+                .unwrap_or_else(|| panic!("`{}` must be refused under --offline", command.name()));
+            let unconsented = offline_mode_refusal(CommunicationMode::UnconsentedOffline, &command)
+                .unwrap_or_else(|| panic!("`{}` must be refused without consent", command.name()));
+            #[cfg(feature = "nym")]
+            {
+                assert!(
+                    deliberate.contains("relaunch without --offline"),
+                    "{deliberate}"
+                );
+                assert!(unconsented.contains("`network on`"), "{unconsented}");
+            }
+            #[cfg(not(feature = "nym"))]
+            for refusal in [&deliberate, &unconsented] {
+                assert!(
+                    refusal.contains("Rebuild with default features"),
+                    "{refusal}"
+                );
+            }
+        }
+    }
+
+    /// HYPOTHESIS: the network family is suppressed only by the deliberate
+    /// `--offline`; an unconsented session keeps `network on` as its act.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn the_network_family_survives_only_where_consent_can_be_granted() {
+        let network = CliCommand::Network { sub: None };
+        assert!(
+            offline_mode_refusal(CommunicationMode::DeliberateOffline, &network).is_some(),
+            "--offline suppresses the whole network family"
+        );
         assert_eq!(
-            refusal,
-            "Error: this session is in Offline mode; no Indexer may be configured. \
-             Restart without --offline to change servers."
+            offline_mode_refusal(CommunicationMode::UnconsentedOffline, &network),
+            None,
+            "`network on` is the unconsented session's consent act"
+        );
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Online, &network),
+            None
         );
     }
 
+    /// HYPOTHESIS: the gate spares every Indexerless capability in every
+    /// posture, honoring the glossary's Offline-mode promise.
     #[test]
-    fn online_mode_and_other_commands_pass_the_pin() {
-        assert_eq!(
-            offline_mode_refusal(CommunicationMode::Online, "change_server"),
-            None,
-            "an Online session may change servers"
-        );
-        assert_eq!(
-            offline_mode_refusal(CommunicationMode::Offline, "balance"),
-            None,
-            "the pin refuses exactly one command, never the local surface"
+    fn every_indexerless_capability_passes_the_gate() {
+        for command in indexerless() {
+            for mode in [
+                CommunicationMode::Online,
+                CommunicationMode::DeliberateOffline,
+                CommunicationMode::UnconsentedOffline,
+            ] {
+                assert_eq!(
+                    offline_mode_refusal(mode, &command),
+                    None,
+                    "`{}` belongs to the Indexerless surface",
+                    command.name()
+                );
+            }
+        }
+    }
+
+    /// HYPOTHESIS: an Online session passes the whole surface.
+    #[test]
+    fn online_passes_the_whole_surface() {
+        for command in network_requiring() {
+            assert_eq!(
+                offline_mode_refusal(CommunicationMode::Online, &command),
+                None,
+                "`{}` must pass online",
+                command.name()
+            );
+        }
+    }
+
+    /// HYPOTHESIS: the launch notice names the only exit from a deliberate
+    /// `--offline` session.
+    #[test]
+    fn the_launch_notice_names_the_only_exit() {
+        assert!(
+            crate::DELIBERATE_OFFLINE_NOTICE.contains("relaunch without --offline"),
+            "{}",
+            crate::DELIBERATE_OFFLINE_NOTICE
         );
     }
 }

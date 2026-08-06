@@ -105,6 +105,16 @@ impl LightClient {
         self.sync().await
     }
 
+    /// Aborts any in-flight sync task and awaits its cancellation.
+    pub(crate) async fn abort_sync(&mut self) {
+        if let Some(sync_handle) = self.sync_handle.take() {
+            sync_handle.abort();
+            let _cancelled = sync_handle.await;
+        }
+        self.sync_mode
+            .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+    }
+
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
     pub fn sync_mode(&self) -> SyncMode {
         SyncMode::from_atomic_u8(self.sync_mode.clone())

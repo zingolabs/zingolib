@@ -505,6 +505,19 @@ impl LightClient {
         Ok(())
     }
 
+    /// Disconnects every network capability of the client, returning only
+    /// when teardown is complete.
+    pub async fn go_offline(&mut self) {
+        self.abort_sync().await;
+        #[cfg(feature = "nym")]
+        {
+            self.vacate_mixnet_slot().await;
+            self.publish_mixnet_slot_state();
+        }
+        self.indexer = None;
+        self.migration_broadcast_uri = None;
+    }
+
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
         self.indexer.as_ref().ok_or(LightClientError::Offline)
@@ -730,6 +743,34 @@ impl LightClient {
             .map_err(LightClientError::FileError)?;
 
         Ok(())
+    }
+
+    /// Record the deliberate clearnet consent for a test client: with the
+    /// mixnet compiled in, the slot moves to
+    /// [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode) — the same act
+    /// the CLI's `network off` performs — so scenario sends transmit over
+    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
+    /// feature the wallet has no mixnet surface and this is a no-op.
+    ///
+    /// Deliberately unconditional (not `nym`-gated): feature unification
+    /// can enable `zingolib/nym` from any workspace member — zingo-cli
+    /// carries it as a default feature (ADR 0026) — so a caller keying the
+    /// consent on its *own* feature set desyncs from zingolib's and
+    /// compiles the consent out exactly when the refusal is compiled in.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn consent_to_clearnet_for_tests(&mut self) {
+        #[cfg(feature = "nym")]
+        self.disable_mixnet().await;
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_clearnet_consented(
+        config: ClientConfig,
+        overwrite: bool,
+    ) -> Result<Self, LightClientError> {
+        let mut client = Self::new(config, overwrite).await?;
+        client.consent_to_clearnet_for_tests().await;
+        Ok(client)
     }
 }
 

@@ -5,20 +5,22 @@
 //! (as is the retired `--nym`, a no-op now that it names the default);
 //! every other argument is forwarded to `zingo-cli` unchanged.
 //!
-//! The default run compiles the mixnet transport into the CLI and bundles
-//! the `nym-proxy` binary beside it, where the CLI's provisioning
-//! precedence resolves it. This tool never launches the proxy: the CLI
-//! owns that lifecycle, spawning the proxy at its go-online moment for an
-//! Online session (Mixnet Mode forced on, ADR 0024) and never for an
-//! offline one — an offline session boots no proxy at all (ADR 0025).
-//! `--clearnet` opts out of both the feature and the bundling: a plain
-//! build with no mixnet capability.
+//! The default run builds the CLI with its default features — which carry
+//! the mixnet transport (ADR 0026) — and bundles the `nym-proxy` binary
+//! beside it, where the CLI's provisioning precedence resolves it. This
+//! tool never launches the proxy: the CLI owns that lifecycle, spawning
+//! the proxy at its go-online moment for an Online session (Mixnet Mode
+//! forced on, ADR 0024) and never for an offline one — an offline session
+//! boots no proxy at all (ADR 0025). `--clearnet` opts out of both the
+//! default features and the bundling: a plain build with no mixnet
+//! capability.
 //!
 //! The launched session decides its own connectivity: first boot is offline,
 //! and only a consent act — a stored standing Connectivity Consent from a
-//! previous run, or an explicit `--online`/`--server` passed through in the
-//! trailing arguments — takes it online (ADR 0025). Neither this tool nor a
-//! bundled proxy binary implies consent.
+//! previous run, an explicit `--online`/`--server` passed through in the
+//! trailing arguments, or the in-session `network on` command (ADR 0026) —
+//! takes it online (ADR 0025). Neither this tool nor a bundled proxy binary
+//! implies consent.
 
 #![forbid(unsafe_code)]
 
@@ -72,8 +74,10 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     if release {
         build.arg("--release");
     }
-    if nym {
-        build.args(["--features", "nym"]);
+    if !nym {
+        // The mixnet transport rides zingo-cli's default features (ADR 0026);
+        // a clearnet build is the explicit opt-out.
+        build.arg("--no-default-features");
     }
     let status = build
         .status()

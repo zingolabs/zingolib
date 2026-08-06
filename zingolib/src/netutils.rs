@@ -20,7 +20,10 @@
 //! Widening the set is a deliberate API decision, not a convenience.
 #![forbid(unsafe_code)]
 
-pub use zingo_netutils::{GrpcIndexer, Indexer, ensure_default_crypto_provider};
+// GetClientError joins the set deliberately: zingo-cli's `network on`
+// consent act connects mid-session via `set_indexer_uri` and models the
+// failure as a typed variant rather than a rendered string.
+pub use zingo_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypto_provider};
 
 pub use zingo_netutils::indexers;
 pub use zingo_netutils::time;
