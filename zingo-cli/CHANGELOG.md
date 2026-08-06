@@ -58,10 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **Breaking.** The string-command plumbing left the library surface: the
   `Command` and `ShortCircuitedCommand` traits, `HelpCommand`, and the
-  `get_commands`, `get_standalone_commands`, `get_wallet_commands`, and
-  `do_user_command` functions are gone. Dispatch parses one clap derive
-  grammar and matches its enum exhaustively; `do_user_command_result`
-  remains the string entry point (ADR 0030).
+  `get_commands`, `get_standalone_commands`, `get_wallet_commands`,
+  `do_user_command`, and `do_user_command_result` functions are gone.
+  Dispatch parses one clap derive grammar and matches its enum
+  exhaustively; no string entry point remains (ADR 0030).
 
 ## [0.4.0] - 2026-06-10
 
