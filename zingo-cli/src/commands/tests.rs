@@ -130,6 +130,35 @@ mod table_invariants {
         }
     }
 
+    /// HYPOTHESIS: every rendered usage line, hand-written or generated,
+    /// invokes its command by the minted name, so an `override_usage`
+    /// cannot drift from a renamed variant.
+    #[test]
+    fn usage_lines_invoke_the_minted_name() {
+        let mut model = CommandLine::command();
+        let names: Vec<String> = model
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        for name in names {
+            let usage = model
+                .find_subcommand_mut(&name)
+                .expect("the name was just minted")
+                .render_usage()
+                .to_string();
+            for line in usage.lines() {
+                let line = line.trim().trim_start_matches("Usage:").trim_start();
+                if line.is_empty() {
+                    continue;
+                }
+                assert!(
+                    line == name || line.starts_with(&format!("{name} ")),
+                    "`{name}`'s usage line drifts from the mint: {line}"
+                );
+            }
+        }
+    }
+
     /// HYPOTHESIS: `name` derives exactly the minted subcommand name, so a
     /// log line names the command without carrying its arguments.
     #[test]
@@ -963,7 +992,9 @@ mod offline_contract {
             .chain(args.iter().copied())
             .map(String::from)
             .collect();
-        let parsed = parse_command_tokens(&tokens).map_err(CommandError::NotYetTyped)?;
+        let parsed = parse_command_tokens(&tokens).unwrap_or_else(|error| {
+            panic!("`{command}` must parse before its offline contract can be judged: {error}")
+        });
         RT.block_on(dispatch_parsed(parsed, client))
     }
 
@@ -990,6 +1021,16 @@ mod offline_contract {
             "`{command}` must not be blocked by Offline mode: {rendered}"
         );
         rendered
+    }
+
+    /// HYPOTHESIS: `assert_unblocked_offline` rejects an invocation that
+    /// never reached dispatch, so a parse error cannot pass as an
+    /// offline-capable command.
+    #[test]
+    #[should_panic(expected = "must parse")]
+    fn a_parse_error_cannot_pass_as_unblocked() {
+        let mut client = offline_client();
+        assert_unblocked_offline(&mut client, "balance", &["surplus-argument"]);
     }
 
     /// Asserts `command` refuses offline through its `Err` channel with the
@@ -1499,10 +1540,76 @@ mod finding_pins {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{RT, parse_command_tokens};
+    use super::super::{CliCommand, RT, format_help, parse_command_tokens};
 
     fn tokens(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| String::from(*word)).collect()
+    }
+
+    const FAMILIES: [&str; 7] = [
+        "save",
+        "settings",
+        "sync",
+        "nym",
+        "migration",
+        "drain",
+        "split",
+    ];
+
+    /// HYPOTHESIS: no family's long help advertises a nested `help` that
+    /// the grammar refuses.
+    #[test]
+    fn family_long_help_never_advertises_nested_help() {
+        for family in FAMILIES {
+            let help = format_help(Some(family));
+            assert!(
+                !help
+                    .lines()
+                    .any(|line| line.split_whitespace().next() == Some("help")),
+                "`{family}` long help advertises a nested help:\n{help}"
+            );
+            assert!(
+                parse_command_tokens(&tokens(&[family, "help"])).is_err(),
+                "`{family} help` must stay refused while unadvertised"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: a REPL refusal speaks in the prompt's terms, never
+    /// naming the binary or its process-oriented usage.
+    #[test]
+    fn repl_refusals_never_name_the_binary() {
+        for line in [
+            &["no_such_command"][..],
+            &["balance", "--bogus"][..],
+            &["save"][..],
+        ] {
+            let error = parse_command_tokens(&tokens(line)).expect_err("must refuse");
+            assert!(!error.contains("zingo-cli"), "{line:?} refused as: {error}");
+        }
+    }
+
+    /// HYPOTHESIS: every family sub-command carries an about line, so
+    /// `help <family>` lists no bare names.
+    #[test]
+    fn family_sub_commands_all_carry_abouts() {
+        for family in FAMILIES {
+            let help = format_help(Some(family));
+            let listing = help
+                .split("Commands:")
+                .nth(1)
+                .unwrap_or_else(|| panic!("`{family}` long help lists its sub-commands"));
+            for entry in listing
+                .lines()
+                .skip(1)
+                .take_while(|line| !line.trim().is_empty())
+            {
+                assert!(
+                    entry.split_whitespace().count() > 1,
+                    "`{family}` lists a bare sub-command: {entry}"
+                );
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -1530,6 +1637,33 @@ mod finding_pins {
             parse_command_tokens(&tokens(&["messages", "--nosync"])).is_err(),
             "a post-command session flag must be refused, never read as a memo filter"
         );
+    }
+
+    /// HYPOTHESIS: a command's Debug rendering, the string the name
+    /// derivation materializes on the heap, never carries memos or key
+    /// material out of the arguments.
+    #[test]
+    fn debug_rendering_never_materializes_memos_or_keys() {
+        let memo = "SENTINEL-MEMO-must-not-materialize";
+        let key = "SENTINEL-UFVK-must-not-materialize";
+        let send = CliCommand::Send {
+            args: vec![
+                String::from("zs1exampleaddress"),
+                String::from("50000"),
+                String::from(memo),
+            ],
+        };
+        let viewkey = CliCommand::ParseViewkey {
+            viewkey: String::from(key),
+        };
+        for (command, sentinel) in [(send, memo), (viewkey, key)] {
+            let rendered = format!("{command:?}");
+            assert!(
+                !rendered.contains(sentinel),
+                "`{}` renders its secret argument onto the heap: {rendered}",
+                command.name()
+            );
+        }
     }
 
     /// HYPOTHESIS: in a build without the nym feature, a nym invocation

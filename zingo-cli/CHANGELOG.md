@@ -34,9 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that alters no command's output (ADR 0030).
 - **Breaking.** Command-line parsing is clap's now. Every command and
   sub-command is a clap derive grammar: help and usage errors are generated,
-  so the hand-written parser messages and their byte-stability are gone;
-  arguments arrive typed, with txids, server URIs, output scopes, and
-  performance levels validated at the parse; and a malformed one-shot
+  so the hand-written parser messages and their byte-stability are gone.
+  Arguments arrive typed, with txids, server URIs, output scopes, and
+  performance levels validated at the parse. A malformed one-shot
   invocation fails with clap's usage error and exit code 2 before any wallet
   work begins, where it previously booted the wallet first.
 - **Breaking.** Command names are case-sensitive: the grammar knows
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-command error before exiting, and a bare `save` refuses at the
   argument parse, since its sub-command is required.
 - The interactive prompt and one-shot mode parse through one grammar,
-  exactly once, at the process boundary; the command channel carries parsed
+  exactly once, at the process boundary. The command channel carries parsed
   values, so no string is re-parsed inside the process.
 
 ### Removed
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_commands`, `get_standalone_commands`, `get_wallet_commands`,
   `do_user_command`, and `do_user_command_result` functions are gone.
   Dispatch parses one clap derive grammar and matches its enum
-  exhaustively; no string entry point remains (ADR 0030).
+  exhaustively. No string entry point remains (ADR 0030).
 
 ## [0.4.0] - 2026-06-10
 

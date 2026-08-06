@@ -80,12 +80,12 @@ the `CommandBody` enum, and the `wallet!`/`standalone!` macros dissolved into
 a single `#[derive(clap::Subcommand)]` `CliCommand` enum: the variant
 identifier mints the command's name, typed fields carry its arguments, and
 dispatch is an exhaustive match, so the divergences the table was built to
-prevent remain impossible by construction. `do_user_command` is deleted; the
+prevent remain impossible by construction. `do_user_command` is deleted. The
 command channel carries a parsed `CliCommand`, so no string dispatch exists
 below the seam at all.
 
 The core ruling stands unchanged. Command bodies are ordinary `async`
 functions returning typed results, the sync world crosses into async only at
-the audited seams — the command loop's two `block_on` calls, the startup
-driver, and the server-resolution entry — and the Clippy `disallowed-methods`
+the audited seams (the command loop's two `block_on` calls, the startup
+driver, and the server-resolution entry), and the Clippy `disallowed-methods`
 rule continues to enforce the invariant everywhere else in the crate.

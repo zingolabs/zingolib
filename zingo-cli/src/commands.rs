@@ -577,8 +577,11 @@ async fn rescan(lightclient: &mut LightClient) -> Result<String, CommandError> {
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SaveSubCommand {
+    #[command(about = "Launch the task that persists the wallet as its state changes")]
     Run,
+    #[command(about = "Check the save task for a recorded failure, restarting it on one")]
     Check,
+    #[command(about = "Shut the save task down")]
     Shutdown,
 }
 
@@ -657,11 +660,14 @@ async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, Comma
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 #[command(rename_all = "snake_case")]
 pub(crate) enum SettingsSubCommand {
+    #[command(about = "Set the sync performance level")]
     Performance {
         #[arg(value_enum)]
         level: PerformanceLevelArg,
     },
+    #[command(about = "Set how many confirmations a note needs to be spendable")]
     MinConfirmations {
+        #[arg(value_name = "count")]
         count: NonZeroU32,
     },
 }
@@ -763,10 +769,15 @@ async fn spendable_balance(lightclient: &mut LightClient) -> Result<String, Comm
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SyncSubCommand {
+    #[command(about = "Start the sync task, or resume it when paused")]
     Run,
+    #[command(about = "Pause the sync task's scanning")]
     Pause,
+    #[command(about = "Shut the sync task down early")]
     Stop,
+    #[command(about = "Report sync progress")]
     Status,
+    #[command(about = "Report the finished sync's result. Not meant to be called by hand")]
     Poll,
 }
 
@@ -1116,15 +1127,21 @@ pub enum NymCommandError {
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NymSubCommand {
+    #[command(about = "Report the mixnet state: off, bootstrapping, or ready")]
     Status,
+    #[command(about = "Start the nym-proxy child and route transmissions through the mixnet")]
     On {
+        #[arg(value_name = "proxy_path")]
         path: Option<String>,
     },
+    #[command(about = "Stop the proxy and revert transmissions to clearnet")]
     Off,
+    #[command(about = "Compare GetLightdInfo over the clearnet and mixnet routes")]
     Probe {
-        #[arg(value_parser = parse_probe_target)]
+        #[arg(value_name = "indexer_uri", value_parser = parse_probe_target)]
         target: Option<http::Uri>,
     },
+    #[command(about = "Show per-indexer attempts across sessions")]
     History,
 }
 
@@ -1424,29 +1441,41 @@ pub enum MigrationCommandError {
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MigrationSubCommand {
+    #[command(about = "Compute the plan and print its hash, sending nothing")]
     Plan,
+    #[command(about = "Record consent to the plan with that hash and begin")]
     Start {
-        #[arg(value_parser = parse_plan_hash)]
+        #[arg(value_name = "plan_hash_hex", value_parser = parse_plan_hash)]
         plan_hash: [u8; 32],
-        #[arg(long)]
+        #[arg(long, value_name = "parts")]
         per_bucket: Option<u32>,
     },
+    #[command(about = "Sync, then drive one splitting step")]
     Continue,
+    #[command(about = "Reset parts-per-window and redraw the schedule")]
     Cadence {
+        #[arg(value_name = "parts")]
         per_bucket: u32,
     },
+    #[command(about = "Sync, then send every part owed right now in one spaced batch")]
     Execute {
         #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
+    #[command(about = "Sync, then broadcast whatever the current window has due")]
     Auto,
+    #[command(about = "Report the balance, phase, part counts, and coming windows")]
     Status,
+    #[command(about = "List each window's block range, position, and confirmations")]
     Windows,
+    #[command(about = "Check the schedule against the chain and apply what is safe")]
     Reconcile,
+    #[command(about = "Send overdue parts now, spaced by the given seconds")]
     Catchup {
         #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
+    #[command(about = "Abandon the migration, keeping its confirmed parts")]
     Cancel,
 }
 
@@ -1695,14 +1724,18 @@ async fn run_migration(
 /// A parsed `drain` sub-command, at the clap derive grammar.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum DrainSubCommand {
+    #[command(about = "Preview the drain from current wallet state, sending nothing")]
     Plan,
+    #[command(about = "Build, sign, and broadcast the drain")]
     Now,
 }
 
 /// A parsed `split` sub-command, at the clap derive grammar.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SplitSubCommand {
+    #[command(about = "Preview the remaining rounds, sending nothing")]
     Plan,
+    #[command(about = "Run one splitting round")]
     Now,
 }
 
@@ -1830,7 +1863,7 @@ async fn run_split(
 
 /// Every command the CLI dispatches, in alphabetical order: the single
 /// source of the dispatchable names, help texts, and typed arguments.
-#[derive(clap::Subcommand, Clone, Debug, PartialEq)]
+#[derive(clap::Subcommand, Clone, PartialEq)]
 #[command(rename_all = "snake_case")]
 pub(crate) enum CliCommand {
     #[command(
@@ -2449,11 +2482,68 @@ pub(crate) enum CliCommand {
 }
 
 impl CliCommand {
+    /// The variant's bare identifier, the single source `Debug` and `name`
+    /// render, so neither can materialize an argument.
+    fn ident(&self) -> &'static str {
+        match self {
+            CliCommand::Addresses => "Addresses",
+            CliCommand::Balance => "Balance",
+            CliCommand::Birthday => "Birthday",
+            CliCommand::Calculate => "Calculate",
+            CliCommand::ChangeServer { .. } => "ChangeServer",
+            CliCommand::CheckAddress { .. } => "CheckAddress",
+            CliCommand::Clear => "Clear",
+            CliCommand::Coins { .. } => "Coins",
+            CliCommand::Confirm => "Confirm",
+            CliCommand::CurrentPrice => "CurrentPrice",
+            CliCommand::Delete => "Delete",
+            CliCommand::Drain { .. } => "Drain",
+            CliCommand::ExportUfvk => "ExportUfvk",
+            CliCommand::Height => "Height",
+            CliCommand::Help { .. } => "Help",
+            CliCommand::Info => "Info",
+            CliCommand::MaxSendValue { .. } => "MaxSendValue",
+            CliCommand::MemobytesToAddress => "MemobytesToAddress",
+            CliCommand::Messages { .. } => "Messages",
+            CliCommand::Migrate => "Migrate",
+            CliCommand::Migration { .. } => "Migration",
+            CliCommand::NewAddress { .. } => "NewAddress",
+            CliCommand::NewTaddress => "NewTaddress",
+            CliCommand::NewTaddressAllowGap => "NewTaddressAllowGap",
+            CliCommand::Notes { .. } => "Notes",
+            CliCommand::Nym { .. } => "Nym",
+            CliCommand::ParseAddress { .. } => "ParseAddress",
+            CliCommand::ParseViewkey { .. } => "ParseViewkey",
+            CliCommand::Quicksend { .. } => "Quicksend",
+            CliCommand::Quickshield => "Quickshield",
+            CliCommand::Quit => "Quit",
+            CliCommand::RecoveryInfo => "RecoveryInfo",
+            CliCommand::RemoveTransaction { .. } => "RemoveTransaction",
+            CliCommand::Rescan => "Rescan",
+            CliCommand::Save { .. } => "Save",
+            CliCommand::Send { .. } => "Send",
+            CliCommand::SendAll { .. } => "SendAll",
+            CliCommand::SendsToAddress => "SendsToAddress",
+            CliCommand::Servers => "Servers",
+            CliCommand::Settings { .. } => "Settings",
+            CliCommand::Shield => "Shield",
+            CliCommand::SpendableBalance => "SpendableBalance",
+            CliCommand::Split { .. } => "Split",
+            CliCommand::Sync { .. } => "Sync",
+            CliCommand::TAddresses => "TAddresses",
+            CliCommand::Transactions => "Transactions",
+            CliCommand::Transmit { .. } => "Transmit",
+            CliCommand::ValueToAddress => "ValueToAddress",
+            CliCommand::ValueTransfers => "ValueTransfers",
+            CliCommand::Version => "Version",
+            CliCommand::WalletKind => "WalletKind",
+        }
+    }
+
     /// The command's minted name, derived from the variant identifier, so
     /// a log line can carry the name and never the arguments.
     pub(crate) fn name(&self) -> String {
-        let debug = format!("{self:?}");
-        let ident = debug.split([' ', '{', '(']).next().unwrap_or_default();
+        let ident = self.ident();
         let mut name = String::with_capacity(ident.len() + 2);
         for c in ident.chars() {
             if c.is_ascii_uppercase() {
@@ -2543,15 +2633,39 @@ impl CliCommand {
     }
 }
 
+/// Renders only the variant identifier, so memos and key material among
+/// the arguments never reach a `Debug` surface.
+impl std::fmt::Debug for CliCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.ident())
+    }
+}
+
 /// The whole command line one dispatch parses: a command name and its
 /// arguments, with no binary name in front, so the REPL and the one-shot
 /// entry share this grammar.
 #[derive(clap::Parser, Debug)]
-#[command(no_binary_name = true, disable_help_subcommand = true)]
+#[command(
+    name = "",
+    no_binary_name = true,
+    disable_help_subcommand = true,
+    about = "Enter one command per line. `help` lists the commands.",
+    override_usage = "<COMMAND> [ARGS]"
+)]
 struct CommandLine {
     #[command(subcommand)]
     command: CliCommand,
 }
+
+/// [`CommandLine`]'s clap model, built once and cloned per use, so a REPL
+/// line never pays the grammar's construction again.
+static COMMAND_MODEL: std::sync::LazyLock<clap::Command> = std::sync::LazyLock::new(|| {
+    use clap::CommandFactory as _;
+
+    let mut model = CommandLine::command();
+    model.build();
+    model
+});
 
 /// The wallet-free commands as values, so the section split in `help`
 /// derives its names from the grammar's own mint.
@@ -2572,9 +2686,7 @@ fn standalone_commands() -> [CliCommand; 5] {
 /// Renders the two-section help listing, or one command's long help,
 /// from [`CommandLine`]'s clap model.
 pub fn format_help(command: Option<&str>) -> String {
-    use clap::CommandFactory as _;
-
-    let mut model = CommandLine::command();
+    let mut model = COMMAND_MODEL.clone();
     let Some(command) = command else {
         let standalone_names: Vec<String> = standalone_commands()
             .iter()
@@ -2612,9 +2724,12 @@ pub fn format_help(command: Option<&str>) -> String {
 /// Parses one command line into a [`CliCommand`], rendering a refusal as
 /// clap prints it, so a malformed REPL line never reaches the command loop.
 pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, String> {
-    use clap::Parser as _;
+    use clap::FromArgMatches as _;
 
-    CommandLine::try_parse_from(tokens)
+    COMMAND_MODEL
+        .clone()
+        .try_get_matches_from(tokens)
+        .and_then(|matches| CommandLine::from_arg_matches(&matches))
         .map(|CommandLine { command }| command)
         .map_err(|error| error.to_string())
         .and_then(|command| command.validate_deferred_grammar().map(|()| command))
