@@ -12,11 +12,11 @@ exclude = ["nym-host"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect", features = [
     "nym",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 

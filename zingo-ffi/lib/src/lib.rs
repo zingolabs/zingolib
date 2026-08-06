@@ -58,8 +58,8 @@ use zingolib::wallet::keys::{
     unified::{ReceiverSelection, UnifiedKeyStore},
 };
 use zingolib::wallet::migration::{
-    MigrationParams, MigrationPhase, RecommendedAction, parts::PartState, parts::SigningStrategy,
-    split::plan_hash,
+    MigrationBroadcastConfig, MigrationParams, MigrationPhase, RecommendedAction,
+    SyncEndpointBroadcast, parts::PartState, parts::SigningStrategy, split::plan_hash,
 };
 
 use zingo_common_components::protocol::ActivationHeights;
@@ -166,9 +166,6 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         // to Mixnet would stamp it with the owned refusal marker and turn
         // it never-retry.
         LightClientError::NoEligibleBroadcastIndexer => ZingolibError::Indexer(text),
-        LightClientError::MigrationBroadcastTargetIsSyncEndpoint { .. } => {
-            ZingolibError::Migration(text)
-        }
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -339,6 +336,15 @@ lazy_static! {
     static ref BATCH_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::BatchProgressHandle>> =
         RwLock::new(None);
 }
+
+// The app-supplied migration-broadcast config (indexer pool plus sync-endpoint
+// policy), read at every client construction: a custom server sends just itself
+// with `AllowWithCorrelationConsent`, a registry server sends the registry with
+// `Forbid` (the sync-operator exclusion), and while empty (before
+// `set_broadcast_candidates` runs) a mixnet migration refuses with
+// NoEligibleBroadcastIndexer.
+static BROADCAST_CONFIG: Lazy<RwLock<(Vec<http::Uri>, SyncEndpointBroadcast)>> =
+    Lazy::new(|| RwLock::new((Vec::new(), SyncEndpointBroadcast::Forbid)));
 
 // Live progress of the in-flight Phase 1 note-splitting round, the split-path
 // counterpart to DRAIN_PROGRESS. `quick_split` holds LIGHTCLIENT.write() for
@@ -587,7 +593,66 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
+    // Inject the app-supplied migration broadcast config: the library ships no
+    // default set, so migration-over-mixnet is unavailable until the app calls
+    // `set_broadcast_candidates`.
+    let (candidates, sync_endpoint) = BROADCAST_CONFIG
+        .read()
+        .map(|config| config.clone())
+        .unwrap_or_else(|_| (Vec::new(), SyncEndpointBroadcast::Forbid));
+    let builder = builder.set_migration_broadcast(MigrationBroadcastConfig {
+        candidates,
+        sync_endpoint,
+    });
     builder.build().map_err(ZingolibError::init)
+}
+
+/// Set the migration broadcast candidate pool from the app's indexer registry
+/// (`serverUris` / `fetchServerList`, a JSON array of lightwalletd URIs),
+/// applied at the next client construction: the library embeds no pool, so a
+/// mixnet migration draws from this set minus the synchronization operator.
+pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
+    let parsed = json::parse(&candidates_json)
+        .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
+    // Accept a bare array (candidates, Forbid) or an object `{ candidates,
+    // allowSyncEndpoint }`, where a custom server sets `allowSyncEndpoint` so the
+    // migration broadcasts through the user's own node instead of being excluded
+    // to nothing.
+    let (array, allow_sync) = if parsed.is_array() {
+        (parsed, false)
+    } else if parsed.is_object() {
+        let allow = parsed["allowSyncEndpoint"].as_bool().unwrap_or(false);
+        (parsed["candidates"].clone(), allow)
+    } else {
+        return Err(ZingolibError::InvalidInput(
+            "candidates must be a JSON array or { candidates, allowSyncEndpoint }".to_string(),
+        ));
+    };
+    if !array.is_array() {
+        return Err(ZingolibError::InvalidInput(
+            "candidates must be an array of URIs".to_string(),
+        ));
+    }
+    let mut uris = Vec::with_capacity(array.len());
+    for member in array.members() {
+        let candidate = member.as_str().ok_or_else(|| {
+            ZingolibError::InvalidInput("each candidate must be a string".to_string())
+        })?;
+        let uri = construct_indexer_uri(Some(candidate.to_string())).map_err(|e| {
+            ZingolibError::InvalidInput(format!("invalid candidate uri {candidate}: {e}"))
+        })?;
+        uris.push(uri);
+    }
+    let count = uris.len();
+    let sync_endpoint = if allow_sync {
+        SyncEndpointBroadcast::AllowWithCorrelationConsent
+    } else {
+        SyncEndpointBroadcast::Forbid
+    };
+    *BROADCAST_CONFIG
+        .write()
+        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = (uris, sync_endpoint);
+    Ok(object! { "candidates_set" => count, "allow_sync_endpoint" => allow_sync }.pretty(2))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -2012,7 +2077,9 @@ pub fn zec_price() -> Result<String, ZingolibError> {
                 .update_current_price()
                 .await
                 .map_err(ffi_error)?;
-            Ok(object! { "current_price" => price }.pretty(2))
+            // MixnetPriceFetch now carries source/round-trip/tunnel metadata
+            // beside the price; the JS contract only reads the USD number.
+            Ok(object! { "current_price" => price.usd }.pretty(2))
         })
     })
 }
@@ -2434,11 +2501,27 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
                     }
                 })
                 .collect::<Vec<_>>();
+            // The resolved broadcast route the migrate-now drain will use (the
+            // eligible candidate set after sync-operator exclusion), surfaced so
+            // the app can show and log which servers the migration broadcasts
+            // through.
+            let broadcast_targets = plan
+                .broadcast_targets
+                .iter()
+                .map(|target| {
+                    object! {
+                        "uri" => target.uri.to_string(),
+                        "operator" => target.operator.clone(),
+                        "reachable_over_mixnet" => target.reachable_over_mixnet,
+                    }
+                })
+                .collect::<Vec<_>>();
             Ok(object! {
                 "transactions" => transactions,
                 "migrated" => plan.migrated,
                 "fee" => plan.fee,
                 "residual" => plan.residual,
+                "broadcast_targets" => broadcast_targets,
             }
             .pretty(2))
         })
@@ -3178,10 +3261,15 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
 /// The Mixnet Mode tri-state-plus-died as the strings the app layer shows.
 fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
     match mode {
-        zingolib::nym::MixnetMode::Off => "off",
+        zingolib::nym::MixnetMode::SwitchedOff => "off",
         zingolib::nym::MixnetMode::Bootstrapping => "bootstrapping",
         zingolib::nym::MixnetMode::Ready => "ready",
-        zingolib::nym::MixnetMode::Died => "died",
+        // A never-attached transport (spawn/attach failed) is not consent to
+        // clearnet; report it as `died` so the app fails closed and reconnects
+        // rather than opening the mixnet-only surfaces.
+        zingolib::nym::MixnetMode::Died | zingolib::nym::MixnetMode::Unattached => {
+            "died"
+        }
     }
 }
 
