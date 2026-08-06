@@ -349,7 +349,7 @@ async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
 }
 
 fn help(command: Option<&str>) -> Result<String, CommandError> {
-    Ok(format_help(command))
+    Ok(format_help(crate::CommunicationMode::Online, command))
 }
 
 async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1150,7 +1150,9 @@ pub(crate) enum NetworkSubCommand {
         #[arg(value_name = "proxy_path")]
         path: Option<String>,
     },
-    #[command(about = "Stop the proxy and revert transmissions to clearnet")]
+    #[command(
+        about = "Disconnect every network capability of the session, keeping any stored consent"
+    )]
     Off,
     #[command(about = "Compare GetLightdInfo over the clearnet and mixnet routes")]
     Probe {
@@ -1415,8 +1417,18 @@ async fn network_command(
             })
         }
         NetworkSubCommand::Off => {
-            lightclient.disable_mixnet().await;
-            Ok("Mixnet Mode disabled; send and price-fetch will use clearnet.".to_string())
+            // Zero-emission teardown: the session drops to the unconsented
+            // posture, never to clearnet transmit, and the stored standing
+            // consent is untouched (`--forget-online` is the erasure act).
+            lightclient.go_offline().await;
+            Ok(
+                "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
+                 and in-flight sync is aborted. Nothing network-visible is emitted until \
+                 `network on` re-consents for this session. The stored Connectivity \
+                 Consent record is untouched: a standing consent, if recorded, attaches \
+                 the next launch again (`--forget-online` erases it)."
+                    .to_string(),
+            )
         }
         NetworkSubCommand::Probe { target } => {
             // Probing emits network traffic and, unlike `network on`,
@@ -2682,6 +2694,54 @@ impl CliCommand {
         }
     }
 
+    /// True when executing the command emits network traffic, so an
+    /// offline posture must refuse it at the dispatch gate.
+    pub(crate) fn requires_network(&self) -> bool {
+        match self {
+            CliCommand::ChangeServer { .. }
+            | CliCommand::Confirm
+            | CliCommand::CurrentPrice
+            | CliCommand::Info
+            | CliCommand::Migrate
+            | CliCommand::Quicksend { .. }
+            | CliCommand::Quickshield
+            | CliCommand::Rescan
+            | CliCommand::Transmit { .. } => true,
+            #[cfg(feature = "nym")]
+            CliCommand::Network { .. } => true,
+            CliCommand::Sync { sub } => matches!(sub, SyncSubCommand::Run),
+            CliCommand::Drain { sub } => matches!(sub, DrainSubCommand::Now),
+            CliCommand::Split { sub } => matches!(sub, SplitSubCommand::Now),
+            CliCommand::Migration { sub } => matches!(
+                sub,
+                MigrationSubCommand::Start { .. }
+                    | MigrationSubCommand::Continue
+                    | MigrationSubCommand::Execute { .. }
+                    | MigrationSubCommand::Auto
+                    | MigrationSubCommand::Reconcile
+                    | MigrationSubCommand::Catchup { .. }
+            ),
+            _ => false,
+        }
+    }
+
+    /// True when `mode` suppresses the command: it leaves `help` and is
+    /// refused if typed, the network family surviving only where `network
+    /// on` remains the consent act.
+    pub(crate) fn suppressed(&self, mode: crate::CommunicationMode) -> bool {
+        match mode {
+            crate::CommunicationMode::Online => false,
+            crate::CommunicationMode::DeliberateOffline => self.requires_network(),
+            crate::CommunicationMode::UnconsentedOffline => {
+                #[cfg(feature = "nym")]
+                if matches!(self, CliCommand::Network { .. }) {
+                    return false;
+                }
+                self.requires_network()
+            }
+        }
+    }
+
     /// Runs the send family's deferred string grammar eagerly, so both
     /// parse boundaries refuse a malformed payload before any wallet work.
     pub(crate) fn validate_deferred_grammar(&self) -> Result<(), String> {
@@ -2824,10 +2884,16 @@ fn wallet_free_commands() -> Vec<CliCommand> {
         .collect()
 }
 
-/// Renders the two-section help listing, or one command's long help,
-/// from [`CommandLine`]'s clap model.
-pub fn format_help(command: Option<&str>) -> String {
+/// Renders the two-section help listing, or one command's long help, from
+/// [`CommandLine`]'s clap model, offering only what `mode` leaves
+/// unsuppressed so help reflects the live session posture.
+pub fn format_help(mode: crate::CommunicationMode, command: Option<&str>) -> String {
     let mut model = COMMAND_MODEL.clone();
+    let offered: Vec<String> = every_command()
+        .into_iter()
+        .filter(|sample| !sample.suppressed(mode))
+        .map(|sample| sample.name())
+        .collect();
     let Some(command) = command else {
         let standalone_names: Vec<String> = wallet_free_commands()
             .iter()
@@ -2836,6 +2902,7 @@ pub fn format_help(command: Option<&str>) -> String {
         let listing = |standalone: bool| {
             model
                 .get_subcommands()
+                .filter(|sub| offered.iter().any(|name| name == sub.get_name()))
                 .filter(|sub| {
                     standalone_names.iter().any(|name| name == sub.get_name()) == standalone
                 })
@@ -2856,8 +2923,10 @@ pub fn format_help(command: Option<&str>) -> String {
         return lines.join("\n");
     };
     match model.find_subcommand_mut(command) {
-        Some(sub) => sub.render_long_help().to_string(),
-        None => format!("Command {command} not found"),
+        Some(sub) if offered.iter().any(|name| name == sub.get_name()) => {
+            sub.render_long_help().to_string()
+        }
+        Some(_) | None => format!("Command {command} not found"),
     }
 }
 

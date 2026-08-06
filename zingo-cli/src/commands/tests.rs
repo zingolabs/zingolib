@@ -29,7 +29,7 @@ mod table_invariants {
     /// rather than any debug-only assertion.
     #[test]
     fn help_sections_agree_with_requires_wallet() {
-        let listing = format_help(None);
+        let listing = format_help(crate::CommunicationMode::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1458,7 +1458,7 @@ mod finding_pins {
     /// exists to drift.
     #[test]
     fn the_standalone_section_derives_from_requires_wallet() {
-        let listing = format_help(None);
+        let listing = format_help(crate::CommunicationMode::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1491,7 +1491,7 @@ mod finding_pins {
     #[test]
     fn family_long_help_never_advertises_nested_help() {
         for &family in FAMILIES {
-            let help = format_help(Some(family));
+            let help = format_help(crate::CommunicationMode::Online, Some(family));
             assert!(
                 !help
                     .lines()
@@ -1524,7 +1524,7 @@ mod finding_pins {
     #[test]
     fn family_sub_commands_all_carry_abouts() {
         for &family in FAMILIES {
-            let help = format_help(Some(family));
+            let help = format_help(crate::CommunicationMode::Online, Some(family));
             let listing = help
                 .split("Commands:")
                 .nth(1)
@@ -1611,5 +1611,91 @@ mod finding_pins {
             Err(error) => error.to_string(),
         };
         assert!(rendered.contains("unrecognized subcommand"), "{rendered}");
+    }
+}
+
+#[cfg(test)]
+mod posture_surface {
+    //! ADR 0032's rendered surface: `help` offers only what the live
+    //! posture leaves unsuppressed, and `network off` is a zero-emission
+    //! teardown, never a clearnet fallback.
+    #![allow(clippy::disallowed_methods)]
+
+    use crate::CommunicationMode;
+
+    use super::super::format_help;
+
+    /// HYPOTHESIS: a deliberate `--offline` help hides the whole
+    /// network-requiring surface, the network family included, while the
+    /// Indexerless surface stays listed.
+    #[test]
+    fn a_deliberate_offline_help_hides_the_network_requiring_surface() {
+        let listing = format_help(CommunicationMode::DeliberateOffline, None);
+        for hidden in [
+            "  confirm - ",
+            "  transmit - ",
+            "  rescan - ",
+            "  network - ",
+        ] {
+            assert!(
+                !listing.contains(hidden),
+                "{hidden:?} must be hidden from a deliberate offline help:\n{listing}"
+            );
+        }
+        for offered in ["  balance - ", "  send - ", "  migration - ", "  height - "] {
+            assert!(
+                listing.contains(offered),
+                "{offered:?} must stay offered:\n{listing}"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: an unconsented session's help keeps the network family,
+    /// because `network on` is its consent act, while the rest of the
+    /// network-requiring surface stays hidden.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn an_unconsented_help_keeps_the_network_family() {
+        let listing = format_help(CommunicationMode::UnconsentedOffline, None);
+        assert!(listing.contains("  network - "), "{listing}");
+        assert!(!listing.contains("  confirm - "), "{listing}");
+    }
+
+    /// HYPOTHESIS: a suppressed command's long help reads as not found, so
+    /// the command has disappeared rather than gone forbidden-but-visible.
+    #[test]
+    fn a_suppressed_commands_long_help_is_not_found() {
+        assert_eq!(
+            format_help(CommunicationMode::DeliberateOffline, Some("confirm")),
+            "Command confirm not found"
+        );
+        assert!(
+            format_help(CommunicationMode::Online, Some("confirm")).contains("Usage:"),
+            "online help must still render the long help"
+        );
+    }
+
+    /// HYPOTHESIS: `network off` reports the minted teardown, leaves the
+    /// client Indexerless, and never mentions a clearnet fallback.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn network_off_tears_down_and_keeps_the_stored_consent() {
+        use zingolib::lightclient::LightClient;
+        use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+
+        let mut client = RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ));
+        let tokens: Vec<String> = ["network", "off"].map(String::from).into();
+        let report = parse_command_tokens(&tokens)
+            .map_err(CommandError::NotYetTyped)
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
+            .expect("network off succeeds offline");
+        assert!(report.contains("Network off"), "{report}");
+        assert!(report.contains("`--forget-online` erases it"), "{report}");
+        assert!(!report.contains("clearnet"), "{report}");
+        assert!(client.indexer_uri().is_none());
     }
 }

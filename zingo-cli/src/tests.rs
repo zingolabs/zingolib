@@ -397,7 +397,10 @@ mod communication_mode {
     #[test]
     fn first_boot_without_consent_is_offline() {
         let dir = scratch_dir();
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     #[test]
@@ -405,7 +408,7 @@ mod communication_mode {
         let dir = scratch_dir();
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::Offline
+            CommunicationMode::DeliberateOffline
         );
     }
 
@@ -421,7 +424,7 @@ mod communication_mode {
         );
         assert_eq!(
             mode_with_dir(&dir, &[]),
-            CommunicationMode::Offline,
+            CommunicationMode::UnconsentedOffline,
             "an un-stored act must not outlive its session"
         );
     }
@@ -464,9 +467,12 @@ mod communication_mode {
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--forget-online"]),
-            CommunicationMode::Offline
+            CommunicationMode::UnconsentedOffline
         );
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     /// Forgetting the store and consenting for the session compose: the
@@ -480,7 +486,10 @@ mod communication_mode {
             mode_with_dir(&dir, &["--forget-online", "--online"]),
             CommunicationMode::Online
         );
-        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::UnconsentedOffline
+        );
     }
 
     /// The deliberate --offline outranks even a stored standing choice.
@@ -491,7 +500,7 @@ mod communication_mode {
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::Offline
+            CommunicationMode::DeliberateOffline
         );
     }
 
@@ -530,7 +539,10 @@ mod communication_mode {
             let dir = scratch_dir();
             zingolib::connectivity::store_standing_online(dir.path())
                 .expect("the store writes in a scratch directory");
-            assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+            assert_eq!(
+                mode_with_dir(&dir, &[]),
+                CommunicationMode::UnconsentedOffline
+            );
         }
 
         #[test]
@@ -540,7 +552,7 @@ mod communication_mode {
                 .expect("the store writes in a scratch directory");
             assert_eq!(
                 mode_with_dir(&dir, &["--forget-online"]),
-                CommunicationMode::Offline
+                CommunicationMode::UnconsentedOffline
             );
             assert!(matches!(
                 zingolib::connectivity::load_connectivity_consent(dir.path()),
@@ -739,7 +751,10 @@ mod config_template {
         #[test]
         fn fill_resolves_no_server_and_disables_sync() {
             let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
-            assert_eq!(config.communication_mode, CommunicationMode::Offline);
+            assert_eq!(
+                config.communication_mode,
+                CommunicationMode::DeliberateOffline
+            );
             assert!(config.server.is_none());
             assert!(!config.sync, "an Offline-mode session cannot sync");
         }
@@ -1078,54 +1093,164 @@ mod config_template {
 }
 
 mod offline_mode_pin {
-    //! The REPL-dispatch half of the Offline-mode contract (issue #2286):
-    //! `change_server` is refused before command execution, since an
-    //! Offline session may never configure an Indexer. The command-surface
-    //! half lives in `commands::offline_contract`.
+    //! The dispatch half of the Offline-mode contract (ADR 0032): an
+    //! offline posture refuses the whole network-requiring surface before
+    //! command execution, naming the live remedy, and spares every
+    //! Indexerless capability. The command-surface half lives in
+    //! `commands::offline_contract`.
 
-    use crate::commands::CliCommand;
+    use crate::commands::{
+        CliCommand, DrainSubCommand, MigrationSubCommand, SplitSubCommand, SyncSubCommand,
+    };
     use crate::{CommunicationMode, offline_mode_refusal};
 
-    /// The refusal names the way out that matches the build: with the
-    /// mixnet capability the `network on` consent act can lift it
-    /// mid-session, without the capability nothing can (ADR 0026).
+    /// One sample per network-requiring shape the gate must refuse.
+    fn network_requiring() -> Vec<CliCommand> {
+        vec![
+            CliCommand::ChangeServer { uri: None },
+            CliCommand::Confirm,
+            CliCommand::CurrentPrice,
+            CliCommand::Info,
+            CliCommand::Migrate,
+            CliCommand::Quicksend { args: Vec::new() },
+            CliCommand::Quickshield,
+            CliCommand::Rescan,
+            CliCommand::Transmit { txids: Vec::new() },
+            CliCommand::Sync {
+                sub: SyncSubCommand::Run,
+            },
+            CliCommand::Drain {
+                sub: DrainSubCommand::Now,
+            },
+            CliCommand::Split {
+                sub: SplitSubCommand::Now,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Continue,
+            },
+        ]
+    }
+
+    /// One sample per Indexerless capability the gate must always spare.
+    fn indexerless() -> Vec<CliCommand> {
+        vec![
+            CliCommand::Balance,
+            CliCommand::Calculate,
+            CliCommand::Height,
+            CliCommand::Help { command: None },
+            CliCommand::Send { args: Vec::new() },
+            CliCommand::Servers,
+            CliCommand::Sync {
+                sub: SyncSubCommand::Status,
+            },
+            CliCommand::Drain {
+                sub: DrainSubCommand::Plan,
+            },
+            CliCommand::Split {
+                sub: SplitSubCommand::Plan,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Plan,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Status,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Windows,
+            },
+            CliCommand::Version,
+        ]
+    }
+
+    /// HYPOTHESIS: both offline postures refuse every network-requiring
+    /// command at the gate, and each refusal names the posture's remedy.
     #[test]
-    fn offline_mode_refuses_change_server_before_dispatch() {
-        let refusal = offline_mode_refusal(
-            CommunicationMode::Offline,
-            &CliCommand::ChangeServer { uri: None },
-        )
-        .expect("an Offline session must refuse change_server");
-        #[cfg(feature = "nym")]
-        assert_eq!(
-            refusal,
-            "Error: this session is in Offline mode; no Indexer may be configured. \
-             Switch to ONLINE MODE with `network on`, or restart without --offline, \
-             to change servers."
+    fn offline_postures_refuse_the_network_requiring_surface() {
+        for command in network_requiring() {
+            let deliberate = offline_mode_refusal(CommunicationMode::DeliberateOffline, &command)
+                .unwrap_or_else(|| panic!("`{}` must be refused under --offline", command.name()));
+            let unconsented = offline_mode_refusal(CommunicationMode::UnconsentedOffline, &command)
+                .unwrap_or_else(|| panic!("`{}` must be refused without consent", command.name()));
+            #[cfg(feature = "nym")]
+            {
+                assert!(
+                    deliberate.contains("relaunch without --offline"),
+                    "{deliberate}"
+                );
+                assert!(unconsented.contains("`network on`"), "{unconsented}");
+            }
+            #[cfg(not(feature = "nym"))]
+            for refusal in [&deliberate, &unconsented] {
+                assert!(
+                    refusal.contains("Rebuild with default features"),
+                    "{refusal}"
+                );
+            }
+        }
+    }
+
+    /// HYPOTHESIS: the network family is suppressed only by the deliberate
+    /// `--offline`; an unconsented session keeps `network on` as its act.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn the_network_family_survives_only_where_consent_can_be_granted() {
+        let network = CliCommand::Network { sub: None };
+        assert!(
+            offline_mode_refusal(CommunicationMode::DeliberateOffline, &network).is_some(),
+            "--offline suppresses the whole network family"
         );
-        #[cfg(not(feature = "nym"))]
         assert_eq!(
-            refusal,
-            "Error: this build has no mixnet capability, so Offline Mode is its only \
-             mode; no Indexer may be configured. Rebuild with default features (plain \
-             `cargo build`, or `makers run-cli`) to go online."
+            offline_mode_refusal(CommunicationMode::UnconsentedOffline, &network),
+            None,
+            "`network on` is the unconsented session's consent act"
+        );
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Online, &network),
+            None
         );
     }
 
+    /// HYPOTHESIS: the gate spares every Indexerless capability in every
+    /// posture, honoring the glossary's Offline-mode promise.
     #[test]
-    fn online_mode_and_other_commands_pass_the_pin() {
-        assert_eq!(
-            offline_mode_refusal(
+    fn every_indexerless_capability_passes_the_gate() {
+        for command in indexerless() {
+            for mode in [
                 CommunicationMode::Online,
-                &CliCommand::ChangeServer { uri: None }
-            ),
-            None,
-            "an Online session may change servers"
-        );
-        assert_eq!(
-            offline_mode_refusal(CommunicationMode::Offline, &CliCommand::Balance),
-            None,
-            "the pin refuses exactly one command, never the local surface"
+                CommunicationMode::DeliberateOffline,
+                CommunicationMode::UnconsentedOffline,
+            ] {
+                assert_eq!(
+                    offline_mode_refusal(mode, &command),
+                    None,
+                    "`{}` belongs to the Indexerless surface",
+                    command.name()
+                );
+            }
+        }
+    }
+
+    /// HYPOTHESIS: an Online session passes the whole surface.
+    #[test]
+    fn online_passes_the_whole_surface() {
+        for command in network_requiring() {
+            assert_eq!(
+                offline_mode_refusal(CommunicationMode::Online, &command),
+                None,
+                "`{}` must pass online",
+                command.name()
+            );
+        }
+    }
+
+    /// HYPOTHESIS: the launch notice names the only exit from a deliberate
+    /// `--offline` session.
+    #[test]
+    fn the_launch_notice_names_the_only_exit() {
+        assert!(
+            crate::DELIBERATE_OFFLINE_NOTICE.contains("relaunch without --offline"),
+            "{}",
+            crate::DELIBERATE_OFFLINE_NOTICE
         );
     }
 }

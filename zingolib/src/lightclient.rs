@@ -505,6 +505,19 @@ impl LightClient {
         Ok(())
     }
 
+    /// Disconnects every network capability of the client, returning only
+    /// when teardown is complete.
+    pub async fn go_offline(&mut self) {
+        self.abort_sync().await;
+        #[cfg(feature = "nym")]
+        {
+            self.vacate_mixnet_slot().await;
+            self.publish_mixnet_slot_state();
+        }
+        self.indexer = None;
+        self.migration_broadcast_uri = None;
+    }
+
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
         self.indexer.as_ref().ok_or(LightClientError::Offline)
