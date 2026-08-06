@@ -181,17 +181,12 @@ pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// round confirms.
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Mixnet transmissions can wait for minutes (mixnet round trips, per-arm
-/// retries, serially gated fan-out rounds, queued-verdict probes), so every
-/// transmitting CLI command prints the transmission's latest progress line
-/// at this interval while it waits. A send that completes before the first
-/// tick stays silent.
-pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
-
-/// An interactive `network on` blocks while the nym proxy bootstraps, so the
-/// command prints the latest bootstrap progress line at this interval while
-/// it waits.
-pub const BOOTSTRAP_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
+/// Every dispatched CLI command narrates its latest progress line at this
+/// interval while it runs, so no command is silent past one interval; a
+/// command that completes before the first tick stays silent. Temporarily
+/// two seconds to strengthen the diagnostic signal while the silent-phase
+/// reports are investigated; the ratified cadence is eight.
+pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Diagnostics and server selection

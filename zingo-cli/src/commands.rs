@@ -38,7 +38,7 @@ use zingolib::wallet::migration::{self, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
-use zingolib::netutils::time::TRANSMIT_HEARTBEAT_INTERVAL;
+use zingolib::netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
 
 async fn with_heartbeat<T>(
     label: &str,
@@ -66,52 +66,57 @@ async fn with_heartbeat<T>(
     }
 }
 
-async fn with_transmit_heartbeat<T>(
-    label: &str,
-    latest: impl Fn() -> Option<String>,
-    emit: impl FnMut(String),
-    operation: impl Future<Output = T>,
-) -> T {
-    with_heartbeat(
-        label,
-        TRANSMIT_HEARTBEAT_INTERVAL,
-        "transmitting",
-        latest,
-        emit,
-        operation,
-    )
-    .await
+/// One read over every live progress side channel, cloned from the client
+/// before dispatch so the narration closure never touches the `&mut` borrow
+/// an operation holds.
+struct ProgressPeek {
+    transmit: TransmitProgressHandle,
+    batch: zingolib::lightclient::migrate::BatchProgressHandle,
+    drain: zingolib::lightclient::migrate::ImmediateMigrationProgressHandle,
+    split: zingolib::lightclient::migrate::SplitProgressHandle,
+    #[cfg(feature = "nym")]
+    mixnet: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
 }
 
-/// Runs `operation` under the transmit heartbeat with the stderr sink: the
-/// one place a command names Narration's channel.
-async fn narrated<T>(
-    label: &str,
-    latest: impl Fn() -> Option<String>,
-    operation: impl Future<Output = T>,
-) -> T {
-    with_transmit_heartbeat(label, latest, |line| eprintln!("{line}"), operation).await
+impl ProgressPeek {
+    fn from_client(lightclient: &LightClient) -> Self {
+        Self {
+            transmit: lightclient.transmit_progress_handle(),
+            batch: lightclient.batch_progress_handle(),
+            drain: lightclient.immediate_migration_progress_handle(),
+            split: lightclient.split_progress_handle(),
+            #[cfg(feature = "nym")]
+            mixnet: lightclient.subscribe_mixnet_status(),
+        }
+    }
+
+    fn latest(&self) -> Option<String> {
+        if let Some(line) = self.transmit.latest() {
+            return Some(line);
+        }
+        if let Some(status) = self.batch.status() {
+            return Some(batch_progress_line(&status));
+        }
+        if let Some(status) = self.drain.status() {
+            return Some(drain_progress_line(&status));
+        }
+        if let Some(status) = self.split.status() {
+            return Some(split_progress_line(&status));
+        }
+        #[cfg(feature = "nym")]
+        if let Some(detail) = self.mixnet.borrow().bootstrap_detail.clone() {
+            return Some(detail);
+        }
+        None
+    }
 }
 
-/// [`narrated`] over the transmit progress handle, for the send-family
-/// commands. Taking the handle by value lets a call site clone it from the
-/// client in argument position, before the operation's `&mut` borrow begins.
-async fn transmit_narrated<T>(
-    label: &str,
-    progress: TransmitProgressHandle,
-    operation: impl Future<Output = T>,
-) -> T {
-    narrated(label, move || progress.latest(), operation).await
-}
-
-/// [`transmit_narrated`] for the operations whose whole result is a list of
-/// transaction ids, rendered here so the sandwich exists once.
+/// The result-is-a-txid-list rendering, kept in one place so every
+/// transmitting body shares it.
 async fn transmit_txids<T: ToString, E: std::fmt::Display>(
-    label: &str,
-    progress: TransmitProgressHandle,
     operation: impl Future<Output = Result<impl IntoIterator<Item = T>, E>>,
 ) -> Result<String, CommandError> {
-    match transmit_narrated(label, progress, operation).await {
+    match operation.await {
         Ok(txids) => {
             let txids: Vec<T> = txids.into_iter().collect();
             Ok(object! { "txids" => txids_json(&txids) }.pretty(JSON_INDENT))
@@ -286,12 +291,7 @@ async fn clear(lightclient: &mut LightClient) -> Result<String, CommandError> {
 }
 
 async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    transmit_txids(
-        "confirm",
-        lightclient.transmit_progress_handle(),
-        lightclient.send_stored_proposal(true),
-    )
-    .await
+    transmit_txids(lightclient.send_stored_proposal(true)).await
 }
 
 #[cfg(feature = "nym")]
@@ -521,12 +521,9 @@ async fn quicksend(
     let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
         .map_err(|e| usage(name, e))?;
-    match transmit_narrated(
-        name,
-        lightclient.transmit_progress_handle(),
-        lightclient.quick_send_reported(request, zip32::AccountId::ZERO, true),
-    )
-    .await
+    match lightclient
+        .quick_send_reported(request, zip32::AccountId::ZERO, true)
+        .await
     {
         Ok(reports) => Ok(object! {
             "txids" => txids_json(&reports.iter().map(|report| report.txid).collect::<Vec<_>>()),
@@ -538,12 +535,7 @@ async fn quicksend(
 }
 
 async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    transmit_txids(
-        "quickshield",
-        lightclient.transmit_progress_handle(),
-        lightclient.quick_shield(zip32::AccountId::ZERO),
-    )
-    .await
+    transmit_txids(lightclient.quick_shield(zip32::AccountId::ZERO)).await
 }
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -882,12 +874,7 @@ async fn transmit(
         ));
     };
 
-    transmit_txids(
-        "transmit",
-        lightclient.transmit_progress_handle(),
-        lightclient.transmit_calculated(txids),
-    )
-    .await
+    transmit_txids(lightclient.transmit_calculated(txids)).await
 }
 
 async fn value_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -1430,24 +1417,6 @@ async fn await_bootstrap_outcome(
     }
 }
 
-/// Runs `operation` under the bootstrap heartbeat with the stderr sink.
-#[cfg(feature = "nym")]
-async fn narrated_bootstrap<T>(
-    label: &str,
-    latest: impl Fn() -> Option<String>,
-    operation: impl Future<Output = T>,
-) -> T {
-    with_heartbeat(
-        label,
-        zingolib::netutils::time::BOOTSTRAP_HEARTBEAT_INTERVAL,
-        "bootstrapping",
-        latest,
-        |line| eprintln!("{line}"),
-        operation,
-    )
-    .await
-}
-
 /// The body of the `network` command; the command exists only with the
 /// mixnet transport compiled in (ADR 0026).
 #[cfg(feature = "nym")]
@@ -1489,20 +1458,14 @@ async fn network_command(
                     path: path.clone(),
                     source,
                 })?;
-            // Block until the bootstrap resolves, narrating on the
-            // bootstrap heartbeat so the caller watches progress instead
-            // of polling `network status` by hand. The wait is bounded:
-            // the supervisor's own lifecycle timeout flips a stuck
-            // bootstrap to died, and the outer timeout is the backstop.
-            let rx = lightclient.subscribe_mixnet_status();
-            let detail_rx = rx.clone();
-            let outcome = narrated_bootstrap(
-                "network on",
-                move || detail_rx.borrow().bootstrap_detail.clone(),
-                tokio::time::timeout(
-                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                    await_bootstrap_outcome(rx),
-                ),
+            // Block until the bootstrap resolves so the return is the
+            // outcome, not a promise to poll; the dispatch seam's progress
+            // heartbeat narrates the wait. The supervisor's own lifecycle
+            // timeout flips a stuck bootstrap to died, and the outer
+            // timeout is the backstop.
+            let outcome = tokio::time::timeout(
+                zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
+                await_bootstrap_outcome(lightclient.subscribe_mixnet_status()),
             )
             .await;
             let readiness = match outcome {
@@ -1678,12 +1641,9 @@ fn txids_json<T: ToString>(txids: &[T]) -> json::JsonValue {
 /// Runs the `migrate` command. Its errors cross the dispatch seam as
 /// [`CommandError::Migration`].
 async fn run_migrate(lightclient: &mut LightClient) -> Result<String, MigrationCommandError> {
-    let summary = transmit_narrated(
-        "migrate",
-        lightclient.transmit_progress_handle(),
-        lightclient.migrate_to_ironwood(zip32::AccountId::ZERO),
-    )
-    .await?;
+    let summary = lightclient
+        .migrate_to_ironwood(zip32::AccountId::ZERO)
+        .await?;
     Ok(object! {
         "split_txids" => txids_json(&summary.split_txids),
         "part_txids" => txids_json(&summary.part_txids),
@@ -1716,17 +1676,14 @@ async fn run_migration(
             plan_hash,
             per_bucket,
         } => {
-            transmit_narrated(
-                "migration start",
-                lightclient.transmit_progress_handle(),
-                lightclient.start_ironwood_migration(
+            lightclient
+                .start_ironwood_migration(
                     zip32::AccountId::ZERO,
                     migration::SigningStrategy::LazyAtBoundary,
                     plan_hash,
                     per_bucket,
-                ),
-            )
-            .await?;
+                )
+                .await?;
             "Migration started.".to_string()
         }
         MigrationSubCommand::Continue => {
@@ -1763,13 +1720,7 @@ async fn run_migration(
                 .sync_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
-            let progress = lightclient.batch_progress_handle();
-            let report = narrated(
-                "migration execute",
-                move || progress.status().as_ref().map(batch_progress_line),
-                lightclient.execute_due_parts(spacing),
-            )
-            .await?;
+            let report = lightclient.execute_due_parts(spacing).await?;
             object! {
                 "outcomes" => report
                     .outcomes
@@ -1875,12 +1826,7 @@ async fn run_migration(
             .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Catchup { spacing } => {
-            let txids = transmit_narrated(
-                "migration catchup",
-                lightclient.transmit_progress_handle(),
-                lightclient.catch_up_migration(spacing),
-            )
-            .await?;
+            let txids = lightclient.catch_up_migration(spacing).await?;
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
@@ -1971,13 +1917,9 @@ async fn run_drain(
             .pretty(JSON_INDENT)
         }
         DrainSubCommand::Now => {
-            let progress = lightclient.immediate_migration_progress_handle();
-            let summary = narrated(
-                "drain",
-                move || progress.status().as_ref().map(drain_progress_line),
-                lightclient.quick_immediate_migration(zip32::AccountId::ZERO, true),
-            )
-            .await?;
+            let summary = lightclient
+                .quick_immediate_migration(zip32::AccountId::ZERO, true)
+                .await?;
             object! {
                 "txids" => txids_json(&summary.txids),
                 "migrated" => summary.migrated,
@@ -2011,13 +1953,9 @@ async fn run_split(
             .pretty(JSON_INDENT)
         }
         SplitSubCommand::Now => {
-            let progress = lightclient.split_progress_handle();
-            match narrated(
-                "split",
-                move || progress.status().as_ref().map(split_progress_line),
-                lightclient.quick_split(zip32::AccountId::ZERO, true),
-            )
-            .await?
+            match lightclient
+                .quick_split(zip32::AccountId::ZERO, true)
+                .await?
             {
                 SplitOutcome::Round { txids } => {
                     object! { "split_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
@@ -3056,10 +2994,31 @@ pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, Stri
         .and_then(|command| command.validate_deferred_grammar().map(|()| command))
 }
 
-/// Dispatches an already-parsed command against the wallet: the exhaustive
-/// match every frontend reaches, whether it parsed its command at the REPL,
-/// at the process's own argument parse, or from a string.
+/// Dispatches an already-parsed command against the wallet under the
+/// progress heartbeat: every command narrates its latest progress line on
+/// the shared cadence while it runs, so no command is silent past one
+/// interval, and no body wires its own narration.
 pub(crate) async fn dispatch_parsed(
+    command: CliCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let label = command.name();
+    let peek = ProgressPeek::from_client(lightclient);
+    with_heartbeat(
+        &label,
+        PROGRESS_HEARTBEAT_INTERVAL,
+        "working",
+        move || peek.latest(),
+        |line| eprintln!("{line}"),
+        run_parsed(command, lightclient),
+    )
+    .await
+}
+
+/// The exhaustive match every frontend reaches, whether it parsed its
+/// command at the REPL, at the process's own argument parse, or from a
+/// string.
+async fn run_parsed(
     command: CliCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {

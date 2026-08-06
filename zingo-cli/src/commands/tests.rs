@@ -121,10 +121,11 @@ mod table_invariants {
 }
 
 #[cfg(test)]
-mod transmit_heartbeat {
-    //! Paused-clock falsifiers for the transmit heartbeat's contract: silence
-    //! for fast transmissions, a narrated line on the ratified 20-40s cadence
-    //! for slow ones, always carrying the side channel's latest detail.
+mod progress_heartbeat {
+    //! Paused-clock falsifiers for the dispatch-seam progress heartbeat's
+    //! contract: silence for fast commands, a narrated line on the shared
+    //! eight-second cadence for slow ones, always carrying the side
+    //! channels' latest detail.
     //!
     //! Seam justification (ADR 0030): the `block_on` here is the one
     //! `#[tokio::test]` generates to drive each async test body; a test
@@ -134,19 +135,23 @@ mod transmit_heartbeat {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use zingo_netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
+
     use super::super::*;
 
-    /// HYPOTHESIS: a transmission finishing before the first tick emits
-    /// nothing, because the heartbeat must not add noise to a normal fast send.
+    /// HYPOTHESIS: a command finishing before the first tick emits nothing,
+    /// because the heartbeat must not add noise to a normal fast command.
     #[tokio::test(start_paused = true)]
-    async fn a_fast_transmission_stays_silent() {
+    async fn a_fast_command_stays_silent() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        let out = with_transmit_heartbeat(
+        let out = with_heartbeat(
             "confirm",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL / 2),
         )
         .await;
         let () = out;
@@ -156,48 +161,57 @@ mod transmit_heartbeat {
         );
     }
 
-    /// HYPOTHESIS: a slow transmission is narrated on the interval cadence,
-    /// each line carrying the label, the side channel's latest detail, and
-    /// the elapsed seconds. Falsified if the wait stays silent or drops the
-    /// detail.
+    /// HYPOTHESIS: a slow command is narrated on the interval cadence, each
+    /// line carrying the label, the side channels' latest detail, and the
+    /// elapsed seconds. Falsified if the wait stays silent or drops the
+    /// detail. Expectations derive from the interval so the pin holds at
+    /// any ratified cadence.
     #[tokio::test(start_paused = true)]
-    async fn a_slow_transmission_heartbeats_the_latest_detail() {
+    async fn a_slow_command_heartbeats_the_latest_detail() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "confirm",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || Some("witness zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(95)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
         .await;
         let lines = lines.lock().expect("line sink poisoned").clone();
-        assert_eq!(
-            lines,
-            vec![
-                "confirm: witness zec.rocks: submitting (30s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (60s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (90s elapsed)".to_string(),
-            ]
-        );
+        let expected: Vec<String> = (1..=3)
+            .map(|tick| {
+                format!(
+                    "confirm: witness zec.rocks: submitting ({}s elapsed)",
+                    PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
+                )
+            })
+            .collect();
+        assert_eq!(lines, expected);
     }
 
-    /// An empty side channel still heartbeats, falling back to a generic
-    /// line rather than skipping the tick.
+    /// A phase that publishes no detail still heartbeats, falling back to
+    /// the generic line rather than going silent past an interval.
     #[tokio::test(start_paused = true)]
     async fn an_empty_side_channel_still_heartbeats() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "transmit",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || None,
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(35)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL + Duration::from_millis(500)),
         )
         .await;
         assert_eq!(
             lines.lock().expect("line sink poisoned").clone(),
-            vec!["transmit: transmitting (30s elapsed)".to_string()]
+            vec![format!(
+                "transmit: working ({}s elapsed)",
+                PROGRESS_HEARTBEAT_INTERVAL.as_secs()
+            )]
         );
     }
 }
@@ -826,22 +840,18 @@ mod network_command_parsing {
 
 #[cfg(all(test, feature = "nym"))]
 mod bootstrap_wait {
-    //! Paused-clock falsifiers for the `network on` bootstrap wait: the
-    //! 8-second heartbeat cadence, and the outcome reader over the status
-    //! subscription.
+    //! Falsifiers for the `network on` bootstrap wait's outcome reader over
+    //! the status subscription; the narration itself is the dispatch seam's
+    //! progress heartbeat, pinned in `progress_heartbeat`.
     //!
     //! Seam justification (ADR 0030): the `block_on` here is the one
     //! `#[tokio::test]` generates to drive each async test body; a test
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
-
-    use zingolib::netutils::time::BOOTSTRAP_HEARTBEAT_INTERVAL;
     use zingolib::nym::{MixnetMode, MixnetStatus};
 
-    use super::super::{BootstrapOutcome, await_bootstrap_outcome, with_heartbeat};
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
     fn status(mode: MixnetMode) -> MixnetStatus {
         MixnetStatus {
@@ -850,31 +860,6 @@ mod bootstrap_wait {
             bootstrap_detail: None,
             death: None,
         }
-    }
-
-    /// HYPOTHESIS: a slow bootstrap is narrated every eight seconds, each
-    /// line carrying the latest detail and the elapsed seconds.
-    #[tokio::test(start_paused = true)]
-    async fn a_slow_bootstrap_heartbeats_on_the_eight_second_cadence() {
-        let lines: Arc<Mutex<Vec<String>>> = Arc::default();
-        let sink = lines.clone();
-        with_heartbeat(
-            "network on",
-            BOOTSTRAP_HEARTBEAT_INTERVAL,
-            "bootstrapping",
-            || Some("connecting to the gateway".to_string()),
-            move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(20)),
-        )
-        .await;
-        let lines = lines.lock().expect("line sink poisoned").clone();
-        assert_eq!(
-            lines,
-            vec![
-                "network on: connecting to the gateway (8s elapsed)".to_string(),
-                "network on: connecting to the gateway (16s elapsed)".to_string(),
-            ]
-        );
     }
 
     /// HYPOTHESIS: the wait resolves `Ready` when the subscription reaches
