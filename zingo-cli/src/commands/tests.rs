@@ -1,44 +1,55 @@
 #[cfg(test)]
 mod table_invariants {
-    //! Pins the properties [`super::super::COMMANDS`] relies on but the
+    //! Pins the properties [`super::super::CliCommand`] relies on but the
     //! compiler does not check: declaration order is the help listing's
-    //! order, and dispatch takes the first name match.
+    //! order, and no two variants mint the same name.
 
-    use super::super::COMMANDS;
+    use clap::CommandFactory as _;
 
-    /// HYPOTHESIS: the table's names are strictly increasing — sorted, so
-    /// the help listing stays alphabetical, and therefore unique, so no
-    /// row can shadow another at dispatch.
+    use super::super::CommandLine;
+
+    /// HYPOTHESIS: the grammar's minted names are strictly increasing —
+    /// sorted, so the help listing stays alphabetical, and therefore
+    /// unique, so no variant can shadow another at dispatch.
     #[test]
     fn names_are_strictly_increasing() {
-        for pair in COMMANDS.windows(2) {
+        let model = CommandLine::command();
+        let names: Vec<&str> = model
+            .get_subcommands()
+            .map(clap::Command::get_name)
+            .collect();
+        for pair in names.windows(2) {
             assert!(
-                pair[0].name < pair[1].name,
-                "COMMANDS must stay sorted and duplicate-free: {:?} precedes {:?}",
-                pair[0].name,
-                pair[1].name
+                pair[0] < pair[1],
+                "CliCommand must stay sorted and duplicate-free: {:?} precedes {:?}",
+                pair[0],
+                pair[1]
             );
         }
     }
 
-    /// HYPOTHESIS: wherever a help text offers a Usage section, at least
+    /// HYPOTHESIS: wherever a long help offers a Usage section, at least
     /// one of its lines invokes the command by its minted name, so the
-    /// prose cannot silently drift from the table's single mint. The
+    /// prose cannot silently drift from the grammar's single mint. The
     /// duplication itself retires when clap generates usage from typed
     /// arguments (the ratified follow-up arc); until then it is pinned.
     #[test]
     fn usage_lines_invoke_the_minted_name() {
-        for spec in COMMANDS {
-            let Some((_, usage)) = spec.help.split_once("Usage:") else {
+        let model = CommandLine::command();
+        for sub in model.get_subcommands() {
+            let Some(long_about) = sub.get_long_about().map(ToString::to_string) else {
                 continue;
             };
+            let Some((_, usage)) = long_about.split_once("Usage:") else {
+                continue;
+            };
+            let name = sub.get_name();
             assert!(
-                usage.lines().map(str::trim).any(|line| {
-                    line == spec.name || line.starts_with(&format!("{} ", spec.name))
-                }),
-                "`{}`'s Usage section never invokes it by its minted name:\n{}",
-                spec.name,
-                spec.help
+                usage
+                    .lines()
+                    .map(str::trim)
+                    .any(|line| line == name || line.starts_with(&format!("{name} "))),
+                "`{name}`'s Usage section never invokes it by its minted name:\n{long_about}"
             );
         }
     }
@@ -138,7 +149,11 @@ mod migration_command_parsing {
     use super::super::*;
 
     fn parse(args: &[&str]) -> Result<MigrationSubCommand, clap::Error> {
-        MigrationCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub)
+        let line = std::iter::once("migration").chain(args.iter().copied());
+        CommandLine::try_parse_from(line).map(|line| match line.command {
+            CliCommand::Migration { sub } => sub,
+            other => panic!("`migration` must parse to the migration family: {other:?}"),
+        })
     }
 
     #[test]
@@ -228,8 +243,13 @@ mod drain_and_split_command_parsing {
 
     #[test]
     fn drain_accepts_exactly_plan_or_now() {
-        let parse =
-            |args: &[&str]| DrainCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub);
+        let parse = |args: &[&str]| {
+            let line = std::iter::once("drain").chain(args.iter().copied());
+            CommandLine::try_parse_from(line).map(|line| match line.command {
+                CliCommand::Drain { sub } => sub,
+                other => panic!("`drain` must parse to the drain family: {other:?}"),
+            })
+        };
         assert_eq!(
             parse(&["plan"]).expect("drain plan parses"),
             DrainSubCommand::Plan
@@ -245,8 +265,13 @@ mod drain_and_split_command_parsing {
 
     #[test]
     fn split_accepts_exactly_plan_or_now() {
-        let parse =
-            |args: &[&str]| SplitCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub);
+        let parse = |args: &[&str]| {
+            let line = std::iter::once("split").chain(args.iter().copied());
+            CommandLine::try_parse_from(line).map(|line| match line.command {
+                CliCommand::Split { sub } => sub,
+                other => panic!("`split` must parse to the split family: {other:?}"),
+            })
+        };
         assert_eq!(
             parse(&["plan"]).expect("split plan parses"),
             SplitSubCommand::Plan
@@ -262,6 +287,149 @@ mod drain_and_split_command_parsing {
 }
 
 #[cfg(test)]
+mod typed_argument_parsing {
+    //! Pins the typed payloads the top-level grammar owns: the arguments
+    //! that once reached a body as `&[&str]` now refuse, or arrive whole,
+    //! at the parse boundary.
+
+    use clap::Parser as _;
+
+    use super::super::*;
+
+    fn parse(args: &[&str]) -> Result<CliCommand, clap::Error> {
+        CommandLine::try_parse_from(args.iter().copied()).map(|line| line.command)
+    }
+
+    /// HYPOTHESIS: `settings` parses its whole grammar before the body
+    /// takes the wallet lock, so a malformed level or confirmation count
+    /// never reaches the wallet.
+    #[test]
+    fn settings_parses_before_it_takes_the_wallet_lock() {
+        assert!(matches!(
+            parse(&["settings"]).expect("a bare settings parses"),
+            CliCommand::Settings { sub: None }
+        ));
+        assert!(matches!(
+            parse(&["settings", "performance", "high"]).expect("a level parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::Performance {
+                    level: PerformanceLevelArg::High
+                })
+            }
+        ));
+        assert!(matches!(
+            parse(&["settings", "min_confirmations", "3"]).expect("a count parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::MinConfirmations { .. })
+            }
+        ));
+        for junk in [
+            &["settings", "bogus"][..],
+            &["settings", "performance"][..],
+            &["settings", "performance", "blazing"][..],
+            &["settings", "min_confirmations", "0"][..],
+            &["settings", "min_confirmations", "many"][..],
+        ] {
+            assert!(parse(junk).is_err(), "{junk:?} must refuse at the parse");
+        }
+    }
+
+    /// HYPOTHESIS: `notes` and `coins` take `all` and nothing else.
+    #[test]
+    fn the_spent_output_scope_is_all_or_nothing() {
+        assert!(matches!(
+            parse(&["notes", "all"]).expect("notes all parses"),
+            CliCommand::Notes {
+                scope: Some(OutputScope::All)
+            }
+        ));
+        assert!(matches!(
+            parse(&["coins"]).expect("bare coins parses"),
+            CliCommand::Coins { scope: None }
+        ));
+        assert!(parse(&["notes", "spent"]).is_err());
+        assert!(parse(&["coins", "all", "extra"]).is_err());
+    }
+
+    /// HYPOTHESIS: `new_address` takes the receivers as a type, so a
+    /// receiver set the wallet cannot build refuses at the parse.
+    #[test]
+    fn new_address_parses_its_receivers() {
+        assert!(matches!(
+            parse(&["new_address", "oz"]).expect("oz parses"),
+            CliCommand::NewAddress {
+                receivers: ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                }
+            }
+        ));
+        assert!(matches!(
+            parse(&["new_address", "z"]).expect("z parses"),
+            CliCommand::NewAddress {
+                receivers: ReceiverSelection {
+                    orchard: false,
+                    sapling: true,
+                }
+            }
+        ));
+        for junk in [
+            &["new_address"][..],
+            &["new_address", "t"][..],
+            &["new_address", "o", "z"][..],
+        ] {
+            assert!(parse(junk).is_err(), "{junk:?} must refuse at the parse");
+        }
+    }
+
+    /// HYPOTHESIS: the transaction-id arguments arrive decoded, so a
+    /// malformed id never reaches the wallet.
+    #[test]
+    fn transaction_ids_parse_at_the_boundary() {
+        let txid = "ab".repeat(32);
+        assert!(matches!(
+            parse(&["transmit"]).expect("a bare transmit parses"),
+            CliCommand::Transmit { txids } if txids.is_empty()
+        ));
+        assert!(matches!(
+            parse(&["transmit", &txid, &txid]).expect("two txids parse"),
+            CliCommand::Transmit { txids } if txids.len() == 2
+        ));
+        assert!(parse(&["transmit", "nonsense"]).is_err());
+        assert!(parse(&["remove_transaction", "nonsense"]).is_err());
+        assert!(parse(&["remove_transaction"]).is_err());
+    }
+
+    /// HYPOTHESIS: `change_server` takes a uri, and an empty argument
+    /// still names the default one.
+    #[test]
+    fn change_server_parses_its_uri() {
+        assert!(matches!(
+            parse(&["change_server"]).expect("a bare change_server parses"),
+            CliCommand::ChangeServer { uri: None }
+        ));
+        assert!(matches!(
+            parse(&["change_server", ""]).expect("an empty uri parses"),
+            CliCommand::ChangeServer { uri: Some(uri) } if uri == http::Uri::default()
+        ));
+        assert!(matches!(
+            parse(&["change_server", "https://zec.rocks:443"]).expect("a uri parses"),
+            CliCommand::ChangeServer { uri: Some(_) }
+        ));
+        assert!(parse(&["change_server", "zec rocks"]).is_err());
+    }
+
+    /// HYPOTHESIS: a name the grammar does not know refuses at the parse,
+    /// where clap's unknown-subcommand error replaces the hand-written
+    /// one the table used to raise.
+    #[test]
+    fn an_unknown_command_refuses_at_the_parse() {
+        assert!(parse(&["bogus"]).is_err());
+        assert!(parse(&[]).is_err());
+    }
+}
+
+#[cfg(test)]
 mod nym_command_parsing {
     //! Pins the clap derive grammar of the `nym` family and the pure
     //! renderers whose strings every frontend shares.
@@ -271,7 +439,11 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     fn parse(args: &[&str]) -> Result<Option<NymSubCommand>, clap::Error> {
         use clap::Parser as _;
-        NymCli::try_parse_from(args.iter().copied()).map(|cli| cli.sub)
+        let line = std::iter::once("nym").chain(args.iter().copied());
+        CommandLine::try_parse_from(line).map(|line| match line.command {
+            CliCommand::Nym { sub } => sub,
+            other => panic!("`nym` must parse to the nym family: {other:?}"),
+        })
     }
 
     #[cfg(feature = "nym")]

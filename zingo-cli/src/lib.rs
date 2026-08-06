@@ -1105,13 +1105,10 @@ pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
 /// the text and exiting the process.
 pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
     if matches.get_one::<String>("COMMAND").map(String::as_str) == Some("help") {
-        let args: Vec<String> = matches
+        let named = matches
             .get_many::<String>("extra_args")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        Some(commands::format_help(
-            &args.iter().map(String::as_str).collect::<Vec<&str>>(),
-        ))
+            .and_then(|mut args| args.next());
+        Some(commands::format_help(named.map(String::as_str)))
     } else {
         None
     }
