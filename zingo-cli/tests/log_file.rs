@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -94,10 +96,13 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.is_empty(),
-        "Expected empty stderr (tracing should go to log file), but got:\n{stderr}"
-    );
+    for level in ["INFO", "WARN", "ERROR", "DEBUG", "TRACE"] {
+        assert!(
+            !stderr.contains(&format!(" {level} ")),
+            "Tracing {level} lines should go to the log file, not stderr \
+             (stderr carries only Narration, ADR 0031). Got:\n{stderr}"
+        );
+    }
 }
 
 /// The error string that pepper_sync's `#[instrument(err)]` on
