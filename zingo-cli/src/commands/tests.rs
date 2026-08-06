@@ -1,44 +1,120 @@
 #[cfg(test)]
 mod table_invariants {
-    //! Pins the properties [`super::super::COMMANDS`] relies on but the
+    //! Pins the properties [`super::super::CliCommand`] relies on but the
     //! compiler does not check: declaration order is the help listing's
-    //! order, and dispatch takes the first name match.
+    //! order, and no two variants mint the same name.
 
-    use super::super::COMMANDS;
+    use clap::CommandFactory as _;
 
-    /// HYPOTHESIS: the table's names are strictly increasing — sorted, so
-    /// the help listing stays alphabetical, and therefore unique, so no
-    /// row can shadow another at dispatch.
+    use super::super::{CliCommand, CommandLine, every_command, format_help};
+
+    /// HYPOTHESIS: the derived names of one-sample-per-variant equal the
+    /// clap model's subcommand names exactly, so `name` can never diverge
+    /// from the mint and the sample list can never go stale.
     #[test]
-    fn names_are_strictly_increasing() {
-        for pair in COMMANDS.windows(2) {
-            assert!(
-                pair[0].name < pair[1].name,
-                "COMMANDS must stay sorted and duplicate-free: {:?} precedes {:?}",
-                pair[0].name,
-                pair[1].name
+    fn every_variant_names_the_mint() {
+        let model = CommandLine::command();
+        let mut derived: Vec<String> = every_command().iter().map(CliCommand::name).collect();
+        derived.sort();
+        let mut minted: Vec<String> = model
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        minted.sort();
+        assert_eq!(derived, minted);
+    }
+
+    /// HYPOTHESIS: `help` files every command in the section
+    /// `requires_wallet` dictates, proven by the rendered listing itself
+    /// rather than any debug-only assertion.
+    #[test]
+    fn help_sections_agree_with_requires_wallet() {
+        let listing = format_help(None);
+        let wallet_header = listing
+            .find("Wallet commands:")
+            .expect("the listing carries a wallet section");
+        for command in every_command() {
+            let name = command.name();
+            let entry = format!("  {name} - ");
+            let position = listing
+                .find(&entry)
+                .unwrap_or_else(|| panic!("`{name}` must appear in the help listing"));
+            assert_eq!(
+                position > wallet_header,
+                command.requires_wallet(),
+                "`{name}` sits in the wrong help section"
             );
         }
     }
 
-    /// HYPOTHESIS: wherever a help text offers a Usage section, at least
-    /// one of its lines invokes the command by its minted name, so the
-    /// prose cannot silently drift from the table's single mint. The
-    /// duplication itself retires when clap generates usage from typed
-    /// arguments (the ratified follow-up arc); until then it is pinned.
+    /// HYPOTHESIS: every rendered usage line, hand-written or generated,
+    /// invokes its command by the minted name, so an `override_usage`
+    /// cannot drift from a renamed variant.
     #[test]
     fn usage_lines_invoke_the_minted_name() {
-        for spec in COMMANDS {
-            let Some((_, usage)) = spec.help.split_once("Usage:") else {
-                continue;
-            };
+        let mut model = CommandLine::command();
+        let names: Vec<String> = model
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        for name in names {
+            let usage = model
+                .find_subcommand_mut(&name)
+                .expect("the name was just minted")
+                .render_usage()
+                .to_string();
+            for line in usage.lines() {
+                let line = line.trim().trim_start_matches("Usage:").trim_start();
+                if line.is_empty() {
+                    continue;
+                }
+                assert!(
+                    line == name || line.starts_with(&format!("{name} ")),
+                    "`{name}`'s usage line drifts from the mint: {line}"
+                );
+            }
+        }
+    }
+
+    /// HYPOTHESIS: `name` derives exactly the minted subcommand name, so a
+    /// log line names the command without carrying its arguments.
+    #[test]
+    fn name_matches_the_mint_and_drops_the_arguments() {
+        let model = CommandLine::command();
+        for (command, expected) in [
+            (CliCommand::Quit, "quit"),
+            (
+                CliCommand::SendAll {
+                    args: vec!["a-secret-memo".to_string()],
+                },
+                "send_all",
+            ),
+            (CliCommand::NewTaddressAllowGap, "new_taddress_allow_gap"),
+        ] {
+            assert_eq!(command.name(), expected);
             assert!(
-                usage.lines().map(str::trim).any(|line| {
-                    line == spec.name || line.starts_with(&format!("{} ", spec.name))
-                }),
-                "`{}`'s Usage section never invokes it by its minted name:\n{}",
-                spec.name,
-                spec.help
+                model.find_subcommand(expected).is_some(),
+                "`{expected}` must be a minted name"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: the grammar's minted names are strictly increasing —
+    /// sorted, so the help listing stays alphabetical, and therefore
+    /// unique, so no variant can shadow another at dispatch.
+    #[test]
+    fn names_are_strictly_increasing() {
+        let model = CommandLine::command();
+        let names: Vec<&str> = model
+            .get_subcommands()
+            .map(clap::Command::get_name)
+            .collect();
+        for pair in names.windows(2) {
+            assert!(
+                pair[0] < pair[1],
+                "CliCommand must stay sorted and duplicate-free: {:?} precedes {:?}",
+                pair[0],
+                pair[1]
             );
         }
     }
@@ -128,18 +204,26 @@ mod transmit_heartbeat {
 
 #[cfg(test)]
 mod migration_command_parsing {
-    //! Pins the pure argument parser and the byte-identity of the typed
-    //! errors' rendering with the in-band strings they replaced.
+    //! Pins the clap derive grammar of the `migration` family: typed
+    //! outcomes, the spacing defaults, and refusal at the parse boundary.
+
+    use clap::Parser as _;
 
     use super::super::*;
+
+    fn parse(args: &[&str]) -> Result<MigrationSubCommand, clap::Error> {
+        let line = std::iter::once("migration").chain(args.iter().copied());
+        CommandLine::try_parse_from(line).map(|line| match line.command {
+            CliCommand::Migration { sub } => sub,
+            other => panic!("`migration` must parse to the migration family: {other:?}"),
+        })
+    }
 
     #[test]
     fn start_parses_hash_and_per_bucket() {
         let hash_hex = "11".repeat(32);
-        let parsed = parse_migration_args(&["start", &hash_hex, "--per-bucket", "3"])
-            .expect("well-formed arguments parse");
         assert_eq!(
-            parsed,
+            parse(&["start", &hash_hex, "--per-bucket", "3"]).expect("well-formed arguments parse"),
             MigrationSubCommand::Start {
                 plan_hash: [0x11; 32],
                 per_bucket: Some(3),
@@ -148,17 +232,14 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn malformed_plan_hash_is_typed() {
-        assert!(matches!(
-            parse_migration_args(&["start", "abc"]),
-            Err(MigrationCommandError::MalformedPlanHash)
-        ));
+    fn malformed_plan_hash_is_refused_at_parse() {
+        assert!(parse(&["start", "abc"]).is_err());
     }
 
     #[test]
     fn continue_parses_bare() {
         assert_eq!(
-            parse_migration_args(&["continue"]).expect("bare continue parses"),
+            parse(&["continue"]).expect("bare continue parses"),
             MigrationSubCommand::Continue
         );
     }
@@ -166,7 +247,7 @@ mod migration_command_parsing {
     #[test]
     fn windows_parses_bare() {
         assert_eq!(
-            parse_migration_args(&["windows"]).expect("bare windows parses"),
+            parse(&["windows"]).expect("bare windows parses"),
             MigrationSubCommand::Windows
         );
     }
@@ -174,25 +255,22 @@ mod migration_command_parsing {
     #[test]
     fn cadence_requires_a_count() {
         assert_eq!(
-            parse_migration_args(&["cadence", "4"]).expect("well-formed cadence parses"),
+            parse(&["cadence", "4"]).expect("well-formed cadence parses"),
             MigrationSubCommand::Cadence { per_bucket: 4 }
         );
-        assert!(matches!(
-            parse_migration_args(&["cadence"]),
-            Err(MigrationCommandError::MalformedCadence)
-        ));
+        assert!(parse(&["cadence"]).is_err());
     }
 
     #[test]
     fn execute_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
-            parse_migration_args(&["execute"]).expect("bare execute parses"),
+            parse(&["execute"]).expect("bare execute parses"),
             MigrationSubCommand::Execute {
                 spacing: std::time::Duration::from_secs(30),
             }
         );
         assert_eq!(
-            parse_migration_args(&["execute", "5"]).expect("spaced execute parses"),
+            parse(&["execute", "5"]).expect("spaced execute parses"),
             MigrationSubCommand::Execute {
                 spacing: std::time::Duration::from_secs(5),
             }
@@ -202,7 +280,7 @@ mod migration_command_parsing {
     #[test]
     fn catchup_defaults_spacing_to_thirty_seconds() {
         assert_eq!(
-            parse_migration_args(&["catchup"]).expect("bare catchup parses"),
+            parse(&["catchup"]).expect("bare catchup parses"),
             MigrationSubCommand::Catchup {
                 spacing: std::time::Duration::from_secs(30),
             }
@@ -210,91 +288,295 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn errors_render_byte_identically_to_the_replaced_strings() {
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::MissingSubCommand),
-            "Error: migration command expects a sub-command. Type \"help migration\" for usage."
-        );
-        assert_eq!(
-            format!("Error: {}", MigrationCommandError::MalformedPerBucket),
-            "Error: --per-bucket expects a positive integer."
-        );
+    fn missing_and_unknown_subcommands_are_refused_at_parse() {
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["bogus"]).is_err());
     }
 }
 
 #[cfg(test)]
 mod drain_and_split_command_parsing {
-    //! Pins the pure argument parsers of the mobile-parity migration
-    //! commands: `drain` and `split` accept exactly `plan` or `now`.
+    //! Pins the clap derive grammars of the mobile-parity migration
+    //! commands: `drain` and `split` accept exactly `plan` or `now`,
+    //! refusing everything else at the parse boundary.
+
+    use clap::Parser as _;
 
     use super::super::*;
 
     #[test]
     fn drain_accepts_exactly_plan_or_now() {
+        let parse = |args: &[&str]| {
+            let line = std::iter::once("drain").chain(args.iter().copied());
+            CommandLine::try_parse_from(line).map(|line| match line.command {
+                CliCommand::Drain { sub } => sub,
+                other => panic!("`drain` must parse to the drain family: {other:?}"),
+            })
+        };
         assert_eq!(
-            parse_drain_args(&["plan"]).expect("drain plan parses"),
+            parse(&["plan"]).expect("drain plan parses"),
             DrainSubCommand::Plan
         );
         assert_eq!(
-            parse_drain_args(&["now"]).expect("drain now parses"),
+            parse(&["now"]).expect("drain now parses"),
             DrainSubCommand::Now
         );
         for junk in [&[][..], &["bogus"][..], &["now", "extra"][..]] {
-            assert!(matches!(
-                parse_drain_args(junk),
-                Err(MigrationCommandError::DrainUsage)
-            ));
+            assert!(parse(junk).is_err());
         }
     }
 
     #[test]
     fn split_accepts_exactly_plan_or_now() {
+        let parse = |args: &[&str]| {
+            let line = std::iter::once("split").chain(args.iter().copied());
+            CommandLine::try_parse_from(line).map(|line| match line.command {
+                CliCommand::Split { sub } => sub,
+                other => panic!("`split` must parse to the split family: {other:?}"),
+            })
+        };
         assert_eq!(
-            parse_split_args(&["plan"]).expect("split plan parses"),
+            parse(&["plan"]).expect("split plan parses"),
             SplitSubCommand::Plan
         );
         assert_eq!(
-            parse_split_args(&["now"]).expect("split now parses"),
+            parse(&["now"]).expect("split now parses"),
             SplitSubCommand::Now
         );
         for junk in [&[][..], &["bogus"][..], &["plan", "extra"][..]] {
-            assert!(matches!(
-                parse_split_args(junk),
-                Err(MigrationCommandError::SplitUsage)
-            ));
+            assert!(parse(junk).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod typed_argument_parsing {
+    //! Pins the typed payloads the top-level grammar owns: the arguments
+    //! that once reached a body as `&[&str]` now refuse, or arrive whole,
+    //! at the parse boundary.
+
+    use clap::Parser as _;
+
+    use super::super::*;
+
+    fn parse(args: &[&str]) -> Result<CliCommand, clap::Error> {
+        CommandLine::try_parse_from(args.iter().copied()).map(|line| line.command)
+    }
+
+    /// HYPOTHESIS: `settings` parses its whole grammar before the body
+    /// takes the wallet lock, so a malformed level or confirmation count
+    /// never reaches the wallet.
+    #[test]
+    fn settings_parses_before_it_takes_the_wallet_lock() {
+        assert!(matches!(
+            parse(&["settings"]).expect("a bare settings parses"),
+            CliCommand::Settings { sub: None }
+        ));
+        assert!(matches!(
+            parse(&["settings", "performance", "high"]).expect("a level parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::Performance {
+                    level: PerformanceLevelArg::High
+                })
+            }
+        ));
+        assert!(matches!(
+            parse(&["settings", "min_confirmations", "3"]).expect("a count parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::MinConfirmations { .. })
+            }
+        ));
+        for junk in [
+            &["settings", "bogus"][..],
+            &["settings", "performance"][..],
+            &["settings", "performance", "blazing"][..],
+            &["settings", "min_confirmations", "0"][..],
+            &["settings", "min_confirmations", "many"][..],
+        ] {
+            assert!(parse(junk).is_err(), "{junk:?} must refuse at the parse");
         }
     }
 
+    /// HYPOTHESIS: `notes` and `coins` take `all` and nothing else.
     #[test]
-    fn usage_errors_render_with_help_pointers() {
+    fn the_spent_output_scope_is_all_or_nothing() {
+        assert!(matches!(
+            parse(&["notes", "all"]).expect("notes all parses"),
+            CliCommand::Notes {
+                scope: Some(OutputScope::All)
+            }
+        ));
+        assert!(matches!(
+            parse(&["coins"]).expect("bare coins parses"),
+            CliCommand::Coins { scope: None }
+        ));
+        assert!(parse(&["notes", "spent"]).is_err());
+        assert!(parse(&["coins", "all", "extra"]).is_err());
+    }
+
+    /// HYPOTHESIS: `new_address` takes the receivers as a type, so a
+    /// receiver set the wallet cannot build refuses at the parse.
+    #[test]
+    fn new_address_parses_its_receivers() {
+        assert!(matches!(
+            parse(&["new_address", "oz"]).expect("oz parses"),
+            CliCommand::NewAddress {
+                receivers: ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                }
+            }
+        ));
+        assert!(matches!(
+            parse(&["new_address", "z"]).expect("z parses"),
+            CliCommand::NewAddress {
+                receivers: ReceiverSelection {
+                    orchard: false,
+                    sapling: true,
+                }
+            }
+        ));
+        for junk in [
+            &["new_address"][..],
+            &["new_address", "t"][..],
+            &["new_address", "o", "z"][..],
+        ] {
+            assert!(parse(junk).is_err(), "{junk:?} must refuse at the parse");
+        }
+    }
+
+    /// HYPOTHESIS: the transaction-id arguments arrive decoded, so a
+    /// malformed id never reaches the wallet.
+    #[test]
+    fn transaction_ids_parse_at_the_boundary() {
+        let txid = "ab".repeat(32);
+        assert!(matches!(
+            parse(&["transmit"]).expect("a bare transmit parses"),
+            CliCommand::Transmit { txids } if txids.is_empty()
+        ));
+        assert!(matches!(
+            parse(&["transmit", &txid, &txid]).expect("two txids parse"),
+            CliCommand::Transmit { txids } if txids.len() == 2
+        ));
+        assert!(parse(&["transmit", "nonsense"]).is_err());
+        assert!(parse(&["remove_transaction", "nonsense"]).is_err());
+        assert!(parse(&["remove_transaction"]).is_err());
+    }
+
+    /// HYPOTHESIS: `change_server` takes a uri, and an empty argument
+    /// still names the default one.
+    #[test]
+    fn change_server_parses_its_uri() {
+        assert!(matches!(
+            parse(&["change_server"]).expect("a bare change_server parses"),
+            CliCommand::ChangeServer { uri: None }
+        ));
+        assert!(matches!(
+            parse(&["change_server", ""]).expect("an empty uri parses"),
+            CliCommand::ChangeServer { uri: Some(uri) } if uri == http::Uri::default()
+        ));
+        assert!(matches!(
+            parse(&["change_server", "https://zec.rocks:443"]).expect("a uri parses"),
+            CliCommand::ChangeServer { uri: Some(_) }
+        ));
+        assert!(parse(&["change_server", "zec rocks"]).is_err());
+    }
+
+    /// HYPOTHESIS: a name the grammar does not know refuses at the parse,
+    /// where clap's unknown-subcommand error replaces the hand-written
+    /// one the table used to raise.
+    #[test]
+    fn an_unknown_command_refuses_at_the_parse() {
+        assert!(parse(&["bogus"]).is_err());
+        assert!(parse(&[]).is_err());
+    }
+
+    /// HYPOTHESIS: a flag-shaped token after send-family arguments refuses
+    /// at the parse instead of becoming the transaction's memo.
+    #[test]
+    fn a_flag_after_send_arguments_refuses_at_the_parse() {
+        for family in ["send", "send_all", "quicksend", "max_send_value"] {
+            assert!(
+                parse(&[family, "zs1exampleaddress", "50000", "--nosync"]).is_err(),
+                "`{family}` must refuse a flag-shaped trailing token"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: the standard `--` escape carries a dash-leading memo
+    /// into the send arguments.
+    #[test]
+    fn the_escape_carries_a_dash_leading_memo() {
         assert_eq!(
-            format!("Error: {}", MigrationCommandError::DrainUsage),
-            "Error: drain expects a sub-command: plan | now. Type \"help drain\" for usage."
+            parse(&["send", "zs1exampleaddress", "50000", "--", "-memo"])
+                .expect("an escaped dash-leading memo parses"),
+            CliCommand::Send {
+                args: ["zs1exampleaddress", "50000", "-memo"]
+                    .map(String::from)
+                    .to_vec(),
+            }
         );
+    }
+
+    /// HYPOTHESIS: `--help` on `messages` renders help, never a filter,
+    /// because defined flags outrank hyphen values.
+    #[test]
+    fn messages_help_outranks_the_hyphen_filter() {
+        let error = parse(&["messages", "--help"]).expect_err("--help renders help");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    /// HYPOTHESIS: a memo filter beginning with a dash rides the standard
+    /// `--` escape, while a bare flag-shaped token refuses.
+    #[test]
+    fn a_dash_leading_messages_filter_rides_the_escape() {
         assert_eq!(
-            format!("Error: {}", MigrationCommandError::SplitUsage),
-            "Error: split expects a sub-command: plan | now. Type \"help split\" for usage."
+            parse(&["messages", "--", "-1ZEC"]).expect("an escaped dash-leading filter parses"),
+            CliCommand::Messages {
+                filter: Some("-1ZEC".to_string()),
+            }
+        );
+        assert!(parse(&["messages", "-1ZEC"]).is_err());
+    }
+
+    /// HYPOTHESIS: every advertised `nym` subcommand parses in every build,
+    /// so a build without the feature refuses with the typed error instead
+    /// of a usage error.
+    #[test]
+    fn nym_subcommands_parse_in_every_build() {
+        assert_eq!(
+            parse(&["nym", "status"]).expect("nym status parses"),
+            CliCommand::Nym {
+                sub: Some(NymSubCommand::Status),
+            }
         );
     }
 }
 
 #[cfg(test)]
 mod nym_command_parsing {
-    //! Pins the pure argument parser and the byte-identity of the typed
-    //! errors' rendering with the in-band strings they replaced.
+    //! Pins the clap derive grammar of the `nym` family and the pure
+    //! renderers whose strings every frontend shares.
 
     use super::super::*;
 
     #[cfg(feature = "nym")]
+    fn parse(args: &[&str]) -> Result<Option<NymSubCommand>, clap::Error> {
+        use clap::Parser as _;
+        let line = std::iter::once("nym").chain(args.iter().copied());
+        CommandLine::try_parse_from(line).map(|line| match line.command {
+            CliCommand::Nym { sub } => sub,
+            other => panic!("`nym` must parse to the nym family: {other:?}"),
+        })
+    }
+
+    #[cfg(feature = "nym")]
     #[test]
-    fn bare_and_status_both_parse_to_status() {
+    fn bare_parses_to_no_subcommand_and_status_to_status() {
+        assert_eq!(parse(&[]).expect("a bare nym parses"), None);
         assert_eq!(
-            parse_nym_args(&[]).expect("a bare nym parses"),
-            NymSubCommand::Status
-        );
-        assert_eq!(
-            parse_nym_args(&["status"]).expect("nym status parses"),
-            NymSubCommand::Status
+            parse(&["status"]).expect("nym status parses"),
+            Some(NymSubCommand::Status)
         );
     }
 
@@ -302,56 +584,44 @@ mod nym_command_parsing {
     #[test]
     fn on_captures_the_optional_path() {
         assert_eq!(
-            parse_nym_args(&["on"]).expect("bare nym on parses"),
-            NymSubCommand::On { path: None }
+            parse(&["on"]).expect("bare nym on parses"),
+            Some(NymSubCommand::On { path: None })
         );
         assert_eq!(
-            parse_nym_args(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
-            NymSubCommand::On {
+            parse(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
+            Some(NymSubCommand::On {
                 path: Some("/opt/nym-proxy".to_string()),
-            }
+            })
         );
     }
 
     #[cfg(feature = "nym")]
     #[test]
-    fn unknown_subcommand_renders_byte_identically_to_the_replaced_string() {
-        assert_eq!(
-            parse_nym_args(&["bogus"])
-                .expect_err("an unknown subcommand is typed")
-                .to_string(),
-            "unknown nym subcommand 'bogus'. Use: nym status | nym on [path] | nym off | \
-             nym probe [uri] | nym history"
-        );
+    fn unknown_subcommands_are_refused_at_parse() {
+        assert!(parse(&["bogus"]).is_err());
     }
 
     #[cfg(feature = "nym")]
     #[test]
     fn probe_parses_its_optional_target_and_rejects_junk() {
         assert_eq!(
-            parse_nym_args(&["probe"]).expect("bare probe parses"),
-            NymSubCommand::Probe { target: None }
+            parse(&["probe"]).expect("bare probe parses"),
+            Some(NymSubCommand::Probe { target: None })
         );
         assert_eq!(
-            parse_nym_args(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
-            NymSubCommand::Probe {
+            parse(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
+            Some(NymSubCommand::Probe {
                 target: Some("https://zec.rocks:443".parse().expect("static uri")),
-            }
+            })
         );
-        assert!(matches!(
-            parse_nym_args(&["probe", "not a uri"]),
-            Err(NymCommandError::InvalidProbeTarget(_))
-        ));
+        assert!(parse(&["probe", "not a uri"]).is_err());
         assert!(
-            matches!(
-                parse_nym_args(&["probe", "http://zec.rocks:9067"]),
-                Err(NymCommandError::InvalidProbeTarget(_))
-            ),
+            parse(&["probe", "http://zec.rocks:9067"]).is_err(),
             "a plaintext http target is refused: mixnet transmission is https-only"
         );
         assert_eq!(
-            parse_nym_args(&["history"]).expect("history parses"),
-            NymSubCommand::History
+            parse(&["history"]).expect("history parses"),
+            Some(NymSubCommand::History)
         );
     }
 
@@ -587,7 +857,7 @@ mod offline_contract {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, do_user_command_result};
+    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -619,7 +889,14 @@ mod offline_contract {
         command: &str,
         args: &[&str],
     ) -> Result<String, CommandError> {
-        RT.block_on(do_user_command_result(command, args, client))
+        let tokens: Vec<String> = std::iter::once(command)
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        let parsed = parse_command_tokens(&tokens).unwrap_or_else(|error| {
+            panic!("`{command}` must parse before its offline contract can be judged: {error}")
+        });
+        RT.block_on(dispatch_parsed(parsed, client))
     }
 
     /// Asserts `command` succeeds offline and returns its output.
@@ -647,6 +924,16 @@ mod offline_contract {
         rendered
     }
 
+    /// HYPOTHESIS: `assert_unblocked_offline` rejects an invocation that
+    /// never reached dispatch, so a parse error cannot pass as an
+    /// offline-capable command.
+    #[test]
+    #[should_panic(expected = "must parse")]
+    fn a_parse_error_cannot_pass_as_unblocked() {
+        let mut client = offline_client();
+        assert_unblocked_offline(&mut client, "balance", &["surplus-argument"]);
+    }
+
     /// Asserts `command` refuses offline through its `Err` channel with the
     /// typed Offline refusal.
     fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
@@ -655,6 +942,21 @@ mod offline_contract {
             error.to_string().contains(OFFLINE_REFUSAL),
             "`{command}` must refuse with the typed Offline error: {error}"
         );
+    }
+
+    /// A build without the nym feature answers a well-formed `nym`
+    /// subcommand with the typed feature-absent refusal, not a usage error.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn nym_refuses_with_the_typed_feature_absent_error() {
+        use super::super::NymCommandError;
+
+        let mut client = offline_client();
+        let error = exec(&mut client, "nym", &["status"]).expect_err("nym status must refuse");
+        assert!(matches!(
+            error,
+            CommandError::Nym(NymCommandError::FeatureAbsent)
+        ));
     }
 
     /// A fresh unified address from the wallet itself, so send-family tests
@@ -1060,5 +1362,248 @@ mod offline_contract {
                 .expect("current_price explains the absent fetch");
             assert!(output.contains("no price fetch"), "{output}");
         }
+    }
+}
+
+#[cfg(test)]
+mod pure_helpers {
+    //! Runtime-free checks of the pure rendering vocabulary: every function
+    //! here takes already-fetched values and returns its whole result.
+
+    use zingolib::wallet::keys::WalletAddressRef;
+
+    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+
+    /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
+    /// "Error: " prefix, so the edge renderer adds it exactly once.
+    #[test]
+    fn not_yet_typed_renders_the_message_unprefixed() {
+        assert_eq!(
+            not_yet_typed("no such wallet file").to_string(),
+            "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the ids render as a flat JSON array of their string
+    /// forms, in the order given.
+    #[test]
+    fn txids_json_renders_a_flat_ordered_array() {
+        assert_eq!(
+            txids_json(&["first", "second"]).dump(),
+            r#"["first","second"]"#
+        );
+    }
+
+    /// HYPOTHESIS: an underived address renders as the single
+    /// is_wallet_address=false field, with no address fields to mislead.
+    #[test]
+    fn address_check_json_renders_the_underived_case_bare() {
+        assert_eq!(
+            address_check_json(None).dump(),
+            r#"{"is_wallet_address":"false"}"#
+        );
+    }
+
+    /// HYPOTHESIS: a derived unified address renders its type, index, and
+    /// receiver flags alongside the encoding.
+    #[test]
+    fn address_check_json_renders_a_unified_derivation() {
+        let rendered = address_check_json(Some(WalletAddressRef::Unified {
+            account_id: zip32::AccountId::ZERO,
+            address_index: Some(3),
+            has_orchard: true,
+            has_sapling: false,
+            has_transparent: true,
+            encoded_address: "u1mocked".to_string(),
+        }))
+        .pretty(JSON_INDENT);
+        for expected in [
+            r#""is_wallet_address": "true""#,
+            r#""address_type": "unified""#,
+            r#""address_index": 3"#,
+            r#""account_id": 0"#,
+            r#""has_orchard": true"#,
+            r#""has_sapling": false"#,
+            r#""has_transparent": true"#,
+            r#""encoded_address": "u1mocked""#,
+        ] {
+            assert!(rendered.contains(expected), "{rendered}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod finding_pins {
+    //! Pins the contracts the review findings demanded, kept green by the
+    //! fixes that closed them.
+    #![allow(clippy::disallowed_methods)]
+
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{CliCommand, RT, format_help, parse_command_tokens, wallet_free_commands};
+
+    fn tokens(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| String::from(*word)).collect()
+    }
+
+    /// HYPOTHESIS: the standalone help section derives from
+    /// `requires_wallet` alone: its rendered entries are exactly the
+    /// derived wallet-free names, so no second statement of the set
+    /// exists to drift.
+    #[test]
+    fn the_standalone_section_derives_from_requires_wallet() {
+        let listing = format_help(None);
+        let wallet_header = listing
+            .find("Wallet commands:")
+            .expect("the listing carries a wallet section");
+        let rendered: Vec<String> = listing[..wallet_header]
+            .lines()
+            .filter_map(|line| line.strip_prefix("  "))
+            .filter_map(|entry| entry.split(" - ").next())
+            .map(String::from)
+            .collect();
+        let derived: Vec<String> = wallet_free_commands()
+            .iter()
+            .map(CliCommand::name)
+            .collect();
+        assert_eq!(rendered, derived);
+    }
+
+    const FAMILIES: [&str; 7] = [
+        "save",
+        "settings",
+        "sync",
+        "nym",
+        "migration",
+        "drain",
+        "split",
+    ];
+
+    /// HYPOTHESIS: no family's long help advertises a nested `help` that
+    /// the grammar refuses.
+    #[test]
+    fn family_long_help_never_advertises_nested_help() {
+        for family in FAMILIES {
+            let help = format_help(Some(family));
+            assert!(
+                !help
+                    .lines()
+                    .any(|line| line.split_whitespace().next() == Some("help")),
+                "`{family}` long help advertises a nested help:\n{help}"
+            );
+            assert!(
+                parse_command_tokens(&tokens(&[family, "help"])).is_err(),
+                "`{family} help` must stay refused while unadvertised"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: a REPL refusal speaks in the prompt's terms, never
+    /// naming the binary or its process-oriented usage.
+    #[test]
+    fn repl_refusals_never_name_the_binary() {
+        for line in [
+            &["no_such_command"][..],
+            &["balance", "--bogus"][..],
+            &["save"][..],
+        ] {
+            let error = parse_command_tokens(&tokens(line)).expect_err("must refuse");
+            assert!(!error.contains("zingo-cli"), "{line:?} refused as: {error}");
+        }
+    }
+
+    /// HYPOTHESIS: every family sub-command carries an about line, so
+    /// `help <family>` lists no bare names.
+    #[test]
+    fn family_sub_commands_all_carry_abouts() {
+        for family in FAMILIES {
+            let help = format_help(Some(family));
+            let listing = help
+                .split("Commands:")
+                .nth(1)
+                .unwrap_or_else(|| panic!("`{family}` long help lists its sub-commands"));
+            for entry in listing
+                .lines()
+                .skip(1)
+                .take_while(|line| !line.trim().is_empty())
+            {
+                assert!(
+                    entry.split_whitespace().count() > 1,
+                    "`{family}` lists a bare sub-command: {entry}"
+                );
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    fn offline_client() -> LightClient {
+        RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ))
+    }
+
+    /// HYPOTHESIS: a malformed one-shot send fails at the parse, so no
+    /// wallet work can begin on a mistyped amount.
+    #[test]
+    fn a_non_numeric_send_amount_refuses_at_the_parse() {
+        assert!(
+            parse_command_tokens(&tokens(&["send", "zs1exampleaddress", "one-hundred"])).is_err(),
+            "a non-numeric amount must be a parse error, not a body error"
+        );
+    }
+
+    /// HYPOTHESIS: a session flag written after `messages` is a usage
+    /// error, as the CHANGELOG's flag-ordering rule promises.
+    #[test]
+    fn a_session_flag_after_messages_refuses_at_the_parse() {
+        assert!(
+            parse_command_tokens(&tokens(&["messages", "--nosync"])).is_err(),
+            "a post-command session flag must be refused, never read as a memo filter"
+        );
+    }
+
+    /// HYPOTHESIS: a command's Debug rendering, the string the name
+    /// derivation materializes on the heap, never carries memos or key
+    /// material out of the arguments.
+    #[test]
+    fn debug_rendering_never_materializes_memos_or_keys() {
+        let memo = "SENTINEL-MEMO-must-not-materialize";
+        let key = "SENTINEL-UFVK-must-not-materialize";
+        let send = CliCommand::Send {
+            args: vec![
+                String::from("zs1exampleaddress"),
+                String::from("50000"),
+                String::from(memo),
+            ],
+        };
+        let viewkey = CliCommand::ParseViewkey {
+            viewkey: String::from(key),
+        };
+        for (command, sentinel) in [(send, memo), (viewkey, key)] {
+            let rendered = format!("{command:?}");
+            assert!(
+                !rendered.contains(sentinel),
+                "`{}` renders its secret argument onto the heap: {rendered}",
+                command.name()
+            );
+        }
+    }
+
+    /// HYPOTHESIS: in a build without the nym feature, a nym invocation
+    /// with arguments explains the feature is absent instead of grading
+    /// the arguments for a transport that was never compiled.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn nym_arguments_meet_the_absent_feature_not_the_grammar() {
+        use super::super::{CommandError, dispatch_parsed};
+        let rendered = match parse_command_tokens(&tokens(&["nym", "probe", "http://x.com"]))
+            .map_err(CommandError::NotYetTyped)
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
+        {
+            Ok(output) => output,
+            Err(error) => error.to_string(),
+        };
+        assert!(rendered.contains("no Nym mixnet support"), "{rendered}");
     }
 }

@@ -40,9 +40,14 @@ use crate::commands::RT;
 
 pub(crate) mod version;
 
-/// Builds the clap `Command` definition for the CLI.
+/// Builds the clap `Command` definition for the CLI: the session's options
+/// followed by every dispatchable command, so a one-shot command parses
+/// into its typed form here, before any wallet work begins.
 pub fn build_clap_app() -> clap::Command {
-    clap::Command::new("Zingo CLI").version(version::VERSION)
+    use clap::Subcommand as _;
+
+    let session_options = clap::Command::new("Zingo CLI").version(version::VERSION)
+            .disable_help_subcommand(true)
             .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
@@ -119,18 +124,13 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("log-file")
                 .long("log-file")
                 .value_name("PATH")
-                .help("Path to the log file for interactive mode. Defaults to .zingo-cli/cli.log"))
-            .arg(Arg::new("COMMAND")
-                .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
-                .required(false)
-                .index(1))
-            .arg(Arg::new("extra_args")
-                .help("Params to execute command with. Run the 'help' command to get usage help.")
-                .required(false)
-                .num_args(1..)
-                .index(2)
-                .action(clap::ArgAction::Append)
+                .help("Path to the log file for interactive mode. Defaults to .zingo-cli/cli.log"));
+    commands::CliCommand::augment_subcommands(session_options)
+        .about(
+            "A command-line light wallet for Zcash. Runs the given command and exits, or \
+             starts the interactive prompt when given none.",
         )
+        .long_about(None)
 }
 
 /// Custom function to parse a string into an `http::Uri`
@@ -288,7 +288,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     let send_request = |request: Request| -> Result<String, String> {
         let description = match &request {
-            Request::Command(cmd, _) => cmd.clone(),
+            Request::Command(command) => command.name(),
             Request::PromptIndicator => "prompt indicator".to_string(),
         };
         if ch.transmitter.send(request).is_err() {
@@ -307,10 +307,6 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
             }
         }
     };
-    let send_command = |cmd: String, args: Vec<String>| -> Result<String, String> {
-        send_request(Request::Command(cmd, args))
-    };
-
     // The prompt's chain label comes from local config, not the server. An
     // `info` round trip here blocked the first prompt behind the cold mixnet
     // tunnel (up to MIXNET_ROUND_TRIP_BOUND), and an offline session got a
@@ -323,7 +319,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     loop {
         // Read the height first
-        let height = send_command("height".to_string(), vec![])
+        let height = send_request(Request::Command(commands::CliCommand::Height))
             .ok()
             .and_then(|s| json::parse(&s).ok())
             .and_then(|v| v["height"].as_i64())
@@ -339,33 +335,38 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
                 rl.add_history_entry(line.as_str())
                     .expect("Ability to add history entry");
                 // Parse command line arguments
-                let mut cmd_args = if let Ok(args) = shellwords::split(&line) {
-                    args
-                } else {
+                let Ok(tokens) = shellwords::split(&line) else {
                     println!("Mismatched Quotes");
                     continue;
                 };
 
-                if cmd_args.is_empty() {
+                if tokens.is_empty() {
                     continue;
                 }
 
-                let cmd = cmd_args.remove(0);
-                let args: Vec<String> = cmd_args;
+                let command = match commands::parse_command_tokens(&tokens) {
+                    Ok(command) => command,
+                    Err(rendered) => {
+                        eprintln!("{rendered}");
+                        continue;
+                    }
+                };
 
                 // CLI-only commands that don't need the LightClient.
-                if cmd == "servers" {
+                if matches!(command, commands::CliCommand::Servers) {
                     println!("{}", format_ranked_servers(cli_config));
                     continue;
                 }
 
-                match send_command(cmd, args) {
+                // Special check for Quit command.
+                let is_quit = matches!(command, commands::CliCommand::Quit);
+
+                match send_request(Request::Command(command)) {
                     Ok(output) => println!("{output}"),
                     Err(rendered) => eprintln!("{rendered}"),
                 }
 
-                // Special check for Quit command.
-                if line == "quit" || line == "exit" {
+                if is_quit {
                     break;
                 }
             }
@@ -394,9 +395,9 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 /// a response by sniffing its text (the in-band-error problem of issue
 /// zingolabs/zingolib#2446).
 enum Request {
-    /// Execute a user command. The reply is `Ok` with the command's
-    /// output, or `Err` with the rendered error line.
-    Command(String, Vec<String>),
+    /// Execute a user command, already parsed by the sender, replying `Ok`
+    /// with the command's output or `Err` with the rendered error line.
+    Command(commands::CliCommand),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
     /// typed calls on the loop thread. The reply is the sync indicator
     /// to embed in the interactive prompt.
@@ -415,15 +416,9 @@ struct CommandChannel {
     receiver: Receiver<Result<String, String>>,
 }
 
-/// Spawns a background thread that listens for `(command, args)` messages,
-/// executes each command against the [`LightClient`], and sends the
-/// response back through the returned [`CommandChannel`].
-///
-/// Each command crosses into async inside `commands::do_user_command`, and
-/// the per-prompt housekeeping crosses in the `block_on` below; the loop
-/// thread holds no other crossing (ADR 0030).
-///
-/// The loop exits when it receives a `"quit"` or `"exit"` command.
+/// Spawns a background thread that executes each parsed-command message
+/// against the [`LightClient`] and replies through the returned
+/// [`CommandChannel`], exiting on [`commands::CliCommand::Quit`].
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
@@ -434,8 +429,8 @@ pub(crate) fn command_loop(
 
     std::thread::spawn(move || {
         while let Ok(request) = command_receiver.recv() {
-            let (cmd, args) = match request {
-                Request::Command(cmd, args) => (cmd, args),
+            let command = match request {
+                Request::Command(command) => command,
                 Request::PromptIndicator => {
                     resp_transmitter
                         .send(Ok(RT.block_on(prompt_indicator(&mut lightclient))))
@@ -444,17 +439,18 @@ pub(crate) fn command_loop(
                 }
             };
             // The Offline-mode pin: this session never configures an Indexer.
-            if let Some(refusal) = offline_mode_refusal(communication_mode, &cmd) {
+            if let Some(refusal) = offline_mode_refusal(communication_mode, &command) {
                 resp_transmitter.send(Err(refusal)).unwrap();
                 continue;
             }
-            let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
+            let is_quit = matches!(command, commands::CliCommand::Quit);
 
-            let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient)
+            let cmd_response = RT
+                .block_on(commands::dispatch_parsed(command, &mut lightclient))
                 .map_err(|e| format!("Error: {e}"));
             resp_transmitter.send(cmd_response).unwrap();
 
-            if cmd == "quit" || cmd == "exit" {
+            if is_quit {
                 info!("Quit");
                 break;
             }
@@ -473,35 +469,24 @@ pub(crate) fn command_loop(
 enum ModeOfOperation {
     /// Start the interactive REPL.
     Interactive,
-    /// Execute a single command and exit.
+    /// Execute a single command and exit, the command arriving already
+    /// parsed from the same grammar the REPL uses.
     Command {
-        /// The command name (e.g. "balance", "send").
-        name: String,
-        /// Additional positional arguments for the command.
-        args: Vec<String>,
+        /// The parsed command to execute.
+        command: commands::CliCommand,
     },
 }
 
-/// Determines the mode of operation from parsed CLI arguments.
-///
-/// Returns [`ModeOfOperation::Command`] if a command is given, or
-/// [`ModeOfOperation::Interactive`] when no command is given.
-///
-/// The `help` command is handled separately before this function is called,
-/// so it will never appear as a [`ModeOfOperation::Command`].
+/// Determines the mode of operation from parsed CLI arguments:
+/// [`ModeOfOperation::Command`] when a command is given, or
+/// [`ModeOfOperation::Interactive`] when none is.
 fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
-    if let Some(cmd_name) = matches.get_one::<String>("COMMAND") {
-        let args = matches
-            .get_many::<String>("extra_args")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        ModeOfOperation::Command {
-            name: cmd_name.clone(),
-            args,
-        }
-    } else {
-        ModeOfOperation::Interactive
-    }
+    use clap::FromArgMatches as _;
+
+    commands::CliCommand::from_arg_matches(matches)
+        .map_or(ModeOfOperation::Interactive, |command| {
+            ModeOfOperation::Command { command }
+        })
 }
 
 /// Whether the CLI communicates with a remote indexer or operates locally.
@@ -517,13 +502,17 @@ enum CommunicationMode {
     Offline,
 }
 
-/// The Offline-mode pin at the REPL dispatch (issue #2286): an Offline
-/// session never configures an Indexer, so `change_server` is refused
-/// before it reaches command execution. Returns the refusal to send in
-/// place of executing `cmd`, or `None` when the command may proceed.
-/// Pure, so the pin is testable without a REPL thread.
-fn offline_mode_refusal(communication_mode: CommunicationMode, cmd: &str) -> Option<String> {
-    (communication_mode == CommunicationMode::Offline && cmd == "change_server").then(|| {
+/// The Offline-mode pin at the REPL dispatch: returns the refusal to send
+/// in place of executing `command` (an Offline session never configures an
+/// Indexer, so `change_server` is refused), or `None` when the command may
+/// proceed.
+fn offline_mode_refusal(
+    communication_mode: CommunicationMode,
+    command: &commands::CliCommand,
+) -> Option<String> {
+    (communication_mode == CommunicationMode::Offline
+        && matches!(command, commands::CliCommand::ChangeServer { .. }))
+    .then(|| {
         "Error: this session is in Offline mode; no Indexer may be configured. \
          Restart without --offline to change servers."
             .to_string()
@@ -966,13 +955,19 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     if filled_template.sync {
-        match commands::do_user_command_result("sync", &["run"], &mut lightclient).await {
+        let sync_run = commands::CliCommand::Sync {
+            sub: commands::SyncSubCommand::Run,
+        };
+        match commands::dispatch_parsed(sync_run, &mut lightclient).await {
             Ok(update) => eprintln!("{update}"),
             Err(e) => eprintln!("Error: {e}"),
         }
     }
 
-    match commands::do_user_command_result("save", &["run"], &mut lightclient).await {
+    let save_run = commands::CliCommand::Save {
+        sub: commands::SaveSubCommand::Run,
+    };
+    match commands::dispatch_parsed(save_run, &mut lightclient).await {
         Ok(update) => eprintln!("{update}"),
         Err(e) => eprintln!("Error: {e}"),
     }
@@ -1017,9 +1012,12 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
     let ch = match startup(cli_config) {
         Ok(ch) => ch,
         Err(startup_error) => {
-            if let ModeOfOperation::Command { name, .. } = &cli_config.mode
-                && name == "recovery_info"
-            {
+            if matches!(
+                &cli_config.mode,
+                ModeOfOperation::Command {
+                    command: commands::CliCommand::RecoveryInfo
+                }
+            ) {
                 return print_salvaged_recovery_info(cli_config, &startup_error)
                     .map(|()| ExitCode::SUCCESS);
             }
@@ -1031,13 +1029,15 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
             start_interactive(cli_config, ch);
             Ok(ExitCode::SUCCESS)
         }
-        ModeOfOperation::Command { name, args } => {
+        ModeOfOperation::Command { command } => {
+            let description = command.name();
             let exit_code = if ch
                 .transmitter
-                .send(Request::Command(name.clone(), args.clone()))
+                .send(Request::Command(command.clone()))
                 .is_err()
             {
-                let e = format!("Error executing command {name}: the command loop has exited");
+                let e =
+                    format!("Error executing command {description}: the command loop has exited");
                 eprintln!("{e}");
                 error!("{e}");
                 ExitCode::FAILURE
@@ -1052,7 +1052,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
                         ExitCode::FAILURE
                     }
                     Err(e) => {
-                        let e = format!("Error executing command {name}: {e}");
+                        let e = format!("Error executing command {description}: {e}");
                         eprintln!("{e}");
                         error!("{e}");
                         ExitCode::FAILURE
@@ -1062,7 +1062,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
 
             if ch
                 .transmitter
-                .send(Request::Command("quit".to_string(), vec![]))
+                .send(Request::Command(commands::CliCommand::Quit))
                 .is_ok()
             {
                 match ch.receiver.recv() {
@@ -1104,16 +1104,11 @@ pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
 /// or `None` for all other modes. The caller is responsible for printing
 /// the text and exiting the process.
 pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
-    if matches.get_one::<String>("COMMAND").map(String::as_str) == Some("help") {
-        let args: Vec<String> = matches
-            .get_many::<String>("extra_args")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        Some(commands::format_help(
-            &args.iter().map(String::as_str).collect::<Vec<&str>>(),
-        ))
-    } else {
-        None
+    match get_mode_of_operation(matches) {
+        ModeOfOperation::Command {
+            command: commands::CliCommand::Help { command: named },
+        } => Some(commands::format_help(named.as_deref())),
+        _ => None,
     }
 }
 
@@ -1126,6 +1121,12 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
     let mode = get_mode_of_operation(&matches);
+    if let ModeOfOperation::Command { command } = &mode
+        && let Err(refusal) = command.validate_deferred_grammar()
+    {
+        eprintln!("{refusal}");
+        return Ok(ExitCode::from(2));
+    }
     let communication_mode = get_communication_mode(&matches)?;
     let cli_config =
         ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;

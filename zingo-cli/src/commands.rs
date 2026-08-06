@@ -1,11 +1,4 @@
 //! Command definitions and dispatch for zingo-cli.
-//!
-//! Every command is one row of [`COMMANDS`], the static spec table: its
-//! name, help texts, wallet requirement, and the async function that runs
-//! it. The sync world crosses into async exactly once, at
-//! [`do_user_command`] (ADR 0030), and a failure leaves a command only as
-//! a [`CommandError`], never as error prose in the result channel
-//! (ADR 0031).
 
 mod error;
 #[cfg(test)]
@@ -14,7 +7,6 @@ mod utils;
 
 use std::convert::TryInto;
 use std::num::NonZeroU32;
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -27,6 +19,7 @@ use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_protocol::TxId;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
@@ -95,19 +88,32 @@ async fn transmit_narrated<T>(
     narrated(label, move || progress.latest(), operation).await
 }
 
-/// Typed failure of a CLI command. The dispatch seam renders these to
-/// prose exactly once, on stderr, for string frontends (ADR 0031). Typed
-/// frontends consume them directly via [`do_user_command_result`].
+/// [`transmit_narrated`] for the operations whose whole result is a list of
+/// transaction ids, rendered here so the sandwich exists once.
+async fn transmit_txids<T: ToString, E: std::fmt::Display>(
+    label: &str,
+    progress: TransmitProgressHandle,
+    operation: impl Future<Output = Result<impl IntoIterator<Item = T>, E>>,
+) -> Result<String, CommandError> {
+    match transmit_narrated(label, progress, operation).await {
+        Ok(txids) => {
+            let txids: Vec<T> = txids.into_iter().collect();
+            Ok(object! { "txids" => txids_json(&txids) }.pretty(JSON_INDENT))
+        }
+        Err(e) => Err(not_yet_typed(e)),
+    }
+}
+
+/// Typed failure of a CLI command, rendered to prose exactly once, on
+/// stderr, at the dispatch seam.
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
     #[error(transparent)]
     Migration(#[from] MigrationCommandError),
     #[error(transparent)]
     Nym(#[from] NymCommandError),
-    #[error("Unknown command : {0}. Type 'help' for a list of commands")]
-    UnknownCommand(String),
     #[error("the `{0}` command runs only at the interactive prompt")]
-    ReplOnly(&'static str),
+    ReplOnly(String),
     /// Transitional quarantine for commands whose failure prose is not
     /// yet typed: the message is stored WITHOUT the "Error: " prefix
     /// (the renderer adds it). Every construction site is a candidate
@@ -124,246 +130,155 @@ fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
     ))
 }
 
-/// The future a wallet command's body returns: boxed so every row of the
-/// spec table shares one type, borrowing the arguments and the client.
-type CommandFuture<'a> = Pin<Box<dyn Future<Output = Result<String, CommandError>> + 'a>>;
+/// The indent width of every JSON object the CLI prints.
+const JSON_INDENT: u16 = 2;
 
-type WalletRunFn = for<'a> fn(&'a [&'a str], &'a mut LightClient) -> CommandFuture<'a>;
-
-/// What runs a command, and therefore what it may touch and where `help`
-/// lists it. A `Standalone` body never receives the wallet, so its
-/// wallet-freedom is enforced by construction; `Repl` marks a command the
-/// interactive REPL dispatches itself, holding state this seam does not.
-enum CommandBody {
-    /// Wallet-free and synchronous; listed under "Standalone commands".
-    Standalone(fn(&[&str]) -> Result<String, CommandError>),
-    /// Needs the loaded wallet; listed under "Wallet commands".
-    Wallet(WalletRunFn),
-    /// Owned by the interactive REPL; listed under "Standalone commands".
-    Repl,
+/// Wraps a failure's rendering in the transitional [`CommandError::NotYetTyped`] variant.
+fn not_yet_typed(e: impl std::fmt::Display) -> CommandError {
+    CommandError::NotYetTyped(e.to_string())
 }
 
-/// One row of the command table: the single source of a command's name,
-/// help texts, and body. The name is minted once, by the `wallet!` and
-/// `standalone!` macros, from the body function's identifier.
-pub struct CommandSpec {
-    pub name: &'static str,
-    help: &'static str,
-    short_help: &'static str,
-    body: CommandBody,
+async fn addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    Ok(lightclient
+        .unified_addresses_json()
+        .await
+        .pretty(JSON_INDENT))
 }
 
-macro_rules! wallet {
-    (
-        $body:ident,
-        short_help: $short_help:expr,
-        help: $help:expr,
-    ) => {
-        CommandSpec {
-            name: stringify!($body),
-            help: $help,
-            short_help: $short_help,
-            body: CommandBody::Wallet({
-                fn wrap<'a>(
-                    args: &'a [&'a str],
-                    lightclient: &'a mut LightClient,
-                ) -> CommandFuture<'a> {
-                    Box::pin($body(args, lightclient))
-                }
-                wrap
-            }),
-        }
-    };
-}
-
-macro_rules! standalone {
-    (
-        $body:ident,
-        short_help: $short_help:expr,
-        help: $help:expr,
-    ) => {
-        CommandSpec {
-            name: stringify!($body),
-            help: $help,
-            short_help: $short_help,
-            body: CommandBody::Standalone($body),
-        }
-    };
-}
-
-/// The help text of the named command, for bodies that echo their own
-/// usage. Empty for a name not in the table.
-fn help_for(name: &str) -> &'static str {
-    COMMANDS
-        .iter()
-        .find(|spec| spec.name == name)
-        .map(|spec| spec.help)
-        .unwrap_or_default()
-}
-
-async fn addresses(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(lightclient.unified_addresses_json().await.pretty(2))
-}
-
-async fn balance(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn balance(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.account_balance(zip32::AccountId::ZERO).await {
         Ok(bal) => Ok(bal.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn birthday(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn birthday(lightclient: &mut LightClient) -> Result<String, CommandError> {
     Ok(lightclient.birthday().to_string())
 }
 
-async fn calculate(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(usage("calculate", error::CommandError::InvalidArguments));
-    }
+async fn calculate(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.calculate_stored_proposal().await {
         Ok(txids) => Ok(object! {
             "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
+}
+
+/// The `change_server` argument: an empty string names the default uri,
+/// as it did when the body parsed the argument itself.
+fn parse_server_uri(raw: &str) -> Result<http::Uri, String> {
+    if raw.is_empty() {
+        return Ok(http::Uri::default());
+    }
+    http::Uri::from_str(raw).map_err(|_| "invalid server uri".to_string())
 }
 
 async fn change_server(
-    args: &[&str],
+    uri: Option<http::Uri>,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    async fn set(lightclient: &mut LightClient, uri: http::Uri) -> Result<String, CommandError> {
-        match lightclient.set_indexer_uri(uri).await {
-            Ok(()) => Ok("server set".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(format!(
-                "failed to set server: {e}"
-            ))),
-        }
-    }
-    match args.len() {
-        0 => set(lightclient, http::Uri::default()).await,
-        1 => match http::Uri::from_str(args[0]) {
-            Ok(uri) => set(lightclient, uri).await,
-            Err(_) => match args[0] {
-                "" => set(lightclient, http::Uri::default()).await,
-                _ => Err(CommandError::NotYetTyped("invalid server uri".to_string())),
-            },
-        },
-        _ => Err(CommandError::NotYetTyped(
-            help_for("change_server").to_string(),
-        )),
+    match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
+        Ok(()) => Ok("server set".to_string()),
+        Err(e) => Err(CommandError::NotYetTyped(format!(
+            "failed to set server: {e}"
+        ))),
     }
 }
 
+/// Renders the wallet's judgment of an address into the `check_address` JSON.
+fn address_check_json(address_ref: Option<WalletAddressRef>) -> json::JsonValue {
+    address_ref.map_or(
+        json::object! { "is_wallet_address" => "false".to_string() },
+        |address_ref| match address_ref {
+            WalletAddressRef::Unified {
+                account_id,
+                address_index,
+                has_orchard,
+                has_sapling,
+                has_transparent,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "unified".to_string(),
+                "address_index" => address_index,
+                "account_id" => u32::from(account_id),
+                "has_orchard" => has_orchard,
+                "has_sapling" => has_sapling,
+                "has_transparent" => has_transparent,
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::OrchardInternal {
+                account_id,
+                diversifier_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "orchard_internal".to_string(),
+                "account_id" => u32::from(account_id),
+                "diversifier_index" => u128::from(diversifier_index).to_string(),
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::SaplingExternal {
+                account_id,
+                diversifier_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "sapling".to_string(),
+                "account_id" => u32::from(account_id),
+                "diversifier_index" => u128::from(diversifier_index).to_string(),
+                "encoded_address" => encoded_address,
+            },
+            WalletAddressRef::Transparent {
+                account_id,
+                scope,
+                address_index,
+                encoded_address,
+            } => json::object! {
+                "is_wallet_address" => "true".to_string(),
+                "address_type" => "transparent".to_string(),
+                "account_id" => u32::from(account_id),
+                "scope" => scope.to_string(),
+                "address_index" => address_index.index(),
+                "encoded_address" => encoded_address,
+            },
+        },
+    )
+}
+
 async fn check_address(
-    args: &[&str],
+    address: &str,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "no address specified. try 'help check_address' for correct usage and examples."
-                .to_string(),
-        ));
-    }
     match lightclient
         .wallet()
         .read()
         .await
-        .is_address_derived_by_keys(args[0])
+        .is_address_derived_by_keys(address)
     {
-        Ok(address_ref) => Ok(address_ref
-            .map_or(
-                json::object! { "is_wallet_address" => "false".to_string() },
-                |address_ref| match address_ref {
-                    WalletAddressRef::Unified {
-                        account_id,
-                        address_index,
-                        has_orchard,
-                        has_sapling,
-                        has_transparent,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "unified".to_string(),
-                        "address_index" => address_index,
-                        "account_id" => u32::from(account_id),
-                        "has_orchard" => has_orchard,
-                        "has_sapling" => has_sapling,
-                        "has_transparent" => has_transparent,
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::OrchardInternal {
-                        account_id,
-                        diversifier_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "orchard_internal".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "diversifier_index" => u128::from(diversifier_index).to_string(),
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::SaplingExternal {
-                        account_id,
-                        diversifier_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "sapling".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "diversifier_index" => u128::from(diversifier_index).to_string(),
-                        "encoded_address" => encoded_address,
-                    },
-                    WalletAddressRef::Transparent {
-                        account_id,
-                        scope,
-                        address_index,
-                        encoded_address,
-                    } => json::object! {
-                        "is_wallet_address" => "true".to_string(),
-                        "address_type" => "transparent".to_string(),
-                        "account_id" => u32::from(account_id),
-                        "scope" => scope.to_string(),
-                        "address_index" => address_index.index(),
-                        "encoded_address" => encoded_address,
-                    },
-                },
-            )
-            .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(address_ref) => Ok(address_check_json(address_ref).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn clear(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn clear(lightclient: &mut LightClient) -> Result<String, CommandError> {
     lightclient.wallet().write().await.clear_all();
-    Ok(object! { "result" => "success" }.pretty(2))
+    Ok(object! { "result" => "success" }.pretty(JSON_INDENT))
 }
 
-async fn confirm(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(usage("confirm", error::CommandError::InvalidArguments));
-    }
-    match transmit_narrated(
+async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    transmit_txids(
         "confirm",
         lightclient.transmit_progress_handle(),
         lightclient.send_stored_proposal(true),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
 #[cfg(feature = "nym")]
-async fn current_price(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
         Ok(fetch) => Ok(format!(
             "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
@@ -372,15 +287,12 @@ async fn current_price(
             fetch.round_trip.as_millis(),
             fetch.via_socks5
         )),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
 #[cfg(not(feature = "nym"))]
-async fn current_price(
-    _args: &[&str],
-    _lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn current_price(_lightclient: &mut LightClient) -> Result<String, CommandError> {
     Ok(
         "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011). \
          Rebuild zingo-cli with `--features nym`."
@@ -388,21 +300,18 @@ async fn current_price(
     )
 }
 
-async fn delete(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn delete(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.delete_wallet_file().await {
         Ok(()) => Ok(object! {
             "result" => "success",
             "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8"),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn export_ufvk(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn export_ufvk(lightclient: &mut LightClient) -> Result<String, CommandError> {
     let ufvk: UnifiedFullViewingKey = match lightclient
         .wallet()
         .read()
@@ -413,16 +322,16 @@ async fn export_ufvk(
         .try_into()
     {
         Ok(ufvk) => ufvk,
-        Err(e) => return Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => return Err(not_yet_typed(e)),
     };
     Ok(object! {
         "ufvk" => ufvk.encode(&lightclient.chain_type()),
         "birthday" => lightclient.birthday()
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
-async fn height(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
     Ok(object! {
         "height" => json::JsonValue::from(
             lightclient
@@ -434,84 +343,92 @@ async fn height(_args: &[&str], lightclient: &mut LightClient) -> Result<String,
                 .map_or(0, u32::from)
         )
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
-fn help(args: &[&str]) -> Result<String, CommandError> {
-    Ok(format_help(args))
+fn help(command: Option<&str>) -> Result<String, CommandError> {
+    Ok(format_help(command))
 }
 
-async fn info(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.info().await {
-        Ok(info) => Ok(json::JsonValue::from(info).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(info) => Ok(json::JsonValue::from(info).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
+/// Borrows the send family's arguments for the `utils::parse_*` grammars,
+/// a JSON-or-positional hybrid clap does not own yet.
+fn as_strs(args: &[String]) -> Vec<&str> {
+    args.iter().map(String::as_str).collect()
+}
+
 async fn max_send_value(
-    args: &[&str],
+    name: &str,
+    args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
     let (address, zennies_for_zingo) =
-        utils::parse_max_send_value_args(args).map_err(|e| usage("max_send_value", e))?;
+        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
         .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
         .await
     {
-        Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn memobytes_to_address(
-    args: &[&str],
+async fn memobytes_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    match lightclient.do_total_memobytes_to_address().await {
+        Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
+    }
+}
+
+async fn messages(
+    filter: Option<&str>,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    if args.len() > 1 {
-        return Err(CommandError::NotYetTyped(format!(
-            "didn't understand arguments\n{}",
-            help_for("memobytes_to_address")
-        )));
-    }
-    match lightclient.do_total_memobytes_to_address().await {
-        Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+    match lightclient.messages_containing(filter).await {
+        Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn messages(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() > 1 {
-        return Err(CommandError::NotYetTyped(
-            "invalid arguments\nTry 'help messages' for correct usage and examples".to_string(),
-        ));
-    }
-    match lightclient.messages_containing(args.first().copied()).await {
-        Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
+async fn migrate(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    Ok(run_migrate(lightclient).await?)
 }
 
-async fn migrate(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migrate(args, lightclient).await?)
+async fn migration(
+    sub: MigrationSubCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    Ok(run_migration(sub, lightclient).await?)
 }
 
-async fn migration(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migration(args, lightclient).await?)
-}
-
-async fn new_address(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() != 1 || (!args[0].contains('o') && !args[0].contains('z')) {
-        return Err(CommandError::NotYetTyped(format!(
-            "No address type specified\n{}",
-            help_for("new_address")
-        )));
+/// The `new_address` argument: `o`, `z`, or both, naming the receivers the
+/// new unified address carries (transparent receivers are `new_taddress`'s).
+fn parse_receiver_selection(raw: &str) -> Result<ReceiverSelection, String> {
+    if raw.is_empty()
+        || raw
+            .chars()
+            .any(|receiver| receiver != 'o' && receiver != 'z')
+    {
+        return Err("the address type must be o, z, or oz".to_string());
     }
+    Ok(ReceiverSelection {
+        orchard: raw.contains('o'),
+        sapling: raw.contains('z'),
+    })
+}
+
+async fn new_address(
+    receivers: ReceiverSelection,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    let receivers = ReceiverSelection {
-        orchard: args[0].contains('o'),
-        sapling: args[0].contains('z'),
-    };
     match wallet.generate_unified_address(receivers, zip32::AccountId::ZERO) {
         Ok((id, unified_address)) => Ok(json::object! {
             "account" => u32::from(zip32::AccountId::ZERO), // used concrete type instead of u32 to simplify upgrading CLI to multi-account
@@ -521,130 +438,97 @@ async fn new_address(args: &[&str], lightclient: &mut LightClient) -> Result<Str
             "has_transparent" => unified_address.has_transparent(),
             "encoded_address" => unified_address.encode(&chain_type),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn new_taddress(
-    _args: &[&str],
+async fn taddress(
     lightclient: &mut LightClient,
+    enforce_gap: bool,
 ) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
+    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_gap) {
         Ok((id, transparent_address)) => Ok(json::object! {
             "account" => u32::from(id.account_id()),
             "address_index" => id.address_index().index(),
             "scope" => id.scope().to_string(),
             "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn new_taddress_allow_gap(
-    _args: &[&str],
+/// The one optional argument of `notes` and `coins`: `all`, widening the
+/// listing to the spent outputs.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OutputScope {
+    All,
+}
+
+async fn notes(
+    scope: Option<OutputScope>,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let chain_type = lightclient.chain_type();
-    let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
-        Ok((id, transparent_address)) => Ok(json::object! {
-            "account" => u32::from(id.account_id()),
-            "address_index" => id.address_index().index(),
-            "scope" => id.scope().to_string(),
-            "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
-}
-
-async fn notes(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let all_notes = match args {
-        [] => false,
-        ["all"] => true,
-        [a] => {
-            return Err(CommandError::NotYetTyped(format!(
-                "Invalid argument \"{a}\". Specify 'all' to include spent notes"
-            )));
-        }
-        _ => {
-            return Err(CommandError::NotYetTyped(help_for("notes").to_string()));
-        }
-    };
+    let all_notes = scope.is_some();
     let wallet = lightclient.wallet().read().await;
     Ok(json::object! {
         "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
         "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
         "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
-async fn coins(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let all_coins = match args {
-        [] => false,
-        ["all"] => true,
-        [a] => {
-            return Err(CommandError::NotYetTyped(format!(
-                "Invalid argument \"{a}\". Specify 'all' to include spent coins"
-            )));
-        }
-        _ => {
-            return Err(CommandError::NotYetTyped(help_for("coins").to_string()));
-        }
-    };
+async fn coins(
+    scope: Option<OutputScope>,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let all_coins = scope.is_some();
     Ok(json::object! {
         "transparent_coins" => json::JsonValue::from(
             lightclient.wallet().read().await.coin_summaries(all_coins)
         ),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
-async fn quicksend(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let receivers = utils::parse_send_args(args).map_err(|e| usage("quicksend", e))?;
+async fn quicksend(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
-        .map_err(|e| usage("quicksend", e))?;
+        .map_err(|e| usage(name, e))?;
     match transmit_narrated(
-        "quicksend",
+        name,
         lightclient.transmit_progress_handle(),
         lightclient.quick_send_reported(request, zip32::AccountId::ZERO, true),
     )
     .await
     {
         Ok(reports) => Ok(object! {
-            "txids" => reports.iter().map(|report| report.txid.to_string()).collect::<Vec<_>>(),
+            "txids" => txids_json(&reports.iter().map(|report| report.txid).collect::<Vec<_>>()),
             "transmissions" => reports.iter().map(render_transmit_report).collect::<Vec<_>>(),
         }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        .pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn quickshield(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(usage("shield", error::CommandError::InvalidArguments));
-    }
-    match transmit_narrated(
+async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    transmit_txids(
         "quickshield",
         lightclient.transmit_progress_handle(),
         lightclient.quick_shield(zip32::AccountId::ZERO),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
-async fn quit(_args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.shutdown_save_task().await {
         Ok(()) => eprintln!("Save task shutdown successfully."),
         Err(e) => eprintln!("Error: save failed. {e}"),
@@ -652,10 +536,7 @@ async fn quit(_args: &[&str], lightclient: &mut LightClient) -> Result<String, C
     Ok("Zingo CLI quit successfully.".to_string())
 }
 
-async fn recovery_info(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn recovery_info(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.wallet().read().await.recovery_info() {
         Some(backup_info) => Ok(backup_info.to_string()),
         None => Err(CommandError::NotYetTyped(
@@ -664,17 +545,16 @@ async fn recovery_info(
     }
 }
 
+/// A transaction id argument, hex-encoded as `calculate` and the wallet's
+/// listings print it.
+fn parse_txid(raw: &str) -> Result<TxId, String> {
+    txid_from_hex_encoded_str(raw).map_err(|e| e.to_string())
+}
+
 async fn remove_transaction(
-    args: &[&str],
+    txid: TxId,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "remove command expects 1 argument. Type \"help remove\" for usage.".to_string(),
-        ));
-    }
-    let txid =
-        txid_from_hex_encoded_str(args[0]).map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
     match lightclient
         .wallet()
         .write()
@@ -682,107 +562,144 @@ async fn remove_transaction(
         .remove_failed_transaction(txid)
     {
         Ok(()) => Ok("Successfully removed failed transaction.".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn rescan(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(CommandError::NotYetTyped(
-            "rescan command expects no arguments. Type \"rescan help\" for usage.".to_string(),
-        ));
-    }
+async fn rescan(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.rescan().await {
         Ok(()) => Ok("Launching rescan...".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn save(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "save command expects 1 argument. Type \"help save\" for usage.".to_string(),
-        ));
-    }
-    match args[0] {
-        "run" => {
+/// A parsed `save` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SaveSubCommand {
+    #[command(about = "Launch the task that persists the wallet as its state changes")]
+    Run,
+    #[command(about = "Check the save task for a recorded failure, restarting it on one")]
+    Check,
+    #[command(about = "Shut the save task down")]
+    Shutdown,
+}
+
+async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<String, CommandError> {
+    match sub {
+        SaveSubCommand::Run => {
             lightclient.save_task().await;
             Ok("Launching save task...".to_string())
         }
-        "check" => match lightclient.check_save_error().await {
+        SaveSubCommand::Check => match lightclient.check_save_error().await {
             Ok(()) => Ok(String::new()),
             Err(e) => Err(CommandError::NotYetTyped(format!(
                 "save failed. {e}\nRestarting save task..."
             ))),
         },
-        "shutdown" => match lightclient.shutdown_save_task().await {
+        SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
             Ok(()) => Ok("Save task shutdown successfully.".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(format!("save failed. {e}"))),
         },
-        _ => Err(CommandError::NotYetTyped(
-            "invalid sub-command. Type \"help save\" for usage.".to_string(),
-        )),
     }
 }
 
-async fn send(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let receivers = utils::parse_send_args(args).map_err(|e| usage("send", e))?;
+async fn send(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let receivers = utils::parse_send_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
-        .map_err(|e| usage("send", e))?;
+        .map_err(|e| usage(name, e))?;
     match lightclient
         .propose_send(request, zip32::AccountId::ZERO)
         .await
     {
         Ok(proposal) => match zingolib::data::proposal::total_fee(&proposal) {
-            Ok(fee) => Ok(object! { "fee" => fee.into_u64() }.pretty(2)),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Ok(fee) => Ok(object! { "fee" => fee.into_u64() }.pretty(JSON_INDENT)),
+            Err(e) => Err(not_yet_typed(e)),
         },
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn send_all(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
+async fn send_all(
+    name: &str,
+    args: &[String],
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
     let (address, zennies_for_zingo, memo) =
-        utils::parse_send_all_args(args).map_err(|e| usage("sendall", e))?;
+        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
         .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
         .await
     {
         Ok(proposal) => {
-            let amount = proposal::total_payment_amount(&proposal)
-                .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
-            let fee = proposal::total_fee(&proposal)
-                .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
+            let amount = proposal::total_payment_amount(&proposal).map_err(not_yet_typed)?;
+            let fee = proposal::total_fee(&proposal).map_err(not_yet_typed)?;
             Ok(object! {
                 "amount" => amount.into_u64(),
                 "fee" => fee.into_u64(),
             }
-            .pretty(2))
+            .pretty(JSON_INDENT))
         }
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn sends_to_address(
-    args: &[&str],
+async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    match lightclient.do_total_spends_to_address().await {
+        Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
+    }
+}
+
+/// A parsed `settings` command, naming which setting to write and its
+/// value, or reading the settings out when no setting is named.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+#[command(rename_all = "snake_case")]
+pub(crate) enum SettingsSubCommand {
+    #[command(about = "Set the sync performance level")]
+    Performance {
+        #[arg(value_enum)]
+        level: PerformanceLevelArg,
+    },
+    #[command(about = "Set how many confirmations a note needs to be spendable")]
+    MinConfirmations {
+        #[arg(value_name = "count")]
+        count: NonZeroU32,
+    },
+}
+
+/// The sync performance levels as a clap grammar, minting CLI value names
+/// for pepper-sync's [`PerformanceLevel`] and converting.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PerformanceLevelArg {
+    Low,
+    Medium,
+    High,
+    Maximum,
+}
+
+impl From<PerformanceLevelArg> for PerformanceLevel {
+    fn from(level: PerformanceLevelArg) -> Self {
+        match level {
+            PerformanceLevelArg::Low => PerformanceLevel::Low,
+            PerformanceLevelArg::Medium => PerformanceLevel::Medium,
+            PerformanceLevelArg::High => PerformanceLevel::High,
+            PerformanceLevelArg::Maximum => PerformanceLevel::Maximum,
+        }
+    }
+}
+
+async fn settings(
+    sub: Option<SettingsSubCommand>,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    if args.len() > 1 {
-        return Err(CommandError::NotYetTyped(format!(
-            "didn't understand arguments\n{}",
-            help_for("sends_to_address")
-        )));
-    }
-    match lightclient.do_total_spends_to_address().await {
-        Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
-}
-
-async fn settings(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
     let mut wallet = lightclient.wallet().write().await;
 
-    if args.is_empty() {
+    let Some(sub) = sub else {
         return Ok(format!(
             r"
 performance: {}
@@ -791,33 +708,15 @@ min confirmations: {}
             wallet.wallet_settings.sync_config.performance_level,
             wallet.wallet_settings.min_confirmations,
         ));
-    }
-
-    let invalid_arguments = || {
-        CommandError::NotYetTyped(
-            "invalid arguments\nTry 'help settings' for correct usage and examples".to_string(),
-        )
     };
-    match args[0] {
-        "performance" => {
-            wallet.wallet_settings.sync_config.performance_level =
-                match args.get(1).copied().ok_or_else(invalid_arguments)? {
-                    "low" => PerformanceLevel::Low,
-                    "medium" => PerformanceLevel::Medium,
-                    "high" => PerformanceLevel::High,
-                    "maximum" => PerformanceLevel::Maximum,
-                    _ => return Err(invalid_arguments()),
-                }
+
+    match sub {
+        SettingsSubCommand::Performance { level } => {
+            wallet.wallet_settings.sync_config.performance_level = level.into();
         }
-        "min_confirmations" => {
-            let min_confirmations = args
-                .get(1)
-                .and_then(|value| value.parse::<u32>().ok())
-                .and_then(|m| NonZeroU32::try_from(m).ok())
-                .ok_or_else(invalid_arguments)?;
-            wallet.wallet_settings.min_confirmations = min_confirmations;
+        SettingsSubCommand::MinConfirmations { count } => {
+            wallet.wallet_settings.min_confirmations = count;
         }
-        _ => return Err(invalid_arguments()),
     }
 
     wallet.mark_dirty();
@@ -825,10 +724,7 @@ min confirmations: {}
     Ok("Successfully updated settings.".to_string())
 }
 
-async fn shield(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(usage("shield", error::CommandError::InvalidArguments));
-    }
+async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.propose_shield(zip32::AccountId::ZERO).await {
         Ok(proposal) => {
             if proposal.steps().len() != 1 {
@@ -852,95 +748,96 @@ async fn shield(args: &[&str], lightclient: &mut LightClient) -> Result<String, 
                 "value_to_shield" => value_to_shield.into_u64(),
                 "fee" => fee.into_u64(),
             }
-            .pretty(2))
+            .pretty(JSON_INDENT))
         }
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn spendable_balance(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn spendable_balance(lightclient: &mut LightClient) -> Result<String, CommandError> {
     let wallet = lightclient.wallet().read().await;
     let spendable_balance = wallet
         .shielded_spendable_balance(zip32::AccountId::ZERO, false)
-        .map_err(|e| CommandError::NotYetTyped(e.to_string()))?;
+        .map_err(not_yet_typed)?;
     Ok(object! {
         "spendable_balance" => spendable_balance.into_u64(),
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
-async fn sync(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if args.len() != 1 {
-        return Err(CommandError::NotYetTyped(
-            "sync command expects 1 argument. Type \"help sync\" for usage.".to_string(),
-        ));
-    }
+/// A parsed `sync` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SyncSubCommand {
+    #[command(about = "Start the sync task, or resume it when paused")]
+    Run,
+    #[command(about = "Pause the sync task's scanning")]
+    Pause,
+    #[command(about = "Shut the sync task down early")]
+    Stop,
+    #[command(about = "Report sync progress")]
+    Status,
+    #[command(about = "Report the finished sync's result. Not meant to be called by hand")]
+    Poll,
+}
 
-    match args[0] {
-        "run" => {
+async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<String, CommandError> {
+    match sub {
+        SyncSubCommand::Run => {
             if lightclient.sync_mode() == SyncMode::Paused {
                 lightclient.resume_sync().expect("sync should be paused");
                 Ok("Resuming sync task...".to_string())
             } else {
                 match lightclient.sync().await {
                     Ok(()) => Ok("Launching sync task...".to_string()),
-                    Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+                    Err(e) => Err(not_yet_typed(e)),
                 }
             }
         }
-        "pause" => match lightclient.pause_sync() {
+        SyncSubCommand::Pause => match lightclient.pause_sync() {
             Ok(()) => Ok("Pausing sync task...".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Err(e) => Err(not_yet_typed(e)),
         },
-        "stop" => match lightclient.stop_sync() {
+        SyncSubCommand::Stop => match lightclient.stop_sync() {
             Ok(()) => Ok("Stopping sync task...".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+            Err(e) => Err(not_yet_typed(e)),
         },
-        "status" => match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
-            Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
-            Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-        },
-        "poll" => match lightclient.poll_sync() {
+        SyncSubCommand::Status => {
+            match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
+                Ok(status) => Ok(json::JsonValue::from(status).pretty(JSON_INDENT)),
+                Err(e) => Err(not_yet_typed(e)),
+            }
+        }
+        SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
             PollReport::Ready(result) => match result {
                 Ok(sync_result) => Ok(sync_result.to_string()),
-                Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+                Err(e) => Err(not_yet_typed(e)),
             },
         },
-        _ => Err(CommandError::NotYetTyped(
-            "invalid sub-command. Type \"help sync\" for usage.".to_string(),
-        )),
     }
 }
 
-async fn t_addresses(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    Ok(lightclient.transparent_addresses_json().await.pretty(2))
+async fn t_addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    Ok(lightclient
+        .transparent_addresses_json()
+        .await
+        .pretty(JSON_INDENT))
 }
 
-async fn transactions(
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    if !args.is_empty() {
-        return Err(CommandError::NotYetTyped(
-            "invalid arguments\nTry 'help transactions' for correct usage and examples".to_string(),
-        ));
-    }
+async fn transactions(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.transaction_summaries(false).await {
         Ok(transactions) => Ok(transactions.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn transmit(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    let txids = if args.is_empty() {
+async fn transmit(
+    requested: Vec<TxId>,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    let txids = if requested.is_empty() {
         // All Calculated transactions, ordered by target height and
         // then txid for determinism.
         let wallet = lightclient.wallet().read().await;
@@ -958,10 +855,7 @@ async fn transmit(args: &[&str], lightclient: &mut LightClient) -> Result<String
         calculated.sort_by_key(|&(height, txid)| (height, txid.as_ref().to_owned()));
         calculated.into_iter().map(|(_, txid)| txid).collect()
     } else {
-        args.iter()
-            .map(|arg| txid_from_hex_encoded_str(arg))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| usage("transmit", e))?
+        requested
     };
 
     let Some(txids) = nonempty::NonEmpty::from_vec(txids) else {
@@ -970,55 +864,33 @@ async fn transmit(args: &[&str], lightclient: &mut LightClient) -> Result<String
         ));
     };
 
-    match transmit_narrated(
+    transmit_txids(
         "transmit",
         lightclient.transmit_progress_handle(),
         lightclient.transmit_calculated(txids),
     )
     .await
-    {
-        Ok(txids) => Ok(object! {
-            "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
-        }
-        .pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
-    }
 }
 
-async fn value_to_address(
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    if args.len() > 1 {
-        return Err(CommandError::NotYetTyped(format!(
-            "didn't understand arguments\n{}",
-            help_for("value_to_address")
-        )));
-    }
+async fn value_to_address(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.do_total_value_to_address().await {
-        Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(2)),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(JSON_INDENT)),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-async fn value_transfers(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn value_transfers(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.value_transfers(false).await {
         Ok(value_transfers) => Ok(value_transfers.to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(e.to_string())),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
-fn version(_args: &[&str]) -> Result<String, CommandError> {
+fn version() -> Result<String, CommandError> {
     Ok(zingolib::git_description().to_string())
 }
 
-async fn wallet_kind(
-    _args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+async fn wallet_kind(lightclient: &mut LightClient) -> Result<String, CommandError> {
     if lightclient.mnemonic_phrase().is_some() {
         return Ok(object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                 "transparent" => true,
@@ -1061,12 +933,7 @@ async fn wallet_kind(
     )
 }
 
-fn parse_address(args: &[&str]) -> Result<String, CommandError> {
-    if args.len() > 1 || args.is_empty() {
-        return Err(CommandError::NotYetTyped(
-            help_for("parse_address").to_string(),
-        ));
-    }
+fn parse_address(address: &str) -> Result<String, CommandError> {
     fn make_decoded_chain_pair(
         address: &str,
     ) -> Option<(
@@ -1082,7 +949,7 @@ fn parse_address(args: &[&str]) -> Result<String, CommandError> {
         .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
     }
     Ok(
-        if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
+        if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(address) {
             #[allow(unreachable_patterns)]
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
@@ -1149,64 +1016,74 @@ fn parse_address(args: &[&str]) -> Result<String, CommandError> {
     )
 }
 
-fn parse_viewkey(args: &[&str]) -> Result<String, CommandError> {
-    match args.len() {
-        1 => Ok(json::stringify_pretty(
-            match Ufvk::decode(args[0]) {
-                Ok((network, ufvk)) => {
-                    let mut pools_available = vec![];
-                    for fvk in ufvk.items_as_parsed() {
-                        match fvk {
-                            zcash_address::unified::Fvk::Orchard(_) => {
-                                pools_available.push("orchard");
-                            }
-                            zcash_address::unified::Fvk::Sapling(_) => {
-                                pools_available.push("sapling");
-                            }
-                            zcash_address::unified::Fvk::P2pkh(_) => {
-                                pools_available.push("transparent");
-                            }
-                            zcash_address::unified::Fvk::Unknown { .. } => pools_available
-                                .push("Unknown future protocol. Perhaps you're using old software"),
+fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
+    Ok(json::stringify_pretty(
+        match Ufvk::decode(viewkey) {
+            Ok((network, ufvk)) => {
+                let mut pools_available = vec![];
+                for fvk in ufvk.items_as_parsed() {
+                    match fvk {
+                        zcash_address::unified::Fvk::Orchard(_) => {
+                            pools_available.push("orchard");
                         }
-                    }
-                    object! {
-                        "status" => "success",
-                        "chain_name" => match network {
-                            NetworkType::Main => "main",
-                            NetworkType::Test => "test",
-                            NetworkType::Regtest => "regtest",
-                        },
-                        "address_kind" => "ufvk",
-                        "pools_available" => pools_available,
+                        zcash_address::unified::Fvk::Sapling(_) => {
+                            pools_available.push("sapling");
+                        }
+                        zcash_address::unified::Fvk::P2pkh(_) => {
+                            pools_available.push("transparent");
+                        }
+                        zcash_address::unified::Fvk::Unknown { .. } => pools_available
+                            .push("Unknown future protocol. Perhaps you're using old software"),
                     }
                 }
-                Err(_) => {
-                    object! {
-                        "status" => "Invalid viewkey",
-                        "chain_name" => json::JsonValue::Null,
-                        "address_kind" => json::JsonValue::Null
-                    }
+                object! {
+                    "status" => "success",
+                    "chain_name" => match network {
+                        NetworkType::Main => "main",
+                        NetworkType::Test => "test",
+                        NetworkType::Regtest => "regtest",
+                    },
+                    "address_kind" => "ufvk",
+                    "pools_available" => pools_available,
                 }
-            },
-            4,
-        )),
-        _ => Err(CommandError::NotYetTyped(
-            help_for("parse_viewkey").to_string(),
-        )),
-    }
+            }
+            Err(_) => {
+                object! {
+                    "status" => "Invalid viewkey",
+                    "chain_name" => json::JsonValue::Null,
+                    "address_kind" => json::JsonValue::Null
+                }
+            }
+        },
+        4,
+    ))
 }
 
-async fn drain(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_drain(args, lightclient).await?)
+async fn drain(
+    sub: DrainSubCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    Ok(run_drain(sub, lightclient).await?)
 }
 
-async fn split(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_split(args, lightclient).await?)
+async fn split(
+    sub: SplitSubCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    Ok(run_split(sub, lightclient).await?)
 }
 
-async fn nym(args: &[&str], lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(nym_command(args, lightclient).await?)
+#[cfg(feature = "nym")]
+async fn nym(
+    sub: Option<NymSubCommand>,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
+    Ok(nym_command(sub.unwrap_or(NymSubCommand::Status), lightclient).await?)
+}
+
+#[cfg(not(feature = "nym"))]
+async fn nym(_lightclient: &mut LightClient) -> Result<String, CommandError> {
+    Err(CommandError::Nym(NymCommandError::FeatureAbsent))
 }
 
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
@@ -1231,19 +1108,10 @@ pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
-/// Typed failure of the `nym` command family. Each variant exists only in
-/// the build that can produce it, so the enum's shape follows the feature.
+/// Typed failure of the `nym` command family, each variant existing only
+/// in the build that can produce it.
 #[derive(Debug, thiserror::Error)]
 pub enum NymCommandError {
-    #[cfg(feature = "nym")]
-    #[error(
-        "unknown nym subcommand '{0}'. Use: nym status | nym on [path] | nym off | \
-         nym probe [uri] | nym history"
-    )]
-    UnknownSubCommand(String),
-    #[cfg(feature = "nym")]
-    #[error("'{0}' is not a valid indexer uri to probe")]
-    InvalidProbeTarget(String),
     #[cfg(not(feature = "nym"))]
     #[error("This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`.")]
     FeatureAbsent,
@@ -1255,48 +1123,39 @@ pub enum NymCommandError {
     },
 }
 
-/// A parsed `nym` command. Arguments parse completely into this
-/// enum before any wallet access.
-#[cfg(feature = "nym")]
-#[derive(Debug, PartialEq, Eq)]
-enum NymSubCommand {
+/// A parsed `nym` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NymSubCommand {
+    #[command(about = "Report the mixnet state: off, bootstrapping, or ready")]
     Status,
-    On { path: Option<String> },
+    #[command(about = "Start the nym-proxy child and route transmissions through the mixnet")]
+    On {
+        #[arg(value_name = "proxy_path")]
+        path: Option<String>,
+    },
+    #[command(about = "Stop the proxy and revert transmissions to clearnet")]
     Off,
-    Probe { target: Option<http::Uri> },
+    #[command(about = "Compare GetLightdInfo over the clearnet and mixnet routes")]
+    Probe {
+        #[arg(value_name = "indexer_uri", value_parser = parse_probe_target)]
+        target: Option<http::Uri>,
+    },
+    #[command(about = "Show per-indexer attempts across sessions")]
     History,
 }
 
-#[cfg(feature = "nym")]
-fn parse_nym_args(args: &[&str]) -> Result<NymSubCommand, NymCommandError> {
-    match args.first().copied() {
-        None | Some("status") => Ok(NymSubCommand::Status),
-        Some("on") => Ok(NymSubCommand::On {
-            path: args.get(1).map(|path| path.to_string()),
-        }),
-        Some("off") => Ok(NymSubCommand::Off),
-        Some("probe") => {
-            let target = args
-                .get(1)
-                .map(|raw| {
-                    let uri = raw
-                        .parse::<http::Uri>()
-                        .map_err(|_| NymCommandError::InvalidProbeTarget((*raw).to_string()))?;
-                    // https-only: the mixnet leg refuses a plaintext target at
-                    // dial time, so reject it up front with a clear message.
-                    if uri.scheme_str() != Some("https") {
-                        return Err(NymCommandError::InvalidProbeTarget(format!(
-                            "{raw} (indexers must be https)"
-                        )));
-                    }
-                    Ok(uri)
-                })
-                .transpose()?;
-            Ok(NymSubCommand::Probe { target })
-        }
-        Some("history") => Ok(NymSubCommand::History),
-        Some(other) => Err(NymCommandError::UnknownSubCommand(other.to_string())),
+/// https-only in a mixnet build, so the grammar refuses a plaintext target
+/// up front, while a build without the feature defers to the typed refusal.
+fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
+    let uri = raw
+        .parse::<http::Uri>()
+        .map_err(|_| "not a valid indexer uri to probe".to_string())?;
+    #[cfg(feature = "nym")]
+    if uri.scheme_str() != Some("https") {
+        return Err("indexers must be https".to_string());
     }
+    Ok(uri)
 }
 
 #[cfg(feature = "nym")]
@@ -1489,10 +1348,10 @@ fn render_status_with_disclaimer(
 /// The body of the `nym` command when the mixnet transport is compiled in.
 #[cfg(feature = "nym")]
 async fn nym_command(
-    args: &[&str],
+    sub: NymSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, NymCommandError> {
-    match parse_nym_args(args)? {
+    match sub {
         NymSubCommand::Status => Ok(render_status_with_disclaimer(
             lightclient.mixnet_mode(),
             lightclient.mixnet_socks5_addr().as_deref(),
@@ -1528,15 +1387,6 @@ async fn nym_command(
         }
         NymSubCommand::History => Ok(nym_history_command(lightclient)),
     }
-}
-
-/// The body of the `nym` command when the mixnet transport is not compiled in.
-#[cfg(not(feature = "nym"))]
-async fn nym_command(
-    _args: &[&str],
-    _lightclient: &mut LightClient,
-) -> Result<String, NymCommandError> {
-    Err(NymCommandError::FeatureAbsent)
 }
 
 /// One transmitted transaction's attestation as JSON: the route it
@@ -1577,133 +1427,70 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
     }
 }
 
-/// Typed failure of the migration command family, following the audit Issue-Q
-/// pattern PR #2464 established: the discriminant lives in the type,
-/// argument parsing happens before any wallet access, and prose is
-/// produced at exactly one rendering site per command. Each Display
-/// message is byte-identical to the in-band string it replaced, so no
-/// frontend observes the change.
+/// Typed failure of the migration command family: the discriminant lives in
+/// the type, and prose is produced at exactly one rendering site per command.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationCommandError {
-    #[error("migrate command expects no arguments. Type \"help migrate\" for usage.")]
-    UnexpectedArguments,
-    #[error("migration command expects a sub-command. Type \"help migration\" for usage.")]
-    MissingSubCommand,
-    #[error("invalid sub-command. Type \"help migration\" for usage.")]
-    InvalidSubCommand,
-    #[error("migration start expects the plan hash printed by \"migration plan\".")]
-    MissingPlanHash,
-    #[error("the plan hash must be 64 hex characters.")]
-    MalformedPlanHash,
-    #[error("--per-bucket expects a positive integer.")]
-    MalformedPerBucket,
-    #[error("cadence expects the number of parts per broadcast window.")]
-    MalformedCadence,
-    #[error("spacing must be a number of seconds.")]
-    MalformedSpacing,
-    #[error("drain expects a sub-command: plan | now. Type \"help drain\" for usage.")]
-    DrainUsage,
-    #[error("split expects a sub-command: plan | now. Type \"help split\" for usage.")]
-    SplitUsage,
     #[error("sync failed: {0}")]
     Sync(zingolib::lightclient::error::LightClientError),
     #[error("{0}")]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
-/// A parsed migration command. Arguments parse completely
-/// into this enum before any wallet access.
-#[derive(Debug, PartialEq, Eq)]
-enum MigrationSubCommand {
+/// A parsed migration command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MigrationSubCommand {
+    #[command(about = "Compute the plan and print its hash, sending nothing")]
     Plan,
+    #[command(about = "Record consent to the plan with that hash and begin")]
     Start {
+        #[arg(value_name = "plan_hash_hex", value_parser = parse_plan_hash)]
         plan_hash: [u8; 32],
+        #[arg(long, value_name = "parts")]
         per_bucket: Option<u32>,
     },
+    #[command(about = "Sync, then drive one splitting step")]
     Continue,
+    #[command(about = "Reset parts-per-window and redraw the schedule")]
     Cadence {
+        #[arg(value_name = "parts")]
         per_bucket: u32,
     },
+    #[command(about = "Sync, then send every part owed right now in one spaced batch")]
     Execute {
+        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
+    #[command(about = "Sync, then broadcast whatever the current window has due")]
     Auto,
+    #[command(about = "Report the balance, phase, part counts, and coming windows")]
     Status,
+    #[command(about = "List each window's block range, position, and confirmations")]
     Windows,
+    #[command(about = "Check the schedule against the chain and apply what is safe")]
     Reconcile,
+    #[command(about = "Send overdue parts now, spaced by the given seconds")]
     Catchup {
+        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
+    #[command(about = "Abandon the migration, keeping its confirmed parts")]
     Cancel,
 }
 
-/// Pure parser for the migration command family's arguments.
-fn parse_migration_args(args: &[&str]) -> Result<MigrationSubCommand, MigrationCommandError> {
-    let Some(sub_command) = args.first() else {
-        return Err(MigrationCommandError::MissingSubCommand);
-    };
-    match *sub_command {
-        "plan" => Ok(MigrationSubCommand::Plan),
-        "start" => {
-            let hash_hex = args.get(1).ok_or(MigrationCommandError::MissingPlanHash)?;
-            let plan_hash: [u8; 32] = hex::decode(hash_hex)
-                .ok()
-                .and_then(|bytes| bytes.try_into().ok())
-                .ok_or(MigrationCommandError::MalformedPlanHash)?;
-            let mut per_bucket = None;
-            let mut remaining = args[2..].iter();
-            while let Some(arg) = remaining.next() {
-                if *arg == "--per-bucket" {
-                    per_bucket = Some(
-                        remaining
-                            .next()
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .ok_or(MigrationCommandError::MalformedPerBucket)?,
-                    );
-                }
-            }
-            Ok(MigrationSubCommand::Start {
-                plan_hash,
-                per_bucket,
-            })
-        }
-        "continue" => Ok(MigrationSubCommand::Continue),
-        "cadence" => {
-            let per_bucket = args
-                .get(1)
-                .and_then(|value| value.parse::<u32>().ok())
-                .ok_or(MigrationCommandError::MalformedCadence)?;
-            Ok(MigrationSubCommand::Cadence { per_bucket })
-        }
-        "execute" => {
-            let spacing = match args.get(1) {
-                Some(seconds) => std::time::Duration::from_secs(
-                    seconds
-                        .parse::<u64>()
-                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
-                ),
-                None => std::time::Duration::from_secs(30),
-            };
-            Ok(MigrationSubCommand::Execute { spacing })
-        }
-        "auto" => Ok(MigrationSubCommand::Auto),
-        "status" => Ok(MigrationSubCommand::Status),
-        "windows" => Ok(MigrationSubCommand::Windows),
-        "reconcile" => Ok(MigrationSubCommand::Reconcile),
-        "catchup" => {
-            let spacing = match args.get(1) {
-                Some(seconds) => std::time::Duration::from_secs(
-                    seconds
-                        .parse::<u64>()
-                        .map_err(|_| MigrationCommandError::MalformedSpacing)?,
-                ),
-                None => std::time::Duration::from_secs(30),
-            };
-            Ok(MigrationSubCommand::Catchup { spacing })
-        }
-        "cancel" => Ok(MigrationSubCommand::Cancel),
-        _ => Err(MigrationCommandError::InvalidSubCommand),
-    }
+fn parse_plan_hash(hash_hex: &str) -> Result<[u8; 32], String> {
+    hex::decode(hash_hex)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| "the plan hash must be 64 hex characters".to_string())
+}
+
+fn parse_spacing(seconds: &str) -> Result<std::time::Duration, String> {
+    seconds
+        .parse::<u64>()
+        .map(std::time::Duration::from_secs)
+        .map_err(|_| "spacing must be a number of seconds".to_string())
 }
 
 /// Renders displayable ids as a JSON array of strings.
@@ -1717,13 +1504,7 @@ fn txids_json<T: ToString>(txids: &[T]) -> json::JsonValue {
 
 /// Runs the `migrate` command. Its errors cross the dispatch seam as
 /// [`CommandError::Migration`].
-async fn run_migrate(
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, MigrationCommandError> {
-    if !args.is_empty() {
-        return Err(MigrationCommandError::UnexpectedArguments);
-    }
+async fn run_migrate(lightclient: &mut LightClient) -> Result<String, MigrationCommandError> {
     let summary = transmit_narrated(
         "migrate",
         lightclient.transmit_progress_handle(),
@@ -1735,15 +1516,15 @@ async fn run_migrate(
         "part_txids" => txids_json(&summary.part_txids),
         "residual" => summary.residual,
     }
-    .pretty(2))
+    .pretty(JSON_INDENT))
 }
 
 /// Runs one `migration` sub-command.
 async fn run_migration(
-    args: &[&str],
+    sub: MigrationSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_migration_args(args)? {
+    Ok(match sub {
         MigrationSubCommand::Plan => {
             let plan = lightclient
                 .plan_ironwood_migration(zip32::AccountId::ZERO)
@@ -1756,7 +1537,7 @@ async fn run_migration(
                 "residual" => plan.residual,
                 "plan_hash" => hex::encode(migration::plan_hash(&plan)),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Start {
             plan_hash,
@@ -1785,7 +1566,7 @@ async fn run_migration(
                     "round" => round,
                     "split_txids" => txids_json(&txids),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
                 SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
                     "Round confirmed; waiting for the anchor to reach its outputs. \
                      Sync and retry."
@@ -1794,7 +1575,7 @@ async fn run_migration(
                 SplitStep::AwaitingConfirmation { pending } => object! {
                     "awaiting_confirmation" => txids_json(&pending),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
                 SplitStep::SplittingComplete => {
                     "Note splitting complete; parts are scheduled.".to_string()
                 }
@@ -1837,7 +1618,7 @@ async fn run_migration(
                     .collect::<Vec<_>>(),
                 "halted" => report.halted,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Auto => {
             lightclient
@@ -1848,7 +1629,7 @@ async fn run_migration(
             if txids.is_empty() {
                 "No parts due yet.".to_string()
             } else {
-                object! { "broadcast" => txids_json(&txids) }.pretty(2)
+                object! { "broadcast" => txids_json(&txids) }.pretty(JSON_INDENT)
             }
         }
         MigrationSubCommand::Status => {
@@ -1877,7 +1658,7 @@ async fn run_migration(
                     "denominations" => batch.denominations.clone(),
                 }),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Windows => {
             let timeline = lightclient.window_timeline().await?;
@@ -1898,7 +1679,7 @@ async fn run_migration(
                         })
                         .collect::<Vec<_>>(),
                 }
-                .pretty(2),
+                .pretty(JSON_INDENT),
             }
         }
         MigrationSubCommand::Reconcile => {
@@ -1918,7 +1699,7 @@ async fn run_migration(
                     .map(|action| format!("{action:?}"))
                     .collect::<Vec<_>>(),
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         MigrationSubCommand::Catchup { spacing } => {
             let txids = transmit_narrated(
@@ -1930,7 +1711,7 @@ async fn run_migration(
             if txids.is_empty() {
                 "No overdue parts.".to_string()
             } else {
-                object! { "part_txids" => txids_json(&txids) }.pretty(2)
+                object! { "part_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
             }
         }
         MigrationSubCommand::Cancel => {
@@ -1940,36 +1721,22 @@ async fn run_migration(
     })
 }
 
-/// A parsed `drain` sub-command.
-#[derive(Debug, PartialEq, Eq)]
-enum DrainSubCommand {
+/// A parsed `drain` sub-command, at the clap derive grammar.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum DrainSubCommand {
+    #[command(about = "Preview the drain from current wallet state, sending nothing")]
     Plan,
+    #[command(about = "Build, sign, and broadcast the drain")]
     Now,
 }
 
-/// Pure parser for the drain command's arguments.
-fn parse_drain_args(args: &[&str]) -> Result<DrainSubCommand, MigrationCommandError> {
-    match args {
-        ["plan"] => Ok(DrainSubCommand::Plan),
-        ["now"] => Ok(DrainSubCommand::Now),
-        _ => Err(MigrationCommandError::DrainUsage),
-    }
-}
-
-/// A parsed `split` sub-command.
-#[derive(Debug, PartialEq, Eq)]
-enum SplitSubCommand {
+/// A parsed `split` sub-command, at the clap derive grammar.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SplitSubCommand {
+    #[command(about = "Preview the remaining rounds, sending nothing")]
     Plan,
+    #[command(about = "Run one splitting round")]
     Now,
-}
-
-/// Pure parser for the split command's arguments.
-fn parse_split_args(args: &[&str]) -> Result<SplitSubCommand, MigrationCommandError> {
-    match args {
-        ["plan"] => Ok(SplitSubCommand::Plan),
-        ["now"] => Ok(SplitSubCommand::Now),
-        _ => Err(MigrationCommandError::SplitUsage),
-    }
 }
 
 /// Renders an in-flight execute batch snapshot as the heartbeat's detail
@@ -2014,10 +1781,10 @@ fn split_progress_line(status: &SplitStatus) -> String {
 ///
 /// Returns the summary as JSON.
 async fn run_drain(
-    args: &[&str],
+    sub: DrainSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_drain_args(args)? {
+    Ok(match sub {
         DrainSubCommand::Plan => {
             let plan = lightclient
                 .plan_immediate_migration(zip32::AccountId::ZERO)
@@ -2028,7 +1795,7 @@ async fn run_drain(
                 "fee" => plan.fee,
                 "residual" => plan.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         DrainSubCommand::Now => {
             let progress = lightclient.immediate_migration_progress_handle();
@@ -2044,7 +1811,7 @@ async fn run_drain(
                 "fee" => summary.fee,
                 "residual" => summary.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
     })
 }
@@ -2055,10 +1822,10 @@ async fn run_drain(
 /// round, writing progress lines to stderr while it runs. It returns the
 /// round's txids, or a message explaining why nothing was sent.
 async fn run_split(
-    args: &[&str],
+    sub: SplitSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
-    Ok(match parse_split_args(args)? {
+    Ok(match sub {
         SplitSubCommand::Plan => {
             let plan = lightclient.plan_note_split(zip32::AccountId::ZERO).await?;
             object! {
@@ -2068,7 +1835,7 @@ async fn run_split(
                 "parts" => plan.parts.clone(),
                 "residual" => plan.residual,
             }
-            .pretty(2)
+            .pretty(JSON_INDENT)
         }
         SplitSubCommand::Now => {
             let progress = lightclient.split_progress_handle();
@@ -2080,7 +1847,7 @@ async fn run_split(
             .await?
             {
                 SplitOutcome::Round { txids } => {
-                    object! { "split_txids" => txids_json(&txids) }.pretty(2)
+                    object! { "split_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
                 }
                 SplitOutcome::AwaitingConfirmation => {
                     "A previous round has not confirmed yet; nothing was sent. Sync and retry."
@@ -2094,42 +1861,35 @@ async fn run_split(
     })
 }
 
-/// Every command, in alphabetical order: the single source of the
-/// dispatchable names, help texts, and bodies (ADR 0030). `help` renders
-/// its listing straight from this table, so declaration order is display
-/// order.
-static COMMANDS: &[CommandSpec] = &[
-    wallet! {
-        addresses,
-        short_help: "List unified addresses in the wallet.",
-        help: indoc! {r"
+/// Every command the CLI dispatches, in alphabetical order: the single
+/// source of the dispatchable names, help texts, and typed arguments.
+#[derive(clap::Subcommand, Clone, PartialEq)]
+#[command(rename_all = "snake_case")]
+pub(crate) enum CliCommand {
+    #[command(
+        about = "List unified addresses in the wallet.",
+        long_about = indoc! {r"
             List the wallet's unified addresses.
-
-            Usage:
-            addresses
-        "},
-    },
-    wallet! {
-        balance,
-        short_help: "Return the wallet ZEC balance for each pool (account 0).",
-        help: indoc! {r"
+        "}
+    )]
+    Addresses,
+    #[command(
+        about = "Return the wallet ZEC balance for each pool (account 0).",
+        long_about = indoc! {r"
             Return the wallet ZEC balance for each pool (account 0).
-        "},
-    },
-    wallet! {
-        birthday,
-        short_help: "Returns block height wallet was created",
-        help: indoc! {r"
+        "}
+    )]
+    Balance,
+    #[command(
+        about = "Returns block height wallet was created",
+        long_about = indoc! {r"
             Print the height the wallet was created at.
-
-            Usage:
-            birthday
-        "},
-    },
-    wallet! {
-        calculate,
-        short_help: "Sign the latest proposal without transmitting it.",
-        help: concat!(
+        "}
+    )]
+    Birthday,
+    #[command(
+        about = "Sign the latest proposal without transmitting it.",
+        long_about = concat!(
             "Sign the latest proposal without transmitting it, for offline signing. No\n",
             "Indexer needed. The transactions are stored Calculated, for 'transmit' to send\n",
             "later. Needs a proposal from 'send', 'send_all' or 'shield' first.\n",
@@ -2139,8 +1899,6 @@ static COMMANDS: &[CommandSpec] = &[
             "Treat a Calculated transaction as live value in flight until it is transmitted,\n",
             "expires, or another transaction spends its inputs.\n",
             "\n",
-            "Usage:\n",
-            "    calculate\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -2151,62 +1909,54 @@ static COMMANDS: &[CommandSpec] = &[
             "\"\n",
             "    calculate\n",
             "    transmit\n",
-        ),
-    },
-    wallet! {
-        change_server,
-        short_help: "Change indexer server",
-        help: concat!(
+        )
+    )]
+    Calculate,
+    #[command(
+        about = "Change indexer server",
+        long_about = concat!(
             "Change the indexer server.\n",
-            "\n",
-            "Usage:\n",
-            "change_server <server_uri>\n",
             "\n",
             "Example:\n",
             "change_server ",
             crate::examples::server_uri!(),
             "\n",
-        ),
+        )
+    )]
+    ChangeServer {
+        #[arg(value_parser = parse_server_uri)]
+        uri: Option<http::Uri>,
     },
-    wallet! {
-        check_address,
-        short_help: "Checks if the given encoded address is derived by the wallet's keys.",
-        help: indoc! {r"
+    #[command(
+        about = "Checks if the given encoded address is derived by the wallet's keys.",
+        long_about = indoc! {r"
             Check whether an encoded address derives from the wallet's keys.
-
-            Usage:
-            check_address <encoded_address>
-        "},
-    },
-    wallet! {
-        clear,
-        short_help: "Clear the wallet state, rolling back the wallet to an empty state.",
-        help: indoc! {r"
+        "}
+    )]
+    CheckAddress { address: String },
+    #[command(
+        about = "Clear the wallet state, rolling back the wallet to an empty state.",
+        long_about = indoc! {r"
             Drop every note, coin and transaction, leaving the wallet to sync from scratch.
-
-            Usage:
-            clear
-        "},
-    },
-    wallet! {
-        coins,
-        short_help: "Show the wallet's coins (transparent outputs).",
-        help: indoc! {r"
+        "}
+    )]
+    Clear,
+    #[command(
+        about = "Show the wallet's coins (transparent outputs).",
+        long_about = indoc! {r"
             Show the wallet's coins (transparent outputs). `all` includes spent ones.
-
-            Usage:
-            coins [all]
-        "},
+        "}
+    )]
+    Coins {
+        #[arg(value_enum)]
+        scope: Option<OutputScope>,
     },
-    wallet! {
-        confirm,
-        short_help: "Build and transmit the latest proposal, then resume sync.",
-        help: concat!(
+    #[command(
+        about = "Build and transmit the latest proposal, then resume sync.",
+        long_about = concat!(
             "Build and transmit the latest proposal, then resume sync. Needs a proposal\n",
             "from 'send', 'send_all' or 'shield' first.\n",
             "\n",
-            "Usage:\n",
-            "    confirm\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -2216,12 +1966,12 @@ static COMMANDS: &[CommandSpec] = &[
             crate::examples::memo!(),
             "\"\n",
             "    confirm\n",
-        ),
-    },
-    wallet! {
-        current_price,
-        short_help: "Updates and returns current price of ZEC.",
-        help: indoc! {r"
+        )
+    )]
+    Confirm,
+    #[command(
+        about = "Updates and returns current price of ZEC.",
+        long_about = indoc! {r"
             Fetch the current ZEC price over the Nym mixnet. USD only.
 
             The fetch races all three price sources (gemini, kraken,
@@ -2233,25 +1983,19 @@ static COMMANDS: &[CommandSpec] = &[
             switched off — the clearnet consent covers sends, never price,
             because the price source is a third party outside the Zcash
             ecosystem. A build without the `nym` feature has no price fetch.
-
-            Usage:
-            current_price
-        "},
-    },
-    wallet! {
-        delete,
-        short_help: "Delete wallet file from disk",
-        help: indoc! {r"
+        "}
+    )]
+    CurrentPrice,
+    #[command(
+        about = "Delete wallet file from disk",
+        long_about = indoc! {r"
             Delete the wallet file from disk.
-
-            Usage:
-            delete
-        "},
-    },
-    wallet! {
-        drain,
-        short_help: "Send all Orchard funds into the Ironwood pool now (immediate ZIP 318 path).",
-        help: indoc! {r"
+        "}
+    )]
+    Delete,
+    #[command(
+        about = "Send all Orchard funds into the Ironwood pool now (immediate ZIP 318 path).",
+        long_about = indoc! {r"
             Send every spendable Orchard note into the Ironwood pool now, ZIP 318's
             immediate path.
 
@@ -2265,93 +2009,75 @@ static COMMANDS: &[CommandSpec] = &[
             `now` builds, signs and broadcasts. Sync first, since like any send this
             does not synchronize. Safe to repeat: a partial failure leaves the unsent
             notes spendable and a second run sends only the remainder.
-
-            Usage:
-            drain plan | now
-        "},
+        "}
+    )]
+    Drain {
+        #[command(subcommand)]
+        sub: DrainSubCommand,
     },
-    wallet! {
-        export_ufvk,
-        short_help: "Export unified full viewing key for the wallet.",
-        help: indoc! {r"
+    #[command(
+        about = "Export unified full viewing key for the wallet.",
+        long_about = indoc! {r"
             Export the wallet's unified full viewing key. To back up spend capability,
             use `recovery_info` instead.
-
-            Usage:
-            export_ufvk
-        "},
-    },
-    wallet! {
-        height,
-        short_help: "Print the chain height as of the wallet's last request to the server.",
-        help: indoc! {r"
+        "}
+    )]
+    ExportUfvk,
+    #[command(
+        about = "Print the chain height as of the wallet's last request to the server.",
+        long_about = indoc! {r"
             Print the chain height as of the wallet's last request to the server.
-
-            Usage:
-            height
-        "},
-    },
-    standalone! {
-        help,
-        short_help: "Lists all available commands",
-        help: indoc! {r"
+        "}
+    )]
+    Height,
+    #[command(
+        about = "Lists all available commands",
+        long_about = indoc! {r"
             List every command, or show one command's help.
-
-            Usage:
-            help [command]
-        "},
-    },
-    wallet! {
-        info,
-        short_help: "Get the indexer server's info",
-        help: indoc! {r"
+        "}
+    )]
+    Help { command: Option<String> },
+    #[command(
+        about = "Get the indexer server's info",
+        long_about = indoc! {r"
             Print the connected indexer's info.
-
-            Usage:
-            info
-        "},
-    },
-    wallet! {
-        max_send_value,
-        short_help: "Print the most the wallet can send to a given address.",
-        help: indoc! {r#"
+        "}
+    )]
+    Info,
+    #[command(
+        about = "Print the most the wallet can send to a given address.",
+        long_about = indoc! {r"
             Print the most the wallet can send to an address: shielded spendable
             balance less the fee. Mid-sync this can trail the confirmed balance.
             `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
             address.
-
-            Usage:
-            max_send_value <address>
-            max_send_value { "address": "<address>", "zennies_for_zingo": <true|false> }
-        "#},
-    },
-    wallet! {
-        memobytes_to_address,
-        short_help: "Show by address memo_bytes transfers for this seed.",
-        help: indoc! {r"
-            Print total memo bytes sent, keyed by address.
-
-            Usage:
-            memobytes_to_address
         "},
-    },
-    wallet! {
-        messages,
-        short_help: "List memos for this wallet.",
-        help: indoc! {r"
+        override_usage = concat!(
+            "max_send_value <address>\n",
+            "       max_send_value { \"address\": \"<address>\", \"zennies_for_zingo\": <true|false> }",
+        )
+    )]
+    MaxSendValue { args: Vec<String> },
+    #[command(
+        about = "Show by address memo_bytes transfers for this seed.",
+        long_about = indoc! {r"
+            Print total memo bytes sent, keyed by address.
+        "}
+    )]
+    MemobytesToAddress,
+    #[command(
+        about = "List memos for this wallet.",
+        long_about = indoc! {r"
             List the wallet's memo-bearing value transfers. An address filters to that
             correspondent, any other string filters to memos containing it, and no
             argument shows every memo. Received messages are matched on the memo's
             reply-to address.
-
-            Usage:
-            messages [address | string]
-        "},
-    },
-    wallet! {
-        migrate,
-        short_help: "Migrate all Orchard funds to the Ironwood pool in one interactive run.",
-        help: indoc! {r"
+        "}
+    )]
+    Messages { filter: Option<String> },
+    #[command(
+        about = "Migrate all Orchard funds to the Ironwood pool in one interactive run.",
+        long_about = indoc! {r"
             Migrate all Orchard funds to the Ironwood pool in one interactive run.
 
             Runs ZIP 318's two phases back to back: note-splitting rounds of Orchard
@@ -2362,15 +2088,12 @@ static COMMANDS: &[CommandSpec] = &[
             alongside synchronization, so the server can correlate them with this
             wallet's activity. The `migration` command spreads them across
             anchor-height buckets instead.
-
-            Usage:
-            migrate
-        "},
-    },
-    wallet! {
-        migration,
-        short_help: "Drive the scheduled Orchard to Ironwood migration",
-        help: indoc! {r"
+        "}
+    )]
+    Migrate,
+    #[command(
+        about = "Drive the scheduled Orchard to Ironwood migration",
+        long_about = indoc! {r"
             Drive the scheduled Orchard to Ironwood migration (ZIP 318).
 
             `plan` computes the plan (rounds, parts, fees, residual dust) from the
@@ -2402,66 +2125,55 @@ static COMMANDS: &[CommandSpec] = &[
             with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
-
-            Usage:
-            migration plan
-            migration start <plan_hash> [--per-bucket N]
-            migration cadence <N>
-            migration execute [spacing_seconds]
-            migration catchup [spacing_seconds]
-            migration continue | auto | status | windows | reconcile | cancel
-        "},
+        "}
+    )]
+    Migration {
+        #[command(subcommand)]
+        sub: MigrationSubCommand,
     },
-    wallet! {
-        new_address,
-        short_help: "Create a new unified address.",
-        help: indoc! {r"
+    #[command(
+        about = "Create a new unified address.",
+        long_about = indoc! {r"
             Create a new unified address, with an orchard receiver, a sapling one, or
             both. No transparent receivers: use `new_taddress` for those.
-
-            Usage:
-            new_address o | z | oz
-        "},
+        "}
+    )]
+    NewAddress {
+        #[arg(value_name = "o|z|oz", value_parser = parse_receiver_selection)]
+        receivers: ReceiverSelection,
     },
-    wallet! {
-        new_taddress,
-        short_help: "Create a new transparent address.",
-        help: indoc! {r"
+    #[command(
+        about = "Create a new transparent address.",
+        long_about = indoc! {r"
             Create a new transparent address.
-
-            Usage:
-            new_taddress
-        "},
-    },
-    wallet! {
-        new_taddress_allow_gap,
-        short_help: "Create a new transparent address (even if the last one did not receive any funds).",
-        help: indoc! {r#"
+        "}
+    )]
+    NewTaddress,
+    #[command(
+        about = "Create a new transparent address (even if the last one did not receive any funds).",
+        long_about = indoc! {r"
             Create a new transparent address even if the last one never received funds.
 
             This bypasses the no-gap rule, which exists because recovery from seed may
             not discover addresses beyond a gap. Funds sent to skipped addresses can go
             missing after a restore unless you rescan or raise the gap limit, so you are
             taking on tracking the unused ones yourself.
-
-            Usage:
-            new_taddress_allow_gap
-        "#},
-    },
-    wallet! {
-        notes,
-        short_help: "Show the wallet's notes (shielded outputs).",
-        help: indoc! {r"
+        "}
+    )]
+    NewTaddressAllowGap,
+    #[command(
+        about = "Show the wallet's notes (shielded outputs).",
+        long_about = indoc! {r"
             Show the wallet's notes (shielded outputs). `all` includes spent ones.
-
-            Usage:
-            notes [all]
-        "},
+        "}
+    )]
+    Notes {
+        #[arg(value_enum)]
+        scope: Option<OutputScope>,
     },
-    wallet! {
-        nym,
-        short_help: "Control the Nym mixnet transport (on/off/status/probe/history).",
-        help: indoc! {r"
+    #[command(
+        about = "Control the Nym mixnet transport (on/off/status/probe/history).",
+        long_about = indoc! {r"
             Control the Nym mixnet transport for send and price-fetch.
 
             With Mixnet Mode on, both route over the mixnet and fail closed while it
@@ -2475,51 +2187,42 @@ static COMMANDS: &[CommandSpec] = &[
             failure is mixnet-specific, and its clearnet leg uses your real IP.
             `history` shows per-indexer attempts across sessions, and needs the
             nym-diary feature plus --indexer-diary.
-
-            Usage:
-            nym status | on [binary_path] | off | probe [uri] | history
-        "},
+        "}
+    )]
+    Nym {
+        #[command(subcommand)]
+        sub: Option<NymSubCommand>,
     },
-    standalone! {
-        parse_address,
-        short_help: "Parse an address",
-        help: concat!(
+    #[command(
+        about = "Parse an address",
+        long_about = concat!(
             "Parse an address.\n",
-            "\n",
-            "Usage:\n",
-            "parse_address <address>\n",
             "\n",
             "Example\n",
             "parse_address ",
             crate::examples::transparent_address!(),
             "\n",
-        ),
-    },
-    standalone! {
-        parse_viewkey,
-        short_help: "Parse a view_key.",
-        help: concat!(
+        )
+    )]
+    ParseAddress { address: String },
+    #[command(
+        about = "Parse a view_key.",
+        long_about = concat!(
             "Parse a viewing key.\n",
-            "\n",
-            "Usage:\n",
-            "parse_viewkey <viewing_key>\n",
             "\n",
             "Example\n",
             "parse_viewkey ",
             crate::examples::unified_viewing_key!(),
             "\n",
-        ),
-    },
-    wallet! {
-        quicksend,
-        short_help: "Send ZEC, fusing `send` and `confirm`.",
-        help: concat!(
+        )
+    )]
+    ParseViewkey { viewkey: String },
+    #[command(
+        about = "Send ZEC, fusing `send` and `confirm`.",
+        long_about = concat!(
             "Send ZEC, fusing `send` and `confirm`. The fee comes out of your balance\n",
             "and you never see it before the transaction goes out.\n",
             "\n",
-            "Usage:\n",
-            "    quicksend <address> <zatoshis> \"<optional memo>\"\n",
-            "    quicksend '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    quicksend ",
             crate::examples::sapling_address!(),
@@ -2529,83 +2232,73 @@ static COMMANDS: &[CommandSpec] = &[
             crate::examples::memo!(),
             "\"\n",
         ),
-    },
-    wallet! {
-        quickshield,
-        short_help: "Shield transparent funds, fusing `shield` and `confirm`.",
-        help: indoc! {r"
+        override_usage = concat!(
+            "quicksend <address> <zatoshis> \"<optional memo>\"\n",
+            "       quicksend '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'",
+        )
+    )]
+    Quicksend { args: Vec<String> },
+    #[command(
+        about = "Shield transparent funds, fusing `shield` and `confirm`.",
+        long_about = indoc! {r"
             Shield transparent funds into the ironwood pool, fusing `shield` and
             `confirm`. The fee comes out of your balance and you never see it before
             the transaction goes out.
-
-            Usage:
-                quickshield
-        "},
-    },
-    wallet! {
-        quit,
-        short_help: "Quit the light client, saving state to disk.",
-        help: indoc! {r"
-            Quit the light client, saving state to disk.
-
-            Usage:
-            quit
-        "},
-    },
-    wallet! {
-        recovery_info,
-        short_help: "Print the wallet's seed phrase, birthday and account count.",
-        help: indoc! {r"
+        "}
+    )]
+    Quickshield,
+    #[command(
+        alias = "exit",
+        about = "Quit the light client, saving state to disk.",
+        long_about = indoc! {r"
+            Quit the light client, saving state to disk. `exit` is an alias.
+        "}
+    )]
+    Quit,
+    #[command(
+        about = "Print the wallet's seed phrase, birthday and account count.",
+        long_about = indoc! {r"
             Print the wallet's seed phrase, birthday and account count.
 
             The seed phrase recovers the whole wallet. Save it carefully, share it with
             nobody.
-
-            Usage:
-            recovery_info
-        "},
-    },
-    wallet! {
-        remove_transaction,
-        short_help: "Remove a failed transaction from the wallet.",
-        help: indoc! {r"
+        "}
+    )]
+    RecoveryInfo,
+    #[command(
+        about = "Remove a failed transaction from the wallet.",
+        long_about = indoc! {r"
             Remove a failed transaction from the wallet. Manual on purpose, so a failed
             send keeps its memos until you decide to drop them.
-
-            Usage:
-            remove_transaction <txid>
-        "},
+        "}
+    )]
+    RemoveTransaction {
+        #[arg(value_parser = parse_txid)]
+        txid: TxId,
     },
-    wallet! {
-        rescan,
-        short_help: "Clear all chain-derived wallet data and sync again from the birthday.",
-        help: indoc! {r"
+    #[command(
+        about = "Clear all chain-derived wallet data and sync again from the birthday.",
+        long_about = indoc! {r"
             Clear all chain-derived wallet data and sync again from the birthday.
-
-            Usage:
-            rescan
-        "},
-    },
-    wallet! {
-        save,
-        short_help: "Launch the save task. Not meant to be called by hand.",
-        help: indoc! {r"
+        "}
+    )]
+    Rescan,
+    #[command(
+        about = "Launch the save task. Not meant to be called by hand.",
+        long_about = indoc! {r"
             Launch the task that persists the wallet as its state changes. Not meant to
             be called by hand.
-
-            Usage:
-            save run | check | shutdown
-        "},
+        "}
+    )]
+    Save {
+        #[command(subcommand)]
+        sub: SaveSubCommand,
     },
-    wallet! {
-        send,
-        short_help: "Propose a transfer of ZEC, for 'confirm' to broadcast.",
-        help: concat!(
+    #[command(
+        about = "Propose a transfer of ZEC, for 'confirm' to broadcast.",
+        long_about = concat!(
             "Propose a transfer of ZEC. Shows the fee, then 'confirm' broadcasts it.\n",
             "\n",
-            "Usage:\n",
-            "    send <address> <zatoshis> \"<optional memo>\"\n",
-            "    send '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -2616,20 +2309,21 @@ static COMMANDS: &[CommandSpec] = &[
             "\"\n",
             "    confirm\n",
         ),
-    },
-    wallet! {
-        send_all,
-        short_help: "Propose a transfer of all shielded ZEC to one address, for 'confirm' to broadcast.",
-        help: concat!(
+        override_usage = concat!(
+            "send <address> <zatoshis> \"<optional memo>\"\n",
+            "       send '[{\"address\":\"<address>\", \"amount\":<zatoshis>, \"memo\":\"<optional memo>\"}, ...]'",
+        )
+    )]
+    Send { args: Vec<String> },
+    #[command(
+        about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to broadcast.",
+        long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
             "then 'confirm' broadcasts it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
             "zingolabs developer address per transaction.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
-            "Usage:\n",
-            "    send_all <address> \"<optional memo>\"\n",
-            "    send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'\n",
             "Example:\n",
             "    send_all ",
             crate::examples::sapling_address!(),
@@ -2638,63 +2332,56 @@ static COMMANDS: &[CommandSpec] = &[
             "\"\n",
             "    confirm\n",
         ),
-    },
-    wallet! {
-        sends_to_address,
-        short_help: "Show by address number of sends for this seed.",
-        help: indoc! {r"
+        override_usage = concat!(
+            "send_all <address> \"<optional memo>\"\n",
+            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'",
+        )
+    )]
+    SendAll { args: Vec<String> },
+    #[command(
+        about = "Show by address number of sends for this seed.",
+        long_about = indoc! {r"
             Print the number of sends, keyed by address.
-
-            Usage:
-            sends_to_address
-        "},
-    },
-    CommandSpec {
-        name: "servers",
-        short_help: "Show ranked indexer servers and response times",
-        help: "Show ranked indexer servers and their get_info() response times.\nUsage: servers",
-        body: CommandBody::Repl,
-    },
-    wallet! {
-        settings,
-        short_help: "Show or set wallet settings.",
-        help: indoc! {r"
+        "}
+    )]
+    SendsToAddress,
+    #[command(
+        about = "Show ranked indexer servers and response times",
+        long_about = "Show ranked indexer servers and their get_info() response times."
+    )]
+    Servers,
+    #[command(
+        about = "Show or set wallet settings.",
+        long_about = indoc! {r"
             Show or set wallet settings. With no argument, prints them all. To set one,
             name it and give a value.
 
             performance        low | medium | high | maximum
             min_confirmations  1 or greater
-
-            Usage:
-            settings
-            settings performance high
-        "},
+        "}
+    )]
+    Settings {
+        #[command(subcommand)]
+        sub: Option<SettingsSubCommand>,
     },
-    wallet! {
-        shield,
-        short_help: "Propose a shield of transparent funds, for 'confirm' to broadcast.",
-        help: indoc! {r"
+    #[command(
+        about = "Propose a shield of transparent funds, for 'confirm' to broadcast.",
+        long_about = indoc! {r"
             Propose a shield of transparent funds into the ironwood pool. Shows the
             fee, then 'confirm' broadcasts it.
-
-            Usage:
-                shield
-        "},
-    },
-    wallet! {
-        spendable_balance,
-        short_help: "Display the wallet's spendable balance.",
-        help: indoc! {r"
+        "}
+    )]
+    Shield,
+    #[command(
+        about = "Display the wallet's spendable balance.",
+        long_about = indoc! {r"
             Print the wallet's spendable balance.
-
-            Usage:
-            spendable_balance
-        "},
-    },
-    wallet! {
-        split,
-        short_help: "Split Orchard notes into ZIP 318 part sizes, one round per call.",
-        help: indoc! {r"
+        "}
+    )]
+    SpendableBalance,
+    #[command(
+        about = "Split Orchard notes into ZIP 318 part sizes, one round per call.",
+        long_about = indoc! {r"
             Resize the wallet's Orchard notes into ZIP 318 part sizes, one round of
             Orchard self-sends per call.
 
@@ -2709,49 +2396,43 @@ static COMMANDS: &[CommandSpec] = &[
             `now` runs one round. Sync first, and again between rounds until each
             round's self-sends confirm. It reports when a prior round is still
             confirming and when splitting is done.
-
-            Usage:
-            split plan | now
-        "},
+        "}
+    )]
+    Split {
+        #[command(subcommand)]
+        sub: SplitSubCommand,
     },
-    wallet! {
-        sync,
-        short_help: "Sync the wallet to the latest state of the blockchain.",
-        help: indoc! {r"
+    #[command(
+        about = "Sync the wallet to the latest state of the blockchain.",
+        long_about = indoc! {r"
             Sync the wallet to the chain tip.
 
             `run` starts or resumes. `pause` halts scanning. `stop` shuts sync down
             early. `status` reports progress. `poll` returns the result once complete,
             and is not meant to be called by hand.
-
-            Usage:
-            sync run | pause | stop | status | poll
-        "},
+        "}
+    )]
+    Sync {
+        #[command(subcommand)]
+        sub: SyncSubCommand,
     },
-    wallet! {
-        t_addresses,
-        short_help: "List transparent addresses in the wallet.",
-        help: indoc! {r"
+    #[command(
+        about = "List transparent addresses in the wallet.",
+        long_about = indoc! {r"
             List the wallet's transparent addresses.
-
-            Usage:
-            t_addresses
-        "},
-    },
-    wallet! {
-        transactions,
-        short_help: "List the wallet's transaction summaries by block height.",
-        help: indoc! {r"
+        "}
+    )]
+    TAddresses,
+    #[command(
+        about = "List the wallet's transaction summaries by block height.",
+        long_about = indoc! {r"
             List the wallet's transaction summaries by block height.
-
-            Usage:
-            transactions
-        "},
-    },
-    wallet! {
-        transmit,
-        short_help: "Transmit calculated transactions to the Indexer.",
-        help: concat!(
+        "}
+    )]
+    Transactions,
+    #[command(
+        about = "Transmit calculated transactions to the Indexer.",
+        long_about = concat!(
             "Transmit calculated transactions to the Indexer. With no arguments, sends\n",
             "every Calculated transaction in target-height order. Pass txids in the order\n",
             "'calculate' printed them to fix the order yourself, which multi-step proposals\n",
@@ -2760,108 +2441,435 @@ static COMMANDS: &[CommandSpec] = &[
             "Anything you leave untransmitted stays live value in flight until it expires or\n",
             "its inputs are spent.\n",
             "\n",
-            "Usage:\n",
-            "    transmit [txid ...]\n",
             "Example:\n",
             "    transmit\n",
-        ),
+        )
+    )]
+    Transmit {
+        #[arg(value_parser = parse_txid)]
+        txids: Vec<TxId>,
     },
-    wallet! {
-        value_to_address,
-        short_help: "Show by address value transfers for this seed.",
-        help: indoc! {r"
+    #[command(
+        about = "Show by address value transfers for this seed.",
+        long_about = indoc! {r"
             Print total value sent, keyed by address.
-
-            Usage:
-            value_to_address
-        "},
-    },
-    wallet! {
-        value_transfers,
-        short_help: "List all value transfers for this wallet.",
-        help: indoc! {r"
+        "}
+    )]
+    ValueToAddress,
+    #[command(
+        about = "List all value transfers for this wallet.",
+        long_about = indoc! {r"
             List the wallet's value transfers, each one a transaction's notes to a
             single receiver.
-
-            Usage:
-            value_transfers
-        "},
-    },
-    standalone! {
-        version,
-        short_help: "Get version of build code",
-        help: indoc! {r"
+        "}
+    )]
+    ValueTransfers,
+    #[command(
+        about = "Get version of build code",
+        long_about = indoc! {r"
             Print the build's git describe --dirty.
-        "},
-    },
-    wallet! {
-        wallet_kind,
-        short_help: "Displays the kind of wallet currently loaded",
-        help: indoc! {r"
+        "}
+    )]
+    Version,
+    #[command(
+        about = "Displays the kind of wallet currently loaded",
+        long_about = indoc! {r"
             Print the loaded wallet's kind. For a UFVK, lists the supported pools.
             Spend-capable wallets always spend from all three.
-            "},
-    },
-];
+            "}
+    )]
+    WalletKind,
+}
 
-/// Renders the help listing (no arguments) or one command's help text,
-/// straight from [`COMMANDS`].
-pub fn format_help(args: &[&str]) -> String {
-    match args.len() {
-        0 => {
-            let mut lines = Vec::new();
-            lines.push("Standalone commands (no wallet required):".to_string());
-            lines.extend(
-                COMMANDS
-                    .iter()
-                    .filter(|spec| !matches!(spec.body, CommandBody::Wallet(_)))
-                    .map(|spec| format!("  {} - {}", spec.name, spec.short_help)),
-            );
-            lines.push(String::new());
-            lines.push("Wallet commands:".to_string());
-            lines.extend(
-                COMMANDS
-                    .iter()
-                    .filter(|spec| matches!(spec.body, CommandBody::Wallet(_)))
-                    .map(|spec| format!("  {} - {}", spec.name, spec.short_help)),
-            );
-            lines.join("\n")
+impl CliCommand {
+    /// The variant's bare identifier, the single source `Debug` and `name`
+    /// render, so neither can materialize an argument.
+    fn ident(&self) -> &'static str {
+        match self {
+            CliCommand::Addresses => "Addresses",
+            CliCommand::Balance => "Balance",
+            CliCommand::Birthday => "Birthday",
+            CliCommand::Calculate => "Calculate",
+            CliCommand::ChangeServer { .. } => "ChangeServer",
+            CliCommand::CheckAddress { .. } => "CheckAddress",
+            CliCommand::Clear => "Clear",
+            CliCommand::Coins { .. } => "Coins",
+            CliCommand::Confirm => "Confirm",
+            CliCommand::CurrentPrice => "CurrentPrice",
+            CliCommand::Delete => "Delete",
+            CliCommand::Drain { .. } => "Drain",
+            CliCommand::ExportUfvk => "ExportUfvk",
+            CliCommand::Height => "Height",
+            CliCommand::Help { .. } => "Help",
+            CliCommand::Info => "Info",
+            CliCommand::MaxSendValue { .. } => "MaxSendValue",
+            CliCommand::MemobytesToAddress => "MemobytesToAddress",
+            CliCommand::Messages { .. } => "Messages",
+            CliCommand::Migrate => "Migrate",
+            CliCommand::Migration { .. } => "Migration",
+            CliCommand::NewAddress { .. } => "NewAddress",
+            CliCommand::NewTaddress => "NewTaddress",
+            CliCommand::NewTaddressAllowGap => "NewTaddressAllowGap",
+            CliCommand::Notes { .. } => "Notes",
+            CliCommand::Nym { .. } => "Nym",
+            CliCommand::ParseAddress { .. } => "ParseAddress",
+            CliCommand::ParseViewkey { .. } => "ParseViewkey",
+            CliCommand::Quicksend { .. } => "Quicksend",
+            CliCommand::Quickshield => "Quickshield",
+            CliCommand::Quit => "Quit",
+            CliCommand::RecoveryInfo => "RecoveryInfo",
+            CliCommand::RemoveTransaction { .. } => "RemoveTransaction",
+            CliCommand::Rescan => "Rescan",
+            CliCommand::Save { .. } => "Save",
+            CliCommand::Send { .. } => "Send",
+            CliCommand::SendAll { .. } => "SendAll",
+            CliCommand::SendsToAddress => "SendsToAddress",
+            CliCommand::Servers => "Servers",
+            CliCommand::Settings { .. } => "Settings",
+            CliCommand::Shield => "Shield",
+            CliCommand::SpendableBalance => "SpendableBalance",
+            CliCommand::Split { .. } => "Split",
+            CliCommand::Sync { .. } => "Sync",
+            CliCommand::TAddresses => "TAddresses",
+            CliCommand::Transactions => "Transactions",
+            CliCommand::Transmit { .. } => "Transmit",
+            CliCommand::ValueToAddress => "ValueToAddress",
+            CliCommand::ValueTransfers => "ValueTransfers",
+            CliCommand::Version => "Version",
+            CliCommand::WalletKind => "WalletKind",
         }
-        1 => match COMMANDS.iter().find(|spec| spec.name == args[0]) {
-            Some(spec) => spec.help.to_string(),
-            None => format!("Command {} not found", args[0]),
-        },
-        _ => "Usage: help [command_name]".to_string(),
+    }
+
+    /// The command's minted name, derived from the variant identifier, so
+    /// a log line can carry the name and never the arguments.
+    pub(crate) fn name(&self) -> String {
+        let ident = self.ident();
+        let mut name = String::with_capacity(ident.len() + 2);
+        for c in ident.chars() {
+            if c.is_ascii_uppercase() {
+                if !name.is_empty() {
+                    name.push('_');
+                }
+                name.push(c.to_ascii_lowercase());
+            } else {
+                name.push(c);
+            }
+        }
+        name
+    }
+
+    /// True when the command's body touches the wallet, deciding which
+    /// section of `help` lists the command.
+    pub(crate) fn requires_wallet(&self) -> bool {
+        match self {
+            CliCommand::Help { .. }
+            | CliCommand::ParseAddress { .. }
+            | CliCommand::ParseViewkey { .. }
+            | CliCommand::Servers
+            | CliCommand::Version => false,
+            CliCommand::Addresses
+            | CliCommand::Balance
+            | CliCommand::Birthday
+            | CliCommand::Calculate
+            | CliCommand::ChangeServer { .. }
+            | CliCommand::CheckAddress { .. }
+            | CliCommand::Clear
+            | CliCommand::Coins { .. }
+            | CliCommand::Confirm
+            | CliCommand::CurrentPrice
+            | CliCommand::Delete
+            | CliCommand::Drain { .. }
+            | CliCommand::ExportUfvk
+            | CliCommand::Height
+            | CliCommand::Info
+            | CliCommand::MaxSendValue { .. }
+            | CliCommand::MemobytesToAddress
+            | CliCommand::Messages { .. }
+            | CliCommand::Migrate
+            | CliCommand::Migration { .. }
+            | CliCommand::NewAddress { .. }
+            | CliCommand::NewTaddress
+            | CliCommand::NewTaddressAllowGap
+            | CliCommand::Notes { .. }
+            | CliCommand::Nym { .. }
+            | CliCommand::Quicksend { .. }
+            | CliCommand::Quickshield
+            | CliCommand::Quit
+            | CliCommand::RecoveryInfo
+            | CliCommand::RemoveTransaction { .. }
+            | CliCommand::Rescan
+            | CliCommand::Save { .. }
+            | CliCommand::Send { .. }
+            | CliCommand::SendAll { .. }
+            | CliCommand::SendsToAddress
+            | CliCommand::Settings { .. }
+            | CliCommand::Shield
+            | CliCommand::SpendableBalance
+            | CliCommand::Split { .. }
+            | CliCommand::Sync { .. }
+            | CliCommand::TAddresses
+            | CliCommand::Transactions
+            | CliCommand::Transmit { .. }
+            | CliCommand::ValueToAddress
+            | CliCommand::ValueTransfers
+            | CliCommand::WalletKind => true,
+        }
+    }
+
+    /// Runs the send family's deferred string grammar eagerly, so both
+    /// parse boundaries refuse a malformed payload before any wallet work.
+    pub(crate) fn validate_deferred_grammar(&self) -> Result<(), String> {
+        match self {
+            CliCommand::Send { args } | CliCommand::Quicksend { args } => {
+                utils::parse_send_args(&as_strs(args)).map(|_| ())
+            }
+            CliCommand::SendAll { args } => utils::parse_send_all_args(&as_strs(args)).map(|_| ()),
+            CliCommand::MaxSendValue { args } => {
+                utils::parse_max_send_value_args(&as_strs(args)).map(|_| ())
+            }
+            _ => return Ok(()),
+        }
+        .map_err(|e| usage(&self.name(), e).to_string())
     }
 }
 
-/// Dispatches a user command by name through [`COMMANDS`], exposing the
-/// typed success/failure crossing. Unknown names and the REPL-owned
-/// `servers` command return typed errors (ADR 0031).
-pub async fn do_user_command_result(
-    cmd: &str,
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    let lowered = cmd.to_ascii_lowercase();
-    match COMMANDS.iter().find(|spec| spec.name == lowered) {
-        Some(spec) => match spec.body {
-            CommandBody::Standalone(run) => run(args),
-            CommandBody::Wallet(run) => run(args, lightclient).await,
-            CommandBody::Repl => Err(CommandError::ReplOnly(spec.name)),
-        },
-        None => Err(CommandError::UnknownCommand(cmd.to_string())),
+/// Renders only the variant identifier, so memos and key material among
+/// the arguments never reach a `Debug` surface.
+impl std::fmt::Debug for CliCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.ident())
     }
 }
 
-/// The crate's single sync-to-async dispatch seam (ADR 0030): string
-/// frontends call this, and the one `block_on` below is the only place
-/// command execution crosses from sync into async.
-#[allow(clippy::disallowed_methods)]
-pub fn do_user_command(
-    cmd: &str,
-    args: &[&str],
+/// The whole command line one dispatch parses: a command name and its
+/// arguments, with no binary name in front, so the REPL and the one-shot
+/// entry share this grammar.
+#[derive(clap::Parser, Debug)]
+#[command(
+    name = "",
+    no_binary_name = true,
+    disable_help_subcommand = true,
+    about = "Enter one command per line. `help` lists the commands.",
+    override_usage = "<COMMAND> [ARGS]"
+)]
+struct CommandLine {
+    #[command(subcommand)]
+    command: CliCommand,
+}
+
+/// [`CommandLine`]'s clap model, built once and cloned per use, so a REPL
+/// line never pays the grammar's construction again.
+static COMMAND_MODEL: std::sync::LazyLock<clap::Command> = std::sync::LazyLock::new(|| {
+    use clap::CommandFactory as _;
+
+    let mut model = CommandLine::command();
+    model.build();
+    model
+});
+
+/// One sample value per variant, held complete by the tests' set-equality
+/// pin, so derived listings cover the whole grammar.
+fn every_command() -> Vec<CliCommand> {
+    vec![
+        CliCommand::Addresses,
+        CliCommand::Balance,
+        CliCommand::Birthday,
+        CliCommand::Calculate,
+        CliCommand::ChangeServer { uri: None },
+        CliCommand::CheckAddress {
+            address: String::new(),
+        },
+        CliCommand::Clear,
+        CliCommand::Coins { scope: None },
+        CliCommand::Confirm,
+        CliCommand::CurrentPrice,
+        CliCommand::Delete,
+        CliCommand::Drain {
+            sub: DrainSubCommand::Plan,
+        },
+        CliCommand::ExportUfvk,
+        CliCommand::Height,
+        CliCommand::Help { command: None },
+        CliCommand::Info,
+        CliCommand::MaxSendValue { args: Vec::new() },
+        CliCommand::MemobytesToAddress,
+        CliCommand::Messages { filter: None },
+        CliCommand::Migrate,
+        CliCommand::Migration {
+            sub: MigrationSubCommand::Plan,
+        },
+        CliCommand::NewAddress {
+            receivers: ReceiverSelection {
+                orchard: true,
+                sapling: false,
+            },
+        },
+        CliCommand::NewTaddress,
+        CliCommand::NewTaddressAllowGap,
+        CliCommand::Notes { scope: None },
+        CliCommand::Nym { sub: None },
+        CliCommand::ParseAddress {
+            address: String::new(),
+        },
+        CliCommand::ParseViewkey {
+            viewkey: String::new(),
+        },
+        CliCommand::Quicksend { args: Vec::new() },
+        CliCommand::Quickshield,
+        CliCommand::Quit,
+        CliCommand::RecoveryInfo,
+        CliCommand::RemoveTransaction {
+            txid: TxId::from_bytes([0; 32]),
+        },
+        CliCommand::Rescan,
+        CliCommand::Save {
+            sub: SaveSubCommand::Run,
+        },
+        CliCommand::Send { args: Vec::new() },
+        CliCommand::SendAll { args: Vec::new() },
+        CliCommand::SendsToAddress,
+        CliCommand::Servers,
+        CliCommand::Settings { sub: None },
+        CliCommand::Shield,
+        CliCommand::SpendableBalance,
+        CliCommand::Split {
+            sub: SplitSubCommand::Plan,
+        },
+        CliCommand::Sync {
+            sub: SyncSubCommand::Status,
+        },
+        CliCommand::TAddresses,
+        CliCommand::Transactions,
+        CliCommand::Transmit { txids: Vec::new() },
+        CliCommand::ValueToAddress,
+        CliCommand::ValueTransfers,
+        CliCommand::Version,
+        CliCommand::WalletKind,
+    ]
+}
+
+/// The wallet-free commands, filtered from [`every_command`] by
+/// [`CliCommand::requires_wallet`], so the set has that single statement.
+fn wallet_free_commands() -> Vec<CliCommand> {
+    every_command()
+        .into_iter()
+        .filter(|command| !command.requires_wallet())
+        .collect()
+}
+
+/// Renders the two-section help listing, or one command's long help,
+/// from [`CommandLine`]'s clap model.
+pub fn format_help(command: Option<&str>) -> String {
+    let mut model = COMMAND_MODEL.clone();
+    let Some(command) = command else {
+        let standalone_names: Vec<String> = wallet_free_commands()
+            .iter()
+            .map(CliCommand::name)
+            .collect();
+        let listing = |standalone: bool| {
+            model
+                .get_subcommands()
+                .filter(|sub| {
+                    standalone_names.iter().any(|name| name == sub.get_name()) == standalone
+                })
+                .map(|sub| {
+                    format!(
+                        "  {} - {}",
+                        sub.get_name(),
+                        sub.get_about().map(ToString::to_string).unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut lines = vec!["Standalone commands (no wallet required):".to_string()];
+        lines.extend(listing(true));
+        lines.push(String::new());
+        lines.push("Wallet commands:".to_string());
+        lines.extend(listing(false));
+        return lines.join("\n");
+    };
+    match model.find_subcommand_mut(command) {
+        Some(sub) => sub.render_long_help().to_string(),
+        None => format!("Command {command} not found"),
+    }
+}
+
+/// Parses one command line into a [`CliCommand`], rendering a refusal as
+/// clap prints it, so a malformed REPL line never reaches the command loop.
+pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, String> {
+    use clap::FromArgMatches as _;
+
+    COMMAND_MODEL
+        .clone()
+        .try_get_matches_from(tokens)
+        .and_then(|matches| CommandLine::from_arg_matches(&matches))
+        .map(|CommandLine { command }| command)
+        .map_err(|error| error.to_string())
+        .and_then(|command| command.validate_deferred_grammar().map(|()| command))
+}
+
+/// Dispatches an already-parsed command against the wallet: the exhaustive
+/// match every frontend reaches, whether it parsed its command at the REPL,
+/// at the process's own argument parse, or from a string.
+pub(crate) async fn dispatch_parsed(
+    command: CliCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    RT.block_on(do_user_command_result(cmd, args, lightclient))
+    let name = command.name();
+    match command {
+        CliCommand::Addresses => addresses(lightclient).await,
+        CliCommand::Balance => balance(lightclient).await,
+        CliCommand::Birthday => birthday(lightclient).await,
+        CliCommand::Calculate => calculate(lightclient).await,
+        CliCommand::ChangeServer { uri } => change_server(uri, lightclient).await,
+        CliCommand::CheckAddress { address } => check_address(&address, lightclient).await,
+        CliCommand::Clear => clear(lightclient).await,
+        CliCommand::Coins { scope } => coins(scope, lightclient).await,
+        CliCommand::Confirm => confirm(lightclient).await,
+        CliCommand::CurrentPrice => current_price(lightclient).await,
+        CliCommand::Delete => delete(lightclient).await,
+        CliCommand::Drain { sub } => drain(sub, lightclient).await,
+        CliCommand::ExportUfvk => export_ufvk(lightclient).await,
+        CliCommand::Height => height(lightclient).await,
+        CliCommand::Help { command: named } => help(named.as_deref()),
+        CliCommand::Info => info(lightclient).await,
+        CliCommand::MaxSendValue { args } => max_send_value(&name, &args, lightclient).await,
+        CliCommand::MemobytesToAddress => memobytes_to_address(lightclient).await,
+        CliCommand::Messages { filter } => messages(filter.as_deref(), lightclient).await,
+        CliCommand::Migrate => migrate(lightclient).await,
+        CliCommand::Migration { sub } => migration(sub, lightclient).await,
+        CliCommand::NewAddress { receivers } => new_address(receivers, lightclient).await,
+        CliCommand::NewTaddress => taddress(lightclient, true).await,
+        CliCommand::NewTaddressAllowGap => taddress(lightclient, false).await,
+        CliCommand::Notes { scope } => notes(scope, lightclient).await,
+        #[cfg(feature = "nym")]
+        CliCommand::Nym { sub } => nym(sub, lightclient).await,
+        #[cfg(not(feature = "nym"))]
+        CliCommand::Nym { .. } => nym(lightclient).await,
+        CliCommand::ParseAddress { address } => parse_address(&address),
+        CliCommand::ParseViewkey { viewkey } => parse_viewkey(&viewkey),
+        CliCommand::Quicksend { args } => quicksend(&name, &args, lightclient).await,
+        CliCommand::Quickshield => quickshield(lightclient).await,
+        CliCommand::Quit => quit(lightclient).await,
+        CliCommand::RecoveryInfo => recovery_info(lightclient).await,
+        CliCommand::RemoveTransaction { txid } => remove_transaction(txid, lightclient).await,
+        CliCommand::Rescan => rescan(lightclient).await,
+        CliCommand::Save { sub } => save(sub, lightclient).await,
+        CliCommand::Send { args } => send(&name, &args, lightclient).await,
+        CliCommand::SendAll { args } => send_all(&name, &args, lightclient).await,
+        CliCommand::SendsToAddress => sends_to_address(lightclient).await,
+        CliCommand::Servers => Err(CommandError::ReplOnly(name)),
+        CliCommand::Settings { sub } => settings(sub, lightclient).await,
+        CliCommand::Shield => shield(lightclient).await,
+        CliCommand::SpendableBalance => spendable_balance(lightclient).await,
+        CliCommand::Split { sub } => split(sub, lightclient).await,
+        CliCommand::Sync { sub } => sync(sub, lightclient).await,
+        CliCommand::TAddresses => t_addresses(lightclient).await,
+        CliCommand::Transactions => transactions(lightclient).await,
+        CliCommand::Transmit { txids } => transmit(txids, lightclient).await,
+        CliCommand::ValueToAddress => value_to_address(lightclient).await,
+        CliCommand::ValueTransfers => value_transfers(lightclient).await,
+        CliCommand::Version => version(),
+        CliCommand::WalletKind => wallet_kind(lightclient).await,
+    }
 }
