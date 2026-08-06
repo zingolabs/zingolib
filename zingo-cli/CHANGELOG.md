@@ -12,6 +12,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** A deliberate `--offline` session is unliftable (ADR 0032).
+  The session offers no network-requiring command, the whole `network`
+  family included. Suppressed commands leave `help` and refuse if typed,
+  with exit code 1 in one-shot mode, and the refusal names the only exit:
+  relaunch without `--offline`. A launch notice states the contract. The
+  suppression is granular where a family splits: `migration` keeps its
+  stored-state subcommands (`plan`, `status`, `windows`, `cadence`,
+  `cancel`), and `sync`, `drain`, and `split` keep their non-emitting
+  subcommands.
+- **Breaking.** An unconsented session refuses network-requiring commands
+  at the dispatch gate instead of deep in a command body, and the refusal
+  names `network on` as the consent act. The `network` family stays
+  offered there, since `network on` is how consent is granted. `help`
+  reflects the live posture in every session.
+- **Breaking.** `network off` is a zero-emission teardown, not a mixnet
+  toggle (ADR 0032). It stops the nym proxy, drops the Indexer
+  connection, clears the Migration Broadcast Endpoint, and aborts
+  in-flight sync, returning only when teardown completes. The session
+  drops to the unconsented posture, so `network on` re-consents, and the
+  stored standing consent is untouched. The clearnet-transmit act is
+  retired: no CLI command routes Transmission or price-fetch over
+  clearnet.
+- The `servers` report is a Last Known report: it renders the launch
+  probe's ranking from session state and never probes.
 - **Breaking.** A failing command now renders exactly once, as `Error: …` on
   stderr, and one-shot mode exits nonzero. Both the message and the failure
   itself previously went to stdout with an exit code of 0, so a failed send was
