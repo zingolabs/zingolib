@@ -42,9 +42,7 @@ pub(crate) mod version;
 
 /// Builds the clap `Command` definition for the CLI: the session's options
 /// followed by every dispatchable command, so a one-shot command parses
-/// into its typed form here, before any wallet work begins. Augmenting
-/// carries the command grammar's own description onto this app, so the
-/// session's description is restated afterwards to win.
+/// into its typed form here, before any wallet work begins.
 pub fn build_clap_app() -> clap::Command {
     use clap::Subcommand as _;
 
@@ -397,9 +395,8 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 /// a response by sniffing its text (the in-band-error problem of issue
 /// zingolabs/zingolib#2446).
 enum Request {
-    /// Execute a user command, already parsed by the sender. The reply is
-    /// `Ok` with the command's output, or `Err` with the rendered error
-    /// line.
+    /// Execute a user command, already parsed by the sender, replying `Ok`
+    /// with the command's output or `Err` with the rendered error line.
     Command(commands::CliCommand),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
     /// typed calls on the loop thread. The reply is the sync indicator
@@ -419,15 +416,9 @@ struct CommandChannel {
     receiver: Receiver<Result<String, String>>,
 }
 
-/// Spawns a background thread that listens for parsed-command messages,
-/// executes each command against the [`LightClient`], and sends the
-/// response back through the returned [`CommandChannel`].
-///
-/// Both of this thread's crossings into async are the `block_on` calls
-/// below, one for command dispatch and one for the per-prompt
-/// housekeeping; the loop thread holds no other crossing (ADR 0030).
-///
-/// The loop exits when it receives [`commands::CliCommand::Quit`].
+/// Spawns a background thread that executes each parsed-command message
+/// against the [`LightClient`] and replies through the returned
+/// [`CommandChannel`], exiting on [`commands::CliCommand::Quit`].
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
@@ -478,23 +469,17 @@ pub(crate) fn command_loop(
 enum ModeOfOperation {
     /// Start the interactive REPL.
     Interactive,
-    /// Execute a single command and exit. The command arrives already
-    /// parsed, from the same grammar the REPL uses.
+    /// Execute a single command and exit, the command arriving already
+    /// parsed from the same grammar the REPL uses.
     Command {
         /// The parsed command to execute.
         command: commands::CliCommand,
     },
 }
 
-/// Determines the mode of operation from parsed CLI arguments.
-///
-/// Returns [`ModeOfOperation::Command`] if a command is given, or
-/// [`ModeOfOperation::Interactive`] when no command is given. The command
-/// is rebuilt from the matches by clap, so a malformed one has already
-/// been refused by the argument parse that produced them.
-///
-/// The `help` command is handled separately before this function is called,
-/// so it will never appear as a [`ModeOfOperation::Command`].
+/// Determines the mode of operation from parsed CLI arguments:
+/// [`ModeOfOperation::Command`] when a command is given, or
+/// [`ModeOfOperation::Interactive`] when none is.
 fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
     use clap::FromArgMatches as _;
 
@@ -517,11 +502,10 @@ enum CommunicationMode {
     Offline,
 }
 
-/// The Offline-mode pin at the REPL dispatch (issue #2286): an Offline
-/// session never configures an Indexer, so `change_server` is refused
-/// before it reaches command execution. Returns the refusal to send in
-/// place of executing `command`, or `None` when the command may proceed.
-/// Pure, so the pin is testable without a REPL thread.
+/// The Offline-mode pin at the REPL dispatch: returns the refusal to send
+/// in place of executing `command` (an Offline session never configures an
+/// Indexer, so `change_server` is refused), or `None` when the command may
+/// proceed.
 fn offline_mode_refusal(
     communication_mode: CommunicationMode,
     command: &commands::CliCommand,

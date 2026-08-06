@@ -1,14 +1,4 @@
 //! Command definitions and dispatch for zingo-cli.
-//!
-//! Every command is one variant of [`CliCommand`], the clap derive
-//! grammar: its name is minted from the variant identifier, its help texts
-//! are its `about` and `long_about`, and its arguments parse into typed
-//! payloads before any body runs. A command is parsed once, as early as
-//! the process can parse it, and travels to [`dispatch_parsed`] as a
-//! [`CliCommand`]; the sync world crosses into async at the two audited
-//! seams in the crate root, the command loop and startup (ADR 0030). A
-//! failure leaves a command only as a [`CommandError`], never as error
-//! prose in the result channel (ADR 0031).
 
 mod error;
 #[cfg(test)]
@@ -345,10 +335,8 @@ async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
     }
 }
 
-/// The send family's arguments as the `utils::parse_*` grammars take them.
-/// Those grammars are a JSON-or-positional hybrid clap does not own yet, so
-/// the four send-family commands carry their arguments as strings and parse
-/// on their first line (documented compromise, clap arc Milestone 2).
+/// Borrows the send family's arguments for the `utils::parse_*` grammars,
+/// a JSON-or-positional hybrid clap does not own yet.
 fn as_strs(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
 }
@@ -397,7 +385,7 @@ async fn migration(
 }
 
 /// The `new_address` argument: `o`, `z`, or both, naming the receivers the
-/// new unified address carries. Transparent receivers are `new_taddress`'s.
+/// new unified address carries (transparent receivers are `new_taddress`'s).
 fn parse_receiver_selection(raw: &str) -> Result<ReceiverSelection, String> {
     if raw.is_empty()
         || raw
@@ -577,8 +565,8 @@ async fn rescan(lightclient: &mut LightClient) -> Result<String, CommandError> {
     }
 }
 
-/// A parsed `save` command. Arguments parse completely into this enum,
-/// at the clap derive grammar, before any wallet access.
+/// A parsed `save` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SaveSubCommand {
     Run,
@@ -650,9 +638,8 @@ async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, Comma
     }
 }
 
-/// A parsed `settings` command: which setting to write, and its value.
-/// Absent, the command reads the settings out instead. The grammar owns
-/// every value, so a malformed one refuses before the wallet lock is taken.
+/// A parsed `settings` command, naming which setting to write and its
+/// value, or reading the settings out when no setting is named.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 #[command(rename_all = "snake_case")]
 pub(crate) enum SettingsSubCommand {
@@ -665,8 +652,8 @@ pub(crate) enum SettingsSubCommand {
     },
 }
 
-/// The sync performance levels as a clap grammar. [`PerformanceLevel`] is
-/// pepper-sync's, so the CLI mints the value names and converts.
+/// The sync performance levels as a clap grammar, minting CLI value names
+/// for pepper-sync's [`PerformanceLevel`] and converting.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PerformanceLevelArg {
     Low,
@@ -758,8 +745,8 @@ async fn spendable_balance(lightclient: &mut LightClient) -> Result<String, Comm
     .pretty(2))
 }
 
-/// A parsed `sync` command. Arguments parse completely into this enum,
-/// at the clap derive grammar, before any wallet access.
+/// A parsed `sync` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SyncSubCommand {
     Run,
@@ -1100,10 +1087,8 @@ pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
     zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
-/// Typed failure of the `nym` command family. Each variant exists only in
-/// the build that can produce it, so the enum's shape follows the feature.
-/// The parse failures that once lived here are clap's now: arguments
-/// refuse at the derive grammar, before any wallet access.
+/// Typed failure of the `nym` command family, each variant existing only
+/// in the build that can produce it.
 #[derive(Debug, thiserror::Error)]
 pub enum NymCommandError {
     #[cfg(not(feature = "nym"))]
@@ -1117,8 +1102,8 @@ pub enum NymCommandError {
     },
 }
 
-/// A parsed `nym` command. Arguments parse completely into this enum,
-/// at the clap derive grammar, before any wallet access.
+/// A parsed `nym` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
 #[cfg(feature = "nym")]
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NymSubCommand {
@@ -1416,11 +1401,8 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
     }
 }
 
-/// Typed failure of the migration command family, following the audit Issue-Q
-/// pattern PR #2464 established: the discriminant lives in the type, and
-/// prose is produced at exactly one rendering site per command. The parse
-/// failures that once lived here are clap's now: arguments refuse at the
-/// derive grammar, before any wallet access.
+/// Typed failure of the migration command family: the discriminant lives in
+/// the type, and prose is produced at exactly one rendering site per command.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationCommandError {
     #[error("sync failed: {0}")]
@@ -1429,8 +1411,8 @@ pub enum MigrationCommandError {
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
-/// A parsed migration command. Arguments parse completely into this
-/// enum, at the clap derive grammar, before any wallet access.
+/// A parsed migration command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MigrationSubCommand {
     Plan,
@@ -1860,10 +1842,7 @@ const NYM_LONG_ABOUT: &str = indoc! {r"
 "};
 
 /// Every command the CLI dispatches, in alphabetical order: the single
-/// source of the dispatchable names, help texts, and typed arguments
-/// (ADR 0030). Each name is minted from its variant identifier, and `help`
-/// renders its listing from this grammar's clap model, so declaration
-/// order is display order.
+/// source of the dispatchable names, help texts, and typed arguments.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq)]
 #[command(rename_all = "snake_case")]
 pub(crate) enum CliCommand {
@@ -2619,7 +2598,7 @@ struct CommandLine {
 
 /// The commands `help` lists under "Standalone commands (no wallet
 /// required)": those whose bodies never touch the wallet, plus the
-/// REPL-owned `servers`. Every other command is a wallet command.
+/// REPL-owned `servers`.
 const STANDALONE_COMMANDS: &[&str] = &[
     "help",
     "parse_address",
@@ -2662,8 +2641,7 @@ pub fn format_help(command: Option<&str>) -> String {
 }
 
 /// Parses one command line into a [`CliCommand`], rendering a refusal as
-/// clap prints it. The REPL parses each line here, so a malformed line
-/// never reaches the command loop.
+/// clap prints it, so a malformed REPL line never reaches the command loop.
 pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, String> {
     use clap::Parser as _;
 
@@ -2674,8 +2652,7 @@ pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, Stri
 
 /// Dispatches an already-parsed command against the wallet: the exhaustive
 /// match every frontend reaches, whether it parsed its command at the REPL,
-/// at the process's own argument parse, or from a string. The REPL-owned
-/// `servers` command returns a typed error (ADR 0031).
+/// at the process's own argument parse, or from a string.
 pub(crate) async fn dispatch_parsed(
     command: CliCommand,
     lightclient: &mut LightClient,
@@ -2739,12 +2716,8 @@ pub(crate) async fn dispatch_parsed(
 }
 
 /// Dispatches a user command given as a name and string arguments: the
-/// string frontend over [`parse_command_tokens`] and [`dispatch_parsed`].
-/// A name the grammar does not know refuses here, before any wallet
-/// access, as a typed error (ADR 0031). No in-process caller remains, now
-/// that every channel carries a parsed command; this surface serves a
-/// frontend that holds only strings, and the offline-contract tests drive
-/// it.
+/// string frontend over [`parse_command_tokens`] and [`dispatch_parsed`],
+/// kept for callers that hold only strings.
 #[allow(dead_code)]
 pub async fn do_user_command_result(
     cmd: &str,
