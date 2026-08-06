@@ -34,6 +34,24 @@ mod mode_of_operation {
         assert_interactive(&[examples::BIN_NAME]);
     }
 
+    /// A session flag binds before the command name and refuses after it.
+    #[test]
+    fn session_flags_precede_the_command_name() {
+        let matches = parse(&[examples::BIN_NAME, "--nosync", "balance"]);
+        assert!(matches.get_flag("nosync"));
+        assert_eq!(
+            get_mode_of_operation(&matches),
+            ModeOfOperation::Command {
+                command: CliCommand::Balance
+            }
+        );
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "balance", "--nosync"])
+                .is_err()
+        );
+    }
+
     #[test]
     fn command_without_extra_args() {
         assert_command(&[examples::BIN_NAME, "balance"], CliCommand::Balance);

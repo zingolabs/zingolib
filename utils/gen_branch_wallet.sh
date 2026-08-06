@@ -9,7 +9,7 @@ WALLETDIR=$REPOROOT/zingocli/tests/data/wallets/v26/${GITBRANCH}/${CHAIN}
 
 if [[ "$CHAIN" = "regtest" ]]
 then 
-  COMMANDARGS="--data-dir=$WALLETDIR save --regtest"
+  COMMANDARGS="--data-dir=$WALLETDIR --chain=regtest save"
 elif [[ "$CHAIN" = "mainnet" ]]
 then
   COMMANDARGS="--data-dir=$WALLETDIR save"

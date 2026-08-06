@@ -288,7 +288,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
 
     let send_request = |request: Request| -> Result<String, String> {
         let description = match &request {
-            Request::Command(command) => format!("{command:?}"),
+            Request::Command(command) => command.name(),
             Request::PromptIndicator => "prompt indicator".to_string(),
         };
         if ch.transmitter.send(request).is_err() {
@@ -1030,7 +1030,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
             Ok(ExitCode::SUCCESS)
         }
         ModeOfOperation::Command { command } => {
-            let description = format!("{command:?}");
+            let description = command.name();
             let exit_code = if ch
                 .transmitter
                 .send(Request::Command(command.clone()))

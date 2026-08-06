@@ -1104,7 +1104,6 @@ pub enum NymCommandError {
 
 /// A parsed `nym` command, its arguments parsed completely at the clap
 /// derive grammar before any wallet access.
-#[cfg(feature = "nym")]
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NymSubCommand {
     Status,
@@ -1121,7 +1120,6 @@ pub(crate) enum NymSubCommand {
 
 /// https-only: the mixnet leg refuses a plaintext target at dial time,
 /// so the grammar rejects it up front with a clear message.
-#[cfg(feature = "nym")]
 fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
     let uri = raw
         .parse::<http::Uri>()
@@ -1819,28 +1817,6 @@ async fn run_split(
     })
 }
 
-/// The `nym` help texts, held as consts because the command's grammar
-/// splits on the `nym` feature and both variants carry the same help.
-const NYM_ABOUT: &str = "Control the Nym mixnet transport (on/off/status/probe/history).";
-const NYM_LONG_ABOUT: &str = indoc! {r"
-    Control the Nym mixnet transport for send and price-fetch.
-
-    With Mixnet Mode on, both route over the mixnet and fail closed while it
-    bootstraps, never falling back to clearnet. Turning it off is a deliberate
-    choice to transmit over clearnet.
-
-    `status` reports off, bootstrapping or ready. `on` starts the nym-proxy
-    child, taking the binary from the given path, else $ZINGO_NYM_PROXY, else
-    one bundled beside this binary, else PATH. `off` reverts to clearnet.
-    `probe` runs GetLightdInfo over both routes side by side to tell whether a
-    failure is mixnet-specific, and its clearnet leg uses your real IP.
-    `history` shows per-indexer attempts across sessions, and needs the
-    nym-diary feature plus --indexer-diary.
-
-    Usage:
-    nym status | on [binary_path] | off | probe [uri] | history
-"};
-
 /// Every command the CLI dispatches, in alphabetical order: the single
 /// source of the dispatchable names, help texts, and typed arguments.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq)]
@@ -2080,10 +2056,7 @@ pub(crate) enum CliCommand {
             max_send_value { "address": "<address>", "zennies_for_zingo": <true|false> }
         "#}
     )]
-    MaxSendValue {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    MaxSendValue { args: Vec<String> },
     #[command(
         about = "Show by address memo_bytes transfers for this seed.",
         long_about = indoc! {r"
@@ -2106,7 +2079,10 @@ pub(crate) enum CliCommand {
             messages [address | string]
         "}
     )]
-    Messages { filter: Option<String> },
+    Messages {
+        #[arg(allow_hyphen_values = true)]
+        filter: Option<String>,
+    },
     #[command(
         about = "Migrate all Orchard funds to the Ironwood pool in one interactive run.",
         long_about = indoc! {r"
@@ -2226,15 +2202,31 @@ pub(crate) enum CliCommand {
         #[arg(value_enum)]
         scope: Option<OutputScope>,
     },
-    #[command(about = NYM_ABOUT, long_about = NYM_LONG_ABOUT)]
-    #[cfg(feature = "nym")]
+    #[command(
+        about = "Control the Nym mixnet transport (on/off/status/probe/history).",
+        long_about = indoc! {r"
+            Control the Nym mixnet transport for send and price-fetch.
+
+            With Mixnet Mode on, both route over the mixnet and fail closed while it
+            bootstraps, never falling back to clearnet. Turning it off is a deliberate
+            choice to transmit over clearnet.
+
+            `status` reports off, bootstrapping or ready. `on` starts the nym-proxy
+            child, taking the binary from the given path, else $ZINGO_NYM_PROXY, else
+            one bundled beside this binary, else PATH. `off` reverts to clearnet.
+            `probe` runs GetLightdInfo over both routes side by side to tell whether a
+            failure is mixnet-specific, and its clearnet leg uses your real IP.
+            `history` shows per-indexer attempts across sessions, and needs the
+            nym-diary feature plus --indexer-diary.
+
+            Usage:
+            nym status | on [binary_path] | off | probe [uri] | history
+        "}
+    )]
     Nym {
         #[command(subcommand)]
         sub: Option<NymSubCommand>,
     },
-    #[command(about = NYM_ABOUT, long_about = NYM_LONG_ABOUT)]
-    #[cfg(not(feature = "nym"))]
-    Nym,
     #[command(
         about = "Parse an address",
         long_about = concat!(
@@ -2284,10 +2276,7 @@ pub(crate) enum CliCommand {
             "\"\n",
         )
     )]
-    Quicksend {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Quicksend { args: Vec<String> },
     #[command(
         about = "Shield transparent funds, fusing `shield` and `confirm`.",
         long_about = indoc! {r"
@@ -2381,10 +2370,7 @@ pub(crate) enum CliCommand {
             "    confirm\n",
         )
     )]
-    Send {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Send { args: Vec<String> },
     #[command(
         about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to broadcast.",
         long_about = concat!(
@@ -2406,10 +2392,7 @@ pub(crate) enum CliCommand {
             "    confirm\n",
         )
     )]
-    SendAll {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    SendAll { args: Vec<String> },
     #[command(
         about = "Show by address number of sends for this seed.",
         long_about = indoc! {r"
@@ -2586,6 +2569,27 @@ pub(crate) enum CliCommand {
     WalletKind,
 }
 
+impl CliCommand {
+    /// The command's minted name, derived from the variant identifier, so
+    /// a log line can carry the name and never the arguments.
+    pub(crate) fn name(&self) -> String {
+        let debug = format!("{self:?}");
+        let ident = debug.split([' ', '{', '(']).next().unwrap_or_default();
+        let mut name = String::with_capacity(ident.len() + 2);
+        for c in ident.chars() {
+            if c.is_ascii_uppercase() {
+                if !name.is_empty() {
+                    name.push('_');
+                }
+                name.push(c.to_ascii_lowercase());
+            } else {
+                name.push(c);
+            }
+        }
+        name
+    }
+}
+
 /// The whole command line one dispatch parses: a command name and its
 /// arguments, with no binary name in front, so the REPL and the one-shot
 /// entry share this grammar.
@@ -2686,7 +2690,7 @@ pub(crate) async fn dispatch_parsed(
         #[cfg(feature = "nym")]
         CliCommand::Nym { sub } => nym(sub, lightclient).await,
         #[cfg(not(feature = "nym"))]
-        CliCommand::Nym => nym(lightclient).await,
+        CliCommand::Nym { .. } => nym(lightclient).await,
         CliCommand::ParseAddress { address } => parse_address(&address),
         CliCommand::ParseViewkey { viewkey } => parse_viewkey(&viewkey),
         CliCommand::Quicksend { args } => quicksend(&args, lightclient).await,

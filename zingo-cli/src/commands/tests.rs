@@ -6,7 +6,30 @@ mod table_invariants {
 
     use clap::CommandFactory as _;
 
-    use super::super::CommandLine;
+    use super::super::{CliCommand, CommandLine};
+
+    /// HYPOTHESIS: `name` derives exactly the minted subcommand name, so a
+    /// log line names the command without carrying its arguments.
+    #[test]
+    fn name_matches_the_mint_and_drops_the_arguments() {
+        let model = CommandLine::command();
+        for (command, expected) in [
+            (CliCommand::Quit, "quit"),
+            (
+                CliCommand::SendAll {
+                    args: vec!["a-secret-memo".to_string()],
+                },
+                "send_all",
+            ),
+            (CliCommand::NewTaddressAllowGap, "new_taddress_allow_gap"),
+        ] {
+            assert_eq!(command.name(), expected);
+            assert!(
+                model.find_subcommand(expected).is_some(),
+                "`{expected}` must be a minted name"
+            );
+        }
+    }
 
     /// HYPOTHESIS: the grammar's minted names are strictly increasing —
     /// sorted, so the help listing stays alphabetical, and therefore
@@ -422,6 +445,57 @@ mod typed_argument_parsing {
     fn an_unknown_command_refuses_at_the_parse() {
         assert!(parse(&["bogus"]).is_err());
         assert!(parse(&[]).is_err());
+    }
+
+    /// HYPOTHESIS: a flag-shaped token after send-family arguments refuses
+    /// at the parse instead of becoming the transaction's memo.
+    #[test]
+    fn a_flag_after_send_arguments_refuses_at_the_parse() {
+        for family in ["send", "send_all", "quicksend", "max_send_value"] {
+            assert!(
+                parse(&[family, "zs1exampleaddress", "50000", "--nosync"]).is_err(),
+                "`{family}` must refuse a flag-shaped trailing token"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: the standard `--` escape carries a dash-leading memo
+    /// into the send arguments.
+    #[test]
+    fn the_escape_carries_a_dash_leading_memo() {
+        assert_eq!(
+            parse(&["send", "zs1exampleaddress", "50000", "--", "-memo"])
+                .expect("an escaped dash-leading memo parses"),
+            CliCommand::Send {
+                args: ["zs1exampleaddress", "50000", "-memo"]
+                    .map(String::from)
+                    .to_vec(),
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a memo filter may begin with a dash.
+    #[test]
+    fn a_dash_leading_messages_filter_parses() {
+        assert_eq!(
+            parse(&["messages", "-1ZEC"]).expect("a dash-leading filter parses"),
+            CliCommand::Messages {
+                filter: Some("-1ZEC".to_string()),
+            }
+        );
+    }
+
+    /// HYPOTHESIS: every advertised `nym` subcommand parses in every build,
+    /// so a build without the feature refuses with the typed error instead
+    /// of a usage error.
+    #[test]
+    fn nym_subcommands_parse_in_every_build() {
+        assert_eq!(
+            parse(&["nym", "status"]).expect("nym status parses"),
+            CliCommand::Nym {
+                sub: Some(NymSubCommand::Status),
+            }
+        );
     }
 }
 

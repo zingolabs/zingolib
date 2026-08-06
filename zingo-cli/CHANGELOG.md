@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work begins, where it previously booted the wallet first.
 - **Breaking.** Command names are case-sensitive: the grammar knows
   `balance`, never `BALANCE`, where the old dispatcher lowercased names.
+- **Breaking.** Session flags precede the command name: `zingo-cli --nosync
+  balance` binds the flag to the session, and a flag written after the
+  command is a usage error with exit code 2, where the old parser accepted
+  session flags in any position. A send-family memo beginning with a dash
+  needs the standard escape: `send <address> <zatoshis> -- "-memo"`.
 - `zingo-cli --help` now lists every wallet command, and `help <command>`
   appends clap's generated usage and options to the command's description.
 - `exit` is a clean alias of `quit`, where it previously printed an
