@@ -56,10 +56,13 @@ refusal that names every candidate's failure. The session's posture is
 untouched: the mixnet stands, and send and price-fetch continue. A pin
 binds the session; an unpinned sweep binds only its Sync Session.
 
-When the sweep completes, its Exit Node is recycled: the transport that
-carried the survey is torn down and a fresh Exit Node is bootstrapped
-before the session transmits again. The exit that learned which
-indexers the wallet surveyed never carries the traffic that follows.
+The sweep rides its own dedicated transport. Its Exit Node is never the
+one carrying send or price-fetch — before or after the sweep — and it
+is recycled the moment the sweep completes: the survey's transport is
+torn down, and the transmit transport never learns what was surveyed.
+The selected sync indexer is excluded from the live candidates that
+serve the transmit operations, so the operator that sees the wallet's
+sync stream is never also a transmit target.
 
 ## Consequences
 

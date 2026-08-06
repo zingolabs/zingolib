@@ -19,6 +19,7 @@ pub mod probe;
 pub mod provision;
 pub mod route;
 pub mod supervisor;
+pub mod sweep;
 
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
