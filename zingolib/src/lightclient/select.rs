@@ -23,6 +23,26 @@ use crate::nym::{MixnetMode, MixnetProxy};
 /// as live (ADR 0034).
 pub const SWEEP_HEIGHT_TOLERANCE: u64 = 2;
 
+/// A phase transition of a running Server-Selection Sweep, delivered to the
+/// consumer's progress callback as the sweep reaches it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SweepProgress {
+    /// The dedicated sweep transport is bootstrapping toward its own exit.
+    TransportBootstrapping,
+    /// The survey is probing every candidate through the sweep exit.
+    Surveying {
+        /// How many candidates the survey covers.
+        candidates: usize,
+    },
+    /// The survey finished and the pure judgment is running.
+    Judging {
+        /// How many candidates answered the survey.
+        answered: usize,
+        /// How many candidates were surveyed.
+        surveyed: usize,
+    },
+}
+
 /// Why a Server-Selection Sweep produced no sync indexer.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerSelectionError {
@@ -54,6 +74,7 @@ impl LightClient {
         binary_path: &Path,
         candidates: &[Uri],
         pin: Option<&Uri>,
+        progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
         let chain = self.chain_type().to_string();
         // A dedicated status channel: the sweep proxy's lifecycle is private
@@ -63,8 +84,16 @@ impl LightClient {
         let proxy =
             MixnetProxy::spawn(binary_path, publisher).map_err(ServerSelectionError::ProxyStart)?;
 
+        progress(SweepProgress::TransportBootstrapping);
         let socks5_addr = await_sweep_ready(&mut receiver).await?;
+        progress(SweepProgress::Surveying {
+            candidates: candidates.len(),
+        });
         let results = survey(&socks5_addr, candidates, &self.indexer_history).await;
+        progress(SweepProgress::Judging {
+            answered: results.iter().filter(|r| r.reported.is_some()).count(),
+            surveyed: results.len(),
+        });
 
         let selection = sweep::select(
             &results,

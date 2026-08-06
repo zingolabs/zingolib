@@ -748,6 +748,11 @@ pub(crate) struct ConfigTemplate {
     /// The Indexer to connect to. `None` exactly when the session is in
     /// Offline mode.
     server: Option<http::Uri>,
+    /// True when `--server` was typed on the command line rather than
+    /// filled by the census default: the pin the Server-Selection Sweep
+    /// surveys and never substitutes (ADR 0034).
+    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
+    server_pinned: bool,
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
@@ -848,6 +853,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             ChainType::Mainnet
         };
 
+        let server_pinned =
+            matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
         let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
@@ -856,6 +863,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             mode,
             communication_mode,
             server,
+            server_pinned,
             #[cfg(feature = "clearnet-test-mode")]
             ranked_servers,
             seed,
@@ -1046,7 +1054,8 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 match status.mode {
                     zingolib::nym::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
-                         (see `network status`)."
+                         (see `network status`).{}",
+                        commands::render_exit_nodes(&status.exits)
                     ),
                     zingolib::nym::MixnetMode::Died => {
                         let cause = status
@@ -1066,7 +1075,18 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         });
     }
 
-    if filled_template.sync {
+    #[cfg(feature = "nym")]
+    let sync_attachable = if filled_template.communication_mode == CommunicationMode::Online
+        && filled_template.sync
+    {
+        sweep_select_sync_indexer(&mut lightclient, filled_template).await
+    } else {
+        true
+    };
+    #[cfg(not(feature = "nym"))]
+    let sync_attachable = true;
+
+    if filled_template.sync && sync_attachable {
         let sync_run = commands::CliCommand::Sync {
             sub: commands::SyncSubCommand::Run,
         };
@@ -1085,6 +1105,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     if filled_template.sync
+        && sync_attachable
         && filled_template.waitsync
         && let Err(e) = lightclient.await_sync().await
     {
@@ -1092,6 +1113,95 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     Ok(lightclient)
+}
+
+/// Maps the session chain to its census chain; `None` for regtest, whose
+/// indexers the census does not carry.
+#[cfg(feature = "nym")]
+fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
+    match chain {
+        ChainType::Mainnet => Some(zingolib::indexers::IndexerChain::Main),
+        ChainType::Testnet => Some(zingolib::indexers::IndexerChain::Test),
+        ChainType::Regtest(_) => None,
+    }
+}
+
+/// Runs the Server-Selection Sweep (ADR 0034), narrating each phase, and
+/// binds its verdict as the sync indexer; returns whether this Sync Session
+/// may open.
+#[cfg(feature = "nym")]
+async fn sweep_select_sync_indexer(
+    lightclient: &mut LightClient,
+    filled_template: &ConfigTemplate,
+) -> bool {
+    use zingolib::lightclient::select::SweepProgress;
+
+    let Some(chain) = census_chain(&filled_template.chaintype) else {
+        return true;
+    };
+    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
+        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
+        .collect();
+    let pin = filled_template
+        .server_pinned
+        .then(|| filled_template.server.clone())
+        .flatten();
+    if let Some(pinned) = &pin
+        && !candidates.contains(pinned)
+    {
+        candidates.push(pinned.clone());
+    }
+    let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
+    let selection = lightclient
+        .run_server_selection_sweep(
+            std::path::Path::new(&proxy_path),
+            &candidates,
+            pin.as_ref(),
+            |phase| match phase {
+                SweepProgress::TransportBootstrapping => eprintln!(
+                    "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
+                     (its Exit Node is recycled when the sweep completes)..."
+                ),
+                SweepProgress::Surveying { candidates } => eprintln!(
+                    "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
+                ),
+                SweepProgress::Judging { answered, surveyed } => eprintln!(
+                    "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
+                     judging the live cohort..."
+                ),
+            },
+        )
+        .await;
+    match selection {
+        Ok(selection) => {
+            let chosen = selection.sync_indexer.clone();
+            match lightclient.set_indexer_uri(chosen.clone()).await {
+                Ok(()) => {
+                    eprintln!(
+                        "Server-Selection Sweep: sync attaches to {chosen} (live cohort of {}, \
+                         {} transmit candidates exclude its operator).",
+                        selection.cohort.len(),
+                        selection.transmit_candidates.len(),
+                    );
+                    true
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {e}. \
+                         This Sync Session does not open."
+                    );
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "Server-Selection Sweep: no sync indexer selected: {e}. This Sync Session does \
+                 not open; the mixnet posture stands, and send and price-fetch continue."
+            );
+            false
+        }
+    }
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for
