@@ -1139,13 +1139,22 @@ async fn sweep_select_sync_indexer(
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
     };
-    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
-        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
-        .collect();
     let pin = filled_template
         .server_pinned
         .then(|| filled_template.server.clone())
         .flatten();
+    if let Some(pinned) = &pin
+        && !zingolib::nym::probe::probe_eligible(pinned)
+    {
+        eprintln!(
+            "Server-Selection Sweep: pinned server {pinned} is outside the mixnet exit policy \
+             (https on port 443), so no sweep can survey it; binding it directly."
+        );
+        return true;
+    }
+    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
+        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
+        .collect();
     if let Some(pinned) = &pin
         && !candidates.contains(pinned)
     {
