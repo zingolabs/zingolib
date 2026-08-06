@@ -5,91 +5,8 @@ mod table_invariants {
     //! order, and no two variants mint the same name.
 
     use clap::CommandFactory as _;
-    use zcash_protocol::TxId;
 
-    use super::super::{
-        CliCommand, CommandLine, DrainSubCommand, MigrationSubCommand, SaveSubCommand,
-        SplitSubCommand, SyncSubCommand, format_help, parse_receiver_selection,
-        standalone_commands,
-    };
-
-    /// One sample per variant, held complete by the set-equality test below,
-    /// so the totality tests cover the whole grammar.
-    fn every_command() -> Vec<CliCommand> {
-        vec![
-            CliCommand::Addresses,
-            CliCommand::Balance,
-            CliCommand::Birthday,
-            CliCommand::Calculate,
-            CliCommand::ChangeServer { uri: None },
-            CliCommand::CheckAddress {
-                address: String::new(),
-            },
-            CliCommand::Clear,
-            CliCommand::Coins { scope: None },
-            CliCommand::Confirm,
-            CliCommand::CurrentPrice,
-            CliCommand::Delete,
-            CliCommand::Drain {
-                sub: DrainSubCommand::Plan,
-            },
-            CliCommand::ExportUfvk,
-            CliCommand::Height,
-            CliCommand::Help { command: None },
-            CliCommand::Info,
-            CliCommand::MaxSendValue { args: Vec::new() },
-            CliCommand::MemobytesToAddress,
-            CliCommand::Messages { filter: None },
-            CliCommand::Migrate,
-            CliCommand::Migration {
-                sub: MigrationSubCommand::Plan,
-            },
-            CliCommand::NewAddress {
-                receivers: parse_receiver_selection("o").expect("a valid receiver selection"),
-            },
-            CliCommand::NewTaddress,
-            CliCommand::NewTaddressAllowGap,
-            CliCommand::Notes { scope: None },
-            CliCommand::Nym { sub: None },
-            CliCommand::ParseAddress {
-                address: String::new(),
-            },
-            CliCommand::ParseViewkey {
-                viewkey: String::new(),
-            },
-            CliCommand::Quicksend { args: Vec::new() },
-            CliCommand::Quickshield,
-            CliCommand::Quit,
-            CliCommand::RecoveryInfo,
-            CliCommand::RemoveTransaction {
-                txid: TxId::from_bytes([0; 32]),
-            },
-            CliCommand::Rescan,
-            CliCommand::Save {
-                sub: SaveSubCommand::Run,
-            },
-            CliCommand::Send { args: Vec::new() },
-            CliCommand::SendAll { args: Vec::new() },
-            CliCommand::SendsToAddress,
-            CliCommand::Servers,
-            CliCommand::Settings { sub: None },
-            CliCommand::Shield,
-            CliCommand::SpendableBalance,
-            CliCommand::Split {
-                sub: SplitSubCommand::Plan,
-            },
-            CliCommand::Sync {
-                sub: SyncSubCommand::Status,
-            },
-            CliCommand::TAddresses,
-            CliCommand::Transactions,
-            CliCommand::Transmit { txids: Vec::new() },
-            CliCommand::ValueToAddress,
-            CliCommand::ValueTransfers,
-            CliCommand::Version,
-            CliCommand::WalletKind,
-        ]
-    }
+    use super::super::{CliCommand, CommandLine, every_command, format_help};
 
     /// HYPOTHESIS: the derived names of one-sample-per-variant equal the
     /// clap model's subcommand names exactly, so `name` can never diverge
@@ -178,22 +95,6 @@ mod table_invariants {
             assert!(
                 model.find_subcommand(expected).is_some(),
                 "`{expected}` must be a minted name"
-            );
-        }
-    }
-
-    /// HYPOTHESIS: every standalone sample is wallet-free by
-    /// `requires_wallet` and its derived name is minted, so `help` cannot
-    /// misfile or misname a section entry.
-    #[test]
-    fn the_standalone_set_is_wallet_free_and_minted() {
-        let model = CommandLine::command();
-        for command in standalone_commands() {
-            assert!(!command.requires_wallet());
-            assert!(
-                model.find_subcommand(command.name()).is_some(),
-                "`{}` must be a minted name",
-                command.name()
             );
         }
     }
@@ -1540,10 +1441,33 @@ mod finding_pins {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CliCommand, RT, format_help, parse_command_tokens};
+    use super::super::{CliCommand, RT, format_help, parse_command_tokens, wallet_free_commands};
 
     fn tokens(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| String::from(*word)).collect()
+    }
+
+    /// HYPOTHESIS: the standalone help section derives from
+    /// `requires_wallet` alone: its rendered entries are exactly the
+    /// derived wallet-free names, so no second statement of the set
+    /// exists to drift.
+    #[test]
+    fn the_standalone_section_derives_from_requires_wallet() {
+        let listing = format_help(None);
+        let wallet_header = listing
+            .find("Wallet commands:")
+            .expect("the listing carries a wallet section");
+        let rendered: Vec<String> = listing[..wallet_header]
+            .lines()
+            .filter_map(|line| line.strip_prefix("  "))
+            .filter_map(|entry| entry.split(" - ").next())
+            .map(String::from)
+            .collect();
+        let derived: Vec<String> = wallet_free_commands()
+            .iter()
+            .map(CliCommand::name)
+            .collect();
+        assert_eq!(rendered, derived);
     }
 
     const FAMILIES: [&str; 7] = [

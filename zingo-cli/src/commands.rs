@@ -2667,20 +2667,94 @@ static COMMAND_MODEL: std::sync::LazyLock<clap::Command> = std::sync::LazyLock::
     model
 });
 
-/// The wallet-free commands as values, so the section split in `help`
-/// derives its names from the grammar's own mint.
-fn standalone_commands() -> [CliCommand; 5] {
-    [
+/// One sample value per variant, held complete by the tests' set-equality
+/// pin, so derived listings cover the whole grammar.
+fn every_command() -> Vec<CliCommand> {
+    vec![
+        CliCommand::Addresses,
+        CliCommand::Balance,
+        CliCommand::Birthday,
+        CliCommand::Calculate,
+        CliCommand::ChangeServer { uri: None },
+        CliCommand::CheckAddress {
+            address: String::new(),
+        },
+        CliCommand::Clear,
+        CliCommand::Coins { scope: None },
+        CliCommand::Confirm,
+        CliCommand::CurrentPrice,
+        CliCommand::Delete,
+        CliCommand::Drain {
+            sub: DrainSubCommand::Plan,
+        },
+        CliCommand::ExportUfvk,
+        CliCommand::Height,
         CliCommand::Help { command: None },
+        CliCommand::Info,
+        CliCommand::MaxSendValue { args: Vec::new() },
+        CliCommand::MemobytesToAddress,
+        CliCommand::Messages { filter: None },
+        CliCommand::Migrate,
+        CliCommand::Migration {
+            sub: MigrationSubCommand::Plan,
+        },
+        CliCommand::NewAddress {
+            receivers: ReceiverSelection {
+                orchard: true,
+                sapling: false,
+            },
+        },
+        CliCommand::NewTaddress,
+        CliCommand::NewTaddressAllowGap,
+        CliCommand::Notes { scope: None },
+        CliCommand::Nym { sub: None },
         CliCommand::ParseAddress {
             address: String::new(),
         },
         CliCommand::ParseViewkey {
             viewkey: String::new(),
         },
+        CliCommand::Quicksend { args: Vec::new() },
+        CliCommand::Quickshield,
+        CliCommand::Quit,
+        CliCommand::RecoveryInfo,
+        CliCommand::RemoveTransaction {
+            txid: TxId::from_bytes([0; 32]),
+        },
+        CliCommand::Rescan,
+        CliCommand::Save {
+            sub: SaveSubCommand::Run,
+        },
+        CliCommand::Send { args: Vec::new() },
+        CliCommand::SendAll { args: Vec::new() },
+        CliCommand::SendsToAddress,
         CliCommand::Servers,
+        CliCommand::Settings { sub: None },
+        CliCommand::Shield,
+        CliCommand::SpendableBalance,
+        CliCommand::Split {
+            sub: SplitSubCommand::Plan,
+        },
+        CliCommand::Sync {
+            sub: SyncSubCommand::Status,
+        },
+        CliCommand::TAddresses,
+        CliCommand::Transactions,
+        CliCommand::Transmit { txids: Vec::new() },
+        CliCommand::ValueToAddress,
+        CliCommand::ValueTransfers,
         CliCommand::Version,
+        CliCommand::WalletKind,
     ]
+}
+
+/// The wallet-free commands, filtered from [`every_command`] by
+/// [`CliCommand::requires_wallet`], so the set has that single statement.
+fn wallet_free_commands() -> Vec<CliCommand> {
+    every_command()
+        .into_iter()
+        .filter(|command| !command.requires_wallet())
+        .collect()
 }
 
 /// Renders the two-section help listing, or one command's long help,
@@ -2688,9 +2762,8 @@ fn standalone_commands() -> [CliCommand; 5] {
 pub fn format_help(command: Option<&str>) -> String {
     let mut model = COMMAND_MODEL.clone();
     let Some(command) = command else {
-        let standalone_names: Vec<String> = standalone_commands()
+        let standalone_names: Vec<String> = wallet_free_commands()
             .iter()
-            .inspect(|command| debug_assert!(!command.requires_wallet()))
             .map(CliCommand::name)
             .collect();
         let listing = |standalone: bool| {

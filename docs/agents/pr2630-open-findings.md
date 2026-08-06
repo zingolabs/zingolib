@@ -1,7 +1,7 @@
 # PR #2630: open review findings
 
 The multi-agent review of the clap conversion confirmed ten findings.
-Eight are resolved on the branch. The parse boundaries now refuse
+Nine are resolved on the branch. The parse boundaries now refuse
 misplaced session flags and malformed send payloads before any wallet
 work. A manual `Debug` impl renders only the variant identifier, so no
 memo or key can reach a `Debug` surface. The family enums carry
@@ -9,7 +9,11 @@ per-variant `about` metadata, their long help no longer advertises a
 nested `help`, the offline harness panics on a parse error instead of
 misreading it, the REPL reuses one cached clap model per session, the
 usage lines are pinned to the minted names, and the CHANGELOG and ADR
-prose follow the punctuation conventions.
+prose follow the punctuation conventions. The wallet-free set has one
+statement, `requires_wallet`: the help split derives from it over the
+module's one-sample-per-variant list, the `standalone_commands` array
+is gone, and a pin holds the rendered standalone section equal to the
+derived names.
 
 ## Open findings
 
@@ -20,15 +24,7 @@ prose follow the punctuation conventions.
    "Type 'help'" pointer is gone. `parse_command_tokens` still renders
    the clap error verbatim.
 
-2. **Wallet-free classification residue.** The green
-   `help_sections_agree_with_requires_wallet` pin catches a misfiled
-   command, but the classification still lives in three places:
-   `requires_wallet`, the `standalone_commands` array of dummy variant
-   values, and `format_help`'s name comparison. The array also needs
-   placeholder fields reconstructed whenever a standalone command gains
-   an argument.
-
-3. **`help` takes one token.** The family syntax now shows in
+2. **`help` takes one token.** The family syntax now shows in
    `help migration`, but the natural follow-up `help migration start`
    is still a parse error. The full argument syntax lives behind
    `migration start --help`.
