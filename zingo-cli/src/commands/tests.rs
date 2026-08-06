@@ -6,7 +6,7 @@ mod table_invariants {
 
     use clap::CommandFactory as _;
 
-    use super::super::{CliCommand, CommandLine};
+    use super::super::{CliCommand, CommandLine, standalone_commands};
 
     /// HYPOTHESIS: `name` derives exactly the minted subcommand name, so a
     /// log line names the command without carrying its arguments.
@@ -27,6 +27,22 @@ mod table_invariants {
             assert!(
                 model.find_subcommand(expected).is_some(),
                 "`{expected}` must be a minted name"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: every standalone sample is wallet-free by
+    /// `requires_wallet` and its derived name is minted, so `help` cannot
+    /// misfile or misname a section entry.
+    #[test]
+    fn the_standalone_set_is_wallet_free_and_minted() {
+        let model = CommandLine::command();
+        for command in standalone_commands() {
+            assert!(!command.requires_wallet());
+            assert!(
+                model.find_subcommand(command.name()).is_some(),
+                "`{}` must be a minted name",
+                command.name()
             );
         }
     }

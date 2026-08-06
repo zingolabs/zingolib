@@ -2601,6 +2601,64 @@ impl CliCommand {
         }
         name
     }
+
+    /// True when the command's body touches the wallet, deciding which
+    /// section of `help` lists the command.
+    pub(crate) fn requires_wallet(&self) -> bool {
+        match self {
+            CliCommand::Help { .. }
+            | CliCommand::ParseAddress { .. }
+            | CliCommand::ParseViewkey { .. }
+            | CliCommand::Servers
+            | CliCommand::Version => false,
+            CliCommand::Addresses
+            | CliCommand::Balance
+            | CliCommand::Birthday
+            | CliCommand::Calculate
+            | CliCommand::ChangeServer { .. }
+            | CliCommand::CheckAddress { .. }
+            | CliCommand::Clear
+            | CliCommand::Coins { .. }
+            | CliCommand::Confirm
+            | CliCommand::CurrentPrice
+            | CliCommand::Delete
+            | CliCommand::Drain { .. }
+            | CliCommand::ExportUfvk
+            | CliCommand::Height
+            | CliCommand::Info
+            | CliCommand::MaxSendValue { .. }
+            | CliCommand::MemobytesToAddress
+            | CliCommand::Messages { .. }
+            | CliCommand::Migrate
+            | CliCommand::Migration { .. }
+            | CliCommand::NewAddress { .. }
+            | CliCommand::NewTaddress
+            | CliCommand::NewTaddressAllowGap
+            | CliCommand::Notes { .. }
+            | CliCommand::Nym { .. }
+            | CliCommand::Quicksend { .. }
+            | CliCommand::Quickshield
+            | CliCommand::Quit
+            | CliCommand::RecoveryInfo
+            | CliCommand::RemoveTransaction { .. }
+            | CliCommand::Rescan
+            | CliCommand::Save { .. }
+            | CliCommand::Send { .. }
+            | CliCommand::SendAll { .. }
+            | CliCommand::SendsToAddress
+            | CliCommand::Settings { .. }
+            | CliCommand::Shield
+            | CliCommand::SpendableBalance
+            | CliCommand::Split { .. }
+            | CliCommand::Sync { .. }
+            | CliCommand::TAddresses
+            | CliCommand::Transactions
+            | CliCommand::Transmit { .. }
+            | CliCommand::ValueToAddress
+            | CliCommand::ValueTransfers
+            | CliCommand::WalletKind => true,
+        }
+    }
 }
 
 /// The whole command line one dispatch parses: a command name and its
@@ -2613,16 +2671,21 @@ struct CommandLine {
     command: CliCommand,
 }
 
-/// The commands `help` lists under "Standalone commands (no wallet
-/// required)": those whose bodies never touch the wallet, plus the
-/// REPL-owned `servers`.
-const STANDALONE_COMMANDS: &[&str] = &[
-    "help",
-    "parse_address",
-    "parse_viewkey",
-    "servers",
-    "version",
-];
+/// The wallet-free commands as values, so the section split in `help`
+/// derives its names from the grammar's own mint.
+fn standalone_commands() -> [CliCommand; 5] {
+    [
+        CliCommand::Help { command: None },
+        CliCommand::ParseAddress {
+            address: String::new(),
+        },
+        CliCommand::ParseViewkey {
+            viewkey: String::new(),
+        },
+        CliCommand::Servers,
+        CliCommand::Version,
+    ]
+}
 
 /// Renders the two-section help listing, or one command's long help,
 /// from [`CommandLine`]'s clap model.
@@ -2631,10 +2694,17 @@ pub fn format_help(command: Option<&str>) -> String {
 
     let mut model = CommandLine::command();
     let Some(command) = command else {
+        let standalone_names: Vec<String> = standalone_commands()
+            .iter()
+            .inspect(|command| debug_assert!(!command.requires_wallet()))
+            .map(CliCommand::name)
+            .collect();
         let listing = |standalone: bool| {
             model
                 .get_subcommands()
-                .filter(|sub| STANDALONE_COMMANDS.contains(&sub.get_name()) == standalone)
+                .filter(|sub| {
+                    standalone_names.iter().any(|name| name == sub.get_name()) == standalone
+                })
                 .map(|sub| {
                     format!(
                         "  {} - {}",
