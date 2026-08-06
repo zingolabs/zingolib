@@ -3,10 +3,10 @@
 use zcash_address::{ToAddress as _, ZcashAddress};
 use zcash_protocol::consensus;
 use zcash_transparent::address::TransparentAddress;
-use zcash_transparent::keys::{
-    AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
-};
+use zcash_transparent::keys::{NonHardenedChildIndex, TransparentKeyScope};
 use zip32::AccountId;
+
+use zcash_transparent::keys::{AccountPubKey, IncomingViewingKey as _};
 
 use crate::wallet::KeyIdInterface;
 

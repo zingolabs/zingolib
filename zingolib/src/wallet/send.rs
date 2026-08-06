@@ -10,8 +10,8 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, Parameters as _};
-use zcash_protocol::{ShieldedProtocol, TxId};
+use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
@@ -47,7 +47,6 @@ impl LightWallet {
                 self.create_proposed_transactions(proposal, sending_account)
                     .await?
             }
-
             _ => return Err(CalculateTransactionError::NonTexMultiStep),
         };
         self.save_required = true;
@@ -73,6 +72,7 @@ impl LightWallet {
                 .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
@@ -97,37 +97,43 @@ impl LightWallet {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();
-
-        match N::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Orchard => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.orchard_shard_ranges(),
-            ),
-            ShieldedProtocol::Sapling => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.sapling_shard_ranges(),
-            ),
-        }
+        // The scan floor: the wallet's Birthday clamped to the Pool
+        // Activation (ADR 0014, never a local mapping), the earliest
+        // height that must be scanned before a note in this pool can be
+        // witnessed. Each pool's commitment tree exists only from its
+        // activation height. Sapling and Orchard implicitly rely on
+        // `birthday >= activation` (true for all current wallets);
+        // Ironwood makes the clamp explicit because wallets born before
+        // NU6.3 can hold Ironwood notes immediately after activation.
+        let scan_floor =
+            pepper_sync::wallet::PoolActivation::of(&self.chain_type, N::SHIELDED_PROTOCOL)
+                .map_or(birthday, |activation| activation.max_with(birthday));
+        let shard_ranges = match N::SHIELDED_PROTOCOL {
+            ShieldedPool::Ironwood => self.sync_state.ironwood_shard_ranges(),
+            ShieldedPool::Orchard => self.sync_state.orchard_shard_ranges(),
+            ShieldedPool::Sapling => self.sync_state.sapling_shard_ranges(),
+        };
+        check_note_shards_are_scanned(
+            note_height,
+            anchor_height,
+            scan_floor,
+            scan_ranges,
+            shard_ranges,
+        )
     }
 }
 
 fn check_note_shards_are_scanned(
     note_height: BlockHeight,
     anchor_height: BlockHeight,
-    wallet_birthday: BlockHeight,
+    scan_floor: BlockHeight,
     scan_ranges: &[ScanRange],
     shard_ranges: &[Range<BlockHeight>],
 ) -> bool {
     let incomplete_shard_range = if let Some(shard_range) = shard_ranges.last() {
         shard_range.end - 1..anchor_height + 1
     } else {
-        wallet_birthday..anchor_height + 1
+        scan_floor..anchor_height + 1
     };
     let mut shard_ranges = shard_ranges.to_vec();
     shard_ranges.push(incomplete_shard_range);
@@ -179,7 +185,7 @@ fn check_note_shards_are_scanned(
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)
-                            || note_shard_range.start < wallet_birthday)
+                            || note_shard_range.start < scan_floor)
                 })
         })
 }
@@ -225,7 +231,7 @@ mod tests {
             transaction_request_from_receivers(rec).expect("rec can requestify");
 
         assert_eq!(
-            request.total().expect("total"),
+            request.total().expect("total").expect("amounts present"),
             (amount_1 + amount_2).expect("add")
         );
     }

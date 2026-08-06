@@ -2,23 +2,53 @@
 name = "zingo-price"
 description = "Crate for fetching ZEC prices."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[features]
+# The fetch machinery: reqwest + TLS + the net-diag classification. On by
+# default so the standalone crate builds and tests its whole surface;
+# zingolib depends on this crate with default features off and re-enables
+# the fetch only under its `nym` feature, per the mixnet-only price rule
+# (ADR 0011, amendment 2026-07-28) — a wallet build without the mixnet
+# compiles no fetch, and no fetch dependencies either. Without this
+# feature the crate is the storage-only price data model.
+default = ["socks5-fetch"]
+socks5-fetch = [
+    "dep:reqwest",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+
+    "dep:thiserror",
+    "dep:zingo-net-diag",
+    "dep:futures",
+]
+
 [dependencies]
-zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = [
+# rustls-tls-webpki-roots-no-provider: bundles the webpki trust anchors (so
+# the TLS handshake to the price source verifies) but never auto-selects a
+# rustls CryptoProvider; the fetch path installs aws-lc-rs (first-install-wins)
+# before requesting. The `socks` feature backs the optional Nym mixnet route;
+# the fetch defaults to clearnet.
+reqwest = { workspace = true, optional = true, default-features = false, features = [
     "cookies",
-    "rustls-tls",
+    "rustls-tls-webpki-roots-no-provider",
     "json",
+    "socks",
 ] }
-rust_decimal = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+zingo-net-diag = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }

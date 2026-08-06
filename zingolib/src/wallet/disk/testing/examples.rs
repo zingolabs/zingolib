@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use http::Uri;
 
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
@@ -189,10 +189,9 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let lightwalletd_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
-
+                let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
                 ClientConfig::builder()
-                    .set_indexer_uri(lightwalletd_uri)
+                    .set_indexer_uri(indexer_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name(
                         self.example_wallet_path()
@@ -204,6 +203,7 @@ impl NetworkSeedVersion {
                     .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                     .set_wallet_config(WalletConfig::Read)
                     .build()
+                    .unwrap()
             }
             NetworkSeedVersion::Testnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI_TESTNET.parse::<Uri>().unwrap())
@@ -217,7 +217,8 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                .unwrap(),
             NetworkSeedVersion::Mainnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Mainnet)
@@ -230,10 +231,11 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                .unwrap(),
         };
 
-        LightClient::new(config, false).unwrap()
+        LightClient::new(config, false).await.unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]
@@ -277,64 +279,64 @@ impl NetworkSeedVersion {
                 RegtestSeedVersion::HospitalMuseum(_) => {
                     match pool {
                         PoolType::Transparent => {"tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string()},
                     }
-                },
+                }
                 RegtestSeedVersion::AbandonAbandon(_) => {
                     match pool {
                         PoolType::Transparent => {"tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"uregtest1h8fnf3vrmswwj0r6nfvq24nxzmyjzaq5jvyxyc2afjtuze8tn93zjqt87kv9wm0ew4rkprpuphf08tc7f5nnd3j3kxnngyxf0cv9k9lc".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"uregtest1h8fnf3vrmswwj0r6nfvq24nxzmyjzaq5jvyxyc2afjtuze8tn93zjqt87kv9wm0ew4rkprpuphf08tc7f5nnd3j3kxnngyxf0cv9k9lc".to_string()},
                     }
-                },
+                }
                 RegtestSeedVersion::AbsurdAmount(_) => {
                     match pool {
                         PoolType::Transparent => {"tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"uregtest1s79x7etgyc7yl5tpw3vf2k6xa5qqk30de670p68c9tes79p2lkfm0vpy2u34x6wrwaa2fsxayjvz9dshrv92dur3h694v7sqnsgac028".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"uregtest1s79x7etgyc7yl5tpw3vf2k6xa5qqk30de670p68c9tes79p2lkfm0vpy2u34x6wrwaa2fsxayjvz9dshrv92dur3h694v7sqnsgac028".to_string()},
                     }
-                },
+                }
             },
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(_) => {
                     match pool {
                         PoolType::Transparent => {"tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"utest1f7hprvzygjeq6gtyh2splf0qq3ug70krvq44z40d7lg590u2dwg59l8we9v2mdpk72llg5wd9cat68ur0pdrmyx8fs54x6asy5z86elr".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"utest1f7hprvzygjeq6gtyh2splf0qq3ug70krvq44z40d7lg590u2dwg59l8we9v2mdpk72llg5wd9cat68ur0pdrmyx8fs54x6asy5z86elr".to_string()},
                     }
-                },
+                }
                 TestnetSeedVersion::MobileShuffle(_) => {
                     match pool {
                         PoolType::Transparent => {"tmEVmDAnveCakZkvV4a6FT1TfYApTv937E7".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"utest1uuwsmtfxnssw7uu664gevkz8xydtcwmt6u0gns95n6pr0vetdpm6mz6ltczk68c0cp8svevr6j4xkps2wdvcrf0gy0lvnfry8qn7gvjc".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"utest1uuwsmtfxnssw7uu664gevkz8xydtcwmt6u0gns95n6pr0vetdpm6mz6ltczk68c0cp8svevr6j4xkps2wdvcrf0gy0lvnfry8qn7gvjc".to_string()},
                     }
-                },
+                }
                 TestnetSeedVersion::GloryGoddess => {
                     match pool {
                         PoolType::Transparent => {"tmF7QpuKsLF7nsMvThu4wQBpiKVGJXGCSJF".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"utest1dmu08vg5wt5m9w0ejwgeqdndzzkfka7c94heuz5llxv5vx4lhcethmm6p5ean3wcj8l0m6tf8k8cau9r636gq7sxq3wa6zey2sysfteh".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"utest1dmu08vg5wt5m9w0ejwgeqdndzzkfka7c94heuz5llxv5vx4lhcethmm6p5ean3wcj8l0m6tf8k8cau9r636gq7sxq3wa6zey2sysfteh".to_string()},
                     }
-                },
+                }
             },
             NetworkSeedVersion::Mainnet(seed) => match seed {
                 MainnetSeedVersion::VillageTarget(_) => {
                     match pool {
                         PoolType::Transparent => {
                     "t1P8tQtYFLR7TWsqtauc71RGQdqqwfFBbb4".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"u1d6whpxpf9l7k7z9ce85w4w3wgfv0y3h5lm25g7ae7wqryqcy9zf7xwd2k6gpqzhat9den3c8ezk797gvdmrhm6dtuldz3wpj5yf27jd3".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"u1d6whpxpf9l7k7z9ce85w4w3wgfv0y3h5lm25g7ae7wqryqcy9zf7xwd2k6gpqzhat9den3c8ezk797gvdmrhm6dtuldz3wpj5yf27jd3".to_string()},
                     }
-                },
+                }
                 MainnetSeedVersion::HotelHumor(_) => {
                     match pool {
                         PoolType::Transparent => {"t1XnsupYhvhSDSFJ4nzZ2kADhLMR22wg35y".to_string()},
-                        PoolType::Shielded(ShieldedProtocol::Sapling) => {panic!("no sapling receiver in default unified address")},
-                        PoolType::Shielded(ShieldedProtocol::Orchard) => {"u17923s4jdmkcjm8ek8t5elhuejlv8wfhwdqxqewk9meqfztmdyatnpxpcudc22qv2625gcp0uadrnf7ggduwutp065vue9m7ekgqxk9eg".to_string()},
+                        PoolType::Shielded(ShieldedPool::Sapling) => {panic!("no sapling receiver in default unified address")},
+                        PoolType::Shielded(ShieldedPool::Orchard) | PoolType::IRONWOOD => {"u17923s4jdmkcjm8ek8t5elhuejlv8wfhwdqxqewk9meqfztmdyatnpxpcudc22qv2625gcp0uadrnf7ggduwutp065vue9m7ekgqxk9eg".to_string()},
                     }
-                },
+                }
             },
         }
     }

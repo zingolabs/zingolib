@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use tokio::sync::mpsc;
 use zip32::DiversifierIndex;
 
+use incrementalmerkletree::Hashable;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
@@ -12,17 +13,21 @@ use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
+use crate::reset_spends;
+use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
+use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
 use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
-    NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
+    WalletTransaction, empty_shard_tree,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, set_transactions_failed};
+use crate::{SyncDomain, client, sync::set_transactions_failed_unchecked};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -148,6 +153,7 @@ pub trait SyncTransactions: SyncWallet {
     fn truncate_wallet_transactions(
         &mut self,
         truncate_height: BlockHeight,
+        set_truncated_transactions_failed: bool,
     ) -> Result<(), Self::Error> {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
@@ -156,7 +162,13 @@ pub trait SyncTransactions: SyncWallet {
             .map(|tx| tx.transaction().txid())
             .collect();
 
-        set_transactions_failed(self.get_wallet_transactions_mut()?, invalid_txids);
+        if set_truncated_transactions_failed {
+            set_transactions_failed_unchecked(self.get_wallet_transactions_mut()?, invalid_txids);
+        } else {
+            let wallet_transactions = self.get_wallet_transactions_mut()?;
+            wallet_transactions.retain(|txid, _| !invalid_txids.contains(txid));
+            reset_spends(wallet_transactions, invalid_txids);
+        }
 
         Ok(())
     }
@@ -178,6 +190,9 @@ pub trait SyncNullifiers: SyncWallet {
         self.get_nullifiers_mut()?
             .orchard
             .append(&mut nullifiers.orchard);
+        self.get_nullifiers_mut()?
+            .ironwood
+            .append(&mut nullifiers.ironwood);
 
         Ok(())
     }
@@ -190,6 +205,9 @@ pub trait SyncNullifiers: SyncWallet {
             .retain(|_, scan_target| scan_target.block_height <= truncate_height);
         nullifier_map
             .orchard
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+        nullifier_map
+            .ironwood
             .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
@@ -241,6 +259,7 @@ pub trait SyncShardTrees: SyncWallet {
         highest_scanned_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+        ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ) -> impl std::future::Future<Output = Result<(), SyncError<Self::Error>>> + Send
     where
         Self: std::marker::Send,
@@ -271,7 +290,7 @@ pub trait SyncShardTrees: SyncWallet {
                 BlockHeight::from_u32(0)..BlockHeight::from_u32(0)
             };
 
-            // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention
+            // in the case that sapling and/or orchard and/or ironwood note commitments are not in an entire block there will be no retention
             // at that height. Therefore, to prevent anchor and truncate errors, checkpoints are manually added first and
             // copy the tree state from the previous checkpoint where the commitment tree has not changed as of that block.
             for checkpoint_height in
@@ -303,6 +322,18 @@ pub trait SyncShardTrees: SyncWallet {
                     &mut shard_trees.orchard,
                 )
                 .await?;
+                add_checkpoint::<
+                    Ironwood,
+                    MerkleHashOrchard,
+                    { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                    { witness::SHARD_HEIGHT },
+                >(
+                    fetch_request_sender.clone(),
+                    checkpoint_height,
+                    &ironwood_located_trees,
+                    &mut shard_trees.ironwood,
+                )
+                .await?;
             }
 
             for tree in sapling_located_trees {
@@ -315,53 +346,93 @@ pub trait SyncShardTrees: SyncWallet {
                     .orchard
                     .insert_tree(tree.subtree, tree.checkpoints)?;
             }
+            for tree in ironwood_located_trees {
+                shard_trees
+                    .ironwood
+                    .insert_tree(tree.subtree, tree.checkpoints)?;
+            }
 
             Ok(())
         }
     }
 
-    /// Removes all shard tree data above the given `block_height`.
-    ///
-    /// A `truncate_height` of zero should replace the shard trees with empty trees.
+    /// Replaces all three shard trees with empty trees.
+    fn clear_shard_trees(&mut self) -> Result<(), SyncError<Self::Error>> {
+        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+        tracing::info!("Clearing shard trees.");
+        shard_trees.sapling = empty_shard_tree();
+        shard_trees.orchard = empty_shard_tree();
+        shard_trees.ironwood = empty_shard_tree();
+
+        Ok(())
+    }
+
+    /// Removes all shard tree data above the given `truncate_height`:
+    /// each tree rolls back to its checkpoint at that height, stays
+    /// untouched because it records nothing above it, or, holding state
+    /// it cannot roll back, aborts with
+    /// [`SyncError::TruncationError`] so the caller can fall back to the
+    /// clear-and-rescan recovery. Each tree's outcome is decided by the
+    /// pure per-pool rule `plan_pool_truncation` over facts read here
+    /// at the point of application (see [`crate::sync::truncate`]).
     fn truncate_shard_trees(
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), SyncError<Self::Error>> {
-        if truncate_height == zcash_protocol::consensus::H0 {
-            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
-            tracing::info!("Clearing shard trees.");
-            shard_trees.sapling =
-                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-            shard_trees.orchard =
-                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        } else {
-            if !self
-                .get_shard_trees_mut()
-                .map_err(SyncError::WalletError)?
-                .sapling
-                .truncate_to_checkpoint(&truncate_height)?
-            {
-                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
-                return Err(SyncError::TruncationError(
-                    truncate_height,
-                    PoolType::SAPLING,
-                ));
-            }
-            if !self
-                .get_shard_trees_mut()
-                .map_err(SyncError::WalletError)?
-                .orchard
-                .truncate_to_checkpoint(&truncate_height)?
-            {
-                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
-                return Err(SyncError::TruncationError(
-                    truncate_height,
-                    PoolType::ORCHARD,
-                ));
-            }
-        }
+        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+        truncate_pool_tree(&mut shard_trees.sapling, truncate_height, PoolType::SAPLING)?;
+        truncate_pool_tree(&mut shard_trees.orchard, truncate_height, PoolType::ORCHARD)?;
+        truncate_pool_tree(
+            &mut shard_trees.ironwood,
+            truncate_height,
+            PoolType::IRONWOOD,
+        )?;
 
         Ok(())
+    }
+}
+
+/// Truncates one pool's shard tree: reads the tree's facts, decides its
+/// outcome through the pure per-pool rule ([`plan_pool_truncation`]),
+/// and applies it.
+///
+/// [`PoolTruncation::ToCheckpoint`] rolls the tree back to its
+/// checkpoint at `truncate_height`. [`PoolTruncation::Untouched`] leaves
+/// the tree alone. [`PoolTruncation::RequiresRescan`], and a planned
+/// rollback the tree store unexpectedly refuses, becomes
+/// [`SyncError::TruncationError`] naming the pool, so the caller can
+/// fall back to the clear-and-rescan recovery.
+fn truncate_pool_tree<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
+    truncate_height: BlockHeight,
+    pool: PoolType,
+) -> Result<(), SyncError<E>>
+where
+    H: Hashable + Clone + PartialEq,
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    match plan_pool_truncation(tree_facts(tree, truncate_height), truncate_height) {
+        PoolTruncation::Untouched => Ok(()),
+        PoolTruncation::ToCheckpoint { checkpoint } => {
+            match tree.rollback_to_checkpoint(checkpoint)? {
+                RollbackOutcome::RolledBack => Ok(()),
+                RollbackOutcome::NoSuchCheckpoint => {
+                    tracing::error!(
+                        "{pool} shard tree refused the planned rollback to its checkpoint at \
+                         {checkpoint}! Beginning rescan."
+                    );
+                    Err(SyncError::TruncationError(truncate_height, pool))
+                }
+            }
+        }
+        PoolTruncation::RequiresRescan { newest_checkpoint } => {
+            tracing::error!(
+                "{pool} shard tree holds state up to checkpoint {newest_checkpoint}, above the \
+                 truncation target {truncate_height}, with no checkpoint at the target! \
+                 Beginning rescan."
+            );
+            Err(SyncError::TruncationError(truncate_height, pool))
+        }
     }
 }
 
@@ -404,8 +475,9 @@ where
             let frontiers =
                 client::get_frontiers(fetch_request_sender.clone(), checkpoint_height).await?;
             let tree_size = match D::SHIELDED_PROTOCOL {
-                ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
-                ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),
+                ShieldedPool::Sapling => frontiers.final_sapling_tree().tree_size(),
+                ShieldedPool::Orchard => frontiers.final_orchard_tree().tree_size(),
+                ShieldedPool::Ironwood => frontiers.final_ironwood_tree().tree_size(),
             };
             if tree_size == 0 {
                 TreeState::Empty

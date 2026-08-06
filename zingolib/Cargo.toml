@@ -1,7 +1,7 @@
 [package]
 name = "zingolib"
 description = "Zingo backend library."
-version = "3.0.1"
+version = "5.0.0"
 authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
@@ -10,18 +10,29 @@ license = "MIT"
 
 [features]
 default = []
-ci = []
-darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile"]
+nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
+# Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
+# the wallet). Off by default; even when compiled, recording is a per-session
+# runtime opt-in, the outcome column is a sanitized category token, and the
+# file is capped. Without this feature the handle is inert.
+nym-diary = []
+testutils = [
+    "portpicker",
+    "zingo_test_vectors",
+    "tempfile",
+    "pepper-sync/test-features",
+    "dep:zaino-proto",
+    "dep:tokio-stream",
+]
 
 [dependencies]
 append-only-vec = { workspace = true }
 bech32 = { workspace = true }
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+blake2b_simd = { workspace = true }
 bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
-bytes = { workspace = true }
 chrono = { workspace = true }
 dirs.workspace = true
 futures = { workspace = true }
@@ -36,11 +47,11 @@ orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
+hmac = { workspace = true }
 rand = { workspace = true }
-ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
-rustls.workspace = true
 sapling-crypto.workspace = true
+sha2 = { workspace = true }
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -49,36 +60,55 @@ tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
-tracing-subscriber = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
-    "transparent-inputs",
     "unstable-serialization",
     "unstable-spanning-tree",
 ] }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
-zcash_proofs = { workspace = true, features = ["download-params"] }
+# download-params (and its minreq/rustls-0.21/ring subtree) is build-time
+# only: build.rs fetches the sapling params; runtime code never downloads.
+zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zingo-memo = { workspace = true }
-zingo-netutils = { workspace = true, features = ["back_compatible"] }
+zingo-netutils = { workspace = true }
 zingo-price = { workspace = true }
 zingo-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+], optional = true }
+tokio-stream = { workspace = true, optional = true }
+zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
+zingo-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
+# The nym tests read their temporal parameters from `time::test`.
+zingo-netutils = { workspace = true, features = ["testutils"] }
+# `test-util` enables paused-time tests (`start_paused`) for the attached-
+# transport falsifiers; dev-only, so the shipped graph is unchanged.
+tokio = { workspace = true, features = ["full", "test-util"] }
 portpicker = { workspace = true }
+proptest = { workspace = true }
+rand_chacha = "0.3"
 tempfile = { workspace = true }
+tokio-stream.workspace = true
+tracing-subscriber = { workspace = true }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+] }
 zingo_test_vectors = { workspace = true }
+serde_json.workspace = true
 
 [badges]
 maintenance = { status = "actively-developed" }

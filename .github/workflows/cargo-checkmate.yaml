@@ -7,12 +7,13 @@ jobs:
   cargo-checkmate:
     name: Cargo Checkmate
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       matrix:
         phase: [build, check, clippy, doc, format]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1

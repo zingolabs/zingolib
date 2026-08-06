@@ -5,10 +5,10 @@ use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
-use zcash_client_backend::tor;
+use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::consensus::Parameters;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
@@ -21,7 +21,11 @@ use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
-use error::{KeyError, PriceError, WalletError};
+use error::{KeyError, WalletError};
+// The one PriceError-returning method is nym-gated (the mixnet-only price
+// rule), so its import follows the feature.
+#[cfg(feature = "nym")]
+use error::PriceError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
@@ -33,6 +37,7 @@ pub mod utils;
 pub mod balance;
 pub mod disk;
 pub mod keys;
+pub mod migration;
 pub mod output;
 pub mod propose;
 pub mod send;
@@ -105,9 +110,7 @@ pub(crate) struct WalletBase {
 /// `birthday` block height.
 ///
 /// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
-/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
-/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
-/// methods for a save task implementation.
+/// automatically. See [`crate::lightclient::LightClient::save_task`] and related methods to persist the wallet.
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
@@ -139,13 +142,21 @@ pub struct LightWallet {
     /// Sync state
     pub sync_state: SyncState,
     /// Wallet settings
+    ///
+    /// Altering the sync config will not automatically restart sync which is needed for the changes to take effect.
+    /// It is recommended to rescan after altering the transparent address discovery settings as scanned ranges will
+    /// have been scanned with the previous configuration.
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
+    /// Orchard→Ironwood migration state, present while a migration is
+    /// planned or in flight. Wallet-file-local by design: restore-from-seed
+    /// starts fresh.
+    pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    pub save_required: bool,
+    pub(crate) save_required: bool,
 }
 
 impl LightWallet {
@@ -236,6 +247,7 @@ impl LightWallet {
             sync_state: SyncState::new(),
             wallet_settings,
             price_list: PriceList::new(),
+            migration: None,
             save_required: true,
             send_proposal: None,
         })
@@ -309,6 +321,14 @@ impl LightWallet {
         &self.transparent_addresses
     }
 
+    /// Returns transparent addresses as mutable reference.
+    #[must_use]
+    pub(crate) fn transparent_addresses_mut(
+        &mut self,
+    ) -> &mut BTreeMap<TransparentAddressId, String> {
+        &mut self.transparent_addresses
+    }
+
     /// Returns transparent addresses in a JSON array.
     #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {
@@ -330,6 +350,11 @@ impl LightWallet {
     /// Clears the proposal in the `send_proposal` field.
     pub fn clear_proposal(&mut self) {
         self.send_proposal = None;
+    }
+
+    /// Marks the wallet as having unsaved changes, scheduling the next [`crate::lightclient::LightClient::save_task`] tick to persist it.
+    pub fn mark_dirty(&mut self) {
+        self.save_required = true;
     }
 
     #[must_use]
@@ -357,6 +382,7 @@ impl LightWallet {
                 account_id,
             )?,
         );
+        self.save_required = true;
 
         Ok(())
     }
@@ -367,34 +393,61 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    /// `save_required` field must be manually set back to false after wallet data has been successfully persisted to disk.
     pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &chain_type)?;
-            self.save_required = false;
+
             Ok(Some(wallet_bytes))
         } else {
             Ok(None)
         }
     }
 
-    /// Update and return current price of ZEC.
+    /// Update, record, and return the current price of ZEC.
     ///
-    /// Will fetch via tor if a `tor_client` is provided.
-    /// Currently only USD is supported.
+    /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
+    /// fetch is routed through that local SOCKS5 address (the Nym mixnet
+    /// transport, ADR 0011); `None` fetches over clearnet. The caller resolves
+    /// which route to use.
+    ///
+    /// Deprecated because this method holds `&mut self` — and therefore the
+    /// wallet lock — across the network wait, which is exactly the polling
+    /// blackout the net-diag design removed: every wallet-state observer
+    /// queues behind the fetch. Production surfaces fetch first with
+    /// [`zingo_price::fetch_current_price`] (no lock held) and then record
+    /// the result under a briefly-held lock, as
+    /// `LightClient::update_current_price` does.
+    #[cfg(feature = "nym")]
+    #[deprecated(note = "holds the wallet lock across the network wait; \
+                fetch with zingo_price::fetch_current_price and record with \
+                record_price_update instead")]
     pub async fn update_current_price(
         &mut self,
-        tor_client: Option<&tor::Client>,
+        socks5_proxy: Option<&str>,
     ) -> Result<f32, PriceError> {
         let current_price = self
             .price_list
-            .update_current_price(tor_client)
+            .update_current_price(socks5_proxy)
             .await?
             .price_usd;
         self.save_required = true;
 
         Ok(current_price)
+    }
+
+    /// Records a price fetched *outside* the wallet lock (the net-diag
+    /// polling-blackout remedy: the caller fetches with no lock held, then
+    /// re-acquires briefly and stores the result here). The price lands in
+    /// the price list, so it serializes with the wallet. Price fetching
+    /// exists only in `nym` builds (ADR 0011, amendment 2026-07-28), so the
+    /// recorder is gated with its only caller.
+    #[cfg(feature = "nym")]
+    pub(crate) fn record_price_update(&mut self, price: zingo_price::Price) {
+        self.price_list.record_current_price(price);
+        self.save_required = true;
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.
@@ -430,24 +483,32 @@ impl LightWallet {
     /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
+        let chain_height_opt = self.sync_state.last_known_chain_height();
         self.sync_state = SyncState::new();
-        pepper_sync::add_scan_targets(
-            &mut self.sync_state,
-            &self
-                .wallet_transactions
-                .values()
-                .filter_map(|transaction| {
-                    transaction
-                        .status()
-                        .get_confirmed_height()
-                        .map(|height| ScanTarget {
-                            block_height: height,
-                            txid: transaction.txid(),
-                            narrow_scan_area: true,
-                        })
-                })
-                .collect::<Vec<_>>(),
-        );
+        if let Some(chain_height) = chain_height_opt {
+            pepper_sync::add_scan_targets(
+                &mut self.sync_state,
+                &self
+                    .wallet_transactions
+                    .values()
+                    .filter(|transaction| {
+                        transaction
+                            .status()
+                            .is_confirmed_before(&(chain_height - MAX_REORG_ALLOWANCE))
+                    })
+                    .filter_map(|transaction| {
+                        transaction
+                            .status()
+                            .get_confirmed_height()
+                            .map(|height| ScanTarget {
+                                block_height: height,
+                                txid: transaction.txid(),
+                                narrow_scan_area: true,
+                            })
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
 
         self.wallet_blocks.clear();
         self.wallet_transactions.clear();
@@ -469,7 +530,7 @@ mod tests {
     #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle
-        // data that was generated for testing commitment tree construction inside of zcashd here.
+        // data that was generated for testing commitment tree construction in zcash/zcash here.
         // https://github.com/zcash/zcash/blob/ecec1f9769a5e37eb3f7fd89a4fcfb35bc28eed7/src/test/data/merkle_roots_orchard.h
 
         let commitments = [

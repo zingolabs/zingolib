@@ -1,0 +1,473 @@
+env_files = [".env.testing-artifacts"]
+
+[config]
+default_to_workspace = false
+
+[env]
+NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
+ZINGOLIB_NEXTEST_PROFILE = "ci"
+# Conditional so a shell override actually wins: cargo-make [env] entries
+# otherwise clobber inherited environment variables. Retries default to 0 so
+# flakes surface instead of being masked; raise per-run with
+# ZINGOLIB_NEXTEST_RETRIES=N.
+ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
+    "ZINGOLIB_NEXTEST_RETRIES",
+] } }
+IMAGE_NAME = "zingodevops/ci-build"
+# Single source of truth: rust-toolchain.toml's `channel`, extracted and
+# validated (concrete numeric versions only) by the workbench
+# `get-rust-version` binary.
+RUST_VERSION = { script = ["cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version"] }
+
+[tasks.default]
+alias = "help"
+
+[tasks.help]
+description = "List Zingolib cargo-make tasks"
+script_runner = "bash"
+script = '''
+set -euo pipefail
+
+cat <<'HELP'
+Zingolib test tasks
+-------------------
+
+Test front door — `makers test "$@"` is a containerized
+`cargo nextest run "$@"`, so every nextest idiom passes through:
+  makers test                 the whole workspace
+  makers test -p zingo-memo   one package
+  makers test some_test_name  positional test-name filter
+  makers test --no-fail-fast  any nextest flag
+
+Reserved first words expand to canned invocations:
+  makers test packages        every workspace package EXCEPT the live
+                              ones (libtonode-tests and zingo-cli)
+  makers test live            ONLY libtonode-tests and zingo-cli
+
+Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
+a reserved word's scope entirely. Extra args after a reserved word are
+forwarded to nextest:
+  makers test live --no-fail-fast
+
+Run the three gated phases (packages, zingo-cli, libtonode), where a
+failing phase stops the later, more expensive ones, with a combined
+per-phase summary:
+  makers hierarchy-test
+
+Common usage:
+  makers container-test
+  cargo make container-test
+
+The container-test task runs tests inside a reproducible container image:
+  cargo nextest run --workspace --profile ci --retries 0
+
+Build or refresh the local image:
+  makers build-image
+
+Run the same nextest command on the host:
+  makers local-run
+
+The local-run task mirrors the PR test defaults:
+  cargo nextest run --workspace --profile ci --retries 0
+
+Forward extra nextest flags after the task name:
+  makers container-test -p zingo-memo
+
+Filter with a nextest expression:
+  makers test -E 'package(zingolib) & not test(slow)'
+
+Reproduce the latest failing or incomplete nextest run:
+  makers rerun
+
+Run ignored tests explicitly:
+  makers run-ignored
+
+Launch the wallet CLI with the mixnet transport compiled in and
+nym-proxy bundled beside the binary. The CLI itself boots the proxy
+only at an Online session's start (Mixnet Mode forced on, ADR 0024);
+an offline session boots no proxy, and the session is offline unless a
+Connectivity Consent stored by a previous run takes it online
+(ADR 0025). Other args are forwarded to zingo-cli:
+  makers run-cli
+
+Opt out of the mixnet default — plain build, nothing bundled:
+  makers run-cli --clearnet
+
+Install cargo-make if these commands are unavailable:
+  cargo install cargo-make
+HELP
+'''
+
+[tasks.base-script]
+script_runner = "bash"
+script.pre = '''
+set -euo pipefail
+
+container_runtime() {
+  if [[ -n "${CONTAINER_RUNTIME:-}" ]]; then
+    printf '%s\n' "${CONTAINER_RUNTIME}"
+  elif command -v podman >/dev/null 2>&1; then
+    printf '%s\n' "podman"
+  elif command -v docker >/dev/null 2>&1; then
+    printf '%s\n' "docker"
+  else
+    echo "Neither podman nor docker was found. Install one or set CONTAINER_RUNTIME." >&2
+    exit 1
+  fi
+}
+
+container_mount_suffix() {
+  case "$(container_runtime)" in
+    podman) printf '%s\n' ":U" ;;
+    *) printf '%s\n' "" ;;
+  esac
+}
+
+container_dir_hash() {
+  {
+    for path in .env.testing-artifacts rust-toolchain.toml; do
+      printf '%s %s\n' "${path}" "$(git hash-object "${path}")"
+    done
+    find docker-ci -type f | LC_ALL=C sort | while IFS= read -r path; do
+      printf '%s %s\n' "${path}" "$(git hash-object "${path}")"
+    done
+  } | git hash-object --stdin | cut -c1-14
+}
+
+container_image_tag() {
+  printf 'RUST_%s-ZAINO_%s-ZEBRA_%s-NEXTEST_%s-CONTAINER_%s' \
+    "${RUST_VERSION}" \
+    "${ZAINO_IMAGE_TAG}" \
+    "${ZEBRA_VERSION}" \
+    "${NEXTEST_VERSION}" \
+    "$(container_dir_hash)" \
+    | git hash-object --stdin \
+    | cut -c1-14
+}
+
+has_package_selection_args() {
+  for arg in "$@"; do
+    case "${arg}" in
+      -p|--package|--package=*|--workspace|--all|--exclude|--exclude=*|--manifest-path|--manifest-path=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+append_workspace_default() {
+  if ! has_package_selection_args "$@"; then
+    printf '%s\n' "--workspace"
+  fi
+}
+
+nextest_args() {
+  local -a extra_args=("$@")
+  local -a args=(
+    --profile "${ZINGOLIB_NEXTEST_PROFILE}"
+    --retries "${ZINGOLIB_NEXTEST_RETRIES}"
+  )
+
+  args+=("${extra_args[@]}")
+
+  local workspace_arg
+  workspace_arg="$(append_workspace_default "$@")"
+  if [[ -n "${workspace_arg}" ]]; then
+    args+=("${workspace_arg}")
+  fi
+
+  printf '%s\n' "${args[@]}"
+}
+
+container_nextest_run() {
+  local runtime mount_suffix tag
+  runtime="$(container_runtime)"
+  mount_suffix="$(container_mount_suffix)"
+  tag="$(container_image_tag)"
+
+  local -a args
+  mapfile -t args < <(nextest_args "$@")
+
+  # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
+  # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
+  # a set-but-empty variable in the container — and never forward an
+  # empty value either: an empty (or restrictive) RUST_LOG silences
+  # zainod's "Syncing block" markers, hanging the harness's
+  # log-contract convergence barrier (2026-07-20 stall forensics).
+  local -a forwarded_env=()
+  if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
+    forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
+  fi
+  if [[ -n "${RUST_LOG:-}" ]]; then
+    forwarded_env+=(-e RUST_LOG)
+  fi
+
+  "${runtime}" run --rm --init \
+    --pids-limit -1 \
+    -v "${PWD}:/workspace" \
+    -v "zingolib-container-target:/workspace/target${mount_suffix}" \
+    -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
+    -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
+    -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
+    -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
+    "${forwarded_env[@]}" \
+    -w /workspace \
+    "${IMAGE_NAME}:${tag}" \
+    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
+    bash \
+    cargo nextest run "${args[@]}"
+}
+'''
+script.main = "true"
+
+[tasks.prepare-test-binaries-dir]
+description = "Ensure the local test binary directory exists"
+script_runner = "bash"
+script = '''
+set -euo pipefail
+mkdir -p test_binaries/bins
+'''
+
+[tasks.compute-image-tag]
+description = "Print the reproducible local test image tag"
+extend = "base-script"
+script.main = '''
+echo "$(container_image_tag)"
+'''
+
+[tasks.init-container-volumes]
+description = "Initialize named volumes used by containerized tests"
+extend = "base-script"
+script.main = '''
+runtime="$(container_runtime)"
+for volume in zingolib-container-target zingolib-cargo-git zingolib-cargo-registry; do
+  "${runtime}" volume inspect "${volume}" >/dev/null 2>&1 || "${runtime}" volume create "${volume}" >/dev/null
+done
+mkdir -p target test_binaries/bins
+'''
+
+[tasks.build-image]
+description = "Build the reproducible local test image from .env.testing-artifacts"
+extend = "base-script"
+dependencies = ["init-container-volumes"]
+script.main = '''
+runtime="$(container_runtime)"
+tag="$(container_image_tag)"
+
+echo "Building ${IMAGE_NAME}:${tag}"
+echo "  RUST_VERSION=${RUST_VERSION}"
+echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
+echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
+echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
+
+"${runtime}" build \
+  -f docker-ci/Dockerfile \
+  --build-arg "RUST_VERSION=${RUST_VERSION}" \
+  --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
+  --build-arg "ZAINO_IMAGE_DIGEST=${ZAINO_IMAGE_DIGEST}" \
+  --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
+  --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
+  --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
+  -t "${IMAGE_NAME}:${tag}" \
+  docker-ci
+'''
+
+[tasks.ensure-image-exists]
+description = "Build the reproducible test image if it is not present locally"
+extend = "base-script"
+dependencies = ["init-container-volumes"]
+script.main = '''
+runtime="$(container_runtime)"
+tag="$(container_image_tag)"
+
+echo "Checking for ${IMAGE_NAME}:${tag} with ${runtime}..."
+
+if "${runtime}" image inspect "${IMAGE_NAME}:${tag}" >/dev/null 2>&1; then
+  echo "Image ${IMAGE_NAME}:${tag} already exists."
+else
+  echo "Image ${IMAGE_NAME}:${tag} not found; building it now."
+  export CONTAINER_RUNTIME="${runtime}"
+  makers build-image
+fi
+'''
+
+[tasks.local-run]
+clear = true
+description = "Run reproducible workspace tests on the host with the same defaults used by PR CI"
+dependencies = ["prepare-test-binaries-dir"]
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+mapfile -t args < <(nextest_args "$@")
+cargo nextest run "${args[@]}"
+'''
+
+[tasks.container-test]
+clear = true
+description = "Run reproducible workspace tests inside the local test container"
+dependencies = ["ensure-image-exists"]
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+container_nextest_run "$@"
+'''
+
+# ===================================================================
+# Developer-facing test front door: `makers test "$@"` IS a containerized
+# `cargo nextest run "$@"` (standard profile and retries defaults), so
+# every nextest idiom passes through untouched:
+#
+#   makers test                     the whole workspace
+#   makers test -p zingo-memo       one package
+#   makers test some_test_name      positional test-name filter
+#
+# Two reserved first words expand to canned invocations:
+#
+#   makers test packages       every workspace package EXCEPT the live ones
+#   makers test live            ONLY the live packages
+#
+# The live-package list is defined once (live_packages, below); both reserved
+# words derive nextest FILTERSETS from it, so the partition cannot drift.
+# Filtersets rather than package selections, deliberately: every invocation
+# keeps the same `--workspace` build scope, cargo unifies features
+# identically, and every phase of `makers hierarchy-test` reuses ONE
+# compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
+# features per selection and compiles a distinct zingolib variant per phase.
+# Explicit package-selection args still replace a set's scope entirely —
+# cargo silently ignores `-p` when `--workspace` is present, so merging
+# them would swallow the user's selection. Caveat: combining a reserved
+# word with your own `-E` unions the two filtersets (nextest semantics);
+# for intersection, pass one full expression to plain `makers test -E`.
+# ===================================================================
+
+[tasks.test]
+# clear = true fully replaces cargo-make's built-in `test` task (which runs
+# `cargo test`); without it our `script` would merge with the builtin `command`.
+clear = true
+description = "Containerized `cargo nextest run \"$@\"`. Reserved first words packages|live expand to canned invocations."
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+# The packages that need live network infrastructure. Single source of truth
+# for the packages/live partition.
+live_packages=(libtonode-tests zingo-cli)
+
+# The filterset matching every live package's tests; its negation is the
+# hermetic remainder. Space-free, so each expression rides as one argv token.
+live_filter=""
+for pkg in "${live_packages[@]}"; do
+  live_filter+="${live_filter:+|}package(${pkg})"
+done
+
+set_args=()
+if [[ "$#" -gt 0 ]]; then
+  case "$1" in
+    packages)
+      shift
+      set_args+=(--workspace -E "!(${live_filter})") ;;
+    live)
+      shift
+      set_args+=(--workspace -E "${live_filter}") ;;
+  esac
+fi
+
+# Explicit package-selection args take over the scope completely; merging
+# them with a set's args would make cargo silently ignore the user's `-p`.
+if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
+  set_args=()
+fi
+
+exec makers container-test "${set_args[@]}" "$@"
+'''
+
+[tasks.hierarchy-test]
+description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "test-summary",
+    "--",
+    "${@}",
+]
+
+[tasks.bundle-nym-proxy]
+description = "Build the standalone nym-proxy binary (from the zingo-netutils workspace, own lockfile) and copy it beside the target/<profile>/ wallet binaries so the CLI finds it with no configuration (ADR 0011). Pass --release for a release build, or --dest <dir> for another location."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "bundle-nym-proxy",
+    "--",
+    "${@}",
+]
+
+[tasks.run-cli]
+description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); pass --release for release builds. Every other argument is forwarded to zingo-cli."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "run-cli",
+    "--",
+    "${@}",
+]
+
+[tasks.bundle-android-shim]
+description = "Release-build the mixnet proxy shim (zingo-nym-proxy-ffi, zingo-netutils workspace) for every Android ABI zingo-mobile ships, regenerate the Kotlin bindings, and lay out target/android-shim/{jniLibs,kotlin} for packaging (#2513). Pass --abi <name> to limit ABIs, or --dest <dir> for another location. Requires cargo-ndk, an NDK, and the matching rustup targets."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "bundle-android-shim",
+    "--",
+    "${@}",
+]
+
+[tasks.rerun]
+clear = true
+description = "Rerun tests that failed or did not complete in the latest recorded nextest run"
+dependencies = ["ensure-image-exists"]
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+container_nextest_run --rerun latest "$@"
+'''
+
+[tasks.run-ignored]
+clear = true
+description = "Run ignored tests with the reproducible nextest profile"
+dependencies = ["prepare-test-binaries-dir"]
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+mapfile -t args < <(nextest_args --run-ignored all "$@")
+cargo nextest run "${args[@]}"
+'''
+
+# The extra-credit libtonode suite: the sentinels (environment-contract
+# checks) and unit_test_twins (pre-migration live originals of the offline
+# unit twins, docs/testing/live-offline-twins.md). Both are off by default
+# and behind the `extra-credit-tests` feature; this is their scheduled
+# entry point — a containerized nextest run so a cron or CI job can invoke
+# one canonical command. Extra nextest args pass through.
+[tasks.test-extra-credit]
+description = "Containerized run of libtonode's extra-credit suite (sentinels + unit_test_twins twins)"
+script_runner = "bash"
+extend = "base-script"
+script.main = '''
+exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
+'''

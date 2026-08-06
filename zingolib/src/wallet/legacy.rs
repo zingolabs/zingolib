@@ -8,20 +8,22 @@ use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
 use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
+use pepper_sync::shardtree_ext::ShardTreeExt as _;
 use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
-use zcash_client_backend::{
-    proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
-};
+use zcash_client_backend::serialization::shardtree::read_shard;
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::{Memo, MemoBytes},
     merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
 };
+use zcash_protocol::{
+    consensus::BlockHeight,
+    memo::{Memo, MemoBytes},
+};
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
@@ -127,7 +129,12 @@ impl TxMap {
                 sap_tree
                     .insert_witness_nodes(sap_wit, height - 1)
                     .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
+                // Witnesses arrive height-sorted, so `NotAboveNewest` here
+                // means a second witness at an already-checkpointed height:
+                // benign, the checkpoint exists. Classified rather than
+                // discarded so a genuinely skipped checkpoint can never
+                // hide in a boolean again.
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -135,7 +142,8 @@ impl TxMap {
                 orch_tree
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+                // As for sapling above: height-sorted, duplicates benign.
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
@@ -193,7 +201,12 @@ impl TxMap {
                 sap_tree
                     .insert_witness_nodes(sap_wit, height - 1)
                     .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
+                // Witnesses arrive height-sorted, so `NotAboveNewest` here
+                // means a second witness at an already-checkpointed height:
+                // benign, the checkpoint exists. Classified rather than
+                // discarded so a genuinely skipped checkpoint can never
+                // hide in a boolean again.
+                let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
             old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
@@ -201,7 +214,8 @@ impl TxMap {
                 orch_tree
                     .insert_witness_nodes(orch_wit, height - 1)
                     .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+                // As for sapling above: height-sorted, duplicates benign.
+                let _ = orch_tree.append_checkpoint(height).expect("infallible");
             }
         }
 
@@ -449,6 +463,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
             orchard::value::NoteValue::from_raw(value),
             rho_nullifier,
             random_seed,
+            orchard::note::NoteVersion::V2,
         ))
         .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
     }
@@ -991,8 +1006,10 @@ impl OutgoingTxData {
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
-/// TODO: Add Doc Comment Here!
-pub const MAX_REORG: usize = 100;
+/// Witness-tree checkpoint retention depth, derived from the
+/// repository's single max-reorg truth (which in turn mirrors zebra's
+/// finalization boundary, see the source constant's docs).
+pub const MAX_REORG: usize = pepper_sync::sync::MAX_REORG_ALLOWANCE as usize;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]
@@ -1256,5 +1273,53 @@ impl WalletZecPriceInfo {
             last_historical_prices_fetched_at,
             historical_prices_retry_count,
         })
+    }
+}
+
+#[cfg(test)]
+mod shardtree_boundary {
+    /// zingolib's half of the confinement rule pepper-sync enforces for
+    /// itself: raw calls to shardtree's boolean operations conflate
+    /// distinct outcomes (the class behind the migrated-wallet wipe), so
+    /// every call in this crate routes through
+    /// `pepper_sync::shardtree_ext`. The walk fails the build the moment
+    /// a raw call reappears.
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        let src_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut rust_sources = Vec::new();
+        collect_rust_sources(&src_root, &mut rust_sources);
+        assert!(!rust_sources.is_empty());
+
+        // The call parenthesis is appended at runtime so this test's own
+        // pattern list does not match itself during the walk.
+        let raw_patterns = [
+            ".checkpoint",
+            ".truncate_to_checkpoint",
+            ".truncate_to_checkpoint_depth",
+        ]
+        .map(|method| format!("{method}("));
+        for path in rust_sources {
+            let source = std::fs::read_to_string(&path).unwrap();
+            for pattern in &raw_patterns {
+                assert!(
+                    !source.contains(pattern),
+                    "{} calls a raw shardtree boolean operation ({pattern}); \
+                     route it through pepper_sync::shardtree_ext instead",
+                    path.display(),
+                );
+            }
+        }
+    }
+
+    fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect_rust_sources(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push(path);
+            }
+        }
     }
 }

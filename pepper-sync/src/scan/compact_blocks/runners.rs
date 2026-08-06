@@ -7,70 +7,105 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::{CompactAction, OrchardDomain};
-use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
 };
-use zcash_protocol::{ShieldedProtocol, consensus};
+use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
+use zcash_protocol::ShieldedPool;
+use zingo_netutils::lightwallet_protocol::CompactBlock;
 
+use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
-use crate::keys::ScanningKeyOps as _;
+use crate::keys::ScanningKeyOps;
 use crate::keys::ScanningKeys;
+use crate::utils::block;
+use crate::utils::get_compact_action;
+use crate::utils::get_compact_output_description;
+use crate::utils::transaction;
 use crate::wallet::OutputId;
 
-type TaggedSaplingBatch = Batch<
+type TaggedSaplingDecryptionBatch = DecryptionBatch<
     SaplingDomain,
     sapling_crypto::note_encryption::CompactOutputDescription,
     CompactDecryptor,
 >;
-type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
+type TaggedSaplingDecryptionBatchRunner<Tasks> = DecryptionBatchRunner<
     SaplingDomain,
     sapling_crypto::note_encryption::CompactOutputDescription,
     CompactDecryptor,
     Tasks,
 >;
 
-type TaggedOrchardBatch =
-    Batch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
-type TaggedOrchardBatchRunner<Tasks> =
-    BatchRunner<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor, Tasks>;
+type TaggedOrchardDecryptionBatch =
+    DecryptionBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
+type TaggedOrchardDecryptionBatchRunner<Tasks> = DecryptionBatchRunner<
+    OrchardDomain,
+    orchard::note_encryption::CompactAction,
+    CompactDecryptor,
+    Tasks,
+>;
 
-pub(crate) trait SaplingTasks: Tasks<TaggedSaplingBatch> {}
-impl<T: Tasks<TaggedSaplingBatch>> SaplingTasks for T {}
+type TaggedIronwoodDecryptionBatch =
+    DecryptionBatch<IronwoodDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
+type TaggedIronwoodDecryptionBatchRunner<Tasks> = DecryptionBatchRunner<
+    IronwoodDomain,
+    orchard::note_encryption::CompactAction,
+    CompactDecryptor,
+    Tasks,
+>;
 
-pub(crate) trait OrchardTasks: Tasks<TaggedOrchardBatch> {}
-impl<T: Tasks<TaggedOrchardBatch>> OrchardTasks for T {}
+pub(crate) trait SaplingTasks: Tasks<TaggedSaplingDecryptionBatch> {}
+impl<T: Tasks<TaggedSaplingDecryptionBatch>> SaplingTasks for T {}
 
-pub(crate) struct BatchRunners<TS: SaplingTasks, TO: OrchardTasks> {
-    pub(crate) sapling: TaggedSaplingBatchRunner<TS>,
-    pub(crate) orchard: TaggedOrchardBatchRunner<TO>,
+pub(crate) trait OrchardTasks: Tasks<TaggedOrchardDecryptionBatch> {}
+impl<T: Tasks<TaggedOrchardDecryptionBatch>> OrchardTasks for T {}
+
+pub(crate) trait IronwoodTasks: Tasks<TaggedIronwoodDecryptionBatch> {}
+impl<T: Tasks<TaggedIronwoodDecryptionBatch>> IronwoodTasks for T {}
+
+pub(crate) struct DecryptionBatchRunners<TS: SaplingTasks, TO: OrchardTasks, TI: IronwoodTasks> {
+    pub(crate) sapling: TaggedSaplingDecryptionBatchRunner<TS>,
+    pub(crate) orchard: TaggedOrchardDecryptionBatchRunner<TO>,
+    pub(crate) ironwood: TaggedIronwoodDecryptionBatchRunner<TI>,
 }
 
-impl<TS, TO> BatchRunners<TS, TO>
+impl<TS, TO, TI> DecryptionBatchRunners<TS, TO, TI>
 where
     TS: SaplingTasks,
     TO: OrchardTasks,
+    TI: IronwoodTasks,
 {
     pub(crate) fn for_keys(batch_size_threshold: usize, scanning_keys: &ScanningKeys) -> Self {
-        BatchRunners {
-            sapling: BatchRunner::new(
+        DecryptionBatchRunners {
+            sapling: DecryptionBatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
                     .sapling
                     .iter()
                     .map(|(id, key)| (*id, key.prepare())),
             ),
-            orchard: BatchRunner::new(
+            orchard: DecryptionBatchRunner::new(
                 batch_size_threshold,
-                scanning_keys
-                    .orchard
-                    .iter()
-                    .map(|(id, key)| (*id, key.prepare())),
+                scanning_keys.orchard.iter().map(|(id, key)| {
+                    (
+                        *id,
+                        ScanningKeyOps::<OrchardDomain, orchard::note::Nullifier>::prepare(key),
+                    )
+                }),
+            ),
+            ironwood: DecryptionBatchRunner::new(
+                batch_size_threshold,
+                scanning_keys.ironwood.iter().map(|(id, key)| {
+                    (
+                        *id,
+                        ScanningKeyOps::<IronwoodDomain, orchard::note::Nullifier>::prepare(key),
+                    )
+                }),
             ),
         }
     }
@@ -78,6 +113,7 @@ where
     pub(crate) fn flush(&mut self) {
         self.sapling.flush();
         self.orchard.flush();
+        self.ironwood.flush();
     }
 
     #[tracing::instrument(skip_all, fields(height = block.height))]
@@ -85,32 +121,31 @@ where
         &mut self,
         params: &P,
         block: CompactBlock,
-    ) -> Result<(), zcash_client_backend::scanning::ScanError>
+    ) -> Result<(), EncodingInvalid>
     where
         P: consensus::Parameters + Send + 'static,
     {
-        let block_hash = block.hash();
-        let block_height = block.height();
+        let block_hash = block::get_compact_hash(&block);
+        let block_height = block::get_compact_height(&block);
         let zip212_enforcement = zip212_enforcement(params, block_height);
 
         for tx in block.vtx {
-            let txid = tx.txid();
+            let txid = transaction::get_compact_txid(&tx);
 
             self.sapling.add_outputs(
                 block_hash,
                 txid,
                 |_| SaplingDomain::new(zip212_enforcement),
                 &tx.outputs
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Sapling,
-                                index: i,
-                            }
+                        get_compact_output_description(&output).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedPool::Sapling,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -121,16 +156,34 @@ where
                 txid,
                 OrchardDomain::for_compact_action,
                 &tx.actions
-                    .iter()
+                    .into_iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|()| {
-                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
-                                at_height: block_height,
-                                txid,
-                                pool_type: ShieldedProtocol::Orchard,
-                                index: i,
-                            }
+                        get_compact_action(&action).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedPool::Orchard,
+                            index: i,
+                            error: e,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+
+            self.ironwood.add_outputs(
+                block_hash,
+                txid,
+                IronwoodDomain::for_compact_action,
+                &tx.ironwood_actions
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, action)| {
+                        get_compact_action(&action).map_err(|e| EncodingInvalid {
+                            at_height: block_height,
+                            txid,
+                            pool_type: ShieldedPool::Ironwood,
+                            index: i,
+                            error: e,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -236,9 +289,9 @@ impl<D: Domain, M> DynamicUsage for OutputReplier<D, M> {
 }
 
 /// The receiver for the result of batch scanning a specific transaction.
-struct BatchReceiver<D: Domain, M>(channel::Receiver<OutputItem<D, M>>);
+struct DecryptionBatchReceiver<D: Domain, M>(channel::Receiver<OutputItem<D, M>>);
 
-impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
+impl<D: Domain, M> DynamicUsage for DecryptionBatchReceiver<D, M> {
     fn dynamic_usage(&self) -> usize {
         // We count the memory usage of items in the channel on the receiver side.
         let num_items = self.0.len();
@@ -270,7 +323,7 @@ impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
 
 /// A tracker for the batch scanning tasks that are currently running.
 ///
-/// This enables a [`BatchRunner`] to be optionally configured to track heap memory usage.
+/// This enables a [`DecryptionBatchRunner`] to be optionally configured to track heap memory usage.
 pub(crate) trait Tasks<Item> {
     type Task: Task;
     fn new() -> Self;
@@ -297,7 +350,7 @@ impl<Item: Task> Tasks<Item> for () {
 }
 
 /// A batch of outputs to trial decrypt.
-pub(crate) struct Batch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
+pub(crate) struct DecryptionBatch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     tags: Vec<KeyId>,
     ivks: Vec<D::IncomingViewingKey>,
     /// We currently store outputs and repliers as parallel vectors, because
@@ -311,7 +364,7 @@ pub(crate) struct Batch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     repliers: Vec<OutputReplier<D, Dec::Memo>>,
 }
 
-impl<D, Output, Dec> DynamicUsage for Batch<D, Output, Dec>
+impl<D, Output, Dec> DynamicUsage for DecryptionBatch<D, Output, Dec>
 where
     D: BatchDomain + DynamicUsage,
     D::IncomingViewingKey: DynamicUsage,
@@ -342,7 +395,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Batch<D, Output, Dec>
+impl<D, Output, Dec> DecryptionBatch<D, Output, Dec>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
@@ -364,7 +417,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Task for Batch<D, Output, Dec>
+impl<D, Output, Dec> Task for DecryptionBatch<D, Output, Dec>
 where
     D: BatchDomain + Send + 'static,
     D::IncomingViewingKey: Send,
@@ -392,7 +445,7 @@ where
             decryption_results.into_iter().zip(repliers.into_iter())
         {
             // If `decryption_result` is `None` then we will just drop `replier`,
-            // indicating to the parent `BatchRunner` that this output was not for us.
+            // indicating to the parent `DecryptionBatchRunner` that this output was not for us.
             if let Some(value) = decryption_result {
                 let result = OutputIndex {
                     output_index: replier.output_index,
@@ -400,7 +453,7 @@ where
                 };
 
                 if replier.value.send(result).is_err() {
-                    tracing::debug!("BatchRunner was dropped before batch finished");
+                    tracing::debug!("DecryptionBatchRunner was dropped before batch finished");
                     break;
                 }
             }
@@ -408,7 +461,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Batch<D, Output, Dec>
+impl<D, Output, Dec> DecryptionBatch<D, Output, Dec>
 where
     D: BatchDomain,
     Output: Clone,
@@ -455,28 +508,28 @@ impl DynamicUsage for ResultKey {
 }
 
 /// Logic to run batches of trial decryptions on the global threadpool.
-pub(crate) struct BatchRunner<D, Output, Dec, T>
+pub(crate) struct DecryptionBatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<DecryptionBatch<D, Output, Dec>>,
 {
     batch_size_threshold: usize,
     // The batch currently being accumulated.
-    acc: Batch<D, Output, Dec>,
+    acc: DecryptionBatch<D, Output, Dec>,
     // The running batches.
     running_tasks: T,
     // Receivers for the results of the running batches.
-    pending_results: HashMap<ResultKey, BatchReceiver<D, Dec::Memo>>,
+    pending_results: HashMap<ResultKey, DecryptionBatchReceiver<D, Dec::Memo>>,
 }
 
-impl<D, Output, Dec, T> DynamicUsage for BatchRunner<D, Output, Dec, T>
+impl<D, Output, Dec, T> DynamicUsage for DecryptionBatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain + DynamicUsage,
     D::IncomingViewingKey: DynamicUsage,
     Output: DynamicUsage,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>> + DynamicUsage,
+    T: Tasks<DecryptionBatch<D, Output, Dec>> + DynamicUsage,
 {
     fn dynamic_usage(&self) -> usize {
         self.acc.dynamic_usage()
@@ -502,11 +555,11 @@ where
     }
 }
 
-impl<D, Output, Dec, T> BatchRunner<D, Output, Dec, T>
+impl<D, Output, Dec, T> DecryptionBatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<DecryptionBatch<D, Output, Dec>>,
 {
     /// Constructs a new batch runner for the given incoming viewing keys.
     pub(crate) fn new(
@@ -516,14 +569,14 @@ where
         let (tags, ivks) = ivks.unzip();
         Self {
             batch_size_threshold,
-            acc: Batch::new(tags, ivks),
+            acc: DecryptionBatch::new(tags, ivks),
             running_tasks: T::new(),
             pending_results: HashMap::default(),
         }
     }
 }
 
-impl<D, Output, Dec, T> BatchRunner<D, Output, Dec, T>
+impl<D, Output, Dec, T> DecryptionBatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain + Send + 'static,
     D::IncomingViewingKey: Clone + Send,
@@ -532,7 +585,7 @@ where
     D::Recipient: Send,
     Output: Clone + Send + 'static,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<DecryptionBatch<D, Output, Dec>>,
 {
     /// Batches the given outputs for trial decryption.
     ///
@@ -553,7 +606,7 @@ where
         let (tx, rx) = channel::unbounded();
         self.acc.add_outputs(domain, outputs, tx);
         self.pending_results
-            .insert(ResultKey(block_tag, txid), BatchReceiver(rx));
+            .insert(ResultKey(block_tag, txid), DecryptionBatchReceiver(rx));
 
         if self.acc.outputs.len() >= self.batch_size_threshold {
             self.flush();
@@ -565,7 +618,7 @@ where
     /// Subsequent calls to `Self::add_outputs` will be accumulated into a new batch.
     pub(crate) fn flush(&mut self) {
         if !self.acc.is_empty() {
-            let mut batch = Batch::new(self.acc.tags.clone(), self.acc.ivks.clone());
+            let mut batch = DecryptionBatch::new(self.acc.tags.clone(), self.acc.ivks.clone());
             mem::swap(&mut batch, &mut self.acc);
             self.running_tasks.run_task(batch);
         }
@@ -585,7 +638,7 @@ where
             .remove(&ResultKey(block_tag, txid))
             // We won't have a pending result if the transaction didn't have outputs of
             // this runner's kind.
-            .map(|BatchReceiver(rx)| {
+            .map(|DecryptionBatchReceiver(rx)| {
                 // This iterator will end once the channel becomes empty and disconnected.
                 // We created one sender per output, and each sender is dropped after the
                 // batch it is in completes (and in the case of successful decryptions,
@@ -598,7 +651,15 @@ where
                              output_index,
                              value,
                          }| {
-                            (OutputId::new(txid, output_index as u16), value)
+                            (
+                                OutputId::new(
+                                    txid,
+                                    output_index
+                                        .try_into()
+                                        .expect("output indexes should be valid u32"),
+                                ),
+                                value,
+                            )
                         },
                     )
                     .collect()

@@ -6,17 +6,28 @@
 use crate::config::ChainType;
 
 pub mod config;
+pub mod connectivity;
 pub mod data;
 pub mod lightclient;
+pub mod netutils;
+pub mod sync;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(test)]
+#[cfg(feature = "nym")]
+pub mod nym;
+
+#[cfg(any(test, feature = "testutils"))]
 pub mod mocks;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 
 pub use zingo_common_components::protocol::ActivationHeights;
+pub use zingo_netutils::ensure_default_crypto_provider;
+/// The indexer census (the sole source of truth for indexer endpoints),
+/// re-exported so downstream consumers — the mobile FFI above all — read
+/// it through their existing zingolib dependency.
+pub use zingo_netutils::indexers;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

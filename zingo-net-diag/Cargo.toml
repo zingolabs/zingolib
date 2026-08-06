@@ -1,0 +1,30 @@
+[package]
+name = "zingo-net-diag"
+version = "0.1.0"
+edition = "2024"
+description = "The shared network-failure taxonomy: typed stages and failure records for covered network operations (docs/agents/net-diag-design.md)."
+authors = ["zingo@zingolabs.org"]
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+readme = "README.md"
+
+# README.md is generated from the lib.rs crate doc (the pepper-sync
+# convention) by running, in this directory:
+#     cargo rdme --intralinks-strip-links
+# The links are stripped because GitHub cannot resolve intra-doc links.
+
+# Zero MANDATORY dependencies is a hard requirement: it is what lets this one
+# crate serve both cargo workspaces (the parent workspace and the standalone
+# zingo-netutils workspace) without resolver coupling. serde is the one
+# exception and it is OPTIONAL, off by default and gated behind the `serde`
+# feature, so a default build (and the standalone workspace, which never enables
+# it) still resolves to nothing.
+[dependencies]
+serde = { version = "1", optional = true, features = ["derive"] }
+
+[features]
+# The boundary-carrier wire (ADR 0024): typed Serialize/Deserialize on the
+# failure taxonomy so zingolib can carry it across its neon boundary to
+# out-of-process consumers. Only zingolib turns this on.
+serde = ["dep:serde"]

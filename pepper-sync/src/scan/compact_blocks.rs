@@ -4,29 +4,30 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
-use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
+use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::Node;
 use tokio::sync::mpsc;
-use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
-};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_primitives::{block::BlockHash, zip32::AccountId};
+use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_netutils::lightwallet_protocol::{
+    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
+};
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    utils::{block, get_compact_action, get_compact_output_description, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
 
-#[cfg(not(feature = "darkside_test"))]
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
 
-use self::runners::{BatchRunners, DecryptedOutput};
+use self::runners::{DecryptedOutput, DecryptionBatchRunners};
 
 use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
 
@@ -37,7 +38,7 @@ pub(super) fn scan_compact_blocks<P>(
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
-    trial_decrypt_task_size: usize,
+    decryption_batch_size: usize,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -53,7 +54,7 @@ where
         consensus_parameters,
         &scanning_keys,
         &compact_blocks,
-        trial_decrypt_task_size,
+        decryption_batch_size,
     )?;
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
@@ -63,25 +64,35 @@ where
     let mut witness_data = WitnessData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
         Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
+        Position::from(u64::from(initial_scan_data.ironwood_initial_tree_size)),
     );
     let mut sapling_initial_tree_size;
     let mut orchard_initial_tree_size;
+    let mut ironwood_initial_tree_size;
     let mut sapling_final_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_final_tree_size = initial_scan_data.orchard_initial_tree_size;
+    let mut ironwood_final_tree_size = initial_scan_data.ironwood_initial_tree_size;
     for block in &compact_blocks {
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
+        ironwood_initial_tree_size = ironwood_final_tree_size;
 
-        let block_height = block.height();
+        let block_height = block::get_compact_height(block);
 
         for transaction in &block.vtx {
             // collect trial decryption results by transaction
-            let incoming_sapling_outputs = runners
-                .sapling
-                .collect_results(block.hash(), transaction.txid());
-            let incoming_orchard_outputs = runners
-                .orchard
-                .collect_results(block.hash(), transaction.txid());
+            let incoming_sapling_outputs = runners.sapling.collect_results(
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
+            );
+            let incoming_orchard_outputs = runners.orchard.collect_results(
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
+            );
+            let incoming_ironwood_outputs = runners.ironwood.collect_results(
+                block::get_compact_hash(block),
+                transaction::get_compact_txid(transaction),
+            );
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
@@ -100,8 +111,19 @@ where
                     narrow_scan_area: false,
                 });
             }
+            for output_id in incoming_ironwood_outputs.keys() {
+                decrypted_scan_targets.insert(ScanTarget {
+                    block_height,
+                    txid: output_id.txid(),
+                    narrow_scan_area: false,
+                });
+            }
 
-            collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+            collect_nullifiers(
+                &mut nullifiers,
+                block::get_compact_height(block),
+                transaction,
+            )?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -113,6 +135,12 @@ where
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
                     &incoming_orchard_outputs,
+                )?,
+            );
+            witness_data.ironwood_leaves_and_retentions.extend(
+                calculate_orchard_leaves_and_retentions(
+                    &transaction.ironwood_actions,
+                    &incoming_ironwood_outputs,
                 )?,
             );
 
@@ -128,11 +156,19 @@ where
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
+            calculate_nullifiers_and_positions(
+                ironwood_final_tree_size,
+                &scanning_keys.ironwood,
+                &incoming_ironwood_outputs,
+                &mut decrypted_note_data.ironwood_nullifiers_and_positions,
+            );
 
-            sapling_final_tree_size += u32::try_from(transaction.outputs.len())
-                .expect("should not be more than 2^32 outputs in a transaction");
-            orchard_final_tree_size += u32::try_from(transaction.actions.len())
-                .expect("should not be more than 2^32 outputs in a transaction");
+            sapling_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Sapling);
+            orchard_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Orchard);
+            ironwood_final_tree_size +=
+                transaction::shielded_output_count(transaction, ShieldedPool::Ironwood);
         }
 
         set_checkpoint_retentions(
@@ -143,22 +179,28 @@ where
             block_height,
             &mut witness_data.orchard_leaves_and_retentions,
         );
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.ironwood_leaves_and_retentions,
+        );
 
         let wallet_block = WalletBlock {
-            block_height: block.height(),
-            block_hash: block.hash(),
-            prev_hash: block.prev_hash(),
+            block_height: block::get_compact_height(block),
+            block_hash: block::get_compact_hash(block),
+            prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
             txids: block
                 .vtx
                 .iter()
-                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
+                .map(transaction::get_compact_txid)
                 .collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
                 orchard_initial_tree_size,
                 orchard_final_tree_size,
+                ironwood_initial_tree_size,
+                ironwood_final_tree_size,
             },
         };
 
@@ -180,23 +222,22 @@ fn trial_decrypt<P>(
     consensus_parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-    trial_decrypt_task_size: usize,
-) -> Result<BatchRunners<(), ()>, ScanError>
+    decryption_batch_size: usize,
+) -> Result<DecryptionBatchRunners<(), (), ()>, ScanError>
 where
     P: consensus::Parameters + Send + 'static,
 {
-    let mut runners = BatchRunners::<(), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
+    let mut runners =
+        DecryptionBatchRunners::<(), (), ()>::for_keys(decryption_batch_size, scanning_keys);
     for block in compact_blocks {
-        runners
-            .add_block(consensus_parameters, block.clone())
-            .map_err(ScanError::ZcbScanError)?;
+        runners.add_block(consensus_parameters, block.clone())?;
     }
     runners.flush();
 
     Ok(runners)
 }
 
-/// Checks height and hash continuity of a batch of compact blocks.
+/// Checks height and hash continuity of a load of compact blocks.
 ///
 /// If available, also checks continuity with the blocks adjacent to the `compact_blocks` forming the start and end
 /// seams of the scan ranges.
@@ -215,26 +256,26 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && block.height() != prev_height + 1
+            && block::get_compact_height(block) != prev_height + 1
         {
             return Err(ContinuityError::HeightDiscontinuity {
-                height: block.height(),
+                height: block::get_compact_height(block),
                 previous_block_height: prev_height,
             });
         }
 
         if let Some(prev_hash) = prev_hash
-            && block.prev_hash() != prev_hash
+            && block::get_compact_prev_hash(block) != prev_hash
         {
             return Err(ContinuityError::HashDiscontinuity {
-                height: block.height(),
-                prev_hash: block.prev_hash(),
+                height: block::get_compact_height(block),
+                prev_hash: block::get_compact_prev_hash(block),
                 previous_block_hash: prev_hash,
             });
         }
 
-        prev_height = Some(block.height());
-        prev_hash = Some(block.hash());
+        prev_height = Some(block::get_compact_height(block));
+        prev_hash = Some(block::get_compact_hash(block));
     }
 
     if let Some(end_seam_block) = end_seam_block {
@@ -259,57 +300,56 @@ fn check_continuity(
     Ok(())
 }
 
+/// Checks every pool's commitment tree size against the chain.
+///
+/// A zero metadata size is also the protobuf default of a server that does
+/// not report the pool.
 fn check_tree_size(
     compact_block: &CompactBlock,
     wallet_block: &WalletBlock,
 ) -> Result<(), ScanError> {
-    if let Some(chain_metadata) = &compact_block.chain_metadata {
-        if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.tree_bounds().sapling_final_tree_size
-        {
-            #[cfg(feature = "darkside_test")]
-            {
-                tracing::error!(
-                    "darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}",
-                    wallet_block.tree_bounds().sapling_final_tree_size,
-                    compact_block
-                        .chain_metadata
-                        .expect("should exist in this scope")
-                        .sapling_commitment_tree_size
-                );
-                return Ok(());
-            }
+    let Some(chain_metadata) = &compact_block.chain_metadata else {
+        return Ok(());
+    };
+    let tree_bounds = wallet_block.tree_bounds();
 
-            #[cfg(not(feature = "darkside_test"))]
-            return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Sapling),
-                block_metadata_size: chain_metadata.sapling_commitment_tree_size,
-                calculated_size: wallet_block.tree_bounds().sapling_final_tree_size,
-            });
+    for (pool, metadata_size, calculated_size) in [
+        (
+            ShieldedPool::Sapling,
+            chain_metadata.sapling_commitment_tree_size,
+            tree_bounds.sapling_final_tree_size,
+        ),
+        (
+            ShieldedPool::Orchard,
+            chain_metadata.orchard_commitment_tree_size,
+            tree_bounds.orchard_final_tree_size,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            chain_metadata.ironwood_commitment_tree_size,
+            tree_bounds.ironwood_final_tree_size,
+        ),
+    ] {
+        if metadata_size == calculated_size {
+            continue;
         }
-        if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.tree_bounds().orchard_final_tree_size
-        {
-            #[cfg(feature = "darkside_test")]
-            {
-                tracing::error!(
-                    "darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}",
-                    wallet_block.tree_bounds().orchard_final_tree_size,
-                    compact_block
-                        .chain_metadata
-                        .expect("should exist in this scope")
-                        .orchard_commitment_tree_size
-                );
-                return Ok(());
-            }
 
-            #[cfg(not(feature = "darkside_test"))]
-            return Err(ScanError::IncorrectTreeSize {
-                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Orchard),
-                block_metadata_size: chain_metadata.orchard_commitment_tree_size,
-                calculated_size: wallet_block.tree_bounds().orchard_final_tree_size,
-            });
+        if metadata_size == 0 {
+            tracing::warn!(
+                "{pool:?} chain metadata reports no tree size at block {} against a wallet size \
+                 of {calculated_size}: either this server does not report the {pool:?} tree size, \
+                 or the wallet's record overstates a pool the chain holds nothing of. The next \
+                 block with a reported size decides.",
+                wallet_block.block_height(),
+            );
+            continue;
         }
+
+        return Err(ScanError::IncorrectTreeSize {
+            shielded_protocol: PoolType::Shielded(pool),
+            block_metadata_size: metadata_size,
+            calculated_size,
+        });
     }
 
     Ok(())
@@ -328,7 +368,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     K: ScanningKeyOps<D, Nf>,
 {
     for (output_id, incoming_output) in incoming_decrypted_outputs {
-        let position = Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
+        let position = Position::from(u64::from(tree_size + output_id.output_index()));
         let key = keys
             .get(&incoming_output.ivk_tag)
             .expect("key should be available as it was used to decrypt output");
@@ -358,11 +398,15 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactOutputDescription::try_from(output)
-                    .map_err(|()| ScanError::InvalidSaplingOutput)?
+                let note_commitment = get_compact_output_description(output)
+                    .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {
@@ -395,11 +439,15 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactAction::try_from(output)
-                    .map_err(|()| ScanError::InvalidOrchardAction)?
+                let note_commitment = get_compact_action(output)
+                    .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
-                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
+                let decrypted: bool = incoming_output_indexes.contains(
+                    &output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
                 let retention = if decrypted {
                     Retention::Marked
                 } else {
@@ -419,22 +467,25 @@ pub(crate) async fn calculate_block_tree_bounds(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
 ) -> Result<TreeBounds, ServerError> {
-    let (sapling_final_tree_size, orchard_final_tree_size) =
+    let (sapling_final_tree_size, orchard_final_tree_size, ironwood_final_tree_size) =
         if let Some(chain_metadata) = compact_block.chain_metadata {
             (
                 chain_metadata.sapling_commitment_tree_size,
                 chain_metadata.orchard_commitment_tree_size,
+                chain_metadata.ironwood_commitment_tree_size,
             )
         } else {
             let sapling_activation_height = consensus_parameters
                 .activation_height(consensus::NetworkUpgrade::Sapling)
                 .expect("should have some sapling activation height");
 
-            match compact_block.height().cmp(&sapling_activation_height) {
+            match block::get_compact_height(compact_block).cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
-                    let frontiers =
-                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
-                            .await?;
+                    let frontiers = client::get_frontiers(
+                        fetch_request_sender.clone(),
+                        block::get_compact_height(compact_block),
+                    )
+                    .await?;
                     (
                         frontiers
                             .final_sapling_tree()
@@ -446,33 +497,29 @@ pub(crate) async fn calculate_block_tree_bounds(
                             .tree_size()
                             .try_into()
                             .expect("should not be more than 2^32 note commitments in the tree!"),
+                        frontiers
+                            .final_ironwood_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
                     )
                 }
-                cmp::Ordering::Equal => (0, 0),
+                cmp::Ordering::Equal => (0, 0, 0),
                 cmp::Ordering::Less => panic!("pre-sapling not supported!"),
             }
         };
 
-    let sapling_output_count: u32 = compact_block
-        .vtx
-        .iter()
-        .map(|tx| tx.outputs.len())
-        .sum::<usize>()
-        .try_into()
-        .expect("Sapling output count cannot exceed a u32");
-    let orchard_output_count: u32 = compact_block
-        .vtx
-        .iter()
-        .map(|tx| tx.actions.len())
-        .sum::<usize>()
-        .try_into()
-        .expect("Sapling output count cannot exceed a u32");
+    let sapling_output_count = block::shielded_output_count(compact_block, ShieldedPool::Sapling);
+    let orchard_output_count = block::shielded_output_count(compact_block, ShieldedPool::Orchard);
+    let ironwood_output_count = block::shielded_output_count(compact_block, ShieldedPool::Ironwood);
 
     Ok(TreeBounds {
         sapling_initial_tree_size: sapling_final_tree_size.saturating_sub(sapling_output_count),
         sapling_final_tree_size,
         orchard_initial_tree_size: orchard_final_tree_size.saturating_sub(orchard_output_count),
         orchard_final_tree_size,
+        ironwood_initial_tree_size: ironwood_final_tree_size.saturating_sub(ironwood_output_count),
+        ironwood_final_tree_size,
     })
 }
 
@@ -497,5 +544,240 @@ fn set_checkpoint_retentions<L>(
             // NOTE: if there are no outputs in the block, this last retention will be a checkpoint and nothing will need to be mutated.
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use zingo_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
+
+    use super::*;
+
+    fn wallet_block_with_ironwood_size(size: u32) -> WalletBlock {
+        WalletBlock {
+            block_height: BlockHeight::from_u32(100),
+            block_hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
+            time: 0,
+            txids: vec![],
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size: 10,
+                sapling_final_tree_size: 10,
+                orchard_initial_tree_size: 10,
+                orchard_final_tree_size: 10,
+                ironwood_initial_tree_size: size,
+                ironwood_final_tree_size: size,
+            },
+        }
+    }
+
+    fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
+        CompactBlock {
+            height: 100,
+            hash: vec![1; 32],
+            prev_hash: vec![0; 32],
+            time: 0,
+            header: vec![],
+            vtx: vec![],
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: 10,
+                orchard_commitment_tree_size: 10,
+                ironwood_commitment_tree_size: size,
+            }),
+        }
+    }
+
+    /// A server actively serving ironwood metadata (nonzero) that disagrees
+    /// with the wallet's own nonzero calculation is corruption, not the
+    /// known "server does not report the ironwood tree size" case (metadata
+    /// zero).
+    /// Validation must reject it exactly as it does for sapling and orchard.
+    #[test]
+    fn nonzero_ironwood_tree_size_mismatch_is_rejected() {
+        let compact_block = compact_block_with_ironwood_size(999);
+        let wallet_block = wallet_block_with_ironwood_size(7);
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                ..
+            })
+        ));
+    }
+
+    /// A placeholder action that parses but decrypts to nothing: enough to
+    /// be counted by the scanner without building a real note.
+    fn compact_ironwood_action() -> CompactOrchardAction {
+        CompactOrchardAction {
+            nullifier: vec![0; 32],
+            cmx: vec![0; 32],
+            ephemeral_key: vec![0; 32],
+            ciphertext: vec![0; 52],
+        }
+    }
+
+    fn block_with_served_ironwood_actions(
+        action_count: usize,
+        metadata_ironwood_size: u32,
+    ) -> CompactBlock {
+        CompactBlock {
+            height: 100,
+            hash: vec![1; 32],
+            prev_hash: vec![0; 32],
+            time: 0,
+            header: vec![],
+            vtx: vec![CompactTx {
+                index: 0,
+                txid: vec![3; 32],
+                fee: 0,
+                spends: vec![],
+                outputs: vec![],
+                actions: vec![],
+                ironwood_actions: (0..action_count)
+                    .map(|_| compact_ironwood_action())
+                    .collect(),
+                vin: vec![],
+                vout: vec![],
+            }],
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: 10,
+                orchard_commitment_tree_size: 10,
+                ironwood_commitment_tree_size: metadata_ironwood_size,
+            }),
+        }
+    }
+
+    fn initial_scan_data(ironwood_initial_tree_size: u32) -> InitialScanData {
+        InitialScanData {
+            start_seam_block: None,
+            end_seam_block: None,
+            sapling_initial_tree_size: 10,
+            orchard_initial_tree_size: 10,
+            ironwood_initial_tree_size,
+        }
+    }
+
+    /// A block's calculated tree size is the scan baseline plus every output
+    /// served on the wire, for ironwood exactly as for orchard.
+    #[test]
+    fn ironwood_calculated_size_counts_served_actions() {
+        let scan_data = scan_compact_blocks(
+            vec![block_with_served_ironwood_actions(5, 105)],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(100),
+            100,
+        )
+        .unwrap();
+
+        let tree_bounds = scan_data
+            .wallet_blocks
+            .values()
+            .next()
+            .unwrap()
+            .tree_bounds();
+        assert_eq!(tree_bounds.ironwood_initial_tree_size, 100);
+        assert_eq!(tree_bounds.ironwood_final_tree_size, 105);
+    }
+
+    /// A baseline understating the true tree size below the range must fail
+    /// the scan at the first served action, escaping the metadata-zero
+    /// tolerance. Note positions and witnesses derive from the same
+    /// baseline, so scanning past the mismatch would corrupt them silently.
+    #[test]
+    fn understated_ironwood_baseline_is_rejected() {
+        let result = scan_compact_blocks(
+            vec![block_with_served_ironwood_actions(5, 105)],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(0),
+            100,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                block_metadata_size: 105,
+                calculated_size: 5,
+            })
+        ));
+    }
+
+    fn block_with_served_orchard_actions(
+        action_count: usize,
+        metadata_orchard_size: u32,
+    ) -> CompactBlock {
+        let mut compact_block = block_with_served_ironwood_actions(0, 10);
+        compact_block.vtx[0].actions = (0..action_count)
+            .map(|_| compact_ironwood_action())
+            .collect();
+        compact_block
+            .chain_metadata
+            .as_mut()
+            .expect("the helper always builds metadata")
+            .orchard_commitment_tree_size = metadata_orchard_size;
+        compact_block
+    }
+
+    /// A wallet whose history never tracked a pool records no tree for it,
+    /// so its blocks report zero where the chain reports a populated tree.
+    /// That is the wallet's record failing to account for the chain, and it
+    /// must be named rather than tolerated: tolerating it leaves the notes
+    /// in that history undetected and the balance understating the wallet.
+    #[test]
+    fn untracked_pool_history_is_rejected() {
+        let compact_block = compact_block_with_ironwood_size(1354);
+        let wallet_block = wallet_block_with_ironwood_size(0);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                block_metadata_size: 1354,
+                calculated_size: 0,
+            })
+        ));
+    }
+
+    /// The same reasoning, for a pool that activated long before this build:
+    /// nothing about it depends on which pool is newest, on an activation
+    /// height, or on a network.
+    #[test]
+    fn untracked_pool_history_is_rejected_for_every_pool() {
+        let compact_block = block_with_served_orchard_actions(0, 1354);
+        let wallet_block = wallet_block_with_ironwood_size(10);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
+                block_metadata_size: 1354,
+                calculated_size: 10,
+            })
+        ));
+    }
+
+    /// A server that does not report a pool's tree size leaves it at zero
+    /// while the block still carries that pool's outputs. Failing sync there
+    /// would strand every wallet using such a server, and the wallet's own
+    /// record is not what is at fault, so this is tolerated.
+    #[test]
+    fn an_unreported_tree_size_does_not_fail_the_scan() {
+        let compact_block = block_with_served_ironwood_actions(5, 0);
+        let wallet_block = wallet_block_with_ironwood_size(5);
+
+        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
+    }
+
+    /// The wallet's count is cumulative, so against a non-reporting server
+    /// the mismatch persists onto blocks that serve no outputs of their
+    /// own; rejecting those would loop reopen-and-rescan forever.
+    #[test]
+    fn an_unreported_tree_size_is_tolerated_on_blocks_without_outputs() {
+        let compact_block = block_with_served_ironwood_actions(0, 0);
+        let wallet_block = wallet_block_with_ironwood_size(7);
+
+        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
     }
 }

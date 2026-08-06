@@ -12,7 +12,7 @@ use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::NetworkConstants;
-use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
+use zcash_protocol::{PoolType, ShieldedPool, consensus};
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
@@ -28,7 +28,9 @@ pub mod chain_generics;
 pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
+pub mod mock_indexer;
 pub mod paths;
+pub mod synthetic_wallet;
 
 // Re-export test dependencies for convenience
 pub use portpicker;
@@ -523,10 +525,10 @@ pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
 
 /// a quick and dirty way to proptest across protocols.
 #[must_use]
-pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
+pub fn int_to_shieldedprotocol(int: i32) -> ShieldedPool {
     match int {
-        1 => ShieldedProtocol::Sapling,
-        2 => ShieldedProtocol::Orchard,
+        1 => ShieldedPool::Sapling,
+        2 => ShieldedPool::Orchard,
         _ => panic!("invalid protocol"),
     }
 }

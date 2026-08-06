@@ -3,32 +3,36 @@ name = "zingolib_testutils"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-test_zainod_zcashd = []
-test_lwd_zebrad = []
-test_lwd_zcashd = []
-
 [dependencies]
-
 # zingolib
 zingolib = { workspace = true, features = ["testutils"] }
-pepper-sync.workspace = true
 zingo_common_components.workspace = true
 
 # zingo infrastructure
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 
+# validator JSON-RPC probes
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
 # zcash
+nonempty.workspace = true
+zcash_primitives.workspace = true
 zcash_protocol.workspace = true
 
-# bitcoin
-
-bip0039.workspace = true
-
 # utilties
-
 portpicker.workspace = true
 tempfile.workspace = true
 http.workspace = true
 zip32.workspace = true
+tokio = { workspace = true, features = ["net", "time", "rt", "io-util", "sync", "macros"] }
+zingo-netutils.workspace = true
+
+[features]
+# Regtest scenario clients transmit over clearnet as recorded consent: the
+# five-state wallet refuses an unconsented send (MixnetNotReady, ADR 0011),
+# so nym-feature consumers (zingo-mobile's integration harness) enable this
+# to have the scenarios record the deliberate switch-off before their
+# funding sends.
+nym = ["zingolib/nym"]

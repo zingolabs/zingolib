@@ -65,7 +65,7 @@ mod mode_of_operation {
 
     #[test]
     fn flags_do_not_affect_mode_interactive() {
-        assert_interactive(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        assert_interactive(&[examples::BIN_NAME, "--nosync"]);
     }
 
     #[test]
@@ -193,6 +193,25 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn calculate() {
+            assert_no_arg_command("calculate");
+        }
+
+        #[test]
+        fn transmit() {
+            assert_no_arg_command("transmit");
+        }
+
+        #[test]
+        fn transmit_with_txids() {
+            assert_command(
+                &[examples::BIN_NAME, "transmit", examples::TXID],
+                "transmit",
+                &[examples::TXID],
+            );
+        }
+
+        #[test]
         fn shield() {
             assert_no_arg_command("shield");
         }
@@ -283,10 +302,165 @@ mod communication_mode {
     use super::*;
     use crate::{CommunicationMode, get_communication_mode};
 
+    /// A scratch data directory per test, so no stored Connectivity
+    /// Consent leaks between tests or into the developer's real store.
+    fn scratch_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("a scratch directory")
+    }
+
+    /// Resolve the communication mode for `extra` launch arguments against
+    /// the scratch store.
+    fn mode_with_dir(dir: &tempfile::TempDir, extra: &[&str]) -> CommunicationMode {
+        let mut args = vec![
+            examples::BIN_NAME,
+            "--data-dir",
+            dir.path().to_str().expect("utf-8 temp path"),
+        ];
+        args.extend_from_slice(extra);
+        get_communication_mode(&parse(&args)).expect("the mode resolves")
+    }
+
+    /// ADR 0025: first boot is offline. With no stored choice and no
+    /// consent act, the session must not touch the network.
     #[test]
-    fn default_is_online() {
-        let matches = parse(&[examples::BIN_NAME]);
-        assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
+    fn first_boot_without_consent_is_offline() {
+        let dir = scratch_dir();
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+    }
+
+    #[test]
+    fn offline_flag_pins_offline() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--offline"]),
+            CommunicationMode::Offline
+        );
+    }
+
+    /// The per-session consent act: --online takes this session online and
+    /// stores nothing, so the next default launch is offline again.
+    #[test]
+    fn online_flag_consents_this_session_only() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::Offline,
+            "an un-stored act must not outlive its session"
+        );
+    }
+
+    /// Naming an endpoint is consenting to connect to it: an explicit
+    /// --server is a consent act (ADR 0025).
+    #[test]
+    fn an_explicit_server_is_a_consent_act() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--server", examples::SERVER_URI]),
+            CommunicationMode::Online
+        );
+    }
+
+    /// The standing choice: --remember-online stores the consent, and a
+    /// later launch with no acts attaches automatically.
+    #[test]
+    fn remember_online_stores_the_standing_choice() {
+        let dir = scratch_dir();
+        assert_eq!(
+            mode_with_dir(&dir, &["--remember-online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(
+            mode_with_dir(&dir, &[]),
+            CommunicationMode::Online,
+            "the stored choice attaches later sessions automatically"
+        );
+    }
+
+    /// --forget-online removes the standing choice: the forgetting session
+    /// runs offline (no other act was expressed), and so does the next.
+    #[test]
+    fn forget_online_returns_the_store_to_first_boot() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--forget-online"]),
+            CommunicationMode::Offline
+        );
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+    }
+
+    /// Forgetting the store and consenting for the session compose: the
+    /// launch goes online once while the standing choice dies.
+    #[test]
+    fn forget_online_composes_with_a_session_act() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--forget-online", "--online"]),
+            CommunicationMode::Online
+        );
+        assert_eq!(mode_with_dir(&dir, &[]), CommunicationMode::Offline);
+    }
+
+    /// The deliberate --offline outranks even a stored standing choice.
+    #[test]
+    fn offline_flag_wins_over_the_stored_choice() {
+        let dir = scratch_dir();
+        mode_with_dir(&dir, &["--remember-online"]);
+        assert_eq!(
+            mode_with_dir(&dir, &["--offline"]),
+            CommunicationMode::Offline
+        );
+    }
+
+    #[test]
+    fn online_conflicts_with_offline() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--online"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn remember_online_conflicts_with_offline_and_forget() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--remember-online"])
+                .is_err()
+        );
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--remember-online", "--forget-online"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn offline_conflicts_with_server() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([
+                    examples::BIN_NAME,
+                    "--offline",
+                    "--server",
+                    examples::SERVER_URI
+                ])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn offline_conflicts_with_waitsync() {
+        assert!(
+            build_clap_app()
+                .try_get_matches_from([examples::BIN_NAME, "--offline", "--waitsync"])
+                .is_err()
+        );
     }
 }
 
@@ -308,7 +482,7 @@ mod is_interactive {
 
     #[test]
     fn flags_without_command_is_interactive() {
-        let matches = parse(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        let matches = parse(&[examples::BIN_NAME, "--nosync"]);
         assert!(is_interactive(&matches));
     }
 }
@@ -332,85 +506,66 @@ mod log_file_path {
 }
 
 mod sync {
-    use crate::poll_sync_for_prompt_indicator;
-    use std::cell::RefCell;
+    use crate::{ScanProgress, idle_indicator, synced_indicator, syncing_indicator};
 
-    /// Simulates a single-response sync poll and returns the prompt indicator.
-    fn poll_with(poll_response: &str) -> String {
-        let response = poll_response.to_string();
-        let send = move |_cmd: String, _args: Vec<String>| response.clone();
-        poll_sync_for_prompt_indicator(&send)
-    }
-
-    /// Simulates a two-step sync poll (poll then status) and returns the prompt indicator.
-    fn poll_then_status(poll_response: &str, status_response: &str) -> String {
-        let call_count = RefCell::new(0);
-        let poll = poll_response.to_string();
-        let status = status_response.to_string();
-        let send = move |_cmd: String, _args: Vec<String>| {
-            let mut c = call_count.borrow_mut();
-            *c += 1;
-            if *c == 1 {
-                poll.clone()
-            } else {
-                status.clone()
-            }
-        };
-        poll_sync_for_prompt_indicator(&send)
+    fn progress(outputs_scanned: u64, total_outputs: u64, complete: bool) -> Option<ScanProgress> {
+        Some(ScanProgress {
+            outputs_scanned,
+            total_outputs,
+            complete,
+        })
     }
 
     #[test]
-    fn poll_error() {
-        assert_eq!(poll_with("Error: connection lost"), " [Sync error]");
-    }
-
-    #[test]
-    fn poll_completed() {
+    fn in_progress_with_available_status() {
         assert_eq!(
-            poll_with("Sync completed succesfully: 1000 blocks"),
-            " [Synced]"
+            syncing_indicator(progress(4_520, 10_000, false)),
+            " [Syncing 4520 / 10000 outputs]"
         );
     }
 
     #[test]
-    fn in_progress_with_valid_status() {
-        assert_eq!(
-            poll_then_status(
-                "Sync task is not complete.",
-                r#"{"percentage_total_outputs_scanned": 45.2}"#,
-            ),
-            " [Syncing 45.2% complete]"
-        );
+    fn in_progress_with_unavailable_status() {
+        assert_eq!(syncing_indicator(None), " [Syncing]");
     }
 
     #[test]
-    fn in_progress_with_unparseable_status() {
-        assert_eq!(
-            poll_then_status("Sync task is not complete.", "not json"),
-            " [Syncing]"
-        );
+    fn in_progress_with_output_free_range() {
+        assert_eq!(syncing_indicator(progress(0, 0, false)), " [Syncing]");
     }
 
     #[test]
     fn not_launched_not_synced() {
         assert_eq!(
-            poll_then_status(
-                "Sync task has not been launched.",
-                r#"{"percentage_total_outputs_scanned": 0.0}"#,
-            ),
-            " [Not syncing 0.0% complete]"
+            idle_indicator(progress(0, 10_000, false)),
+            " [Sync stopped at 0 / 10000 outputs]"
         );
     }
 
     #[test]
     fn not_launched_fully_synced() {
         assert_eq!(
-            poll_then_status(
-                "Sync task has not been launched.",
-                r#"{"percentage_total_outputs_scanned": 100.0}"#,
-            ),
-            " [Synced]"
+            idle_indicator(progress(10_000, 10_000, true)),
+            " [Synced 10000 / 10000 outputs]"
         );
+    }
+
+    #[test]
+    fn synced_with_unavailable_status() {
+        assert_eq!(synced_indicator(None), " [Synced]");
+    }
+
+    #[test]
+    fn all_outputs_scanned_but_refetch_pending_is_not_synced() {
+        assert_eq!(
+            idle_indicator(progress(10_000, 10_000, false)),
+            " [Sync stopped at 10000 / 10000 outputs]"
+        );
+    }
+
+    #[test]
+    fn not_launched_with_unavailable_status() {
+        assert_eq!(idle_indicator(None), " [Sync stopped]");
     }
 }
 
@@ -427,13 +582,98 @@ mod config_template {
     fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        let communication_mode = get_communication_mode(&matches);
+        let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
         ConfigTemplate::fill(mode, communication_mode, matches)
+    }
+
+    /// Helper: build the ZingoConfig for a filled template. The builder is
+    /// async, so the tests hold their own crossing into the runtime.
+    #[allow(clippy::disallowed_methods)]
+    fn build(filled: &ConfigTemplate) -> zingolib::config::ClientConfig {
+        crate::commands::RT
+            .block_on(build_zingo_config(filled))
+            .unwrap()
     }
 
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
     fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
-        build_zingo_config(&fill(args).unwrap()).unwrap()
+        build(&fill(args).unwrap())
+    }
+
+    mod offline {
+        use super::*;
+        use crate::CommunicationMode;
+
+        #[test]
+        fn fill_resolves_no_server_and_disables_sync() {
+            let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
+            assert_eq!(config.communication_mode, CommunicationMode::Offline);
+            assert!(config.server.is_none());
+            assert!(!config.sync, "an Offline-mode session cannot sync");
+        }
+
+        #[test]
+        fn restored_wallet_builds_an_indexerless_client_config() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-indexerless-test");
+            let config = fill_and_build(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--seed",
+                examples::SEED_PHRASE,
+                "--birthday",
+                "1",
+                "--data-dir",
+                data_dir.to_str().expect("temp dir path is valid unicode"),
+            ]);
+            assert!(
+                config.indexer_uri().is_none(),
+                "an Offline-mode session never configures an Indexer"
+            );
+        }
+
+        /// A new wallet's birthday normally comes from the server's chain
+        /// tip. Offline mode has no server, so the Library Birthday (a
+        /// release-stamped height no new seed can predate) stands in
+        /// (ADR 0007). No --birthday is demanded.
+        #[test]
+        fn new_wallet_without_birthday_uses_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-lib-birthday-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build(&filled);
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == zingolib::config::lib_birthday(ChainType::Mainnet)
+            ));
+        }
+
+        /// --birthday remains available for a new Offline-mode wallet as an
+        /// expert override of the Library Birthday floor (ADR 0007).
+        #[test]
+        fn new_wallet_birthday_overrides_library_birthday() {
+            let data_dir = std::env::temp_dir().join("zingo-cli-offline-birthday-override-test");
+            let filled = fill(&[
+                examples::BIN_NAME,
+                "--offline",
+                "--birthday",
+                "3500000",
+                "--data-dir",
+                data_dir.to_str().unwrap(),
+            ])
+            .unwrap();
+            let config = build(&filled);
+            assert!(matches!(
+                config.wallet_config(),
+                zingolib::config::WalletConfig::NewSeed { chain_height, .. }
+                    if chain_height == 3_500_000
+            ));
+        }
     }
 
     mod happy_paths {
@@ -448,7 +688,6 @@ mod config_template {
             assert_eq!(config.communication_mode, CommunicationMode::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
-            assert!(!config.tor_enabled);
             assert!(config.seed.is_none());
             assert!(config.ufvk.is_none());
             assert_eq!(config.birthday, 0);
@@ -457,20 +696,16 @@ mod config_template {
 
         #[test]
         fn nosync_flag() {
-            let config = fill(&[examples::BIN_NAME, "--nosync"]).unwrap();
+            // --online keeps this a test of the flag, not of the offline
+            // default (an unconsented session disables sync by itself).
+            let config = fill(&[examples::BIN_NAME, "--online", "--nosync"]).unwrap();
             assert!(!config.sync);
         }
 
         #[test]
         fn waitsync_flag() {
-            let config = fill(&[examples::BIN_NAME, "--waitsync"]).unwrap();
+            let config = fill(&[examples::BIN_NAME, "--online", "--waitsync"]).unwrap();
             assert!(config.waitsync);
-        }
-
-        #[test]
-        fn tor_flag() {
-            let config = fill(&[examples::BIN_NAME, "--tor"]).unwrap();
-            assert!(config.tor_enabled);
         }
 
         #[test]
@@ -575,14 +810,17 @@ mod config_template {
 
         #[test]
         fn default_server_is_propagated() {
+            // --online is the consent act (ADR 0025); the default server
+            // then fills in because none was named explicitly.
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
+                "--online",
                 "--seed",
                 HOSPITAL_MUSEUM_SEED,
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
@@ -600,7 +838,7 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().to_string();
+            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
                 uri.starts_with(examples::SERVER_URI),
                 "expected URI to start with {}, got: {uri}",
@@ -662,5 +900,39 @@ mod config_template {
                 }
             );
         }
+    }
+}
+
+mod offline_mode_pin {
+    //! The REPL-dispatch half of the Offline-mode contract (issue #2286):
+    //! `change_server` is refused before command execution, since an
+    //! Offline session may never configure an Indexer. The command-surface
+    //! half lives in `commands::offline_contract`.
+
+    use crate::{CommunicationMode, offline_mode_refusal};
+
+    #[test]
+    fn offline_mode_refuses_change_server_before_dispatch() {
+        let refusal = offline_mode_refusal(CommunicationMode::Offline, "change_server")
+            .expect("an Offline session must refuse change_server");
+        assert_eq!(
+            refusal,
+            "Error: this session is in Offline mode; no Indexer may be configured. \
+             Restart without --offline to change servers."
+        );
+    }
+
+    #[test]
+    fn online_mode_and_other_commands_pass_the_pin() {
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Online, "change_server"),
+            None,
+            "an Online session may change servers"
+        );
+        assert_eq!(
+            offline_mode_refusal(CommunicationMode::Offline, "balance"),
+            None,
+            "the pin refuses exactly one command, never the local surface"
+        );
     }
 }

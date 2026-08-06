@@ -9,17 +9,22 @@ permissions:
   contents: write
 
 jobs:
+  compute-image-tag:
+    uses: ./.github/workflows/compute-image-tag.yaml
+
   coverage:
     name: Coverage
+    needs: compute-image-tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:009
+      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -45,7 +50,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2

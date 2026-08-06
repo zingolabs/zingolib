@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -43,7 +45,10 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
         .arg("--server")
-        .arg("https://127.0.0.1:1")
+        .arg("https://zec.rocks:443")
+        // This test observes log redirection, not transmission; opt out of
+        // the forced Mixnet Mode so a nym-featured build needs no proxy.
+        .arg("--no-mixnet")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -59,7 +64,24 @@ fn interactive_mode_redirects_tracing_to_log_file() {
         .spawn()
         .expect("failed to spawn zingo-cli");
 
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    // Wait for the startup INFO lines to reach the log file, polling
+    // instead of sleeping a fixed interval; the ceiling only bounds the
+    // pathological case.
+    let deadline = std::time::Instant::now() + zingo_netutils::time::test::LOG_FLUSH_DEADLINE;
+    loop {
+        if std::fs::read_to_string(&log_path)
+            .unwrap_or_default()
+            .contains("INFO")
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no INFO line reached the log file within {:?}",
+            zingo_netutils::time::test::LOG_FLUSH_DEADLINE
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     if let Some(ref mut stdin) = child.stdin {
         let _ = writeln!(stdin, "quit");
     }
@@ -74,10 +96,13 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.is_empty(),
-        "Expected empty stderr (tracing should go to log file), but got:\n{stderr}"
-    );
+    for level in ["INFO", "WARN", "ERROR", "DEBUG", "TRACE"] {
+        assert!(
+            !stderr.contains(&format!(" {level} ")),
+            "Tracing {level} lines should go to the log file, not stderr \
+             (stderr carries only Narration, ADR 0031). Got:\n{stderr}"
+        );
+    }
 }
 
 /// The error string that pepper_sync's `#[instrument(err)]` on
@@ -120,9 +145,12 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     let data_dir = tmp.path().join("wallets");
 
     let mut child = Command::new(zingo_cli_binary())
-        .env("RUST_LOG", "error")
+        .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
+        // This test observes log redirection, not transmission; opt out of
+        // the forced Mixnet Mode so a nym-featured build needs no proxy.
+        .arg("--no-mixnet")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -137,9 +165,29 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .spawn()
         .expect("failed to spawn zingo-cli");
 
-    // pepper_sync's UNARY_RPC_TIMEOUT is 10s. Wait long enough for the
-    // timeout to fire, the error to be logged, and the poll loop to run.
-    std::thread::sleep(std::time::Duration::from_secs(12));
+    // Wait for the tracing ERROR to reach the log file, polling instead of
+    // sleeping a fixed interval. The mock answers immediately with its
+    // configured error status, so the ERROR lands as soon as the child's
+    // first fetch call completes — typically well under a second after
+    // startup. (Awaiting tokio::time::sleep between polls is what makes
+    // that true: this test runs on the default current-thread runtime, so
+    // a blocking wait here would starve the spawned mock server, leave the
+    // child's request unanswered, and make the child sit out its full
+    // 10-second client-side RPC timeout instead.) The ceiling only bounds
+    // the pathological case.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let log_contents = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if log_contents.contains("ERROR") && log_contents.contains(EXPECTED_ERROR) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no tracing ERROR containing '{EXPECTED_ERROR}' reached the log \
+             file within 20s.\nLog contents:\n{log_contents}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 
     if let Some(ref mut stdin) = child.stdin {
         let _ = writeln!(stdin, "quit");

@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+### Added
+- `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
+  deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
+  Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
+  and passes the raw wallet bytes across the FFI boundary. Restores the in-memory
+  construction path that was lost when `create_from_wallet` and `WalletBase` were removed
+  in 5.0.0; the new path uses the `WalletConfig` enum and the existing
+  `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
+- ZIP 318 Orchard to Ironwood migration, in `lightclient::migrate`:
+  - Immediate path: `plan_immediate_migration`, `quick_immediate_migration`.
+  - Note splitting, stateless and one round per call: `plan_note_split`, `quick_split`.
+  - Scheduled path: `plan_ironwood_migration`, `start_ironwood_migration`,
+    `execute_due_parts`, `auto_broadcast_if_due`, `reconcile_migration`,
+    `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`.
+  - Reporting: `migration_status`, `window_timeline`, and the
+    `split_progress_handle` / `batch_progress_handle` progress handles.
+- `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
+  - A Part carries two independent buckets: `bucket_index`, the window it is
+    broadcast in, and `anchor_bucket`, the lower bucket whose boundary it proves
+    against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
+    must clear (strictly above the NU6.3 activation bucket; at or above the
+    boundary covering the Part's own bound note), and `draw_anchor_bucket`
+    reject-samples an age from `draw_anchor_age` against them.
+  - The anchor age is drawn per Part, `Geometric(1/2)` capped at
+    `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
+    the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
+    ADR 0018). The builder's target height, and so the consensus branch the Part
+    commits to, comes from the broadcast window instead.
+  - Consequence for consumers: a wallet that schedules immediately after note
+    splitting waits one extra window (~3h at `M` = 144) before its first Batch is
+    due, because a fresh note floors the anchor at the next boundary and a legal
+    window sits a bucket above its anchor. A wallet whose notes confirmed at least
+    one bucket earlier has its first Batch due the moment it is scheduled. Read the
+    wait from `MigrationStatus::upcoming_windows`, whose `BroadcastWindow`s carry
+    `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
+  - The migration section of the wallet file carries its own version, independent
+    of the wallet format version, and ships at 4.
+- `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
+  Migration-part broadcasts route by Mixnet Mode and never at the sync host.
+- `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.
+- Ironwood pool in summaries: `ironwood_notes`, `outgoing_ironwood_notes`,
+  `is_orchard_to_ironwood_migration`.
+
+### Changed
+- `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
+- `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
+  updated to include options for defaults.
+- BREAKING: the price fetch has no clearnet tier and compiles only with the `nym`
+  feature. Without it `zingo-price` is types-only.
+- Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
+  number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
+  a prefix-only salvage read so `recovery_info` still works.
+
+### Removed
+- `wallet::summary::data::TransactionSummary::balance_delta` - the method had no
+  callers and misreported a Zennies-donating self-send: `transaction_kind`
+  exempts the donation address, so the `SendToSelf` arm reported only the fee
+  while the wallet also moves the donation. A future consumer should derive
+  balance deltas after the Zennies exemption moves to the viewmodel projection
+  (#2612).
+- `wallet::summary::data::TransactionSummaries::paid_fees` - its only caller was
+  the `get_fees_paid_by_client` testutils helper, which now sums the fees itself
+  (#2612).
+- `wallet::summary::data::TransactionSummaries::txids` - called only by test
+  code, which now inlines the one-line map (#2612).
+
+## [5.0.0] - 2026-06-10
+
 ### Added
 - `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
   if it failed, returns `(SyncRecoveryObservables, String)` with the recommended
@@ -35,9 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::WalletSettings`: `default` impl
 
 ### Changed
-- Upgraded `zingo-netutils` from 3.0.0 to 4.0.0 (`indexer_trait` branch).
-  Proto types now come from `lightwallet-protocol` via `zingo_netutils::lightwallet_protocol`.
-  `back_compatible` and `globally-public-transparent` feature gates are enabled.
+- Upgraded `zingo-netutils` from 3.0.0 to 5.0.1:
+  - proto types now come from `lightwallet-protocol` via `zingo_netutils::lightwallet_protocol`.
+  - `globally-public-transparent` feature gates are enabled.
 - `lightclient::LightClient`:
   - `new` now installs the rustls ring crypto provider (idempotent) since
     `GrpcIndexer::new` pre-builds a TLS endpoint at construction time.
@@ -48,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `set_server`: renamed `set_indexer_uri`
   - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
   - `new` constructor: removed `chain_height` parameter which is now within the config
+- `lightclient::error::LightClientError`: removed `TorClientError` variant.
 - `config` module:
   - `ChainType`:
     - `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
@@ -88,14 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `new` constructor:
     - `network` parameter renamed `chain_type`
     - `wallet_base`, `birthday` and `wallet_settings` fields replaced by `wallet_config` field
-  - new wallet serialization version 40 due to changes to chain type fmt::Display. chain type is now encoded as u8.
+  - new wallet serialization version 41 due to changes to chain type fmt::Display. chain type is now encoded as u8 and output indexes changed to u32.
+  - `update_current_price` method no longer takes `tor_client` parameter.
 - `wallet::keys::unified::UnifiedKeyStore`:
   - `new_from_seed` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
   - `new_from_mnemonic` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
   - `new_from_ufvk` method: `network` parameter renamed `chain_type` and now takes `ChainType` instead of `&ChainType`
-- `wallet::disk::read`: `network` parameter renamed `chain_type`
+- `wallet::disk`:
+  - serialized version incremented to 41 for serializing output indexes as u32 and chain types as u8 instead of string.
+  - `read` module: `network` parameter renamed `chain_type`
 - `wallet::error::WalletError`: added `WalletAlreadyCreated` variant
 - `wallet::error::KeyError`: added `InvalidMnemonicPhrase` variant
+- `wallet::summary::data`:
+  - `NoteSummary`: `output_index` field is now u32.
+  - `OutgoingNoteSummary`: `output_index` field is now u32.
+  - `CoinSummary`: `output_index` field is now u32.
+  - `OutgoingCoinSummary`: `output_index` field is now u32.
+- `wallet::output::OutputRef`: `output_index` method now returns u32.
 
 ### Removed
 - `regtest` feature: production binaries can now be tested in regtest mode.
@@ -126,19 +206,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `get_log_path()` method
   - `ZingoConfigBuilder::set_logfile_name()` method.
   - `load_clientconfig`: replaced by zingo config builder pattern (`ZingoConfigBuilder`)
-- `wallet::LightWallet::mnemonic()`
+- `wallet::LightWallet`: `mnemonic` method.
 - `testutils::lightclient::new_client_from_save_buffer`
 - `wallet::WalletBase`: no longer public. public functionality replaced by `config::WalletConfig`
 - `lightclient::LightClient`:
   - `create_from_wallet` constructor: no longer needed as now covered by `new` due to config rework
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
+  - `tor_client` method. Tor no longer supported. To be replaced by nym in coming release.
+  - `create_tor_client` method.
+  - `remove_tor_client` method.
 - `testutils::build_fvk_client`
+
+## [4.0.0] - 2026-06-05
+
+### Changed
+- `lightclient::error::LightClientError`: added `SyncLaunchErrror` variant.
+- `data::Receiver`: From impl for Payment is now a TryFrom
 
 ## [3.0.1] - 2026-03-26
 
 ## [3.0.0] - 2026-03-02
-
-### Deprecated
 
 ### Added
 - `lightclient::error::TransmissionError`: moved from `wallet::error` and simplified to much fewer variants more specific

@@ -2,14 +2,17 @@
 //! (obviously) in a test environment.
 
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedPool};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
+use crate::wallet::summary::data::TransactionKind;
 
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+        // The ironwood receiver of a unified address is its orchard receiver.
+        PoolType::Shielded(ShieldedPool::Ironwood) | PoolType::Shielded(ShieldedPool::Orchard) => {
             assert!(
                 client.unified_addresses_json().await[0]["has_orchard"]
                     .as_bool()
@@ -19,7 +22,7 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
                 .clone()
                 .to_string()
         }
-        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+        PoolType::Shielded(ShieldedPool::Sapling) => {
             assert!(
                 !client.unified_addresses_json().await[1]["has_orchard"]
                     .as_bool()
@@ -39,13 +42,22 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
             .to_string(),
     }
 }
-/// Get the total fees paid by a given client (assumes 1 capability per client).
+/// Get the total fees paid by a given client (assumes 1 capability per client):
+/// the sum of fees on confirmed sending transactions.
 pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
     client
         .transaction_summaries(false)
         .await
         .unwrap()
-        .paid_fees()
+        .iter()
+        .filter_map(|summary| {
+            if matches!(summary.kind, TransactionKind::Sent(_)) && summary.status.is_confirmed() {
+                summary.fee
+            } else {
+                None
+            }
+        })
+        .sum()
 }
 /// Helpers to provide `raw_receivers` to lightclients for send and shield, etc.
 pub mod from_inputs {
@@ -54,6 +66,7 @@ pub mod from_inputs {
     use zcash_primitives::transaction::TxId;
 
     use crate::{
+        data::{proposal::ProportionalFeeProposal, receivers::Receivers},
         lightclient::{LightClient, error::LightClientError},
         wallet::error::ProposeSendError,
     };
@@ -73,7 +86,7 @@ pub mod from_inputs {
     /// Panics if the address, amount or memo conversion fails.
     pub(crate) fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> crate::data::receivers::Receivers {
+    ) -> Receivers {
         raw_receivers
             .into_iter()
             .map(|(address, amount, memo)| {
@@ -106,7 +119,7 @@ pub mod from_inputs {
     pub async fn propose(
         proposer: &mut LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request, zip32::AccountId::ZERO).await
@@ -117,7 +130,7 @@ pub mod from_inputs {
 pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
-) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
+) -> nonempty::NonEmpty<Option<ConfirmationStatus>> {
     let wallet = client.wallet().read().await;
 
     txids.map(|txid| {

@@ -12,7 +12,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 // TODO: revisit after implementing nullifier refetching
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PerformanceLevel {
-    /// - number of outputs per batch is quartered
+    /// - output budget per scan load is quartered
     /// - nullifier map only contains chain tip
     Low,
     /// - nullifier map has a small maximum size
@@ -21,7 +21,7 @@ pub enum PerformanceLevel {
     /// - nullifier map has a large maximum size
     #[default]
     High,
-    /// - number of outputs per batch is quadrupled
+    /// - output budget per scan load is quadrupled
     /// - nullifier map has no maximum size
     ///
     /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
