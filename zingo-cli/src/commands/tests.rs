@@ -5,8 +5,130 @@ mod table_invariants {
     //! order, and no two variants mint the same name.
 
     use clap::CommandFactory as _;
+    use zcash_protocol::TxId;
 
-    use super::super::{CliCommand, CommandLine, standalone_commands};
+    use super::super::{
+        CliCommand, CommandLine, DrainSubCommand, MigrationSubCommand, SaveSubCommand,
+        SplitSubCommand, SyncSubCommand, format_help, parse_receiver_selection,
+        standalone_commands,
+    };
+
+    /// One sample per variant, held complete by the set-equality test below,
+    /// so the totality tests cover the whole grammar.
+    fn every_command() -> Vec<CliCommand> {
+        vec![
+            CliCommand::Addresses,
+            CliCommand::Balance,
+            CliCommand::Birthday,
+            CliCommand::Calculate,
+            CliCommand::ChangeServer { uri: None },
+            CliCommand::CheckAddress {
+                address: String::new(),
+            },
+            CliCommand::Clear,
+            CliCommand::Coins { scope: None },
+            CliCommand::Confirm,
+            CliCommand::CurrentPrice,
+            CliCommand::Delete,
+            CliCommand::Drain {
+                sub: DrainSubCommand::Plan,
+            },
+            CliCommand::ExportUfvk,
+            CliCommand::Height,
+            CliCommand::Help { command: None },
+            CliCommand::Info,
+            CliCommand::MaxSendValue { args: Vec::new() },
+            CliCommand::MemobytesToAddress,
+            CliCommand::Messages { filter: None },
+            CliCommand::Migrate,
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Plan,
+            },
+            CliCommand::NewAddress {
+                receivers: parse_receiver_selection("o").expect("a valid receiver selection"),
+            },
+            CliCommand::NewTaddress,
+            CliCommand::NewTaddressAllowGap,
+            CliCommand::Notes { scope: None },
+            CliCommand::Nym { sub: None },
+            CliCommand::ParseAddress {
+                address: String::new(),
+            },
+            CliCommand::ParseViewkey {
+                viewkey: String::new(),
+            },
+            CliCommand::Quicksend { args: Vec::new() },
+            CliCommand::Quickshield,
+            CliCommand::Quit,
+            CliCommand::RecoveryInfo,
+            CliCommand::RemoveTransaction {
+                txid: TxId::from_bytes([0; 32]),
+            },
+            CliCommand::Rescan,
+            CliCommand::Save {
+                sub: SaveSubCommand::Run,
+            },
+            CliCommand::Send { args: Vec::new() },
+            CliCommand::SendAll { args: Vec::new() },
+            CliCommand::SendsToAddress,
+            CliCommand::Servers,
+            CliCommand::Settings { sub: None },
+            CliCommand::Shield,
+            CliCommand::SpendableBalance,
+            CliCommand::Split {
+                sub: SplitSubCommand::Plan,
+            },
+            CliCommand::Sync {
+                sub: SyncSubCommand::Status,
+            },
+            CliCommand::TAddresses,
+            CliCommand::Transactions,
+            CliCommand::Transmit { txids: Vec::new() },
+            CliCommand::ValueToAddress,
+            CliCommand::ValueTransfers,
+            CliCommand::Version,
+            CliCommand::WalletKind,
+        ]
+    }
+
+    /// HYPOTHESIS: the derived names of one-sample-per-variant equal the
+    /// clap model's subcommand names exactly, so `name` can never diverge
+    /// from the mint and the sample list can never go stale.
+    #[test]
+    fn every_variant_names_the_mint() {
+        let model = CommandLine::command();
+        let mut derived: Vec<String> = every_command().iter().map(CliCommand::name).collect();
+        derived.sort();
+        let mut minted: Vec<String> = model
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        minted.sort();
+        assert_eq!(derived, minted);
+    }
+
+    /// HYPOTHESIS: `help` files every command in the section
+    /// `requires_wallet` dictates, proven by the rendered listing itself
+    /// rather than any debug-only assertion.
+    #[test]
+    fn help_sections_agree_with_requires_wallet() {
+        let listing = format_help(None);
+        let wallet_header = listing
+            .find("Wallet commands:")
+            .expect("the listing carries a wallet section");
+        for command in every_command() {
+            let name = command.name();
+            let entry = format!("  {name} - ");
+            let position = listing
+                .find(&entry)
+                .unwrap_or_else(|| panic!("`{name}` must appear in the help listing"));
+            assert_eq!(
+                position > wallet_header,
+                command.requires_wallet(),
+                "`{name}` sits in the wrong help section"
+            );
+        }
+    }
 
     /// HYPOTHESIS: `name` derives exactly the minted subcommand name, so a
     /// log line names the command without carrying its arguments.
@@ -466,6 +588,14 @@ mod typed_argument_parsing {
         );
     }
 
+    /// HYPOTHESIS: `--help` on `messages` renders help, never a filter,
+    /// because defined flags outrank hyphen values.
+    #[test]
+    fn messages_help_outranks_the_hyphen_filter() {
+        let error = parse(&["messages", "--help"]).expect_err("--help renders help");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
     /// HYPOTHESIS: a memo filter may begin with a dash.
     #[test]
     fn a_dash_leading_messages_filter_parses() {
@@ -868,6 +998,21 @@ mod offline_contract {
             error.to_string().contains(OFFLINE_REFUSAL),
             "`{command}` must refuse with the typed Offline error: {error}"
         );
+    }
+
+    /// A build without the nym feature answers a well-formed `nym`
+    /// subcommand with the typed feature-absent refusal, not a usage error.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn nym_refuses_with_the_typed_feature_absent_error() {
+        use super::super::NymCommandError;
+
+        let mut client = offline_client();
+        let error = exec(&mut client, "nym", &["status"]).expect_err("nym status must refuse");
+        assert!(matches!(
+            error,
+            CommandError::Nym(NymCommandError::FeatureAbsent)
+        ));
     }
 
     /// A fresh unified address from the wallet itself, so send-family tests
@@ -1340,5 +1485,64 @@ mod pure_helpers {
         ] {
             assert!(rendered.contains(expected), "{rendered}");
         }
+    }
+}
+
+#[cfg(test)]
+mod open_finding_reds {
+    //! Red by design: each test asserts a contract the CHANGELOG documents
+    //! and fails until its open review finding is fixed.
+
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{RT, parse_command_tokens};
+
+    fn tokens(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| String::from(*word)).collect()
+    }
+
+    #[allow(dead_code)]
+    fn offline_client() -> LightClient {
+        RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ))
+    }
+
+    /// HYPOTHESIS: a malformed one-shot send fails at the parse, so no
+    /// wallet work can begin on a mistyped amount.
+    #[test]
+    fn a_non_numeric_send_amount_refuses_at_the_parse() {
+        assert!(
+            parse_command_tokens(&tokens(&["send", "zs1exampleaddress", "one-hundred"])).is_err(),
+            "a non-numeric amount must be a parse error, not a body error"
+        );
+    }
+
+    /// HYPOTHESIS: a session flag written after `messages` is a usage
+    /// error, as the CHANGELOG's flag-ordering rule promises.
+    #[test]
+    fn a_session_flag_after_messages_refuses_at_the_parse() {
+        assert!(
+            parse_command_tokens(&tokens(&["messages", "--nosync"])).is_err(),
+            "a post-command session flag must be refused, never read as a memo filter"
+        );
+    }
+
+    /// HYPOTHESIS: in a build without the nym feature, a nym invocation
+    /// with arguments explains the feature is absent instead of grading
+    /// the arguments for a transport that was never compiled.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn nym_arguments_meet_the_absent_feature_not_the_grammar() {
+        use super::super::{CommandError, dispatch_parsed};
+        let rendered = match parse_command_tokens(&tokens(&["nym", "probe", "http://x.com"]))
+            .map_err(CommandError::NotYetTyped)
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
+        {
+            Ok(output) => output,
+            Err(error) => error.to_string(),
+        };
+        assert!(rendered.contains("no Nym mixnet support"), "{rendered}");
     }
 }
