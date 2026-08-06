@@ -1022,12 +1022,12 @@ impl LightClient {
                     return Err(crate::nym::MixnetNotReady::Unattached.into());
                 }
             };
-        if let Some(uri) = &target {
-            if !crate::nym::probe::probe_eligible(uri) {
-                return Err(
-                    crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
-                );
-            }
+        if let Some(uri) = &target
+            && !crate::nym::probe::probe_eligible(uri)
+        {
+            return Err(
+                crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+            );
         }
         let targets: Vec<http::Uri> = target
             .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
