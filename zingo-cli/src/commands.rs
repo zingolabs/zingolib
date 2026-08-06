@@ -3,10 +3,12 @@
 //! Every command is one variant of [`CliCommand`], the clap derive
 //! grammar: its name is minted from the variant identifier, its help texts
 //! are its `about` and `long_about`, and its arguments parse into typed
-//! payloads before any body runs. The sync world crosses into async
-//! exactly once, at [`do_user_command`] (ADR 0030), and a failure leaves a
-//! command only as a [`CommandError`], never as error prose in the result
-//! channel (ADR 0031).
+//! payloads before any body runs. A command is parsed once, as early as
+//! the process can parse it, and travels to [`dispatch_parsed`] as a
+//! [`CliCommand`]; the sync world crosses into async at the two audited
+//! seams in the crate root, the command loop and startup (ADR 0030). A
+//! failure leaves a command only as a [`CommandError`], never as error
+//! prose in the result channel (ADR 0031).
 
 mod error;
 #[cfg(test)]
@@ -463,7 +465,7 @@ async fn new_taddress_allow_gap(lightclient: &mut LightClient) -> Result<String,
 /// The one optional argument of `notes` and `coins`: `all`, widening the
 /// listing to the spent outputs.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-enum OutputScope {
+pub(crate) enum OutputScope {
     All,
 }
 
@@ -577,8 +579,8 @@ async fn rescan(lightclient: &mut LightClient) -> Result<String, CommandError> {
 
 /// A parsed `save` command. Arguments parse completely into this enum,
 /// at the clap derive grammar, before any wallet access.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum SaveSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SaveSubCommand {
     Run,
     Check,
     Shutdown,
@@ -651,9 +653,9 @@ async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, Comma
 /// A parsed `settings` command: which setting to write, and its value.
 /// Absent, the command reads the settings out instead. The grammar owns
 /// every value, so a malformed one refuses before the wallet lock is taken.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 #[command(rename_all = "snake_case")]
-enum SettingsSubCommand {
+pub(crate) enum SettingsSubCommand {
     Performance {
         #[arg(value_enum)]
         level: PerformanceLevelArg,
@@ -666,7 +668,7 @@ enum SettingsSubCommand {
 /// The sync performance levels as a clap grammar. [`PerformanceLevel`] is
 /// pepper-sync's, so the CLI mints the value names and converts.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-enum PerformanceLevelArg {
+pub(crate) enum PerformanceLevelArg {
     Low,
     Medium,
     High,
@@ -758,8 +760,8 @@ async fn spendable_balance(lightclient: &mut LightClient) -> Result<String, Comm
 
 /// A parsed `sync` command. Arguments parse completely into this enum,
 /// at the clap derive grammar, before any wallet access.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum SyncSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SyncSubCommand {
     Run,
     Pause,
     Stop,
@@ -1118,8 +1120,8 @@ pub enum NymCommandError {
 /// A parsed `nym` command. Arguments parse completely into this enum,
 /// at the clap derive grammar, before any wallet access.
 #[cfg(feature = "nym")]
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum NymSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NymSubCommand {
     Status,
     On {
         path: Option<String>,
@@ -1429,8 +1431,8 @@ pub enum MigrationCommandError {
 
 /// A parsed migration command. Arguments parse completely into this
 /// enum, at the clap derive grammar, before any wallet access.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum MigrationSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MigrationSubCommand {
     Plan,
     Start {
         #[arg(value_parser = parse_plan_hash)]
@@ -1700,15 +1702,15 @@ async fn run_migration(
 }
 
 /// A parsed `drain` sub-command, at the clap derive grammar.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum DrainSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum DrainSubCommand {
     Plan,
     Now,
 }
 
 /// A parsed `split` sub-command, at the clap derive grammar.
-#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
-enum SplitSubCommand {
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SplitSubCommand {
     Plan,
     Now,
 }
@@ -1862,9 +1864,9 @@ const NYM_LONG_ABOUT: &str = indoc! {r"
 /// (ADR 0030). Each name is minted from its variant identifier, and `help`
 /// renders its listing from this grammar's clap model, so declaration
 /// order is display order.
-#[derive(clap::Subcommand, Debug)]
+#[derive(clap::Subcommand, Clone, Debug, PartialEq)]
 #[command(rename_all = "snake_case")]
-enum CliCommand {
+pub(crate) enum CliCommand {
     #[command(
         about = "List unified addresses in the wallet.",
         long_about = indoc! {r"
@@ -2320,9 +2322,10 @@ enum CliCommand {
     )]
     Quickshield,
     #[command(
+        alias = "exit",
         about = "Quit the light client, saving state to disk.",
         long_about = indoc! {r"
-            Quit the light client, saving state to disk.
+            Quit the light client, saving state to disk. `exit` is an alias.
 
             Usage:
             quit
@@ -2658,20 +2661,25 @@ pub fn format_help(command: Option<&str>) -> String {
     }
 }
 
-/// Dispatches a user command by parsing it with [`CommandLine`], exposing
-/// the typed success/failure crossing. A name the grammar does not know
-/// and the REPL-owned `servers` command return typed errors (ADR 0031).
-pub async fn do_user_command_result(
-    cmd: &str,
-    args: &[&str],
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
+/// Parses one command line into a [`CliCommand`], rendering a refusal as
+/// clap prints it. The REPL parses each line here, so a malformed line
+/// never reaches the command loop.
+pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, String> {
     use clap::Parser as _;
 
-    let line =
-        std::iter::once(cmd.to_ascii_lowercase()).chain(args.iter().map(|arg| (*arg).to_string()));
-    let CommandLine { command } = CommandLine::try_parse_from(line)
-        .map_err(|error| CommandError::NotYetTyped(error.to_string()))?;
+    CommandLine::try_parse_from(tokens)
+        .map(|CommandLine { command }| command)
+        .map_err(|error| error.to_string())
+}
+
+/// Dispatches an already-parsed command against the wallet: the exhaustive
+/// match every frontend reaches, whether it parsed its command at the REPL,
+/// at the process's own argument parse, or from a string. The REPL-owned
+/// `servers` command returns a typed error (ADR 0031).
+pub(crate) async fn dispatch_parsed(
+    command: CliCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, CommandError> {
     match command {
         CliCommand::Addresses => addresses(lightclient).await,
         CliCommand::Balance => balance(lightclient).await,
@@ -2730,14 +2738,22 @@ pub async fn do_user_command_result(
     }
 }
 
-/// The crate's single sync-to-async dispatch seam (ADR 0030): string
-/// frontends call this, and the one `block_on` below is the only place
-/// command execution crosses from sync into async.
-#[allow(clippy::disallowed_methods)]
-pub fn do_user_command(
+/// Dispatches a user command given as a name and string arguments: the
+/// string frontend over [`parse_command_tokens`] and [`dispatch_parsed`].
+/// A name the grammar does not know refuses here, before any wallet
+/// access, as a typed error (ADR 0031). No in-process caller remains, now
+/// that every channel carries a parsed command; this surface serves a
+/// frontend that holds only strings, and the offline-contract tests drive
+/// it.
+#[allow(dead_code)]
+pub async fn do_user_command_result(
     cmd: &str,
     args: &[&str],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    RT.block_on(do_user_command_result(cmd, args, lightclient))
+    let tokens: Vec<String> = std::iter::once(cmd.to_ascii_lowercase())
+        .chain(args.iter().map(|arg| (*arg).to_string()))
+        .collect();
+    let command = parse_command_tokens(&tokens).map_err(CommandError::NotYetTyped)?;
+    dispatch_parsed(command, lightclient).await
 }

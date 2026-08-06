@@ -10,6 +10,7 @@ fn parse(args: &[&str]) -> clap::ArgMatches {
 
 mod mode_of_operation {
     use super::*;
+    use crate::commands::CliCommand;
     use crate::{ModeOfOperation, get_mode_of_operation};
 
     fn assert_interactive(args: &[&str]) {
@@ -20,14 +21,11 @@ mod mode_of_operation {
         );
     }
 
-    fn assert_command(args: &[&str], expected_name: &str, expected_args: &[&str]) {
+    fn assert_command(args: &[&str], expected: CliCommand) {
         let matches = parse(args);
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command {
-                name: expected_name.to_string(),
-                args: expected_args.iter().map(|s| s.to_string()).collect(),
-            }
+            ModeOfOperation::Command { command: expected }
         );
     }
 
@@ -38,7 +36,7 @@ mod mode_of_operation {
 
     #[test]
     fn command_without_extra_args() {
-        assert_command(&[examples::BIN_NAME, "balance"], "balance", &[]);
+        assert_command(&[examples::BIN_NAME, "balance"], CliCommand::Balance);
     }
 
     #[test]
@@ -50,8 +48,12 @@ mod mode_of_operation {
                 examples::SAPLING_ADDRESS,
                 examples::AMOUNT_ZATOSHIS,
             ],
-            "send",
-            &[examples::SAPLING_ADDRESS, examples::AMOUNT_ZATOSHIS],
+            CliCommand::Send {
+                args: vec![
+                    examples::SAPLING_ADDRESS.to_string(),
+                    examples::AMOUNT_ZATOSHIS.to_string(),
+                ],
+            },
         );
     }
 
@@ -60,7 +62,10 @@ mod mode_of_operation {
         // `help` is handled by `parse_args_or_exit_for_help` in main.rs before
         // `get_mode_of_operation` is called, but if it were passed through
         // it would produce a normal Command variant.
-        assert_command(&[examples::BIN_NAME, "help"], "help", &[]);
+        assert_command(
+            &[examples::BIN_NAME, "help"],
+            CliCommand::Help { command: None },
+        );
     }
 
     #[test]
@@ -70,15 +75,20 @@ mod mode_of_operation {
 
     #[test]
     fn flags_do_not_affect_mode_command() {
-        assert_command(&[examples::BIN_NAME, "--nosync", "balance"], "balance", &[]);
+        assert_command(
+            &[examples::BIN_NAME, "--nosync", "balance"],
+            CliCommand::Balance,
+        );
     }
 
     mod commands {
         use super::*;
+        use crate::commands::{SaveSubCommand, SyncSubCommand};
+        use zingolib::wallet::keys::unified::ReceiverSelection;
 
-        /// Assert that a command with no extra args parses correctly.
-        fn assert_no_arg_command(name: &str) {
-            assert_command(&[examples::BIN_NAME, name], name, &[]);
+        /// Assert that a command with no arguments parses to its variant.
+        fn assert_no_arg_command(name: &str, expected: CliCommand) {
+            assert_command(&[examples::BIN_NAME, name], expected);
         }
 
         #[test]
@@ -91,12 +101,13 @@ mod mode_of_operation {
                     examples::AMOUNT_ZATOSHIS,
                     examples::MEMO,
                 ],
-                "send",
-                &[
-                    examples::SAPLING_ADDRESS,
-                    examples::AMOUNT_ZATOSHIS,
-                    examples::MEMO,
-                ],
+                CliCommand::Send {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::AMOUNT_ZATOSHIS.to_string(),
+                        examples::MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -109,8 +120,12 @@ mod mode_of_operation {
                     examples::SAPLING_ADDRESS,
                     examples::SEND_ALL_MEMO,
                 ],
-                "send_all",
-                &[examples::SAPLING_ADDRESS, examples::SEND_ALL_MEMO],
+                CliCommand::SendAll {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::SEND_ALL_MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -124,12 +139,13 @@ mod mode_of_operation {
                     examples::AMOUNT_ZATOSHIS,
                     examples::MEMO,
                 ],
-                "quicksend",
-                &[
-                    examples::SAPLING_ADDRESS,
-                    examples::AMOUNT_ZATOSHIS,
-                    examples::MEMO,
-                ],
+                CliCommand::Quicksend {
+                    args: vec![
+                        examples::SAPLING_ADDRESS.to_string(),
+                        examples::AMOUNT_ZATOSHIS.to_string(),
+                        examples::MEMO.to_string(),
+                    ],
+                },
             );
         }
 
@@ -141,8 +157,9 @@ mod mode_of_operation {
                     "parse_address",
                     examples::TRANSPARENT_ADDRESS,
                 ],
-                "parse_address",
-                &[examples::TRANSPARENT_ADDRESS],
+                CliCommand::ParseAddress {
+                    address: examples::TRANSPARENT_ADDRESS.to_string(),
+                },
             );
         }
 
@@ -154,8 +171,9 @@ mod mode_of_operation {
                     "parse_viewkey",
                     examples::UNIFIED_VIEWING_KEY,
                 ],
-                "parse_viewkey",
-                &[examples::UNIFIED_VIEWING_KEY],
+                CliCommand::ParseViewkey {
+                    viewkey: examples::UNIFIED_VIEWING_KEY.to_string(),
+                },
             );
         }
 
@@ -163,137 +181,173 @@ mod mode_of_operation {
         fn change_server() {
             assert_command(
                 &[examples::BIN_NAME, "change_server", examples::SERVER_URI],
-                "change_server",
-                &[examples::SERVER_URI],
+                CliCommand::ChangeServer {
+                    uri: Some(examples::SERVER_URI.parse().expect("a valid example uri")),
+                },
             );
         }
 
         #[test]
         fn sync() {
-            assert_command(&[examples::BIN_NAME, "sync", "run"], "sync", &["run"]);
+            assert_command(
+                &[examples::BIN_NAME, "sync", "run"],
+                CliCommand::Sync {
+                    sub: SyncSubCommand::Run,
+                },
+            );
         }
 
         #[test]
         fn new_address() {
             assert_command(
                 &[examples::BIN_NAME, "new_address", "o"],
-                "new_address",
-                &["o"],
+                CliCommand::NewAddress {
+                    receivers: ReceiverSelection {
+                        orchard: true,
+                        sapling: false,
+                    },
+                },
             );
         }
 
         #[test]
         fn balance() {
-            assert_no_arg_command("balance");
+            assert_no_arg_command("balance", CliCommand::Balance);
         }
 
         #[test]
         fn confirm() {
-            assert_no_arg_command("confirm");
+            assert_no_arg_command("confirm", CliCommand::Confirm);
         }
 
         #[test]
         fn calculate() {
-            assert_no_arg_command("calculate");
+            assert_no_arg_command("calculate", CliCommand::Calculate);
         }
 
         #[test]
         fn transmit() {
-            assert_no_arg_command("transmit");
+            assert_no_arg_command("transmit", CliCommand::Transmit { txids: vec![] });
         }
 
         #[test]
         fn transmit_with_txids() {
+            let txid = zingolib::utils::conversion::txid_from_hex_encoded_str(examples::TXID)
+                .expect("a valid example txid");
             assert_command(
                 &[examples::BIN_NAME, "transmit", examples::TXID],
-                "transmit",
-                &[examples::TXID],
+                CliCommand::Transmit { txids: vec![txid] },
             );
         }
 
         #[test]
         fn shield() {
-            assert_no_arg_command("shield");
+            assert_no_arg_command("shield", CliCommand::Shield);
         }
 
         #[test]
         fn height() {
-            assert_no_arg_command("height");
+            assert_no_arg_command("height", CliCommand::Height);
         }
 
         #[test]
         fn info() {
-            assert_no_arg_command("info");
+            assert_no_arg_command("info", CliCommand::Info);
         }
 
         #[test]
         fn addresses() {
-            assert_no_arg_command("addresses");
+            assert_no_arg_command("addresses", CliCommand::Addresses);
         }
 
+        /// `save` names its sub-command: the grammar requires one, so the
+        /// process's own argument parse refuses a bare `save`.
         #[test]
         fn save() {
-            assert_no_arg_command("save");
+            assert_command(
+                &[examples::BIN_NAME, "save", "run"],
+                CliCommand::Save {
+                    sub: SaveSubCommand::Run,
+                },
+            );
         }
 
         #[test]
         fn quit() {
-            assert_no_arg_command("quit");
+            assert_no_arg_command("quit", CliCommand::Quit);
+        }
+
+        /// `exit` is an alias of `quit`, so it parses to the same variant
+        /// and the one-shot flow quits cleanly instead of erroring.
+        #[test]
+        fn exit_is_an_alias_of_quit() {
+            assert_no_arg_command("exit", CliCommand::Quit);
         }
 
         #[test]
         fn notes() {
-            assert_no_arg_command("notes");
+            assert_no_arg_command("notes", CliCommand::Notes { scope: None });
         }
 
         #[test]
         fn version() {
-            assert_no_arg_command("version");
+            assert_no_arg_command("version", CliCommand::Version);
         }
 
         #[test]
         fn rescan() {
-            assert_no_arg_command("rescan");
+            assert_no_arg_command("rescan", CliCommand::Rescan);
         }
 
         #[test]
         fn export_ufvk() {
-            assert_no_arg_command("export_ufvk");
+            assert_no_arg_command("export_ufvk", CliCommand::ExportUfvk);
         }
 
         #[test]
         fn settings() {
-            assert_no_arg_command("settings");
+            assert_no_arg_command("settings", CliCommand::Settings { sub: None });
         }
 
         #[test]
         fn value_transfers() {
-            assert_no_arg_command("value_transfers");
+            assert_no_arg_command("value_transfers", CliCommand::ValueTransfers);
         }
 
         #[test]
         fn transactions() {
-            assert_no_arg_command("transactions");
+            assert_no_arg_command("transactions", CliCommand::Transactions);
         }
 
         #[test]
         fn quickshield() {
-            assert_no_arg_command("quickshield");
+            assert_no_arg_command("quickshield", CliCommand::Quickshield);
         }
 
         #[test]
         fn wallet_kind() {
-            assert_no_arg_command("wallet_kind");
+            assert_no_arg_command("wallet_kind", CliCommand::WalletKind);
         }
 
         #[test]
         fn birthday() {
-            assert_no_arg_command("birthday");
+            assert_no_arg_command("birthday", CliCommand::Birthday);
         }
 
         #[test]
         fn delete() {
-            assert_no_arg_command("delete");
+            assert_no_arg_command("delete", CliCommand::Delete);
+        }
+
+        /// A command the grammar does not know now refuses at the process's
+        /// own argument parse, before any wallet work begins.
+        #[test]
+        fn an_unknown_command_refuses_at_the_argument_parse() {
+            assert!(
+                build_clap_app()
+                    .try_get_matches_from([examples::BIN_NAME, "nonesuch"])
+                    .is_err()
+            );
         }
     }
 }
@@ -740,8 +794,7 @@ mod config_template {
             assert_eq!(
                 config.mode,
                 ModeOfOperation::Command {
-                    name: "balance".to_string(),
-                    args: vec![],
+                    command: crate::commands::CliCommand::Balance,
                 }
             );
         }
@@ -909,12 +962,16 @@ mod offline_mode_pin {
     //! Offline session may never configure an Indexer. The command-surface
     //! half lives in `commands::offline_contract`.
 
+    use crate::commands::CliCommand;
     use crate::{CommunicationMode, offline_mode_refusal};
 
     #[test]
     fn offline_mode_refuses_change_server_before_dispatch() {
-        let refusal = offline_mode_refusal(CommunicationMode::Offline, "change_server")
-            .expect("an Offline session must refuse change_server");
+        let refusal = offline_mode_refusal(
+            CommunicationMode::Offline,
+            &CliCommand::ChangeServer { uri: None },
+        )
+        .expect("an Offline session must refuse change_server");
         assert_eq!(
             refusal,
             "Error: this session is in Offline mode; no Indexer may be configured. \
@@ -925,12 +982,15 @@ mod offline_mode_pin {
     #[test]
     fn online_mode_and_other_commands_pass_the_pin() {
         assert_eq!(
-            offline_mode_refusal(CommunicationMode::Online, "change_server"),
+            offline_mode_refusal(
+                CommunicationMode::Online,
+                &CliCommand::ChangeServer { uri: None }
+            ),
             None,
             "an Online session may change servers"
         );
         assert_eq!(
-            offline_mode_refusal(CommunicationMode::Offline, "balance"),
+            offline_mode_refusal(CommunicationMode::Offline, &CliCommand::Balance),
             None,
             "the pin refuses exactly one command, never the local surface"
         );
