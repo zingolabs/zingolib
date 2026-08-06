@@ -1128,12 +1128,13 @@ pub(crate) enum NymSubCommand {
     History,
 }
 
-/// https-only: the mixnet leg refuses a plaintext target at dial time,
-/// so the grammar rejects it up front with a clear message.
+/// https-only in a mixnet build, so the grammar refuses a plaintext target
+/// up front, while a build without the feature defers to the typed refusal.
 fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
     let uri = raw
         .parse::<http::Uri>()
         .map_err(|_| "not a valid indexer uri to probe".to_string())?;
+    #[cfg(feature = "nym")]
     if uri.scheme_str() != Some("https") {
         return Err("indexers must be https".to_string());
     }
@@ -2040,10 +2041,7 @@ pub(crate) enum CliCommand {
             reply-to address.
         "}
     )]
-    Messages {
-        #[arg(allow_hyphen_values = true)]
-        filter: Option<String>,
-    },
+    Messages { filter: Option<String> },
     #[command(
         about = "Migrate all Orchard funds to the Ironwood pool in one interactive run.",
         long_about = indoc! {r"
@@ -2527,6 +2525,22 @@ impl CliCommand {
             | CliCommand::WalletKind => true,
         }
     }
+
+    /// Runs the send family's deferred string grammar eagerly, so both
+    /// parse boundaries refuse a malformed payload before any wallet work.
+    pub(crate) fn validate_deferred_grammar(&self) -> Result<(), String> {
+        match self {
+            CliCommand::Send { args } | CliCommand::Quicksend { args } => {
+                utils::parse_send_args(&as_strs(args)).map(|_| ())
+            }
+            CliCommand::SendAll { args } => utils::parse_send_all_args(&as_strs(args)).map(|_| ()),
+            CliCommand::MaxSendValue { args } => {
+                utils::parse_max_send_value_args(&as_strs(args)).map(|_| ())
+            }
+            _ => return Ok(()),
+        }
+        .map_err(|e| usage(&self.name(), e).to_string())
+    }
 }
 
 /// The whole command line one dispatch parses: a command name and its
@@ -2603,6 +2617,7 @@ pub(crate) fn parse_command_tokens(tokens: &[String]) -> Result<CliCommand, Stri
     CommandLine::try_parse_from(tokens)
         .map(|CommandLine { command }| command)
         .map_err(|error| error.to_string())
+        .and_then(|command| command.validate_deferred_grammar().map(|()| command))
 }
 
 /// Dispatches an already-parsed command against the wallet: the exhaustive

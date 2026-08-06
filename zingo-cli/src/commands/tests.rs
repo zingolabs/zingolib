@@ -596,15 +596,17 @@ mod typed_argument_parsing {
         assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
     }
 
-    /// HYPOTHESIS: a memo filter may begin with a dash.
+    /// HYPOTHESIS: a memo filter beginning with a dash rides the standard
+    /// `--` escape, while a bare flag-shaped token refuses.
     #[test]
-    fn a_dash_leading_messages_filter_parses() {
+    fn a_dash_leading_messages_filter_rides_the_escape() {
         assert_eq!(
-            parse(&["messages", "-1ZEC"]).expect("a dash-leading filter parses"),
+            parse(&["messages", "--", "-1ZEC"]).expect("an escaped dash-leading filter parses"),
             CliCommand::Messages {
                 filter: Some("-1ZEC".to_string()),
             }
         );
+        assert!(parse(&["messages", "-1ZEC"]).is_err());
     }
 
     /// HYPOTHESIS: every advertised `nym` subcommand parses in every build,
@@ -1489,9 +1491,10 @@ mod pure_helpers {
 }
 
 #[cfg(test)]
-mod open_finding_reds {
-    //! Red by design: each test asserts a contract the CHANGELOG documents
-    //! and fails until its open review finding is fixed.
+mod finding_pins {
+    //! Pins the contracts the review findings demanded, kept green by the
+    //! fixes that closed them.
+    #![allow(clippy::disallowed_methods)]
 
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;

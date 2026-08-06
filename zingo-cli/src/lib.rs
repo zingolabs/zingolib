@@ -1121,6 +1121,12 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
     let mode = get_mode_of_operation(&matches);
+    if let ModeOfOperation::Command { command } = &mode
+        && let Err(refusal) = command.validate_deferred_grammar()
+    {
+        eprintln!("{refusal}");
+        return Ok(ExitCode::from(2));
+    }
     let communication_mode = get_communication_mode(&matches)?;
     let cli_config =
         ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;

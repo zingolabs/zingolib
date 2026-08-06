@@ -45,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   balance` binds the flag to the session, and a flag written after the
   command is a usage error with exit code 2, where the old parser accepted
   session flags in any position. A send-family memo beginning with a dash
-  needs the standard escape: `send <address> <zatoshis> -- "-memo"`.
+  needs the standard escape: `send <address> <zatoshis> -- "-memo"`, and a
+  `messages` filter beginning with a dash rides the same escape.
 - `zingo-cli --help` now lists every wallet command, and `help <command>`
   appends clap's generated usage and options to the command's description.
 - `exit` is a clean alias of `quit`, where it previously printed an
