@@ -586,9 +586,18 @@ mod config_template {
         ConfigTemplate::fill(mode, communication_mode, matches)
     }
 
+    /// Helper: build the ZingoConfig for a filled template. The builder is
+    /// async, so the tests hold their own crossing into the runtime.
+    #[allow(clippy::disallowed_methods)]
+    fn build(filled: &ConfigTemplate) -> zingolib::config::ClientConfig {
+        crate::commands::RT
+            .block_on(build_zingo_config(filled))
+            .unwrap()
+    }
+
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
     fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
-        build_zingo_config(&fill(args).unwrap()).unwrap()
+        build(&fill(args).unwrap())
     }
 
     mod offline {
@@ -636,7 +645,7 @@ mod config_template {
                 data_dir.to_str().unwrap(),
             ])
             .unwrap();
-            let config = build_zingo_config(&filled).unwrap();
+            let config = build(&filled);
             assert!(matches!(
                 config.wallet_config(),
                 zingolib::config::WalletConfig::NewSeed { chain_height, .. }
@@ -658,7 +667,7 @@ mod config_template {
                 data_dir.to_str().unwrap(),
             ])
             .unwrap();
-            let config = build_zingo_config(&filled).unwrap();
+            let config = build(&filled);
             assert!(matches!(
                 config.wallet_config(),
                 zingolib::config::WalletConfig::NewSeed { chain_height, .. }
