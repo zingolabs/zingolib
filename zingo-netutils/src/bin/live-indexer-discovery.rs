@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use zingo_netutils::ensure_default_crypto_provider;
 use zingo_netutils::get_lightd_info_via_socks5;
 use zingo_netutils::indexers::IndexerChain;
-use zingo_netutils::pool_discovery::{DiscoveryFailureKind, discover_pool};
+use zingo_netutils::live_indexer_discovery::{DiscoveryFailureKind, discover_live_indexers};
 use zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND;
 
 #[tokio::main]
@@ -47,7 +47,7 @@ async fn main() -> ExitCode {
         .expect("the clock sits after the epoch")
         .as_nanos() as u64;
 
-    let report = match discover_pool(IndexerChain::Main, budget, seed, |line| {
+    let report = match discover_live_indexers(IndexerChain::Main, budget, seed, |line| {
         println!("  … {line}");
     })
     .await

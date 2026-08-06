@@ -1115,15 +1115,10 @@ pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
 #[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkCommandError {
-    /// Always carries [`LightClientError::Offline`], zingolib's single
-    /// minted offline-refusal string: `network probe` would emit traffic,
-    /// which an Offline session forbids. Unlike `network on` — the consent
-    /// act that switches the session to Online Mode (ADR 0026) — probing
-    /// grants nothing.
-    ///
-    /// [`LightClientError::Offline`]: zingolib::lightclient::error::LightClientError::Offline
+    /// `network probe` runs only over the mixnet route; this carries the
+    /// typed refusal naming the transport state and its remedy.
     #[error(transparent)]
-    Offline(zingolib::lightclient::error::LightClientError),
+    Probe(#[from] zingolib::lightclient::error::LightClientError),
     /// The `network on` consent act could not resolve any indexer URI while
     /// switching the session to Online Mode; the session stays offline.
     #[error("no indexer could be resolved for going online: {0}")]
@@ -1163,7 +1158,7 @@ pub(crate) enum NetworkSubCommand {
         about = "Disconnect every network capability of the session, keeping any stored consent"
     )]
     Off,
-    #[command(about = "Compare GetLightdInfo over the clearnet and mixnet routes")]
+    #[command(about = "Probe indexer liveness over the mixnet route")]
     Probe {
         #[arg(value_name = "indexer_uri", value_parser = parse_probe_target)]
         target: Option<http::Uri>,
@@ -1172,15 +1167,16 @@ pub(crate) enum NetworkSubCommand {
     History,
 }
 
-/// https-only in a mixnet build, so the grammar refuses a plaintext target
-/// up front, while a build without the feature defers to the typed refusal.
+/// https on port 443 only in a mixnet build — the one endpoint shape the
+/// exit policy carries — so the grammar refuses anything else up front,
+/// while a build without the feature defers to the typed refusal.
 fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
     let uri = raw
         .parse::<http::Uri>()
         .map_err(|_| "not a valid indexer uri to probe".to_string())?;
     #[cfg(feature = "nym")]
-    if uri.scheme_str() != Some("https") {
-        return Err("indexers must be https".to_string());
+    if !zingolib::nym::probe::probe_eligible(&uri) {
+        return Err("probe targets must be https on port 443".to_string());
     }
     Ok(uri)
 }
@@ -1188,11 +1184,9 @@ fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
 #[cfg(feature = "nym")]
 use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 
-/// Render one paired probe: the two legs side by side, so a mixnet-specific
-/// failure (clearnet ok, mixnet failed) reads at a glance. Pure, pinned by
-/// unit tests.
+/// Render one mixnet liveness probe. Pure, pinned by unit tests.
 #[cfg(feature = "nym")]
-fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
+fn render_mixnet_probe(probe: &zingolib::nym::probe::MixnetProbe) -> String {
     let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
         Ok(success) => format!(
             "ok in {}ms: chain {}, height {}",
@@ -1200,16 +1194,7 @@ fn render_paired_probe(probe: &zingolib::nym::probe::PairedProbe) -> String {
         ),
         Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
-    let mixnet = match &probe.mixnet {
-        Some(mixnet_leg) => leg(mixnet_leg),
-        None => "skipped (mixnet proxy not ready)".to_string(),
-    };
-    format!(
-        "{}\n  clearnet: {}\n  mixnet:   {}",
-        probe.host,
-        leg(&probe.clearnet),
-        mixnet
-    )
+    format!("{}\n  mixnet:   {}", probe.host, leg(&probe.leg))
 }
 
 /// Renders the accumulated record for `network history` when the indexer diary is
@@ -1376,8 +1361,28 @@ fn render_status_with_disclaimer(
 #[cfg(feature = "nym")]
 #[derive(Debug, PartialEq, Eq)]
 enum BootstrapOutcome {
-    Ready,
+    Ready { exits: Vec<String> },
     Failed { report: String },
+}
+
+/// Renders the bound Exit Nodes for the `network on` success report,
+/// shortening each identity for the terminal.
+#[cfg(feature = "nym")]
+fn render_exit_nodes(exits: &[String]) -> String {
+    fn shorten(identity: &str) -> String {
+        if identity.chars().count() > 15 {
+            let head: String = identity.chars().take(12).collect();
+            format!("{head}…")
+        } else {
+            identity.to_string()
+        }
+    }
+    let named: Vec<String> = exits.iter().map(|exit| shorten(exit)).collect();
+    match named.len() {
+        0 => String::new(),
+        1 => format!(" Exit Node bound: {}.", named[0]),
+        _ => format!(" Exit Nodes bound: {}.", named.join(", ")),
+    }
 }
 
 /// Waits on the status subscription until the bootstrap reaches a terminal
@@ -1391,7 +1396,11 @@ async fn await_bootstrap_outcome(
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready => return BootstrapOutcome::Ready,
+            MixnetMode::Ready => {
+                return BootstrapOutcome::Ready {
+                    exits: status.exits.clone(),
+                };
+            }
             MixnetMode::Died => {
                 let cause = status
                     .death
@@ -1475,9 +1484,10 @@ async fn network_command(
             )
             .await;
             let readiness = match outcome {
-                Ok(BootstrapOutcome::Ready) => format!(
+                Ok(BootstrapOutcome::Ready { exits }) => format!(
                     "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
-                     price-fetch over the mixnet."
+                     price-fetch over the mixnet.{}",
+                    render_exit_nodes(&exits)
                 ),
                 Ok(BootstrapOutcome::Failed { report }) => {
                     return Err(NetworkCommandError::Bootstrap { report });
@@ -1511,19 +1521,14 @@ async fn network_command(
             )
         }
         NetworkSubCommand::Probe { target } => {
-            // Probing emits network traffic and, unlike `network on`,
-            // grants no consent; an Offline session refuses.
-            if lightclient.indexer_uri().is_none() {
-                return Err(NetworkCommandError::Offline(
-                    zingolib::lightclient::error::LightClientError::Offline,
-                ));
-            }
+            // Probing runs only over the mixnet route; the typed refusal
+            // below names the transport state and its remedy.
             let probes = lightclient
                 .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
-                .await;
+                .await?;
             Ok(probes
                 .iter()
-                .map(render_paired_probe)
+                .map(render_mixnet_probe)
                 .collect::<Vec<_>>()
                 .join("\n"))
         }
@@ -2274,11 +2279,10 @@ pub(crate) enum CliCommand {
             $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
             `off` disconnects every network capability of the session, keeping
             any stored standing consent; `network on` re-consents (ADR 0032).
-            `probe` runs GetLightdInfo over both routes side by side to tell
-            whether a failure is mixnet-specific, and its clearnet leg uses
-            your real IP; an offline session refuses it. `history` shows
-            per-indexer attempts across sessions, and needs the nym-diary
-            feature plus --indexer-diary.
+            `probe` runs GetLightdInfo over the mixnet route to establish an
+            indexer's liveness; it requires the mixnet and touches no
+            clearnet endpoint. `history` shows per-indexer attempts across
+            sessions, and needs the nym-diary feature plus --indexer-diary.
         "}
     )]
     Network {

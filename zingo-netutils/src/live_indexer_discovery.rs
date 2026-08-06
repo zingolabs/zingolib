@@ -91,7 +91,7 @@ pub enum DiscoveryError {
 /// Budget; `None` is full width. `seed` fixes the exit sampling, so a
 /// caller supplies entropy (production hashes the clock, tests pass a
 /// constant).
-pub async fn discover_pool(
+pub async fn discover_live_indexers(
     chain: IndexerChain,
     budget: Option<usize>,
     seed: u64,

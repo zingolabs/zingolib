@@ -37,7 +37,8 @@
 use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
-    NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
+    NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
+    get_lightd_info_via_socks5,
     indexers::MIXNET_HEALTH_INDEXER,
     time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
@@ -67,8 +68,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // announced.
     health_gate(&mut proxy).await?;
 
-    // Announce the address on a single line and flush, so the parent sees it
-    // the moment the mixnet is verified reachable.
+    // Announce the bound Exit Node before the address, so the parent sees
+    // both the moment the mixnet is verified reachable.
+    println!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider());
     println!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr());
     std::io::stdout().flush()?;
 

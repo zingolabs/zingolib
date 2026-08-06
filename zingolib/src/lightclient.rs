@@ -872,6 +872,7 @@ impl LightClient {
             // None for the true slot states; the pinned address of a test
             // stand-in, whose Ready must not publish addressless.
             socks5_addr: self.mixnet_slot.socks5_addr(),
+            exits: self.mixnet_slot.exits(),
             bootstrap_detail: None,
             death: None,
         });
@@ -1012,17 +1013,34 @@ impl LightClient {
         &self,
         target: Option<http::Uri>,
         timeout: std::time::Duration,
-    ) -> Vec<crate::nym::probe::PairedProbe> {
-        let targets = target
+    ) -> Result<Vec<crate::nym::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
+    {
+        let socks5_addr =
+            match crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())? {
+                crate::nym::MixnetRoute::Mixnet(addr) => addr,
+                crate::nym::MixnetRoute::Clearnet => {
+                    return Err(crate::nym::MixnetNotReady::Unattached.into());
+                }
+            };
+        if let Some(uri) = &target {
+            if !crate::nym::probe::probe_eligible(uri) {
+                return Err(
+                    crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+                );
+            }
+        }
+        let targets: Vec<http::Uri> = target
             .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
                 vec![uri]
-            });
-        let socks5_addr = self.mixnet_socks5_addr();
+            })
+            .into_iter()
+            .filter(crate::nym::probe::probe_eligible)
+            .collect();
         let history = self.indexer_history.clone();
-        futures::future::join_all(targets.iter().map(|indexer| {
-            crate::nym::probe::probe_indexer(indexer, socks5_addr.as_deref(), timeout, &history)
+        Ok(futures::future::join_all(targets.iter().map(|indexer| {
+            crate::nym::probe::probe_indexer(indexer, &socks5_addr, timeout, &history)
         }))
-        .await
+        .await)
     }
 }
 

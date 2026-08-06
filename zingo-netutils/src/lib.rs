@@ -58,6 +58,10 @@ pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
 /// `NYM_STATUS=attempt 4/10: 2 in flight, 2 failed`.
 pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
 
+/// The stdout line prefix announcing the bound Exit Node identity, emitted
+/// before the address line so the ready snapshot carries it.
+pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
+
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
@@ -84,7 +88,7 @@ mod nym_proxy;
 pub use nym_proxy::NymProxy;
 
 #[cfg(feature = "nym")]
-pub mod pool_discovery;
+pub mod live_indexer_discovery;
 
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;

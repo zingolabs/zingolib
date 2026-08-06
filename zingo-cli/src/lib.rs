@@ -453,9 +453,15 @@ pub(crate) fn command_loop(
             // snapshot: `network on` may have granted consent mid-session,
             // and `network off` may have torn the session down to the
             // unconsented posture. A deliberate `--offline` never lifts.
+            // Consent shows as a configured Indexer or a non-Unattached
+            // mixnet slot, since a mixnet-only session binds no Indexer.
             let live_mode = match communication_mode {
                 CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
+                #[cfg(feature = "nym")]
+                _ if lightclient.mixnet_mode() != zingolib::nym::MixnetMode::Unattached => {
+                    CommunicationMode::Online
+                }
                 _ => CommunicationMode::UnconsentedOffline,
             };
             // `help` renders the live posture's surface: what a suppressed

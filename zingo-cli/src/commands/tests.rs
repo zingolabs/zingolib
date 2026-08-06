@@ -642,32 +642,43 @@ mod network_command_parsing {
             parse(&["probe", "http://zec.rocks:9067"]).is_err(),
             "a plaintext http target is refused: mixnet transmission is https-only"
         );
+        assert!(
+            parse(&["probe", "https://zec.rocks:9067"]).is_err(),
+            "an https target off port 443 is refused: the exit policy carries only 443"
+        );
         assert_eq!(
             parse(&["history"]).expect("history parses"),
             Some(NetworkSubCommand::History)
         );
     }
 
-    /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
-    /// legible at a glance: clearnet ok beside mixnet FAILED. Falsified if
-    /// either leg's outcome, timing, or the not-ready skip is dropped.
+    /// HYPOTHESIS: the mixnet-probe rendering carries the outcome, its
+    /// timing, and the typed failure's full text. Falsified if any of the
+    /// three is dropped.
     #[cfg(feature = "nym")]
     #[test]
-    fn paired_probe_renders_both_legs_side_by_side() {
+    fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
-        let tip = ProbeSuccess {
-            chain: "main".to_string(),
-            height: 3_420_400,
-        };
-        let mixnet_specific = PairedProbe {
-            host: "carover0.xyz".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip.clone()),
-                millis: 210,
+        let live = MixnetProbe {
+            host: "zec.rocks".to_string(),
+            leg: ProbeLeg {
+                outcome: Ok(ProbeSuccess {
+                    chain: "main".to_string(),
+                    height: 3_420_400,
+                }),
+                millis: 180,
             },
-            mixnet: Some(ProbeLeg {
+        };
+        assert_eq!(
+            render_mixnet_probe(&live),
+            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+        );
+
+        let dead = MixnetProbe {
+            host: "carover0.xyz".to_string(),
+            leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
                     target: "carover0.xyz".to_string(),
@@ -677,24 +688,11 @@ mod network_command_parsing {
                     ],
                 }),
                 millis: 20_000,
-            }),
-        };
-        assert_eq!(
-            render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
-        );
-
-        let proxy_not_ready = PairedProbe {
-            host: "zec.rocks".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip),
-                millis: 180,
             },
-            mixnet: None,
         };
         assert_eq!(
-            render_paired_probe(&proxy_not_ready),
-            "zec.rocks\n  clearnet: ok in 180ms: chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+            render_mixnet_probe(&dead),
+            "carover0.xyz\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
     }
 
@@ -857,26 +855,49 @@ mod bootstrap_wait {
         MixnetStatus {
             mode,
             socks5_addr: None,
+            exits: Vec::new(),
             bootstrap_detail: None,
             death: None,
         }
     }
 
     /// HYPOTHESIS: the wait resolves `Ready` when the subscription reaches
-    /// the ready mode, even from an initial unattached snapshot.
+    /// the ready mode, carrying the bound Exit Nodes, even from an initial
+    /// unattached snapshot.
     #[tokio::test]
-    async fn ready_resolves_the_wait() {
+    async fn ready_resolves_the_wait_carrying_the_exits() {
         let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
         tx.send(status(MixnetMode::Bootstrapping))
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Ready))
-            .expect("the waiter holds the receiver");
+        let mut ready = status(MixnetMode::Ready);
+        ready.exits = vec!["exit-alpha".to_string()];
+        tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
             waiter.await.expect("the waiter must not panic"),
-            BootstrapOutcome::Ready
+            BootstrapOutcome::Ready {
+                exits: vec!["exit-alpha".to_string()]
+            }
+        );
+    }
+
+    /// HYPOTHESIS: the success report names each bound Exit Node, shortened
+    /// for the terminal, and stays silent when none was announced.
+    #[test]
+    fn exit_nodes_render_shortened_by_count() {
+        assert_eq!(super::super::render_exit_nodes(&[]), "");
+        assert_eq!(
+            super::super::render_exit_nodes(&["short-exit".to_string()]),
+            " Exit Node bound: short-exit."
+        );
+        assert_eq!(
+            super::super::render_exit_nodes(&[
+                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".to_string(),
+                "short-exit".to_string(),
+            ]),
+            " Exit Nodes bound: AlphaBetaGam…, short-exit."
         );
     }
 
@@ -1348,12 +1369,18 @@ mod offline_contract {
             assert!(output.contains("unattached"), "{output}");
         }
 
-        /// `network probe` emits probe traffic and, unlike `network on`,
-        /// grants no consent: an Offline session refuses.
+        /// `network probe` runs only over the mixnet route: a session whose
+        /// mixnet is unattached refuses with the mixnet refusal, never by
+        /// falling back to a clearnet probe.
         #[cfg(feature = "nym")]
         #[test]
-        fn network_probe_refuses_offline() {
-            assert_refuses_offline_via_err(&mut offline_client(), "network", &["probe"]);
+        fn network_probe_refuses_without_the_mixnet() {
+            let error = exec(&mut offline_client(), "network", &["probe"])
+                .expect_err("probe must refuse without the mixnet");
+            assert!(
+                error.to_string().contains("the Nym mixnet is not enabled"),
+                "the refusal names the mixnet state: {error}"
+            );
         }
 
         #[test]

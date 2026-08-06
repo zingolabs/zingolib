@@ -85,7 +85,7 @@ name = "nym-proxy"
 required-features = ["nym"]
 
 [[bin]]
-name = "pool-discovery"
+name = "live-indexer-discovery"
 required-features = ["nym"]
 
 [dev-dependencies]

@@ -69,6 +69,7 @@ use crate::time::{
 pub struct NymProxy {
     client: Socks5MixnetClient,
     bind_port: u16,
+    exit_provider: String,
 }
 
 impl NymProxy {
@@ -201,7 +202,16 @@ impl NymProxy {
             .connect_to_mixnet_via_socks5()
             .await
             .map_err(|e| NymProxyError::Connect(Box::new(e)))?;
-        Ok(Self { client, bind_port })
+        Ok(Self {
+            client,
+            bind_port,
+            exit_provider: provider_mix_address.to_string(),
+        })
+    }
+
+    /// The Exit Node identity this transport bound.
+    pub fn exit_provider(&self) -> &str {
+        &self.exit_provider
     }
 
     /// The local SOCKS5 proxy address (e.g., `"127.0.0.1:43210"`).
