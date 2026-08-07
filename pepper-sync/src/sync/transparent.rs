@@ -110,8 +110,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
                     .keys()
-                    .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
-                    .next_back()
+                    .rfind(|id| id.account_id() == *account_id && id.scope() == *scope)
                 {
                     id.address_index().next()
                 } else {

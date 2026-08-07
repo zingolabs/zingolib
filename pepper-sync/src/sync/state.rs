@@ -689,7 +689,7 @@ fn select_scan_range(
                 sync_state.scan_ranges.iter().cloned().enumerate().collect();
             if nullifier_map_limit_exceeded {
                 scan_ranges_priority_sorted
-                    .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
+                    .sort_by_key(|(_, range)| std::cmp::Reverse(range.block_range().start));
             }
             scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
 
