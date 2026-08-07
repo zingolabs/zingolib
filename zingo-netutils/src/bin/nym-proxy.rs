@@ -57,24 +57,13 @@ async fn main() -> std::process::ExitCode {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let excluded = parse_excluded_exits(std::env::args().skip(1))?;
 
-    // Narrate the bootstrap on stdout so the parent supervisor can surface
-    // live progress (`nym status`) instead of an opaque wait.
-    let mut proxy = NymProxy::start_with_progress(excluded, |line| {
-        println!("{NYM_STATUS_LINE_PREFIX}{line}");
-        let _ = std::io::stdout().flush();
-    })
-    .await?;
-
-    // Health-gate readiness: prove the mixnet carries data end to end before
-    // announcing, redrawing gateways on failure. Only a verified path is
-    // announced.
-    health_gate(&mut proxy).await?;
-
-    // Announce the bound Exit Node before the address, so the parent sees
-    // both the moment the mixnet is verified reachable.
-    println!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider());
-    println!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr());
-    std::io::stdout().flush()?;
+    // The stdin watchdog covers the bootstrap too: a parent that dies while
+    // this child is still drawing gateways must take the child with it, not
+    // leave an orphan to finish bootstrapping against a closed pipe.
+    let proxy = tokio::select! {
+        _ = wait_for_parent_exit() => return Ok(()),
+        outcome = bootstrap(excluded) => outcome?,
+    };
 
     // Serve until either the parent goes away (stdin closes — the durable
     // coupling that survives even a SIGKILL of the parent) or an interrupt
@@ -85,6 +74,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     proxy.disconnect().await;
     Ok(())
+}
+
+/// Bootstrap the proxy: connect with the exclusions, health-gate readiness
+/// (proving the mixnet carries data end to end before announcing), then
+/// announce the bound Exit Node and the SOCKS5 address together.
+async fn bootstrap(excluded: Vec<String>) -> Result<NymProxy, Box<dyn std::error::Error>> {
+    // Narrate the bootstrap on stdout so the parent supervisor can surface
+    // live progress (`nym status`) instead of an opaque wait.
+    let mut proxy = NymProxy::start_with_progress(excluded, |line| {
+        emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
+    })
+    .await?;
+
+    health_gate(&mut proxy).await?;
+
+    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider()));
+    emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
+    Ok(proxy)
 }
 
 /// Prove the mixnet carries data end to end, redrawing gateways until it does
@@ -127,8 +134,16 @@ async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Err
 /// Emit a bootstrap status line on stdout, flushed, so the supervisor's live
 /// `nym status` detail updates in step with the verification.
 fn report(line: String) {
-    println!("{NYM_STATUS_LINE_PREFIX}{line}");
-    let _ = std::io::stdout().flush();
+    emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
+}
+
+/// Write one line to stdout, flushed, swallowing write errors: a broken pipe
+/// means the parent is gone, which the stdin watchdog turns into a clean
+/// exit — a panicking `println!` must never race it onto the terminal.
+fn emit(line: String) {
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{line}");
+    let _ = stdout.flush();
 }
 
 /// The Exit Nodes a parent excludes from this proxy's draw: every
