@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- `wallet::LightWallet::update_current_price` - the deprecated lock-holding
+  price fetch. Its only callers were two tests, and the sequential
+  `zingo_price` path it rode is itself removed; production fetches with
+  `LightClient::update_current_price`, which races the sources outside the
+  wallet lock and records the result under a briefly-held one.
 - `wallet::summary::data::TransactionSummary::balance_delta` - the method had no
   callers and misreported a Zennies-donating self-send: `transaction_kind`
   exempts the donation address, so the `SendToSelf` arm reported only the fee
