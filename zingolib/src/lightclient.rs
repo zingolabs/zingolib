@@ -796,6 +796,12 @@ impl LightClient {
         }
     }
 
+    /// The Exit Nodes the session currently has in use, excluded from every
+    /// new acquisition's draw; a released exit re-enters the pool.
+    pub(crate) fn exits_in_use(&self) -> Vec<String> {
+        self.mixnet_slot.exits()
+    }
+
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
     /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
@@ -810,6 +816,7 @@ impl LightClient {
         match crate::nym::MixnetProxy::spawn(
             binary_path,
             std::sync::Arc::clone(&self.mixnet_status),
+            &self.exits_in_use(),
         ) {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session

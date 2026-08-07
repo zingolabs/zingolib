@@ -55,9 +55,11 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let excluded = parse_excluded_exits(std::env::args().skip(1))?;
+
     // Narrate the bootstrap on stdout so the parent supervisor can surface
     // live progress (`nym status`) instead of an opaque wait.
-    let mut proxy = NymProxy::start_with_progress(|line| {
+    let mut proxy = NymProxy::start_with_progress(excluded, |line| {
         println!("{NYM_STATUS_LINE_PREFIX}{line}");
         let _ = std::io::stdout().flush();
     })
@@ -129,6 +131,22 @@ fn report(line: String) {
     let _ = std::io::stdout().flush();
 }
 
+/// The Exit Nodes a parent excludes from this proxy's draw: every
+/// `--exclude-exit <identity>` pair in `args`, refusing unknown arguments.
+fn parse_excluded_exits(mut args: impl Iterator<Item = String>) -> Result<Vec<String>, String> {
+    let mut excluded = Vec::new();
+    while let Some(arg) = args.next() {
+        if arg != "--exclude-exit" {
+            return Err(format!("unknown argument: {arg}"));
+        }
+        match args.next() {
+            Some(identity) => excluded.push(identity),
+            None => return Err("--exclude-exit needs an Exit Node identity".to_string()),
+        }
+    }
+    Ok(excluded)
+}
+
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
 /// end of the pipe, on a clean exit, a panic, or a SIGKILL. Any read error is
 /// also treated as "parent gone". Bytes on stdin are ignored: the pipe's
@@ -143,5 +161,38 @@ async fn wait_for_parent_exit() {
             Ok(0) | Err(_) => return,
             Ok(_) => continue,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_excluded_exits;
+
+    /// HYPOTHESIS: the argument grammar accepts repeated `--exclude-exit`
+    /// pairs and refuses anything else, so a malformed spawn fails loudly
+    /// instead of silently dropping an exclusion.
+    #[test]
+    fn the_exclusion_grammar_is_pairs_only() {
+        assert_eq!(
+            parse_excluded_exits(std::iter::empty()).expect("no arguments, no exclusions"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse_excluded_exits(
+                ["--exclude-exit", "id-a", "--exclude-exit", "id-b"]
+                    .into_iter()
+                    .map(String::from)
+            )
+            .expect("two well-formed pairs"),
+            vec!["id-a".to_string(), "id-b".to_string()]
+        );
+        assert!(
+            parse_excluded_exits(["--exclude-exit"].into_iter().map(String::from)).is_err(),
+            "a dangling flag refuses"
+        );
+        assert!(
+            parse_excluded_exits(["--unknown"].into_iter().map(String::from)).is_err(),
+            "an unknown argument refuses"
+        );
     }
 }

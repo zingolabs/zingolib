@@ -238,8 +238,12 @@ impl MixnetProxy {
     pub(crate) fn spawn(
         binary_path: &Path,
         publisher: StatusPublisher,
+        excluded_exits: &[String],
     ) -> Result<Self, MixnetProxyError> {
         let mut command = Command::new(binary_path);
+        for exit in excluded_exits {
+            command.arg("--exclude-exit").arg(exit);
+        }
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

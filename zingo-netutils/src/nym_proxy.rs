@@ -70,6 +70,7 @@ pub struct NymProxy {
     client: Socks5MixnetClient,
     bind_port: u16,
     exit_provider: String,
+    excluded: Vec<String>,
 }
 
 impl NymProxy {
@@ -80,30 +81,46 @@ impl NymProxy {
     /// listens on a random available localhost port. This is the recommended
     /// entry point, since no Nym-specific addresses are required.
     pub async fn start() -> Result<Self, NymProxyError> {
-        Self::start_with_progress(|_| {}).await
+        Self::start_with_progress(Vec::new(), |_| {}).await
     }
 
-    /// [`Self::start`], reporting each bootstrap step to `on_progress` as a
-    /// human-readable line. The spawnable binary forwards these lines to the
-    /// wallet supervisor, so a user watching `nym status` sees the race
-    /// advance instead of an opaque wait.
+    /// [`Self::start`], excluding the caller's already-known Exit Nodes from
+    /// the draw and reporting each bootstrap step to `on_progress` as a
+    /// human-readable line. Exclusion holds for this start and for every
+    /// later redraw of this proxy.
     pub async fn start_with_progress(
+        excluded: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        tokio::time::timeout(NYM_LIFECYCLE_TIMEOUT, Self::start_inner(on_progress))
-            .await
-            .map_err(|_| {
-                NymProxyError::ConnectivityCheck(format!(
-                    "start timed out after {}s",
-                    NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ))
-            })?
+        tokio::time::timeout(
+            NYM_LIFECYCLE_TIMEOUT,
+            Self::start_inner(excluded, on_progress),
+        )
+        .await
+        .map_err(|_| {
+            NymProxyError::ConnectivityCheck(format!(
+                "start timed out after {}s",
+                NYM_LIFECYCLE_TIMEOUT.as_secs()
+            ))
+        })?
     }
 
-    async fn start_inner(mut on_progress: impl FnMut(String)) -> Result<Self, NymProxyError> {
+    async fn start_inner(
+        excluded: Vec<String>,
+        mut on_progress: impl FnMut(String),
+    ) -> Result<Self, NymProxyError> {
         on_progress("discovering exit gateways".to_string());
-        let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
-        Self::connect_across_providers(&providers, on_progress).await
+        let discovered = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let providers = eligible_providers(discovered, &excluded)?;
+        if !excluded.is_empty() {
+            on_progress(format!(
+                "excluding {} known exits from the draw",
+                excluded.len()
+            ));
+        }
+        let mut proxy = Self::connect_across_providers(&providers, on_progress).await?;
+        proxy.excluded = excluded;
+        Ok(proxy)
     }
 
     /// Race the pure hedged plan ([`crate::arm_race`]) over `providers`: one
@@ -206,6 +223,7 @@ impl NymProxy {
             client,
             bind_port,
             exit_provider: provider_mix_address.to_string(),
+            excluded: Vec::new(),
         })
     }
 
@@ -262,7 +280,8 @@ impl NymProxy {
     }
 
     async fn reconnect_inner(&mut self) -> Result<(), NymProxyError> {
-        let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let discovered = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let providers = eligible_providers(discovered, &self.excluded)?;
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
         let new_proxy = Self::connect_across_providers(&providers, |_| {}).await?;
@@ -271,6 +290,7 @@ impl NymProxy {
         // leaves the old client untouched.
         let old_client = std::mem::replace(&mut self.client, new_proxy.client);
         self.bind_port = new_proxy.bind_port;
+        self.exit_provider = new_proxy.exit_provider;
         old_client.disconnect().await;
         Ok(())
     }
@@ -353,11 +373,13 @@ impl NymProxy {
 /// timeout actually occur.
 fn provider_attempt_stage(error: &NymProxyError) -> NetOpStage {
     match error {
-        // Client construction, the local port draw, and discovery all fail
-        // before this arm touches the network.
-        NymProxyError::Build(_) | NymProxyError::DiscoveryApi(_) | NymProxyError::NoProvider => {
-            NetOpStage::RouteResolution
-        }
+        // Client construction, the local port draw, discovery, and an
+        // exclusion-emptied draw all fail before this arm touches the
+        // network.
+        NymProxyError::Build(_)
+        | NymProxyError::DiscoveryApi(_)
+        | NymProxyError::NoProvider
+        | NymProxyError::AllExitsExcluded { .. } => NetOpStage::RouteResolution,
         // Registering with the provider's gateway is the arm's remote
         // connect. An exhausted race never occurs per arm; it summarizes
         // the connects it is made of, so it classifies with them.
@@ -390,6 +412,26 @@ fn race_loss_error(lost: LostRace<NetOpFailure>) -> NymProxyError {
             failures: lost.failures,
         }
     }
+}
+
+/// The discovered providers minus the caller's known exits, refusing typed
+/// when the exclusion empties the draw.
+fn eligible_providers(
+    discovered: Vec<String>,
+    excluded: &[String],
+) -> Result<Vec<String>, NymProxyError> {
+    let discovered_count = discovered.len();
+    let eligible: Vec<String> = discovered
+        .into_iter()
+        .filter(|provider| !excluded.contains(provider))
+        .collect();
+    if eligible.is_empty() && discovered_count > 0 {
+        return Err(NymProxyError::AllExitsExcluded {
+            discovered: discovered_count,
+            excluded: excluded.len(),
+        });
+    }
+    Ok(eligible)
 }
 
 /// A provider mix-address shortened for an error summary: the full base58
@@ -589,6 +631,36 @@ mod tests {
     fn find_available_port_returns_nonzero() {
         let port = NymProxy::find_available_port().expect("find_available_port");
         assert!(port > 0);
+    }
+
+    /// HYPOTHESIS: a known exit never re-enters the draw — the eligible set
+    /// is the discovered set minus the exclusions, an exclusion that empties
+    /// the draw refuses typed, and an empty discovery stays an empty draw
+    /// rather than a spurious exclusion error.
+    #[test]
+    fn known_exits_never_reenter_the_draw() {
+        let discovered = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let eligible = eligible_providers(discovered.clone(), &["b".to_string()])
+            .expect("two providers survive");
+        assert_eq!(eligible, vec!["a".to_string(), "c".to_string()]);
+
+        let error = eligible_providers(
+            vec!["a".to_string()],
+            &["a".to_string(), "stale".to_string()],
+        )
+        .expect_err("an emptied draw refuses");
+        assert!(matches!(
+            error,
+            NymProxyError::AllExitsExcluded {
+                discovered: 1,
+                excluded: 2,
+            }
+        ));
+
+        assert_eq!(
+            eligible_providers(Vec::new(), &["a".to_string()]).expect("empty discovery passes"),
+            Vec::<String>::new()
+        );
     }
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
