@@ -75,7 +75,6 @@ pub struct SyncStatus {
     pub sync_start_height: BlockHeight,
     pub session_blocks_scanned: u32,
     pub total_blocks_scanned: u32,
-    pub percentage_session_blocks_scanned: f32,
     pub percentage_total_blocks_scanned: f32,
     pub session_sapling_outputs_scanned: u32,
     pub total_sapling_outputs_scanned: u32,
@@ -83,7 +82,6 @@ pub struct SyncStatus {
     pub total_orchard_outputs_scanned: u32,
     pub session_ironwood_outputs_scanned: u32,
     pub total_ironwood_outputs_scanned: u32,
-    pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
     /// Numerator of the exact scan-progress ratio: outputs scanned so far
     /// across both shielded pools. May exceed `total_outputs`, whose tree
@@ -144,7 +142,6 @@ impl From<SyncStatus> for json::JsonValue {
             "sync_start_height" => u32::from(value.sync_start_height),
             "session_blocks_scanned" => value.session_blocks_scanned,
             "total_blocks_scanned" => value.total_blocks_scanned,
-            "percentage_session_blocks_scanned" => value.percentage_session_blocks_scanned,
             "percentage_total_blocks_scanned" => value.percentage_total_blocks_scanned,
             "session_sapling_outputs_scanned" => value.session_sapling_outputs_scanned,
             "total_sapling_outputs_scanned" => value.total_sapling_outputs_scanned,
@@ -152,7 +149,6 @@ impl From<SyncStatus> for json::JsonValue {
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
             "session_ironwood_outputs_scanned" => value.session_ironwood_outputs_scanned,
             "total_ironwood_outputs_scanned" => value.total_ironwood_outputs_scanned,
-            "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
             "total_outputs_scanned" => value.total_outputs_scanned,
             "total_outputs" => value.total_outputs,
@@ -808,7 +804,6 @@ where
             sync_start_height: 0.into(),
             session_blocks_scanned: 0,
             total_blocks_scanned: 0,
-            percentage_session_blocks_scanned: 0.0,
             percentage_total_blocks_scanned: 0.0,
             session_sapling_outputs_scanned: 0,
             session_orchard_outputs_scanned: 0,
@@ -816,7 +811,6 @@ where
             total_sapling_outputs_scanned: 0,
             total_orchard_outputs_scanned: 0,
             total_ironwood_outputs_scanned: 0,
-            percentage_session_outputs_scanned: 0.0,
             percentage_total_outputs_scanned: 0.0,
             total_outputs_scanned: 0,
             total_outputs: 0,
@@ -861,56 +855,33 @@ where
         total_ironwood_outputs,
     );
 
-    let session_blocks_scanned =
-        total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
-    let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
-        / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
-    if percentage_session_blocks_scanned.is_nan() {
-        percentage_session_blocks_scanned = 100.0;
-    }
+    // Saturating because the baseline is a stash taken at session start
+    // while the scanned count is a live sum over scan ranges: a truncation
+    // on re-org shrinks the live sum below the stash.
+    let session_blocks_scanned = total_blocks_scanned
+        .saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
     let mut percentage_total_blocks_scanned =
         ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
     if percentage_total_blocks_scanned.is_nan() {
         percentage_total_blocks_scanned = 100.0;
     }
 
-    let session_sapling_outputs_scanned = total_sapling_outputs_scanned
-        - sync_state
-            .initial_sync_state
-            .previously_scanned_sapling_outputs;
-    let session_orchard_outputs_scanned = total_orchard_outputs_scanned
-        - sync_state
-            .initial_sync_state
-            .previously_scanned_orchard_outputs;
-    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned
-        - sync_state
-            .initial_sync_state
-            .previously_scanned_ironwood_outputs;
-    let session_outputs_scanned = output_pool_total(
-        session_sapling_outputs_scanned,
-        session_orchard_outputs_scanned,
-        session_ironwood_outputs_scanned,
-    );
-    let previously_scanned_outputs = output_pool_total(
+    // Saturating for the same reason as the blocks baseline above.
+    let session_sapling_outputs_scanned = total_sapling_outputs_scanned.saturating_sub(
         sync_state
             .initial_sync_state
             .previously_scanned_sapling_outputs,
+    );
+    let session_orchard_outputs_scanned = total_orchard_outputs_scanned.saturating_sub(
         sync_state
             .initial_sync_state
             .previously_scanned_orchard_outputs,
+    );
+    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned.saturating_sub(
         sync_state
             .initial_sync_state
             .previously_scanned_ironwood_outputs,
     );
-    let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
-        / (total_outputs - previously_scanned_outputs) as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
-    if percentage_session_outputs_scanned.is_nan() {
-        percentage_session_outputs_scanned = 100.0;
-    }
     let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
     if percentage_total_outputs_scanned.is_nan() {
@@ -922,14 +893,8 @@ where
         .iter()
         .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
     {
-        if percentage_session_blocks_scanned == 100.0 {
-            percentage_session_blocks_scanned = 99.0;
-        }
         if percentage_total_blocks_scanned == 100.0 {
             percentage_total_blocks_scanned = 99.0;
-        }
-        if percentage_session_outputs_scanned == 100.0 {
-            percentage_session_outputs_scanned = 99.0;
         }
         if percentage_total_outputs_scanned == 100.0 {
             percentage_total_outputs_scanned = 99.0;
@@ -941,7 +906,6 @@ where
         sync_start_height: sync_state.initial_sync_state.sync_start_height,
         session_blocks_scanned,
         total_blocks_scanned,
-        percentage_session_blocks_scanned,
         percentage_total_blocks_scanned,
         session_sapling_outputs_scanned,
         total_sapling_outputs_scanned,
@@ -949,7 +913,6 @@ where
         total_orchard_outputs_scanned,
         session_ironwood_outputs_scanned,
         total_ironwood_outputs_scanned,
-        percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
         total_outputs_scanned,
         total_outputs,
@@ -2472,7 +2435,6 @@ mod test {
                 sync_start_height: sync_start_height.into(),
                 session_blocks_scanned: 0,
                 total_blocks_scanned: 0,
-                percentage_session_blocks_scanned: 0.0,
                 percentage_total_blocks_scanned: 0.0,
                 session_sapling_outputs_scanned: 0,
                 total_sapling_outputs_scanned: 0,
@@ -2480,7 +2442,6 @@ mod test {
                 total_orchard_outputs_scanned: 0,
                 session_ironwood_outputs_scanned: 0,
                 total_ironwood_outputs_scanned: 0,
-                percentage_session_outputs_scanned: 0.0,
                 percentage_total_outputs_scanned: 0.0,
                 total_outputs_scanned: 0,
                 total_outputs: 0,
@@ -2801,6 +2762,144 @@ mod test {
                 status.percentage_total_outputs_scanned,
                 expected_percentage,
             );
+        }
+    }
+
+    /// The scan-progress baseline hazard, at its two narrowest scopes.
+    ///
+    /// `SyncStatus::total_outputs_scanned` documents that a live scanned
+    /// count passes the span frozen at sync start "when scanning continues
+    /// past them into chain growth". Any code that subtracts one from the
+    /// other therefore meets an unsigned underflow in ordinary operation.
+    mod scan_progress_baseline {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, sync_status};
+        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+
+        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds,
+            }
+        }
+
+        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
+            TreeBounds {
+                sapling_initial_tree_size: sapling,
+                sapling_final_tree_size: sapling,
+                orchard_initial_tree_size: orchard,
+                orchard_final_tree_size: orchard,
+                ironwood_initial_tree_size: ironwood,
+                ironwood_final_tree_size: ironwood,
+            }
+        }
+
+        /// HYPOTHESIS: the unguarded subtraction is profile-dependent, so
+        /// the class of bug is visible in the suite rather than only in
+        /// production. Overflow checks turn it into a panic that aborts
+        /// whatever thread computes it; their absence turns it into a
+        /// wrapped denominator that pins every derived percentage at zero.
+        /// Both readings are wrong, and neither is detectable by the
+        /// caller.
+        #[test]
+        fn the_unguarded_baseline_subtraction_is_profile_dependent() {
+            let span = std::hint::black_box(30_u64);
+            let baseline = std::hint::black_box(70_u64);
+            let scanned = std::hint::black_box(75_u64);
+
+            let previous_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            let outcome = std::panic::catch_unwind(|| span - baseline);
+            std::panic::set_hook(previous_hook);
+
+            if cfg!(debug_assertions) {
+                assert!(
+                    outcome.is_err(),
+                    "with overflow checks the underflow must panic"
+                );
+            } else {
+                let wrapped = outcome.expect("without overflow checks it wraps");
+                assert_eq!(wrapped, u64::MAX - 39);
+                let percentage =
+                    ((scanned - baseline) as f32 / wrapped as f32 * 100.0).clamp(0.0, 100.0);
+                assert_eq!(
+                    percentage, 0.0,
+                    "the wrapped denominator silently pins progress at zero"
+                );
+            }
+        }
+
+        /// HYPOTHESIS: the saturating baseline the session counts now use
+        /// reports no session progress rather than underflowing, when a
+        /// re-org truncation shrinks the live count below the baseline.
+        #[test]
+        fn a_baseline_above_the_live_count_saturates_to_zero() {
+            assert_eq!(40_u32.saturating_sub(70), 0);
+            assert_eq!(75_u32.saturating_sub(70), 5);
+        }
+
+        /// HYPOTHESIS: `sync_status` survives the overshoot its own
+        /// documentation describes, and reports the exact ratio unreduced,
+        /// instead of taking its caller down. Falsified while the session
+        /// percentage divides by a span the baseline has already passed.
+        #[tokio::test]
+        async fn status_survives_scanning_past_the_frozen_tree_bounds() {
+            let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1_000)..BlockHeight::from_u32(1_010),
+                ScanPriority::Scanned,
+            )]);
+            sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(1_000);
+            // The frozen span: ten orchard outputs between the wallet
+            // bounds measured at sync start.
+            sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
+                sapling_initial_tree_size: 100,
+                sapling_final_tree_size: 100,
+                orchard_initial_tree_size: 200,
+                orchard_final_tree_size: 210,
+                ironwood_initial_tree_size: 300,
+                ironwood_final_tree_size: 300,
+            };
+            // The live baseline has already passed that span, exactly as
+            // scanning into chain growth produces.
+            sync_state
+                .initial_sync_state
+                .previously_scanned_orchard_outputs = 70;
+
+            let wallet_blocks = BTreeMap::from([
+                (
+                    BlockHeight::from_u32(1_000),
+                    block(1_000, flat_bounds(100, 200, 300)),
+                ),
+                (
+                    BlockHeight::from_u32(1_009),
+                    block(1_009, flat_bounds(100, 275, 300)),
+                ),
+            ]);
+            let wallet = MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet();
+
+            let status = sync_status(&wallet)
+                .await
+                .expect("an overshoot is an ordinary reading, not a failure");
+
+            // The exact ratio is reported unreduced: the numerator is
+            // allowed to exceed the denominator, which is what the
+            // overshoot means.
+            assert_eq!(status.total_outputs_scanned, 75);
+            assert_eq!(status.total_outputs, 10);
+            // The session count saturates rather than underflowing.
+            assert_eq!(status.session_orchard_outputs_scanned, 5);
         }
     }
 

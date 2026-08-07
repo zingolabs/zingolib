@@ -1254,3 +1254,53 @@ mod offline_mode_pin {
         );
     }
 }
+
+/// The blast radius of a scan-progress arithmetic fault, at the surface
+/// that actually suffered one.
+///
+/// `scan_progress` guards `sync_status` with `.ok()`, which catches a
+/// typed error but not an unwind, so a panic inside progress accounting
+/// escapes into `prompt_indicator` — reached on every REPL prompt — and
+/// into `await_sync_narrated`, killing the command loop and with it the
+/// whole session. The CLI reads only `total_outputs_scanned`,
+/// `total_outputs`, and `is_complete()`: no percentage reaches it, so the
+/// session must never die computing one.
+mod scan_progress_blast_radius {
+    use zcash_protocol::consensus::BlockHeight;
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use crate::commands::RT;
+    use crate::prompt_indicator;
+
+    /// A client whose scanning has passed the tree bounds frozen at sync
+    /// start: the ordinary condition `SyncStatus::total_outputs_scanned`
+    /// documents, and the one that took the session down.
+    fn client_scanned_past_its_frozen_bounds() -> LightClient {
+        let client = RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ));
+        RT.block_on(async {
+            let mut wallet = client.wallet().write().await;
+            wallet
+                .sync_state
+                .set_session_baseline_for_test(BlockHeight::from_u32(1_000), 70);
+        });
+        client
+    }
+
+    /// HYPOTHESIS: rendering a prompt over such a wallet returns an
+    /// indicator, because a session must not die computing a statistic it
+    /// never reads. Falsified while the session percentage divides by a
+    /// span its baseline has already passed: the panic escapes
+    /// `scan_progress`'s `.ok()` and unwinds the command loop.
+    #[test]
+    fn a_prompt_survives_scanning_past_the_frozen_bounds() {
+        let mut client = client_scanned_past_its_frozen_bounds();
+        let indicator = RT.block_on(prompt_indicator(&mut client));
+        assert!(
+            !indicator.is_empty(),
+            "the prompt must render over an overshot wallet: {indicator:?}"
+        );
+    }
+}

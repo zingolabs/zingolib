@@ -10,12 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `wallet::SyncState::set_session_baseline_for_test` (behind `test-features`): places a
+  sync state in the documented overshoot condition, where the session baseline has passed
+  the span frozen at sync start, so consumers can regression-test their progress surfaces.
 
 ### Changed
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+- `sync::sync_status` no longer panics when scanning passes the tree bounds frozen at sync
+  start. That condition is ordinary and is documented on
+  `sync::SyncStatus::total_outputs_scanned`, but the session percentages divided by a span
+  the baseline had already passed, which underflowed. In a debug build the panic aborted
+  the calling thread; in a release build the subtraction wrapped and pinned every derived
+  percentage at zero. The surviving session counts now saturate.
 
 ### Removed
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ## [0.5.0] - 2026-06-10
 

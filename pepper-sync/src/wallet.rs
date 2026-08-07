@@ -796,6 +796,14 @@ impl SyncState {
         sync_state.scan_ranges = scan_ranges;
         sync_state
     }
+
+    /// Places this state in the overshoot condition
+    /// [`crate::sync::SyncStatus::total_outputs_scanned`] documents, where
+    /// the session baseline has passed the span frozen at sync start.
+    pub fn set_session_baseline_for_test(&mut self, start_height: BlockHeight, baseline: u32) {
+        self.initial_sync_state.sync_start_height = start_height;
+        self.initial_sync_state.previously_scanned_orchard_outputs = baseline;
+    }
 }
 
 #[cfg(any(test, feature = "test-features"))]
