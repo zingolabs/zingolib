@@ -107,7 +107,7 @@ pub fn live_cohort(results: &[SurveyResult], chain: &str, tolerance: u64) -> Vec
     if on_chain.is_empty() {
         return Vec::new();
     }
-    on_chain.sort_by(|a, b| b.1.cmp(&a.1));
+    on_chain.sort_by_key(|(_, height)| std::cmp::Reverse(*height));
     let heights: Vec<u64> = on_chain.iter().map(|(_, h)| *h).collect();
     let mid = median(&heights);
     on_chain

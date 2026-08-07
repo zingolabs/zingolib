@@ -932,7 +932,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         }
 
         let data_dir = data_dir_from(&matches);
-        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
+        log::info!("data_dir: {}", data_dir.to_str().unwrap());
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "clearnet-test-mode")]
