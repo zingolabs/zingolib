@@ -205,6 +205,33 @@ async fn prompt_indicator(lightclient: &mut LightClient) -> String {
     indicator
 }
 
+/// Waits on the loop thread for the launched sync task to finish, narrating
+/// scan progress on stderr at the standard heartbeat cadence, and returns
+/// the sync result's rendering.
+async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, String> {
+    let mut interval = tokio::time::interval(zingolib::netutils::time::PROGRESS_HEARTBEAT_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        match lightclient.poll_sync() {
+            PollReport::NoHandle => {
+                return Err("Error: no sync task is running to wait for".to_string());
+            }
+            PollReport::NotReady => {
+                eprintln!(
+                    "sync:{}",
+                    syncing_indicator(scan_progress(lightclient).await)
+                );
+            }
+            PollReport::Ready(result) => {
+                return result
+                    .map(|sync_result| sync_result.to_string())
+                    .map_err(|e| format!("Error: {e}"));
+            }
+        }
+    }
+}
+
 /// The wallet's scan progress: the exact integer ratio of outputs scanned,
 /// and whether sync is complete. No floating-point representation appears
 /// anywhere in the prompt's reporting.
@@ -301,6 +328,7 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
         let description = match &request {
             Request::Command(command) => command.name(),
             Request::PromptIndicator => "prompt indicator".to_string(),
+            Request::AwaitSync => "await sync".to_string(),
         };
         if ch.transmitter.send(request).is_err() {
             let e = format!("Error executing command {description}: the command loop has exited");
@@ -413,6 +441,10 @@ enum Request {
     /// typed calls on the loop thread. The reply is the sync indicator
     /// to embed in the interactive prompt.
     PromptIndicator,
+    /// Block on the loop thread until the launched sync task finishes,
+    /// narrating scan progress on stderr, and reply with the sync result.
+    /// Sent by the one-shot path so `sync run` means sync to completion.
+    AwaitSync,
 }
 
 /// A paired request/response channel for communicating with the background
@@ -445,6 +477,12 @@ pub(crate) fn command_loop(
                 Request::PromptIndicator => {
                     resp_transmitter
                         .send(Ok(RT.block_on(prompt_indicator(&mut lightclient))))
+                        .unwrap();
+                    continue;
+                }
+                Request::AwaitSync => {
+                    resp_transmitter
+                        .send(RT.block_on(await_sync_narrated(&mut lightclient)))
                         .unwrap();
                     continue;
                 }
@@ -809,6 +847,21 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                 ));
             }
         };
+
+        // A one-shot `--online <command>` grants a connection for that single
+        // command, so the command must be one that uses it. An offline-capable
+        // command after `--online` is a contradiction the launch refuses
+        // early, before any network or wallet work.
+        if matches.get_flag("online")
+            && let ModeOfOperation::Command { command } = &mode
+            && !command.requires_online()
+        {
+            return Err(format!(
+                "`{}` needs no network, so `--online` grants a connection it never \
+                 uses. Drop `--online`, or run it at the interactive prompt.",
+                command.name()
+            ));
+        }
 
         let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
@@ -1262,7 +1315,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
         }
         ModeOfOperation::Command { command } => {
             let description = command.name();
-            let exit_code = if ch
+            let mut succeeded = if ch
                 .transmitter
                 .send(Request::Command(command.clone()))
                 .is_err()
@@ -1271,24 +1324,61 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
                     format!("Error executing command {description}: the command loop has exited");
                 eprintln!("{e}");
                 error!("{e}");
-                ExitCode::FAILURE
+                false
             } else {
                 match ch.receiver.recv() {
                     Ok(Ok(output)) => {
                         println!("{output}");
-                        ExitCode::SUCCESS
+                        true
                     }
                     Ok(Err(rendered)) => {
                         eprintln!("{rendered}");
-                        ExitCode::FAILURE
+                        false
                     }
                     Err(e) => {
                         let e = format!("Error executing command {description}: {e}");
                         eprintln!("{e}");
                         error!("{e}");
-                        ExitCode::FAILURE
+                        false
                     }
                 }
+            };
+
+            // A one-shot `sync run` means sync to completion: the session
+            // holds open, narrating progress, until the sync task reports
+            // its result, which becomes the command's outcome.
+            if succeeded
+                && matches!(
+                    &command,
+                    commands::CliCommand::Sync {
+                        sub: commands::SyncSubCommand::Run
+                    }
+                )
+            {
+                succeeded = if ch.transmitter.send(Request::AwaitSync).is_err() {
+                    eprintln!("Error awaiting sync: the command loop has exited");
+                    false
+                } else {
+                    match ch.receiver.recv() {
+                        Ok(Ok(output)) => {
+                            println!("{output}");
+                            true
+                        }
+                        Ok(Err(rendered)) => {
+                            eprintln!("{rendered}");
+                            false
+                        }
+                        Err(e) => {
+                            eprintln!("Error awaiting sync: {e}");
+                            false
+                        }
+                    }
+                };
+            }
+            let exit_code = if succeeded {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
             };
 
             if ch

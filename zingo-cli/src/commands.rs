@@ -800,6 +800,9 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             } else {
                 match lightclient.sync().await {
                     Ok(()) => Ok("Launching sync task...".to_string()),
+                    Err(zingolib::lightclient::error::LightClientError::SyncModeError(
+                        pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+                    )) => Ok("Sync task already running.".to_string()),
                     Err(e) => Err(not_yet_typed(e)),
                 }
             }
@@ -2819,6 +2822,15 @@ impl CliCommand {
             | CliCommand::Version
             | CliCommand::WalletKind => false,
         }
+    }
+
+    /// True when the command cannot do its work offline: it either transmits
+    /// or speaks to the sync Indexer. A one-shot `--online <command>` is only
+    /// valid for such a command; an offline-capable command after `--online`
+    /// is refused early, since the flag would grant a connection the command
+    /// never uses.
+    pub(crate) fn requires_online(&self) -> bool {
+        self.transmits() || self.requires_indexer()
     }
 
     /// True when the command speaks to the sync Indexer over the session

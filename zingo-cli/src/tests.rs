@@ -1090,6 +1090,45 @@ mod config_template {
             );
         }
     }
+
+    /// A one-shot `--online <command>` is valid only for a command that
+    /// requires online; an offline-capable command after `--online` is
+    /// refused at fill, before any network or wallet work. The flag is an
+    /// online consent act, which only nym builds accept (ADR 0026).
+    #[cfg(feature = "nym")]
+    mod online_one_shot {
+        use super::*;
+
+        #[test]
+        fn an_offline_capable_command_after_online_is_refused() {
+            let error = fill(&[examples::BIN_NAME, "--online", "addresses"])
+                .expect_err("addresses needs no network");
+            assert!(error.contains("needs no network"), "{error}");
+            assert!(error.contains("addresses"), "{error}");
+        }
+
+        #[test]
+        fn an_online_requiring_command_after_online_is_accepted() {
+            let config = fill(&[examples::BIN_NAME, "--online", "sync", "run"])
+                .expect("sync run requires online");
+            assert!(matches!(config.mode, ModeOfOperation::Command { .. }));
+        }
+
+        #[test]
+        fn an_offline_capable_command_without_online_is_accepted() {
+            // The gate keys on the flag, not the command: `addresses` is a
+            // legitimate offline one-shot.
+            fill(&[examples::BIN_NAME, "addresses"]).expect("addresses is a fine offline one-shot");
+        }
+
+        #[test]
+        fn online_alone_starts_an_interactive_session() {
+            // No command means no one-shot to judge; `--online` opens a
+            // connected prompt.
+            let config = fill(&[examples::BIN_NAME, "--online"]).expect("interactive online");
+            assert!(matches!(config.mode, ModeOfOperation::Interactive));
+        }
+    }
 }
 
 mod offline_mode_pin {
