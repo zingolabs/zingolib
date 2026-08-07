@@ -133,6 +133,74 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
         .long_about(None)
 }
 
+/// A session option placed after the command, and the corrected invocation.
+/// Session options configure the whole session, so clap accepts them only
+/// before the command; placed after, clap rejects them with an opaque
+/// "unexpected argument". This detector names the misplacement and the fix
+/// instead, deriving both the option set and the command set from
+/// [`build_clap_app`] so neither list drifts.
+///
+/// Returns `None` when `args` (the process arguments including argv[0]) put
+/// every session option ahead of the command, or name no command at all.
+pub fn misplaced_session_option(args: &[String]) -> Option<String> {
+    let app = build_clap_app();
+    let commands: std::collections::HashSet<String> = app
+        .get_subcommands()
+        .flat_map(|c| std::iter::once(c.get_name().to_string()))
+        .collect();
+    let long_options: std::collections::HashSet<String> = app
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    let short_options: std::collections::HashSet<char> = app
+        .get_arguments()
+        .filter_map(clap::Arg::get_short)
+        .collect();
+
+    // Everything after the command token is the command's own; scan it for a
+    // token that names a session option. The `--` marker ends option parsing,
+    // so nothing after it is a misplaced option.
+    let mut after_command = args
+        .iter()
+        .skip(1)
+        .skip_while(|token| !commands.contains(token.as_str()))
+        .skip(1)
+        .take_while(|token| token.as_str() != "--");
+
+    let corrected = |option: &str| {
+        format!(
+            "`{option}` is a session option and must come before the command.\n       \
+             try:  zingo-cli {option} {rest}",
+            rest = args
+                .iter()
+                .skip(1)
+                .filter(|t| t.as_str() != option)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    };
+
+    after_command.find_map(|token| {
+        if let Some(long) = token.strip_prefix("--") {
+            // A `--flag=value` form carries the name before the `=`.
+            let name = long.split('=').next().unwrap_or(long);
+            long_options
+                .contains(name)
+                .then(|| corrected(&format!("--{name}")))
+        } else if let Some(shorts) = token.strip_prefix('-').filter(|s| !s.is_empty()) {
+            // A single short session flag; clustered shorts are not session
+            // options, so only the lone form is diagnosed.
+            let mut chars = shorts.chars();
+            let first = chars.next().expect("non-empty after the dash");
+            (chars.next().is_none() && short_options.contains(&first))
+                .then(|| corrected(&format!("-{first}")))
+        } else {
+            None
+        }
+    })
+}
+
 /// Custom function to parse a string into an `http::Uri`
 fn parse_uri(s: &str) -> Result<http::Uri, String> {
     s.parse::<http::Uri>().map_err(|e| e.to_string())

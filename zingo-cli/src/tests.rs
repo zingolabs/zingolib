@@ -8,6 +8,72 @@ fn parse(args: &[&str]) -> clap::ArgMatches {
         .expect("valid args")
 }
 
+mod misplaced_session_option {
+    use super::*;
+    use crate::misplaced_session_option;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        std::iter::once(examples::BIN_NAME)
+            .chain(parts.iter().copied())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A session option after the command is caught and the fix names the
+    /// option and the corrected order.
+    #[test]
+    fn a_long_option_after_the_command_is_caught() {
+        let guidance = misplaced_session_option(&args(&["sync", "run", "--online"]))
+            .expect("--online after the command is misplaced");
+        assert!(
+            guidance.contains("`--online` is a session option"),
+            "{guidance}"
+        );
+        assert!(
+            guidance.contains("zingo-cli --online sync run"),
+            "the fix moves the option ahead of the command: {guidance}"
+        );
+    }
+
+    /// The correctly ordered invocation is not flagged.
+    #[test]
+    fn a_long_option_before_the_command_is_accepted() {
+        assert!(misplaced_session_option(&args(&["--online", "sync", "run"])).is_none());
+    }
+
+    /// A `--flag=value` form after the command is caught by its name.
+    #[test]
+    fn an_equals_form_after_the_command_is_caught() {
+        let guidance = misplaced_session_option(&args(&["balance", "--data-dir=/tmp/w"]))
+            .expect("--data-dir after the command is misplaced");
+        assert!(
+            guidance.contains("`--data-dir` is a session option"),
+            "{guidance}"
+        );
+    }
+
+    /// A short session flag after the command is caught.
+    #[test]
+    fn a_short_flag_after_the_command_is_caught() {
+        // `-n` is --nosync's short form.
+        let guidance = misplaced_session_option(&args(&["balance", "-n"]))
+            .expect("-n after the command is misplaced");
+        assert!(guidance.contains("`-n` is a session option"), "{guidance}");
+    }
+
+    /// With no command token there is nothing after a command to misplace.
+    #[test]
+    fn options_without_a_command_are_not_flagged() {
+        assert!(misplaced_session_option(&args(&["--online"])).is_none());
+    }
+
+    /// A command's own value that follows `--` is never read as an option.
+    #[test]
+    fn tokens_after_the_end_of_options_marker_are_ignored() {
+        assert!(misplaced_session_option(&args(&["sync", "run", "--", "--online"])).is_none());
+    }
+}
+
 mod mode_of_operation {
     use super::*;
     use crate::commands::CliCommand;
