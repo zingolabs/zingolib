@@ -19,10 +19,14 @@
 //! must fall back to the sync endpoint.
 
 use crate::wallet::migration::transmission::{
-    PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+    PartTransmissionError, TransmissionClient, TransmissionReceipt,
 };
-use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
+
+#[cfg(feature = "nym")]
+use crate::wallet::migration::transmission::TransmissionRoute;
+#[cfg(feature = "nym")]
+use zcash_primitives::transaction::TxId;
 
 use super::transmission_grpc::GrpcTransmissionClient;
 

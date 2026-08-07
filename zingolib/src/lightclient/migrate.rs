@@ -4347,10 +4347,10 @@ mod tests {
 
         /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint,
         /// the posture every connected session holds.
+        #[cfg(feature = "nym")]
         async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
             let (wallet, bound_note) = wallet_with_migration_note(tip);
             let mut client = LightClient::new_for_test(wallet).await;
-            #[cfg(feature = "nym")]
             client
                 .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
                 .await;
