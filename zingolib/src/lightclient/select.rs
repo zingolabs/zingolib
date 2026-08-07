@@ -76,7 +76,7 @@ impl LightClient {
         pin: Option<&Uri>,
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
-        let chain = self.chain_type().to_string();
+        let chain = lightd_chain_name(&self.chain_type());
         // A dedicated status channel: the sweep proxy's lifecycle is private
         // to this call and must not touch the session's mixnet status.
         let publisher = crate::nym::status_publisher();
@@ -97,7 +97,7 @@ impl LightClient {
 
         let selection = sweep::select(
             &results,
-            &chain,
+            chain,
             SWEEP_HEIGHT_TOLERANCE,
             pin,
             &mut rand::rngs::OsRng,
@@ -108,6 +108,16 @@ impl LightClient {
         // that observed the survey.
         drop(proxy);
         Ok(selection)
+    }
+}
+
+/// The chain name a `GetLightdInfo` reply carries for `chain`, the
+/// vocabulary the survey's liveness judgment must compare against.
+fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
+    match chain {
+        crate::config::ChainType::Mainnet => "main",
+        crate::config::ChainType::Testnet => "test",
+        crate::config::ChainType::Regtest(_) => "regtest",
     }
 }
 
@@ -207,4 +217,38 @@ async fn probe_one(
         outcome,
     });
     reported
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// HYPOTHESIS: the judgment compares against the wire's chain
+    /// vocabulary (`main`, `test`, `regtest`), never `ChainType`'s own
+    /// rendering (`mainnet`). Falsified if the mapping drifts back to the
+    /// Display form, which emptied a 17-of-17 mainnet cohort on 2026-08-06.
+    #[test]
+    fn the_judgment_speaks_the_wire_chain_vocabulary() {
+        use zingo_common_components::protocol::ActivationHeights;
+
+        assert_eq!(
+            lightd_chain_name(&crate::config::ChainType::Mainnet),
+            "main"
+        );
+        assert_eq!(
+            lightd_chain_name(&crate::config::ChainType::Testnet),
+            "test"
+        );
+        assert_eq!(
+            lightd_chain_name(&crate::config::ChainType::Regtest(
+                ActivationHeights::default()
+            )),
+            "regtest"
+        );
+        assert_ne!(
+            lightd_chain_name(&crate::config::ChainType::Mainnet),
+            crate::config::ChainType::Mainnet.to_string(),
+            "the Display form is not the wire form"
+        );
+    }
 }
