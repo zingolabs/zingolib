@@ -808,12 +808,12 @@ impl LightClient {
     /// `Ready`. Enabling while already enabled replaces the running proxy. A
     /// spawn failure leaves the mode `Unattached`, which refuses the mixnet
     /// surfaces — never a fallback to clearnet.
-    pub async fn enable_mixnet(
+    pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::spawn(
+        match crate::nym::MixnetProxy::spawn::<R>(
             binary_path,
             std::sync::Arc::clone(&self.mixnet_status),
             &self.exits_in_use(),
@@ -918,7 +918,11 @@ impl LightClient {
                 crate::nym::ProvisionStrategy::Spawn(hints) => {
                     let path = crate::nym::provision::resolve_proxy_path(&hints);
                     log::info!("mixnet session start: spawning nym-proxy at {path}");
-                    self.enable_mixnet(std::path::Path::new(&path)).await
+                    // The go-online moment is a user act: someone is waiting.
+                    self.enable_mixnet::<zingo_netutils::responsiveness::Critical>(
+                        std::path::Path::new(&path),
+                    )
+                    .await
                 }
                 crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
                     self.attach_mixnet(socks5_addr).await

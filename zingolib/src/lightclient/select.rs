@@ -81,8 +81,13 @@ impl LightClient {
         // to this call and must not touch the session's mixnet status.
         let publisher = crate::nym::status_publisher();
         let mut receiver = publisher.subscribe();
-        let proxy = MixnetProxy::spawn(binary_path, publisher, &self.exits_in_use())
-            .map_err(ServerSelectionError::ProxyStart)?;
+        // The sweep gates the Sync Session a user just asked to open.
+        let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::Critical>(
+            binary_path,
+            publisher,
+            &self.exits_in_use(),
+        )
+        .map_err(ServerSelectionError::ProxyStart)?;
 
         progress(SweepProgress::TransportBootstrapping);
         let socks5_addr = await_sweep_ready(&mut receiver).await?;

@@ -228,19 +228,21 @@ enum Transport {
 }
 
 impl MixnetProxy {
-    /// Spawn the `nym-proxy` binary at `binary_path`. Returns immediately with
+    /// Spawn the `nym-proxy` binary at `binary_path`, its acquisition racing
+    /// under `R`'s launch policy. Returns immediately with
     /// mode [`MixnetMode::Bootstrapping`], published into `publisher` along
     /// with every later transition; poll [`Self::mode`] or subscribe to the
     /// session channel for readiness.
     /// The child is killed if this supervisor is dropped, spawned in its own
     /// process group (terminal signals do not reach it) with its stdin piped
     /// (its closure is how the child learns the parent is gone).
-    pub(crate) fn spawn(
+    pub(crate) fn spawn<R: zingo_netutils::responsiveness::Responsiveness>(
         binary_path: &Path,
         publisher: StatusPublisher,
         excluded_exits: &[String],
     ) -> Result<Self, MixnetProxyError> {
         let mut command = Command::new(binary_path);
+        command.arg("--responsiveness").arg(R::CLASS.wire());
         for exit in excluded_exits {
             command.arg("--exclude-exit").arg(exit);
         }

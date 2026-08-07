@@ -1469,8 +1469,9 @@ async fn network_command(
             #[cfg(not(feature = "clearnet-test-mode"))]
             let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
+            // `network on` is an interactive act: the user sits at the prompt.
             lightclient
-                .enable_mixnet(std::path::Path::new(&path))
+                .enable_mixnet::<zingolib::nym::Critical>(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),

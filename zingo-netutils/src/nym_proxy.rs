@@ -46,6 +46,7 @@ use zingo_net_diag::{NetOpFailure, NetOpStage};
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
 use crate::mixnet_connect::{seeded_shuffle, strip_socks5_scheme};
+use crate::responsiveness::{Responsiveness, ResponsivenessClass};
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
@@ -53,14 +54,7 @@ const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
 /// Maximum number of providers to try before giving up.
 const MAX_PROVIDER_ATTEMPTS: usize = 10;
 
-/// The most simultaneous connect attempts the hedged bootstrap holds in
-/// flight. Each attempt is a full ephemeral mixnet client registration, so
-/// parallelism is deliberately narrow.
-const MAX_PARALLEL_CONNECTS: usize = 3;
-
-use crate::time::{
-    DISCOVERY_TIMEOUT, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
-};
+use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT};
 
 /// Embedded Nym SOCKS5 proxy that routes traffic through the Nym mixnet.
 ///
@@ -71,30 +65,34 @@ pub struct NymProxy {
     bind_port: u16,
     exit_provider: String,
     excluded: Vec<String>,
+    /// The acquisition's responsiveness class, reused by every later redraw
+    /// of this proxy.
+    class: ResponsivenessClass,
 }
 
 impl NymProxy {
     /// Start an embedded Nym SOCKS5 proxy using an auto-discovered public exit gateway.
     ///
-    /// Queries the Nym API for active exit gateways, then races hedged
-    /// connect attempts across them, keeping the first winner. The proxy
-    /// listens on a random available localhost port. This is the recommended
-    /// entry point, since no Nym-specific addresses are required.
-    pub async fn start() -> Result<Self, NymProxyError> {
-        Self::start_with_progress(Vec::new(), |_| {}).await
+    /// Queries the Nym API for active exit gateways, then races connect
+    /// attempts across them under `R`'s launch policy, keeping the first
+    /// winner. The proxy listens on a random available localhost port. This
+    /// is the recommended entry point, since no Nym-specific addresses are
+    /// required.
+    pub async fn start<R: Responsiveness>() -> Result<Self, NymProxyError> {
+        Self::start_with_progress::<R>(Vec::new(), |_| {}).await
     }
 
     /// [`Self::start`], excluding the caller's already-known Exit Nodes from
     /// the draw and reporting each bootstrap step to `on_progress` as a
     /// human-readable line. Exclusion holds for this start and for every
     /// later redraw of this proxy.
-    pub async fn start_with_progress(
+    pub async fn start_with_progress<R: Responsiveness>(
         excluded: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         tokio::time::timeout(
             NYM_LIFECYCLE_TIMEOUT,
-            Self::start_inner(excluded, on_progress),
+            Self::start_inner(R::CLASS, excluded, on_progress),
         )
         .await
         .map_err(|_| {
@@ -106,6 +104,7 @@ impl NymProxy {
     }
 
     async fn start_inner(
+        class: ResponsivenessClass,
         excluded: Vec<String>,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
@@ -118,15 +117,16 @@ impl NymProxy {
                 excluded.len()
             ));
         }
-        let mut proxy = Self::connect_across_providers(&providers, on_progress).await?;
+        let mut proxy = Self::connect_across_providers(&providers, class, on_progress).await?;
         proxy.excluded = excluded;
+        proxy.class = class;
         Ok(proxy)
     }
 
-    /// Race the pure hedged plan ([`crate::arm_race`]) over `providers`: one
-    /// arm first, another after each quiet [`HEDGE_INTERVAL`] or immediately
-    /// on a failure, at most [`MAX_PARALLEL_CONNECTS`] in flight and
-    /// [`MAX_PROVIDER_ATTEMPTS`] contacted. Each arm is bounded by
+    /// Race the pure plan ([`crate::arm_race`]) over `providers` under
+    /// `class`'s launch policy — saturating for a Critical acquisition,
+    /// hedged for a NonCritical one — at most [`MAX_PROVIDER_ATTEMPTS`]
+    /// contacted. Each arm is bounded by
     /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binds a fresh port, since a
     /// timed-out arm may still hold the port it was given. A loser that
     /// finishes connecting after the winner is disconnected, not leaked.
@@ -136,15 +136,13 @@ impl NymProxy {
     /// [`Self::reconnect`].
     async fn connect_across_providers(
         providers: &[String],
+        class: ResponsivenessClass,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         drive_race(
             providers.len(),
             MAX_PROVIDER_ATTEMPTS,
-            LaunchPolicy::Hedged {
-                max_parallel: MAX_PARALLEL_CONNECTS,
-                hedge_interval: HEDGE_INTERVAL,
-            },
+            class.launch_policy(),
             |candidate| {
                 let provider = providers[candidate].clone();
                 let target = short_provider_name(providers, candidate);
@@ -224,6 +222,9 @@ impl NymProxy {
             bind_port,
             exit_provider: provider_mix_address.to_string(),
             excluded: Vec::new(),
+            // A pinned-provider start never races; the class only governs
+            // this proxy's later redraws, which serve a caller who waits.
+            class: ResponsivenessClass::Critical,
         })
     }
 
@@ -284,7 +285,7 @@ impl NymProxy {
         let providers = eligible_providers(discovered, &self.excluded)?;
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_providers(&providers, |_| {}).await?;
+        let new_proxy = Self::connect_across_providers(&providers, self.class, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
@@ -621,6 +622,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::responsiveness::{Critical, MAX_PARALLEL_CONNECTS};
+    use crate::time::HEDGE_INTERVAL;
 
     // The scheme-stripping and retry-engine logic is tested in
     // `mixnet_connect`, where the tests call the REAL functions in the
@@ -923,7 +926,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_starts_and_reports_address() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
         assert!(
             addr.starts_with("127.0.0.1:"),
@@ -943,7 +948,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
 
         let stream = tokio_socks::tcp::Socks5Stream::connect(&*addr, "zec.rocks:443")
@@ -958,7 +965,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_disconnect_clean() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         proxy.disconnect().await;
     }
 }
