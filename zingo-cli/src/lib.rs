@@ -140,7 +140,7 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
 /// instead, deriving both the option set and the command set from
 /// [`build_clap_app`] so neither list drifts.
 ///
-/// Returns `None` when `args` (the process arguments including argv[0]) put
+/// Returns `None` when `args` (the process arguments including `argv[0]`) put
 /// every session option ahead of the command, or name no command at all.
 pub fn misplaced_session_option(args: &[String]) -> Option<String> {
     let app = build_clap_app();

@@ -128,7 +128,7 @@ fn answered_count(results: &[SurveyResult]) -> usize {
 
 /// Judge a survey into a [`Selection`], drawing one ticket per operator over
 /// the live cohort with `rng`. `pin` is an explicit user server: when set,
-/// it is selected if it is in the cohort and the sweep fails [`DeadPin`]
+/// it is selected if it is in the cohort and the sweep fails [`SweepError::DeadPin`]
 /// otherwise, never falling back to the draw (ADR 0034).
 pub fn select(
     results: &[SurveyResult],

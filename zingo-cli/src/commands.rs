@@ -144,7 +144,7 @@ pub enum CommandError {
     NotYetTyped(String),
 }
 
-/// A usage failure carrying the standard "Try 'help <command>'" pointer,
+/// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
     CommandError::NotYetTyped(format!(
