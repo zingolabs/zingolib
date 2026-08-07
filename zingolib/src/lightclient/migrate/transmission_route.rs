@@ -18,7 +18,9 @@
 //! its historical behavior, including the logged correlation warning when it
 //! must fall back to the sync endpoint.
 
-use crate::wallet::migration::transmission::{PartTransmissionError, TransmissionClient};
+use crate::wallet::migration::transmission::{
+    PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
@@ -43,7 +45,7 @@ impl TransmissionClient for RoutedTransmissionClient {
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TxId, PartTransmissionError> {
+    ) -> Result<TransmissionReceipt, PartTransmissionError> {
         match self {
             RoutedTransmissionClient::Clearnet(client) => {
                 client.submit(raw_tx, expiry_height).await
@@ -84,7 +86,7 @@ impl TransmissionClient for MixnetTransmissionClient {
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TxId, PartTransmissionError> {
+    ) -> Result<TransmissionReceipt, PartTransmissionError> {
         use rand::seq::SliceRandom as _;
 
         let indexer = self
@@ -112,8 +114,16 @@ impl TransmissionClient for MixnetTransmissionClient {
                 PartTransmissionError::Rejected(rendered)
             }
         })?;
-        crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
-            PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
+        let txid: TxId =
+            crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
+                PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
+            })?;
+        Ok(TransmissionReceipt {
+            txid,
+            route: TransmissionRoute::Mixnet {
+                correspondent: super::transmission_grpc::host_of(indexer),
+                via_socks5: self.socks5_addr.clone(),
+            },
         })
     }
 }
