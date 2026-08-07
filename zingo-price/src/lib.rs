@@ -315,7 +315,7 @@ impl PriceRaceFailure {
     }
 }
 
-/// Race all three sources concurrently and report the first success; the
+/// Race every source concurrently and report the first success; the
 /// losing fetches are cancelled. When every source fails, the error names
 /// each source's typed failure. Bounded by [`REQUEST_TIMEOUT`] per leg, so
 /// the whole race settles within the single-fetch bound.
@@ -326,11 +326,16 @@ pub async fn race_current_price(
     race_sources(
         socks5_proxy,
         [
-            PriceSource::Gemini,
-            PriceSource::Kraken,
-            PriceSource::CoinGecko,
-        ]
-        .map(|source| (source, source.url().to_string())),
+            (PriceSource::Gemini, GEMINI_ZECUSD_URL.to_string()),
+            (PriceSource::Kraken, KRAKEN_ZECUSD_URL.to_string()),
+            (PriceSource::CoinGecko, COINGECKO_ZECUSD_URL.to_string()),
+            (PriceSource::Coinbase, COINBASE_ZECUSD_URL.to_string()),
+            (PriceSource::Bitfinex, BITFINEX_ZECUSD_URL.to_string()),
+            (PriceSource::Okx, OKX_ZECUSDT_URL.to_string()),
+            (PriceSource::Mexc, MEXC_ZECUSDT_URL.to_string()),
+            (PriceSource::GateIo, GATEIO_ZECUSDT_URL.to_string()),
+            (PriceSource::Kucoin, KUCOIN_ZECUSDT_URL.to_string()),
+        ],
         REQUEST_TIMEOUT,
         CONNECT_TIMEOUT,
     )
@@ -340,9 +345,9 @@ pub async fn race_current_price(
 /// The race mechanism, URL-injectable for tests. First `Ok` wins and
 /// aborts the rest; all-fail collects every typed failure.
 #[cfg(feature = "socks5-fetch")]
-async fn race_sources(
+async fn race_sources<const N: usize>(
     socks5_proxy: Option<&str>,
-    entries: [(PriceSource, String); 3],
+    entries: [(PriceSource, String); N],
     request_timeout: Duration,
     connect_timeout: Duration,
 ) -> Result<RacedPrice, PriceRaceFailure> {
@@ -386,6 +391,39 @@ const KRAKEN_ZECUSD_URL: &str = "https://api.kraken.com/0/public/Trades?pair=ZEC
 #[cfg(feature = "socks5-fetch")]
 const COINGECKO_ZECUSD_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd&include_last_updated_at=true";
 
+/// Coinbase's spot-price endpoint for the ZEC/USD pair, a single quote
+/// carrying no trades and no timestamp.
+#[cfg(feature = "socks5-fetch")]
+const COINBASE_ZECUSD_URL: &str = "https://api.coinbase.com/v2/prices/ZEC-USD/spot";
+
+/// Bitfinex's public recent-trades endpoint for the ZEC/USD pair,
+/// requesting [`TRADES_REQUESTED`] trades so the median contract transfers.
+#[cfg(feature = "socks5-fetch")]
+const BITFINEX_ZECUSD_URL: &str = "https://api-pub.bitfinex.com/v2/trades/tZECUSD/hist?limit=11";
+
+/// OKX's public recent-trades endpoint for the ZEC/USDT pair — the
+/// dollar-pegged stablecoin quote standing in for USD — requesting
+/// [`TRADES_REQUESTED`] trades.
+#[cfg(feature = "socks5-fetch")]
+const OKX_ZECUSDT_URL: &str = "https://www.okx.com/api/v5/market/trades?instId=ZEC-USDT&limit=11";
+
+/// MEXC's public recent-trades endpoint for the ZEC/USDT pair,
+/// requesting [`TRADES_REQUESTED`] trades.
+#[cfg(feature = "socks5-fetch")]
+const MEXC_ZECUSDT_URL: &str = "https://api.mexc.com/api/v3/trades?symbol=ZECUSDT&limit=11";
+
+/// Gate.io's public recent-trades endpoint for the ZEC/USDT pair,
+/// requesting [`TRADES_REQUESTED`] trades.
+#[cfg(feature = "socks5-fetch")]
+const GATEIO_ZECUSDT_URL: &str =
+    "https://api.gateio.ws/api/v4/spot/trades?currency_pair=ZEC_USDT&limit=11";
+
+/// KuCoin's public trade-histories endpoint for the ZEC/USDT pair, which
+/// takes no count parameter, so the parser keeps the newest
+/// [`TRADES_REQUESTED`] rows.
+#[cfg(feature = "socks5-fetch")]
+const KUCOIN_ZECUSDT_URL: &str = "https://api.kucoin.com/api/v1/market/histories?symbol=ZEC-USDT";
+
 /// The public price sources, each an independent operator and failure
 /// domain.
 #[cfg(feature = "socks5-fetch")]
@@ -397,6 +435,22 @@ pub enum PriceSource {
     Kraken,
     /// CoinGecko's simple-price endpoint, an aggregator's spot value.
     CoinGecko,
+    /// Coinbase's spot-price endpoint, a single quote stamped at the fetch.
+    Coinbase,
+    /// Bitfinex's recent-trades endpoint, median of eleven trades.
+    Bitfinex,
+    /// OKX's recent-trades endpoint for the USDT pair, median of eleven
+    /// trades.
+    Okx,
+    /// MEXC's recent-trades endpoint for the USDT pair, median of eleven
+    /// trades.
+    Mexc,
+    /// Gate.io's recent-trades endpoint for the USDT pair, median of
+    /// eleven trades.
+    GateIo,
+    /// KuCoin's trade-histories endpoint for the USDT pair, median of the
+    /// newest eleven trades.
+    Kucoin,
 }
 
 #[cfg(feature = "socks5-fetch")]
@@ -407,6 +461,12 @@ impl PriceSource {
             PriceSource::Gemini => "gemini",
             PriceSource::Kraken => "kraken",
             PriceSource::CoinGecko => "coingecko",
+            PriceSource::Coinbase => "coinbase",
+            PriceSource::Bitfinex => "bitfinex",
+            PriceSource::Okx => "okx",
+            PriceSource::Mexc => "mexc",
+            PriceSource::GateIo => "gateio",
+            PriceSource::Kucoin => "kucoin",
         }
     }
 
@@ -415,15 +475,28 @@ impl PriceSource {
             PriceSource::Gemini => GEMINI_ZECUSD_URL,
             PriceSource::Kraken => KRAKEN_ZECUSD_URL,
             PriceSource::CoinGecko => COINGECKO_ZECUSD_URL,
+            PriceSource::Coinbase => COINBASE_ZECUSD_URL,
+            PriceSource::Bitfinex => BITFINEX_ZECUSD_URL,
+            PriceSource::Okx => OKX_ZECUSDT_URL,
+            PriceSource::Mexc => MEXC_ZECUSDT_URL,
+            PriceSource::GateIo => GATEIO_ZECUSDT_URL,
+            PriceSource::Kucoin => KUCOIN_ZECUSDT_URL,
         }
     }
 
-    /// The source's parser, a pure function over the response text.
+    /// The source's parser, a pure function over the response text except
+    /// Coinbase's, whose timeless spot quote is stamped at the fetch.
     fn parse(self, body: &str) -> Result<Price, PriceError> {
         match self {
             PriceSource::Gemini => parse_gemini_trades(body),
             PriceSource::Kraken => parse_kraken_trades(body),
             PriceSource::CoinGecko => parse_coingecko_simple(body),
+            PriceSource::Coinbase => parse_coinbase_spot(body),
+            PriceSource::Bitfinex => parse_bitfinex_trades(body),
+            PriceSource::Okx => parse_okx_trades(body),
+            PriceSource::Mexc => parse_mexc_trades(body),
+            PriceSource::GateIo => parse_gateio_trades(body),
+            PriceSource::Kucoin => parse_kucoin_histories(body),
         }
     }
 }
@@ -533,6 +606,187 @@ fn parse_coingecko_simple(body: &str) -> Result<Price, PriceError> {
         price_usd: quote.zcash.usd,
         time: quote.zcash.last_updated_at,
     })
+}
+
+/// Coinbase's spot response: a single amount with no trades and no
+/// timestamp, so the price is stamped at the fetch.
+#[cfg(feature = "socks5-fetch")]
+fn parse_coinbase_spot(body: &str) -> Result<Price, PriceError> {
+    let envelope: serde_json::Value = serde_json::from_str(body)?;
+    let price_usd: f32 = envelope["data"]["amount"]
+        .as_str()
+        .ok_or(PriceError::UnexpectedShape("the spot amount"))?
+        .parse()?;
+    if !price_usd.is_finite() {
+        return Err(PriceError::InvalidPrice);
+    }
+    let time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as u32)
+        .unwrap_or_default();
+    Ok(Price { price_usd, time })
+}
+
+/// Bitfinex's trades response: an array of `[id, millis, amount, price]`
+/// rows, reduced to the median.
+#[cfg(feature = "socks5-fetch")]
+fn parse_bitfinex_trades(body: &str) -> Result<Price, PriceError> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(body)?;
+    let trades = entries
+        .iter()
+        .map(|entry| {
+            let price_usd = entry
+                .get(3)
+                .and_then(serde_json::Value::as_f64)
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                as f32;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let millis = entry
+                .get(1)
+                .and_then(serde_json::Value::as_u64)
+                .ok_or(PriceError::UnexpectedShape("a trade's timestamp"))?;
+            Ok(Price {
+                price_usd,
+                time: (millis / 1000) as u32,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+/// OKX's trades response: a coded envelope whose `data` rows carry string
+/// prices and millisecond timestamps, reduced to the median.
+#[cfg(feature = "socks5-fetch")]
+fn parse_okx_trades(body: &str) -> Result<Price, PriceError> {
+    let envelope: serde_json::Value = serde_json::from_str(body)?;
+    if envelope["code"].as_str() != Some("0") {
+        return Err(PriceError::SourceReportedError(
+            envelope["msg"]
+                .as_str()
+                .unwrap_or("unnamed OKX error")
+                .to_string(),
+        ));
+    }
+    let trades = envelope["data"]
+        .as_array()
+        .ok_or(PriceError::UnexpectedShape("the trades array"))?
+        .iter()
+        .map(|entry| {
+            let price_usd: f32 = entry["px"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                .parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let millis: u64 = entry["ts"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's timestamp"))?
+                .parse()
+                .map_err(|_| PriceError::UnexpectedShape("a numeric timestamp"))?;
+            Ok(Price {
+                price_usd,
+                time: (millis / 1000) as u32,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+/// MEXC's trades response: an array of objects carrying string prices and
+/// millisecond timestamps, reduced to the median.
+#[cfg(feature = "socks5-fetch")]
+fn parse_mexc_trades(body: &str) -> Result<Price, PriceError> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(body)?;
+    let trades = entries
+        .iter()
+        .map(|entry| {
+            let price_usd: f32 = entry["price"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                .parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let millis = entry["time"]
+                .as_u64()
+                .ok_or(PriceError::UnexpectedShape("a trade's timestamp"))?;
+            Ok(Price {
+                price_usd,
+                time: (millis / 1000) as u32,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+/// Gate.io's trades response: an array of objects carrying string prices
+/// and string second timestamps, reduced to the median.
+#[cfg(feature = "socks5-fetch")]
+fn parse_gateio_trades(body: &str) -> Result<Price, PriceError> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(body)?;
+    let trades = entries
+        .iter()
+        .map(|entry| {
+            let price_usd: f32 = entry["price"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                .parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let time: u32 = entry["create_time"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's timestamp"))?
+                .parse()
+                .map_err(|_| PriceError::UnexpectedShape("a numeric timestamp"))?;
+            Ok(Price { price_usd, time })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
+}
+
+/// KuCoin's histories response: a coded envelope whose rows carry string
+/// prices and nanosecond timestamps, with the newest
+/// [`TRADES_REQUESTED`] rows reduced to the median because the endpoint
+/// takes no count parameter.
+#[cfg(feature = "socks5-fetch")]
+fn parse_kucoin_histories(body: &str) -> Result<Price, PriceError> {
+    let envelope: serde_json::Value = serde_json::from_str(body)?;
+    if envelope["code"].as_str() != Some("200000") {
+        return Err(PriceError::SourceReportedError(
+            envelope["msg"]
+                .as_str()
+                .unwrap_or("unnamed KuCoin error")
+                .to_string(),
+        ));
+    }
+    let rows = envelope["data"]
+        .as_array()
+        .ok_or(PriceError::UnexpectedShape("the trades array"))?;
+    let newest = rows.len().saturating_sub(TRADES_REQUESTED);
+    let trades = rows[newest..]
+        .iter()
+        .map(|entry| {
+            let price_usd: f32 = entry["price"]
+                .as_str()
+                .ok_or(PriceError::UnexpectedShape("a trade's price"))?
+                .parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+            let nanos = entry["time"]
+                .as_u64()
+                .ok_or(PriceError::UnexpectedShape("a trade's timestamp"))?;
+            Ok(Price {
+                price_usd,
+                time: (nanos / 1_000_000_000) as u32,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+    median_price(trades)
 }
 
 /// The typed signals [`classify_stage`] reads from a [`reqwest::Error`],
@@ -781,7 +1035,137 @@ mod tests {
             GEMINI_ZECUSD_URL.ends_with(&format!("limit_trades={TRADES_REQUESTED}")),
             "GEMINI_ZECUSD_URL must request TRADES_REQUESTED trades: {GEMINI_ZECUSD_URL}"
         );
+        assert!(
+            BITFINEX_ZECUSD_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
+            "BITFINEX_ZECUSD_URL must request TRADES_REQUESTED trades: {BITFINEX_ZECUSD_URL}"
+        );
+        assert!(
+            OKX_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
+            "OKX_ZECUSDT_URL must request TRADES_REQUESTED trades: {OKX_ZECUSDT_URL}"
+        );
+        assert!(
+            MEXC_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
+            "MEXC_ZECUSDT_URL must request TRADES_REQUESTED trades: {MEXC_ZECUSDT_URL}"
+        );
+        assert!(
+            GATEIO_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
+            "GATEIO_ZECUSDT_URL must request TRADES_REQUESTED trades: {GATEIO_ZECUSDT_URL}"
+        );
         assert_eq!(MEDIAN_INDEX, TRADES_REQUESTED / 2);
+    }
+
+    /// HYPOTHESIS: MEXC's object rows reduce to the median with
+    /// second-resolution times.
+    #[test]
+    fn mexc_trades_reduce_to_the_median() {
+        let rows: Vec<String> = (0..TRADES_REQUESTED)
+            .map(|i| {
+                format!(
+                    r#"{{"price":"{}.0","qty":"1","time":1786060006816}}"#,
+                    490 + i
+                )
+            })
+            .collect();
+        let body = format!("[{}]", rows.join(","));
+        let price = parse_mexc_trades(&body).expect("eleven well-formed rows parse");
+        assert!((price.price_usd - 495.0).abs() < 0.001);
+        assert_eq!(price.time, 1_786_060_006);
+    }
+
+    /// HYPOTHESIS: Gate.io's string-second rows reduce to the median.
+    #[test]
+    fn gateio_trades_reduce_to_the_median() {
+        let rows: Vec<String> = (0..TRADES_REQUESTED)
+            .map(|i| {
+                format!(
+                    r#"{{"price":"{}.0","amount":"1","create_time":"1786060000"}}"#,
+                    490 + i
+                )
+            })
+            .collect();
+        let body = format!("[{}]", rows.join(","));
+        let price = parse_gateio_trades(&body).expect("eleven well-formed rows parse");
+        assert!((price.price_usd - 495.0).abs() < 0.001);
+        assert_eq!(price.time, 1_786_060_000);
+    }
+
+    /// HYPOTHESIS: KuCoin's coded envelope keeps only the newest eleven of
+    /// its uncounted rows, honors nanosecond times, and refuses a non-zero
+    /// code with the reported message.
+    #[test]
+    fn kucoin_histories_truncate_to_the_newest_eleven() {
+        // Twenty rows ascending in price; the newest eleven are 499..=509,
+        // whose median is 504.
+        let rows: Vec<String> = (0..20)
+            .map(|i| {
+                format!(
+                    r#"{{"price":"{}.0","size":"1","time":1786059671481000000}}"#,
+                    490 + i
+                )
+            })
+            .collect();
+        let body = format!(r#"{{"code":"200000","data":[{}]}}"#, rows.join(","));
+        let price = parse_kucoin_histories(&body).expect("twenty well-formed rows parse");
+        assert!((price.price_usd - 504.0).abs() < 0.001);
+        assert_eq!(price.time, 1_786_059_671);
+        assert!(matches!(
+            parse_kucoin_histories(r#"{"code":"400100","msg":"symbol not found","data":[]}"#),
+            Err(PriceError::SourceReportedError(message)) if message.contains("not found")
+        ));
+    }
+
+    /// HYPOTHESIS: Coinbase's timeless spot quote parses to its amount
+    /// with a fetch-time stamp, and a malformed amount refuses typed.
+    #[test]
+    fn coinbase_spot_parses_the_amount() {
+        let price =
+            parse_coinbase_spot(r#"{"data":{"amount":"495.03","base":"ZEC","currency":"USD"}}"#)
+                .expect("the live shape parses");
+        assert!((price.price_usd - 495.03).abs() < 0.001);
+        assert!(price.time > 0, "the spot quote is stamped at the fetch");
+        assert!(matches!(
+            parse_coinbase_spot(r#"{"data":{"amount":null}}"#),
+            Err(PriceError::UnexpectedShape("the spot amount"))
+        ));
+    }
+
+    /// HYPOTHESIS: Bitfinex's `[id, millis, amount, price]` rows reduce to
+    /// the median price with second-resolution times.
+    #[test]
+    fn bitfinex_trades_reduce_to_the_median() {
+        let rows: Vec<String> = (0..TRADES_REQUESTED)
+            .map(|i| format!("[{i},1786058678265,0.5,{}.0]", 490 + i))
+            .collect();
+        let body = format!("[{}]", rows.join(","));
+        let price = parse_bitfinex_trades(&body).expect("eleven well-formed rows parse");
+        assert!((price.price_usd - 495.0).abs() < 0.001);
+        assert_eq!(price.time, 1_786_058_678);
+        assert!(matches!(
+            parse_bitfinex_trades("[[1,1786058678265,0.5,495.0]]"),
+            Err(PriceError::InsufficientTrades { received: 1 })
+        ));
+    }
+
+    /// HYPOTHESIS: OKX's coded envelope reduces to the median when the
+    /// code is zero and refuses with the reported message otherwise.
+    #[test]
+    fn okx_trades_honor_the_envelope_code() {
+        let rows: Vec<String> = (0..TRADES_REQUESTED)
+            .map(|i| {
+                format!(
+                    r#"{{"instId":"ZEC-USDT","px":"{}.0","sz":"1","ts":"1786058702759"}}"#,
+                    490 + i
+                )
+            })
+            .collect();
+        let body = format!(r#"{{"code":"0","msg":"","data":[{}]}}"#, rows.join(","));
+        let price = parse_okx_trades(&body).expect("eleven well-formed rows parse");
+        assert!((price.price_usd - 495.0).abs() < 0.001);
+        assert_eq!(price.time, 1_786_058_702);
+        assert!(matches!(
+            parse_okx_trades(r#"{"code":"51001","msg":"Instrument ID does not exist","data":[]}"#),
+            Err(PriceError::SourceReportedError(message)) if message.contains("does not exist")
+        ));
     }
 
     /// A recorded current price survives the write/read round trip, so the
