@@ -9,7 +9,13 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [features]
-default = []
+default = ["perspective"]
+# The editorial layer (`zingolib::perspective`). Default-on and consumed by
+# every governed consumer; the feature exists as a boundary marker, not a
+# capability toggle — CI's feature-powerset job compiles the perspective-off
+# subset, proving core builds without its editorial layer (ADR 0024,
+# amendment 2026-08-04).
+perspective = []
 nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 # Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
 # the wallet). Off by default; even when compiled, recording is a per-session

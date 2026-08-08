@@ -10,6 +10,8 @@ pub mod connectivity;
 pub mod data;
 pub mod lightclient;
 pub mod netutils;
+#[cfg(feature = "perspective")]
+pub mod perspective;
 pub mod sync;
 pub mod utils;
 pub mod wallet;
