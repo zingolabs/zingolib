@@ -1528,7 +1528,7 @@ async fn network_command(
             // Probing runs only over the mixnet route; the typed refusal
             // below names the transport state and its remedy.
             let probes = lightclient
-                .probe_broadcast_indexers(target, PROBE_LEG_TIMEOUT)
+                .probe_correspondents(target, PROBE_LEG_TIMEOUT)
                 .await?;
             Ok(probes
                 .iter()
@@ -1553,12 +1553,12 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {
-            witness,
+            correspondent,
             via_socks5,
         } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => true,
-            "witness" => witness.clone(),
+            "correspondent" => correspondent.clone(),
             "via_socks5" => via_socks5.clone(),
             "rtt_ms" => rtt_ms,
         },
@@ -1613,7 +1613,7 @@ pub(crate) enum MigrationSubCommand {
         #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
-    #[command(about = "Sync, then broadcast whatever the current window has due")]
+    #[command(about = "Sync, then transmit whatever the current window has due")]
     Auto,
     #[command(about = "Report the balance, phase, part counts, and coming windows")]
     Status,
@@ -1707,7 +1707,7 @@ async fn run_migration(
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             match lightclient.continue_note_splitting().await? {
-                SplitStep::RoundBroadcast { round, txids } => object! {
+                SplitStep::RoundTransmitted { round, txids } => object! {
                     "round" => round,
                     "split_txids" => txids_json(&txids),
                 }
@@ -1764,11 +1764,11 @@ async fn run_migration(
                 .sync_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
-            let txids = lightclient.auto_broadcast_if_due().await?;
+            let txids = lightclient.auto_transmit_if_due().await?;
             if txids.is_empty() {
                 "No parts due yet.".to_string()
             } else {
-                object! { "broadcast" => txids_json(&txids) }.pretty(JSON_INDENT)
+                object! { "transmitted" => txids_json(&txids) }.pretty(JSON_INDENT)
             }
         }
         MigrationSubCommand::Status => {
@@ -1860,7 +1860,7 @@ async fn run_migration(
 pub(crate) enum DrainSubCommand {
     #[command(about = "Preview the drain from current wallet state, sending nothing")]
     Plan,
-    #[command(about = "Build, sign, and broadcast the drain")]
+    #[command(about = "Build, sign, and transmit the drain")]
     Now,
 }
 
@@ -1891,7 +1891,7 @@ fn batch_progress_line(status: &zingolib::lightclient::migrate::BatchStatus) -> 
 }
 
 /// Renders an in-flight drain snapshot as the heartbeat's detail line:
-/// "built i/N" while proving and signing, "sent i/N" while broadcasting.
+/// "built i/N" while proving and signing, "sent i/N" while transmitting.
 fn drain_progress_line(status: &ImmediateMigrationStatus) -> String {
     match status.phase {
         ImmediateMigrationPhase::Building => format!("built {}/{}", status.built, status.total),
@@ -1910,7 +1910,7 @@ fn split_progress_line(status: &SplitStatus) -> String {
 
 /// Runs `drain plan` or `drain now`.
 ///
-/// `plan` previews from wallet state and sends nothing. `now` broadcasts, and
+/// `plan` previews from wallet state and sends nothing. `now` transmits, and
 /// writes progress lines to stderr while it runs.
 ///
 /// Returns the summary as JSON.
@@ -2132,7 +2132,7 @@ pub(crate) enum CliCommand {
             `plan` previews from current wallet state: transaction count, the total
             landing in Ironwood, fees, and the residual dust left behind because moving
             it costs more than it carries. Nothing is signed or sent.
-            `now` builds, signs and broadcasts. Sync first, since like any send this
+            `now` builds, signs and transmits. Sync first, since like any send this
             does not synchronize. Safe to repeat: a partial failure leaves the unsent
             notes spendable and a second run sends only the remainder.
         "}
@@ -2208,7 +2208,7 @@ pub(crate) enum CliCommand {
 
             Runs ZIP 318's two phases back to back: note-splitting rounds of Orchard
             self-sends, each awaited to confirmation, then one migration transaction per
-            part, broadcast immediately.
+            part, transmitted immediately.
 
             Privacy disclosure (ZIP 318): parts go out alongside each other and
             alongside synchronization, so the server can correlate them with this
@@ -2225,9 +2225,9 @@ pub(crate) enum CliCommand {
             `plan` computes the plan (rounds, parts, fees, residual dust) from the
             wallet's spendable Orchard notes and prints its hash. Nothing is sent.
             `start` records consent to the plan with that hash and begins. --per-bucket
-            caps how many parts share a broadcast window: lower is more private, higher
+            caps how many parts share a transmission window: lower is more private, higher
             is faster. Fails if the notes changed since planning.
-            `continue` syncs, then drives one splitting step, broadcasting the next
+            `continue` syncs, then drives one splitting step, transmitting the next
             round of self-sends or, once every note is part-ready, binding the parts and
             scheduling them. Repeat, syncing between rounds, until it reports them
             scheduled.
@@ -2237,7 +2237,7 @@ pub(crate) enum CliCommand {
             current window's due parts plus any missed windows', spaced by the given
             seconds (default 30). Reports each part's outcome. The manual counterpart
             to `auto`.
-            `auto` syncs, then broadcasts whatever the current window has due. Run it
+            `auto` syncs, then transmits whatever the current window has due. Run it
             periodically to drive the migration hands-off.
             `status` reports the Orchard confirmed-spendable balance, the phase, part
             counts and values, and the coming windows.
@@ -2247,7 +2247,7 @@ pub(crate) enum CliCommand {
             `reconcile` checks the persisted schedule against the chain and applies what
             is safe unattended. Run it after every sync.
             `catchup` sends overdue parts now, spaced by the given seconds (default 30).
-            Disclosure (ZIP 318): sending at catch-up time correlates the broadcasts
+            Disclosure (ZIP 318): sending at catch-up time correlates the transmissions
             with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
@@ -2435,9 +2435,9 @@ pub(crate) enum CliCommand {
         sub: SaveSubCommand,
     },
     #[command(
-        about = "Propose a transfer of ZEC, for 'confirm' to broadcast.",
+        about = "Propose a transfer of ZEC, for 'confirm' to transmit.",
         long_about = concat!(
-            "Propose a transfer of ZEC. Shows the fee, then 'confirm' broadcasts it.\n",
+            "Propose a transfer of ZEC. Shows the fee, then 'confirm' transmits it.\n",
             "\n",
             "Example:\n",
             "    send ",
@@ -2456,10 +2456,10 @@ pub(crate) enum CliCommand {
     )]
     Send { args: Vec<String> },
     #[command(
-        about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to broadcast.",
+        about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to transmit.",
         long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
-            "then 'confirm' broadcasts it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
+            "then 'confirm' transmits it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
             "zingolabs developer address per transaction.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
@@ -2505,10 +2505,10 @@ pub(crate) enum CliCommand {
         sub: Option<SettingsSubCommand>,
     },
     #[command(
-        about = "Propose a shield of transparent funds, for 'confirm' to broadcast.",
+        about = "Propose a shield of transparent funds, for 'confirm' to transmit.",
         long_about = indoc! {r"
             Propose a shield of transparent funds into the ironwood pool. Shows the
-            fee, then 'confirm' broadcasts it.
+            fee, then 'confirm' transmits it.
         "}
     )]
     Shield,
@@ -2759,7 +2759,7 @@ impl CliCommand {
     }
 
     /// True when executing the command reaches a transmit seam — a
-    /// transaction broadcast, the price fetch, or the mixnet probe — the
+    /// transaction Transmission, the price fetch, or the mixnet probe — the
     /// class the Online consent covers and the readiness gate holds.
     pub(crate) fn transmits(&self) -> bool {
         match self {

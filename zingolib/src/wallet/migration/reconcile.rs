@@ -57,10 +57,10 @@ pub enum PartClass {
     /// Its window passed recently (within the slip tolerance). Normal
     /// operation, never surfaced as an error.
     SlippedWithinTolerance,
-    /// Its window passed beyond the slip tolerance without a broadcast.
+    /// Its window passed beyond the slip tolerance without a transmission.
     Overdue,
     /// Signed, its window passed, and its transaction is still valid:
-    /// broadcasting it now would mine a permanent lateness fingerprint
+    /// transmitting it now would mine a permanent lateness fingerprint
     /// (the cleartext expiry and the stale anchor single the part out
     /// within its denomination cohort), so it waits out its expiry and
     /// rebuilds fresh, on-chain indistinguishable from an on-schedule
@@ -127,7 +127,7 @@ pub enum RecommendedAction {
     ReplanRemainder,
     /// Overdue parts should be offered for immediate, sequenced sending.
     /// Requires the user-facing disclosure that sending at application-open
-    /// time correlates the broadcasts with the user's activity.
+    /// time correlates the transmissions with the user's activity.
     PromptCatchUp {
         /// The overdue parts.
         parts: Vec<PartId>,
@@ -261,7 +261,7 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
 }
 
 /// The parts a user-triggered
-/// [`crate::lightclient::LightClient::execute_due_parts`] would broadcast this
+/// [`crate::lightclient::LightClient::execute_due_parts`] would transmit this
 /// instant, computed read-only from a reconcile `report` and the schedule.
 ///
 /// This is the current window's parts whose random target the chain has
@@ -384,7 +384,7 @@ fn classify(
         return PartClass::Expired;
     }
 
-    // Window position for parts that still await broadcast.
+    // Window position for parts that still await transmission.
     if matches!(part.state, PartState::Assigned | PartState::Signed)
         && let Some(bucket) = part.bucket_index
     {
@@ -700,7 +700,7 @@ mod tests {
         // Bucket TIP_BUCKET - 2 closed well beyond the slip tolerance. The
         // Assigned part is Overdue and folds into the batch; the Signed one is
         // classified AwaitingExpiry (it waits out its expiry and rebuilds
-        // rather than broadcasting late), so it is outside the catch-up batch
+        // rather than transmitting late), so it is outside the catch-up batch
         // and never folds.
         let assigned = assigned_part(0, TIP_BUCKET - 2);
         let mut signed = assigned_part(1, TIP_BUCKET - 2);

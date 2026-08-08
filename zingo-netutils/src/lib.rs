@@ -4,7 +4,7 @@
 //! # Organizing principle
 //!
 //! The [`Indexer`] trait is the sole interface a Zcash wallet or tool needs
-//! to query, sync, and broadcast against a chain indexer. It is
+//! to query, sync, and transmit against a chain indexer. It is
 //! implementation-agnostic: production code uses the provided [`GrpcIndexer`]
 //! (gRPC over tonic), while tests can supply a mock implementor with no
 //! network dependency.
@@ -79,7 +79,7 @@ pub use globally_public::TransparentIndexer;
 mod mixnet_connect;
 
 // Deliberately ungated and public: the pure racing planner shared by the
-// mixnet bootstrap here and zingolib's send fan-out (ADR 0011).
+// mixnet bootstrap here and zingolib's send escalation (ADR 0011).
 pub mod arm_race;
 
 // Deliberately ungated and public: the wallet side names an acquisition's

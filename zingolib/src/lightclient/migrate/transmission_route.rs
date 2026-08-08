@@ -1,63 +1,65 @@
 //! How migration parts choose their wire (ADR 0011, amendment 2026-07-23).
 //!
-//! Migration-part broadcasts obey the Mixnet Mode policy like every other
+//! Migration-part transmissions obey the Mixnet Mode policy like every other
 //! transmitting surface: while the mode is on they travel ONLY over the
 //! mixnet (failing closed while it bootstraps or after the proxy dies,
 //! never falling back to clearnet), and clearnet carries them only when the
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 //!
-//! Over the mixnet, each part is submitted to one Broadcast Indexer drawn at
-//! random per submission (Witness Rotation for migration parts), and the
-//! synchronization endpoint's *operator* is forbidden as a target (ADR
-//! 0022): a configured `migration_broadcast_uri` on the sync operator's
+//! Over the mixnet, each part is submitted to one Correspondent drawn at
+//! random per submission (Correspondent Rotation for migration parts), and
+//! the synchronization endpoint's *operator* is forbidden as a target (ADR
+//! 0022): a configured `migration_transmission_uri` on the sync operator's
 //! domain is refused, and the random draw excludes that operator from the
-//! curated list through the same exclusion core the send fan-out uses, so a
-//! sync connection to a regional variant (`eu.zec.rocks`) still bars the
-//! operator's witness (`zec.rocks`). The clearnet opt-out path keeps its
-//! historical behavior, including the logged correlation warning when it
+//! curated list through the same exclusion core the send escalation uses, so
+//! a sync connection to a regional variant (`eu.zec.rocks`) still bars the
+//! operator's Correspondent (`zec.rocks`). The clearnet opt-out path keeps
+//! its historical behavior, including the logged correlation warning when it
 //! must fall back to the sync endpoint.
 
-use crate::wallet::migration::broadcast::{BroadcastClient, BroadcastError};
+use crate::wallet::migration::transmission::{PartTransmissionError, TransmissionClient};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::broadcast_grpc::GrpcBroadcastClient;
+use super::transmission_grpc::GrpcTransmissionClient;
 
 #[cfg(feature = "nym")]
 use crate::lightclient::error::LightClientError;
 
-/// The [`BroadcastClient`] the Mixnet Mode policy resolved for this session:
+/// The [`TransmissionClient`] the Mixnet Mode policy resolved for this session:
 /// one concrete type for the callers, delegating to the wire the route chose.
-pub enum RoutedBroadcastClient {
+pub enum RoutedTransmissionClient {
     /// Clearnet submission, the deliberate mixnet opt-out, or a build
     /// without the `nym` feature.
-    Clearnet(GrpcBroadcastClient),
+    Clearnet(GrpcTransmissionClient),
     /// Mixnet submission through the local SOCKS5 proxy.
     #[cfg(feature = "nym")]
-    Mixnet(MixnetBroadcastClient),
+    Mixnet(MixnetTransmissionClient),
 }
 
-impl BroadcastClient for RoutedBroadcastClient {
+impl TransmissionClient for RoutedTransmissionClient {
     async fn submit(
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TxId, BroadcastError> {
+    ) -> Result<TxId, PartTransmissionError> {
         match self {
-            RoutedBroadcastClient::Clearnet(client) => client.submit(raw_tx, expiry_height).await,
+            RoutedTransmissionClient::Clearnet(client) => {
+                client.submit(raw_tx, expiry_height).await
+            }
             #[cfg(feature = "nym")]
-            RoutedBroadcastClient::Mixnet(client) => client.submit(raw_tx, expiry_height).await,
+            RoutedTransmissionClient::Mixnet(client) => client.submit(raw_tx, expiry_height).await,
         }
     }
 }
 
 /// Submits parts through the local SOCKS5 proxy, one randomly drawn
-/// Broadcast Indexer per submission, and can do nothing else. The ZIP 318
+/// Correspondent per submission, and can do nothing else. The ZIP 318
 /// no-synchronization guarantee holds structurally here exactly as it does
 /// for the clearnet client.
 #[cfg(feature = "nym")]
-pub struct MixnetBroadcastClient {
+pub struct MixnetTransmissionClient {
     socks5_addr: String,
     /// The eligible targets ([`eligible_candidates`]): nonempty, and never
     /// operated by the synchronization endpoint's operator (ADR 0022).
@@ -65,11 +67,11 @@ pub struct MixnetBroadcastClient {
 }
 
 #[cfg(feature = "nym")]
-impl MixnetBroadcastClient {
+impl MixnetTransmissionClient {
     /// A client dialing through the proxy at `socks5_addr`, drawing each
     /// submission's target from `candidates`.
     pub(crate) fn new(socks5_addr: String, candidates: Vec<http::Uri>) -> Self {
-        MixnetBroadcastClient {
+        MixnetTransmissionClient {
             socks5_addr,
             candidates,
         }
@@ -77,46 +79,48 @@ impl MixnetBroadcastClient {
 }
 
 #[cfg(feature = "nym")]
-impl BroadcastClient for MixnetBroadcastClient {
+impl TransmissionClient for MixnetTransmissionClient {
     async fn submit(
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TxId, BroadcastError> {
+    ) -> Result<TxId, PartTransmissionError> {
         use rand::seq::SliceRandom as _;
 
         let indexer = self
             .candidates
             .choose(&mut rand::rngs::OsRng)
-            .ok_or_else(|| BroadcastError::Transport("no broadcast candidates".to_string()))?;
+            .ok_or_else(|| {
+                PartTransmissionError::Transport("no transmission candidates".to_string())
+            })?;
         let txid_hex = zingo_netutils::send_transaction_via_socks5(
             &self.socks5_addr,
             indexer,
             &raw_tx,
             u64::from(u32::from(expiry_height)),
-            super::broadcast_grpc::MIGRATION_SUBMIT_TIMEOUT,
+            super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,
         )
         .await
         .map_err(|error| {
-            // The taxonomy's own failover reading maps onto BroadcastError's
+            // The taxonomy's own failover reading maps onto PartTransmissionError's
             // contract: a failover candidate was not consumed (Transport,
             // retryable: the part falls to reconciliation), a verdict was.
             let rendered = error.to_string();
             if error.is_failover_candidate() {
-                BroadcastError::Transport(rendered)
+                PartTransmissionError::Transport(rendered)
             } else {
-                BroadcastError::Rejected(rendered)
+                PartTransmissionError::Rejected(rendered)
             }
         })?;
         crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
-            BroadcastError::Rejected(format!("endpoint returned an invalid txid: {e}"))
+            PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
         })
     }
 }
 
 /// The mixnet targets migration parts may go to: the configured
-/// `migration_broadcast_uri` alone when set, otherwise the curated Broadcast
-/// Indexer pool, in both cases with the synchronization endpoint's operator
+/// `migration_transmission_uri` alone when set, otherwise the curated
+/// Correspondent pool, in both cases with the synchronization endpoint's operator
 /// forbidden (ADR 0022), so no server correlates a wallet's sync stream with
 /// its migration cohort. An exclusion that empties the pool refuses with a
 /// typed error rather than falling back.
@@ -128,21 +132,21 @@ pub(crate) fn eligible_candidates(
     candidates_from(
         configured,
         sync_indexer,
-        crate::nym::broadcast_indexers::broadcast_indexers(),
+        crate::nym::correspondents::correspondent_indexers(),
     )
 }
 
 /// Pure core of [`eligible_candidates`], over an arbitrary pool for
 /// testability. The pool exclusion delegates to the sanctioned constructor's
 /// core (`eligible_from`), so the migration draw can never diverge from the
-/// send fan-out's operator-level exclusion semantics (ADR 0022).
+/// send escalation's operator-level exclusion semantics (ADR 0022).
 #[cfg(feature = "nym")]
 fn candidates_from(
     configured: Option<http::Uri>,
     sync_indexer: Option<&http::Uri>,
     pool: Vec<http::Uri>,
 ) -> Result<Vec<http::Uri>, LightClientError> {
-    use crate::nym::broadcast_indexers::{eligible_from, same_operator};
+    use crate::nym::correspondents::{eligible_from, same_operator};
 
     if let Some(configured) = configured {
         let shares_sync_operator = configured
@@ -150,17 +154,19 @@ fn candidates_from(
             .zip(sync_indexer.and_then(http::Uri::host))
             .is_some_and(|(candidate, sync)| same_operator(candidate, sync));
         if shares_sync_operator {
-            return Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint {
-                host: configured.host().unwrap_or_default().to_string(),
-            });
+            return Err(
+                LightClientError::MigrationTransmissionTargetIsSyncEndpoint {
+                    host: configured.host().unwrap_or_default().to_string(),
+                },
+            );
         }
         return Ok(vec![configured]);
     }
     match sync_indexer {
         Some(sync) => {
-            eligible_from(pool, sync).map_err(|_| LightClientError::NoEligibleBroadcastIndexer)
+            eligible_from(pool, sync).map_err(|_| LightClientError::NoEligibleCorrespondent)
         }
-        None if pool.is_empty() => Err(LightClientError::NoEligibleBroadcastIndexer),
+        None if pool.is_empty() => Err(LightClientError::NoEligibleCorrespondent),
         None => Ok(pool),
     }
 }
@@ -196,7 +202,7 @@ mod tests {
 
     /// HYPOTHESIS: exclusion is by operator, not exact host (ADR 0022). A
     /// sync connection to a regional variant must still bar the operator's
-    /// listed witness. Falsified if the draw weakens to exact-host matching,
+    /// listed Correspondent. Falsified if the draw weakens to exact-host matching,
     /// the regression PR #2527's review found on this path.
     #[test]
     fn the_sync_operators_regional_variant_is_excluded_from_the_pool() {
@@ -209,7 +215,7 @@ mod tests {
         assert_eq!(candidates, vec![uri("https://other.example:443")]);
     }
 
-    /// HYPOTHESIS: a configured broadcast target equal to the sync endpoint
+    /// HYPOTHESIS: a configured transmission target equal to the sync endpoint
     /// is refused outright, not silently accepted.
     #[test]
     fn a_configured_target_on_the_sync_host_is_refused() {
@@ -221,12 +227,12 @@ mod tests {
         );
         assert!(matches!(
             refused,
-            Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint { host }) if host == "sync.example"
+            Err(LightClientError::MigrationTransmissionTargetIsSyncEndpoint { host }) if host == "sync.example"
         ));
     }
 
     /// HYPOTHESIS: the configured-target refusal is also operator-level: a
-    /// `migration_broadcast_uri` on the sync operator's regional variant is
+    /// `migration_transmission_uri` on the sync operator's regional variant is
     /// refused, since both hosts are the same accumulating party (ADR 0022).
     #[test]
     fn a_configured_target_on_the_sync_operators_variant_is_refused() {
@@ -238,7 +244,7 @@ mod tests {
         );
         assert!(matches!(
             refused,
-            Err(LightClientError::MigrationBroadcastTargetIsSyncEndpoint { host }) if host == "eu.zec.rocks"
+            Err(LightClientError::MigrationTransmissionTargetIsSyncEndpoint { host }) if host == "eu.zec.rocks"
         ));
     }
 
@@ -274,7 +280,7 @@ mod tests {
         let refused = candidates_from(None, Some(&sync), vec![uri("https://only.example:443")]);
         assert!(matches!(
             refused,
-            Err(LightClientError::NoEligibleBroadcastIndexer)
+            Err(LightClientError::NoEligibleCorrespondent)
         ));
     }
 
@@ -283,12 +289,12 @@ mod tests {
     /// pool, with that operator absent.
     #[test]
     fn eligible_candidates_draws_the_curated_pool_minus_the_sync_operator() {
-        use crate::nym::broadcast_indexers::BROADCAST_INDEXERS;
+        use crate::nym::correspondents::CORRESPONDENT_INDEXERS;
 
         let sync = uri("https://eu.zec.rocks:443");
         let candidates =
             eligible_candidates(None, Some(&sync)).expect("the curated pool minus one operator");
-        assert_eq!(candidates.len(), BROADCAST_INDEXERS.len() - 1);
+        assert_eq!(candidates.len(), CORRESPONDENT_INDEXERS.len() - 1);
         assert!(
             candidates
                 .iter()

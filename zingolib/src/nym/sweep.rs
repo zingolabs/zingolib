@@ -67,7 +67,7 @@ pub struct Selection {
 /// The operator key of a host: its registrable parent domain (last two
 /// labels), lowercased. One domain is one administrative authority, so
 /// endpoints group by this value for the one-ticket-per-operator draw and
-/// the transmit exclusion. Mirrors `broadcast_indexers::operator_domain`;
+/// the transmit exclusion. Mirrors `correspondents::operator_domain`;
 /// the census-level `Indexer::operator` is the eventual single owner.
 fn operator_domain(host: &str) -> String {
     let host = host.to_ascii_lowercase();

@@ -135,7 +135,7 @@ pub struct MixnetPriceFetch {
 /// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -160,7 +160,7 @@ pub struct LightClient {
     batch_progress: migrate::BatchProgressHandle,
     /// The latest progress line of an in-flight Transmission, or `None` when
     /// idle. A side channel like `immediate_migration_progress`, updated by
-    /// `transmit_transactions` (submissions, retries, probes, fan-out rounds)
+    /// `transmit_transactions` (submissions, retries, probes, escalation rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
     /// The cross-session per-indexer attempt history (the indexer diary).
@@ -233,7 +233,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -269,7 +269,7 @@ impl LightClient {
         zingo_netutils::ensure_default_crypto_provider();
         LightClient {
             indexer: None,
-            migration_broadcast_uri: None,
+            migration_transmission_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
@@ -326,7 +326,7 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -366,7 +366,7 @@ impl LightClient {
     /// `&mut self`, then poll [`transmit::TransmitProgressHandle::latest`]
     /// concurrently, the same side-channel pattern as
     /// [`Self::immediate_migration_progress_handle`]. The line narrates submissions,
-    /// retries, queued probes, and mixnet fan-out rounds.
+    /// retries, queued probes, and mixnet escalation rounds.
     pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
         self.transmit_progress.clone()
     }
@@ -517,7 +517,7 @@ impl LightClient {
             self.publish_mixnet_slot_state();
         }
         self.indexer = None;
-        self.migration_broadcast_uri = None;
+        self.migration_transmission_uri = None;
     }
 
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
@@ -962,7 +962,7 @@ impl LightClient {
     /// Switch Mixnet Mode on for a chain-mock test: the slot reports
     /// [`MixnetMode::Ready`](crate::nym::MixnetMode) at `socks5_addr` with no
     /// child, watcher, or probe behind it, so the test walks the same
-    /// fail-closed route resolver and fan-out orchestration a live Ready
+    /// fail-closed route resolver and escalation orchestration a live Ready
     /// session does. The transmit path pairs this slot state with arms that
     /// submit over the mock indexer's channel; the address is never dialed.
     #[cfg(any(test, feature = "testutils"))]
@@ -1016,12 +1016,12 @@ impl LightClient {
     }
 
     /// Runs the mixnet liveness probe against `target`, or against every
-    /// Broadcast Indexer when `target` is `None`. Indexers are probed
+    /// Correspondent when `target` is `None`. Indexers are probed
     /// concurrently: each probe runs `GetLightdInfo` through the session's
     /// SOCKS5 proxy and appends its outcome to the cross-session indexer
     /// history. The probe has no clearnet leg and refuses while the mixnet
     /// transport is not ready.
-    pub async fn probe_broadcast_indexers(
+    pub async fn probe_correspondents(
         &self,
         target: Option<http::Uri>,
         timeout: std::time::Duration,
@@ -1042,7 +1042,7 @@ impl LightClient {
             );
         }
         let targets: Vec<http::Uri> = target
-            .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
+            .map_or_else(crate::nym::correspondents::correspondent_indexers, |uri| {
                 vec![uri]
             })
             .into_iter()

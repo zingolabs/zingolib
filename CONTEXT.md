@@ -11,7 +11,7 @@ recommendations, and the session's network posture.
 
 **Transmitting command**:
 A command whose execution emits mixnet-bound traffic: a transaction
-broadcast, the price fetch, or the mixnet probe. The Online consent
+Transmission, the price fetch, or the mixnet probe. The Online consent
 covers exactly this class.
 _Avoid_: network command (conflates this class with sync-class commands)
 
@@ -28,12 +28,12 @@ to become ready before the typed refusal stands.
 **Immediate migration**:
 The non-private ZIP 318 option ("migrate immediately"): every spendable
 Orchard note swept into one Ironwood output per transaction, real amounts
-visible on-chain, broadcast at once.
+visible on-chain, transmitted at once.
 _Avoid_: drain
 
 **Scheduled migration**:
 The private ZIP 318 flow: note splitting into denominations, then parts
-broadcast across buckets.
+transmitted across buckets.
 
 **Note splitting**:
 Phase 1 of the scheduled flow: Orchard self-sends that resize notes to
