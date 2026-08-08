@@ -457,7 +457,7 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
 
 /// One liveness probe: can the endpoint still be dialed? Local and cheap —
 /// its job is to notice the platform host dying, not to re-validate the
-/// mixnet path, which the send fan-out judges per arm.
+/// mixnet path, which the send escalation judges per arm.
 async fn endpoint_alive(socks5_addr: String) -> bool {
     matches!(
         tokio::time::timeout(

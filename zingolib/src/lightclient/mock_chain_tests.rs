@@ -1002,7 +1002,7 @@ async fn immediate_migration_is_a_migration_value_transfer() {
     let summary = client
         .migrate_immediately(AccountId::ZERO)
         .await
-        .expect("the immediate migration builds and broadcasts");
+        .expect("the immediate migration builds and transmits");
     assert_eq!(
         summary.txids.len(),
         1,
@@ -1057,7 +1057,7 @@ async fn migration_with_memo_is_still_a_migration_value_transfer() {
     // A send to the wallet's own orchard receiver lands in the Ironwood pool
     // post-NU6.3, funded from the legacy Orchard note: an Orchard→Ironwood
     // self-send carrying a real memo. Asserted on the pending (transmitted)
-    // record, the state the history shows right after broadcast, and the
+    // record, the state the history shows right after transmission, and the
     // same classification path as a confirmed transaction. (Mining it would
     // conflict the injected note's fabricated orchard tree leaf with the
     // send's real orchard commitments at the same positions.)
@@ -1194,7 +1194,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
     // The invariant the immediate migration path enforces (fail_unsent_transactions) and
     // the split path must too: after a failed round, nothing may remain
     // Calculated. Its notes would stay spent by transactions that will
-    // never broadcast, and a replan silently excludes them.
+    // never transmit, and a replan silently excludes them.
     assert!(
         calculated.is_empty(),
         "a failed note-split round stranded {} transaction(s) in Calculated \

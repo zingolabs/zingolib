@@ -1,16 +1,17 @@
-//! Censorship-resistant broadcast over the Nym mixnet: an escalating, serially
-//! gated fan-out over the curated Broadcast Indexer list.
+//! Censorship-resistant transmission over the Nym mixnet: an escalating,
+//! serially gated Correspondent Rotation over the curated Correspondent list.
 //!
-//! The adversary is a Broadcast Indexer that suppresses a send (accepting the
+//! The adversary is a Correspondent that suppresses a send (accepting the
 //! connection but declining to relay, or misreporting the outcome), so the
 //! send must be able to route around it to honest indexers. The first round
-//! submits to a single random indexer (witness rotation, and the common
-//! success path). Only if that fails to confirm delivery does the send
-//! escalate, submitting to two fresh indexers in parallel, then three, each
-//! round gated on the complete failure of the round before it. The fan-out
-//! stops at `MAX_BROADCAST_WITNESSES` distinct indexers, which the one-two-
-//! three schedule reaches at the end of the third round. Within a round the
-//! first indexer to confirm delivery wins and the rest are abandoned. See
+//! submits to a single random Correspondent (Correspondent Rotation, and the
+//! common success path). Only if that fails to confirm delivery does the send
+//! escalate, submitting to two fresh Correspondents in parallel, then three,
+//! each round gated on the complete failure of the round before it. The
+//! escalation stops at `MAX_TRANSMISSION_CORRESPONDENTS` distinct
+//! Correspondents, which the one-two-three schedule reaches at the end of the
+//! third round. Within a round the first Correspondent to confirm delivery
+//! wins and the rest are abandoned. See
 //! `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
 //! This orchestrates the shared per-submission policy (retry,
@@ -35,44 +36,45 @@ use rand::Rng;
 use rand::seq::SliceRandom;
 use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
 
-/// The maximum number of distinct Broadcast Indexers a single send may contact
-/// before it surfaces failure (ADR 0011). The escalating one-two-three fan-out
-/// reaches this at the end of the third round. It is the circuit breaker for an
-/// unbroadcastable transaction, since the client cannot classify a rejection.
-pub(crate) const MAX_BROADCAST_WITNESSES: usize = 6;
+/// The maximum number of distinct Correspondents a single send may contact
+/// before it surfaces failure (ADR 0011). The escalating one-two-three
+/// schedule reaches this at the end of the third round. It is the circuit
+/// breaker for an untransmittable transaction, since the client cannot
+/// classify a rejection.
+pub(crate) const MAX_TRANSMISSION_CORRESPONDENTS: usize = 6;
 
-/// One witness's failed arm: which indexer was tried and its typed failure,
-/// carried whole (`docs/agents/net-diag-design.md`).
+/// One Correspondent's failed arm: which indexer was tried and its typed
+/// failure, carried whole (`docs/agents/net-diag-design.md`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct WitnessAttempt<E> {
-    /// The witness's host.
-    pub witness: String,
+pub(crate) struct CorrespondentAttempt<E> {
+    /// The Correspondent's host.
+    pub correspondent: String,
     /// The arm's failure, untouched.
     pub failure: E,
 }
 
-/// Why a fan-out broadcast failed. The failed attempts are a vector of
+/// Why an escalating transmission failed. The failed attempts are a vector of
 /// typed records; the joined-prose rendering is a `Display` on top of that
 /// vector for the existing string consumers, never the storage form.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum FanoutError<E> {
-    /// The Broadcast Indexer list was empty.
+pub(crate) enum EscalationError<E> {
+    /// The Correspondent list was empty.
     NoIndexers,
-    /// The cap was reached without any indexer confirming delivery.
+    /// The cap was reached without any Correspondent confirming delivery.
     AllFailed {
-        /// The number of distinct indexers contacted.
+        /// The number of distinct Correspondents contacted.
         attempts: usize,
-        /// Every witness's failure: which indexers were tried and how each
-        /// arm failed, in completion order.
-        failures: Vec<WitnessAttempt<E>>,
+        /// Every Correspondent's failure: which indexers were tried and how
+        /// each arm failed, in completion order.
+        failures: Vec<CorrespondentAttempt<E>>,
     },
 }
 
-impl<E: std::fmt::Display> std::fmt::Display for FanoutError<E> {
+impl<E: std::fmt::Display> std::fmt::Display for EscalationError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FanoutError::NoIndexers => write!(f, "the Broadcast Indexer list is empty"),
-            FanoutError::AllFailed { attempts, failures } => {
+            EscalationError::NoIndexers => write!(f, "the Correspondent list is empty"),
+            EscalationError::AllFailed { attempts, failures } => {
                 write!(
                     f,
                     "no indexer confirmed delivery after contacting {attempts} of them: "
@@ -81,7 +83,7 @@ impl<E: std::fmt::Display> std::fmt::Display for FanoutError<E> {
                     if i > 0 {
                         write!(f, "; ")?;
                     }
-                    write!(f, "{}: {}", attempt.witness, attempt.failure)?;
+                    write!(f, "{}: {}", attempt.correspondent, attempt.failure)?;
                 }
                 Ok(())
             }
@@ -89,13 +91,14 @@ impl<E: std::fmt::Display> std::fmt::Display for FanoutError<E> {
     }
 }
 
-impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for FanoutError<E> {}
+impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for EscalationError<E> {}
 
-/// Broadcast to `indexers` as an escalating, serially gated fan-out, returning
-/// the server-reported txid of the first indexer to confirm delivery. `run_arm`
-/// submits to one indexer and resolves to `Ok(server_txid)` on confirmed
-/// delivery or `Err(msg)` otherwise. `rng` chooses the random order (witness
-/// rotation), and `cap` bounds the distinct indexers contacted.
+/// Transmit to `indexers` as an escalating, serially gated Correspondent
+/// Rotation, returning the server-reported txid of the first Correspondent to
+/// confirm delivery. `run_arm` submits to one indexer and resolves to
+/// `Ok(server_txid)` on confirmed delivery or `Err(msg)` otherwise. `rng`
+/// chooses the random order (Correspondent Rotation), and `cap` bounds the
+/// distinct Correspondents contacted.
 ///
 /// Round `r` submits to `r` fresh indexers in parallel, and round `r + 1` runs
 /// only after every arm of round `r` fails, so parallelism widens only as
@@ -106,13 +109,13 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for FanoutError<E
 /// `report` receives a succinct progress line whenever the race's shape
 /// changes (a launch or an arm failure), rendering the planner's own
 /// [`RaceProgress`](zingo_netutils::arm_race::RaceProgress) snapshot for display.
-pub(crate) async fn fanout_broadcast<A, F, E, R, P, T>(
+pub(crate) async fn escalating_transmit<A, F, E, R, P, T>(
     indexers: &[Uri],
     rng: &mut R,
     cap: usize,
     run_arm: A,
     report: P,
-) -> Result<T, FanoutError<E>>
+) -> Result<T, EscalationError<E>>
 where
     A: Fn(Uri) -> F,
     F: Future<Output = Result<T, E>>,
@@ -121,7 +124,7 @@ where
     P: Fn(String),
 {
     if indexers.is_empty() {
-        return Err(FanoutError::NoIndexers);
+        return Err(EscalationError::NoIndexers);
     }
 
     // One shuffle yields both the initial random pick and a repetition-free
@@ -140,7 +143,7 @@ where
     let mut race = RaceState::new(order.len(), cap, LaunchPolicy::EscalatingRounds);
     let mut arms = FuturesUnordered::new();
     let mut lost = false;
-    let mut failures: Vec<WitnessAttempt<E>> = Vec::new();
+    let mut failures: Vec<CorrespondentAttempt<E>> = Vec::new();
 
     let launch = |actions: Vec<RaceAction>, arms: &mut FuturesUnordered<_>, lost: &mut bool| {
         for action in actions {
@@ -178,8 +181,8 @@ where
                     &mut arms,
                     &mut lost,
                 );
-                failures.push(WitnessAttempt {
-                    witness: host_of(candidate),
+                failures.push(CorrespondentAttempt {
+                    correspondent: host_of(candidate),
                     failure: error,
                 });
                 report(race.progress().to_string());
@@ -187,7 +190,7 @@ where
         }
     }
 
-    Err(FanoutError::AllFailed {
+    Err(EscalationError::AllFailed {
         attempts: race.launched(),
         failures,
     })
@@ -269,7 +272,7 @@ mod tests {
     #[tokio::test]
     async fn empty_list_is_an_error() {
         let mock = MockArms::new(&[]);
-        let err = fanout_broadcast(
+        let err = escalating_transmit(
             &[],
             &mut StdRng::seed_from_u64(1),
             6,
@@ -278,14 +281,14 @@ mod tests {
         )
         .await
         .expect_err("no indexers");
-        assert!(matches!(err, FanoutError::NoIndexers));
+        assert!(matches!(err, EscalationError::NoIndexers));
         assert!(mock.contacted().is_empty());
     }
 
     #[tokio::test]
-    async fn first_round_success_contacts_exactly_one_witness() {
+    async fn first_round_success_contacts_exactly_one_correspondent() {
         // Every indexer would accept; the single round-one pick must end it, so
-        // the happy path keeps its single-witness discipline.
+        // the happy path keeps its single-Correspondent discipline.
         let indexers = uris(&["a", "b", "c", "d"]);
         let mock = MockArms::new(&[
             ("a", Ok("txid")),
@@ -293,7 +296,7 @@ mod tests {
             ("c", Ok("txid")),
             ("d", Ok("txid")),
         ]);
-        let ok = fanout_broadcast(
+        let ok = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(7),
             6,
@@ -329,7 +332,7 @@ mod tests {
             .collect();
         let mock = MockArms::new(&scripts);
 
-        let ok = fanout_broadcast(
+        let ok = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(seed),
             6,
@@ -349,29 +352,29 @@ mod tests {
 
     #[tokio::test]
     async fn all_failing_stops_at_the_cap() {
-        // Ten indexers, every one suppressing. The fan-out must stop at the
-        // six-witness cap (1 + 2 + 3), not walk the whole list.
+        // Ten indexers, every one suppressing. The escalation must stop at the
+        // six-Correspondent cap (1 + 2 + 3), not walk the whole list.
         let hosts = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
             hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
         let mock = MockArms::new(&scripts);
 
-        let err = fanout_broadcast(
+        let err = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(3),
-            MAX_BROADCAST_WITNESSES,
+            MAX_TRANSMISSION_CORRESPONDENTS,
             |u| mock.run(u),
             |_| (),
         )
         .await
         .expect_err("no indexer confirms");
         match err {
-            FanoutError::AllFailed { attempts, .. } => assert_eq!(attempts, 6),
+            EscalationError::AllFailed { attempts, .. } => assert_eq!(attempts, 6),
             other => panic!("expected AllFailed, got {other:?}"),
         }
         let contacted = mock.contacted();
-        assert_eq!(contacted.len(), 6, "capped at six witnesses");
+        assert_eq!(contacted.len(), 6, "capped at six Correspondents");
         let distinct: std::collections::HashSet<_> = contacted.iter().collect();
         assert_eq!(distinct.len(), 6, "no indexer is contacted twice");
     }
@@ -385,7 +388,7 @@ mod tests {
             hosts.iter().map(|&h| (h, Err("down"))).collect();
         let mock = MockArms::new(&scripts);
 
-        let err = fanout_broadcast(
+        let err = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(5),
             6,
@@ -395,25 +398,25 @@ mod tests {
         .await
         .expect_err("all down");
         match err {
-            FanoutError::AllFailed { attempts, .. } => assert_eq!(attempts, 3),
+            EscalationError::AllFailed { attempts, .. } => assert_eq!(attempts, 3),
             other => panic!("expected AllFailed, got {other:?}"),
         }
         assert_eq!(mock.contacted().len(), 3);
     }
 
-    /// HYPOTHESIS: a failed fan-out accounts for every witness contacted and
-    /// how each failed, as typed records — and the prose rendering on top
-    /// still names each one. Falsified if any contacted host is missing from
-    /// the typed attempts or the rendering.
+    /// HYPOTHESIS: a failed escalation accounts for every Correspondent
+    /// contacted and how each failed, as typed records — and the prose
+    /// rendering on top still names each one. Falsified if any contacted host
+    /// is missing from the typed attempts or the rendering.
     #[tokio::test]
-    async fn a_failed_fanout_records_every_witness_and_its_failure() {
+    async fn a_failed_escalation_records_every_correspondent_and_its_failure() {
         let hosts = ["a", "b", "c"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
             hosts.iter().map(|&h| (h, Err("suppressed"))).collect();
         let mock = MockArms::new(&scripts);
 
-        let err = fanout_broadcast(
+        let err = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(5),
             6,
@@ -423,14 +426,14 @@ mod tests {
         .await
         .expect_err("all suppressed");
         let rendered = err.to_string();
-        let FanoutError::AllFailed { failures, .. } = err else {
+        let EscalationError::AllFailed { failures, .. } = err else {
             panic!("expected AllFailed");
         };
         for host in hosts {
             assert!(
                 failures
                     .iter()
-                    .any(|a| a.witness == host && a.failure == "suppressed"),
+                    .any(|a| a.correspondent == host && a.failure == "suppressed"),
                 "the typed attempts must record {host}: {failures:?}"
             );
             assert!(
@@ -440,12 +443,12 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: the fan-out narrates its shape at every launch and
+    /// HYPOTHESIS: the escalation narrates its shape at every launch and
     /// failure, so a heartbeat consumer can render the race live. Falsified
-    /// if a fully failing fan-out never reports the single-arm round one or a
-    /// widened later round.
+    /// if a fully failing transmission never reports the single-arm round one
+    /// or a widened later round.
     #[tokio::test]
-    async fn a_failing_fanout_narrates_its_escalation() {
+    async fn a_failing_transmission_narrates_its_escalation() {
         let hosts = ["a", "b", "c", "d", "e", "f"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
@@ -453,10 +456,10 @@ mod tests {
         let mock = MockArms::new(&scripts);
 
         let lines = Mutex::new(Vec::<String>::new());
-        let _ = fanout_broadcast(
+        let _ = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(11),
-            MAX_BROADCAST_WITNESSES,
+            MAX_TRANSMISSION_CORRESPONDENTS,
             |u| mock.run(u),
             |line| lines.lock().expect("narration mutex poisoned").push(line),
         )
@@ -477,16 +480,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_seed_picks_the_same_first_witness_every_time() {
-        // Witness rotation is driven by the injected RNG, so a fixed seed is
-        // reproducible: the same indexer carries round one across runs.
+    async fn a_seed_picks_the_same_first_correspondent_every_time() {
+        // Correspondent Rotation is driven by the injected RNG, so a fixed
+        // seed is reproducible: the same indexer carries round one across runs.
         let hosts = ["a", "b", "c", "d", "e"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
             hosts.iter().map(|&h| (h, Err("down"))).collect();
 
         let first_run = MockArms::new(&scripts);
-        let _ = fanout_broadcast(
+        let _ = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(99),
             6,
@@ -496,7 +499,7 @@ mod tests {
         .await;
 
         let second_run = MockArms::new(&scripts);
-        let _ = fanout_broadcast(
+        let _ = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(99),
             6,
@@ -508,7 +511,7 @@ mod tests {
         assert_eq!(
             first_run.contacted()[0],
             second_run.contacted()[0],
-            "the seed fixes the round-one witness"
+            "the seed fixes the round-one Correspondent"
         );
     }
 }

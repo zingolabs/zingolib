@@ -98,7 +98,7 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
-    /// A placement asked for a broadcast window whose candidate anchor set is
+    /// A placement asked for a transmission window whose candidate anchor set is
     /// empty: every bucket below it is ruled out by the Ironwood era floor or
     /// by the part's own bound note, leaving no boundary at age one or more to
     /// prove against. A caller that derives its window from
@@ -109,7 +109,7 @@ pub enum WalletError {
          at or above {lowest_anchor} sits below it."
     )]
     MigrationNoLegalAnchor {
-        /// The broadcast window the part was being placed in.
+        /// The transmission window the part was being placed in.
         window: u64,
         /// The lowest bucket the part's floors permit as an anchor.
         lowest_anchor: u64,

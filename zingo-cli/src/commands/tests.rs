@@ -174,7 +174,7 @@ mod progress_heartbeat {
             "confirm",
             PROGRESS_HEARTBEAT_INTERVAL,
             "working",
-            || Some("witness zec.rocks: submitting".to_string()),
+            || Some("correspondent zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
             tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
@@ -183,7 +183,7 @@ mod progress_heartbeat {
         let expected: Vec<String> = (1..=3)
             .map(|tick| {
                 format!(
-                    "confirm: witness zec.rocks: submitting ({}s elapsed)",
+                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
                     PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
                 )
             })

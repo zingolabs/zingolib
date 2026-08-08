@@ -4,13 +4,13 @@
 //! against distinct candidates, never repeat a candidate, stop at a cap,
 //! let the first success win, and accumulate every failure. The mixnet
 //! bootstrap hedges (a new arm after a silence interval, or immediately when
-//! an arm fails) and the send fan-out escalates in serially gated rounds
+//! an arm fails) and the send escalation widens in serially gated rounds
 //! (ADR 0011). This module captures the shared skeleton as a pure state
 //! machine ([`RaceState::start`] and [`RaceState::on_event`] map events to
 //! [`RaceAction`]s with no I/O, no clock, and no randomness) and takes the
 //! escalation style as data ([`LaunchPolicy`]). Effectful drivers execute
 //! the actions: `NymProxy` drives a hedged race over tokio tasks, and
-//! zingolib's `fanout_broadcast` drives escalating rounds over borrowed
+//! zingolib's `escalating_transmit` drives escalating rounds over borrowed
 //! futures. Deliberately NOT feature-gated, so the planner's tests run in
 //! the default build without the nym-sdk stack.
 //!
