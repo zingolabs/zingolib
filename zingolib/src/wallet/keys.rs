@@ -527,31 +527,18 @@ mod tests {
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds;
 
-    use crate::config::{ChainType, WalletConfig};
-    use crate::testutils::default_test_wallet_settings;
+    use crate::config::ChainType;
     use crate::wallet::LightWallet;
     use crate::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
 
-    /// Key derivation needs no network: these were libtonode integration
-    /// tests whose only assertions are derivations against fixed vectors, and
-    /// each spent ~12s launching zebrad+zainod for scaffolding it never used.
-    fn regtest_wallet(mnemonic_phrase: String) -> LightWallet {
-        LightWallet::new(
-            ChainType::Regtest(ActivationHeights::default()),
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase,
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
-            },
-        )
-        .unwrap()
+    fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
+        crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(mnemonic_phrase).build()
     }
 
     /// Migrated from libtonode `fast::ensure_taddrs_from_old_seeds_work`.
     #[test]
     fn taddrs_from_old_seeds_stay_stable() {
-        let wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED.to_string());
+        let wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
         // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
         assert_eq!(
             wallet.transparent_addresses().values().next().unwrap(),
@@ -565,7 +552,7 @@ mod tests {
         let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let mut wallet = regtest_wallet(seed_phrase);
+        let mut wallet = regtest_wallet(&seed_phrase);
         let network = ChainType::Regtest(ActivationHeights::default());
 
         // The scenario ClientBuilder::build_client generates an extra

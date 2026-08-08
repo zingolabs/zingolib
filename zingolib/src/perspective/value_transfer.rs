@@ -1,12 +1,12 @@
-//! The value-transfer editorial types, relocated from zingolib's summary
-//! data module when the derivation moved to this crate.
+//! The value-transfer editorial types: per-recipient statements of value
+//! movement derived from transaction summaries.
 
 use chrono::DateTime;
 use json::JsonValue;
 
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
-use crate::wallet::summary::data::TransactionSummary;
+use crate::wallet::summary::data::{TransactionSummary, display_pools, pools_to_json};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// Value transfer kind.
@@ -62,21 +62,6 @@ impl std::fmt::Display for ValueTransferKind {
             },
         }
     }
-}
-
-/// Names of the given pools, e.g. `["Orchard", "Ironwood"]`.
-fn pool_names(pools: &[PoolType]) -> Vec<String> {
-    pools.iter().map(ToString::to_string).collect()
-}
-
-/// Formats a list of pools for display, e.g. "Orchard, Ironwood".
-fn display_pools(pools: &[PoolType]) -> String {
-    pool_names(pools).join(", ")
-}
-
-/// Converts a list of pools to a JSON array of pool names.
-fn pools_to_json(pools: &[PoolType]) -> JsonValue {
-    JsonValue::from(pool_names(pools))
 }
 
 /// A value transfer is a note group abstraction.

@@ -1,8 +1,6 @@
 //! The editorial layer: the house perspective over the canonical wallet
 //! record, deriving presentation-facing statements that never feed wallet
-//! logic. Compiled behind the default-on `perspective` feature, whose off
-//! build proves core stands without this layer (ADR 0024, amendment
-//! 2026-08-04).
+//! logic.
 
 pub mod finsight;
 pub mod value_transfer;
@@ -15,8 +13,8 @@ use crate::lightclient::LightClient;
 use crate::wallet::LightWallet;
 use crate::wallet::error::{KeyError, SummaryError};
 use crate::wallet::summary::data::{
-    OutgoingCoinSummary, OutgoingNoteSummary, Scope, SendType, TransactionKind, TransactionSummary,
-    pools_present,
+    BasicNoteSummary, OutgoingCoinSummary, OutgoingNoteSummary, Scope, SendType, TransactionKind,
+    TransactionSummary, pools_present,
 };
 
 use finsight::{
@@ -26,6 +24,49 @@ use finsight::{
 use value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
 };
+
+/// The summary accessors that serve only the editorial derivation.
+impl TransactionSummary {
+    /// The shielded note summaries paired with their pool, newest pool first
+    /// (ironwood, orchard, sapling), the order value transfers are listed in.
+    pub(crate) fn shielded_notes_by_pool(&self) -> [(&[BasicNoteSummary], PoolType); 3] {
+        [
+            (self.ironwood_notes.as_slice(), PoolType::IRONWOOD),
+            (self.orchard_notes.as_slice(), PoolType::ORCHARD),
+            (self.sapling_notes.as_slice(), PoolType::SAPLING),
+        ]
+    }
+
+    /// All memos on this transaction's wallet-received shielded notes, in pool
+    /// order ironwood, orchard, sapling.
+    pub(crate) fn received_memos(&self) -> Vec<String> {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter().filter_map(|note| note.memo.clone()))
+            .collect()
+    }
+
+    /// The sum of every output this transaction delivered to the wallet's own
+    /// addresses: all wallet-received shielded notes plus transparent coins.
+    pub(crate) fn self_received_value(&self) -> u64 {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter().map(|note| note.value))
+            .chain(self.transparent_coins.iter().map(|coin| coin.value))
+            .sum()
+    }
+
+    /// The sum of the wallet-received shielded notes that carry a memo,
+    /// excluding memo-less change.
+    pub(crate) fn received_memo_value(&self) -> u64 {
+        self.shielded_notes_by_pool()
+            .into_iter()
+            .flat_map(|(notes, _)| notes.iter())
+            .filter(|note| note.memo.is_some())
+            .map(|note| note.value)
+            .sum()
+    }
+}
 
 /// Creates one value transfer of `kind` for each shielded pool the transaction
 /// received notes into, newest pool first (ironwood, orchard, sapling).
@@ -189,8 +230,7 @@ fn finsight_from(value_transfers: &ValueTransfers) -> Finsight {
     }
 }
 
-/// The editorial reductions over the wallet, carrying the method names,
-/// signatures, and output shapes `wallet::summary` exposed before the move.
+/// The editorial reductions over the wallet.
 impl LightWallet {
     /// Provides a list of value transfers related to this capability.
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
@@ -317,9 +357,7 @@ impl LightWallet {
         Ok(value_transfers)
     }
 
-    /// Every finsight rollup from one derivation of the value transfers;
-    /// the per-rollup methods below re-derive them on each call, so a
-    /// consumer wanting several rollups should take them from here.
+    /// Every finsight rollup from one derivation of the value transfers.
     pub async fn finsight(&self) -> Result<Finsight, SummaryError> {
         let value_transfers = self.value_transfers(false).await?;
         Ok(finsight_from(&value_transfers))
