@@ -9,7 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `responsiveness` module partitions network operations at compile
+  time: the sealed `Responsiveness` trait with the `Critical` and
+  `NonCritical` marker types, the `ResponsivenessClass` enum with
+  `wire`, `parse`, and `launch_policy`, and the
+  `RESERVATION_CLUTCH_SIZE` constant.
+- `LaunchPolicy::Saturating` launches the full clutch at once; a
+  Critical acquisition races under it.
+- The proxy binary accepts `--responsiveness <critical|non-critical>`
+  and defaults a bare invocation to critical.
+
 ### Changed
+
+- BREAKING: `NymProxy::start` and `NymProxy::start_with_progress` take
+  a `R: Responsiveness` type parameter that names the acquisition's
+  responsiveness class.
+- BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
+  `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
+  reservations, never an independent parameter (ADR 0035).
 
 ### Removed
 

@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated to include options for defaults.
 - BREAKING: the price fetch has no clearnet tier and compiles only with the `nym`
   feature. Without it `zingo-price` is types-only.
+- BREAKING: `LightClient::enable_mixnet` takes a
+  `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
+  the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
+  `NonCritical`, and `Responsiveness` for callers.
 - Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
   number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
   a prefix-only salvage read so `recovery_info` still works.
