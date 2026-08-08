@@ -979,14 +979,6 @@ impl LightClient {
     /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
     /// blocking thread pool without holding the lock (Phase B), and wallet
     /// writes + submission happen sequentially under the lock again (Phase C).
-    /// The due-part transmission loop, optionally narrowed to a single part so
-    /// catch-up can sequence sends with spacing.
-    ///
-    /// Proving is parallelised across all due parts via
-    /// [`tokio::task::spawn_blocking`]: wallet reads happen under the write
-    /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
-    /// blocking thread pool without holding the lock (Phase B), and wallet
-    /// writes + submission happen sequentially under the lock again (Phase C).
     async fn transmit_due_parts_selected(
         &mut self,
         client: &impl TransmissionClient,
@@ -4073,7 +4065,7 @@ mod tests {
 
     /// `MigrationStatus::due_now`: the batch a manual-execution client offers
     /// to send right now. The crux is that it names exactly what a tap would
-    /// transmitted, never the current-window parts still ahead of their random
+    /// transmit, never the current-window parts still ahead of their random
     /// target (the stale-tip bounce), and never in-flight parts.
     mod migration_status_due_now {
         use std::time::Duration;

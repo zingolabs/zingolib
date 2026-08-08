@@ -5,7 +5,7 @@
 //! zebra witness serving), so it is ignored until those land. The other
 //! tests exercise the migration state machine against a live regtest chain
 //! with today's stack: bound-note reservation, external-spend invalidation
-//! and the no-sync broadcast path.
+//! and the no-sync transmit path.
 
 use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
 use zcash_local_net::validator::Validator;
@@ -249,7 +249,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 async fn unavailable_boundary_tree_state_skips_without_sync() {
     use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 
-    // The blocks mined behind the wallet's back before the broadcast
+    // The blocks mined behind the wallet's back before the transmit
     // attempt: enough to prove the skip performs no hidden sync, few
     // enough to stay inside the bucket.
     const HIDDEN_BLOCKS: u32 = 10;
@@ -268,7 +268,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // retention, so that boundary's checkpoint is pruned, and far enough
     // below the third boundary that the hidden blocks stay inside the
     // bucket. The second boundary rather than the first, because the
-    // broadcast path skips a part whose boundary lies below the NU6.3
+    // transmit path skips a part whose boundary lies below the NU6.3
     // activation, and the deferred activation below sits past the first.
     const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
         + MAX_REORG_ALLOWANCE
@@ -282,7 +282,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // earlier; the deferred activation leaves margin beyond that, and
     // still lies below [`TARGET_TIP`] so the leap crosses it.
     const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
-    // The part is scheduled at the second bucket boundary; the broadcast
+    // The part is scheduled at the second bucket boundary; the transmit
     // path requires that boundary to sit at or above the activation.
     const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= TRANSPARENT_DEFERRED_NU6_3);
 
@@ -358,7 +358,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // New blocks the wallet has not seen: a hidden sync inside the
-    // broadcast path would advance the wallet's known height.
+    // transmit path would advance the wallet's known height.
     generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
     let sent = recipient.transmit_due_parts().await.unwrap();
@@ -372,7 +372,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),
-        "the broadcast path must never synchronize"
+        "the transmit path must never synchronize"
     );
 }
 
@@ -653,7 +653,7 @@ async fn migrate_all_orchard_to_ironwood() {
 }
 
 /// An immediate migration of a fragmented wallet chunks into several independent transactions,
-/// all built and broadcast in the same pass, and still empties the pool.
+/// all built and transmitted in the same pass, and still empties the pool.
 #[tokio::test]
 async fn immediate_migration_chunks_a_fragmented_wallet() {
     // More notes than fit one transaction's action budget, funded in one
