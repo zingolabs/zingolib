@@ -153,28 +153,11 @@ impl PriceList {
     /// and [`Self::current_price`] reflects the latest fetch.
     ///
     /// This is the storage half of a price update. A caller that must not
-    /// hold a lock across the network wait runs [`fetch_current_price`]
+    /// hold a lock across the network wait runs [`race_current_price`]
     /// first, then records the result here under a briefly-held lock (the
     /// net-diag polling-blackout remedy).
     pub fn record_current_price(&mut self, price: Price) {
         self.current_price = Some(price);
-    }
-
-    /// Update, record, and return the current price of ZEC.
-    ///
-    /// Currently only USD is supported. When `socks5_proxy` is `Some`, the
-    /// request is routed through that local SOCKS5 proxy (the Nym mixnet
-    /// transport); `None` fetches over clearnet. The caller decides which
-    /// route to use. The fetched price is recorded on `self` as
-    /// [`Self::current_price`].
-    #[cfg(feature = "socks5-fetch")]
-    pub async fn update_current_price(
-        &mut self,
-        socks5_proxy: Option<&str>,
-    ) -> Result<Price, PriceError> {
-        let price = fetch_current_price(socks5_proxy).await?;
-        self.record_current_price(price);
-        Ok(price)
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
@@ -289,40 +272,6 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 #[cfg(feature = "socks5-fetch")]
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Fetch the current price of ZEC in USD from the public price source,
-/// optionally through a local SOCKS5 proxy.
-///
-/// When `socks5_proxy` is `Some(addr)`, the request is proxied through
-/// `socks5h://addr`, so the destination hostname is resolved at the proxy and
-/// never leaked to the local clearnet resolver (the Nym mixnet transport).
-/// `None` fetches over clearnet. This is a pure mechanism with no storage
-/// side effects, so a caller can run it without holding any wallet lock and
-/// store the result under a briefly-held lock afterwards (the net-diag
-/// polling-blackout remedy).
-#[cfg(feature = "socks5-fetch")]
-pub async fn fetch_current_price(socks5_proxy: Option<&str>) -> Result<Price, PriceError> {
-    fetch_current_price_from(PriceSource::Gemini, socks5_proxy).await
-}
-
-/// Fetch the current ZEC/USD price from the named source, optionally
-/// through a local SOCKS5 proxy (`socks5h://`, so hostname resolution
-/// happens at the proxy). The same lock-free contract as
-/// [`fetch_current_price`] applies.
-#[cfg(feature = "socks5-fetch")]
-pub async fn fetch_current_price_from(
-    source: PriceSource,
-    socks5_proxy: Option<&str>,
-) -> Result<Price, PriceError> {
-    get_source_price(
-        source,
-        socks5_proxy,
-        source.url(),
-        REQUEST_TIMEOUT,
-        CONNECT_TIMEOUT,
-    )
-    .await
-}
-
 /// The winning answer of the three-source race: the price and the source
 /// that answered first.
 #[cfg(feature = "socks5-fetch")]
@@ -377,10 +326,11 @@ pub async fn race_current_price(
     race_sources(
         socks5_proxy,
         [
-            (PriceSource::Gemini, GEMINI_ZECUSD_URL.to_string()),
-            (PriceSource::Kraken, KRAKEN_ZECUSD_URL.to_string()),
-            (PriceSource::CoinGecko, COINGECKO_ZECUSD_URL.to_string()),
-        ],
+            PriceSource::Gemini,
+            PriceSource::Kraken,
+            PriceSource::CoinGecko,
+        ]
+        .map(|source| (source, source.url().to_string())),
         REQUEST_TIMEOUT,
         CONNECT_TIMEOUT,
     )
@@ -437,8 +387,7 @@ const KRAKEN_ZECUSD_URL: &str = "https://api.kraken.com/0/public/Trades?pair=ZEC
 const COINGECKO_ZECUSD_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd&include_last_updated_at=true";
 
 /// The public price sources, each an independent operator and failure
-/// domain. Rotation order is the declaration order, wrapping; the caller
-/// owning rotation policy decides when to advance.
+/// domain.
 #[cfg(feature = "socks5-fetch")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PriceSource {
@@ -452,15 +401,6 @@ pub enum PriceSource {
 
 #[cfg(feature = "socks5-fetch")]
 impl PriceSource {
-    /// The next source in rotation order, wrapping at the end.
-    pub fn next(self) -> PriceSource {
-        match self {
-            PriceSource::Gemini => PriceSource::Kraken,
-            PriceSource::Kraken => PriceSource::CoinGecko,
-            PriceSource::CoinGecko => PriceSource::Gemini,
-        }
-    }
-
     /// The stable lowercase name carried in payloads and reports.
     pub fn name(self) -> &'static str {
         match self {
@@ -701,7 +641,7 @@ fn classify_request(
 /// Get current price of ZEC in USD from `url`, optionally through a local
 /// SOCKS5 proxy, bounded by the given timeouts.
 ///
-/// Production callers go through [`fetch_current_price`]; tests point `url`
+/// Production callers go through [`race_current_price`]; tests point `url`
 /// at a local server and shrink the bounds.
 #[cfg(all(test, feature = "socks5-fetch"))]
 async fn get_current_price(
@@ -817,19 +757,19 @@ mod tests {
         );
     }
 
-    /// Smoke test against the real Gemini endpoint over clearnet. Ignored by
-    /// default (needs network and a live third party); run with
-    /// `cargo test -p zingo-price -- --ignored` to confirm the live fetch.
+    /// Smoke test against the real price sources over clearnet. Ignored by
+    /// default (needs network and live third parties); run with
+    /// `cargo test -p zingo-price -- --ignored` to confirm the live race.
     #[tokio::test]
-    #[ignore = "hits the live Gemini API over clearnet"]
-    async fn live_gemini_clearnet_fetch_smoke() {
-        let price = fetch_current_price(None)
+    #[ignore = "hits the live price-source APIs over clearnet"]
+    async fn live_clearnet_price_race_smoke() {
+        let raced = race_current_price(None)
             .await
-            .expect("the live Gemini fetch succeeds");
+            .expect("the live price race succeeds");
         assert!(
-            price.price_usd > 0.0 && price.price_usd.is_finite(),
+            raced.price.price_usd > 0.0 && raced.price.price_usd.is_finite(),
             "a live ZEC/USD price is positive and finite, got {}",
-            price.price_usd
+            raced.price.price_usd
         );
     }
 
@@ -986,6 +926,52 @@ mod tests {
         hold.abort();
     }
 
+    /// A dead SOCKS5 proxy (the port is closed when the fetch dials it)
+    /// surfaces as a typed connect-phase failure with the reqwest source
+    /// and the cause chain preserved whole, so a consumer distinguishes a
+    /// connect failure from a TLS or HTTP failure by fields instead of
+    /// parsing prose.
+    #[tokio::test]
+    async fn a_dead_proxy_failure_is_typed_with_its_source_intact() {
+        // Bind then drop, so the port is closed when the fetch dials it.
+        let closed = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap()
+        };
+
+        let short = Duration::from_millis(300);
+        let error = get_current_price(
+            Some(&closed.to_string()),
+            "http://127.0.0.1:9/v1/trades/zecusd",
+            short,
+            short,
+        )
+        .await
+        .expect_err("a closed port cannot serve a price");
+        match &error {
+            PriceError::RequestFailed { failure, source } => {
+                assert!(
+                    source.is_connect(),
+                    "the reqwest failure must keep its kind: {source}"
+                );
+                assert!(
+                    matches!(
+                        failure.stage,
+                        NetOpStage::LocalProxyConnect
+                            | NetOpStage::SocksHandshake
+                            | NetOpStage::RemoteConnect
+                    ),
+                    "a dead local proxy must classify as a connect-phase stage: {failure}"
+                );
+                assert!(
+                    !failure.cause_chain.is_empty(),
+                    "the cause chain is captured layer by layer"
+                );
+            }
+            other => panic!("expected a typed RequestFailed, got {other}"),
+        }
+    }
+
     /// A structurally short trades response is a typed refusal, never an
     /// index panic (the design's median-guard requirement).
     #[tokio::test]
@@ -1071,13 +1057,6 @@ mod tests {
             matches!(error, PriceError::InvalidPrice),
             "the refusal must be the typed invalid-price arm: {error}"
         );
-    }
-
-    #[test]
-    fn the_rotation_order_cycles_through_every_source() {
-        assert_eq!(PriceSource::Gemini.next(), PriceSource::Kraken);
-        assert_eq!(PriceSource::Kraken.next(), PriceSource::CoinGecko);
-        assert_eq!(PriceSource::CoinGecko.next(), PriceSource::Gemini);
     }
 
     /// A server that answers every connection with this body, until dropped.
