@@ -442,7 +442,7 @@ where
 
         let decryption_results = Dec::batch_decrypt(&tags, &ivks, &outputs);
         for (decryption_result, OutputReplier(replier)) in
-            decryption_results.into_iter().zip(repliers.into_iter())
+            decryption_results.into_iter().zip(repliers)
         {
             // If `decryption_result` is `None` then we will just drop `replier`,
             // indicating to the parent `DecryptionBatchRunner` that this output was not for us.

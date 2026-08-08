@@ -322,7 +322,7 @@ async fn transmit_one_transaction(
 /// escalates round by round until an indexer confirms delivery or the witness
 /// cap is reached.
 ///
-/// The draw comes from [`eligible_witnesses`], never the raw curated list: a
+/// The draw comes from [`crate::nym::broadcast_indexers::eligible_witnesses`], never the raw curated list: a
 /// witness is never the sync indexer's operator (ADR 0022), because that party
 /// already holds the wallet's address set and must not receive the broadcast
 /// too. An emptied pool refuses rather than falling back.

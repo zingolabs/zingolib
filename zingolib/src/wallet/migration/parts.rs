@@ -125,7 +125,7 @@ pub struct PartRecord {
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
-    /// [`super::schedule::draw_anchor_age`]). Drawn per part at placement
+    /// [`super::schedule::draw_anchor_bucket`]). Drawn per part at placement
     /// time, so two parts of one batch usually carry different anchors.
     ///
     /// `None` on a part read from a migration section written before anchors

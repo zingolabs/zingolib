@@ -215,16 +215,11 @@ impl SyncState {
     /// Returns `None` if `self.scan_ranges` is empty.
     #[must_use]
     pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
-        if let Some(last_scanned_range) = self
-            .scan_ranges
-            .iter()
-            .filter(|scan_range| {
-                scan_range.priority() == ScanPriority::Scanned
-                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
-            })
-            .next_back()
-        {
+        if let Some(last_scanned_range) = self.scan_ranges.iter().rfind(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
+        }) {
             Some(last_scanned_range.block_range().end - 1)
         } else {
             self.wallet_birthday().map(|start| start - 1)

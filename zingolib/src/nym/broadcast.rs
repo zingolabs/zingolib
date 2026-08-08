@@ -105,7 +105,7 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for FanoutError<E
 ///
 /// `report` receives a succinct progress line whenever the race's shape
 /// changes (a launch or an arm failure), rendering the planner's own
-/// [`RaceProgress`] snapshot for display.
+/// [`RaceProgress`](zingo_netutils::arm_race::RaceProgress) snapshot for display.
 pub(crate) async fn fanout_broadcast<A, F, E, R, P, T>(
     indexers: &[Uri],
     rng: &mut R,

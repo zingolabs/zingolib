@@ -58,6 +58,10 @@ pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
 /// `NYM_STATUS=attempt 4/10: 2 in flight, 2 failed`.
 pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
 
+/// The stdout line prefix announcing the bound Exit Node identity, emitted
+/// before the address line so the ready snapshot carries it.
+pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
+
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
@@ -78,10 +82,17 @@ mod mixnet_connect;
 // mixnet bootstrap here and zingolib's send fan-out (ADR 0011).
 pub mod arm_race;
 
+// Deliberately ungated and public: the wallet side names an acquisition's
+// class at compile time even in builds where the nym transport is off.
+pub mod responsiveness;
+
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]
 pub use nym_proxy::NymProxy;
+
+#[cfg(feature = "nym")]
+pub mod live_indexer_discovery;
 
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;

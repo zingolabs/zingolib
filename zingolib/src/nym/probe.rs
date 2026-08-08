@@ -1,32 +1,28 @@
-//! Connectivity probes: the paired clearnet/mixnet indexer probe and the
-//! staged sync-path probe.
+//! Connectivity probes: the mixnet indexer probe and the staged sync-path
+//! probe.
 //!
-//! A failed mixnet send leaves an ambiguity: is the indexer down, or is the
-//! mixnet path to it broken? A paired probe answers it by running the same
-//! `GetLightdInfo` against the same indexer over both routes and reporting
-//! the two outcomes side by side: clearnet-ok + mixnet-fail is a
-//! mixnet-specific failure (dead proxy, exit-gateway policy, tunnel
-//! transport), fail + fail is the indexer itself, ok + ok exonerates both.
-//! Probe outcomes are appended to the cross-session indexer history like
-//! send attempts, so reliability accumulates.
+//! The mixnet probe runs `GetLightdInfo` against an indexer through the
+//! session's SOCKS5 proxy: it establishes an indexer's liveness over the
+//! mixnet, the precondition every sync attach requires (the 2026-08-06
+//! ruling), and its outcomes are appended to the cross-session indexer
+//! history like send attempts, so reliability accumulates. The probe has
+//! no clearnet leg: a session's only clearnet communication is sync
+//! itself.
 //!
 //! The staged sync-path probe ([`probe_sync_server`]) serves connectivity
-//! triage for the ordinary synchronization path (the Connection Doctor,
-//! zingo-mobile's diagnostics plan): it walks one server through TCP
-//! connect, secure-channel establishment, and a `GetLightdInfo` round trip,
-//! timing each stage and reporting each failure as a typed
-//! [`NetOpFailure`], so a non-developer's report says which layer broke
-//! without anyone parsing prose.
+//! triage for the ordinary synchronization path — the sole clearnet
+//! exception (the Connection Doctor, zingo-mobile's diagnostics plan): it
+//! walks one server through TCP connect, secure-channel establishment,
+//! and a `GetLightdInfo` round trip, timing each stage and reporting each
+//! failure as a typed [`NetOpFailure`], so a non-developer's report says
+//! which layer broke without anyone parsing prose. It contacts the server
+//! from the client's real IP, so it is a user-invoked diagnostic, never
+//! an automatic path.
 //!
 //! Every outcome in this module is data: success carries the server's chain
 //! name and height as fields ([`ProbeSuccess`]), failure carries the
 //! taxonomy record with its cause chain as a vector. Rendering belongs to
 //! consumers.
-//!
-//! Privacy note: the clearnet legs contact servers directly from the
-//! client's real IP. `GetLightdInfo` carries no wallet data, but the contact
-//! itself is observable, so these are user-invoked diagnostics, never an
-//! automatic path.
 #![forbid(unsafe_code)]
 
 use std::time::{Duration, Instant};
@@ -58,7 +54,7 @@ impl ProbeSuccess {
     }
 }
 
-/// One leg of a paired probe.
+/// One probe attempt's outcome and timing.
 #[derive(Clone, Debug)]
 pub struct ProbeLeg {
     /// The server's identity on success, or the typed failure record.
@@ -67,15 +63,13 @@ pub struct ProbeLeg {
     pub millis: u64,
 }
 
-/// The two legs of one indexer's paired probe.
+/// One indexer's liveness probe over the mixnet route.
 #[derive(Clone, Debug)]
-pub struct PairedProbe {
+pub struct MixnetProbe {
     /// The probed indexer's host.
     pub host: String,
-    /// The direct clearnet leg.
-    pub clearnet: ProbeLeg,
-    /// The mixnet leg, or `None` when the proxy was not ready to carry it.
-    pub mixnet: Option<ProbeLeg>,
+    /// The probe's outcome through the session's SOCKS5 proxy.
+    pub leg: ProbeLeg,
 }
 
 /// The stage of [`GetClientError`] by typed match: a bad URI never touched
@@ -89,76 +83,6 @@ fn get_client_stage(error: &GetClientError) -> NetOpStage {
         }
         GetClientError::Transport(_) => NetOpStage::RemoteConnect,
     }
-}
-
-/// The typed failure for one bounded clearnet `GetLightdInfo` round trip.
-fn clearnet_info_failure(
-    target: &str,
-    timeout: Duration,
-) -> impl Fn(ClearnetInfoError) -> NetOpFailure + '_ {
-    move |error| match error {
-        ClearnetInfoError::Connect(e) => NetOpFailure::from_error(get_client_stage(&e), target, &e),
-        ClearnetInfoError::Rpc(status) => {
-            NetOpFailure::from_error(NetOpStage::RemoteHttp, target, &status)
-        }
-        ClearnetInfoError::TimedOut => NetOpFailure::message(
-            NetOpStage::TimedOut {
-                after_ms: timeout.as_millis().try_into().unwrap_or(u64::MAX),
-            },
-            target,
-            format!("no answer within {timeout:.0?}"),
-        ),
-    }
-}
-
-/// The three ways a bounded clearnet `GetLightdInfo` can fail, kept typed
-/// until classification.
-enum ClearnetInfoError {
-    Connect(GetClientError),
-    Rpc(zingo_netutils::Status),
-    TimedOut,
-}
-
-/// One bounded clearnet `GetLightdInfo` round trip: connect and RPC under a
-/// single timeout, every failure typed.
-async fn clearnet_info(
-    server: &Uri,
-    timeout: Duration,
-) -> Result<zingo_netutils::lightwallet_protocol::LightdInfo, ClearnetInfoError> {
-    // `GrpcIndexer::new` connects eagerly with no connect timeout of its
-    // own, so a black-holing host would stall past `timeout`; bound
-    // construction and the RPC together.
-    tokio::time::timeout(timeout, async {
-        let mut grpc = GrpcIndexer::new(server.clone())
-            .await
-            .map_err(ClearnetInfoError::Connect)?;
-        grpc.get_lightd_info(timeout)
-            .await
-            .map_err(ClearnetInfoError::Rpc)
-    })
-    .await
-    .unwrap_or(Err(ClearnetInfoError::TimedOut))
-}
-
-/// Probes `indexer` over clearnet, recording the attempt.
-async fn clearnet_leg(
-    indexer: &Uri,
-    timeout: Duration,
-    history: &IndexerHistoryHandle,
-    host: &str,
-) -> ProbeLeg {
-    let started = Instant::now();
-    let target = host.to_string();
-    let outcome = clearnet_info(indexer, timeout)
-        .await
-        .map(|info| ProbeSuccess::of(&info))
-        .map_err(clearnet_info_failure(&target, timeout));
-    let leg = ProbeLeg {
-        millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
-        outcome,
-    };
-    record_probe(history, host, AttemptRoute::Clearnet, &leg);
-    leg
 }
 
 /// Probes `indexer` through the SOCKS5 proxy, recording the attempt.
@@ -199,37 +123,24 @@ fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute,
     });
 }
 
-/// Runs the paired probe against one indexer: both legs concurrently, so a
-/// hanging mixnet tunnel does not serialize behind the clearnet answer.
-/// `socks5_addr` is `None` when the proxy is not ready, and the mixnet leg is
-/// then skipped and reported as absent.
+/// Whether `indexer` may be probed: `https` on port 443, the one endpoint
+/// shape the mixnet exit policy carries.
+pub fn probe_eligible(indexer: &Uri) -> bool {
+    indexer.scheme_str() == Some("https") && indexer.port_u16().unwrap_or(443) == 443
+}
+
+/// Runs the liveness probe against one indexer over the mixnet route.
 pub(crate) async fn probe_indexer(
     indexer: &Uri,
-    socks5_addr: Option<&str>,
+    socks5_addr: &str,
     timeout: Duration,
     history: &IndexerHistoryHandle,
-) -> PairedProbe {
+) -> MixnetProbe {
     let host = indexer
         .host()
         .map_or_else(|| indexer.to_string(), str::to_string);
-    match socks5_addr {
-        Some(socks5) => {
-            let (clearnet, mixnet) = tokio::join!(
-                clearnet_leg(indexer, timeout, history, &host),
-                mixnet_leg(socks5, indexer, timeout, history, &host),
-            );
-            PairedProbe {
-                host,
-                clearnet,
-                mixnet: Some(mixnet),
-            }
-        }
-        None => PairedProbe {
-            clearnet: clearnet_leg(indexer, timeout, history, &host).await,
-            mixnet: None,
-            host,
-        },
-    }
+    let leg = mixnet_leg(socks5_addr, indexer, timeout, history, &host).await;
+    MixnetProbe { host, leg }
 }
 
 /// One step of the staged sync-path probe, named by what it establishes.

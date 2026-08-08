@@ -1110,7 +1110,7 @@ impl LightClient {
                 let mut all_to_submit: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
                     newly_proven_with_expiry
                         .into_iter()
-                        .chain(pre_proven.into_iter())
+                        .chain(pre_proven)
                         .collect();
                 all_to_submit.sort_by_key(|(index, ..)| *index);
                 Ok::<_, LightClientError>(all_to_submit)

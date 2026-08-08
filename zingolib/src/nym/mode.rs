@@ -194,6 +194,16 @@ impl MixnetSlot {
             MixnetSlot::AttachedForTests { socks5_addr } => Some(socks5_addr.clone()),
         }
     }
+
+    /// The bound Exit Node identities, when an attached transport is ready.
+    pub(crate) fn exits(&self) -> Vec<String> {
+        match self {
+            MixnetSlot::Attached(proxy) => proxy.exits(),
+            MixnetSlot::Unattached | MixnetSlot::SwitchedOff => Vec::new(),
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { .. } => Vec::new(),
+        }
+    }
 }
 
 /// The IP-correlation disclaimer a frontend must show alongside Mixnet Mode
