@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Critical acquisition races under it.
 - The proxy binary accepts `--responsiveness <critical|non-critical>`
   and defaults a bare invocation to critical.
+- `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
+  silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
+  MIXNET_ROUND_TRIP_BOUND` so a responsive Correspondent's confirmed
+  delivery beats the first hedge (ADR 0040).
 
 ### Changed
 
