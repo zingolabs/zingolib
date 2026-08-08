@@ -17,7 +17,7 @@
 //! Immediate migration transactions do not depend on one another. There is no change output and no
 //! conditioning round, so when an account holds more notes than fit in one
 //! transaction the plan simply chunks them, and every chunk is built and
-//! broadcast in the same pass. There are no rounds to drive and nothing to
+//! transmitted in the same pass. There are no rounds to drive and nothing to
 //! wait for.
 
 use orchard::bundle::BundleVersion;
@@ -159,7 +159,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned immediate migration transaction
-    /// (Orchard→Ironwood). Returns its txid. Broadcast is the caller's step.
+    /// (Orchard→Ironwood). Returns its txid. Transmission is the caller's step.
     ///
     /// Errors below the NU6.3 activation height: there is no Ironwood pool to
     /// send to.
@@ -373,13 +373,13 @@ mod tests {
 
     /// An immediate migration re-planned after some of its notes were spent covers exactly
     /// the notes that are still free. This is what makes re-calling the immediate migration
-    /// the recovery path after a partial broadcast.
+    /// the recovery path after a partial transmission.
     #[test]
     fn replanning_covers_only_the_remaining_notes() {
         let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
         let full = plan_immediate_migration(&all, &params());
 
-        // The first two notes were spent by an immediate migration that did broadcast.
+        // The first two notes were spent by an immediate migration that did transmit.
         let remaining = &all[2..];
         let replan = plan_immediate_migration(remaining, &params());
 

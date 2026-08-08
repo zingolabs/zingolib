@@ -21,13 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Immediate path: `plan_immediate_migration`, `quick_immediate_migration`.
   - Note splitting, stateless and one round per call: `plan_note_split`, `quick_split`.
   - Scheduled path: `plan_ironwood_migration`, `start_ironwood_migration`,
-    `execute_due_parts`, `auto_broadcast_if_due`, `reconcile_migration`,
+    `execute_due_parts`, `auto_transmit_if_due`, `reconcile_migration`,
     `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`.
   - Reporting: `migration_status`, `window_timeline`, and the
     `split_progress_handle` / `batch_progress_handle` progress handles.
 - `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
   - A Part carries two independent buckets: `bucket_index`, the window it is
-    broadcast in, and `anchor_bucket`, the lower bucket whose boundary it proves
+    transmitted in, and `anchor_bucket`, the lower bucket whose boundary it proves
     against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
     must clear (strictly above the NU6.3 activation bucket; at or above the
     boundary covering the Part's own bound note), and `draw_anchor_bucket`
@@ -36,18 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
     the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
     ADR 0018). The builder's target height, and so the consensus branch the Part
-    commits to, comes from the broadcast window instead.
+    commits to, comes from the transmission window instead.
   - Consequence for consumers: a wallet that schedules immediately after note
     splitting waits one extra window (~3h at `M` = 144) before its first Batch is
     due, because a fresh note floors the anchor at the next boundary and a legal
     window sits a bucket above its anchor. A wallet whose notes confirmed at least
     one bucket earlier has its first Batch due the moment it is scheduled. Read the
-    wait from `MigrationStatus::upcoming_windows`, whose `BroadcastWindow`s carry
+    wait from `MigrationStatus::upcoming_windows`, whose `TransmissionWindow`s carry
     `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
   - The migration section of the wallet file carries its own version, independent
     of the wallet format version, and ships at 4.
 - `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
-  Migration-part broadcasts route by Mixnet Mode and never at the sync host.
+  Migration-part transmissions route by Mixnet Mode and never at the sync host.
 - `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.
 - Ironwood pool in summaries: `ironwood_notes`, `outgoing_ironwood_notes`,
   `is_orchard_to_ironwood_migration`.
@@ -62,6 +62,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
   the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
   `NonCritical`, and `Responsiveness` for callers.
+- BREAKING: the send-path vocabulary of ADRs 0036 and 0037 replaces "broadcast"
+  and "witness" throughout the API. The config key `migration_broadcast_uri` is
+  renamed `migration_transmission_uri` (builder:
+  `set_migration_transmission_uri`). `wallet::migration` re-exports
+  `TransmissionClient` and `PartTransmissionError` (were `BroadcastClient`,
+  `BroadcastError`) and `TransmissionWindow` (was `BroadcastWindow`).
+  `SplitStep::RoundBroadcast` is `SplitStep::RoundTransmitted`.
+  `LightClientError` renames `MigrationBroadcastTargetIsSyncEndpoint` to
+  `MigrationTransmissionTargetIsSyncEndpoint` and `NoEligibleBroadcastIndexer`
+  to `NoEligibleCorrespondent`. `LightClient::probe_broadcast_indexers` is
+  `probe_correspondents`, `broadcast_due_parts` is `transmit_due_parts`, and
+  `auto_broadcast_if_due` is `auto_transmit_if_due`.
+  `TransmitRoute::Mixnet`'s field `witness` is `correspondent`. The nym
+  modules rename: `nym::broadcast` to `nym::correspondent_rotation` and
+  `nym::broadcast_indexers` to `nym::correspondents`, with
+  `CORRESPONDENT_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
+  `lightclient::migrate::{broadcast_grpc, broadcast_route}` rename to
+  `{transmission_grpc, transmission_route}` with `GrpcTransmissionClient`,
+  `RoutedTransmissionClient`, and `MixnetTransmissionClient`. The persisted
+  part-state grammar (`PartState::Broadcast` and its stored strings) is
+  deliberately unchanged: renaming a persisted token is a wallet-format event.
 - Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
   number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
   a prefix-only salvage read so `recovery_info` still works.

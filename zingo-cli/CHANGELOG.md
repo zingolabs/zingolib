@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** The send-path vocabulary of ADRs 0036 and 0037 reaches the
+  CLI's output grammar. The mixnet route report's JSON key `witness` is now
+  `correspondent`, and `migrate auto`'s success key `broadcast` is now
+  `transmitted`. Progress narration says `correspondent <host>` and
+  `mixnet escalation`, and help text says transmit where it said broadcast.
 - **Breaking.** The `--no-mixnet` flag is retired. A connected session
   runs the mixnet unconditionally and fails closed; clearnet carries
   sync alone. The clearnet server-selection sweep now compiles only

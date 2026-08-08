@@ -452,8 +452,8 @@ fn short_provider_name(providers: &[String], candidate: usize) -> String {
 /// A lost race's terminal account: how many distinct candidates were
 /// contacted, and every arm's typed failure in completion order. The driver
 /// retains the failures whole (the planner keeps only the rendered line
-/// each one fed to its progress narration), mirroring the broadcast
-/// fan-out's shape (issue #2562).
+/// each one fed to its progress narration), mirroring the transmission
+/// escalation's shape (issue #2562).
 #[derive(Debug)]
 struct LostAcqRace<E> {
     /// Distinct candidates contacted before the race was lost.

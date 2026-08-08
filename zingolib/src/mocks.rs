@@ -679,34 +679,34 @@ pub mod proposal {
     }
 }
 
-/// Mock for the migration broadcast client.
-pub(crate) mod broadcast {
+/// Mock for the migration transmission client.
+pub(crate) mod transmission {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use zcash_protocol::consensus::BlockHeight;
 
-    use crate::wallet::migration::{BroadcastClient, BroadcastError};
+    use crate::wallet::migration::{PartTransmissionError, TransmissionClient};
 
     /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real
     /// client's transient-failure contract).
     #[derive(Default)]
-    pub struct MockBroadcastClient {
+    pub struct MockTransmissionClient {
         /// Raw transactions received, with their expiry heights.
         pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
         /// When set, every submit fails.
         pub fail: AtomicBool,
     }
 
-    impl BroadcastClient for MockBroadcastClient {
+    impl TransmissionClient for MockTransmissionClient {
         async fn submit(
             &self,
             raw_tx: Vec<u8>,
             expiry_height: BlockHeight,
-        ) -> Result<zcash_primitives::transaction::TxId, BroadcastError> {
+        ) -> Result<zcash_primitives::transaction::TxId, PartTransmissionError> {
             if self.fail.load(Ordering::Relaxed) {
-                return Err(BroadcastError::Transport(
+                return Err(PartTransmissionError::Transport(
                     "mock transport failure".to_string(),
                 ));
             }

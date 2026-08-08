@@ -180,8 +180,8 @@ pub const TRANSMIT_READINESS_BUDGET: Duration = Duration::from_secs(90);
 /// mixnet is still bootstrapping.
 pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
 
-/// Bound on one migration-broadcast submission through the tunnel. More
-/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a migration broadcast
+/// Bound on one migration-part submission through the tunnel. More
+/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a part transmission
 /// tolerates latency better than an interactive send.
 pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
