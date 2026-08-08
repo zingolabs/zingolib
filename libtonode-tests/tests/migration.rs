@@ -358,7 +358,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // New blocks the wallet has not seen: a hidden sync inside the
-    // broadcast path would advance the wallet's known height.
+    // transmit path would advance the wallet's known height.
     generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
     let sent = recipient.transmit_due_parts().await.unwrap();
