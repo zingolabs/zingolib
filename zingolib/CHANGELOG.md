@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
+  is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
+  pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
+  flight, replacing the serially gated one-two-three rounds. The
+  six-Correspondent cap and the happy path's single-Correspondent
+  discipline are unchanged.
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
 - `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
   updated to include options for defaults.

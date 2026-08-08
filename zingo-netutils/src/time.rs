@@ -81,6 +81,25 @@ pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// The silence interval before a send's escalation launches a further
+/// Correspondent arm: the sum of a connect attempt's bound and one mixnet
+/// round trip, so a responsive Correspondent's confirmed delivery beats the
+/// first hedge by construction, and the interval retunes when either bound
+/// retunes.
+///
+/// ```
+/// use zingo_netutils::time::{
+///     MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT, TRANSMISSION_HEDGE_INTERVAL,
+/// };
+///
+/// assert_eq!(
+///     TRANSMISSION_HEDGE_INTERVAL,
+///     PER_ATTEMPT_CONNECT_TIMEOUT + MIXNET_ROUND_TRIP_BOUND,
+/// );
+/// ```
+pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
+    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
+
 /// How often the mobile shim's liveness monitor probes the local SOCKS5
 /// listener. Faster than [`ATTACH_PROBE_INTERVAL`] because the shim's host
 /// (the app) is the remediation owner: it must notice a lost proxy and
