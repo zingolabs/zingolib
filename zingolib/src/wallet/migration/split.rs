@@ -653,7 +653,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
     pub(crate) fn build_note_split_transaction(

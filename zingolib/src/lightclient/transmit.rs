@@ -1,6 +1,6 @@
 //! The resilient transmission policy: retry, duplicate-in-mempool, and
 //! queued-probe handling, defined once and generic over the transmission
-//! target so the clearnet indexer path and the Nym broadcast path share a
+//! target so the clearnet indexer path and the Nym transmission path share a
 //! single implementation.
 //!
 //! [`resilient_transmit`] performs no wallet-state mutation: it interprets a
@@ -31,7 +31,7 @@ use zingo_netutils::time::TRANSMIT_RETRY_INTERVAL;
 /// or `None` when no transmission is running. A consumer holding a clone (the
 /// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
 /// holds `&mut LightClient`. The transmit path updates it as submissions,
-/// retries, probes, and fan-out rounds occur. Mirrors the
+/// retries, probes, and escalation rounds occur. Mirrors the
 /// `ImmediateMigrationProgressHandle` pattern.
 #[derive(Clone, Debug, Default)]
 pub struct TransmitProgressHandle(Arc<Mutex<Option<String>>>);
@@ -101,7 +101,7 @@ impl SubmitFailure for zingo_netutils::Socks5TransmitError {
 
 /// A single transmission endpoint: submits a serialized transaction and can
 /// ask the server whether it already knows a txid. Implemented for the
-/// configured clearnet indexer and for a Nym Broadcast Indexer reached
+/// configured clearnet indexer and for a Nym Correspondent reached
 /// through the SOCKS5 proxy.
 pub(crate) trait TransmitTarget {
     /// The target's typed failure, preserved whole through the policy.

@@ -62,6 +62,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
   the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
   `NonCritical`, and `Responsiveness` for callers.
+- BREAKING: the send-path vocabulary of ADRs 0036 and 0037 replaces "broadcast"
+  and "witness" throughout the API. The config key `migration_broadcast_uri` is
+  renamed `migration_transmission_uri` (builder:
+  `set_migration_transmission_uri`). `wallet::migration` re-exports
+  `TransmissionClient` and `PartTransmissionError` (were `BroadcastClient`,
+  `BroadcastError`) and `TransmissionWindow` (was `BroadcastWindow`).
+  `SplitStep::RoundBroadcast` is `SplitStep::RoundTransmitted`.
+  `LightClientError` renames `MigrationBroadcastTargetIsSyncEndpoint` to
+  `MigrationTransmissionTargetIsSyncEndpoint` and `NoEligibleBroadcastIndexer`
+  to `NoEligibleCorrespondent`. `LightClient::probe_broadcast_indexers` is
+  `probe_correspondents`, `broadcast_due_parts` is `transmit_due_parts`, and
+  `auto_broadcast_if_due` is `auto_transmit_if_due`.
+  `TransmitRoute::Mixnet`'s field `witness` is `correspondent`. The nym
+  modules rename: `nym::broadcast` to `nym::correspondent_rotation` and
+  `nym::broadcast_indexers` to `nym::correspondents`, with
+  `CORRESPONDENT_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
+  `lightclient::migrate::{broadcast_grpc, broadcast_route}` rename to
+  `{transmission_grpc, transmission_route}` with `GrpcTransmissionClient`,
+  `RoutedTransmissionClient`, and `MixnetTransmissionClient`. The persisted
+  part-state grammar (`PartState::Broadcast` and its stored strings) is
+  deliberately unchanged: renaming a persisted token is a wallet-format event.
 - Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
   number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
   a prefix-only salvage read so `recovery_info` still works.

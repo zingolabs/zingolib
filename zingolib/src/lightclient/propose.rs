@@ -1391,7 +1391,7 @@ mod proposal_shape {
     /// ephemeral transparent output, then the transparent leg to the TEX
     /// destination funded entirely by step one. The original's only
     /// proposal-level assertion was the step count. The offline version
-    /// also pins the inter-step wiring. The broadcast half (both steps
+    /// also pins the inter-step wiring. The transmission half (both steps
     /// mined, three wallet records) retires with the LocalNet original.
     #[tokio::test]
     async fn send_to_tex() {

@@ -361,8 +361,8 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // broadcast path would advance the wallet's known height.
     generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
-    let sent = recipient.broadcast_due_parts().await.unwrap();
-    assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
+    let sent = recipient.transmit_due_parts().await.unwrap();
+    assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
 
     let wallet = recipient.wallet().read().await;
     let part = &wallet.migration.as_ref().unwrap().parts[0];
