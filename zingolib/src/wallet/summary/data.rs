@@ -210,50 +210,6 @@ impl TransactionSummary {
     }
 }
 
-/// The editorial accessors, compiled only for the perspective layer.
-#[cfg(feature = "perspective")]
-impl TransactionSummary {
-    /// The shielded note summaries paired with their pool, newest pool first
-    /// (ironwood, orchard, sapling), the order value transfers are listed in.
-    pub(crate) fn shielded_notes_by_pool(&self) -> [(&[BasicNoteSummary], PoolType); 3] {
-        [
-            (self.ironwood_notes.as_slice(), PoolType::IRONWOOD),
-            (self.orchard_notes.as_slice(), PoolType::ORCHARD),
-            (self.sapling_notes.as_slice(), PoolType::SAPLING),
-        ]
-    }
-
-    /// All memos on this transaction's wallet-received shielded notes, in pool
-    /// order ironwood, orchard, sapling.
-    pub(crate) fn received_memos(&self) -> Vec<String> {
-        self.shielded_notes_by_pool()
-            .into_iter()
-            .flat_map(|(notes, _)| notes.iter().filter_map(|note| note.memo.clone()))
-            .collect()
-    }
-
-    /// The sum of every output this transaction delivered to the wallet's own
-    /// addresses: all wallet-received shielded notes plus transparent coins.
-    pub(crate) fn self_received_value(&self) -> u64 {
-        self.shielded_notes_by_pool()
-            .into_iter()
-            .flat_map(|(notes, _)| notes.iter().map(|note| note.value))
-            .chain(self.transparent_coins.iter().map(|coin| coin.value))
-            .sum()
-    }
-
-    /// The sum of the wallet-received shielded notes that carry a memo,
-    /// excluding memo-less change.
-    pub(crate) fn received_memo_value(&self) -> u64 {
-        self.shielded_notes_by_pool()
-            .into_iter()
-            .flat_map(|(notes, _)| notes.iter())
-            .filter(|note| note.memo.is_some())
-            .map(|note| note.value)
-            .sum()
-    }
-}
-
 impl std::fmt::Display for TransactionSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (
