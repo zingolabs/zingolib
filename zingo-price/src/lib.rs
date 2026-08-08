@@ -326,16 +326,17 @@ pub async fn race_current_price(
     race_sources(
         socks5_proxy,
         [
-            (PriceSource::Gemini, GEMINI_ZECUSD_URL.to_string()),
-            (PriceSource::Kraken, KRAKEN_ZECUSD_URL.to_string()),
-            (PriceSource::CoinGecko, COINGECKO_ZECUSD_URL.to_string()),
-            (PriceSource::Coinbase, COINBASE_ZECUSD_URL.to_string()),
-            (PriceSource::Bitfinex, BITFINEX_ZECUSD_URL.to_string()),
-            (PriceSource::Okx, OKX_ZECUSDT_URL.to_string()),
-            (PriceSource::Mexc, MEXC_ZECUSDT_URL.to_string()),
-            (PriceSource::GateIo, GATEIO_ZECUSDT_URL.to_string()),
-            (PriceSource::Kucoin, KUCOIN_ZECUSDT_URL.to_string()),
-        ],
+            PriceSource::Gemini,
+            PriceSource::Kraken,
+            PriceSource::CoinGecko,
+            PriceSource::Coinbase,
+            PriceSource::Bitfinex,
+            PriceSource::Okx,
+            PriceSource::Mexc,
+            PriceSource::GateIo,
+            PriceSource::Kucoin,
+        ]
+        .map(|source| (source, source.url().to_string())),
         REQUEST_TIMEOUT,
         CONNECT_TIMEOUT,
     )
