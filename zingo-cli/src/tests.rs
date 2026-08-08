@@ -1380,7 +1380,9 @@ mod scan_progress_blast_radius {
 
     /// A client whose scanning has passed the tree bounds frozen at sync
     /// start: the ordinary condition `SyncStatus::total_outputs_scanned`
-    /// documents, and the one that took the session down.
+    /// documents, and the one that took the session down. Construction is
+    /// async, so the test rig holds its own crossing into the runtime.
+    #[allow(clippy::disallowed_methods)]
     fn client_scanned_past_its_frozen_bounds() -> LightClient {
         let client = RT.block_on(LightClient::new_for_test(
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
@@ -1400,6 +1402,7 @@ mod scan_progress_blast_radius {
     /// span its baseline has already passed: the panic escapes
     /// `scan_progress`'s `.ok()` and unwinds the command loop.
     #[test]
+    #[allow(clippy::disallowed_methods)]
     fn a_prompt_survives_scanning_past_the_frozen_bounds() {
         let mut client = client_scanned_past_its_frozen_bounds();
         let indicator = RT.block_on(prompt_indicator(&mut client));
