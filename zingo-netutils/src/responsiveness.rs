@@ -1,6 +1,7 @@
 //! The compile-time partition of network operations by responsiveness:
-//! [`Critical`] when latency governs the widening and racing wide carries
-//! no privacy cost, [`NonCritical`] when parsimony outranks latency.
+//! [`PrioritiseSpeed`] when latency governs the widening and racing wide
+//! carries no privacy cost, [`PrioritisePrivacy`] when parsimony outranks
+//! latency.
 
 use crate::arm_race::LaunchPolicy;
 use crate::time::HEDGE_INTERVAL;
@@ -11,56 +12,59 @@ pub const RESERVATION_CLUTCH_SIZE: usize = 3;
 
 mod sealed {
     pub trait Sealed {}
-    impl Sealed for super::Critical {}
-    impl Sealed for super::NonCritical {}
+    impl Sealed for super::PrioritiseSpeed {}
+    impl Sealed for super::PrioritisePrivacy {}
 }
 
-/// The responsiveness category of a network operation, named at compile
-/// time by every acquisition site.
+/// The declared priority of a network operation, named at compile time by
+/// every acquisition site.
 pub trait Responsiveness: sealed::Sealed {
-    /// The value form of this category, for seams a type cannot cross.
+    /// The value form of this priority, for seams a type cannot cross.
     ///
     /// ```
     /// use zingo_netutils::responsiveness::{
-    ///     Critical, NonCritical, Responsiveness, ResponsivenessClass,
+    ///     PrioritisePrivacy, PrioritiseSpeed, Responsiveness, ResponsivenessClass,
     /// };
     ///
-    /// assert_eq!(Critical::CLASS, ResponsivenessClass::Critical);
-    /// assert_eq!(NonCritical::CLASS, ResponsivenessClass::NonCritical);
+    /// assert_eq!(PrioritiseSpeed::CLASS, ResponsivenessClass::PrioritiseSpeed);
+    /// assert_eq!(
+    ///     PrioritisePrivacy::CLASS,
+    ///     ResponsivenessClass::PrioritisePrivacy
+    /// );
     /// ```
     const CLASS: ResponsivenessClass;
 }
 
-/// The category of a network operation where latency governs and racing
-/// wide carries no privacy cost.
-pub struct Critical;
+/// The priority of a network operation where latency governs the widening
+/// and racing wide carries no privacy cost.
+pub struct PrioritiseSpeed;
 
-/// The category of a network operation where parsimony outranks latency.
-pub struct NonCritical;
+/// The priority of a network operation where parsimony outranks latency.
+pub struct PrioritisePrivacy;
 
-impl Responsiveness for Critical {
-    const CLASS: ResponsivenessClass = ResponsivenessClass::Critical;
+impl Responsiveness for PrioritiseSpeed {
+    const CLASS: ResponsivenessClass = ResponsivenessClass::PrioritiseSpeed;
 }
 
-impl Responsiveness for NonCritical {
-    const CLASS: ResponsivenessClass = ResponsivenessClass::NonCritical;
+impl Responsiveness for PrioritisePrivacy {
+    const CLASS: ResponsivenessClass = ResponsivenessClass::PrioritisePrivacy;
 }
 
-/// The value form of the responsiveness partition.
+/// The value form of the priority partition.
 // Preferred iff `adt_const_params` stabilizes — this enum then derives
 // `ConstParamTy`, acquisition sites name the class as a const parameter,
 // and the marker types retire:
 //
 //     #[derive(ConstParamTy, Clone, Copy, Debug, PartialEq, Eq)]
-//     pub enum ResponsivenessClass { Critical, NonCritical }
+//     pub enum ResponsivenessClass { PrioritiseSpeed, PrioritisePrivacy }
 //
 //     async fn start<const CLASS: ResponsivenessClass>() { /* ... */ }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponsivenessClass {
     /// Latency governs the widening; racing wide carries no privacy cost.
-    Critical,
+    PrioritiseSpeed,
     /// Parsimony — privacy or load — outranks latency.
-    NonCritical,
+    PrioritisePrivacy,
 }
 
 impl ResponsivenessClass {
@@ -71,8 +75,8 @@ impl ResponsivenessClass {
     /// use zingo_netutils::responsiveness::ResponsivenessClass;
     ///
     /// for class in [
-    ///     ResponsivenessClass::Critical,
-    ///     ResponsivenessClass::NonCritical,
+    ///     ResponsivenessClass::PrioritiseSpeed,
+    ///     ResponsivenessClass::PrioritisePrivacy,
     /// ] {
     ///     assert_eq!(ResponsivenessClass::parse(class.wire()), Some(class));
     /// }
@@ -80,16 +84,16 @@ impl ResponsivenessClass {
     /// ```
     pub fn wire(self) -> &'static str {
         match self {
-            ResponsivenessClass::Critical => "critical",
-            ResponsivenessClass::NonCritical => "non-critical",
+            ResponsivenessClass::PrioritiseSpeed => "prioritise-speed",
+            ResponsivenessClass::PrioritisePrivacy => "prioritise-privacy",
         }
     }
 
     /// The class a wire token names, or `None` for an unknown token.
     pub fn parse(token: &str) -> Option<Self> {
         match token {
-            "critical" => Some(ResponsivenessClass::Critical),
-            "non-critical" => Some(ResponsivenessClass::NonCritical),
+            "prioritise-speed" => Some(ResponsivenessClass::PrioritiseSpeed),
+            "prioritise-privacy" => Some(ResponsivenessClass::PrioritisePrivacy),
             _ => None,
         }
     }
@@ -98,10 +102,10 @@ impl ResponsivenessClass {
     /// under.
     pub fn launch_policy(self) -> LaunchPolicy {
         match self {
-            ResponsivenessClass::Critical => LaunchPolicy::Saturating {
+            ResponsivenessClass::PrioritiseSpeed => LaunchPolicy::Saturating {
                 max_parallel: RESERVATION_CLUTCH_SIZE,
             },
-            ResponsivenessClass::NonCritical => LaunchPolicy::Hedged {
+            ResponsivenessClass::PrioritisePrivacy => LaunchPolicy::Hedged {
                 max_parallel: RESERVATION_CLUTCH_SIZE,
                 hedge_interval: HEDGE_INTERVAL,
             },
