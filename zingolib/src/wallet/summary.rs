@@ -364,30 +364,14 @@ mod tests {
     use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, WalletTransaction};
     use zcash_primitives::transaction::TxId;
     use zcash_protocol::memo::Memo;
-    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::seeds;
 
-    use crate::config::{ChainType, WalletConfig};
     use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
-    use crate::testutils::default_test_wallet_settings;
     use crate::wallet::LightWallet;
 
-    /// Message semantics need no network: the ported tests in this module
-    /// were libtonode integration tests (the first two ports alone cost
-    /// 49s and 132s of LocalNet mining/syncing) whose assertions are pure
-    /// summary/value-transfer derivation over wallet transaction records.
     fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
-        LightWallet::new(
-            ChainType::Regtest(ActivationHeights::default()),
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: mnemonic_phrase.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
-            },
-        )
-        .unwrap()
+        crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(mnemonic_phrase).build()
     }
 
     /// Migrated from libtonode

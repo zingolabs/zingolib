@@ -314,9 +314,7 @@ impl LightWallet {
         Ok(value_transfers)
     }
 
-    /// Every finsight rollup from one derivation of the value transfers;
-    /// the per-rollup methods below re-derive them on each call, so a
-    /// consumer wanting several rollups should take them from here.
+    /// Every finsight rollup from one derivation of the value transfers.
     pub async fn finsight(&self) -> Result<Finsight, SummaryError> {
         let value_transfers = self.value_transfers(false).await?;
         Ok(finsight_from(&value_transfers))
