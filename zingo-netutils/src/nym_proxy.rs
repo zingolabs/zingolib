@@ -139,7 +139,7 @@ impl NymProxy {
         class: ResponsivenessClass,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        drive_race(
+        drive_acq_race(
             providers.len(),
             MAX_PROVIDER_ATTEMPTS,
             class.launch_policy(),
@@ -176,7 +176,7 @@ impl NymProxy {
             |progress| on_progress(progress.to_string()),
         )
         .await
-        .map_err(race_loss_error)
+        .map_err(acq_race_loss_error)
     }
 
     /// The exit providers the Nym directory currently advertises, for
@@ -404,7 +404,7 @@ fn provider_attempt_failure(error: &NymProxyError, target: &str) -> NetOpFailure
 /// The terminal error of a lost race: [`NymProxyError::NoProvider`] when
 /// nothing was ever contacted, otherwise the typed per-provider attempts
 /// carried whole into [`NymProxyError::AttemptsExhausted`].
-fn race_loss_error(lost: LostRace<NetOpFailure>) -> NymProxyError {
+fn acq_race_loss_error(lost: LostAcqRace<NetOpFailure>) -> NymProxyError {
     if lost.launched == 0 {
         NymProxyError::NoProvider
     } else {
@@ -455,7 +455,7 @@ fn short_provider_name(providers: &[String], candidate: usize) -> String {
 /// each one fed to its progress narration), mirroring the broadcast
 /// fan-out's shape (issue #2562).
 #[derive(Debug)]
-struct LostRace<E> {
+struct LostAcqRace<E> {
     /// Distinct candidates contacted before the race was lost.
     launched: usize,
     /// Every arm's failure, untouched, in completion order.
@@ -467,10 +467,10 @@ struct LostRace<E> {
 /// feed completions back as events, and stop at the first winner, aborting
 /// the arms still in flight and handing any arm that had already finished as
 /// a second winner to `abandon` rather than leaking it. A lost race returns
-/// a [`LostRace`] carrying every attempt's typed failure. A panicked arm is
+/// a [`LostAcqRace`] carrying every attempt's typed failure. A panicked arm is
 /// a failed arm; `describe_panic` renders its record from the candidate
 /// index and the join error's text.
-async fn drive_race<T, E, F, Fut, D, DFut>(
+async fn drive_acq_race<T, E, F, Fut, D, DFut>(
     candidates: usize,
     cap: usize,
     policy: LaunchPolicy,
@@ -478,7 +478,7 @@ async fn drive_race<T, E, F, Fut, D, DFut>(
     abandon: D,
     describe_panic: impl Fn(usize, String) -> E,
     mut on_progress: impl FnMut(RaceProgress),
-) -> Result<T, LostRace<E>>
+) -> Result<T, LostAcqRace<E>>
 where
     T: Send + 'static,
     E: std::fmt::Display + Send + 'static,
@@ -487,7 +487,7 @@ where
     D: Fn(T) -> DFut,
     DFut: Future<Output = ()>,
 {
-    let mut race = RaceState::new(candidates, cap, policy);
+    let mut acq_race = RaceState::new(candidates, cap, policy);
     let mut arms: tokio::task::JoinSet<(usize, Result<T, E>)> = tokio::task::JoinSet::new();
     let mut arm_candidates: HashMap<tokio::task::Id, usize> = HashMap::new();
     let mut hedge_deadline: Option<tokio::time::Instant> = None;
@@ -515,18 +515,18 @@ where
     };
 
     apply(
-        race.start(),
+        acq_race.start(),
         &mut arms,
         &mut arm_candidates,
         &mut hedge_deadline,
         &mut lost,
     );
-    on_progress(race.progress());
+    on_progress(acq_race.progress());
 
     loop {
         if lost {
-            return Err(LostRace {
-                launched: race.launched(),
+            return Err(LostAcqRace {
+                launched: acq_race.launched(),
                 failures,
             });
         }
@@ -536,8 +536,8 @@ where
             biased;
             joined = arms.join_next_with_id() => {
                 let Some(joined) = joined else {
-                    return Err(LostRace {
-                        launched: race.launched(),
+                    return Err(LostAcqRace {
+                        launched: acq_race.launched(),
                         failures,
                     });
                 };
@@ -571,7 +571,7 @@ where
                         // progress narration; the typed failure is retained
                         // whole for the terminal account.
                         apply(
-                            race.on_event(RaceEvent::ArmFailed {
+                            acq_race.on_event(RaceEvent::ArmFailed {
                                 candidate,
                                 error: error.to_string(),
                             }),
@@ -581,7 +581,7 @@ where
                             &mut lost,
                         );
                         failures.push(error);
-                        on_progress(race.progress());
+                        on_progress(acq_race.progress());
                     }
                 }
             }
@@ -590,13 +590,13 @@ where
             ), if hedge_deadline.is_some() => {
                 hedge_deadline = None;
                 apply(
-                    race.on_event(RaceEvent::HedgeElapsed),
+                    acq_race.on_event(RaceEvent::HedgeElapsed),
                     &mut arms,
                     &mut arm_candidates,
                     &mut hedge_deadline,
                     &mut lost,
                 );
-                on_progress(race.progress());
+                on_progress(acq_race.progress());
             }
         }
     }
@@ -622,7 +622,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::responsiveness::{Critical, MAX_PARALLEL_CONNECTS};
+    use crate::responsiveness::{Critical, RESERVATION_CLUTCH_SIZE};
     use crate::time::HEDGE_INTERVAL;
 
     // The scheme-stripping and retry-engine logic is tested in
@@ -688,10 +688,10 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_hedged_arm_rescues_a_hanging_provider_at_the_hedge_interval() {
         let started = tokio::time::Instant::now();
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move {
                 if candidate == 0 {
                     std::future::pending::<Result<&str, String>>().await
@@ -725,7 +725,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_per_attempt_timeout_frees_a_wedged_slot() {
         let started = tokio::time::Instant::now();
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
             hedged(1),
@@ -759,11 +759,11 @@ mod tests {
     /// accounts for them as typed records, not a joined sentence (issue
     /// #2562). Falsified if any attempt's failure is missing or flattened.
     #[tokio::test(start_paused = true)]
-    async fn a_lost_race_accounts_for_every_attempt() {
-        let lost = drive_race(
+    async fn a_lost_acq_race_accounts_for_every_attempt() {
+        let lost = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
             panic_text,
@@ -795,10 +795,10 @@ mod tests {
         let sink = std::sync::Arc::clone(&abandoned);
         // Arm 0 launches at t=0 and finishes at t=6; arm 1 launches at the
         // t=5 hedge and finishes at t=6 as well.
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move {
                 let finish = if candidate == 0 {
                     Duration::from_secs(6)
@@ -829,13 +829,13 @@ mod tests {
     /// bootstrap is narratable rather than opaque. Falsified if no progress
     /// line mentions the widened race.
     #[tokio::test(start_paused = true)]
-    async fn progress_lines_narrate_the_race() {
+    async fn progress_lines_narrate_the_acq_race() {
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = std::sync::Arc::clone(&lines);
-        let _ = drive_race(
+        let _ = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
             panic_text,
@@ -894,9 +894,9 @@ mod tests {
     /// otherwise the typed attempts are carried whole into
     /// `AttemptsExhausted`, never flattened (issue #2562).
     #[test]
-    fn a_race_loss_carries_its_typed_attempts_whole() {
+    fn an_acq_race_loss_carries_its_typed_attempts_whole() {
         assert!(matches!(
-            race_loss_error(LostRace {
+            acq_race_loss_error(LostAcqRace {
                 launched: 0,
                 failures: Vec::new(),
             }),
@@ -907,7 +907,7 @@ mod tests {
             NetOpFailure::message(NetOpStage::RemoteConnect, "p0", "gateway refused"),
             NetOpFailure::message(NetOpStage::TimedOut { after_ms: 20_000 }, "p1", "timed out"),
         ];
-        match race_loss_error(LostRace {
+        match acq_race_loss_error(LostAcqRace {
             launched: 2,
             failures: records.clone(),
         }) {
