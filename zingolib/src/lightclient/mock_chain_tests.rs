@@ -1022,7 +1022,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
 
 /// The offline twins whose assertions read the editorial surface.
 #[cfg(feature = "perspective")]
-mod editorial {
+mod perspective {
     use crate::lightclient::LightClient;
     use crate::perspective::value_transfer::{
         SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
