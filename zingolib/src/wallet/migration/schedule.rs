@@ -6,7 +6,7 @@
 //!
 //! A part's *anchor* is a separate bucket from its broadcast window. The
 //! anchor sits a canonically drawn age below the window, never zero
-//! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
+//! (`ANCHOR_AGE_CAP` bounds how far), so a part always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
 //! information, and because its window has closed, its ZIP 318 *cohort* (the
@@ -65,8 +65,8 @@ use rand::CryptoRng;
 use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
-/// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
-/// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
+/// `broadcast_height`: the most recent multiple of `EXPIRY_MODULUS` at or
+/// below it, plus `EXPIRY_WINDOW`. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
@@ -154,7 +154,7 @@ impl AnchorFloor {
 
 /// The anchor bucket for a part broadcasting in `window`: `window − a` for a
 /// canonically drawn age (`Geometric(1/2)`, never zero, capped at
-/// [`ANCHOR_AGE_CAP`]), redrawn until it clears `floor`.
+/// `ANCHOR_AGE_CAP`), redrawn until it clears `floor`.
 ///
 /// Delegates to the canonical
 /// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
@@ -242,7 +242,7 @@ fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
 ///
 /// Re-drawing the anchor here is what keeps the age honest. A part shifted
 /// into a later window while keeping an old anchor would silently age past
-/// [`ANCHOR_AGE_CAP`]; because every move lands here, none can.
+/// `ANCHOR_AGE_CAP`; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
 pub fn place(
     part: &mut PartRecord,

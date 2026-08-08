@@ -1,10 +1,27 @@
 # zingolib
 
-A Rust Zcash light-wallet library. The vocabulary below is the migration
-domain (ZIP 318, Orchard → Ironwood); it follows the ZIP's language, with
-gaps filled from the Shielded Labs migration-security recommendations.
+A Rust Zcash light-wallet library. The vocabulary below covers the
+migration domain (ZIP 318, Orchard → Ironwood), which follows the ZIP's
+language with gaps filled from the Shielded Labs migration-security
+recommendations, and the session's network posture.
 
 ## Language
+
+### Command classes
+
+**Transmitting command**:
+A command whose execution emits mixnet-bound traffic: a transaction
+broadcast, the price fetch, or the mixnet probe. The Online consent
+covers exactly this class.
+_Avoid_: network command (conflates this class with sync-class commands)
+
+**Sync-class command**:
+A command that speaks only to the sync Indexer over the session route.
+It needs a configured Indexer, never the Online transmission consent.
+
+**Readiness budget**:
+The bounded time a transmitting command waits for a bootstrapping mixnet
+to become ready before the typed refusal stands.
 
 ### Migration paths
 

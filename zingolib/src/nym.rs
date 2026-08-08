@@ -19,6 +19,7 @@ pub mod probe;
 pub mod provision;
 pub mod route;
 pub mod supervisor;
+pub mod sweep;
 
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
@@ -26,6 +27,7 @@ pub(crate) use mode::MixnetSlot;
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
+pub use zingo_netutils::responsiveness::{Critical, NonCritical, Responsiveness};
 
 /// The temporal calibration a consumer of the mixnet transport reads from
 /// the wallet, so a user interface paces itself from the same source of

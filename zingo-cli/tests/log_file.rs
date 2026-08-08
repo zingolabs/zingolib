@@ -42,13 +42,12 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
 
-    let mut child = Command::new(zingo_cli_binary())
+    // No consent act is passed, so every build shape launches offline:
+    // the session skips the mixnet driver, needs no proxy, and still
+    // writes its startup lines — this test observes log redirection only.
+    let mut command = Command::new(zingo_cli_binary());
+    let mut child = command
         .env("RUST_LOG", "info")
-        .arg("--server")
-        .arg("https://zec.rocks:443")
-        // This test observes log redirection, not transmission; opt out of
-        // the forced Mixnet Mode so a nym-featured build needs no proxy.
-        .arg("--no-mixnet")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -107,6 +106,7 @@ fn interactive_mode_redirects_tracing_to_log_file() {
 
 /// The error string that pepper_sync's `#[instrument(err)]` on
 /// `get_latest_block` logs when the gRPC call fails.
+#[cfg(feature = "nym")]
 const EXPECTED_ERROR: &str = "pepper_sync::client::fetch";
 
 /// Starts a mock gRPC server where all methods return `DEADLINE_EXCEEDED`.
@@ -116,6 +116,11 @@ const EXPECTED_ERROR: &str = "pepper_sync::client::fetch";
 /// Verifies:
 /// - The log file contains `ERROR` and the specific error message
 /// - stderr does NOT contain formatted tracing ERROR lines
+///
+/// The scenario names a server and syncs against it — online acts, which
+/// the offline-only build refuses at launch (ADR 0026) — so the test
+/// exists only with the mixnet capability compiled in.
+#[cfg(feature = "nym")]
 #[tokio::test]
 async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     use zingo_grpc_proxy::tonic_reexport as tonic;
@@ -148,9 +153,12 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
-        // This test observes log redirection, not transmission; opt out of
-        // the forced Mixnet Mode so a nym-featured build needs no proxy.
-        .arg("--no-mixnet")
+        // The mixnet is unconditional for a connected session, so hand the
+        // spawner a binary that exits at once: the spawn succeeds, the
+        // bootstrap dies, and the clearnet sync — the sole clearnet
+        // exception — still runs against the mock to produce the ERROR.
+        .arg("--nym-proxy")
+        .arg("/bin/true")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")

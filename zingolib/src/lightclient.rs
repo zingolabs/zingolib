@@ -43,6 +43,8 @@ pub mod migrate;
 pub mod offline;
 pub mod propose;
 pub mod save;
+#[cfg(feature = "nym")]
+pub mod select;
 pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
@@ -502,6 +504,19 @@ impl LightClient {
         Ok(())
     }
 
+    /// Disconnects every network capability of the client, returning only
+    /// when teardown is complete.
+    pub async fn go_offline(&mut self) {
+        self.abort_sync().await;
+        #[cfg(feature = "nym")]
+        {
+            self.vacate_mixnet_slot().await;
+            self.publish_mixnet_slot_state();
+        }
+        self.indexer = None;
+        self.migration_broadcast_uri = None;
+    }
+
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
         self.indexer.as_ref().ok_or(LightClientError::Offline)
@@ -683,6 +698,34 @@ impl LightClient {
 
         Ok(())
     }
+
+    /// Record the deliberate clearnet consent for a test client: with the
+    /// mixnet compiled in, the slot moves to
+    /// [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode) — the same act
+    /// the CLI's `network off` performs — so scenario sends transmit over
+    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
+    /// feature the wallet has no mixnet surface and this is a no-op.
+    ///
+    /// Deliberately unconditional (not `nym`-gated): feature unification
+    /// can enable `zingolib/nym` from any workspace member — zingo-cli
+    /// carries it as a default feature (ADR 0026) — so a caller keying the
+    /// consent on its *own* feature set desyncs from zingolib's and
+    /// compiles the consent out exactly when the refusal is compiled in.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn consent_to_clearnet_for_tests(&mut self) {
+        #[cfg(feature = "nym")]
+        self.disable_mixnet().await;
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_clearnet_consented(
+        config: ClientConfig,
+        overwrite: bool,
+    ) -> Result<Self, LightClientError> {
+        let mut client = Self::new(config, overwrite).await?;
+        client.consent_to_clearnet_for_tests().await;
+        Ok(client)
+    }
 }
 
 /// Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
@@ -705,20 +748,27 @@ impl LightClient {
         }
     }
 
+    /// The Exit Nodes the session currently has in use, excluded from every
+    /// new acquisition's draw; a released exit re-enters the pool.
+    pub(crate) fn exits_in_use(&self) -> Vec<String> {
+        self.mixnet_slot.exits()
+    }
+
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
     /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
     /// `Ready`. Enabling while already enabled replaces the running proxy. A
     /// spawn failure leaves the mode `Unattached`, which refuses the mixnet
     /// surfaces — never a fallback to clearnet.
-    pub async fn enable_mixnet(
+    pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::spawn(
+        match crate::nym::MixnetProxy::spawn::<R>(
             binary_path,
             std::sync::Arc::clone(&self.mixnet_status),
+            &self.exits_in_use(),
         ) {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
@@ -783,6 +833,7 @@ impl LightClient {
             // None for the true slot states; the pinned address of a test
             // stand-in, whose Ready must not publish addressless.
             socks5_addr: self.mixnet_slot.socks5_addr(),
+            exits: self.mixnet_slot.exits(),
             bootstrap_detail: None,
             death: None,
         });
@@ -819,7 +870,11 @@ impl LightClient {
                 crate::nym::ProvisionStrategy::Spawn(hints) => {
                     let path = crate::nym::provision::resolve_proxy_path(&hints);
                     log::info!("mixnet session start: spawning nym-proxy at {path}");
-                    self.enable_mixnet(std::path::Path::new(&path)).await
+                    // The go-online moment is a user act: someone is waiting.
+                    self.enable_mixnet::<zingo_netutils::responsiveness::Critical>(
+                        std::path::Path::new(&path),
+                    )
+                    .await
                 }
                 crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
                     self.attach_mixnet(socks5_addr).await
@@ -912,28 +967,44 @@ impl LightClient {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
 
-    /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
-    /// against every Broadcast Indexer when `target` is `None`. Indexers are
-    /// probed concurrently. Each probe runs `GetLightdInfo` over both routes
-    /// (the mixnet leg is skipped when the proxy is not ready) and appends
-    /// its outcomes to the cross-session indexer history. The clearnet leg
-    /// contacts indexers from the real IP, and this is a user-invoked
-    /// diagnostic, never an automatic path.
+    /// Runs the mixnet liveness probe against `target`, or against every
+    /// Broadcast Indexer when `target` is `None`. Indexers are probed
+    /// concurrently: each probe runs `GetLightdInfo` through the session's
+    /// SOCKS5 proxy and appends its outcome to the cross-session indexer
+    /// history. The probe has no clearnet leg and refuses while the mixnet
+    /// transport is not ready.
     pub async fn probe_broadcast_indexers(
         &self,
         target: Option<http::Uri>,
         timeout: std::time::Duration,
-    ) -> Vec<crate::nym::probe::PairedProbe> {
-        let targets = target
+    ) -> Result<Vec<crate::nym::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
+    {
+        let socks5_addr =
+            match crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())? {
+                crate::nym::MixnetRoute::Mixnet(addr) => addr,
+                crate::nym::MixnetRoute::Clearnet => {
+                    return Err(crate::nym::MixnetNotReady::Unattached.into());
+                }
+            };
+        if let Some(uri) = &target
+            && !crate::nym::probe::probe_eligible(uri)
+        {
+            return Err(
+                crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+            );
+        }
+        let targets: Vec<http::Uri> = target
             .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
                 vec![uri]
-            });
-        let socks5_addr = self.mixnet_socks5_addr();
+            })
+            .into_iter()
+            .filter(crate::nym::probe::probe_eligible)
+            .collect();
         let history = self.indexer_history.clone();
-        futures::future::join_all(targets.iter().map(|indexer| {
-            crate::nym::probe::probe_indexer(indexer, socks5_addr.as_deref(), timeout, &history)
+        Ok(futures::future::join_all(targets.iter().map(|indexer| {
+            crate::nym::probe::probe_indexer(indexer, &socks5_addr, timeout, &history)
         }))
-        .await
+        .await)
     }
 }
 
@@ -1102,9 +1173,9 @@ mod tests {
     /// clearnet fallback. The route pre-flight variants
     /// (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Unattached, Bootstrapping,
     /// Died}`) pair with `nym::route`'s own `resolve_route` tests; the
-    /// tests here pin the surface wiring and the transport leg. The
-    /// clearnet default lives on [`LightClient::update_current_price`] and
-    /// carries no mixnet contract.
+    /// tests here pin the surface wiring. The transport-leg contract
+    /// (typed connect and timeout failures with their cause chains) is
+    /// pinned in `zingo-price`'s own tests, beside the mechanism.
     #[cfg(feature = "nym")]
     mod price_fetch_contract {
         use crate::lightclient::LightClient;
@@ -1173,101 +1244,6 @@ mod tests {
                 client.mixnet_route(),
                 Ok(crate::nym::MixnetRoute::Clearnet)
             ));
-        }
-
-        /// A dead proxy endpoint surfaces as the typed request variant with
-        /// the [`zingo_net_diag::NetOpFailure`] record beside the reqwest
-        /// source, preserved whole, so a consumer distinguishes a connect
-        /// failure from a TLS or HTTP failure by fields instead of parsing
-        /// prose. The same value converts into
-        /// [`LightClientError::PriceError`] by `From`, which is the exact
-        /// wiring `LightClient::update_current_price`'s `?`
-        /// uses.
-        #[tokio::test]
-        #[allow(deprecated)] // the lock-holding path is the unit under test
-        async fn dead_proxy_failure_is_typed_with_its_source_intact() {
-            use zingo_net_diag::NetOpStage;
-
-            // Bind then drop, so the port is closed when the fetch dials it.
-            let closed = {
-                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-                listener.local_addr().unwrap()
-            };
-
-            let mut wallet = wallet();
-            let error = wallet
-                .update_current_price(Some(&closed.to_string()))
-                .await
-                .expect_err("a closed port cannot serve a price");
-
-            match &error {
-                crate::wallet::error::PriceError::PriceError(
-                    zingo_price::PriceError::RequestFailed { failure, source },
-                ) => {
-                    assert!(
-                        source.is_connect(),
-                        "the reqwest failure must keep its kind: {source}"
-                    );
-                    assert!(
-                        matches!(
-                            failure.stage,
-                            NetOpStage::LocalProxyConnect
-                                | NetOpStage::SocksHandshake
-                                | NetOpStage::RemoteConnect
-                        ),
-                        "a dead local proxy must classify as a connect-phase stage: {failure}"
-                    );
-                    assert!(
-                        !failure.cause_chain.is_empty(),
-                        "the cause chain arrives as a vector of layers"
-                    );
-                }
-                other => panic!("the transport failure must arrive typed: {other}"),
-            }
-
-            let surfaced = LightClientError::from(error);
-            assert!(
-                matches!(surfaced, LightClientError::PriceError(_)),
-                "the API surface must report the same typed variant: {surfaced}"
-            );
-        }
-
-        /// A black-holed proxy (the TCP connect completes in the kernel's
-        /// backlog, but no SOCKS5 reply ever comes) resolves within the
-        /// client bound as a typed timed-out failure (net-diag acceptance
-        /// criteria 2 and 9) — the unbounded five-minute field hang can no
-        /// longer happen. Paused tokio time auto-advances the client
-        /// timeout, so the test does not spend the real twenty seconds.
-        #[tokio::test(start_paused = true)]
-        #[allow(deprecated)] // the lock-holding path is the unit under test
-        async fn black_holed_proxy_times_out_typed_within_the_bound() {
-            use zingo_net_diag::NetOpStage;
-
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-
-            let mut wallet = wallet();
-            let error = wallet
-                .update_current_price(Some(&addr.to_string()))
-                .await
-                .expect_err("a silent proxy cannot serve a price");
-
-            match &error {
-                crate::wallet::error::PriceError::PriceError(
-                    zingo_price::PriceError::RequestFailed { failure, source },
-                ) => {
-                    assert!(
-                        matches!(failure.stage, NetOpStage::TimedOut { .. }),
-                        "the hang must arrive as a typed timeout stage: {failure}"
-                    );
-                    assert!(
-                        source.is_timeout(),
-                        "the reqwest source must keep its timeout kind: {source}"
-                    );
-                }
-                other => panic!("the timeout must arrive typed: {other}"),
-            }
-            drop(listener);
         }
     }
 
