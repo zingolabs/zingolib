@@ -98,7 +98,7 @@ async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error:
 
     health_gate(&mut proxy).await?;
 
-    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider()));
+    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_node()));
     emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
     Ok(proxy)
 }

@@ -57,7 +57,7 @@ pub enum Socks5TransmitError {
     },
     /// The proxy accepted the dial but the SOCKS5 tunnel to the destination
     /// could not be established: the mixnet exit refused, could not reach, or
-    /// timed out on the destination, including a provider whose exit policy
+    /// timed out on the destination, including an Exit Node whose exit policy
     /// blocks the destination host or port.
     #[error("the mixnet exit could not reach {destination} ({source} after {elapsed:.1?})")]
     TunnelRefused {
