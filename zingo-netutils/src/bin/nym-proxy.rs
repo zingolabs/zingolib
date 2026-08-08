@@ -37,8 +37,10 @@
 use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
-    NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
+    NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
+    get_lightd_info_via_socks5,
     indexers::MIXNET_HEALTH_INDEXER,
+    responsiveness::{Critical, NonCritical, ResponsivenessClass},
     time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
 
@@ -54,23 +56,15 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    // Narrate the bootstrap on stdout so the parent supervisor can surface
-    // live progress (`nym status`) instead of an opaque wait.
-    let mut proxy = NymProxy::start_with_progress(|line| {
-        println!("{NYM_STATUS_LINE_PREFIX}{line}");
-        let _ = std::io::stdout().flush();
-    })
-    .await?;
+    let arguments = parse_arguments(std::env::args().skip(1))?;
 
-    // Health-gate readiness: prove the mixnet carries data end to end before
-    // announcing, redrawing gateways on failure. Only a verified path is
-    // announced.
-    health_gate(&mut proxy).await?;
-
-    // Announce the address on a single line and flush, so the parent sees it
-    // the moment the mixnet is verified reachable.
-    println!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr());
-    std::io::stdout().flush()?;
+    // The stdin watchdog covers the bootstrap too: a parent that dies while
+    // this child is still drawing gateways must take the child with it, not
+    // leave an orphan to finish bootstrapping against a closed pipe.
+    let proxy = tokio::select! {
+        _ = wait_for_parent_exit() => return Ok(()),
+        outcome = bootstrap(arguments) => outcome?,
+    };
 
     // Serve until either the parent goes away (stdin closes — the durable
     // coupling that survives even a SIGKILL of the parent) or an interrupt
@@ -81,6 +75,32 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     proxy.disconnect().await;
     Ok(())
+}
+
+/// Bootstrap the proxy: connect with the exclusions under the parent's
+/// responsiveness class, health-gate readiness (proving the mixnet carries
+/// data end to end before announcing), then announce the bound Exit Node and
+/// the SOCKS5 address together.
+async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error::Error>> {
+    // Narrate the bootstrap on stdout so the parent supervisor can surface
+    // live progress (`nym status`) instead of an opaque wait.
+    let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
+    // The one point where the wire form re-enters the type system: each
+    // class monomorphizes the same start.
+    let mut proxy = match arguments.class {
+        ResponsivenessClass::Critical => {
+            NymProxy::start_with_progress::<Critical>(arguments.excluded, narrate).await?
+        }
+        ResponsivenessClass::NonCritical => {
+            NymProxy::start_with_progress::<NonCritical>(arguments.excluded, narrate).await?
+        }
+    };
+
+    health_gate(&mut proxy).await?;
+
+    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider()));
+    emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
+    Ok(proxy)
 }
 
 /// Prove the mixnet carries data end to end, redrawing gateways until it does
@@ -123,8 +143,50 @@ async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Err
 /// Emit a bootstrap status line on stdout, flushed, so the supervisor's live
 /// `nym status` detail updates in step with the verification.
 fn report(line: String) {
-    println!("{NYM_STATUS_LINE_PREFIX}{line}");
-    let _ = std::io::stdout().flush();
+    emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
+}
+
+/// Write one line to stdout, flushed, swallowing write errors: a broken pipe
+/// means the parent is gone, which the stdin watchdog turns into a clean
+/// exit — a panicking `println!` must never race it onto the terminal.
+fn emit(line: String) {
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{line}");
+    let _ = stdout.flush();
+}
+
+/// The parent's spawn-time instructions, parsed from the argument grammar.
+struct Arguments {
+    /// The Exit Nodes excluded from this proxy's draw.
+    excluded: Vec<String>,
+    /// The acquisition's responsiveness class; a bare invocation defaults
+    /// to critical, matching a person waiting at a terminal.
+    class: ResponsivenessClass,
+}
+
+/// Parse every `--exclude-exit <identity>` pair and the optional
+/// `--responsiveness <critical|non-critical>` from `args`, refusing unknown
+/// arguments and unknown class tokens.
+fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, String> {
+    let mut excluded = Vec::new();
+    let mut class = ResponsivenessClass::Critical;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--exclude-exit" => match args.next() {
+                Some(identity) => excluded.push(identity),
+                None => return Err("--exclude-exit needs an Exit Node identity".to_string()),
+            },
+            "--responsiveness" => match args.next() {
+                Some(token) => {
+                    class = ResponsivenessClass::parse(&token)
+                        .ok_or_else(|| format!("unknown responsiveness class: {token}"))?;
+                }
+                None => return Err("--responsiveness needs a class token".to_string()),
+            },
+            other => return Err(format!("unknown argument: {other}")),
+        }
+    }
+    Ok(Arguments { excluded, class })
 }
 
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
@@ -141,5 +203,72 @@ async fn wait_for_parent_exit() {
             Ok(0) | Err(_) => return,
             Ok(_) => continue,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResponsivenessClass, parse_arguments};
+
+    fn parse(args: &[&str]) -> Result<super::Arguments, String> {
+        parse_arguments(args.iter().map(ToString::to_string))
+    }
+
+    /// HYPOTHESIS: the argument grammar accepts repeated `--exclude-exit`
+    /// pairs and refuses anything else, so a malformed spawn fails loudly
+    /// instead of silently dropping an exclusion.
+    #[test]
+    fn the_exclusion_grammar_is_pairs_only() {
+        assert_eq!(
+            parse(&[]).expect("no arguments, no exclusions").excluded,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse(&["--exclude-exit", "id-a", "--exclude-exit", "id-b"])
+                .expect("two well-formed pairs")
+                .excluded,
+            vec!["id-a".to_string(), "id-b".to_string()]
+        );
+        assert!(
+            parse(&["--exclude-exit"]).is_err(),
+            "a dangling flag refuses"
+        );
+        assert!(
+            parse(&["--unknown"]).is_err(),
+            "an unknown argument refuses"
+        );
+    }
+
+    /// HYPOTHESIS: the class grammar accepts exactly the wire tokens of the
+    /// two responsiveness classes and defaults a bare invocation to
+    /// critical, so a malformed spawn fails loudly instead of silently
+    /// racing under the wrong policy.
+    #[test]
+    fn the_class_grammar_speaks_the_wire_tokens() {
+        assert_eq!(
+            parse(&[]).expect("bare invocation").class,
+            ResponsivenessClass::Critical,
+            "a person at a terminal is waiting"
+        );
+        assert_eq!(
+            parse(&["--responsiveness", "non-critical"])
+                .expect("the non-critical token")
+                .class,
+            ResponsivenessClass::NonCritical
+        );
+        assert_eq!(
+            parse(&["--responsiveness", "critical", "--exclude-exit", "id-a"])
+                .expect("class and exclusions compose")
+                .class,
+            ResponsivenessClass::Critical
+        );
+        assert!(
+            parse(&["--responsiveness", "urgent"]).is_err(),
+            "an unknown class token refuses"
+        );
+        assert!(
+            parse(&["--responsiveness"]).is_err(),
+            "a dangling flag refuses"
+        );
     }
 }

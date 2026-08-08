@@ -46,6 +46,7 @@ use zingo_net_diag::{NetOpFailure, NetOpStage};
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
 use crate::mixnet_connect::{seeded_shuffle, strip_socks5_scheme};
+use crate::responsiveness::{Responsiveness, ResponsivenessClass};
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
@@ -53,14 +54,7 @@ const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
 /// Maximum number of providers to try before giving up.
 const MAX_PROVIDER_ATTEMPTS: usize = 10;
 
-/// The most simultaneous connect attempts the hedged bootstrap holds in
-/// flight. Each attempt is a full ephemeral mixnet client registration, so
-/// parallelism is deliberately narrow.
-const MAX_PARALLEL_CONNECTS: usize = 3;
-
-use crate::time::{
-    DISCOVERY_TIMEOUT, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
-};
+use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT};
 
 /// Embedded Nym SOCKS5 proxy that routes traffic through the Nym mixnet.
 ///
@@ -69,46 +63,70 @@ use crate::time::{
 pub struct NymProxy {
     client: Socks5MixnetClient,
     bind_port: u16,
+    exit_provider: String,
+    excluded: Vec<String>,
+    /// The acquisition's responsiveness class, reused by every later redraw
+    /// of this proxy.
+    class: ResponsivenessClass,
 }
 
 impl NymProxy {
     /// Start an embedded Nym SOCKS5 proxy using an auto-discovered public exit gateway.
     ///
-    /// Queries the Nym API for active exit gateways, then races hedged
-    /// connect attempts across them, keeping the first winner. The proxy
-    /// listens on a random available localhost port. This is the recommended
-    /// entry point, since no Nym-specific addresses are required.
-    pub async fn start() -> Result<Self, NymProxyError> {
-        Self::start_with_progress(|_| {}).await
+    /// Queries the Nym API for active exit gateways, then races connect
+    /// attempts across them under `R`'s launch policy, keeping the first
+    /// winner. The proxy listens on a random available localhost port. This
+    /// is the recommended entry point, since no Nym-specific addresses are
+    /// required.
+    pub async fn start<R: Responsiveness>() -> Result<Self, NymProxyError> {
+        Self::start_with_progress::<R>(Vec::new(), |_| {}).await
     }
 
-    /// [`Self::start`], reporting each bootstrap step to `on_progress` as a
-    /// human-readable line. The spawnable binary forwards these lines to the
-    /// wallet supervisor, so a user watching `nym status` sees the race
-    /// advance instead of an opaque wait.
-    pub async fn start_with_progress(
+    /// [`Self::start`], excluding the caller's already-known Exit Nodes from
+    /// the draw and reporting each bootstrap step to `on_progress` as a
+    /// human-readable line. Exclusion holds for this start and for every
+    /// later redraw of this proxy.
+    pub async fn start_with_progress<R: Responsiveness>(
+        excluded: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        tokio::time::timeout(NYM_LIFECYCLE_TIMEOUT, Self::start_inner(on_progress))
-            .await
-            .map_err(|_| {
-                NymProxyError::ConnectivityCheck(format!(
-                    "start timed out after {}s",
-                    NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ))
-            })?
+        tokio::time::timeout(
+            NYM_LIFECYCLE_TIMEOUT,
+            Self::start_inner(R::CLASS, excluded, on_progress),
+        )
+        .await
+        .map_err(|_| {
+            NymProxyError::ConnectivityCheck(format!(
+                "start timed out after {}s",
+                NYM_LIFECYCLE_TIMEOUT.as_secs()
+            ))
+        })?
     }
 
-    async fn start_inner(mut on_progress: impl FnMut(String)) -> Result<Self, NymProxyError> {
+    async fn start_inner(
+        class: ResponsivenessClass,
+        excluded: Vec<String>,
+        mut on_progress: impl FnMut(String),
+    ) -> Result<Self, NymProxyError> {
         on_progress("discovering exit gateways".to_string());
-        let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
-        Self::connect_across_providers(&providers, on_progress).await
+        let discovered = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let providers = eligible_providers(discovered, &excluded)?;
+        if !excluded.is_empty() {
+            on_progress(format!(
+                "excluding {} known exits from the draw",
+                excluded.len()
+            ));
+        }
+        let mut proxy = Self::connect_across_providers(&providers, class, on_progress).await?;
+        proxy.excluded = excluded;
+        proxy.class = class;
+        Ok(proxy)
     }
 
-    /// Race the pure hedged plan ([`crate::arm_race`]) over `providers`: one
-    /// arm first, another after each quiet [`HEDGE_INTERVAL`] or immediately
-    /// on a failure, at most [`MAX_PARALLEL_CONNECTS`] in flight and
-    /// [`MAX_PROVIDER_ATTEMPTS`] contacted. Each arm is bounded by
+    /// Race the pure plan ([`crate::arm_race`]) over `providers` under
+    /// `class`'s launch policy — saturating for a Critical acquisition,
+    /// hedged for a NonCritical one — at most [`MAX_PROVIDER_ATTEMPTS`]
+    /// contacted. Each arm is bounded by
     /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binds a fresh port, since a
     /// timed-out arm may still hold the port it was given. A loser that
     /// finishes connecting after the winner is disconnected, not leaked.
@@ -118,15 +136,13 @@ impl NymProxy {
     /// [`Self::reconnect`].
     async fn connect_across_providers(
         providers: &[String],
+        class: ResponsivenessClass,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        drive_race(
+        drive_acq_race(
             providers.len(),
             MAX_PROVIDER_ATTEMPTS,
-            LaunchPolicy::Hedged {
-                max_parallel: MAX_PARALLEL_CONNECTS,
-                hedge_interval: HEDGE_INTERVAL,
-            },
+            class.launch_policy(),
             |candidate| {
                 let provider = providers[candidate].clone();
                 let target = short_provider_name(providers, candidate);
@@ -160,7 +176,15 @@ impl NymProxy {
             |progress| on_progress(progress.to_string()),
         )
         .await
-        .map_err(race_loss_error)
+        .map_err(acq_race_loss_error)
+    }
+
+    /// The exit providers the Nym directory currently advertises, for
+    /// callers that assign exits themselves (the pool discovery's
+    /// uniform sampling without replacement, ADR 0029) instead of racing
+    /// [`Self::start`]'s hedged draw.
+    pub async fn discover_exit_providers() -> Result<Vec<String>, NymProxyError> {
+        Self::discover_providers(DEFAULT_NYM_API_URL).await
     }
 
     /// Start with a specific exit gateway provider address.
@@ -193,7 +217,20 @@ impl NymProxy {
             .connect_to_mixnet_via_socks5()
             .await
             .map_err(|e| NymProxyError::Connect(Box::new(e)))?;
-        Ok(Self { client, bind_port })
+        Ok(Self {
+            client,
+            bind_port,
+            exit_provider: provider_mix_address.to_string(),
+            excluded: Vec::new(),
+            // A pinned-provider start never races; the class only governs
+            // this proxy's later redraws, which serve a caller who waits.
+            class: ResponsivenessClass::Critical,
+        })
+    }
+
+    /// The Exit Node identity this transport bound.
+    pub fn exit_provider(&self) -> &str {
+        &self.exit_provider
     }
 
     /// The local SOCKS5 proxy address (e.g., `"127.0.0.1:43210"`).
@@ -244,15 +281,17 @@ impl NymProxy {
     }
 
     async fn reconnect_inner(&mut self) -> Result<(), NymProxyError> {
-        let providers = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let discovered = Self::discover_providers(DEFAULT_NYM_API_URL).await?;
+        let providers = eligible_providers(discovered, &self.excluded)?;
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_providers(&providers, |_| {}).await?;
+        let new_proxy = Self::connect_across_providers(&providers, self.class, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
         let old_client = std::mem::replace(&mut self.client, new_proxy.client);
         self.bind_port = new_proxy.bind_port;
+        self.exit_provider = new_proxy.exit_provider;
         old_client.disconnect().await;
         Ok(())
     }
@@ -335,11 +374,13 @@ impl NymProxy {
 /// timeout actually occur.
 fn provider_attempt_stage(error: &NymProxyError) -> NetOpStage {
     match error {
-        // Client construction, the local port draw, and discovery all fail
-        // before this arm touches the network.
-        NymProxyError::Build(_) | NymProxyError::DiscoveryApi(_) | NymProxyError::NoProvider => {
-            NetOpStage::RouteResolution
-        }
+        // Client construction, the local port draw, discovery, and an
+        // exclusion-emptied draw all fail before this arm touches the
+        // network.
+        NymProxyError::Build(_)
+        | NymProxyError::DiscoveryApi(_)
+        | NymProxyError::NoProvider
+        | NymProxyError::AllExitsExcluded { .. } => NetOpStage::RouteResolution,
         // Registering with the provider's gateway is the arm's remote
         // connect. An exhausted race never occurs per arm; it summarizes
         // the connects it is made of, so it classifies with them.
@@ -363,7 +404,7 @@ fn provider_attempt_failure(error: &NymProxyError, target: &str) -> NetOpFailure
 /// The terminal error of a lost race: [`NymProxyError::NoProvider`] when
 /// nothing was ever contacted, otherwise the typed per-provider attempts
 /// carried whole into [`NymProxyError::AttemptsExhausted`].
-fn race_loss_error(lost: LostRace<NetOpFailure>) -> NymProxyError {
+fn acq_race_loss_error(lost: LostAcqRace<NetOpFailure>) -> NymProxyError {
     if lost.launched == 0 {
         NymProxyError::NoProvider
     } else {
@@ -372,6 +413,26 @@ fn race_loss_error(lost: LostRace<NetOpFailure>) -> NymProxyError {
             failures: lost.failures,
         }
     }
+}
+
+/// The discovered providers minus the caller's known exits, refusing typed
+/// when the exclusion empties the draw.
+fn eligible_providers(
+    discovered: Vec<String>,
+    excluded: &[String],
+) -> Result<Vec<String>, NymProxyError> {
+    let discovered_count = discovered.len();
+    let eligible: Vec<String> = discovered
+        .into_iter()
+        .filter(|provider| !excluded.contains(provider))
+        .collect();
+    if eligible.is_empty() && discovered_count > 0 {
+        return Err(NymProxyError::AllExitsExcluded {
+            discovered: discovered_count,
+            excluded: excluded.len(),
+        });
+    }
+    Ok(eligible)
 }
 
 /// A provider mix-address shortened for an error summary: the full base58
@@ -394,7 +455,7 @@ fn short_provider_name(providers: &[String], candidate: usize) -> String {
 /// each one fed to its progress narration), mirroring the broadcast
 /// fan-out's shape (issue #2562).
 #[derive(Debug)]
-struct LostRace<E> {
+struct LostAcqRace<E> {
     /// Distinct candidates contacted before the race was lost.
     launched: usize,
     /// Every arm's failure, untouched, in completion order.
@@ -406,10 +467,10 @@ struct LostRace<E> {
 /// feed completions back as events, and stop at the first winner, aborting
 /// the arms still in flight and handing any arm that had already finished as
 /// a second winner to `abandon` rather than leaking it. A lost race returns
-/// a [`LostRace`] carrying every attempt's typed failure. A panicked arm is
+/// a [`LostAcqRace`] carrying every attempt's typed failure. A panicked arm is
 /// a failed arm; `describe_panic` renders its record from the candidate
 /// index and the join error's text.
-async fn drive_race<T, E, F, Fut, D, DFut>(
+async fn drive_acq_race<T, E, F, Fut, D, DFut>(
     candidates: usize,
     cap: usize,
     policy: LaunchPolicy,
@@ -417,7 +478,7 @@ async fn drive_race<T, E, F, Fut, D, DFut>(
     abandon: D,
     describe_panic: impl Fn(usize, String) -> E,
     mut on_progress: impl FnMut(RaceProgress),
-) -> Result<T, LostRace<E>>
+) -> Result<T, LostAcqRace<E>>
 where
     T: Send + 'static,
     E: std::fmt::Display + Send + 'static,
@@ -426,7 +487,7 @@ where
     D: Fn(T) -> DFut,
     DFut: Future<Output = ()>,
 {
-    let mut race = RaceState::new(candidates, cap, policy);
+    let mut acq_race = RaceState::new(candidates, cap, policy);
     let mut arms: tokio::task::JoinSet<(usize, Result<T, E>)> = tokio::task::JoinSet::new();
     let mut arm_candidates: HashMap<tokio::task::Id, usize> = HashMap::new();
     let mut hedge_deadline: Option<tokio::time::Instant> = None;
@@ -454,18 +515,18 @@ where
     };
 
     apply(
-        race.start(),
+        acq_race.start(),
         &mut arms,
         &mut arm_candidates,
         &mut hedge_deadline,
         &mut lost,
     );
-    on_progress(race.progress());
+    on_progress(acq_race.progress());
 
     loop {
         if lost {
-            return Err(LostRace {
-                launched: race.launched(),
+            return Err(LostAcqRace {
+                launched: acq_race.launched(),
                 failures,
             });
         }
@@ -475,8 +536,8 @@ where
             biased;
             joined = arms.join_next_with_id() => {
                 let Some(joined) = joined else {
-                    return Err(LostRace {
-                        launched: race.launched(),
+                    return Err(LostAcqRace {
+                        launched: acq_race.launched(),
                         failures,
                     });
                 };
@@ -510,7 +571,7 @@ where
                         // progress narration; the typed failure is retained
                         // whole for the terminal account.
                         apply(
-                            race.on_event(RaceEvent::ArmFailed {
+                            acq_race.on_event(RaceEvent::ArmFailed {
                                 candidate,
                                 error: error.to_string(),
                             }),
@@ -520,7 +581,7 @@ where
                             &mut lost,
                         );
                         failures.push(error);
-                        on_progress(race.progress());
+                        on_progress(acq_race.progress());
                     }
                 }
             }
@@ -529,13 +590,13 @@ where
             ), if hedge_deadline.is_some() => {
                 hedge_deadline = None;
                 apply(
-                    race.on_event(RaceEvent::HedgeElapsed),
+                    acq_race.on_event(RaceEvent::HedgeElapsed),
                     &mut arms,
                     &mut arm_candidates,
                     &mut hedge_deadline,
                     &mut lost,
                 );
-                on_progress(race.progress());
+                on_progress(acq_race.progress());
             }
         }
     }
@@ -561,6 +622,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::responsiveness::{Critical, RESERVATION_CLUTCH_SIZE};
+    use crate::time::HEDGE_INTERVAL;
 
     // The scheme-stripping and retry-engine logic is tested in
     // `mixnet_connect`, where the tests call the REAL functions in the
@@ -571,6 +634,36 @@ mod tests {
     fn find_available_port_returns_nonzero() {
         let port = NymProxy::find_available_port().expect("find_available_port");
         assert!(port > 0);
+    }
+
+    /// HYPOTHESIS: a known exit never re-enters the draw — the eligible set
+    /// is the discovered set minus the exclusions, an exclusion that empties
+    /// the draw refuses typed, and an empty discovery stays an empty draw
+    /// rather than a spurious exclusion error.
+    #[test]
+    fn known_exits_never_reenter_the_draw() {
+        let discovered = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let eligible = eligible_providers(discovered.clone(), &["b".to_string()])
+            .expect("two providers survive");
+        assert_eq!(eligible, vec!["a".to_string(), "c".to_string()]);
+
+        let error = eligible_providers(
+            vec!["a".to_string()],
+            &["a".to_string(), "stale".to_string()],
+        )
+        .expect_err("an emptied draw refuses");
+        assert!(matches!(
+            error,
+            NymProxyError::AllExitsExcluded {
+                discovered: 1,
+                excluded: 2,
+            }
+        ));
+
+        assert_eq!(
+            eligible_providers(Vec::new(), &["a".to_string()]).expect("empty discovery passes"),
+            Vec::<String>::new()
+        );
     }
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
@@ -595,10 +688,10 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_hedged_arm_rescues_a_hanging_provider_at_the_hedge_interval() {
         let started = tokio::time::Instant::now();
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move {
                 if candidate == 0 {
                     std::future::pending::<Result<&str, String>>().await
@@ -632,7 +725,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_per_attempt_timeout_frees_a_wedged_slot() {
         let started = tokio::time::Instant::now();
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
             hedged(1),
@@ -666,11 +759,11 @@ mod tests {
     /// accounts for them as typed records, not a joined sentence (issue
     /// #2562). Falsified if any attempt's failure is missing or flattened.
     #[tokio::test(start_paused = true)]
-    async fn a_lost_race_accounts_for_every_attempt() {
-        let lost = drive_race(
+    async fn a_lost_acq_race_accounts_for_every_attempt() {
+        let lost = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
             panic_text,
@@ -702,10 +795,10 @@ mod tests {
         let sink = std::sync::Arc::clone(&abandoned);
         // Arm 0 launches at t=0 and finishes at t=6; arm 1 launches at the
         // t=5 hedge and finishes at t=6 as well.
-        let winner = drive_race(
+        let winner = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move {
                 let finish = if candidate == 0 {
                     Duration::from_secs(6)
@@ -736,13 +829,13 @@ mod tests {
     /// bootstrap is narratable rather than opaque. Falsified if no progress
     /// line mentions the widened race.
     #[tokio::test(start_paused = true)]
-    async fn progress_lines_narrate_the_race() {
+    async fn progress_lines_narrate_the_acq_race() {
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = std::sync::Arc::clone(&lines);
-        let _ = drive_race(
+        let _ = drive_acq_race(
             2,
             MAX_PROVIDER_ATTEMPTS,
-            hedged(MAX_PARALLEL_CONNECTS),
+            hedged(RESERVATION_CLUTCH_SIZE),
             |candidate| async move { Err::<&str, _>(format!("candidate {candidate} refused")) },
             no_abandon,
             panic_text,
@@ -801,9 +894,9 @@ mod tests {
     /// otherwise the typed attempts are carried whole into
     /// `AttemptsExhausted`, never flattened (issue #2562).
     #[test]
-    fn a_race_loss_carries_its_typed_attempts_whole() {
+    fn an_acq_race_loss_carries_its_typed_attempts_whole() {
         assert!(matches!(
-            race_loss_error(LostRace {
+            acq_race_loss_error(LostAcqRace {
                 launched: 0,
                 failures: Vec::new(),
             }),
@@ -814,7 +907,7 @@ mod tests {
             NetOpFailure::message(NetOpStage::RemoteConnect, "p0", "gateway refused"),
             NetOpFailure::message(NetOpStage::TimedOut { after_ms: 20_000 }, "p1", "timed out"),
         ];
-        match race_loss_error(LostRace {
+        match acq_race_loss_error(LostAcqRace {
             launched: 2,
             failures: records.clone(),
         }) {
@@ -833,7 +926,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_starts_and_reports_address() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
         assert!(
             addr.starts_with("127.0.0.1:"),
@@ -853,7 +948,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
 
         let stream = tokio_socks::tcp::Socks5Stream::connect(&*addr, "zec.rocks:443")
@@ -868,7 +965,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_disconnect_clean() {
-        let proxy = NymProxy::start().await.expect("NymProxy::start");
+        let proxy = NymProxy::start::<Critical>()
+            .await
+            .expect("NymProxy::start");
         proxy.disconnect().await;
     }
 }

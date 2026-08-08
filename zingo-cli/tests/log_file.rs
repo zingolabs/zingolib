@@ -42,17 +42,10 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
 
+    // No consent act is passed, so every build shape launches offline:
+    // the session skips the mixnet driver, needs no proxy, and still
+    // writes its startup lines — this test observes log redirection only.
     let mut command = Command::new(zingo_cli_binary());
-    // Naming a server is an online act, which only a nym build accepts
-    // (ADR 0026); the offline-only build launches offline and still logs.
-    // The explicit server keeps the nym build from probing the curated
-    // list, and --no-mixnet opts out of the forced Mixnet Mode so the
-    // build needs no proxy: this test observes log redirection only.
-    #[cfg(feature = "nym")]
-    command
-        .arg("--server")
-        .arg("https://zec.rocks:443")
-        .arg("--no-mixnet");
     let mut child = command
         .env("RUST_LOG", "info")
         .arg("--data-dir")
@@ -160,9 +153,12 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
-        // This test observes log redirection, not transmission; opt out of
-        // the forced Mixnet Mode so a nym-featured build needs no proxy.
-        .arg("--no-mixnet")
+        // The mixnet is unconditional for a connected session, so hand the
+        // spawner a binary that exits at once: the spawn succeeds, the
+        // bootstrap dies, and the clearnet sync — the sole clearnet
+        // exception — still runs against the mock to produce the ERROR.
+        .arg("--nym-proxy")
+        .arg("/bin/true")
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")

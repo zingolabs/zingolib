@@ -165,9 +165,9 @@ pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
 /// A duplicate already in the mempool or chain counts as success (an earlier
 /// submission is minable or mined). "Queued for download" is re-probed up to
 /// [`MAX_QUEUED_PROBES`] times until the verdict is storage-backed. Any other
-/// error retries up to [`MAX_RETRIES`] times. On exhaustion a delivery check
-/// ([`TransmitTarget::knows_transaction`]) confirms whether an earlier attempt
-/// was in fact received. Returns the server-reported txid on success.
+/// error retries up to [`MAX_RETRIES`] times. On either exhaustion a delivery
+/// check ([`TransmitTarget::knows_transaction`]) confirms whether an earlier
+/// attempt was in fact received. Returns the server-reported txid on success.
 ///
 /// `sleep` supplies the wait between probes/retries. Production passes
 /// `tokio::time::sleep`, tests pass a no-op so the policy runs instantly.
@@ -192,7 +192,7 @@ where
     let mut queued_probes: u8 = 0;
 
     report("submitting".to_string());
-    loop {
+    let exhausted = loop {
         let failure = match target.submit(raw_tx, height).await {
             Ok(server_txid) => return Ok(server_txid),
             Err(failure) => failure,
@@ -202,7 +202,7 @@ where
             RejectionClass::StorageBackedDuplicate => return Ok(txid.to_string()),
             RejectionClass::QueuedProbe => {
                 if queued_probes >= MAX_QUEUED_PROBES {
-                    return Err(TransmitFailed(failure));
+                    break failure;
                 }
                 queued_probes += 1;
                 report(format!(
@@ -212,16 +212,7 @@ where
             }
             RejectionClass::Transient => {
                 if retry_count >= MAX_RETRIES {
-                    // A transmission error does not prove the transaction
-                    // failed to reach the network; an earlier attempt may have
-                    // been accepted with its response lost (e.g. a timeout),
-                    // causing rebroadcasts to be rejected as duplicates. Only
-                    // fail if the server does not know it.
-                    report("checking whether an earlier attempt was delivered".to_string());
-                    if target.knows_transaction(txid).await {
-                        return Ok(txid.to_string());
-                    }
-                    return Err(TransmitFailed(failure));
+                    break failure;
                 }
                 retry_count += 1;
                 report(format!(
@@ -230,7 +221,17 @@ where
                 sleep(TRANSMIT_RETRY_INTERVAL).await;
             }
         }
+    };
+
+    // A transmission error does not prove the transaction failed to reach
+    // the network: an earlier attempt may have been accepted with its
+    // response lost, and a queued verdict may become storage-backed moments
+    // after the last probe. Only fail if the server does not know it.
+    report("checking whether an earlier attempt was delivered".to_string());
+    if target.knows_transaction(txid).await {
+        return Ok(txid.to_string());
     }
+    Err(TransmitFailed(exhausted))
 }
 
 #[cfg(test)]
@@ -376,7 +377,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queued_probe_exhausts() {
+    async fn queued_probe_exhaustion_runs_the_delivery_check() {
         let submits = std::iter::repeat_n(
             Err::<String, String>("already queued for download".into()),
             (MAX_QUEUED_PROBES as usize) + 1,
@@ -385,15 +386,36 @@ mod tests {
         let target = ScriptedTarget::new(submits, false);
         let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
-            .expect_err("probes exhausted");
+            .expect_err("probes exhausted and the server does not know the txid");
         assert!(err.0.0.contains("already queued for download"));
         // One initial submit plus MAX_QUEUED_PROBES probes.
         assert_eq!(target.submit_calls(), (MAX_QUEUED_PROBES as usize) + 1);
         assert_eq!(
             target.knows_calls(),
-            0,
-            "queued exhaustion is not a delivery check"
+            1,
+            "queued exhaustion ends with the delivery check"
         );
+    }
+
+    /// HYPOTHESIS: a verdict that lands moments after the last queued probe
+    /// is still a success — the delivery check converts the exhaustion into
+    /// the acceptance the server reached (the 2026-08-06 container run,
+    /// where the mempool held the transaction nine seconds after the first
+    /// submission). Falsified if exhaustion fails without consulting the
+    /// server.
+    #[tokio::test]
+    async fn queued_exhaustion_with_a_known_transaction_is_success() {
+        let submits = std::iter::repeat_n(
+            Err::<String, String>("already queued for download".into()),
+            (MAX_QUEUED_PROBES as usize) + 1,
+        )
+        .collect();
+        let target = ScriptedTarget::new(submits, true);
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
+            .await
+            .expect("the server knows the transaction, so delivery stands");
+        assert_eq!(out, a_txid().to_string());
+        assert_eq!(target.knows_calls(), 1);
     }
 
     #[tokio::test]

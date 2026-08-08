@@ -46,6 +46,8 @@ pub mod migrate;
 pub mod offline;
 pub mod propose;
 pub mod save;
+#[cfg(feature = "nym")]
+pub mod select;
 pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
@@ -794,20 +796,27 @@ impl LightClient {
         }
     }
 
+    /// The Exit Nodes the session currently has in use, excluded from every
+    /// new acquisition's draw; a released exit re-enters the pool.
+    pub(crate) fn exits_in_use(&self) -> Vec<String> {
+        self.mixnet_slot.exits()
+    }
+
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
     /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
     /// `Ready`. Enabling while already enabled replaces the running proxy. A
     /// spawn failure leaves the mode `Unattached`, which refuses the mixnet
     /// surfaces — never a fallback to clearnet.
-    pub async fn enable_mixnet(
+    pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::spawn(
+        match crate::nym::MixnetProxy::spawn::<R>(
             binary_path,
             std::sync::Arc::clone(&self.mixnet_status),
+            &self.exits_in_use(),
         ) {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
@@ -872,6 +881,7 @@ impl LightClient {
             // None for the true slot states; the pinned address of a test
             // stand-in, whose Ready must not publish addressless.
             socks5_addr: self.mixnet_slot.socks5_addr(),
+            exits: self.mixnet_slot.exits(),
             bootstrap_detail: None,
             death: None,
         });
@@ -908,7 +918,11 @@ impl LightClient {
                 crate::nym::ProvisionStrategy::Spawn(hints) => {
                     let path = crate::nym::provision::resolve_proxy_path(&hints);
                     log::info!("mixnet session start: spawning nym-proxy at {path}");
-                    self.enable_mixnet(std::path::Path::new(&path)).await
+                    // The go-online moment is a user act: someone is waiting.
+                    self.enable_mixnet::<zingo_netutils::responsiveness::Critical>(
+                        std::path::Path::new(&path),
+                    )
+                    .await
                 }
                 crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
                     self.attach_mixnet(socks5_addr).await
@@ -1001,28 +1015,44 @@ impl LightClient {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
 
-    /// Runs the paired clearnet/mixnet diagnostic probe against `target`, or
-    /// against every Broadcast Indexer when `target` is `None`. Indexers are
-    /// probed concurrently. Each probe runs `GetLightdInfo` over both routes
-    /// (the mixnet leg is skipped when the proxy is not ready) and appends
-    /// its outcomes to the cross-session indexer history. The clearnet leg
-    /// contacts indexers from the real IP, and this is a user-invoked
-    /// diagnostic, never an automatic path.
+    /// Runs the mixnet liveness probe against `target`, or against every
+    /// Broadcast Indexer when `target` is `None`. Indexers are probed
+    /// concurrently: each probe runs `GetLightdInfo` through the session's
+    /// SOCKS5 proxy and appends its outcome to the cross-session indexer
+    /// history. The probe has no clearnet leg and refuses while the mixnet
+    /// transport is not ready.
     pub async fn probe_broadcast_indexers(
         &self,
         target: Option<http::Uri>,
         timeout: std::time::Duration,
-    ) -> Vec<crate::nym::probe::PairedProbe> {
-        let targets = target
+    ) -> Result<Vec<crate::nym::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
+    {
+        let socks5_addr =
+            match crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())? {
+                crate::nym::MixnetRoute::Mixnet(addr) => addr,
+                crate::nym::MixnetRoute::Clearnet => {
+                    return Err(crate::nym::MixnetNotReady::Unattached.into());
+                }
+            };
+        if let Some(uri) = &target
+            && !crate::nym::probe::probe_eligible(uri)
+        {
+            return Err(
+                crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+            );
+        }
+        let targets: Vec<http::Uri> = target
             .map_or_else(crate::nym::broadcast_indexers::broadcast_indexers, |uri| {
                 vec![uri]
-            });
-        let socks5_addr = self.mixnet_socks5_addr();
+            })
+            .into_iter()
+            .filter(crate::nym::probe::probe_eligible)
+            .collect();
         let history = self.indexer_history.clone();
-        futures::future::join_all(targets.iter().map(|indexer| {
-            crate::nym::probe::probe_indexer(indexer, socks5_addr.as_deref(), timeout, &history)
+        Ok(futures::future::join_all(targets.iter().map(|indexer| {
+            crate::nym::probe::probe_indexer(indexer, &socks5_addr, timeout, &history)
         }))
-        .await
+        .await)
     }
 }
 

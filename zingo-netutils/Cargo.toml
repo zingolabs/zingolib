@@ -84,6 +84,10 @@ nym = [
 name = "nym-proxy"
 required-features = ["nym"]
 
+[[bin]]
+name = "live-indexer-discovery"
+required-features = ["nym"]
+
 [dev-dependencies]
 tokio-stream.workspace = true
 hyper-rustls.workspace = true

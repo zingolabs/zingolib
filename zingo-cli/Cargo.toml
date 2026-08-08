@@ -12,6 +12,11 @@ edition = "2024"
 # command then reports the capability was switched off at build time.
 default = ["nym"]
 nym = ["zingolib/nym"]
+# The quarantined clearnet server-selection sweep (ADR 0029 deletes it from
+# ordinary builds). Never a default: a session that goes online engages
+# clearnet only for sync, so compiling this back in is a deliberate,
+# review-gated test act (2026-08-06 ruling).
+clearnet-test-mode = []
 # Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
 # in to recording and `network history` can display it. Off by default; without
 # it the flag warns and records nothing.

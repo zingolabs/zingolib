@@ -68,6 +68,11 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("{0}")]
     MixnetNotReady(#[from] crate::nym::MixnetNotReady),
+    /// A probe target outside the one endpoint shape the mixnet exit
+    /// policy carries.
+    #[cfg(feature = "nym")]
+    #[error("probe targets must be https on port 443; got '{0}'")]
+    IneligibleProbeTarget(http::Uri),
     /// The configured migration broadcast target shares the synchronization
     /// endpoint's host, which would let that server correlate the wallet's
     /// sync stream with its migration cohort (ADR 0011, 2026-07-23).
