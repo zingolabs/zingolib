@@ -56,8 +56,8 @@ because it cannot be launched without a clutch.
 Respawn moves to the parent. A transport no longer redraws internally
 after exhausting its attempts; it dies, and the supervisor that owns the
 pool decides whether to respawn with a fresh clutch. The pre-warm
-standing pool this enables races its acquisitions as `NonCritical`,
-activating the second responsiveness class.
+standing pool this enables races its acquisitions as
+`PrioritisePrivacy`, activating the second responsiveness class.
 
 The model is ratified but not yet implemented; the glossary entries and
 this record govern the implementation (plan items 1 and 3 of

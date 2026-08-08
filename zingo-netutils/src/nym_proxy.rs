@@ -124,8 +124,8 @@ impl NymProxy {
     }
 
     /// Race the pure plan ([`crate::arm_race`]) over `exit_nodes` under
-    /// `class`'s launch policy — saturating for a Critical acquisition,
-    /// hedged for a NonCritical one — at most [`MAX_EXIT_NODE_ATTEMPTS`]
+    /// `class`'s launch policy — saturating under PrioritiseSpeed, hedged
+    /// under PrioritisePrivacy — at most [`MAX_EXIT_NODE_ATTEMPTS`]
     /// contacted. Each pull is bounded by
     /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binds a fresh port, since a
     /// timed-out pull may still hold the port it was given. A loser that
@@ -223,8 +223,9 @@ impl NymProxy {
             exit_node: exit_node_address.to_string(),
             excluded: Vec::new(),
             // A pinned-Exit-Node start never races; the class only governs
-            // this proxy's later redraws, which serve a caller who waits.
-            class: ResponsivenessClass::Critical,
+            // this proxy's later redraws, which default to the speed
+            // priority.
+            class: ResponsivenessClass::PrioritiseSpeed,
         })
     }
 
@@ -622,7 +623,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::responsiveness::{Critical, RESERVATION_CLUTCH_SIZE};
+    use crate::responsiveness::{PrioritiseSpeed, RESERVATION_CLUTCH_SIZE};
     use crate::time::HEDGE_INTERVAL;
 
     // The scheme-stripping and retry-engine logic is tested in
@@ -929,7 +930,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_starts_and_reports_address() {
-        let proxy = NymProxy::start::<Critical>()
+        let proxy = NymProxy::start::<PrioritiseSpeed>()
             .await
             .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
@@ -951,7 +952,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
-        let proxy = NymProxy::start::<Critical>()
+        let proxy = NymProxy::start::<PrioritiseSpeed>()
             .await
             .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
@@ -968,7 +969,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_disconnect_clean() {
-        let proxy = NymProxy::start::<Critical>()
+        let proxy = NymProxy::start::<PrioritiseSpeed>()
             .await
             .expect("NymProxy::start");
         proxy.disconnect().await;

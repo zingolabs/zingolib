@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
   the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
   `NonCritical`, and `Responsiveness` for callers.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `zingolib::nym` re-exports `PrioritiseSpeed` (was `Critical`) and
+  `PrioritisePrivacy` (was `NonCritical`). A class names the acquisition's
+  declared priority, never who waits.
 - BREAKING: the send-path vocabulary of ADRs 0036 and 0037 replaces "broadcast"
   and "witness" throughout the API. The config key `migration_broadcast_uri` is
   renamed `migration_transmission_uri` (builder:

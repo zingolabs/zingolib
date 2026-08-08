@@ -919,7 +919,7 @@ impl LightClient {
                     let path = crate::nym::provision::resolve_proxy_path(&hints);
                     log::info!("mixnet session start: spawning nym-proxy at {path}");
                     // The go-online moment is a user act: someone is waiting.
-                    self.enable_mixnet::<zingo_netutils::responsiveness::Critical>(
+                    self.enable_mixnet::<zingo_netutils::responsiveness::PrioritiseSpeed>(
                         std::path::Path::new(&path),
                     )
                     .await

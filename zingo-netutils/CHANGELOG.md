@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
   (whose "arm" was the verb, colliding with the bandit noun).
   `RaceState::new` names its first parameter `arms`.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `PrioritiseSpeed` (was `Critical`, saturating) and
+  `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker
+  types, the `ResponsivenessClass` variants, and the wire tokens
+  (`--responsiveness <prioritise-speed|prioritise-privacy>`). A class
+  names the acquisition's declared priority, never who waits.
 - BREAKING: the Exit Node vocabulary replaces "provider" throughout the
   proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
   gateway role, a false friend). `NymProxy::exit_node`,
