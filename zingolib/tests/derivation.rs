@@ -1,17 +1,12 @@
 #![forbid(unsafe_code)]
 #![cfg(all(feature = "perspective", feature = "testutils"))]
-//! Unit tests of the value-transfer derivation, relocated from
-//! zingolib's summary test module when the derivation moved to the
-//! perspective module. Message semantics need no network: the ported tests in this
-//! module were libtonode integration tests (the first two ports alone
-//! cost 49s and 132s of LocalNet mining/syncing) whose assertions are
-//! pure summary/value-transfer derivation over wallet transaction
-//! records.
+//! Unit tests of the value-transfer derivation over fabricated wallet
+//! transaction records.
 
 #[path = "support/common.rs"]
 mod common;
 
-use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
+use pepper_sync::wallet::{IronwoodNote, OutputId, WalletTransaction};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -21,11 +16,13 @@ use zingolib::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::perspective::value_transfer::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
-use common::{received_texts, regtest_wallet, sent};
+use common::{
+    own_orchard_receiver, received_texts, regtest_wallet, self_send, sent, zfz_self_send,
+};
 
 /// Migrated from libtonode `fast::filter_empty_messages`.
 #[tokio::test]
@@ -121,60 +118,16 @@ async fn message_thread() {
 }
 
 /// Migrated from libtonode `fast::create_send_to_self_with_zfz_active`:
-/// the assertions are value-transfer KIND classification (a self-send
-/// yields SendToSelf(Basic). The Zennies-for-Zingo output yields a
-/// Sent(Send) addressed to the ZFZ address), which is pure summary
-/// derivation. The proposal/transmission pipeline the integration test
-/// drove incidentally remains covered by the chain-bound send tests.
+/// a self-send yields SendToSelf(Basic) and the Zennies-for-Zingo output
+/// yields a Sent(Send) addressed to the ZFZ address.
 #[tokio::test]
 async fn create_send_to_self_with_zfz_active() {
     let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
-    let network = ChainType::Regtest(ActivationHeights::default());
 
-    let own_orchard_receiver = *wallet
-        .unified_addresses()
-        .values()
-        .next()
-        .unwrap()
-        .orchard()
-        .unwrap();
-    let zcash_client_backend::address::Address::Unified(zfz_unified_address) =
-        zcash_client_backend::address::Address::decode(&network, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)
-            .unwrap()
-    else {
-        panic!("ZFZ address must be unified");
-    };
-
-    let txid = TxId::from_bytes([1; 32]);
-    let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
-        txid,
-        ConfirmationStatus::Confirmed(10.into()),
-        vec![],
-        vec![
-            // The send-to-self output: recipient is one of the wallet's
-            // own orchard receivers.
-            OutgoingIronwoodNote::new_for_test(
-                OutputId::new(txid, 0),
-                zip32::AccountId::ZERO,
-                zip32::Scope::External,
-                OrchardCryptoNoteBuilder::default()
-                    .recipient(own_orchard_receiver)
-                    .build(),
-                Memo::Empty,
-                None,
-            ),
-            // The Zennies-for-Zingo output.
-            OutgoingIronwoodNote::new_for_test(
-                OutputId::new(txid, 1),
-                zip32::AccountId::ZERO,
-                zip32::Scope::External,
-                OrchardCryptoNoteBuilder::default().build(),
-                Memo::Empty,
-                Some(zfz_unified_address),
-            ),
-        ],
-    );
-    wallet.wallet_transactions.insert(txid, transaction);
+    let transaction = zfz_self_send(1, 10, own_orchard_receiver(&wallet));
+    wallet
+        .wallet_transactions
+        .insert(transaction.txid(), transaction);
 
     let value_transfers = wallet.value_transfers(true).await.unwrap();
 
@@ -215,50 +168,17 @@ async fn send_exposes_recipient_pools_received() {
 
 /// A send-to-self value transfer exposes the pools its value arrived
 /// into (here: ironwood), letting consumers label pool movements such
-/// as an orchard -> ironwood migration outside zingolib. The funding
-/// side (`pools_sent_from`) needs real spend links, so it is pinned by
-/// the chain-bound shield tests in libtonode instead.
+/// as an orchard -> ironwood migration outside zingolib.
 #[tokio::test]
 async fn send_to_self_exposes_pools_received() {
     use zcash_protocol::PoolType;
 
     let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
-    let own_orchard_receiver = *wallet
-        .unified_addresses()
-        .values()
-        .next()
-        .unwrap()
-        .orchard()
-        .unwrap();
 
-    let txid = TxId::from_bytes([1; 32]);
-    let transaction = WalletTransaction::new_for_test_with_ironwood_notes(
-        txid,
-        ConfirmationStatus::Confirmed(10.into()),
-        // The self-received output, landing in the ironwood pool.
-        vec![IronwoodNote::new_for_test(
-            OutputId::new(txid, 0),
-            zip32::AccountId::ZERO,
-            zip32::Scope::Internal,
-            OrchardCryptoNoteBuilder::default().build(),
-            Memo::Empty,
-            None,
-        )],
-        // The outgoing view of the same output: recipient is one of
-        // the wallet's own receivers, making the transaction a
-        // send-to-self.
-        vec![OutgoingIronwoodNote::new_for_test(
-            OutputId::new(txid, 0),
-            zip32::AccountId::ZERO,
-            zip32::Scope::External,
-            OrchardCryptoNoteBuilder::default()
-                .recipient(own_orchard_receiver)
-                .build(),
-            Memo::Empty,
-            None,
-        )],
-    );
-    wallet.wallet_transactions.insert(txid, transaction);
+    let transaction = self_send(1, 10, own_orchard_receiver(&wallet));
+    wallet
+        .wallet_transactions
+        .insert(transaction.txid(), transaction);
 
     let value_transfers = wallet.value_transfers(true).await.unwrap();
 
@@ -311,10 +231,11 @@ async fn by_address_finsight() {
     );
 }
 
-/// Migrated from libtonode `fast::value_transfers`: a four-output
-/// memo'd receive aggregates into one value transfer carrying all
-/// four memos, and the derivation is idempotent and sort-stable
-/// (the descending ordering is exactly the reverse of ascending).
+/// Migrated from libtonode `fast::value_transfers`: a four-output memo'd
+/// receive aggregates into one value transfer, the derivation is
+/// idempotent, and the descending sort reverses the ascending one at
+/// transaction granularity while preserving intra-transaction creation
+/// order.
 #[tokio::test]
 async fn value_transfers_aggregation_and_ordering() {
     use std::str::FromStr as _;
@@ -373,24 +294,52 @@ async fn value_transfers_aggregation_and_ordering() {
             ),
         );
     }
+    // ...plus one transaction yielding TWO value transfers (a self-send
+    // and a ZFZ send), so the intra-transaction assertions bite.
+    let zfz_txid = TxId::from_bytes([4; 32]);
+    let transaction = zfz_self_send(4, 7, own_orchard_receiver(&wallet));
+    wallet
+        .wallet_transactions
+        .insert(transaction.txid(), transaction);
 
-    let value_transfers = wallet.value_transfers(true).await.unwrap();
-    let value_transfers1 = wallet.value_transfers(true).await.unwrap();
-    let value_transfers2 = wallet.value_transfers(true).await.unwrap();
-    let mut value_transfers3 = wallet.value_transfers(false).await.unwrap();
-    let mut value_transfers4 = wallet.value_transfers(false).await.unwrap();
+    let descending = wallet.value_transfers(true).await.unwrap();
+    let ascending = wallet.value_transfers(false).await.unwrap();
 
-    let four_memo_transfer = value_transfers
+    let four_memo_transfer = descending
         .iter()
         .find(|transfer| transfer.txid == TxId::from_bytes([1; 32]))
         .unwrap();
     assert_eq!(four_memo_transfer.memos.len(), 4);
 
-    value_transfers3.reverse();
-    value_transfers4.reverse();
+    // Idempotence.
+    assert_eq!(descending, wallet.value_transfers(true).await.unwrap());
+    assert_eq!(ascending, wallet.value_transfers(false).await.unwrap());
 
-    assert_eq!(value_transfers, value_transfers1);
-    assert_eq!(value_transfers, value_transfers2);
-    assert_eq!(value_transfers, value_transfers3);
-    assert_eq!(value_transfers, value_transfers4);
+    // Descending reverses ascending at transaction granularity only: the
+    // per-transaction blocks reverse, while each transaction's transfers
+    // keep their creation order in both directions.
+    let transaction_blocks = |value_transfers: &ValueTransfers| {
+        let mut blocks: Vec<TxId> = Vec::new();
+        for value_transfer in value_transfers.iter() {
+            if blocks.last() != Some(&value_transfer.txid) {
+                blocks.push(value_transfer.txid);
+            }
+        }
+        blocks
+    };
+    let mut reversed_ascending_blocks = transaction_blocks(&ascending);
+    reversed_ascending_blocks.reverse();
+    assert_eq!(transaction_blocks(&descending), reversed_ascending_blocks);
+
+    let kinds_of = |value_transfers: &ValueTransfers, txid: TxId| {
+        value_transfers
+            .iter()
+            .filter(|value_transfer| value_transfer.txid == txid)
+            .map(|value_transfer| value_transfer.kind)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(kinds_of(&descending, zfz_txid).len(), 2);
+    for txid in transaction_blocks(&descending) {
+        assert_eq!(kinds_of(&descending, txid), kinds_of(&ascending, txid));
+    }
 }

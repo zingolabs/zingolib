@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# zingolib
-zingolib = { workspace = true, features = ["testutils"] }
+zingolib = { workspace = true, features = ["perspective", "testutils"] }
 zingo_common_components.workspace = true
 
 # zingo infrastructure
