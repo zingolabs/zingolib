@@ -24,6 +24,12 @@ Transmission Endpoint. This deliberately breaks with ZIP 318's word for
 part submission; ZIP fidelity yields to arity truth, and the departure
 is recorded in the glossary's Broadcast entry.
 
+The replacement is also grammatically complete where "broadcast" was
+not: transmit is the verb and Transmission is the noun, so every use
+site names its part of speech. "Broadcast" serves as both verb and
+noun in one ambiguous form, and the sweep resolves each occurrence to
+the correct member of the pair.
+
 The distinction between the two submission paths survives on facts,
 not words: a Transmission verifies the server-reported txid echo, the
 migration-part path does not, and the part path keeps its decoupled
