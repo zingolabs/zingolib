@@ -20,7 +20,7 @@ reads the milestone lines below).
   (`LightClient::update_current_price` and
   `update_current_price_over_mixnet` fetch before any wallet lock is
   taken and re-acquire briefly to record). The remedy-3 audit of the
-  broadcast fan-out and attach validation under long-held locks remains
+  Transmission fan-out and attach validation under long-held locks remains
   open in issue #2552.
 - **Sync-path probes**: LANDED. `zingolib::nym::probe::probe_sync_server`
   (see the addendum below).
@@ -56,7 +56,7 @@ out. This design keeps it.
 
 ## Goals
 
-1. Every covered network operation (price fetch, broadcast fan-out,
+1. Every covered network operation (price fetch, Transmission fan-out,
    attach validation) reports failures as data: which stage failed,
    against what target, with the full cause chain.
 2. One taxonomy reused across all of them, so a consumer that learns to
@@ -300,7 +300,7 @@ observability did not hold.
    Document the small race this admits (the route could die mid-fetch,
    which the fetch itself then reports as a typed failure).
 3. Audit the other covered operations for the same coupling. The
-   broadcast fan-out and attach validation also run under long-held
+   Transmission fan-out and attach validation also run under long-held
    locks. For each, either the lock is released across network waits or
    the operation's progress is observable through a side channel that
    shares no lock with it (zingo-mobile's DRAIN_PROGRESS idiom, an
