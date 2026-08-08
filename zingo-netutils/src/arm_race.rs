@@ -1,10 +1,10 @@
-//! The pure planner for racing arms over an ordered candidate list.
+//! The pure planner for racing pulls over an ordered list of arms.
 //!
-//! Two escalation styles in this codebase share one skeleton: launch arms
-//! against distinct candidates, never repeat a candidate, stop at a cap,
+//! Two escalation styles in this codebase share one skeleton: launch pulls
+//! against distinct arms, never pull the same arm twice, stop at a cap,
 //! let the first success win, and accumulate every failure. The mixnet
-//! bootstrap hedges (a new arm after a silence interval, or immediately when
-//! an arm fails) and the send escalation widens in serially gated rounds
+//! bootstrap hedges (a new pull after a silence interval, or immediately when
+//! a pull fails) and the send escalation widens in serially gated rounds
 //! (ADR 0011). This module captures the shared skeleton as a pure state
 //! machine ([`RaceState::start`] and [`RaceState::on_event`] map events to
 //! [`RaceAction`]s with no I/O, no clock, and no randomness) and takes the
@@ -14,10 +14,15 @@
 //! futures. Deliberately NOT feature-gated, so the planner's tests run in
 //! the default build without the nym-sdk stack.
 //!
-//! Every arm's outcome is retained ([`RaceState::failures`]), down to the
+//! An arm is a contender available to be tried, and a pull is one trial of
+//! it (ADR 0035's bandit vocabulary). This race pulls each arm at most
+//! once, so the two counts coincide today; the accounting is nevertheless
+//! kept in pulls, because the reservation model may pull an arm twice.
+//!
+//! Every pull's outcome is retained ([`RaceState::failures`]), down to the
 //! first: failures trigger immediate replacement launches and feed live
 //! progress ([`RaceState::progress`]). The terminal account of a lost race
-//! belongs to the driver, which keeps each arm's failure as a typed record
+//! belongs to the driver, which keeps each pull's failure as a typed record
 //! (issue #2562); the planner retains only the rendered line each failure
 //! fed to its progress narration.
 #![forbid(unsafe_code)]
@@ -27,33 +32,33 @@ use std::time::Duration;
 /// How a race widens.
 #[derive(Clone, Copy, Debug)]
 pub enum LaunchPolicy {
-    /// Launch one arm, then hedge: a further arm after each `hedge_interval`
-    /// of silence, or immediately when an arm fails, holding at most
-    /// `max_parallel` arms in flight.
+    /// Launch one pull, then hedge: a further pull after each
+    /// `hedge_interval` of silence, or immediately when a pull fails,
+    /// holding at most `max_parallel` pulls in flight.
     Hedged {
-        /// The most arms allowed in flight at once.
+        /// The most pulls allowed in flight at once.
         max_parallel: usize,
-        /// The silence interval after which another arm is launched.
+        /// The silence interval after which another pull is launched.
         hedge_interval: Duration,
     },
-    /// Escalating serially gated rounds: round `r` launches `r` arms, and
-    /// round `r + 1` launches only after every arm of round `r` has failed.
+    /// Escalating serially gated rounds: round `r` launches `r` pulls, and
+    /// round `r + 1` launches only after every pull of round `r` has failed.
     /// Uses no timer.
     EscalatingRounds,
-    /// Launch `max_parallel` arms immediately and replace each failure at
+    /// Launch `max_parallel` pulls immediately and replace each failure at
     /// once, holding the width saturated until the cap exhausts. Uses no
     /// timer.
     Saturating {
-        /// The most arms allowed in flight at once.
+        /// The most pulls allowed in flight at once.
         max_parallel: usize,
     },
 }
 
-/// One arm's failure, retained for replacement decisions and progress.
+/// One pull's failure, retained for replacement decisions and progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ArmFailure {
-    /// The candidate index (into the caller's ordered list) that failed.
-    pub candidate: usize,
+pub struct PullFailure {
+    /// The arm index (into the caller's ordered list) whose pull failed.
+    pub arm: usize,
     /// The failure rendered for a human.
     pub error: String,
 }
@@ -61,29 +66,29 @@ pub struct ArmFailure {
 /// An input to the planner.
 #[derive(Clone, Debug)]
 pub enum RaceEvent {
-    /// The arm racing `candidate` failed with `error`.
-    ArmFailed {
-        /// The candidate index whose arm failed.
-        candidate: usize,
+    /// The pull of `arm` failed with `error`.
+    PullFailed {
+        /// The arm index whose pull failed.
+        arm: usize,
         /// The failure rendered for a human.
         error: String,
     },
-    /// The pending hedge timer elapsed with no arm finishing meanwhile.
+    /// The pending hedge timer elapsed with no pull finishing meanwhile.
     HedgeElapsed,
 }
 
 /// An instruction to the effectful driver.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RaceAction {
-    /// Launch an arm against this candidate index.
+    /// Launch a pull of this arm index.
     Launch {
-        /// The candidate index to race next.
-        candidate: usize,
+        /// The arm index to pull next.
+        arm: usize,
     },
     /// Replace the pending hedge timer with one firing after this duration.
     /// The driver keeps at most one hedge timer.
-    ArmHedgeTimer(Duration),
-    /// No further launches are possible and no arm is in flight: the race is
+    SetHedgeTimer(Duration),
+    /// No further launches are possible and no pull is in flight: the race is
     /// lost. Read [`RaceState::failures`] for the full account.
     GiveUp,
 }
@@ -94,13 +99,13 @@ pub enum RaceAction {
 /// [`Display`]: std::fmt::Display
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RaceProgress {
-    /// Arms launched so far (distinct candidates contacted).
+    /// Pulls launched so far (distinct arms pulled).
     pub launched: usize,
-    /// The most candidates this race may contact.
+    /// The most arms this race may pull.
     pub limit: usize,
-    /// Arms currently in flight.
+    /// Pulls currently in flight.
     pub in_flight: usize,
-    /// Arms that have failed.
+    /// Pulls that have failed.
     pub failed: usize,
 }
 
@@ -118,23 +123,23 @@ impl std::fmt::Display for RaceProgress {
 #[derive(Debug)]
 pub struct RaceState {
     policy: LaunchPolicy,
-    /// The most candidates this race may contact: `cap.min(candidates)`.
+    /// The most arms this race may pull: `cap.min(arms)`.
     limit: usize,
-    /// The next unlaunched candidate index. Also the count launched so far.
+    /// The next unpulled arm index. Also the count of pulls launched so far.
     next: usize,
     in_flight: usize,
     /// The current round size under [`LaunchPolicy::EscalatingRounds`].
     round_size: usize,
-    failures: Vec<ArmFailure>,
+    failures: Vec<PullFailure>,
 }
 
 impl RaceState {
-    /// A race over `candidates` many candidates, contacting at most `cap` of
-    /// them, widening per `policy`.
-    pub fn new(candidates: usize, cap: usize, policy: LaunchPolicy) -> Self {
+    /// A race over `arms` many arms, pulling at most `cap` of them, widening
+    /// per `policy`.
+    pub fn new(arms: usize, cap: usize, policy: LaunchPolicy) -> Self {
         RaceState {
             policy,
-            limit: cap.min(candidates),
+            limit: cap.min(arms),
             next: 0,
             in_flight: 0,
             round_size: 1,
@@ -143,7 +148,7 @@ impl RaceState {
     }
 
     /// Begin the race: the initial launch batch, or an immediate
-    /// [`RaceAction::GiveUp`] when there is nothing to contact.
+    /// [`RaceAction::GiveUp`] when there is nothing to pull.
     pub fn start(&mut self) -> Vec<RaceAction> {
         if self.limit == 0 {
             return vec![RaceAction::GiveUp];
@@ -153,16 +158,16 @@ impl RaceState {
             LaunchPolicy::Hedged { .. } | LaunchPolicy::EscalatingRounds => 1,
         };
         let mut actions = self.launch(initial);
-        self.arm_timer_if_hedging(&mut actions);
+        self.set_timer_if_hedging(&mut actions);
         actions
     }
 
     /// Advance the race on `event`, returning the driver's next actions.
     pub fn on_event(&mut self, event: RaceEvent) -> Vec<RaceAction> {
         let mut actions = match event {
-            RaceEvent::ArmFailed { candidate, error } => {
+            RaceEvent::PullFailed { arm, error } => {
                 self.in_flight = self.in_flight.saturating_sub(1);
-                self.failures.push(ArmFailure { candidate, error });
+                self.failures.push(PullFailure { arm, error });
                 match self.policy {
                     LaunchPolicy::Hedged { .. } | LaunchPolicy::Saturating { .. } => self.launch(1),
                     LaunchPolicy::EscalatingRounds => {
@@ -191,28 +196,26 @@ impl RaceState {
         if self.in_flight == 0 && actions.is_empty() {
             actions.push(RaceAction::GiveUp);
         } else {
-            self.arm_timer_if_hedging(&mut actions);
+            self.set_timer_if_hedging(&mut actions);
         }
         actions
     }
 
-    /// Launch up to `count` fresh candidates, bounded by the limit.
+    /// Launch pulls of up to `count` fresh arms, bounded by the limit.
     fn launch(&mut self, count: usize) -> Vec<RaceAction> {
         let launches = count.min(self.limit - self.next);
         let mut actions = Vec::with_capacity(launches);
         for _ in 0..launches {
-            actions.push(RaceAction::Launch {
-                candidate: self.next,
-            });
+            actions.push(RaceAction::Launch { arm: self.next });
             self.next += 1;
             self.in_flight += 1;
         }
         actions
     }
 
-    /// Under [`LaunchPolicy::Hedged`], re-arm the hedge timer whenever another
-    /// arm could still be launched by a future timer firing.
-    fn arm_timer_if_hedging(&self, actions: &mut Vec<RaceAction>) {
+    /// Under [`LaunchPolicy::Hedged`], re-set the hedge timer whenever another
+    /// pull could still be launched by a future timer firing.
+    fn set_timer_if_hedging(&self, actions: &mut Vec<RaceAction>) {
         if let LaunchPolicy::Hedged {
             max_parallel,
             hedge_interval,
@@ -220,7 +223,7 @@ impl RaceState {
             && self.next < self.limit
             && self.in_flight < max_parallel
         {
-            actions.push(RaceAction::ArmHedgeTimer(hedge_interval));
+            actions.push(RaceAction::SetHedgeTimer(hedge_interval));
         }
     }
 
@@ -234,12 +237,12 @@ impl RaceState {
         }
     }
 
-    /// Every arm failure so far, in the order they happened.
-    pub fn failures(&self) -> &[ArmFailure] {
+    /// Every pull failure so far, in the order they happened.
+    pub fn failures(&self) -> &[PullFailure] {
         &self.failures
     }
 
-    /// Distinct candidates contacted so far.
+    /// Distinct arms pulled so far.
     pub fn launched(&self) -> usize {
         self.next
     }
@@ -258,21 +261,21 @@ mod tests {
         }
     }
 
-    fn failed(candidate: usize) -> RaceEvent {
-        RaceEvent::ArmFailed {
-            candidate,
-            error: format!("candidate {candidate} down"),
+    fn failed(arm: usize) -> RaceEvent {
+        RaceEvent::PullFailed {
+            arm,
+            error: format!("arm {arm} down"),
         }
     }
 
     #[test]
-    fn start_launches_one_arm_and_arms_the_hedge_timer() {
+    fn start_launches_one_pull_and_sets_the_hedge_timer() {
         let mut race = RaceState::new(10, 10, hedged(3));
         assert_eq!(
             race.start(),
             vec![
-                RaceAction::Launch { candidate: 0 },
-                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
+                RaceAction::Launch { arm: 0 },
+                RaceAction::SetHedgeTimer(PLANNER_HEDGE)
             ]
         );
     }
@@ -284,14 +287,14 @@ mod tests {
         assert_eq!(
             race.on_event(RaceEvent::HedgeElapsed),
             vec![
-                RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
+                RaceAction::Launch { arm: 1 },
+                RaceAction::SetHedgeTimer(PLANNER_HEDGE)
             ]
         );
-        // The third arm fills max_parallel, so no further timer is armed.
+        // The third pull fills max_parallel, so no further timer is set.
         assert_eq!(
             race.on_event(RaceEvent::HedgeElapsed),
-            vec![RaceAction::Launch { candidate: 2 }]
+            vec![RaceAction::Launch { arm: 2 }]
         );
         // At max_parallel a timer firing launches nothing.
         assert_eq!(race.on_event(RaceEvent::HedgeElapsed), Vec::new());
@@ -305,8 +308,8 @@ mod tests {
         assert_eq!(
             actions,
             vec![
-                RaceAction::Launch { candidate: 1 },
-                RaceAction::ArmHedgeTimer(PLANNER_HEDGE)
+                RaceAction::Launch { arm: 1 },
+                RaceAction::SetHedgeTimer(PLANNER_HEDGE)
             ],
             "a failure is a signal to try elsewhere at once, not to wait"
         );
@@ -322,11 +325,11 @@ mod tests {
         assert_eq!(
             race.start(),
             vec![
-                RaceAction::Launch { candidate: 0 },
-                RaceAction::Launch { candidate: 1 },
-                RaceAction::Launch { candidate: 2 },
+                RaceAction::Launch { arm: 0 },
+                RaceAction::Launch { arm: 1 },
+                RaceAction::Launch { arm: 2 },
             ],
-            "the whole width flies at once, and no hedge timer is armed"
+            "the whole width flies at once, and no hedge timer is set"
         );
     }
 
@@ -336,7 +339,7 @@ mod tests {
         race.start();
         assert_eq!(
             race.on_event(failed(1)),
-            vec![RaceAction::Launch { candidate: 3 }],
+            vec![RaceAction::Launch { arm: 3 }],
             "a failure is replaced at once, holding the width saturated"
         );
         assert_eq!(
@@ -347,18 +350,18 @@ mod tests {
     }
 
     /// HYPOTHESIS: a saturating race never holds more than `max_parallel`
-    /// arms in flight, even across failure-driven replacements. Falsified
+    /// pulls in flight, even across failure-driven replacements. Falsified
     /// if a replacement launch overshoots the width the start established.
     #[test]
     fn saturating_replacements_never_exceed_the_width() {
         let mut race = RaceState::new(10, 10, saturating(3));
         race.start();
         assert_eq!(race.progress().in_flight, 3);
-        for candidate in 0..7 {
-            race.on_event(failed(candidate));
+        for arm in 0..7 {
+            race.on_event(failed(arm));
             assert!(
                 race.progress().in_flight <= 3,
-                "in_flight {} after failing candidate {candidate}",
+                "in_flight {} after failing arm {arm}",
                 race.progress().in_flight
             );
         }
@@ -371,18 +374,18 @@ mod tests {
         assert_eq!(race.on_event(failed(0)), Vec::new());
         assert_eq!(race.on_event(failed(1)), Vec::new());
         assert_eq!(race.on_event(failed(2)), vec![RaceAction::GiveUp]);
-        assert_eq!(race.failures().len(), 3, "every arm's failure is retained");
+        assert_eq!(race.failures().len(), 3, "every pull's failure is retained");
     }
 
     #[test]
-    fn exhaustion_with_arms_in_flight_waits_rather_than_giving_up() {
+    fn exhaustion_with_pulls_in_flight_waits_rather_than_giving_up() {
         let mut race = RaceState::new(2, 10, hedged(3));
         race.start();
-        race.on_event(RaceEvent::HedgeElapsed); // both candidates in flight
+        race.on_event(RaceEvent::HedgeElapsed); // both arms in flight
         assert_eq!(
             race.on_event(failed(0)),
             Vec::new(),
-            "no fresh candidate, but candidate 1 still races"
+            "no fresh arm, but arm 1's pull still races"
         );
     }
 
@@ -396,13 +399,13 @@ mod tests {
         assert_eq!(
             race.failures(),
             &[
-                ArmFailure {
-                    candidate: 0,
-                    error: "candidate 0 down".to_string(),
+                PullFailure {
+                    arm: 0,
+                    error: "arm 0 down".to_string(),
                 },
-                ArmFailure {
-                    candidate: 1,
-                    error: "candidate 1 down".to_string(),
+                PullFailure {
+                    arm: 1,
+                    error: "arm 1 down".to_string(),
                 },
             ],
             "every failure is retained, in order"
@@ -410,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_candidate_list_gives_up_at_start() {
+    fn an_empty_arm_list_gives_up_at_start() {
         let mut race = RaceState::new(0, 10, hedged(3));
         assert_eq!(race.start(), vec![RaceAction::GiveUp]);
         let mut race = RaceState::new(10, 0, hedged(3));
@@ -418,11 +421,11 @@ mod tests {
     }
 
     #[test]
-    fn the_cap_bounds_distinct_candidates() {
+    fn the_cap_bounds_distinct_arms() {
         let mut race = RaceState::new(10, 2, hedged(3));
         race.start();
         race.on_event(RaceEvent::HedgeElapsed);
-        // Both capped candidates are in flight; a failure launches nothing new.
+        // Both capped arms are in flight; a failure launches nothing new.
         assert_eq!(race.on_event(failed(0)), Vec::new());
         assert_eq!(race.launched(), 2);
     }
@@ -430,27 +433,24 @@ mod tests {
     #[test]
     fn rounds_escalate_one_two_three_gated_on_whole_round_failure() {
         let mut race = RaceState::new(10, 6, LaunchPolicy::EscalatingRounds);
-        assert_eq!(race.start(), vec![RaceAction::Launch { candidate: 0 }]);
-        // Round one fails: round two launches two arms, no timer ever.
+        assert_eq!(race.start(), vec![RaceAction::Launch { arm: 0 }]);
+        // Round one fails: round two launches two pulls, no timer ever.
         assert_eq!(
             race.on_event(failed(0)),
-            vec![
-                RaceAction::Launch { candidate: 1 },
-                RaceAction::Launch { candidate: 2 }
-            ]
+            vec![RaceAction::Launch { arm: 1 }, RaceAction::Launch { arm: 2 }]
         );
         // One of round two fails: the gate holds while its sibling races.
         assert_eq!(race.on_event(failed(1)), Vec::new());
-        // The whole round has failed: round three launches three arms.
+        // The whole round has failed: round three launches three pulls.
         assert_eq!(
             race.on_event(failed(2)),
             vec![
-                RaceAction::Launch { candidate: 3 },
-                RaceAction::Launch { candidate: 4 },
-                RaceAction::Launch { candidate: 5 }
+                RaceAction::Launch { arm: 3 },
+                RaceAction::Launch { arm: 4 },
+                RaceAction::Launch { arm: 5 }
             ]
         );
-        // All six capped arms have failed: the race is lost.
+        // All six capped pulls have failed: the race is lost.
         race.on_event(failed(3));
         race.on_event(failed(4));
         assert_eq!(race.on_event(failed(5)), vec![RaceAction::GiveUp]);
@@ -459,13 +459,13 @@ mod tests {
     }
 
     #[test]
-    fn a_round_is_bounded_by_the_remaining_candidates() {
+    fn a_round_is_bounded_by_the_remaining_arms() {
         let mut race = RaceState::new(2, 6, LaunchPolicy::EscalatingRounds);
         race.start();
         assert_eq!(
             race.on_event(failed(0)),
-            vec![RaceAction::Launch { candidate: 1 }],
-            "round two wants two arms but only one candidate remains"
+            vec![RaceAction::Launch { arm: 1 }],
+            "round two wants two pulls but only one arm remains"
         );
         assert_eq!(race.on_event(failed(1)), vec![RaceAction::GiveUp]);
     }

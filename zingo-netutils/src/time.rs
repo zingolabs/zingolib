@@ -62,22 +62,22 @@ pub const LOOPBACK_DIAL_BOUND: Duration = Duration::from_secs(5);
 /// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
 pub const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Timeout for a single provider connect attempt.
+/// Timeout for a single Exit Node connect attempt.
 ///
-/// Without this bound, one unresponsive provider hangs
+/// Without this bound, one unresponsive Exit Node hangs
 /// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
-/// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds. Six full
+/// budget burns, and the retry engine never reaches the next Exit Node. A
+/// responsive Exit Node bootstraps in well under ten seconds. Six full
 /// attempts fit inside the lifecycle budget.
 pub const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Timeout for the provider-discovery API query, which is otherwise
+/// Timeout for the Exit-Node-discovery API query, which is otherwise
 /// unbounded for the same reason as the connect attempts.
 pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the hedged bootstrap stays quiet before launching another
-/// provider in parallel. A responsive provider typically connects in well
-/// under ten seconds, so an attempt this old is worth hedging against
+/// Exit Node pull in parallel. A responsive Exit Node typically connects in
+/// well under ten seconds, so an attempt this old is worth hedging against
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 

@@ -19,7 +19,7 @@ pub(crate) fn strip_socks5_scheme(url: &str) -> &str {
 }
 
 /// Fisher-Yates shuffle driven by a caller-supplied seed, so the permutation
-/// is a pure function of `(items, seed)`. The pure core of provider
+/// is a pure function of `(items, seed)`. The pure core of Exit Node
 /// shuffling: the caller supplies entropy (production hashes the clock,
 /// tests pass a constant).
 ///

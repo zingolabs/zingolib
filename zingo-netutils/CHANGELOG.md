@@ -27,6 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
   `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
   reservations, never an independent parameter (ADR 0035).
+- BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
+  `PullFailure` (was `ArmFailure`) carries an `arm` field (was
+  `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
+  `RaceAction::Launch`'s field is `arm`, and
+  `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
+  (whose "arm" was the verb, colliding with the bandit noun).
+  `RaceState::new` names its first parameter `arms`.
+- BREAKING: the Exit Node vocabulary replaces "provider" throughout the
+  proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
+  gateway role, a false friend). `NymProxy::exit_node`,
+  `NymProxy::start_with_exit_node`, and `NymProxy::discover_exit_nodes`
+  replace `exit_provider`, `start_with_provider`, and
+  `discover_exit_providers`. `NymProxyError::NoExitNode` replaces
+  `NoProvider`, and the `AttemptTimeout` and `AttemptsExhausted`
+  `Display` renderings now say "exit node" where they said "provider".
+  `DiscoveredIndexer` and `DiscoveryFailure` carry `exit_node` (was
+  `exit_provider`).
 
 ### Removed
 

@@ -16,13 +16,13 @@
 //!
 //! This orchestrates the shared per-submission policy (retry,
 //! duplicate-in-mempool, queued-probe, delivery-check) rather than
-//! duplicating it: each arm is a call to `resilient_transmit`
+//! duplicating it: each pull is a call to `resilient_transmit`
 //! (`crate::lightclient::transmit`, crate-private, so no intra-doc link
 //! from this public module), the same policy the clearnet path runs. The escalation logic itself is
 //! the shared pure racing planner ([`zingo_netutils::arm_race`]) under its
 //! serially gated [`LaunchPolicy::EscalatingRounds`]. This module drives the
 //! planner's actions over borrowed futures and keeps the ratified schedule.
-//! The per-arm runner and the random-number generator are injected, so the
+//! The per-pull runner and the random-number generator are injected, so the
 //! round, escalation, and cap logic is exercised in CI without a live mixnet
 //! or real time.
 #![forbid(unsafe_code)]
@@ -43,13 +43,13 @@ use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
 /// classify a rejection.
 pub(crate) const MAX_TRANSMISSION_CORRESPONDENTS: usize = 6;
 
-/// One Correspondent's failed arm: which indexer was tried and its typed
+/// One Correspondent's failed pull: which indexer was tried and its typed
 /// failure, carried whole (`docs/agents/net-diag-design.md`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CorrespondentAttempt<E> {
     /// The Correspondent's host.
     pub correspondent: String,
-    /// The arm's failure, untouched.
+    /// The pull's failure, untouched.
     pub failure: E,
 }
 
@@ -65,7 +65,7 @@ pub(crate) enum EscalationError<E> {
         /// The number of distinct Correspondents contacted.
         attempts: usize,
         /// Every Correspondent's failure: which indexers were tried and how
-        /// each arm failed, in completion order.
+        /// each pull failed, in completion order.
         failures: Vec<CorrespondentAttempt<E>>,
     },
 }
@@ -95,25 +95,25 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for EscalationErr
 
 /// Transmit to `indexers` as an escalating, serially gated Correspondent
 /// Rotation, returning the server-reported txid of the first Correspondent to
-/// confirm delivery. `run_arm` submits to one indexer and resolves to
+/// confirm delivery. `run_pull` submits to one indexer and resolves to
 /// `Ok(server_txid)` on confirmed delivery or `Err(msg)` otherwise. `rng`
 /// chooses the random order (Correspondent Rotation), and `cap` bounds the
 /// distinct Correspondents contacted.
 ///
 /// Round `r` submits to `r` fresh indexers in parallel, and round `r + 1` runs
-/// only after every arm of round `r` fails, so parallelism widens only as
-/// evidence of censorship or failure accumulates. Within a round the first arm
+/// only after every pull of round `r` fails, so parallelism widens only as
+/// evidence of censorship or failure accumulates. Within a round the first pull
 /// to confirm delivery wins and the rest are abandoned. The one-two-three
 /// schedule stops once `cap` distinct indexers have been contacted.
 ///
 /// `report` receives a succinct progress line whenever the race's shape
-/// changes (a launch or an arm failure), rendering the planner's own
+/// changes (a launch or a pull failure), rendering the planner's own
 /// [`RaceProgress`](zingo_netutils::arm_race::RaceProgress) snapshot for display.
 pub(crate) async fn escalating_transmit<A, F, E, R, P, T>(
     indexers: &[Uri],
     rng: &mut R,
     cap: usize,
-    run_arm: A,
+    run_pull: A,
     report: P,
 ) -> Result<T, EscalationError<E>>
 where
@@ -132,8 +132,8 @@ where
     let mut order: Vec<usize> = (0..indexers.len()).collect();
     order.shuffle(rng);
 
-    let host_of = |candidate: usize| {
-        let indexer = &indexers[order[candidate]];
+    let host_of = |arm: usize| {
+        let indexer = &indexers[order[arm]];
         indexer
             .host()
             .map(str::to_string)
@@ -141,48 +141,48 @@ where
     };
 
     let mut race = RaceState::new(order.len(), cap, LaunchPolicy::EscalatingRounds);
-    let mut arms = FuturesUnordered::new();
+    let mut pulls = FuturesUnordered::new();
     let mut lost = false;
     let mut failures: Vec<CorrespondentAttempt<E>> = Vec::new();
 
-    let launch = |actions: Vec<RaceAction>, arms: &mut FuturesUnordered<_>, lost: &mut bool| {
+    let launch = |actions: Vec<RaceAction>, pulls: &mut FuturesUnordered<_>, lost: &mut bool| {
         for action in actions {
             match action {
-                RaceAction::Launch { candidate } => {
-                    let arm = run_arm(indexers[order[candidate]].clone());
-                    arms.push(async move { (candidate, arm.await) });
+                RaceAction::Launch { arm } => {
+                    let pull = run_pull(indexers[order[arm]].clone());
+                    pulls.push(async move { (arm, pull.await) });
                 }
                 // The serially gated rounds policy never hedges on time.
-                RaceAction::ArmHedgeTimer(_) => {}
+                RaceAction::SetHedgeTimer(_) => {}
                 RaceAction::GiveUp => *lost = true,
             }
         }
     };
 
-    launch(race.start(), &mut arms, &mut lost);
+    launch(race.start(), &mut pulls, &mut lost);
     report(race.progress().to_string());
 
     while !lost {
-        let Some((candidate, outcome)) = arms.next().await else {
+        let Some((arm, outcome)) = pulls.next().await else {
             break;
         };
         match outcome {
-            // The first arm to confirm delivery wins; dropping `arms`
-            // abandons the round's remaining arms.
+            // The first pull to confirm delivery wins; dropping `pulls`
+            // abandons the round's remaining pulls.
             Ok(server_txid) => return Ok(server_txid),
             Err(error) => {
                 // The race planner's event wants a rendered line for its
                 // progress narration; the typed failure itself is kept.
                 launch(
-                    race.on_event(RaceEvent::ArmFailed {
-                        candidate,
+                    race.on_event(RaceEvent::PullFailed {
+                        arm,
                         error: error.to_string(),
                     }),
-                    &mut arms,
+                    &mut pulls,
                     &mut lost,
                 );
                 failures.push(CorrespondentAttempt {
-                    correspondent: host_of(candidate),
+                    correspondent: host_of(arm),
                     failure: error,
                 });
                 report(race.progress().to_string());
@@ -217,10 +217,10 @@ mod tests {
         indexer.host().expect("indexer uri has a host").to_string()
     }
 
-    /// An arm runner returning a scripted result per indexer host and recording
-    /// every indexer it was asked to contact. Recording happens when the arm is
-    /// created (which the orchestrator does for all of a round's arms before it
-    /// awaits any), so a round's full width is counted even when an early arm
+    /// A pull runner returning a scripted result per indexer host and recording
+    /// every indexer it was asked to contact. Recording happens when the pull is
+    /// created (which the orchestrator does for all of a round's pulls before it
+    /// awaits any), so a round's full width is counted even when an early pull
     /// wins the race.
     struct MockArms {
         scripts: HashMap<String, Result<String, String>>,
@@ -445,7 +445,7 @@ mod tests {
 
     /// HYPOTHESIS: the escalation narrates its shape at every launch and
     /// failure, so a heartbeat consumer can render the race live. Falsified
-    /// if a fully failing transmission never reports the single-arm round one
+    /// if a fully failing transmission never reports the single-pull round one
     /// or a widened later round.
     #[tokio::test]
     async fn a_failing_transmission_narrates_its_escalation() {
@@ -471,7 +471,7 @@ mod tests {
             lines
                 .first()
                 .is_some_and(|line| line.contains("1 in flight")),
-            "round one must narrate its single arm: {lines:?}"
+            "round one must narrate its single pull: {lines:?}"
         );
         assert!(
             lines.iter().any(|line| line.contains("2 in flight")),

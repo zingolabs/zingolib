@@ -2,8 +2,8 @@
 //! Indexer Pool (ADR 0029).
 //!
 //! Every mixnet-eligible census endpoint is probed through its own exit,
-//! uniformly sampled without replacement from the directory's exit
-//! providers, so no exit observes more than one probe and no operator
+//! uniformly sampled without replacement from the directory's Exit
+//! Nodes, so no exit observes more than one probe and no operator
 //! learns anything at boot beyond its own endpoint having been probed. A
 //! probe that succeeds keeps its transport — the discovery dial is the
 //! pool connection's first dial — and a probe that fails tears its
@@ -30,8 +30,8 @@ use crate::time::{
 pub struct DiscoveredIndexer {
     /// The census entry that answered.
     pub indexer: &'static Indexer,
-    /// The exit provider (Nym recipient address) assigned to this endpoint.
-    pub exit_provider: String,
+    /// The Exit Node (Nym recipient address) assigned to this endpoint.
+    pub exit_node: String,
     /// The transport the probe rode, kept alive as the pool connection.
     pub transport: NymProxy,
     /// The endpoint's `GetLightdInfo` answer.
@@ -45,8 +45,8 @@ pub struct DiscoveredIndexer {
 pub struct DiscoveryFailure {
     /// The census entry that failed.
     pub indexer: &'static Indexer,
-    /// The exit provider the endpoint had been assigned.
-    pub exit_provider: String,
+    /// The Exit Node the endpoint had been assigned.
+    pub exit_node: String,
     /// Which phase failed, carrying the typed cause.
     pub kind: DiscoveryFailureKind,
 }
@@ -71,7 +71,7 @@ pub struct DiscoveryReport {
 /// A discovery sweep that could not start.
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoveryError {
-    /// The Nym directory could not be queried for exit providers.
+    /// The Nym directory could not be queried for Exit Nodes.
     #[error(transparent)]
     ExitDirectory(NymProxyError),
     /// The directory offered fewer exits than eligible endpoints, so
@@ -80,7 +80,7 @@ pub enum DiscoveryError {
     InsufficientExits {
         /// Eligible endpoints to probe.
         need: usize,
-        /// Exit providers the directory offered.
+        /// Exit Nodes the directory offered.
         have: usize,
     },
 }
@@ -104,25 +104,25 @@ pub async fn discover_live_indexers(
     }
 
     on_progress(format!(
-        "discovering exit providers for {} eligible endpoints",
+        "discovering exit nodes for {} eligible endpoints",
         eligible.len()
     ));
-    let mut providers = NymProxy::discover_exit_providers()
+    let mut exit_nodes = NymProxy::discover_exit_nodes()
         .await
         .map_err(DiscoveryError::ExitDirectory)?;
-    if providers.len() < eligible.len() {
+    if exit_nodes.len() < eligible.len() {
         return Err(DiscoveryError::InsufficientExits {
             need: eligible.len(),
-            have: providers.len(),
+            have: exit_nodes.len(),
         });
     }
-    seeded_shuffle(&mut providers, seed);
-    providers.truncate(eligible.len());
+    seeded_shuffle(&mut exit_nodes, seed);
+    exit_nodes.truncate(eligible.len());
 
     let mut tasks = tokio::task::JoinSet::new();
-    for (indexer, exit_provider) in eligible.into_iter().zip(providers) {
+    for (indexer, exit_node) in eligible.into_iter().zip(exit_nodes) {
         let progress = Arc::clone(&on_progress);
-        tasks.spawn(probe_via_unique_exit(indexer, exit_provider, progress));
+        tasks.spawn(probe_via_unique_exit(indexer, exit_node, progress));
     }
 
     let mut live = Vec::new();
@@ -140,18 +140,18 @@ pub async fn discover_live_indexers(
 
 async fn probe_via_unique_exit(
     indexer: &'static Indexer,
-    exit_provider: String,
+    exit_node: String,
     on_progress: Arc<dyn Fn(String) + Send + Sync>,
 ) -> Result<DiscoveredIndexer, DiscoveryFailure> {
     let started = Instant::now();
     on_progress(format!(
         "{}: bootstrapping exit {}",
         indexer.uri,
-        short_exit(&exit_provider)
+        short_exit(&exit_node)
     ));
     let bootstrap = tokio::time::timeout(
         PER_ATTEMPT_CONNECT_TIMEOUT,
-        NymProxy::start_with_provider(&exit_provider),
+        NymProxy::start_with_exit_node(&exit_node),
     )
     .await
     .unwrap_or_else(|_elapsed| {
@@ -165,11 +165,11 @@ async fn probe_via_unique_exit(
             on_progress(format!(
                 "{}: exit {} refused ({source})",
                 indexer.uri,
-                short_exit(&exit_provider)
+                short_exit(&exit_node)
             ));
             return Err(DiscoveryFailure {
                 indexer,
-                exit_provider,
+                exit_node,
                 kind: DiscoveryFailureKind::Bootstrap(source),
             });
         }
@@ -185,12 +185,12 @@ async fn probe_via_unique_exit(
                 "{}: live at height {} via exit {} ({:.1?})",
                 indexer.uri,
                 info.block_height,
-                short_exit(&exit_provider),
+                short_exit(&exit_node),
                 started.elapsed()
             ));
             Ok(DiscoveredIndexer {
                 indexer,
-                exit_provider,
+                exit_node,
                 transport,
                 info,
                 elapsed: started.elapsed(),
@@ -201,7 +201,7 @@ async fn probe_via_unique_exit(
             transport.disconnect().await;
             Err(DiscoveryFailure {
                 indexer,
-                exit_provider,
+                exit_node,
                 kind: DiscoveryFailureKind::Probe(source),
             })
         }
@@ -209,7 +209,7 @@ async fn probe_via_unique_exit(
 }
 
 /// The transport's SOCKS5 listener binds asynchronously after
-/// [`NymProxy::start_with_provider`] returns, so a dial refused at the
+/// [`NymProxy::start_with_exit_node`] returns, so a dial refused at the
 /// loopback is warmup, not death: retry it until the round-trip budget
 /// elapses. Every other failure classifies immediately.
 async fn probe_once_listening(
@@ -229,7 +229,7 @@ async fn probe_once_listening(
     }
 }
 
-fn short_exit(provider: &str) -> &str {
-    let head = provider.split('.').next().unwrap_or(provider);
+fn short_exit(exit_node: &str) -> &str {
+    let head = exit_node.split('.').next().unwrap_or(exit_node);
     &head[..head.len().min(8)]
 }
