@@ -31,7 +31,7 @@ impl ValuesSentToAddress {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use zingo_perspective::finsight::ValuesSentToAddress;
+    /// use zingolib::perspective::finsight::ValuesSentToAddress;
     ///
     /// let values = ValuesSentToAddress(HashMap::from([("zs1x".to_string(), vec![100, 250])]));
     /// assert_eq!(values.total_value().0["zs1x"], 350);
@@ -49,7 +49,7 @@ impl ValuesSentToAddress {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use zingo_perspective::finsight::ValuesSentToAddress;
+    /// use zingolib::perspective::finsight::ValuesSentToAddress;
     ///
     /// let values = ValuesSentToAddress(HashMap::from([("zs1x".to_string(), vec![100, 250])]));
     /// assert_eq!(values.total_sends().0["zs1x"], 2);
