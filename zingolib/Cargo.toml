@@ -21,6 +21,7 @@ nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 # file is capped. Without this feature the handle is inert.
 nym-diary = []
 testutils = [
+    "perspective",
     "portpicker",
     "zingo_test_vectors",
     "tempfile",
@@ -98,6 +99,10 @@ zingo-net-diag = { workspace = true, features = ["serde"] }
 zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
+# Self dev-dependency: activates these features for every test target, so
+# the feature-gated integration tests always compile and run in
+# package-scoped invocations instead of silently building empty binaries.
+zingolib = { path = ".", features = ["perspective", "testutils"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 # The nym tests read their temporal parameters from `time::test`.
 zingo-netutils = { workspace = true, features = ["testutils"] }

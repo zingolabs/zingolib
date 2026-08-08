@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `do_total_*` methods), behind the new `perspective` feature, which is off
   by default. A consumer that renders value transfers enables the feature
   and imports the types from `zingolib::perspective`.
+- The `testutils` feature enables `perspective`, so the chain-generics
+  value-transfer fixture is present whenever the test scaffolding is
+  compiled.
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
 - `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
   updated to include options for defaults.

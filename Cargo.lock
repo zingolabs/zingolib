@@ -4843,6 +4843,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components",
  "zingo_test_vectors",
+ "zingolib",
  "zip32",
 ]
 
