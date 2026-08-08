@@ -94,12 +94,6 @@ pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
 /// mobile list's `:443`.
 pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks:443";
 
-/// The indexer both mixnet health gates round-trip (the wallet's attach
-/// readiness gate and the spawned binary's health gate — one target, per
-/// issue #2565's one-owner rule). Rotation across the census is a planned
-/// refinement; today this is the mainnet default.
-pub const MIXNET_HEALTH_INDEXER: &str = DEFAULT_INDEXER_URI;
-
 /// The census, chains interleaved; use [`active`] and [`default_uri`] for
 /// the common partitions.
 pub const INDEXERS: &[Indexer] = &[
@@ -474,16 +468,5 @@ mod tests {
         for indexer in INDEXERS {
             assert!(seen.insert(indexer.uri), "duplicate: {}", indexer.uri);
         }
-    }
-
-    /// HYPOTHESIS: the health target is a non-obsolete census member, so
-    /// the gates never round-trip an endpoint the census has retired.
-    #[test]
-    fn the_health_target_is_an_active_member() {
-        let member = INDEXERS
-            .iter()
-            .find(|indexer| indexer.uri == MIXNET_HEALTH_INDEXER)
-            .expect("the health target must be in the census");
-        assert!(!member.obsolete);
     }
 }

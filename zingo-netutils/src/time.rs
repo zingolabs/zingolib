@@ -37,21 +37,8 @@ use std::time::Duration;
 /// binary's three draws (3 × 30 s = 90 s of 120 s).
 pub const MIXNET_ROUND_TRIP_BOUND: Duration = Duration::from_secs(30);
 
-/// How many gateway draws the spawned `nym-proxy` binary attempts before
-/// giving up: each failure redraws a fresh set of gateways, so this is the
-/// number of distinct mixnet paths tried, each bounded by
-/// [`MIXNET_ROUND_TRIP_BOUND`]. Lives in the census — not as a private
-/// literal in the binary — so the lifecycle relation test below can name
-/// it (the #2569 review): the full draw sequence must fit inside
-/// [`NYM_LIFECYCLE_TIMEOUT`].
-pub const MIXNET_HEALTH_DRAWS: u32 = 3;
-
-/// Bound on one loopback exchange with the local SOCKS5 listener: the wallet
-/// supervisor's liveness probe (a bare TCP dial) and the mobile shim's
-/// liveness monitor (a SOCKS5 method-selection round trip) both address the
-/// same in-process listener, so they share one bound (issue #2565). Generous
-/// for a loopback exchange — its job is to notice a torn-down host, not to
-/// measure the mixnet, which no local exchange can see.
+/// Bound on one loopback exchange with the local SOCKS5 listener, shared by
+/// the wallet supervisor's watchdog and the mobile shim's monitor.
 pub const LOOPBACK_DIAL_BOUND: Duration = Duration::from_secs(5);
 
 /// Overall timeout for the mixnet bootstrap (`start()` and `reconnect()`),
@@ -100,33 +87,20 @@ pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
     Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
 
-/// How often the mobile shim's liveness monitor probes the local SOCKS5
-/// listener. Faster than [`ATTACH_PROBE_INTERVAL`] because the shim's host
-/// (the app) is the remediation owner: it must notice a lost proxy and
-/// re-attach before the wallet's backstop declares death. Whether that
-/// ordering is a hard constraint is an open question on issue #2565.
-pub const LIVENESS_PROBE_INTERVAL: Duration = Duration::from_secs(15);
+/// How often the mobile shim's monitor dials the local SOCKS5 listener,
+/// faster than the wallet's backstop so the app notices first.
+pub const LISTENER_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Cadence of the wallet supervisor's liveness probe against an attached
-/// endpoint — the backstop for hosts that pass no death observer.
-pub const ATTACH_PROBE_INTERVAL: Duration = Duration::from_secs(30);
+/// Cadence of the wallet supervisor's loopback watchdog against an attached
+/// endpoint.
+pub const ATTACH_WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Pause between the attach readiness gate's round-trip attempts, letting a
-/// transient blip pass. Spacing, not a bound: the attempts themselves are
-/// bounded by [`MIXNET_ROUND_TRIP_BOUND`].
-pub const ATTACH_HEALTH_RETRY_PAUSE: Duration = Duration::from_secs(1);
+/// Pause between the attach readiness gate's loopback attempts.
+pub const ATTACH_LISTENER_RETRY_PAUSE: Duration = Duration::from_secs(1);
 
-/// The attach readiness gate's total budget, worst case: every attempt's
-/// round-trip bound plus the pauses between attempts (today two attempts of
-/// [`MIXNET_ROUND_TRIP_BOUND`] with one [`ATTACH_HEALTH_RETRY_PAUSE`]).
-/// This is the number a user experiences between "Connecting to mixnet…"
-/// and a `died` verdict, previously emergent and unnamed (issue #2565's
-/// census); a consumer pacing a wait (the mobile app's connect spinner)
-/// reads it through the wallet's typed timing record instead of pinning a
-/// copy. The attempt count lives with the gate in the wallet supervisor,
-/// which pins this sum with a relation test so the three constants cannot
-/// drift apart.
-pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
+/// The attach readiness gate's total worst-case budget: every loopback
+/// attempt's bound plus the pauses between attempts.
+pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(11);
 
 // ---------------------------------------------------------------------------
 // The gRPC data path (sync and send)
@@ -136,15 +110,12 @@ pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
 mod tests {
     use super::*;
 
-    /// HYPOTHESIS (issue #2565's drift-test pattern, the #2569 review):
-    /// every one of the spawned binary's health draws fits inside the nym
-    /// lifecycle budget, with the draw count named rather than implied.
-    /// Falsified if [`MIXNET_ROUND_TRIP_BOUND`] is retuned past what
-    /// [`NYM_LIFECYCLE_TIMEOUT`] can hold for the full draw count.
+    /// HYPOTHESIS: one bounded round trip fits inside the nym lifecycle
+    /// budget.
     #[test]
-    fn the_health_draws_fit_inside_the_lifecycle() {
+    fn the_round_trip_bound_fits_inside_the_lifecycle() {
         assert!(
-            MIXNET_ROUND_TRIP_BOUND * MIXNET_HEALTH_DRAWS <= NYM_LIFECYCLE_TIMEOUT,
+            MIXNET_ROUND_TRIP_BOUND <= NYM_LIFECYCLE_TIMEOUT,
             "retune the round-trip bound with the lifecycle, never apart"
         );
     }
@@ -283,9 +254,9 @@ pub mod test {
     /// time.
     pub const FAST_STAGE_BOUND: Duration = Duration::from_millis(800);
 
-    /// Cadence of the FFI liveness monitor under paused-time tests.
-    pub const MONITOR_PROBE_INTERVAL: Duration = Duration::from_millis(30);
+    /// Cadence of the FFI listener monitor under paused-time tests.
+    pub const MONITOR_CHECK_INTERVAL: Duration = Duration::from_millis(30);
 
-    /// Per-probe bound of the FFI liveness monitor under paused-time tests.
-    pub const MONITOR_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
+    /// Per-check bound of the FFI listener monitor under paused-time tests.
+    pub const MONITOR_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
 }

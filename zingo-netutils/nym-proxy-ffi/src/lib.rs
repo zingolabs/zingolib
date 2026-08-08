@@ -22,12 +22,11 @@ use std::{net::SocketAddr, sync::Mutex, time::Duration};
 
 use tokio::runtime::Runtime;
 use zingo_netutils::responsiveness::PrioritiseSpeed;
-use zingo_netutils::time::{LIVENESS_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND};
+use zingo_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 use zingo_netutils::NymProxy;
 
-/// Consecutive probe failures required before the proxy is declared dead,
-/// so one transient hiccup does not kill an attached session.
-const LIVENESS_PROBE_STRIKES: u32 = 2;
+/// Consecutive check failures required before the proxy is declared dead.
+const LISTENER_MONITOR_STRIKES: u32 = 2;
 
 uniffi::setup_scaffolding!();
 
@@ -103,14 +102,11 @@ pub struct MixnetProxyHandle {
     monitor: Option<tokio::task::AbortHandle>,
 }
 
-/// One SOCKS5 method-selection round trip against the local listener: a data
-/// exchange, not a bare TCP connect (the increment-17 lesson), yet purely
-/// local — end-to-end mixnet reachability belongs to the wallet's attach
-/// probe. The nym client accepts the no-auth method, so a healthy listener
-/// answers `[0x05, 0x00]`.
-async fn socks5_handshake_probe(
+/// One purely local SOCKS5 method-selection round trip against the listener,
+/// answered `[0x05, 0x00]` when the no-auth method is accepted.
+async fn socks5_handshake_check(
     endpoint: &Socks5Endpoint,
-    probe_timeout: Duration,
+    check_timeout: Duration,
 ) -> Result<(), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let attempt = async {
@@ -131,25 +127,24 @@ async fn socks5_handshake_probe(
         }
         Ok(())
     };
-    tokio::time::timeout(probe_timeout, attempt)
+    tokio::time::timeout(check_timeout, attempt)
         .await
-        .map_err(|_| format!("probe timed out after {}ms", probe_timeout.as_millis()))?
+        .map_err(|_| format!("check timed out after {}ms", check_timeout.as_millis()))?
 }
 
-/// Probe until `strikes_allowed` consecutive failures, then report the death
-/// exactly once and end. A healthy probe resets the strike count. Aborted by
-/// [`MixnetProxyHandle::stop`], so a deliberate stop never reads as death.
-async fn monitor_liveness(
+/// Checks the listener until `strikes_allowed` consecutive failures, then
+/// reports the death exactly once and ends.
+async fn monitor_listener(
     endpoint: Socks5Endpoint,
     observer: Box<dyn ProxyDeathObserver>,
     interval: Duration,
-    probe_timeout: Duration,
+    check_timeout: Duration,
     strikes_allowed: u32,
 ) {
     let mut strikes = 0;
     loop {
         tokio::time::sleep(interval).await;
-        match socks5_handshake_probe(&endpoint, probe_timeout).await {
+        match socks5_handshake_check(&endpoint, check_timeout).await {
             Ok(()) => strikes = 0,
             Err(detail) => {
                 strikes += 1;
@@ -178,12 +173,10 @@ fn endpoint_from_listener_addr(addr: &str) -> Result<Socks5Endpoint, ProxyFfiErr
 #[uniffi::export]
 impl MixnetProxyHandle {
     /// Bring up a mixnet proxy and return a handle once its SOCKS5 listener is
-    /// up. The returned handle's [`Self::socks5_endpoint`] is what the app hands
-    /// to the wallet's `attach_mixnet`; readiness is verified there (the
-    /// increment-17 health round trip), so this returns as soon as the proxy
-    /// has an endpoint to offer. When `observer` is given, a liveness monitor
-    /// probes the local listener and reports through it, at most once, if the
-    /// running proxy is lost.
+    /// up. The returned handle's [`Self::socks5_endpoint`] is what the app
+    /// hands to the wallet's `attach_mixnet`, and when `observer` is given a
+    /// listener monitor reports through it, at most once, if the proxy is
+    /// lost.
     #[uniffi::constructor]
     pub fn start(
         observer: Option<Box<dyn ProxyDeathObserver>>,
@@ -202,12 +195,12 @@ impl MixnetProxyHandle {
         let endpoint = endpoint_from_listener_addr(&proxy.socks5_addr())?;
         let monitor = observer.map(|observer| {
             runtime
-                .spawn(monitor_liveness(
+                .spawn(monitor_listener(
                     endpoint.clone(),
                     observer,
-                    LIVENESS_PROBE_INTERVAL,
+                    LISTENER_MONITOR_INTERVAL,
                     LOOPBACK_DIAL_BOUND,
-                    LIVENESS_PROBE_STRIKES,
+                    LISTENER_MONITOR_STRIKES,
                 ))
                 .abort_handle()
         });
@@ -227,7 +220,7 @@ impl MixnetProxyHandle {
     /// Disconnect the mixnet client and stop the local SOCKS5 proxy. Idempotent:
     /// a second call after the proxy is already stopped is a no-op. Deliberate
     /// stop is not death: the liveness monitor is cancelled before the listener
-    /// goes down, so the observer never fires for it.
+    /// goes down, so the observer never fires for a deliberate stop.
     pub fn stop(&self) {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
@@ -290,37 +283,37 @@ mod tests {
         (endpoint, serving)
     }
 
-    use zingo_netutils::time::test::MONITOR_PROBE_TIMEOUT;
+    use zingo_netutils::time::test::MONITOR_CHECK_TIMEOUT;
 
     #[tokio::test]
-    async fn probe_passes_a_listener_that_completes_the_handshake() {
+    async fn check_passes_a_listener_that_completes_the_handshake() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
-        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
+        socks5_handshake_check(&endpoint, MONITOR_CHECK_TIMEOUT)
             .await
-            .expect("healthy handshake must pass the probe");
+            .expect("a completed handshake must pass the check");
         serving.abort();
     }
 
     #[tokio::test]
-    async fn probe_fails_a_listener_that_rejects_the_method() {
+    async fn check_fails_a_listener_that_rejects_the_method() {
         // 0xff is SOCKS5 for "no acceptable method" — the listener is alive
         // but no longer serving, which must read as dead.
         let (endpoint, serving) = mock_socks5_listener([0x05, 0xff]).await;
-        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
+        socks5_handshake_check(&endpoint, MONITOR_CHECK_TIMEOUT)
             .await
-            .expect_err("a refusing listener must fail the probe");
+            .expect_err("a refusing listener must fail the check");
         serving.abort();
     }
 
     #[tokio::test]
-    async fn probe_fails_when_nothing_listens() {
+    async fn check_fails_when_nothing_listens() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
         serving.abort();
         // The port is now free again; connecting must be refused.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        socks5_handshake_probe(&endpoint, MONITOR_PROBE_TIMEOUT)
+        socks5_handshake_check(&endpoint, MONITOR_CHECK_TIMEOUT)
             .await
-            .expect_err("a dead listener must fail the probe");
+            .expect_err("a dead listener must fail the check");
     }
 
     #[derive(Default)]
@@ -334,21 +327,21 @@ mod tests {
         }
     }
 
-    use zingo_netutils::time::test::MONITOR_PROBE_INTERVAL;
+    use zingo_netutils::time::test::MONITOR_CHECK_INTERVAL;
 
     #[tokio::test]
     async fn monitor_reports_death_exactly_once_after_the_listener_dies() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
         let observer = Arc::new(RecordingObserver::default());
-        let monitor = tokio::spawn(monitor_liveness(
+        let monitor = tokio::spawn(monitor_listener(
             endpoint,
             Box::new(Arc::clone(&observer)),
-            MONITOR_PROBE_INTERVAL,
-            MONITOR_PROBE_TIMEOUT,
-            LIVENESS_PROBE_STRIKES,
+            MONITOR_CHECK_INTERVAL,
+            MONITOR_CHECK_TIMEOUT,
+            LISTENER_MONITOR_STRIKES,
         ));
         // Several healthy intervals pass without a death report.
-        tokio::time::sleep(MONITOR_PROBE_INTERVAL * 4).await;
+        tokio::time::sleep(MONITOR_CHECK_INTERVAL * 4).await;
         assert!(observer.deaths.lock().unwrap().is_empty());
 
         serving.abort();

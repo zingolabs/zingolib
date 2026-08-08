@@ -9,15 +9,9 @@
 //! SOCKS5_ADDR=127.0.0.1:43210
 //! ```
 //!
-//! The address is not announced the instant the SOCKS5 listener is up. A
-//! gateway draw can bring the listener up yet carry no data end to end (the
-//! tunnel establishes but a TLS handshake over it stalls), and announcing then
-//! would make the wallet mark Mixnet Mode ready against a dead path, so every
-//! send fails closed. Instead the binary health-gates readiness: it runs a real
-//! `GetLightdInfo` round trip through the mixnet, and only on success prints the
-//! address. On failure it redraws a fresh set of gateways and retries, and if
-//! the attempts exhaust it exits non-zero so the supervisor records the proxy
-//! as died rather than ready.
+//! The bound Exit Node and the address are announced the moment the bind
+//! completes; end-to-end verification belongs to the session's sweep, and
+//! every later Transmission doubles as a probe.
 //!
 //! The parent reads the announced line to learn where to dial, then routes send
 //! and price-fetch traffic through it. The process serves until either it is
@@ -38,10 +32,7 @@ use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
     NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
-    get_lightd_info_via_socks5,
-    indexers::MIXNET_HEALTH_INDEXER,
     responsiveness::{PrioritisePrivacy, PrioritiseSpeed, ResponsivenessClass},
-    time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
 
 #[tokio::main]
@@ -77,17 +68,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Bootstrap the proxy: connect with the exclusions under the parent's
-/// responsiveness class, health-gate readiness (proving the mixnet carries
-/// data end to end before announcing), then announce the bound Exit Node and
-/// the SOCKS5 address together.
+/// Bootstrap the proxy under the parent's responsiveness class, then
+/// announce the bound Exit Node and the SOCKS5 address at bind time.
 async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error::Error>> {
     // Narrate the bootstrap on stdout so the parent supervisor can surface
     // live progress (`nym status`) instead of an opaque wait.
     let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
     // The one point where the wire form re-enters the type system: each
     // class monomorphizes the same start.
-    let mut proxy = match arguments.class {
+    let proxy = match arguments.class {
         ResponsivenessClass::PrioritiseSpeed => {
             NymProxy::start_with_progress::<PrioritiseSpeed>(arguments.excluded, narrate).await?
         }
@@ -96,54 +85,9 @@ async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error:
         }
     };
 
-    health_gate(&mut proxy).await?;
-
     emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_node()));
     emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
     Ok(proxy)
-}
-
-/// Prove the mixnet carries data end to end, redrawing gateways until it does
-/// or the attempts exhaust. Each attempt runs a real `GetLightdInfo` round trip
-/// through the local SOCKS5 tunnel (the exact path a send takes, and the one a
-/// dead draw stalls at the TLS handshake) rather than a bare tunnel-establish
-/// check, which a dead-data-path draw would pass. Progress is narrated on
-/// stdout so `nym status` shows the verification. Returns an error only when
-/// every draw fails, which the caller turns into a non-zero exit.
-async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Error>> {
-    let indexer: http::Uri = MIXNET_HEALTH_INDEXER.parse()?;
-    for attempt in 1..=MIXNET_HEALTH_DRAWS {
-        report(format!(
-            "verifying the mixnet path (attempt {attempt}/{MIXNET_HEALTH_DRAWS})"
-        ));
-        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, MIXNET_ROUND_TRIP_BOUND)
-            .await
-        {
-            Ok(_) => {
-                report("mixnet path verified".to_string());
-                return Ok(());
-            }
-            Err(e) if attempt < MIXNET_HEALTH_DRAWS => {
-                report(format!("mixnet path unverified ({e}); redrawing gateways"));
-                proxy.reconnect().await?;
-            }
-            Err(e) => {
-                return Err(format!(
-                    "the mixnet path failed verification after {MIXNET_HEALTH_DRAWS} draws: {e}"
-                )
-                .into());
-            }
-        }
-    }
-    // The loop returns on the final attempt; this is unreachable but keeps the
-    // function total without an explicit panic.
-    Err("health check exhausted".into())
-}
-
-/// Emit a bootstrap status line on stdout, flushed, so the supervisor's live
-/// `nym status` detail updates in step with the verification.
-fn report(line: String) {
-    emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
 }
 
 /// Write one line to stdout, flushed, swallowing write errors: a broken pipe

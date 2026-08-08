@@ -19,12 +19,9 @@
 //! carrying a SOCKS5 endpoint and a liveness signal. `MixnetProxy::attach`
 //! is the other instance — a platform (a mobile app hosting the proxy as a
 //! dynamic library) hands the wallet an already-running local SOCKS5
-//! address. Readiness is gated on a data round trip through the endpoint,
-//! never a bare TCP connect, because a listener that accepts connections
-//! proves nothing about the mixnet carrying data; liveness is thereafter
-//! observed by a periodic probe, whose failure lands `Died` and clears the
-//! address, exactly as a closed stdout pipe does for the spawned child. The
-//! mode semantics are identical for both transports.
+//! address. Readiness and continued life are judged by loopback dials
+//! alone, whose failure lands `Died` exactly as the closed stdout pipe
+//! does for the spawned child.
 //!
 //! # Lifetime coupling
 //!
@@ -53,24 +50,15 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
 use zingo_netutils::time::{
-    ATTACH_HEALTH_RETRY_PAUSE, ATTACH_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND, MIXNET_ROUND_TRIP_BOUND,
+    ATTACH_LISTENER_RETRY_PAUSE, ATTACH_WATCHDOG_INTERVAL, LOOPBACK_DIAL_BOUND,
 };
 use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
 use crate::nym::driver::{MixnetStatus, StatusPublisher};
 
-/// The indexer the attach readiness gate round-trips through: the census's
-/// shared health target, the same one the spawned binary's gate uses (one
-/// owner, issue #2565's rule; the census pins it to an active member). No
-/// wallet data travels — a bare `GetLightdInfo`.
-const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
-
-/// Readiness attempts against the attached endpoint before declaring it
-/// dead. Unlike the spawned binary's health gate, attach cannot redraw a
-/// mixnet path — the platform owns the endpoint — so retrying buys recovery
-/// only from a transient blip, and two attempts suffice.
-const ATTACH_HEALTH_ATTEMPTS: usize = 2;
+/// Loopback readiness attempts against the attached listener before it is declared dead.
+const ATTACH_LISTENER_ATTEMPTS: usize = 2;
 
 /// A failure starting the mixnet proxy child process or attaching to a
 /// platform-hosted endpoint.
@@ -282,15 +270,8 @@ impl MixnetProxy {
         })
     }
 
-    /// Attach to an already-running, platform-hosted SOCKS5 endpoint
-    /// (ADR 0011's mobile amendment) instead of spawning the bundled binary.
-    /// Returns immediately with mode [`MixnetMode::Bootstrapping`]; poll
-    /// [`Self::mode`]. Readiness is gated on a data round trip through the
-    /// endpoint — never a bare TCP connect — and liveness is thereafter
-    /// observed by a periodic probe. A failure of either lands
-    /// [`MixnetMode::Died`], so an attached transport refuses rather than
-    /// falls back to clearnet, exactly like a spawned one. Every transition
-    /// is published into `publisher`.
+    /// Attaches to an already-running, platform-hosted SOCKS5 endpoint whose
+    /// readiness and continued life are judged by loopback dials alone.
     pub(crate) fn attach(
         socks5_addr: &str,
         publisher: StatusPublisher,
@@ -309,13 +290,13 @@ impl MixnetProxy {
         }));
         publish_locked(&state.lock().expect("proxy state mutex"), &publisher);
         let addr = socks5_addr.to_string();
-        let probe_addr = addr.clone();
+        let watch_addr = addr.clone();
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
             addr.clone(),
-            attach_readiness(addr),
-            move || endpoint_alive(probe_addr.clone()),
-            ATTACH_PROBE_INTERVAL,
+            listener_readiness(addr),
+            move || endpoint_alive(watch_addr.clone()),
+            ATTACH_WATCHDOG_INTERVAL,
             publisher,
         ));
         Ok(MixnetProxy {
@@ -415,49 +396,24 @@ impl MixnetProxy {
     }
 }
 
-/// The attach readiness gate: a real data round trip through the endpoint to
-/// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
-/// listener that accepts TCP proves nothing about the mixnet carrying data —
-/// the lesson behind the spawned binary's health gate. The last attempt's
-/// failure is returned typed: stage by typed match over the transmit error,
-/// target the local endpoint for pre-tunnel stages and the health indexer
-/// beyond, cause chain captured layer by layer.
-async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
-    let indexer: http::Uri = ATTACH_HEALTH_INDEXER
-        .parse()
-        .expect("the static health-check URI parses");
-    let mut last_failure = None;
-    for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
+/// The attach readiness gate: the local listener must accept a loopback dial, retried once.
+async fn listener_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
+    for attempt in 0..ATTACH_LISTENER_ATTEMPTS {
         if attempt > 0 {
-            tokio::time::sleep(ATTACH_HEALTH_RETRY_PAUSE).await;
+            tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        match zingo_netutils::get_lightd_info_via_socks5(
-            &socks5_addr,
-            &indexer,
-            MIXNET_ROUND_TRIP_BOUND,
-        )
-        .await
-        {
-            Ok(_) => return Ok(()),
-            Err(error) => {
-                let stage = crate::nym::socks5_transmit_stage(&error);
-                let target = match stage {
-                    zingo_net_diag::NetOpStage::LocalProxyConnect
-                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.as_str(),
-                    _ => ATTACH_HEALTH_INDEXER,
-                };
-                last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
-                    stage, target, &error,
-                ));
-            }
+        if endpoint_alive(socks5_addr.clone()).await {
+            return Ok(());
         }
     }
-    Err(last_failure.expect("at least one readiness attempt ran"))
+    Err(zingo_net_diag::NetOpFailure::message(
+        zingo_net_diag::NetOpStage::LocalProxyConnect,
+        &socks5_addr,
+        "the attached listener refused the loopback dial",
+    ))
 }
 
-/// One liveness probe: can the endpoint still be dialed? Local and cheap —
-/// its job is to notice the platform host dying, not to re-validate the
-/// mixnet path, which the send escalation judges per arm.
+/// One watchdog tick: whether the local endpoint still accepts a dial.
 async fn endpoint_alive(socks5_addr: String) -> bool {
     matches!(
         tokio::time::timeout(
@@ -469,19 +425,13 @@ async fn endpoint_alive(socks5_addr: String) -> bool {
     )
 }
 
-/// Drive an attached endpoint's state. The injected readiness round trip
-/// gates `Ready`: success publishes the address; failure lands `Died`
-/// without ever announcing a false `Ready`. After readiness, the injected
-/// liveness probe runs every `interval`; a failed probe lands `Died` and
-/// clears the address, exactly as a closed stdout pipe does for a spawned
-/// child. Generic over both effects so the transitions are unit-tested on
-/// paused time without a network; only [`MixnetProxy::stop`] tears down to
-/// `Unattached`, and it aborts this task first.
+/// Drives an attached endpoint's state: the injected readiness check gates
+/// `Ready`, and a failed tick of the injected watchdog thereafter lands `Died`.
 async fn drive_attached_state<RFut, P, PFut>(
     state: Arc<Mutex<ProxyState>>,
     socks5_addr: String,
     readiness: RFut,
-    mut probe: P,
+    mut watchdog: P,
     interval: Duration,
     publisher: StatusPublisher,
 ) where
@@ -515,13 +465,13 @@ async fn drive_attached_state<RFut, P, PFut>(
     }
     loop {
         tokio::time::sleep(interval).await;
-        if !probe().await {
+        if !watchdog().await {
             die(
                 &state,
                 zingo_net_diag::NetOpFailure::message(
                     zingo_net_diag::NetOpStage::LocalProxyConnect,
                     &socks5_addr,
-                    "the liveness probe could not dial the attached endpoint",
+                    "the listener watchdog could not dial the attached endpoint",
                 ),
             );
             return;
@@ -828,11 +778,10 @@ mod tests {
 
     // ----- attached-transport falsifiers (issue #2503) -----
 
-    /// HYPOTHESIS: a failed readiness round trip lands Died without ever
-    /// announcing Ready, and the liveness probe never runs — an attached
-    /// listener that accepts TCP but carries no data must not be published.
-    /// Falsified if the driver reaches Ready, leaves an address set, or
-    /// consults the probe after a dead readiness verdict.
+    /// HYPOTHESIS: a failed readiness check lands Died without ever
+    /// announcing Ready, and the watchdog never runs. Falsified if the
+    /// driver reaches Ready, leaves an address set, or consults the
+    /// watchdog after a dead readiness verdict.
     #[tokio::test(start_paused = true)]
     async fn attached_readiness_failure_lands_died_never_ready() {
         let state = bootstrapping();
@@ -865,15 +814,15 @@ mod tests {
     }
 
     /// HYPOTHESIS (the attached zombie falsifier): readiness success
-    /// publishes Ready with the address, and a later liveness-probe failure
-    /// lands Died with the address cleared. The probe closure snapshots the
-    /// state at each call, so the intermediate Ready is asserted without
-    /// racing the driver. Falsified if Ready is never published, the probe
-    /// cadence stalls, or the dead endpoint's address stays dialable. Runs
-    /// on paused tokio time.
+    /// publishes Ready with the address, and a later watchdog failure
+    /// lands Died with the address cleared. The watchdog closure snapshots
+    /// the state at each call, so the intermediate Ready is asserted
+    /// without racing the driver. Falsified if Ready is never published,
+    /// the watchdog cadence stalls, or the dead endpoint's address stays
+    /// dialable. Runs on paused tokio time.
     #[tokio::test(start_paused = true)]
-    async fn attached_probe_failure_lands_died_after_publishing_ready() {
-        /// What the probe closure saw at one call: the mode and the
+    async fn attached_watchdog_failure_lands_died_after_publishing_ready() {
+        /// What the watchdog closure saw at one call: the mode and the
         /// published address at that instant.
         type ProbeSnapshot = (MixnetMode, Option<String>);
 
@@ -900,14 +849,14 @@ mod tests {
         .await;
 
         let observed = observed.lock().unwrap();
-        assert_eq!(observed.len(), 3, "two live probes, then the fatal third");
+        assert_eq!(observed.len(), 3, "two live ticks, then the fatal third");
         assert_eq!(
             observed[0],
             (MixnetMode::Ready, Some("127.0.0.1:1080".to_string())),
             "readiness success must publish Ready with the address"
         );
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Died, "a failed probe is death");
+        assert_eq!(s.mode, MixnetMode::Died, "a failed tick is death");
         assert!(
             s.socks5_addr.is_none(),
             "the dead endpoint's address must be cleared so nothing dials it"
@@ -1097,16 +1046,14 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS (issue #2565's drift-test pattern): the named readiness
-    /// budget equals the gate it summarizes — every attempt's round-trip
-    /// bound plus the pauses between attempts. Falsified if any of the
-    /// three constants is retuned without the others.
+    /// HYPOTHESIS: the named readiness budget equals the loopback gate it
+    /// summarizes.
     #[test]
     fn the_readiness_budget_is_the_sum_of_its_gate() {
-        let attempts = u32::try_from(ATTACH_HEALTH_ATTEMPTS).expect("a small count");
+        let attempts = u32::try_from(ATTACH_LISTENER_ATTEMPTS).expect("a small count");
         assert_eq!(
             zingo_netutils::time::ATTACH_READINESS_BUDGET,
-            MIXNET_ROUND_TRIP_BOUND * attempts + ATTACH_HEALTH_RETRY_PAUSE * (attempts - 1),
+            LOOPBACK_DIAL_BOUND * attempts + ATTACH_LISTENER_RETRY_PAUSE * (attempts - 1),
             "retune the budget with its gate, never apart"
         );
     }

@@ -21,7 +21,7 @@ use crate::indexers::{Indexer, IndexerChain, mixnet_eligible};
 use crate::mixnet_connect::seeded_shuffle;
 use crate::socks5_transmit::{Socks5TransmitError, get_lightd_info_via_socks5};
 use crate::time::{
-    ATTACH_HEALTH_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT,
+    ATTACH_LISTENER_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT,
 };
 
 /// A census endpoint that answered `GetLightdInfo` through its own exit.
@@ -222,7 +222,7 @@ async fn probe_once_listening(
             .await
         {
             Err(Socks5TransmitError::ProxyUnreachable { .. }) if Instant::now() < deadline => {
-                tokio::time::sleep(ATTACH_HEALTH_RETRY_PAUSE).await;
+                tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
             }
             outcome => return outcome,
         }

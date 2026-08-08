@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
   (whose "arm" was the verb, colliding with the bandit noun).
   `RaceState::new` names its first parameter `arms`.
+- BREAKING: the spawned binary's health gate is deleted. The bound Exit
+  Node and the SOCKS5 address are announced at bind time, end-to-end
+  verification belongs to the session's sweep, and `MIXNET_HEALTH_DRAWS`
+  and `indexers::MIXNET_HEALTH_INDEXER` are removed.
+- BREAKING: the periodic probe convention is retired. Attach readiness
+  and the recurring check are loopback dials only; the timing constants
+  rename accordingly: `LISTENER_MONITOR_INTERVAL` (was
+  `LIVENESS_PROBE_INTERVAL`), `ATTACH_WATCHDOG_INTERVAL` (was
+  `ATTACH_PROBE_INTERVAL`), and `ATTACH_LISTENER_RETRY_PAUSE` (was
+  `ATTACH_HEALTH_RETRY_PAUSE`), and `ATTACH_READINESS_BUDGET` retunes
+  from 61 s to 11 s.
 - BREAKING: the responsiveness classes are renamed for the tradeoff they
   declare: `PrioritiseSpeed` (was `Critical`, saturating) and
   `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker

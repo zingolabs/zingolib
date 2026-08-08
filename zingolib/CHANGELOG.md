@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: `LightClient::attach_mixnet` readiness is a loopback dial of the
+  platform-hosted listener, never a mixnet round trip; end-to-end
+  verification belongs to the session's Server-Selection Sweep, and every
+  Transmission thereafter doubles as a probe.
 - BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
   is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
   pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
