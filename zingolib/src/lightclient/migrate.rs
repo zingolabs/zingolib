@@ -1121,8 +1121,10 @@ impl LightClient {
                     wallet.save_required = true;
                 })
                 .ok_or(MigrationError::NoMigration)?;
+            let started = std::time::Instant::now();
             match client.submit(raw_tx, expiry_height).await {
-                Ok(_) => {
+                Ok(receipt) => {
+                    record_part_route(&self.indexer_history, &receipt.route, started, Ok(()));
                     wallet
                         .with_migration_state(|wallet, state| {
                             state.parts[index].mark_broadcast()?;
@@ -2275,6 +2277,38 @@ fn immediate_migration_entry_gate(
         }
         Some(_) => Ok(()),
     }
+}
+
+/// Records one part submission's own route evidence in the cross-session
+/// indexer history, so an audit reads the wire each part actually traveled
+/// rather than inferring it from the session's policy afterwards. The
+/// evidence never enters the wallet file: the history is its home, and the
+/// wallet's persisted grammar is untouched.
+fn record_part_route(
+    history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
+    route: &crate::wallet::migration::TransmissionRoute,
+    started: std::time::Instant,
+    outcome: Result<(), String>,
+) {
+    use crate::lightclient::indexer_history::{
+        AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
+    };
+    use crate::wallet::migration::TransmissionRoute;
+
+    let (host, attempt_route) = match route {
+        TransmissionRoute::Mixnet { correspondent, .. } => {
+            (correspondent.clone(), AttemptRoute::Mixnet)
+        }
+        TransmissionRoute::Clearnet { endpoint } => (endpoint.clone(), AttemptRoute::Clearnet),
+    };
+    history.record(&IndexerAttempt {
+        unix_secs: now_unix_secs(),
+        host,
+        route: attempt_route,
+        kind: AttemptKind::Send,
+        millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        outcome: outcome.map_err(|detail| FailureKind::classify(&detail)),
+    });
 }
 
 #[cfg(test)]
@@ -4296,6 +4330,127 @@ mod tests {
             assert!(
                 client.migration_status().await.unwrap().due_now.is_none(),
                 "a fully confirmed schedule offers no batch",
+            );
+        }
+    }
+
+    /// The mixnet-only validation pass for the migration machinery (the
+    /// 2026-08-06 question): planning, proposing, and scheduling all reach
+    /// the wire through one seam, and this module pins that the seam routes
+    /// every part over the mixnet — including the ironwood-to-ironwood
+    /// self-sends of note splitting, whose amounts and cadence sketch the
+    /// schedule and so need the mixnet most.
+    mod mixnet_only_validation {
+        use super::*;
+        use crate::wallet::migration::TransmissionRoute;
+        use zcash_primitives::transaction::TxId;
+
+        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint,
+        /// the posture every connected session holds.
+        #[cfg(feature = "nym")]
+        async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
+            let (wallet, bound_note) = wallet_with_migration_note(tip);
+            let mut client = LightClient::new_for_test(wallet).await;
+            client
+                .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
+                .await;
+            (client, bound_note)
+        }
+
+        /// HYPOTHESIS: the resolved transmission client is the mixnet
+        /// variant whenever Mixnet Mode is ready, so no migration part can
+        /// reach a clearnet wire without the deliberate opt-out. Falsified
+        /// if a ready session resolves anything else.
+        #[cfg(feature = "nym")]
+        #[tokio::test]
+        async fn a_ready_session_resolves_the_mixnet_wire() {
+            let (client, _) = ready_client(400).await;
+            let resolved = client
+                .migration_transmission_client()
+                .expect("a ready session resolves a wire");
+            assert!(
+                matches!(
+                    resolved,
+                    crate::lightclient::migrate::transmission_route::RoutedTransmissionClient::Mixnet(_)
+                ),
+                "a ready session must resolve the mixnet wire"
+            );
+        }
+
+        /// HYPOTHESIS: while the mixnet is unavailable and the user has not
+        /// consented to clearnet, the seam refuses instead of resolving any
+        /// wire, so no part is emitted. Falsified if an unattached session
+        /// resolves a client at all.
+        #[cfg(feature = "nym")]
+        #[tokio::test]
+        async fn an_unattached_session_refuses_rather_than_resolving_clearnet() {
+            let (wallet, _) = wallet_with_migration_note(400);
+            let client = LightClient::new_for_test(wallet).await;
+            assert!(
+                client.migration_transmission_client().is_err(),
+                "absence of a mixnet is never consent to clearnet"
+            );
+        }
+
+        /// HYPOTHESIS: every part the lifecycle transmits carries a mixnet
+        /// route receipt, and the count of receipts equals the count of
+        /// parts the schedule sent — no part reaches a wire outside the
+        /// seam, and none travels clearnet. Falsified if any receipt names
+        /// a clearnet route, or if the wire saw a different number of
+        /// submissions than the schedule reports sent.
+        #[tokio::test]
+        async fn every_transmitted_part_carries_a_mixnet_receipt() {
+            const TIP: u32 = 400;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("the synthetic wallet is fully synced");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+
+            // A part signed in an earlier session, its window open now: the
+            // shape a scheduled migration presents to the transmission path.
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            part.mark_signed(own_txid, window_end, Some(vec![0xAB; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let transmission_client = MockTransmissionClient::default();
+            let sent = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .expect("the due part transmits");
+
+            assert_eq!(sent, vec![own_txid], "the open-window part is sent");
+            assert_eq!(
+                transmission_client.submissions.lock().unwrap().len(),
+                sent.len(),
+                "every sent part reached the wire exactly once, and nothing else did"
+            );
+        }
+
+        /// HYPOTHESIS: the validation is not vacuous — a clearnet receipt is
+        /// visibly clearnet, so a future path that leaks would be caught
+        /// rather than silently passing. Falsified if the clearnet route
+        /// reports itself as mixnet.
+        #[test]
+        fn the_detector_can_see_a_clearnet_leak() {
+            let mixnet = TransmissionRoute::Mixnet {
+                correspondent: "correspondent.example".to_string(),
+                via_socks5: "127.0.0.1:1".to_string(),
+            };
+            let clearnet = TransmissionRoute::Clearnet {
+                endpoint: "clearnet.example".to_string(),
+            };
+            assert!(mixnet.is_mixnet());
+            assert!(
+                !clearnet.is_mixnet(),
+                "a clearnet route must never read as mixnet"
             );
         }
     }

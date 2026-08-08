@@ -1,6 +1,6 @@
 //! The compile-time partition of network operations by responsiveness:
-//! [`Critical`] when a user actively awaits the operation, [`NonCritical`]
-//! when nobody blocks on it.
+//! [`Critical`] when latency governs the widening and racing wide carries
+//! no privacy cost, [`NonCritical`] when parsimony outranks latency.
 
 use crate::arm_race::LaunchPolicy;
 use crate::time::HEDGE_INTERVAL;
@@ -31,10 +31,11 @@ pub trait Responsiveness: sealed::Sealed {
     const CLASS: ResponsivenessClass;
 }
 
-/// The category of a network operation a user actively awaits.
+/// The category of a network operation where latency governs and racing
+/// wide carries no privacy cost.
 pub struct Critical;
 
-/// The category of a network operation nobody blocks on.
+/// The category of a network operation where parsimony outranks latency.
 pub struct NonCritical;
 
 impl Responsiveness for Critical {
@@ -56,9 +57,9 @@ impl Responsiveness for NonCritical {
 //     async fn start<const CLASS: ResponsivenessClass>() { /* ... */ }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponsivenessClass {
-    /// A user actively awaits the operation.
+    /// Latency governs the widening; racing wide carries no privacy cost.
     Critical,
-    /// Nobody blocks on the operation.
+    /// Parsimony — privacy or load — outranks latency.
     NonCritical,
 }
 
