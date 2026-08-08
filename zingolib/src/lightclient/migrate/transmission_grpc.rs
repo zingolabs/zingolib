@@ -10,7 +10,9 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 
-use crate::wallet::migration::transmission::{PartTransmissionError, TransmissionClient};
+use crate::wallet::migration::transmission::{
+    PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+};
 
 pub(super) use zingo_netutils::time::MIGRATION_SUBMIT_TIMEOUT;
 
@@ -32,7 +34,7 @@ impl TransmissionClient for GrpcTransmissionClient {
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TxId, PartTransmissionError> {
+    ) -> Result<TransmissionReceipt, PartTransmissionError> {
         let mut indexer = zingo_netutils::GrpcIndexer::new(self.uri.clone())
             .await
             .map_err(|e| PartTransmissionError::Transport(e.to_string()))?;
@@ -46,8 +48,21 @@ impl TransmissionClient for GrpcTransmissionClient {
             )
             .await
             .map_err(|status| PartTransmissionError::Rejected(status.to_string()))?;
-        crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
-            PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
+        let txid: TxId =
+            crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
+                PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
+            })?;
+        Ok(TransmissionReceipt {
+            txid,
+            route: TransmissionRoute::Clearnet {
+                endpoint: host_of(&self.uri),
+            },
         })
     }
+}
+
+/// An endpoint's host, the identity a route record names; the whole URI
+/// when it carries no host.
+pub(super) fn host_of(uri: &http::Uri) -> String {
+    uri.host().map_or_else(|| uri.to_string(), str::to_string)
 }

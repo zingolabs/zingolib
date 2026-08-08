@@ -686,17 +686,58 @@ pub(crate) mod transmission {
 
     use zcash_protocol::consensus::BlockHeight;
 
-    use crate::wallet::migration::{PartTransmissionError, TransmissionClient};
+    use crate::wallet::migration::{
+        PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+    };
+
+    /// The mock's stand-in mixnet tunnel endpoint, the address a chain-mock
+    /// session reports as its SOCKS5 route. Never dialed.
+    pub const MOCK_SOCKS5_ADDR: &str = "127.0.0.1:1";
+
+    /// The mock's stand-in Correspondent host.
+    pub const MOCK_CORRESPONDENT: &str = "mock.correspondent.indexer";
 
     /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real
     /// client's transient-failure contract).
-    #[derive(Default)]
+    ///
+    /// Each submission is answered with a route record, mixnet by default,
+    /// so a validation pass can assert over the wire every part traveled.
+    /// [`Self::clearnet`] builds one that answers clearnet instead, the
+    /// leak a mixnet-only migration must never produce.
     pub struct MockTransmissionClient {
         /// Raw transactions received, with their expiry heights.
         pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
         /// When set, every submit fails.
         pub fail: AtomicBool,
+        /// The route every receipt from this client names.
+        route: TransmissionRoute,
+    }
+
+    impl Default for MockTransmissionClient {
+        fn default() -> Self {
+            MockTransmissionClient {
+                submissions: Mutex::new(Vec::new()),
+                fail: AtomicBool::new(false),
+                route: TransmissionRoute::Mixnet {
+                    correspondent: MOCK_CORRESPONDENT.to_string(),
+                    via_socks5: MOCK_SOCKS5_ADDR.to_string(),
+                },
+            }
+        }
+    }
+
+    impl MockTransmissionClient {
+        /// A client whose receipts name a clearnet route, for the falsifier
+        /// half of a mixnet-only assertion.
+        pub fn clearnet() -> Self {
+            MockTransmissionClient {
+                route: TransmissionRoute::Clearnet {
+                    endpoint: "mock.clearnet.indexer".to_string(),
+                },
+                ..MockTransmissionClient::default()
+            }
+        }
     }
 
     impl TransmissionClient for MockTransmissionClient {
@@ -704,7 +745,7 @@ pub(crate) mod transmission {
             &self,
             raw_tx: Vec<u8>,
             expiry_height: BlockHeight,
-        ) -> Result<zcash_primitives::transaction::TxId, PartTransmissionError> {
+        ) -> Result<TransmissionReceipt, PartTransmissionError> {
             if self.fail.load(Ordering::Relaxed) {
                 return Err(PartTransmissionError::Transport(
                     "mock transport failure".to_string(),
@@ -714,7 +755,10 @@ pub(crate) mod transmission {
                 .lock()
                 .unwrap()
                 .push((raw_tx, expiry_height));
-            Ok(super::default_txid())
+            Ok(TransmissionReceipt {
+                txid: super::default_txid(),
+                route: self.route.clone(),
+            })
         }
     }
 }

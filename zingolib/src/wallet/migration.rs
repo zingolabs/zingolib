@@ -67,7 +67,9 @@ pub use reconcile::{
 pub use schedule::{TransmissionWindow, WindowReport, bucket_index};
 pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
 pub use split::{MigrationPlan, NoteSplitTx, plan_hash, plan_migration};
-pub use transmission::{PartTransmissionError, TransmissionClient};
+pub use transmission::{
+    PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+};
 
 use zcash_primitives::transaction::TxId;
 
