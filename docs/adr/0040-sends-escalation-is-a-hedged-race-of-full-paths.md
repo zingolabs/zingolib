@@ -42,8 +42,15 @@ accepts, then suppresses or misreports.
 The hedge interval is chosen to protect the happy path: long enough
 that a responsive Correspondent's confirmed delivery beats the first
 hedge, so the common send contacts exactly one Correspondent through
-exactly one exit. Its value is a named constant whose calibration is
-decided separately; this record fixes the discipline, not the number.
+exactly one exit. Its value is the named constant
+TRANSMISSION_HEDGE_INTERVAL, defined as the sum of two already
+ratified bounds — PER_ATTEMPT_CONNECT_TIMEOUT plus
+MIXNET_ROUND_TRIP_BOUND, fifty seconds at today's values — so an arm
+that is going to confirm has, by construction, time to connect and
+complete one bounded round trip before the first hedge launches. The
+sum retunes when either bound retunes, and an empirical recalibration
+in the Five-Minute-Calibration style may tighten it per release.
+Ratified 2026-08-08.
 
 ## Consequences
 
