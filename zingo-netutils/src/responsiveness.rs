@@ -1,6 +1,7 @@
-//! The compile-time partition of network acquisitions by declared priority:
-//! [`PrioritiseSpeed`] when the wait is the cost that matters,
-//! [`PrioritisePrivacy`] when the exposure is.
+//! The compile-time partition of network operations by responsiveness:
+//! [`PrioritiseSpeed`] when latency governs the widening and racing wide
+//! carries no privacy cost, [`PrioritisePrivacy`] when parsimony outranks
+//! latency.
 
 use crate::arm_race::LaunchPolicy;
 use crate::time::HEDGE_INTERVAL;
@@ -34,12 +35,11 @@ pub trait Responsiveness: sealed::Sealed {
     const CLASS: ResponsivenessClass;
 }
 
-/// The priority of an operation whose acquisition buys minimum latency at
-/// maximum exposure.
+/// The priority of a network operation where latency governs the widening
+/// and racing wide carries no privacy cost.
 pub struct PrioritiseSpeed;
 
-/// The priority of an operation whose acquisition buys minimum exposure at
-/// the cost of patience.
+/// The priority of a network operation where parsimony outranks latency.
 pub struct PrioritisePrivacy;
 
 impl Responsiveness for PrioritiseSpeed {
@@ -61,9 +61,9 @@ impl Responsiveness for PrioritisePrivacy {
 //     async fn start<const CLASS: ResponsivenessClass>() { /* ... */ }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponsivenessClass {
-    /// The wait is the cost that matters: launch the full width at once.
+    /// Latency governs the widening; racing wide carries no privacy cost.
     PrioritiseSpeed,
-    /// The exposure is the cost that matters: hedge one pull at a time.
+    /// Parsimony — privacy or load — outranks latency.
     PrioritisePrivacy,
 }
 

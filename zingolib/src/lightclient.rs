@@ -32,10 +32,7 @@ use crate::{
         balance::AccountBalance,
         error::{BalanceError, KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
-        summary::data::{
-            TransactionSummaries, ValueTransfers,
-            finsight::{TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress},
-        },
+        summary::data::TransactionSummaries,
     },
 };
 use error::LightClientError;
@@ -598,51 +595,6 @@ impl LightClient {
             .await
             .transaction_summaries(reverse_sort)
             .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::value_transfers`].
-    pub async fn value_transfers(
-        &self,
-        sort_highest_to_lowest: bool,
-    ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .value_transfers(sort_highest_to_lowest)
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::messages_containing`].
-    pub async fn messages_containing(
-        &self,
-        filter: Option<&str>,
-    ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet().read().await.messages_containing(filter).await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_memobytes_to_address`].
-    pub async fn do_total_memobytes_to_address(
-        &self,
-    ) -> Result<TotalMemoBytesToAddress, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .do_total_memobytes_to_address()
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_spends_to_address`].
-    pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .do_total_spends_to_address()
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
-    pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
-        self.wallet().read().await.do_total_value_to_address().await
     }
 
     /// Update and return the current ZEC price in USD over the Nym mixnet,

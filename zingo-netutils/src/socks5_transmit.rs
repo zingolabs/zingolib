@@ -488,7 +488,7 @@ mod tests {
     /// record loses the bound. (The full tunnel-and-TLS path cannot stall in
     /// a unit test — the connector pins webpki roots by the https-only rule —
     /// so the bounding seam itself is the unit under test; the Android field
-    /// run of issue #2564 is the end-to-end witness.)
+    /// run of issue #2564 is the end-to-end evidence.)
     #[tokio::test(start_paused = true)]
     async fn a_stalled_rpc_lands_the_typed_timeout() {
         let outcome = bounded_rpc::<()>(
