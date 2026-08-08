@@ -84,3 +84,12 @@ ADR 0029 is amended, not replaced: the Maintained Indexer Pool, when
 it lands, becomes the sweep's maintained successor — the same
 qualification and draw over a pool whose liveness is maintained by
 per-exit probes instead of re-established each Sync Session.
+
+## Addendum (2026-08-08)
+
+ADR 0029 is superseded, so the maintained-successor consequence above
+is void: the sweep's successor is the Correspondent Pools with the
+transmissions-are-probes Health economy. The sweep itself gains a
+ratified second role: it is the session's baseline health probe, the
+last probe-only act a session performs. The judgment this record calls
+liveness is since named Health in the glossary.

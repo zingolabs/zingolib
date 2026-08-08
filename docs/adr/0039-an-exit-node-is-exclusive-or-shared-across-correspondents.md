@@ -59,8 +59,8 @@ at the acquisition site.
 The ruled change of send's race discipline — hedged full-path arms in
 the RFC 8305 style, with an interval long enough that a responsive
 Correspondent wins before a second arm launches — builds on this
-partition but is deliberately not decided here: whether it replaces
-the serially gated rounds of ADR 0011 awaits its own decision.
+partition and was decided the same day as ADR 0040, which replaces
+the serially gated rounds of ADR 0011.
 
 Implementation follows the reservation machinery this partition
 presupposes; neither the pool nor the leases exist in code yet, so

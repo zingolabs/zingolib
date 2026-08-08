@@ -2,7 +2,10 @@
 
 Date: 2026-08-04
 
-Status: draft — ratified in session, pending review
+Status: superseded 2026-08-08 — the Correspondent Pools and the
+transmissions-are-probes Health economy (glossary; ADRs 0038 through
+0040) replace the maintained-connection model. The retirement of
+server selection as a concept survives in ADR 0034's sweep.
 
 ## Context
 
