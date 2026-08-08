@@ -1,5 +1,5 @@
-//! The value-transfer editorial types, relocated from zingolib's summary
-//! data module when the derivation moved to this crate.
+//! The value-transfer editorial types: per-recipient statements of value
+//! movement derived from transaction summaries.
 
 use chrono::DateTime;
 use json::JsonValue;

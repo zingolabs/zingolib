@@ -1,5 +1,5 @@
-//! The financial-insight rollup types, relocated from zingolib's summary
-//! data module when their derivation moved to this crate.
+//! The financial-insight rollup types: per-address reductions over the
+//! wallet's external sends.
 
 /// Every external send's value, grouped by recipient address: one entry
 /// per address, holding the value of each Send value transfer made to it.

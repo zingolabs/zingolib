@@ -1,8 +1,6 @@
 //! The editorial layer: the house perspective over the canonical wallet
 //! record, deriving presentation-facing statements that never feed wallet
-//! logic. Compiled behind the default-on `perspective` feature, whose off
-//! build proves core stands without this layer (ADR 0024, amendment
-//! 2026-08-04).
+//! logic.
 
 pub mod finsight;
 pub mod value_transfer;
@@ -189,8 +187,7 @@ fn finsight_from(value_transfers: &ValueTransfers) -> Finsight {
     }
 }
 
-/// The editorial reductions over the wallet, carrying the method names,
-/// signatures, and output shapes `wallet::summary` exposed before the move.
+/// The editorial reductions over the wallet.
 impl LightWallet {
     /// Provides a list of value transfers related to this capability.
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
