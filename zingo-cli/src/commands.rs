@@ -1124,8 +1124,10 @@ pub enum NetworkCommandError {
     Probe(#[from] zingolib::lightclient::error::LightClientError),
     /// The `network on` consent act could not resolve any indexer URI while
     /// switching the session to Online Mode; the session stays offline.
+    /// Reachable only from the quarantined clearnet resolution.
+    #[cfg(feature = "clearnet-test-mode")]
     #[error("no indexer could be resolved for going online: {0}")]
-    ServerResolution(#[from] http::uri::InvalidUri),
+    ServerResolution(#[from] crate::server_select_clearnet::ResolveServerError),
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the
     /// quarantined clearnet resolution.

@@ -148,6 +148,17 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
     ranked
 }
 
+/// Why the clearnet resolution produced no server.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ResolveServerError {
+    /// The explicit `--server` value failed to parse as a URI.
+    #[error(transparent)]
+    InvalidUri(#[from] http::uri::InvalidUri),
+    /// No probed indexer answered, and no default server exists.
+    #[error("no probed server responded and there is no default server; pass --server")]
+    NoResponder,
+}
+
 /// Resolves the indexer server from CLI arguments.
 ///
 /// If `--server` was provided explicitly, uses that URI and returns an
@@ -159,11 +170,10 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn resolve_server(
     matches: &clap::ArgMatches,
-) -> Result<(http::Uri, Vec<RankedServer>), String> {
+) -> Result<(http::Uri, Vec<RankedServer>), ResolveServerError> {
     if let Some(explicit) = matches.get_one::<http::Uri>("server") {
         Ok((
-            zingolib::config::construct_indexer_uri(explicit.to_string())
-                .map_err(|e| e.to_string())?,
+            zingolib::config::construct_indexer_uri(explicit.to_string())?,
             vec![],
         ))
     } else {
@@ -174,12 +184,11 @@ pub(crate) fn resolve_server(
 /// Resolves the indexer for a session going online without an explicit
 /// `--server`: the fastest probed responder, refused typed when nothing
 /// answered, since no default server exists.
-pub(crate) async fn resolve_ranked_server() -> Result<(http::Uri, Vec<RankedServer>), String> {
+pub(crate) async fn resolve_ranked_server()
+-> Result<(http::Uri, Vec<RankedServer>), ResolveServerError> {
     let ranked = select_servers().await;
     match ranked.first() {
         Some(best) => Ok((best.uri.clone(), ranked)),
-        None => Err(
-            "no probed server responded and there is no default server; pass --server".to_string(),
-        ),
+        None => Err(ResolveServerError::NoResponder),
     }
 }
