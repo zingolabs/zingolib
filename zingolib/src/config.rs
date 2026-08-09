@@ -25,7 +25,6 @@ use crate::wallet::{
 /// `:443`, retiring the old portless string this module completed to
 /// `:9067` — the drift between that completion and the mobile list's `:443`
 /// is what the census exists to end.
-pub use zingo_netutils::indexers::{DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET};
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -277,30 +276,22 @@ impl WalletConfig {
     }
 }
 
-/// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
-/// If the provided string is missing the http prefix, a prefix of `http://` will be added.
-/// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_indexer_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return Ok(http::Uri::default());
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse()?;
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
-        }
-        None => DEFAULT_INDEXER_URI.to_string(),
+/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
+/// `:9067` port when they are missing.
+pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
+    if server.is_empty() {
+        return Ok(http::Uri::default());
     }
-    .parse()
+    let mut s = if server.starts_with("http") {
+        server
+    } else {
+        "http://".to_string() + &server
+    };
+    let uri: http::Uri = s.parse()?;
+    if uri.port().is_none() {
+        s += ":9067";
+    }
+    s.parse()
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
@@ -560,10 +551,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_indexer_uri(Some(
-            crate::config::DEFAULT_INDEXER_URI.to_string(),
-        ))
-        .unwrap();
+        let valid_uri =
+            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();

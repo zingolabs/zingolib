@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: there is no default server. `config::construct_indexer_uri`
+  takes `String` instead of `Option<String>`, and the
+  `DEFAULT_INDEXER_URI` / `DEFAULT_INDEXER_URI_TESTNET` re-exports are
+  removed; an unpinned online session starts Indexerless and the
+  Server-Selection Sweep selects its sync indexer.
 - BREAKING: `LightClient::attach_mixnet` readiness is a loopback dial of the
   platform-hosted listener, never a mixnet round trip; end-to-end
   verification belongs to the session's Server-Selection Sweep, and every

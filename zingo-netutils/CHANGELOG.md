@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
   (whose "arm" was the verb, colliding with the bandit noun).
   `RaceState::new` names its first parameter `arms`.
+- BREAKING: the census has no default server. `DEFAULT_INDEXER_URI`,
+  `DEFAULT_INDEXER_URI_TESTNET`, the `Indexer::default` field, and
+  `default_uri` are removed; a session either pins a server explicitly
+  or lets the Server-Selection Sweep select one.
 - BREAKING: the spawned binary's health gate is deleted. The bound Exit
   Node and the SOCKS5 address are announced at bind time, end-to-end
   verification belongs to the session's sweep, and `MIXNET_HEALTH_DRAWS`

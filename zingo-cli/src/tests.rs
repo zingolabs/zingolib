@@ -1041,9 +1041,9 @@ mod config_template {
         /// so the propagation contract exists only in nym builds.
         #[cfg(feature = "nym")]
         #[test]
-        fn default_server_is_propagated() {
-            // --online is the consent act (ADR 0025); the default server
-            // then fills in because none was named explicitly.
+        fn unpinned_online_configures_no_indexer() {
+            // --online is the consent act; with no --server there is no
+            // default to fill in, and the sweep selects the sync indexer.
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
                 "--online",
@@ -1052,10 +1052,10 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
-                uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
-                "expected URI to start with default server, got: {uri}"
+                zc.indexer_uri().is_none(),
+                "an unpinned online session must configure no indexer, got: {:?}",
+                zc.indexer_uri()
             );
         }
 

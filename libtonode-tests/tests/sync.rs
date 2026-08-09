@@ -20,11 +20,14 @@ use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
-    config::{DEFAULT_INDEXER_URI, construct_indexer_uri},
+    config::construct_indexer_uri,
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
 };
+
+/// The mainnet indexer these ignored, hand-run sync tests dial explicitly.
+const SYNC_TEST_INDEXER: &str = "https://zec.rocks:443";
 use zingolib_testutils::scenarios::{
     self, IndexerConvergence, increase_height_and_wait_for_client,
 };
@@ -35,7 +38,7 @@ async fn sync_mainnet_test() {
     zingolib::ensure_default_crypto_provider();
     tracing_subscriber::fmt().init();
 
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
@@ -156,7 +159,7 @@ async fn add_subtree_roots() {
 
     zingolib::ensure_default_crypto_provider();
 
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
@@ -523,7 +526,7 @@ async fn store_all_checkpoints_in_verification_window() {
 #[ignore = "diagnostic: run manually against live mainnet"]
 #[tokio::test]
 async fn diagnose_subtree_root_stream() {
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
 
     for attempt in 1..=3 {
         let mut grpc_client = GrpcIndexer::new(uri.clone()).await.unwrap();

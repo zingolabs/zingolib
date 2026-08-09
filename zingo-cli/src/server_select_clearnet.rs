@@ -132,7 +132,7 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
     if ranked.is_empty() {
         eprintln!(
             "Warning: none of the {} probed indexers responded; every failure is \
-             listed above. Falling back to default.",
+             listed above. There is no default server to fall back to.",
             failures.len()
         );
     } else {
@@ -159,10 +159,11 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn resolve_server(
     matches: &clap::ArgMatches,
-) -> Result<(http::Uri, Vec<RankedServer>), http::uri::InvalidUri> {
+) -> Result<(http::Uri, Vec<RankedServer>), String> {
     if let Some(explicit) = matches.get_one::<http::Uri>("server") {
         Ok((
-            zingolib::config::construct_indexer_uri(Some(explicit.to_string()))?,
+            zingolib::config::construct_indexer_uri(explicit.to_string())
+                .map_err(|e| e.to_string())?,
             vec![],
         ))
     } else {
@@ -171,18 +172,14 @@ pub(crate) fn resolve_server(
 }
 
 /// Resolves the indexer for a session going online without an explicit
-/// `--server`: probes the curated indexers and returns the fastest
-/// responder with the full ranked list, or the default indexer URI when
-/// none responded. Async, below the crate's single seam (ADR 0030), so
-/// launch-time resolution and the in-session `network on` consent act
-/// (ADR 0026) share it.
-pub(crate) async fn resolve_ranked_server()
--> Result<(http::Uri, Vec<RankedServer>), http::uri::InvalidUri> {
+/// `--server`: the fastest probed responder, refused typed when nothing
+/// answered, since no default server exists.
+pub(crate) async fn resolve_ranked_server() -> Result<(http::Uri, Vec<RankedServer>), String> {
     let ranked = select_servers().await;
-    let server = if let Some(best) = ranked.first() {
-        best.uri.clone()
-    } else {
-        zingolib::config::construct_indexer_uri(None)?
-    };
-    Ok((server, ranked))
+    match ranked.first() {
+        Some(best) => Ok((best.uri.clone(), ranked)),
+        None => Err(
+            "no probed server responded and there is no default server; pass --server".to_string(),
+        ),
+    }
 }

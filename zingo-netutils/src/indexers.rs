@@ -17,7 +17,6 @@
 //!
 //! Membership rules, pinned by the census tests at the bottom:
 //! - every URI is `https` with an explicit port (no completion rules);
-//! - exactly one non-obsolete default per chain;
 //! - no duplicate URIs.
 //!
 //! Mixnet-side selection (webpki-chained certs only, 443 preferred,
@@ -44,8 +43,6 @@ pub struct Indexer {
     /// The translation-key suffix a frontend renders the region with
     /// (zingo-mobile's `settings.<key>`); empty when unknown.
     pub region_key: &'static str,
-    /// Whether this is the chain's default endpoint.
-    pub default: bool,
     /// Kept for recognition and history, never offered for selection.
     pub obsolete: bool,
 }
@@ -86,57 +83,42 @@ impl Indexer {
     }
 }
 
-/// The mainnet default. Named so config re-exports keep their signatures.
-pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
-
-/// The testnet default. Explicit `:443`: the census retires the old
-/// portless config string whose `:9067` completion disagreed with the
-/// mobile list's `:443`.
-pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks:443";
-
-/// The census, chains interleaved; use [`active`] and [`default_uri`] for
-/// the common partitions.
+/// The census, chains interleaved; use [`active`] for the common partition.
 pub const INDEXERS: &[Indexer] = &[
     Indexer {
-        uri: DEFAULT_INDEXER_URI,
+        uri: "https://zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "usa",
-        default: true,
         obsolete: false,
     },
     Indexer {
         uri: "https://na.zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "na",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://sa.zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "sa",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://eu.zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "ea",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://ap.zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "ao",
-        default: false,
         obsolete: false,
     },
     Indexer {
-        uri: DEFAULT_INDEXER_URI_TESTNET,
+        uri: "https://testnet.zec.rocks:443",
         chain: IndexerChain::Test,
         region_key: "",
-        default: true,
         obsolete: false,
     },
     // The retired fleet, kept for recognition (a wallet configured years
@@ -145,210 +127,180 @@ pub const INDEXERS: &[Indexer] = &[
         uri: "https://lwd1.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "usa",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd2.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "hk",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd3.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "usa",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd4.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "canada",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd5.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "france",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd6.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "usa",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd7.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "netherlands",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://lwd8.zcash-infra.com:9067",
         chain: IndexerChain::Main,
         region_key: "uk",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://mainnet.lightwalletd.com:9067",
         chain: IndexerChain::Main,
         region_key: "na",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://na.lightwalletd.com:443",
         chain: IndexerChain::Main,
         region_key: "na",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://sa.lightwalletd.com:443",
         chain: IndexerChain::Main,
         region_key: "sa",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://eu.lightwalletd.com:443",
         chain: IndexerChain::Main,
         region_key: "ea",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://ai.lightwalletd.com:443",
         chain: IndexerChain::Main,
         region_key: "ao",
-        default: false,
         obsolete: true,
     },
     Indexer {
         uri: "https://zaino.unsafe.zec.rocks:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zaino.testnet.unsafe.zec.rocks:443",
         chain: IndexerChain::Test,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zec-node.cakewallet.com:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://lwd.zcashexplorer.app:9067",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://us.zec.stardust.rest:443",
         chain: IndexerChain::Main,
         region_key: "usa",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://eu.zec.stardust.rest:443",
         chain: IndexerChain::Main,
         region_key: "ea",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://l.ombie.cash:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://z.ombie.cash:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zec.0xrpc.io:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zec.alexxiy.top:9067",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zec.alexxiy.top:8137",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://lwd.z0n.jp:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://lwd.blakyniica.xyz:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://carover0.xyz:9067",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://myzec.cryptover.site:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://zcashlw.devshore.ovh:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
     Indexer {
         uri: "https://znode.roamerx.win:443",
         chain: IndexerChain::Main,
         region_key: "",
-        default: false,
         obsolete: false,
     },
 ];
@@ -372,15 +324,6 @@ pub const MOST_UP_INDEXER_URIS: &[&str] = &[
     "https://sn-hub.de:9067",
     "https://zec.rollrunner.info:443",
 ];
-
-/// The chain's default endpoint, from the census.
-pub fn default_uri(chain: IndexerChain) -> &'static str {
-    INDEXERS
-        .iter()
-        .find(|indexer| indexer.chain == chain && indexer.default)
-        .expect("the census tests pin one default per chain")
-        .uri
-}
 
 /// The chain's selectable (non-obsolete) entries, census order.
 pub fn active(chain: IndexerChain) -> impl Iterator<Item = &'static Indexer> {
@@ -439,25 +382,6 @@ mod tests {
                 parses_with_explicit_port(uri),
                 "leaderboard entry fails the membership rule: {uri}"
             );
-        }
-    }
-
-    /// HYPOTHESIS: exactly one non-obsolete default per chain, and the
-    /// named constants agree with the flagged entries.
-    #[test]
-    fn one_default_per_chain_and_the_constants_agree() {
-        for (chain, expected) in [
-            (IndexerChain::Main, DEFAULT_INDEXER_URI),
-            (IndexerChain::Test, DEFAULT_INDEXER_URI_TESTNET),
-        ] {
-            let defaults: Vec<_> = INDEXERS
-                .iter()
-                .filter(|indexer| indexer.chain == chain && indexer.default)
-                .collect();
-            assert_eq!(defaults.len(), 1, "one default for {chain:?}");
-            assert!(!defaults[0].obsolete, "a default may not be obsolete");
-            assert_eq!(defaults[0].uri, expected);
-            assert_eq!(default_uri(chain), expected);
         }
     }
 

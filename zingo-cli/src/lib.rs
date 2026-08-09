@@ -87,9 +87,9 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Indexer server to connect to.")
-                .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
+                .help("Pin a specific Indexer server. Without it, an online session's \
+Server-Selection Sweep selects the sync indexer.")
+                .value_parser(parse_uri))
             .arg(Arg::new("offline")
                 .long("offline")
                 .action(clap::ArgAction::SetTrue)
@@ -851,12 +851,11 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
     communication_mode: CommunicationMode,
-    /// The Indexer to connect to. `None` exactly when the session is in
-    /// Offline mode.
+    /// The pinned Indexer: `None` when the session is Offline, and equally
+    /// when it is Online unpinned, where the Server-Selection Sweep selects.
     server: Option<http::Uri>,
-    /// True when `--server` was typed on the command line rather than
-    /// filled by the census default: the pin the Server-Selection Sweep
-    /// surveys and never substitutes (ADR 0034).
+    /// True when `--server` was typed on the command line: the pin the
+    /// Server-Selection Sweep surveys and never substitutes.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     server_pinned: bool,
     /// All servers that responded to `get_info()` during dynamic selection,
@@ -946,19 +945,18 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                 (Some(server), ranked_servers)
             }
         };
-        // Without the quarantined sweep, resolution is pure: the `--server`
-        // value (explicit or clap's census default), never a probe.
+        // Without the quarantined sweep, resolution is pure: the typed
+        // `--server` pin or nothing, never a probe and never a default.
         #[cfg(not(feature = "clearnet-test-mode"))]
         let server = match communication_mode {
             CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => None,
-            CommunicationMode::Online => Some(
-                zingolib::config::construct_indexer_uri(
-                    matches
-                        .get_one::<http::Uri>("server")
-                        .map(std::string::ToString::to_string),
-                )
-                .map_err(|e| e.to_string())?,
-            ),
+            CommunicationMode::Online => matches
+                .get_one::<http::Uri>("server")
+                .map(|server| {
+                    zingolib::config::construct_indexer_uri(server.to_string())
+                        .map_err(|e| e.to_string())
+                })
+                .transpose()?,
         };
         if let Some(server) = &server {
             // Test to make sure the server has all of scheme, host and port
@@ -1104,6 +1102,9 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         info!("Starting Zingo-CLI");
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
+            None if filled_template.communication_mode == CommunicationMode::Online => {
+                info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
+            }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
     }
