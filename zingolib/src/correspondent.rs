@@ -102,6 +102,9 @@ impl Correspondable for zingo_price::PriceSource {
     }
 }
 
+#[cfg(feature = "nym")]
+pub(crate) mod pool;
+
 /// Curated Correspondents (mainnet): the publicly reachable indexers found
 /// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
 /// those the mixnet can actually reach. See the module docs for provenance,

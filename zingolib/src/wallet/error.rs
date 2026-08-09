@@ -157,6 +157,9 @@ pub enum PriceError {
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
+    /// The Price Source Pool could not supply a transport for the run.
+    #[error("price transport acquisition failed. {0}")]
+    TransportAcquisition(String),
 }
 
 /// Summary error

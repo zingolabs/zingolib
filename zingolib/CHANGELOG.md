@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: the Correspondent Pools land. A spawned session keeps an
+  Indexer Pool (two Correspondent-Bound transports) and a Price Source
+  Pool (one Shared-exit transport), refilled in the background under
+  `PrioritisePrivacy` and drained on disable. `update_current_price`
+  on a spawned session consumes the price member — one fresh Shared
+  exit per run, the refill draw excluding the spent exit — instead of
+  riding the slot's shared tunnel; an attached session is unchanged.
+  `PriceError` gains `TransportAcquisition`.
 - BREAKING: `nym::correspondents` is absorbed into the new top-level
   `zingolib::correspondent` module, which compiles without the `nym`
   feature and adds the `Correspondable` trait — the party a Transmission

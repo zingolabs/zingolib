@@ -310,6 +310,12 @@ impl MixnetProxy {
         self.state.lock().expect("proxy state mutex").mode
     }
 
+    /// Whether this transport is a spawned child rather than a
+    /// platform-attached endpoint.
+    pub(crate) fn is_spawned(&self) -> bool {
+        matches!(self.transport, Transport::Spawned { .. })
+    }
+
     /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
     pub fn socks5_addr(&self) -> Option<String> {
         self.state
@@ -550,6 +556,71 @@ fn parse_status_line(line: &str) -> Option<&str> {
 /// exit announcement line.
 fn parse_exit_line(line: &str) -> Option<&str> {
     line.strip_prefix(NYM_EXIT_LINE_PREFIX).map(str::trim)
+}
+
+impl crate::correspondent::pool::PoolTransport for MixnetProxy {
+    fn is_ready(&self) -> bool {
+        self.mode() == MixnetMode::Ready
+    }
+}
+
+/// Spawns one pool transport under `PrioritisePrivacy` and waits until it
+/// is ready, yielding the transport with its bound Exit Node.
+pub(crate) async fn spawn_ready_pool_transport(
+    binary_path: &std::path::Path,
+    excluded_exits: &[String],
+) -> Result<(MixnetProxy, String), String> {
+    let publisher = crate::nym::status_publisher();
+    let mut receiver = publisher.subscribe();
+    let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::PrioritisePrivacy>(
+        binary_path,
+        publisher,
+        excluded_exits,
+    )
+    .map_err(|e| e.to_string())?;
+    let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
+    let outcome = tokio::time::timeout(budget, async {
+        loop {
+            {
+                let status = receiver.borrow_and_update();
+                match status.mode {
+                    MixnetMode::Ready => {
+                        if let Some(exit) = status.exits.first() {
+                            return Ok(exit.clone());
+                        }
+                    }
+                    MixnetMode::Died => {
+                        return Err(status
+                            .death
+                            .as_ref()
+                            .and_then(|d| d.detail.as_ref().map(std::string::ToString::to_string))
+                            .unwrap_or_else(|| {
+                                "the pool transport died during bootstrap".to_string()
+                            }));
+                    }
+                    _ => {}
+                }
+            }
+            if receiver.changed().await.is_err() {
+                return Err("the pool transport's status channel closed".to_string());
+            }
+        }
+    })
+    .await;
+    match outcome {
+        Ok(Ok(exit)) => Ok((proxy, exit)),
+        Ok(Err(cause)) => {
+            proxy.stop().await;
+            Err(cause)
+        }
+        Err(_elapsed) => {
+            proxy.stop().await;
+            Err(format!(
+                "the pool transport did not become ready within {}s",
+                budget.as_secs()
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

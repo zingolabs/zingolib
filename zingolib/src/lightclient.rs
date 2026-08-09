@@ -171,6 +171,10 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: crate::nym::MixnetSlot,
+    /// The Correspondent Pools: ready transports Exit Rotation consumes per
+    /// run, refilled in the background under PrioritisePrivacy.
+    #[cfg(feature = "nym")]
+    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -250,6 +254,8 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         })
     }
@@ -285,6 +291,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         }
@@ -342,6 +350,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         })
@@ -626,24 +636,93 @@ impl LightClient {
             }
         };
 
+        // A spawned session runs the race over its own Price Source Pool
+        // member — one fresh Shared exit per run, never the slot's shared
+        // tunnel — while an attached session's single platform endpoint
+        // carries it as before. The consumed member is stopped whatever
+        // the outcome, and the refill draw excludes its exit.
+        let pooled = if self
+            .mixnet_slot
+            .proxy()
+            .is_some_and(crate::nym::MixnetProxy::is_spawned)
+            && self.correspondent_pools.binary().is_some()
+        {
+            let take = {
+                let mut pool = self
+                    .correspondent_pools
+                    .price
+                    .lock()
+                    .expect("price pool mutex");
+                pool.take()
+            };
+            for dead in take.evicted {
+                dead.transport.stop().await;
+            }
+            match take.member {
+                Some(member) => Some(member),
+                None => {
+                    let binary = self
+                        .correspondent_pools
+                        .binary()
+                        .expect("checked above; the binary is set");
+                    let excluded = {
+                        let mut exits = self.exits_in_use();
+                        let pool = self
+                            .correspondent_pools
+                            .price
+                            .lock()
+                            .expect("price pool mutex");
+                        for exit in pool.excluded_exits() {
+                            if !exits.contains(&exit) {
+                                exits.push(exit);
+                            }
+                        }
+                        exits
+                    };
+                    let (transport, exit) =
+                        crate::nym::supervisor::spawn_ready_pool_transport(&binary, &excluded)
+                            .await
+                            .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
+                    self.correspondent_pools
+                        .price
+                        .lock()
+                        .expect("price pool mutex")
+                        .note_spent_exit(exit.clone());
+                    Some(crate::correspondent::pool::Member {
+                        transport,
+                        exit,
+                        correspondent: None,
+                    })
+                }
+            }
+        } else {
+            None
+        };
+        let via_socks5 = pooled
+            .as_ref()
+            .and_then(|member| member.transport.socks5_addr())
+            .unwrap_or(socks5_addr);
+
         // The fetch runs outside the wallet lock (the net-diag
         // polling-blackout remedy), so a hung tunnel can no longer freeze
-        // every wallet-state observer. The route was resolved above and
-        // could die mid-fetch; the fetch itself then reports that as a
-        // typed transport failure rather than anything falling back. All
-        // three sources race through the tunnel; the first answer wins and
-        // the losing legs are cancelled (zingo-mobile parity).
+        // every wallet-state observer. All sources race through the one
+        // tunnel at full width; the first answer wins and the losing legs
+        // are cancelled.
         let dispatched = std::time::Instant::now();
-        let raced = zingo_price::race_current_price(Some(&socks5_addr))
-            .await
-            .map_err(crate::wallet::error::PriceError::from)?;
+        let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
+        if let Some(member) = pooled {
+            member.transport.stop().await;
+            self.correspondent_pools
+                .ensure_filled(self.exits_in_use(), self.indexer_uri());
+        }
+        let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
         self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
             round_trip,
-            via_socks5: socks5_addr,
+            via_socks5,
         })
     }
 
@@ -741,6 +820,7 @@ impl LightClient {
     /// standing clearnet consent, and a failure must not silently reinstate
     /// a prior `SwitchedOff`.
     async fn vacate_mixnet_slot(&mut self) {
+        self.correspondent_pools.drain_all().await;
         if let crate::nym::MixnetSlot::Attached(running) =
             std::mem::replace(&mut self.mixnet_slot, crate::nym::MixnetSlot::Unattached)
         {
@@ -751,7 +831,9 @@ impl LightClient {
     /// The Exit Nodes the session currently has in use, excluded from every
     /// new acquisition's draw; a released exit re-enters the pool.
     pub(crate) fn exits_in_use(&self) -> Vec<String> {
-        self.mixnet_slot.exits()
+        let mut exits = self.mixnet_slot.exits();
+        exits.extend(self.correspondent_pools.exits());
+        exits
     }
 
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
@@ -774,6 +856,10 @@ impl LightClient {
                 // The spawn already published Bootstrapping into the session
                 // channel; nothing further to announce here.
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
+                self.correspondent_pools
+                    .set_binary(binary_path.to_path_buf());
+                self.correspondent_pools
+                    .ensure_filled(self.exits_in_use(), self.indexer_uri());
                 Ok(())
             }
             Err(error) => {
