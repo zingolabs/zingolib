@@ -146,7 +146,7 @@ pub(crate) fn eligible_candidates(
     candidates_from(
         configured,
         sync_indexer,
-        crate::nym::correspondents::correspondent_indexers(),
+        crate::correspondent::correspondent_indexers(),
     )
 }
 
@@ -160,7 +160,7 @@ fn candidates_from(
     sync_indexer: Option<&http::Uri>,
     pool: Vec<http::Uri>,
 ) -> Result<Vec<http::Uri>, LightClientError> {
-    use crate::nym::correspondents::{eligible_from, same_operator};
+    use crate::correspondent::{eligible_from, same_operator};
 
     if let Some(configured) = configured {
         let shares_sync_operator = configured
@@ -303,7 +303,7 @@ mod tests {
     /// pool, with that operator absent.
     #[test]
     fn eligible_candidates_draws_the_curated_pool_minus_the_sync_operator() {
-        use crate::nym::correspondents::CORRESPONDENT_INDEXERS;
+        use crate::correspondent::CORRESPONDENT_INDEXERS;
 
         let sync = uri("https://eu.zec.rocks:443");
         let candidates =

@@ -994,7 +994,7 @@ impl LightClient {
             );
         }
         let targets: Vec<http::Uri> = target
-            .map_or_else(crate::nym::correspondents::correspondent_indexers, |uri| {
+            .map_or_else(crate::correspondent::correspondent_indexers, |uri| {
                 vec![uri]
             })
             .into_iter()

@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: `nym::correspondents` is absorbed into the new top-level
+  `zingolib::correspondent` module, which compiles without the `nym`
+  feature and adds the `Correspondable` trait — the party a Transmission
+  addresses, implemented by the census `Indexer` and (under `nym`) by
+  `PriceSource`, each yielding an https address and an accountable
+  operator. The draw-eligibility functions stay `nym`-gated.
 - BREAKING: there is no default server. `config::construct_indexer_uri`
   takes `String` instead of `Option<String>`, and the
   `DEFAULT_INDEXER_URI` / `DEFAULT_INDEXER_URI_TESTNET` re-exports are

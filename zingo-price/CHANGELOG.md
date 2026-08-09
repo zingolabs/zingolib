@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `PriceSource::url` is public, so a Correspondable implementation can
+  name the endpoint a source answers at.
 
 ### Changed
 

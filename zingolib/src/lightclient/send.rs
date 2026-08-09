@@ -322,7 +322,7 @@ async fn transmit_one_transaction(
 /// proxy, and the escalation widens round by round until a Correspondent
 /// confirms delivery or the cap is reached.
 ///
-/// The draw comes from [`crate::nym::correspondents::eligible_correspondents`],
+/// The draw comes from [`crate::correspondent::eligible_correspondents`],
 /// never the raw curated list: a Correspondent is never the sync indexer's
 /// operator (ADR 0022), because that party already holds the wallet's address
 /// set and must not receive the transmission too. An emptied pool refuses
@@ -337,10 +337,10 @@ async fn mixnet_escalating_transmit(
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
 ) -> Result<(String, String), String> {
+    use crate::correspondent::eligible_correspondents;
     use crate::nym::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
-    use crate::nym::correspondents::eligible_correspondents;
 
     let indexers = eligible_correspondents(sync_indexer).map_err(|e| e.to_string())?;
     let run_arm = |indexer: http::Uri| {
@@ -403,10 +403,10 @@ async fn mock_escalating_transmit(
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
 ) -> Result<(String, String), String> {
+    use crate::correspondent::eligible_correspondents;
     use crate::nym::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
-    use crate::nym::correspondents::eligible_correspondents;
 
     let correspondents = eligible_correspondents(Some(indexer.uri())).map_err(|e| e.to_string())?;
     let run_arm = |correspondent: http::Uri| {

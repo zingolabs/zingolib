@@ -1,4 +1,4 @@
-//! The curated Correspondent list.
+//! The Correspondable trait and the curated Correspondent list.
 //!
 //! This list is kept deliberately separate from the sync-server list
 //! (`zingo-cli`'s `most_up_indexer_uris`): Correspondents are chosen for
@@ -54,6 +54,54 @@
 
 use http::Uri;
 
+/// Something that can be corresponded with over the mixnet: the party a
+/// Transmission addresses, never the path that carries it.
+///
+/// ```
+/// use zingolib::correspondent::Correspondable;
+///
+/// let indexer = zingolib::indexers::INDEXERS
+///     .iter()
+///     .find(|indexer| indexer.uri == "https://na.zec.rocks:443")
+///     .unwrap();
+/// assert_eq!(Correspondable::address(indexer).scheme_str(), Some("https"));
+/// assert_eq!(
+///     Correspondable::operator(indexer).as_deref(),
+///     Some("zec.rocks")
+/// );
+/// ```
+pub trait Correspondable {
+    /// Where a Transmission addresses it.
+    fn address(&self) -> Uri;
+    /// The accountable operator: the draw key and the Health aggregation key.
+    fn operator(&self) -> Option<String>;
+}
+
+impl Correspondable for zingo_netutils::indexers::Indexer {
+    fn address(&self) -> Uri {
+        self.uri
+            .parse()
+            .expect("the census tests pin every entry parseable")
+    }
+
+    fn operator(&self) -> Option<String> {
+        Some(zingo_netutils::indexers::Indexer::operator(self))
+    }
+}
+
+#[cfg(feature = "nym")]
+impl Correspondable for zingo_price::PriceSource {
+    fn address(&self) -> Uri {
+        self.url()
+            .parse()
+            .expect("every price source URL is pinned parseable")
+    }
+
+    fn operator(&self) -> Option<String> {
+        Some(self.name().to_string())
+    }
+}
+
 /// Curated Correspondents (mainnet): the publicly reachable indexers found
 /// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
 /// those the mixnet can actually reach. See the module docs for provenance,
@@ -88,6 +136,7 @@ pub fn correspondent_indexers() -> Vec<Uri> {
 
 /// Every Correspondent the sync indexer's operator left in the pool was
 /// excluded — there is nothing safe to draw, so the send refuses (ADR 0022).
+#[cfg(feature = "nym")]
 #[derive(Clone, Debug, thiserror::Error)]
 #[error(
     "no eligible Correspondent: every entry in the pool belongs to the \
@@ -118,6 +167,7 @@ pub(crate) struct NoEligibleCorrespondents {
 /// An Indexerless session passes `None`: it has no accumulating sync
 /// operator to exclude, so the ADR 0022 invariant holds vacuously over the
 /// full pool (ruling 2026-07-29).
+#[cfg(feature = "nym")]
 pub(crate) fn eligible_correspondents(
     sync_indexer: Option<&Uri>,
 ) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
@@ -131,6 +181,7 @@ pub(crate) fn eligible_correspondents(
 /// testability. Crate-visible so the migration draw's pool filtering
 /// (`eligible_candidates`) delegates here instead of growing a second,
 /// divergent exclusion (ADR 0022 requires one).
+#[cfg(feature = "nym")]
 pub(crate) fn eligible_from(
     pool: Vec<Uri>,
     sync_indexer: &Uri,
@@ -153,6 +204,7 @@ pub(crate) fn eligible_from(
 /// Whether two hosts belong to the same accumulating operator: their
 /// operator keys match. This is the one predicate every transmission
 /// surface uses to compare a candidate against the sync indexer (ADR 0022).
+#[cfg(feature = "nym")]
 pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
     operator_domain(host_a) == operator_domain(host_b)
 }
@@ -164,6 +216,7 @@ pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
 /// only over-exclude (two unrelated hosts sharing a suffix collapse
 /// together), which merely shrinks the pool — it never lets the sync
 /// indexer's operator through.
+#[cfg(feature = "nym")]
 fn operator_domain(host: &str) -> String {
     let host = host.to_ascii_lowercase();
     let labels: Vec<&str> = host.rsplit('.').collect();
@@ -176,7 +229,7 @@ fn operator_domain(host: &str) -> String {
         .join(".")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "nym"))]
 mod tests {
     use super::*;
 

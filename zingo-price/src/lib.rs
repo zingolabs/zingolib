@@ -471,7 +471,8 @@ impl PriceSource {
         }
     }
 
-    fn url(self) -> &'static str {
+    /// The https endpoint this source answers at.
+    pub fn url(self) -> &'static str {
         match self {
             PriceSource::Gemini => GEMINI_ZECUSD_URL,
             PriceSource::Kraken => KRAKEN_ZECUSD_URL,

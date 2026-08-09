@@ -12,7 +12,6 @@
 #![forbid(unsafe_code)]
 
 pub mod correspondent_rotation;
-pub mod correspondents;
 pub mod driver;
 mod mode;
 pub mod probe;
