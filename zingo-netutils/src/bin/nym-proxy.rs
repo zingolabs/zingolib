@@ -40,7 +40,7 @@ use zingo_netutils::{
     NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
     get_lightd_info_via_socks5,
     indexers::MIXNET_HEALTH_INDEXER,
-    responsiveness::{Critical, NonCritical, ResponsivenessClass},
+    responsiveness::{PrioritisePrivacy, PrioritiseSpeed, ResponsivenessClass},
     time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
 };
 
@@ -88,17 +88,17 @@ async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error:
     // The one point where the wire form re-enters the type system: each
     // class monomorphizes the same start.
     let mut proxy = match arguments.class {
-        ResponsivenessClass::Critical => {
-            NymProxy::start_with_progress::<Critical>(arguments.excluded, narrate).await?
+        ResponsivenessClass::PrioritiseSpeed => {
+            NymProxy::start_with_progress::<PrioritiseSpeed>(arguments.excluded, narrate).await?
         }
-        ResponsivenessClass::NonCritical => {
-            NymProxy::start_with_progress::<NonCritical>(arguments.excluded, narrate).await?
+        ResponsivenessClass::PrioritisePrivacy => {
+            NymProxy::start_with_progress::<PrioritisePrivacy>(arguments.excluded, narrate).await?
         }
     };
 
     health_gate(&mut proxy).await?;
 
-    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_provider()));
+    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_node()));
     emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
     Ok(proxy)
 }
@@ -160,16 +160,16 @@ struct Arguments {
     /// The Exit Nodes excluded from this proxy's draw.
     excluded: Vec<String>,
     /// The acquisition's responsiveness class; a bare invocation defaults
-    /// to critical, matching a person waiting at a terminal.
+    /// to prioritise-speed, matching a person waiting at a terminal.
     class: ResponsivenessClass,
 }
 
 /// Parse every `--exclude-exit <identity>` pair and the optional
-/// `--responsiveness <critical|non-critical>` from `args`, refusing unknown
-/// arguments and unknown class tokens.
+/// `--responsiveness <prioritise-speed|prioritise-privacy>` from `args`,
+/// refusing unknown arguments and unknown class tokens.
 fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, String> {
     let mut excluded = Vec::new();
-    let mut class = ResponsivenessClass::Critical;
+    let mut class = ResponsivenessClass::PrioritiseSpeed;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--exclude-exit" => match args.next() {
@@ -241,26 +241,31 @@ mod tests {
 
     /// HYPOTHESIS: the class grammar accepts exactly the wire tokens of the
     /// two responsiveness classes and defaults a bare invocation to
-    /// critical, so a malformed spawn fails loudly instead of silently
-    /// racing under the wrong policy.
+    /// prioritise-speed, so a malformed spawn fails loudly instead of
+    /// silently racing under the wrong policy.
     #[test]
     fn the_class_grammar_speaks_the_wire_tokens() {
         assert_eq!(
             parse(&[]).expect("bare invocation").class,
-            ResponsivenessClass::Critical,
+            ResponsivenessClass::PrioritiseSpeed,
             "a person at a terminal is waiting"
         );
         assert_eq!(
-            parse(&["--responsiveness", "non-critical"])
-                .expect("the non-critical token")
+            parse(&["--responsiveness", "prioritise-privacy"])
+                .expect("the prioritise-privacy token")
                 .class,
-            ResponsivenessClass::NonCritical
+            ResponsivenessClass::PrioritisePrivacy
         );
         assert_eq!(
-            parse(&["--responsiveness", "critical", "--exclude-exit", "id-a"])
-                .expect("class and exclusions compose")
-                .class,
-            ResponsivenessClass::Critical
+            parse(&[
+                "--responsiveness",
+                "prioritise-speed",
+                "--exclude-exit",
+                "id-a"
+            ])
+            .expect("class and exclusions compose")
+            .class,
+            ResponsivenessClass::PrioritiseSpeed
         );
         assert!(
             parse(&["--responsiveness", "urgent"]).is_err(),

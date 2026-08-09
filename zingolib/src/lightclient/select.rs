@@ -82,7 +82,7 @@ impl LightClient {
         let publisher = crate::nym::status_publisher();
         let mut receiver = publisher.subscribe();
         // The sweep gates the Sync Session a user just asked to open.
-        let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::Critical>(
+        let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::PrioritiseSpeed>(
             binary_path,
             publisher,
             &self.exits_in_use(),

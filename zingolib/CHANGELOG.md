@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
+  is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
+  pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
+  flight, replacing the serially gated one-two-three rounds. The
+  six-Correspondent cap and the happy path's single-Correspondent
+  discipline are unchanged.
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
 - `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
   updated to include options for defaults.
@@ -71,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
   the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
   `NonCritical`, and `Responsiveness` for callers.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `zingolib::nym` re-exports `PrioritiseSpeed` (was `Critical`) and
+  `PrioritisePrivacy` (was `NonCritical`). A class names the acquisition's
+  declared priority, never who waits.
 - BREAKING: the send-path vocabulary of ADRs 0036 and 0037 replaces "broadcast"
   and "witness" throughout the API. The config key `migration_broadcast_uri` is
   renamed `migration_transmission_uri` (builder:

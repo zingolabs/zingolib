@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Critical acquisition races under it.
 - The proxy binary accepts `--responsiveness <critical|non-critical>`
   and defaults a bare invocation to critical.
+- `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
+  silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
+  MIXNET_ROUND_TRIP_BOUND` so a responsive Correspondent's confirmed
+  delivery beats the first hedge (ADR 0040).
 
 ### Changed
 
@@ -27,6 +31,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
   `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
   reservations, never an independent parameter (ADR 0035).
+- BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
+  `PullFailure` (was `ArmFailure`) carries an `arm` field (was
+  `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
+  `RaceAction::Launch`'s field is `arm`, and
+  `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
+  (whose "arm" was the verb, colliding with the bandit noun).
+  `RaceState::new` names its first parameter `arms`.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `PrioritiseSpeed` (was `Critical`, saturating) and
+  `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker
+  types, the `ResponsivenessClass` variants, and the wire tokens
+  (`--responsiveness <prioritise-speed|prioritise-privacy>`). A class
+  names the acquisition's declared priority, never who waits.
+- BREAKING: the Exit Node vocabulary replaces "provider" throughout the
+  proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
+  gateway role, a false friend). `NymProxy::exit_node`,
+  `NymProxy::start_with_exit_node`, and `NymProxy::discover_exit_nodes`
+  replace `exit_provider`, `start_with_provider`, and
+  `discover_exit_providers`. `NymProxyError::NoExitNode` replaces
+  `NoProvider`, and the `AttemptTimeout` and `AttemptsExhausted`
+  `Display` renderings now say "exit node" where they said "provider".
+  `DiscoveredIndexer` and `DiscoveryFailure` carry `exit_node` (was
+  `exit_provider`).
 
 ### Removed
 

@@ -21,7 +21,7 @@
 use std::{net::SocketAddr, sync::Mutex, time::Duration};
 
 use tokio::runtime::Runtime;
-use zingo_netutils::responsiveness::Critical;
+use zingo_netutils::responsiveness::PrioritiseSpeed;
 use zingo_netutils::time::{LIVENESS_PROBE_INTERVAL, LOOPBACK_DIAL_BOUND};
 use zingo_netutils::NymProxy;
 
@@ -195,7 +195,7 @@ impl MixnetProxyHandle {
                 reason: e.to_string(),
             })?;
         let proxy = runtime
-            .block_on(NymProxy::start::<Critical>())
+            .block_on(NymProxy::start::<PrioritiseSpeed>())
             .map_err(|e| ProxyFfiError::Connect {
                 reason: e.to_string(),
             })?;

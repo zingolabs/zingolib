@@ -1471,7 +1471,7 @@ async fn network_command(
             let path = resolve_proxy_path(path.as_deref());
             // `network on` is an interactive act: the user sits at the prompt.
             lightclient
-                .enable_mixnet::<zingolib::nym::Critical>(std::path::Path::new(&path))
+                .enable_mixnet::<zingolib::nym::PrioritiseSpeed>(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
