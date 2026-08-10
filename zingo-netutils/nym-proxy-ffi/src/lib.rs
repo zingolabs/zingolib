@@ -217,6 +217,15 @@ impl MixnetProxyHandle {
         self.endpoint.clone()
     }
 
+    /// The Exit Node identity the running proxy bound, `None` once stopped.
+    pub fn exit_node(&self) -> Option<String> {
+        self.proxy
+            .lock()
+            .expect("proxy mutex poisoned")
+            .as_ref()
+            .map(|proxy| proxy.exit_node().to_string())
+    }
+
     /// Disconnect the mixnet client and stop the local SOCKS5 proxy. Idempotent:
     /// a second call after the proxy is already stopped is a no-op. Deliberate
     /// stop is not death: the liveness monitor is cancelled before the listener

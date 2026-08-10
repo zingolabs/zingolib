@@ -1845,13 +1845,16 @@ mod attached_exit_reporting {
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome, render_exit_nodes};
 
-    /// HYPOTHESIS: an attached transport that reaches `Ready` publishes the
-    /// Exit Node identity its platform host bound, so the CLI's success
-    /// report renders it and the session's exits-in-use draw is never
-    /// vacuous on the attach path. Falsified while the attach seam carries
-    /// no exit identity: the Ready publication then holds an empty set, and
-    /// this test runs red until the exit-reporting FFI roundtrips an
-    /// identity into it (the #2660 headline finding).
+    /// The identity the stand-in platform host reports as its bound exit,
+    /// within the render's unshortened width.
+    const HOST_BOUND_EXIT: &str = "host-bound-exit";
+
+    /// HYPOTHESIS: an attached transport that reaches `Ready` publishes
+    /// exactly the Exit Node identity its platform host bound, rendered by
+    /// the CLI's success report, so the session's exits-in-use draw is never
+    /// vacuous on the attach path. Falsified if the attach seam drops,
+    /// alters, or invents the host-reported identity (the #2660 headline
+    /// finding ran this red until the seam carried it).
     #[tokio::test]
     async fn an_attached_ready_transport_reports_its_bound_exit_node() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1873,18 +1876,25 @@ mod attached_exit_reporting {
         .await;
         let receiver = client.subscribe_mixnet_status();
         client
-            .attach_mixnet(&addr)
+            .attach_mixnet(&addr, &[HOST_BOUND_EXIT.to_string()])
             .await
             .expect("a valid loopback address attaches");
 
         let outcome = await_bootstrap_outcome(receiver).await;
         host.abort();
         match outcome {
-            BootstrapOutcome::Ready { exits } => assert_ne!(
-                render_exit_nodes(&exits),
-                "",
-                "an attached Ready must report the Exit Node its host bound"
-            ),
+            BootstrapOutcome::Ready { exits } => {
+                assert_eq!(
+                    exits,
+                    vec![HOST_BOUND_EXIT.to_string()],
+                    "an attached Ready must report exactly the Exit Node its host bound"
+                );
+                assert_eq!(
+                    render_exit_nodes(&exits),
+                    format!(" Exit Node bound: {HOST_BOUND_EXIT}."),
+                    "the success report must render the host-bound identity"
+                );
+            }
             BootstrapOutcome::Failed { report } => {
                 panic!("the attached endpoint must reach Ready: {report}")
             }

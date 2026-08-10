@@ -151,6 +151,8 @@ pub enum ProvisionStrategy<'a> {
     Attach {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
+        /// The Exit Node identities the platform host reports as bound.
+        exits: &'a [String],
     },
 }
 

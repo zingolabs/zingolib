@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the attach path carries the platform host's bound Exit Node
+  identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
+  parameter and `nym::ProvisionStrategy::Attach` gains an `exits` field;
+  the attached transport's `Ready` publication reports them, so the
+  session's exits-in-use draw is no longer vacuous on the attach path.
 - BREAKING: the transport-acquisition path speaks the typed
   `nym::TransportError` instead of `String`. The enum names the
   missing acquirer, the discover mode's spawn and exit failures, the

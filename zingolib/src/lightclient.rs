@@ -858,21 +858,17 @@ impl LightClient {
         }
     }
 
-    /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5
-    /// endpoint (ADR 0011's mobile amendment) instead of spawning the bundled
-    /// nym-proxy binary. Returns immediately; [`Self::mixnet_mode`] reports
-    /// `Bootstrapping` while a data round trip validates the endpoint, then
-    /// `Ready`, or `Died` if validation or the ongoing liveness probe fails —
-    /// an attached transport refuses rather than falls back to clearnet,
-    /// exactly like a spawned one. Attaching while a proxy is running
-    /// replaces it.
+    /// Attaches Mixnet Mode to an already-running, platform-hosted SOCKS5
+    /// endpoint that bound `exits`, replacing any running transport.
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
+        exits: &[String],
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
         match crate::nym::MixnetProxy::attach(
             socks5_addr,
+            exits,
             std::sync::Arc::clone(&self.mixnet_status),
         ) {
             Ok(proxy) => {
@@ -949,8 +945,8 @@ impl LightClient {
                     )
                     .await
                 }
-                crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
-                    self.attach_mixnet(socks5_addr).await
+                crate::nym::ProvisionStrategy::Attach { socks5_addr, exits } => {
+                    self.attach_mixnet(socks5_addr, exits).await
                 }
             },
         }
@@ -1382,6 +1378,7 @@ mod tests {
                 .start_mixnet_session(
                     crate::nym::ProvisionStrategy::Attach {
                         socks5_addr: "not-a-socket-address",
+                        exits: &[],
                     },
                     crate::nym::MixnetStartPolicy::ForcedOn,
                 )
@@ -1417,6 +1414,7 @@ mod tests {
                     // the driver lands Died.
                     crate::nym::ProvisionStrategy::Attach {
                         socks5_addr: "127.0.0.1:9",
+                        exits: &[],
                     },
                     crate::nym::MixnetStartPolicy::ForcedOn,
                 )

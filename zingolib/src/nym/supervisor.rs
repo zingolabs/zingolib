@@ -267,10 +267,12 @@ impl MixnetProxy {
         })
     }
 
-    /// Attaches to an already-running, platform-hosted SOCKS5 endpoint whose
-    /// readiness and continued life are judged by loopback dials alone.
+    /// Attaches to an already-running, platform-hosted SOCKS5 endpoint that
+    /// bound `exits`, judging readiness and continued life by loopback dials
+    /// alone.
     pub(crate) fn attach(
         socks5_addr: &str,
+        exits: &[String],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
         if socks5_addr.parse::<SocketAddr>().is_err() {
@@ -281,7 +283,7 @@ impl MixnetProxy {
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
-            exits: Vec::new(),
+            exits: exits.to_vec(),
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
             death: None,
         }));
@@ -1070,14 +1072,14 @@ mod tests {
     #[tokio::test]
     async fn attach_validates_the_address_and_stop_is_a_deliberate_teardown() {
         assert!(matches!(
-            MixnetProxy::attach("not-a-socket-address", test_publisher()),
+            MixnetProxy::attach("not-a-socket-address", &[], test_publisher()),
             Err(MixnetProxyError::InvalidAddress { .. })
         ));
 
         // A refusing localhost endpoint: readiness will fail, but stop() must
         // win regardless of where the driver is when it lands.
-        let proxy =
-            MixnetProxy::attach("127.0.0.1:9", test_publisher()).expect("a valid address attaches");
+        let proxy = MixnetProxy::attach("127.0.0.1:9", &[], test_publisher())
+            .expect("a valid address attaches");
         // The readiness gate races this assert (a refused port can land Died
         // fast), so assert only what is invariant: a live attachment is in
         // the transport lifecycle, never in a wallet slot state.
@@ -1103,8 +1105,8 @@ mod tests {
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.
-        let proxy =
-            MixnetProxy::attach("127.0.0.1:9", test_publisher()).expect("a valid address attaches");
+        let proxy = MixnetProxy::attach("127.0.0.1:9", &[], test_publisher())
+            .expect("a valid address attaches");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while proxy.mode() != MixnetMode::Died {
             assert!(
