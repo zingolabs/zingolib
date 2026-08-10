@@ -62,24 +62,43 @@ pub const LOOPBACK_DIAL_BOUND: Duration = Duration::from_secs(5);
 /// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
 pub const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Timeout for a single provider connect attempt.
+/// Timeout for a single Exit Node connect attempt.
 ///
-/// Without this bound, one unresponsive provider hangs
+/// Without this bound, one unresponsive Exit Node hangs
 /// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
-/// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds. Six full
+/// budget burns, and the retry engine never reaches the next Exit Node. A
+/// responsive Exit Node bootstraps in well under ten seconds. Six full
 /// attempts fit inside the lifecycle budget.
 pub const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Timeout for the provider-discovery API query, which is otherwise
+/// Timeout for the Exit-Node-discovery API query, which is otherwise
 /// unbounded for the same reason as the connect attempts.
 pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the hedged bootstrap stays quiet before launching another
-/// provider in parallel. A responsive provider typically connects in well
-/// under ten seconds, so an attempt this old is worth hedging against
+/// Exit Node pull in parallel. A responsive Exit Node typically connects in
+/// well under ten seconds, so an attempt this old is worth hedging against
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
+
+/// The silence interval before a send's escalation launches a further
+/// Correspondent arm: the sum of a connect attempt's bound and one mixnet
+/// round trip, so a responsive Correspondent's confirmed delivery beats the
+/// first hedge by construction, and the interval retunes when either bound
+/// retunes.
+///
+/// ```
+/// use zingo_netutils::time::{
+///     MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT, TRANSMISSION_HEDGE_INTERVAL,
+/// };
+///
+/// assert_eq!(
+///     TRANSMISSION_HEDGE_INTERVAL,
+///     PER_ATTEMPT_CONNECT_TIMEOUT + MIXNET_ROUND_TRIP_BOUND,
+/// );
+/// ```
+pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
+    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
 
 /// How often the mobile shim's liveness monitor probes the local SOCKS5
 /// listener. Faster than [`ATTACH_PROBE_INTERVAL`] because the shim's host
@@ -172,8 +191,16 @@ pub const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);
 /// The interval between transmit retries and queued-verdict probes.
 pub const TRANSMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Bound on one migration-broadcast submission through the tunnel. More
-/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a migration broadcast
+/// How long a transmitting command waits out a bootstrapping mixnet
+/// before the typed Bootstrapping refusal stands.
+pub const TRANSMIT_READINESS_BUDGET: Duration = Duration::from_secs(90);
+
+/// The cadence at which a waiting transmitting command reports that the
+/// mixnet is still bootstrapping.
+pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
+
+/// Bound on one migration-part submission through the tunnel. More
+/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a part transmission
 /// tolerates latency better than an interactive send.
 pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -181,12 +208,12 @@ pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// round confirms.
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Mixnet transmissions can wait for minutes (mixnet round trips, per-arm
-/// retries, serially gated fan-out rounds, queued-verdict probes), so every
-/// transmitting CLI command prints the transmission's latest progress line
-/// at this interval while it waits. A send that completes before the first
-/// tick stays silent.
-pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+/// Every dispatched CLI command narrates its latest progress line at this
+/// interval while it runs, so no command is silent past one interval; a
+/// command that completes before the first tick stays silent. Temporarily
+/// two seconds to strengthen the diagnostic signal while the silent-phase
+/// reports are investigated; the ratified cadence is eight.
+pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Diagnostics and server selection

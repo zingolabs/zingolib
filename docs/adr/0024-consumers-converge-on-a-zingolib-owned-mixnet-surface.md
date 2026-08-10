@@ -112,3 +112,66 @@ lands there; it warrants an immediate issue independent of this
 record. Golden wire fixtures multiply across three repos and must stay
 byte-identical; the shim's existing three-language pattern is the
 template.
+
+## Amendment (2026-08-04): the editorial layer is the `perspective` module, not a crate
+
+The editorial layer — the value-transfer derivation, the finsight
+rollups, and their types — was re-extracted into a workspace crate,
+zingo-perspective, on the branch `viewmodel_seed` (draft PR #2611,
+with the mixnet projection slice stacked as PR #2617). That extraction
+carried its own amendment to this record, retargeting rule 7 so that
+governed consumers would declare zingo-perspective as their one wallet
+dependency, reached through a funnel of path-for-path re-exports. This
+amendment declines the extraction before it merges. Both pull requests
+close as superseded, and `viewmodel_seed` joins `viewmodel-crate` as
+an inventory of what belongs in the editorial layer, mined but never
+rebased.
+
+The editorial layer instead becomes the `zingolib::perspective`
+module, compiled behind a `perspective` cargo feature that is the
+crate's first default-on feature. Rule 7 therefore stands as
+originally written: consumers declare exactly one wallet dependency,
+and it is zingolib. The deciding ground is churn. The funnel form
+required every governed consumer, across three repositories, to
+repoint its manifest and rename every import, and required the funnel
+to pin a re-exported surface path-for-path forever after; the module
+form requires none of it, because consumers already hold the one
+dependency the funnel existed to provide, and because the derivation
+returns to inherent `impl LightWallet` and `impl LightClient` blocks,
+so no call site changes and no trait import appears. The extraction's
+naming ruling survives the placement reversal: the layer is named
+perspective, the singular load-bearing — one house perspective, N
+renderers — with viewmodel rejected for inviting an MVVM misreading.
+
+What the module surrenders is recorded plainly. The crate boundary is
+the only construct in Rust that denies a crate's own code access its
+consumers have: visibility only narrows outward, so every `pub` item
+a consumer can import is nameable from every module of the defining
+crate, and the extraction's editorial-independence guarantee held by
+construction where the module's holds by convention. The resulting
+boundary is asymmetric. In the core-to-editorial direction the proof
+is structural and already standing: CI's cargo-hack feature-powerset
+job compiles the perspective-off subset of every feature combination
+under `-D warnings` on every pull request, so zingolib building
+without its editorial layer is a permanent compiler-checked fact. In
+the editorial-to-core direction there is no mechanism at all — no
+import allowlist, no workbench gate — by explicit ruling: developer
+discipline and review carry it. The five summary primitives the
+extraction had promoted to `pub` remain `pub(crate)`, read by the
+module as any sibling reads them, and the roughly 170 editorial items
+the extraction would have removed from zingolib's public API remain
+public, since consumers must import them from somewhere.
+
+The editorial items move clean: the editorial half of
+`wallet::summary` relocates to `zingolib::perspective` with no aliases
+or deprecated re-exports left at the old paths, so governed consumers
+rewrite the `use` lines naming the moved types once, and nothing else.
+The canonical `TransactionSummary` stays where it is. The golden
+fixtures captured from the pre-extraction implementation port
+unchanged and keep pinning the same contract. The mixnet projection
+remains deliberately absent, to be re-derived from the zingolib-owned
+typed status of rules 1 and 2 in a later slice that lands in the
+module. The Reference Consumer's placement under ADR 0028 is
+untouched, its path dependency reading zingolib directly; the
+unmerged wording that routed it through zingo-perspective reverts
+when that record lands.

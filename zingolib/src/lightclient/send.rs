@@ -69,7 +69,7 @@ pub struct TransmitReport {
     /// it.
     pub route: TransmitRoute,
     /// Wall-clock time from dispatching the transmission to its delivery
-    /// confirmation, retries and fan-out escalation included.
+    /// confirmation, retries and Correspondent escalation included.
     pub round_trip: std::time::Duration,
 }
 
@@ -78,7 +78,7 @@ pub struct TransmitReport {
 /// (`None`), from the session's connectivity and its Mixnet Mode route.
 ///
 /// An Indexerless session transmits only over a ready mixnet (ruling
-/// 2026-07-29): the Broadcast Witness fan-out needs no sync indexer, so
+/// 2026-07-29): the Correspondent escalation needs no sync indexer, so
 /// the ADR 0022 exclusion holds vacuously. A mixnet-less offline session
 /// keeps the typed [`LightClientError::Offline`] refusal — an unattached
 /// mixnet carries no online intent — while attached-but-not-ready states
@@ -107,12 +107,12 @@ pub enum TransmitRoute {
         /// The sync indexer's host.
         indexer: String,
     },
-    /// Mixnet fan-out over the Broadcast Witnesses (ADR 0022), reached
+    /// Mixnet escalation over the Correspondents (ADR 0022), reached
     /// through the local SOCKS5 tunnel endpoint.
     Mixnet {
-        /// The host of the Broadcast Witness whose delivery confirmation
-        /// won the fan-out.
-        witness: String,
+        /// The host of the Correspondent whose delivery confirmation
+        /// won the escalation.
+        correspondent: String,
         /// The local SOCKS5 endpoint of the mixnet tunnel.
         via_socks5: String,
     },
@@ -199,10 +199,10 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
-/// A single Broadcast Indexer reached through the local SOCKS5 proxy, as a
+/// A single Correspondent reached through the local SOCKS5 proxy, as a
 /// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
 /// running the same [`resilient_transmit`] policy as the clearnet path. The
-/// fan-out builds one of these per pick.
+/// escalation builds one of these per pick.
 #[cfg(feature = "nym")]
 struct SocksTarget {
     socks5_addr: String,
@@ -251,7 +251,7 @@ impl TransmitTarget for SocksTarget {
 
 /// Submit one transaction under the route the Mixnet Mode policy resolved:
 /// clearnet through the configured indexer when `socks5_proxy` is `None`, or
-/// the mixnet fan-out over the Broadcast Indexers reached through the SOCKS5
+/// the mixnet escalation over the Correspondents reached through the SOCKS5
 /// proxy when it is `Some`. Returns the server-reported txid or the last
 /// failure message.
 async fn transmit_one_transaction(
@@ -292,7 +292,7 @@ async fn transmit_one_transaction(
             outcome.map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
         }
         #[cfg(feature = "nym")]
-        Some(socks5_addr) => mixnet_fanout_transmit(
+        Some(socks5_addr) => mixnet_escalating_transmit(
             socks5_addr,
             indexer.map(|indexer| indexer.uri()),
             tx_bytes,
@@ -302,11 +302,11 @@ async fn transmit_one_transaction(
             history,
         )
         .await
-        .map(|(server_txid, witness)| {
+        .map(|(server_txid, correspondent)| {
             (
                 server_txid,
                 TransmitRoute::Mixnet {
-                    witness,
+                    correspondent,
                     via_socks5: socks5_addr.to_string(),
                 },
             )
@@ -316,18 +316,19 @@ async fn transmit_one_transaction(
     }
 }
 
-/// Broadcast one transaction over the mixnet as the escalating, serially gated
-/// fan-out (ADR 0011): each arm runs the shared [`resilient_transmit`] policy
-/// against one Broadcast Indexer through the SOCKS5 proxy, and the fan-out
-/// escalates round by round until an indexer confirms delivery or the witness
-/// cap is reached.
+/// Transmit one transaction over the mixnet as the escalating, serially gated
+/// Correspondent Rotation (ADR 0011): each arm runs the shared
+/// [`resilient_transmit`] policy against one Correspondent through the SOCKS5
+/// proxy, and the escalation widens round by round until a Correspondent
+/// confirms delivery or the cap is reached.
 ///
-/// The draw comes from [`eligible_witnesses`], never the raw curated list: a
-/// witness is never the sync indexer's operator (ADR 0022), because that party
-/// already holds the wallet's address set and must not receive the broadcast
-/// too. An emptied pool refuses rather than falling back.
+/// The draw comes from [`crate::nym::correspondents::eligible_correspondents`],
+/// never the raw curated list: a Correspondent is never the sync indexer's
+/// operator (ADR 0022), because that party already holds the wallet's address
+/// set and must not receive the transmission too. An emptied pool refuses
+/// rather than falling back.
 #[cfg(feature = "nym")]
-async fn mixnet_fanout_transmit(
+async fn mixnet_escalating_transmit(
     socks5_addr: &str,
     sync_indexer: Option<&http::Uri>,
     tx_bytes: &[u8],
@@ -336,10 +337,12 @@ async fn mixnet_fanout_transmit(
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
 ) -> Result<(String, String), String> {
-    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
-    use crate::nym::broadcast_indexers::eligible_witnesses;
+    use crate::nym::correspondent_rotation::{
+        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
+    };
+    use crate::nym::correspondents::eligible_correspondents;
 
-    let indexers = eligible_witnesses(sync_indexer).map_err(|e| e.to_string())?;
+    let indexers = eligible_correspondents(sync_indexer).map_err(|e| e.to_string())?;
     let run_arm = |indexer: http::Uri| {
         let socks5_addr = socks5_addr.to_string();
         let tx_bytes = tx_bytes.to_vec();
@@ -354,15 +357,16 @@ async fn mixnet_fanout_transmit(
             };
             let started = std::time::Instant::now();
             // The arm's failure becomes the taxonomy record — stage by typed
-            // match, cause chain captured layer by layer, target the witness
-            // host — which the fan-out collects whole per witness.
+            // match, cause chain captured layer by layer, target the
+            // Correspondent host — which the escalation collects whole per
+            // Correspondent.
             let outcome = resilient_transmit(
                 &target,
                 &tx_bytes,
                 height,
                 &txid,
                 |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("witness {host}: {event}")),
+                |event| progress.set(format!("correspondent {host}: {event}")),
             )
             .await
             .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
@@ -372,26 +376,26 @@ async fn mixnet_fanout_transmit(
         }
     };
 
-    fanout_broadcast(
+    escalating_transmit(
         &indexers,
         &mut rand::rngs::OsRng,
-        MAX_BROADCAST_WITNESSES,
+        MAX_TRANSMISSION_CORRESPONDENTS,
         run_arm,
-        |line| progress.set(format!("mixnet fan-out: {line}")),
+        |line| progress.set(format!("mixnet escalation: {line}")),
     )
     .await
     .map_err(|error| error.to_string())
 }
 
-/// The chain-mock twin of [`mixnet_fanout_transmit`], paired with the
+/// The chain-mock twin of [`mixnet_escalating_transmit`], paired with the
 /// test-attached slot state behind
-/// [`LightClient::switch_on_mixnet_for_tests`]: the witness draw, the
-/// escalation rounds, and the cap run for real over the curated Broadcast
-/// Indexer pool, while each arm's bytes travel the mock indexer's channel
+/// [`LightClient::switch_on_mixnet_for_tests`]: the Correspondent draw, the
+/// escalation rounds, and the cap run for real over the curated Correspondent
+/// pool, while each arm's bytes travel the mock indexer's channel
 /// instead of a SOCKS5 tunnel. The tunnel's byte transport is pinned by
 /// zingo-netutils' own tests, so no packet leaves the process here.
 #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
-async fn mock_fanout_transmit(
+async fn mock_escalating_transmit(
     indexer: &zingo_netutils::GrpcIndexer,
     tx_bytes: &[u8],
     height: u64,
@@ -399,17 +403,19 @@ async fn mock_fanout_transmit(
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
 ) -> Result<(String, String), String> {
-    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
-    use crate::nym::broadcast_indexers::eligible_witnesses;
+    use crate::nym::correspondent_rotation::{
+        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
+    };
+    use crate::nym::correspondents::eligible_correspondents;
 
-    let witnesses = eligible_witnesses(Some(indexer.uri())).map_err(|e| e.to_string())?;
-    let run_arm = |witness: http::Uri| {
+    let correspondents = eligible_correspondents(Some(indexer.uri())).map_err(|e| e.to_string())?;
+    let run_arm = |correspondent: http::Uri| {
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = witness
+        let host = correspondent
             .host()
-            .map_or_else(|| witness.to_string(), str::to_string);
+            .map_or_else(|| correspondent.to_string(), str::to_string);
         async move {
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
@@ -418,7 +424,7 @@ async fn mock_fanout_transmit(
                 height,
                 &txid,
                 |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("witness {host}: {event}")),
+                |event| progress.set(format!("correspondent {host}: {event}")),
             )
             .await
             .map_err(|TransmitFailed(status)| status.to_string());
@@ -427,12 +433,12 @@ async fn mock_fanout_transmit(
         }
     };
 
-    fanout_broadcast(
-        &witnesses,
+    escalating_transmit(
+        &correspondents,
         &mut rand::rngs::OsRng,
-        MAX_BROADCAST_WITNESSES,
+        MAX_TRANSMISSION_CORRESPONDENTS,
         run_arm,
-        |line| progress.set(format!("mixnet fan-out: {line}")),
+        |line| progress.set(format!("mixnet escalation: {line}")),
     )
     .await
     .map_err(|error| error.to_string())
@@ -733,7 +739,7 @@ impl LightClient {
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
         // `Clearnet` submits through the configured indexer; `Mixnet(addr)`
-        // routes the fan-out through the SOCKS5 proxy — with or without a
+        // routes the escalation through the SOCKS5 proxy — with or without a
         // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
         // here, before any submission, rather than leaking to clearnet.
         // Without the `nym` feature there is no mixnet, so the route is
@@ -749,7 +755,7 @@ impl LightClient {
 
         // A test-attached slot pairs its Ready route with arms that submit
         // over the mock indexer's channel; a live Ready session keeps the
-        // SOCKS5 fan-out. Production builds carry no test slot state, so
+        // SOCKS5 escalation. Production builds carry no test slot state, so
         // this distinction does not exist there.
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
@@ -799,12 +805,12 @@ impl LightClient {
 
             // The retry / duplicate-in-mempool / queued-probe policy is defined
             // once in `transmit::resilient_transmit`; the clearnet path runs it
-            // directly and the mixnet path runs it per fan-out arm. Wallet-state
-            // effects stay here, around the pure transmission.
+            // directly and the mixnet path runs it per escalation arm.
+            // Wallet-state effects stay here, around the pure transmission.
             let dispatched = std::time::Instant::now();
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
             let transmit_outcome = if mock_arms {
-                mock_fanout_transmit(
+                mock_escalating_transmit(
                     indexer
                         .as_ref()
                         .expect("the test-attached slot always carries a mock indexer"),
@@ -815,11 +821,11 @@ impl LightClient {
                     &history,
                 )
                 .await
-                .map(|(server_txid, witness)| {
+                .map(|(server_txid, correspondent)| {
                     (
                         server_txid,
                         TransmitRoute::Mixnet {
-                            witness,
+                            correspondent,
                             via_socks5: socks5_proxy.clone().unwrap_or_default(),
                         },
                     )
@@ -905,7 +911,7 @@ impl LightClient {
 /// (docs/testing/test-protection-audit-dev-to-ironwood.md § Gap
 /// remediation plan): the built transaction's expiry and consensus
 /// branch id must derive from the wallet's synced height + 1.
-/// `LightWallet::calculate_transactions` is the build-without-broadcast
+/// `LightWallet::calculate_transactions` is the build-without-transmit
 /// seam (it proves and stores the transaction without transmitting),
 /// so these cells run offline over a synthetic wallet.
 #[cfg(test)]
@@ -930,7 +936,7 @@ mod built_transaction_shape {
         address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
     }
 
-    /// Builds (without broadcasting) one send-all from the given wallet
+    /// Builds (without transmitting) one send-all from the given wallet
     /// and returns the stored transaction's (target, expiry, branch id).
     async fn build_one_send(wallet: LightWallet) -> (u32, u32, BranchId) {
         let mut client = LightClient::new_for_test(wallet).await;
@@ -1400,7 +1406,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn complete_and_broadcast_unconnected_error() {
+    async fn complete_and_transmit_unconnected_error() {
         let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
         let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();

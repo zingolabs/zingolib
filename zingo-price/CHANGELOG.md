@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Removed
+- The dead sequential fetch path: `fetch_current_price`,
+  `fetch_current_price_from`, `PriceList::update_current_price`, and
+  `PriceSource::next`. Production moved to `race_current_price`, which races
+  every source concurrently, and nothing called the sequential path anymore.
 - The unreachable `PriceError::DecimalError` variant and the `rust_decimal`
   dependency that existed only to feed it. Price parsing has been float-based
   since the fetch re-implementation, so nothing could construct the variant.

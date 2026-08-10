@@ -48,38 +48,48 @@ pub enum NymProxyError {
     #[error("failed to connect to Nym mixnet")]
     Connect(#[source] Box<nym_sdk::Error>),
 
-    /// Failed to query the Nym API for service providers.
+    /// Failed to query the Nym API for Exit Nodes.
     #[error("Nym API query failed: {0}")]
     DiscoveryApi(String),
 
-    /// No public exit gateway could be discovered.
+    /// No public Exit Node could be discovered.
     #[error("no public Nym exit gateway found")]
-    NoProvider,
+    NoExitNode,
 
     /// End-to-end connectivity check through the SOCKS5 tunnel failed.
     #[error("connectivity check failed: {0}")]
     ConnectivityCheck(String),
 
-    /// A single provider connect attempt exceeded its per-attempt timeout.
-    #[error("provider connect attempt timed out after {0}s")]
+    /// A single Exit Node connect attempt exceeded its per-attempt timeout.
+    #[error("exit node connect attempt timed out after {0}s")]
     AttemptTimeout(u64),
 
     /// Every raced connect attempt failed. Each attempt is a typed
-    /// [`zingo_net_diag::NetOpFailure`] — the stage, the shortened provider
+    /// [`zingo_net_diag::NetOpFailure`] — the stage, the shortened Exit Node
     /// name as the target, and the cause chain as a vector — so a consumer
-    /// dispatches on fields (every provider timed out, versus one refused
+    /// dispatches on fields (every Exit Node timed out, versus one refused
     /// and the rest were never launched) instead of parsing prose. The
     /// joined-prose rendering below is `Display` only, never the storage
     /// form (`docs/agents/net-diag-design.md`, issue #2562).
     #[error(
-        "no provider connected after contacting {attempts} providers: {}",
+        "no exit node connected after contacting {attempts} exit nodes: {}",
         join_failures(failures)
     )]
     AttemptsExhausted {
-        /// The number of distinct providers contacted.
+        /// The number of distinct Exit Nodes contacted.
         attempts: usize,
         /// Every attempt's failure, in completion order.
         failures: Vec<zingo_net_diag::NetOpFailure>,
+    },
+
+    /// Every discovered exit was excluded by the caller's known-exit set,
+    /// so no fresh Exit Node can be drawn.
+    #[error("all {discovered} discovered exits are excluded by the {excluded} known exits")]
+    AllExitsExcluded {
+        /// How many exits the directory advertised.
+        discovered: usize,
+        /// How many known exits the caller excluded.
+        excluded: usize,
     },
 }
 
@@ -119,16 +129,16 @@ mod tests {
                 NetOpFailure::message(
                     NetOpStage::TimedOut { after_ms: 20_000 },
                     "9f2kQvR8sWx…",
-                    "provider connect attempt timed out after 20s",
+                    "exit node connect attempt timed out after 20s",
                 ),
             ],
         };
         assert_eq!(
             error.to_string(),
-            "no provider connected after contacting 2 providers: \
+            "no exit node connected after contacting 2 exit nodes: \
              failed at remote-connect to Emq7Gc3PLdp…: gateway refused; \
              failed at timed-out(20000ms) to 9f2kQvR8sWx…: \
-             provider connect attempt timed out after 20s"
+             exit node connect attempt timed out after 20s"
         );
     }
 }

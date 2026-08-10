@@ -3,22 +3,23 @@
 //!
 //! This module holds the mixnet control and policy logic: the five-state
 //! [`MixnetMode`], the fail-closed [`route`] resolver shared by every mixnet-only
-//! surface, the escalating fan-out [`broadcast`] over an injected per-arm
-//! runner and random-number generator, the curated Broadcast Indexer list, and
-//! the [`supervisor`] that owns the spawned `nym-proxy` child. The fan-out
+//! surface, the escalating [`correspondent_rotation`] over an injected per-arm
+//! runner and random-number generator, the curated Correspondent list, and
+//! the [`supervisor`] that owns the spawned `nym-proxy` child. The escalation
 //! orchestrates the shared per-submission resilience policy across rounds, and
 //! because its arm runner and RNG are injected, the round, escalation, and cap
 //! logic runs in CI without a reachable mixnet or real time.
 #![forbid(unsafe_code)]
 
-pub mod broadcast;
-pub mod broadcast_indexers;
+pub mod correspondent_rotation;
+pub mod correspondents;
 pub mod driver;
 mod mode;
 pub mod probe;
 pub mod provision;
 pub mod route;
 pub mod supervisor;
+pub mod sweep;
 
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
@@ -26,6 +27,7 @@ pub(crate) use mode::MixnetSlot;
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
+pub use zingo_netutils::responsiveness::{PrioritisePrivacy, PrioritiseSpeed, Responsiveness};
 
 /// The temporal calibration a consumer of the mixnet transport reads from
 /// the wallet, so a user interface paces itself from the same source of
@@ -56,7 +58,7 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// The taxonomy stage of a SOCKS5 transmit failure
 /// (`docs/agents/net-diag-design.md`): a pure, typed match over the error's
 /// variants — no substring inspection anywhere. This is the one classifier
-/// for [`zingo_netutils::Socks5TransmitError`], shared by the fan-out, the
+/// for [`zingo_netutils::Socks5TransmitError`], shared by the escalation, the
 /// mixnet probe leg, and the attach readiness gate.
 pub(crate) fn socks5_transmit_stage(
     error: &zingo_netutils::Socks5TransmitError,

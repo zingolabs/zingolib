@@ -34,6 +34,10 @@ pub struct MixnetStatus {
     /// The local SOCKS5 address, present exactly while ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub socks5_addr: Option<String>,
+    /// The Exit Node identities the ready transport bound, present only
+    /// while ready.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub exits: Vec<String>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,6 +56,8 @@ struct RawMixnetStatus {
     #[serde(default)]
     socks5_addr: Option<String>,
     #[serde(default)]
+    exits: Vec<String>,
+    #[serde(default)]
     bootstrap_detail: Option<String>,
     #[serde(default)]
     death: Option<DeathReport>,
@@ -67,6 +73,9 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
         if raw.socks5_addr.is_some() && raw.mode != MixnetMode::Ready {
             return Err(stray("socks5_addr", raw.mode));
         }
+        if !raw.exits.is_empty() && raw.mode != MixnetMode::Ready {
+            return Err(stray("exits", raw.mode));
+        }
         if raw.bootstrap_detail.is_some() && raw.mode != MixnetMode::Bootstrapping {
             return Err(stray("bootstrap_detail", raw.mode));
         }
@@ -76,6 +85,7 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
         Ok(MixnetStatus {
             mode: raw.mode,
             socks5_addr: raw.socks5_addr,
+            exits: raw.exits,
             bootstrap_detail: raw.bootstrap_detail,
             death: raw.death,
         })
@@ -89,6 +99,7 @@ impl MixnetStatus {
         MixnetStatus {
             mode,
             socks5_addr: None,
+            exits: Vec::new(),
             bootstrap_detail: None,
             death: None,
         }
@@ -190,6 +201,7 @@ mod wire_contract {
             &MixnetStatus {
                 mode: MixnetMode::Bootstrapping,
                 socks5_addr: None,
+                exits: Vec::new(),
                 bootstrap_detail: Some("connecting to gateway".into()),
                 death: None,
             },
@@ -203,10 +215,25 @@ mod wire_contract {
             &MixnetStatus {
                 mode: MixnetMode::Ready,
                 socks5_addr: Some("127.0.0.1:1080".into()),
+                exits: Vec::new(),
                 bootstrap_detail: None,
                 death: None,
             },
             r#"{"mode":"ready","socks5_addr":"127.0.0.1:1080"}"#,
+        );
+    }
+
+    #[test]
+    fn ready_carries_its_bound_exits() {
+        pin(
+            &MixnetStatus {
+                mode: MixnetMode::Ready,
+                socks5_addr: Some("127.0.0.1:1080".into()),
+                exits: vec!["exit-alpha".into(), "exit-beta".into()],
+                bootstrap_detail: None,
+                death: None,
+            },
+            r#"{"mode":"ready","socks5_addr":"127.0.0.1:1080","exits":["exit-alpha","exit-beta"]}"#,
         );
     }
 
@@ -216,6 +243,7 @@ mod wire_contract {
             &MixnetStatus {
                 mode: MixnetMode::Died,
                 socks5_addr: None,
+                exits: Vec::new(),
                 bootstrap_detail: None,
                 death: Some(DeathReport {
                     at: fixed_at(),
@@ -236,6 +264,7 @@ mod wire_contract {
             &MixnetStatus {
                 mode: MixnetMode::Died,
                 socks5_addr: None,
+                exits: Vec::new(),
                 bootstrap_detail: None,
                 death: Some(DeathReport {
                     at: fixed_at(),
@@ -267,6 +296,7 @@ mod wire_contract {
             r#"{"mode":"unattached","socks5_addr":"127.0.0.1:1080"}"#,
             r#"{"mode":"ready","bootstrap_detail":"connecting to gateway"}"#,
             r#"{"mode":"bootstrapping","death":{"at":0}}"#,
+            r#"{"mode":"bootstrapping","exits":["exit-alpha"]}"#,
         ] {
             assert!(
                 serde_json::from_str::<MixnetStatus>(hostile).is_err(),

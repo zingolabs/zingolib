@@ -1,22 +1,39 @@
 # zingolib
 
-A Rust Zcash light-wallet library. The vocabulary below is the migration
-domain (ZIP 318, Orchard → Ironwood); it follows the ZIP's language, with
-gaps filled from the Shielded Labs migration-security recommendations.
+A Rust Zcash light-wallet library. The vocabulary below covers the
+migration domain (ZIP 318, Orchard → Ironwood), which follows the ZIP's
+language with gaps filled from the Shielded Labs migration-security
+recommendations, and the session's network posture.
 
 ## Language
+
+### Command classes
+
+**Transmitting command**:
+A command whose execution emits mixnet-bound traffic: a transaction
+Transmission, the price fetch, or the mixnet probe. The Online consent
+covers exactly this class.
+_Avoid_: network command (conflates this class with sync-class commands)
+
+**Sync-class command**:
+A command that speaks only to the sync Indexer over the session route.
+It needs a configured Indexer, never the Online transmission consent.
+
+**Readiness budget**:
+The bounded time a transmitting command waits for a bootstrapping mixnet
+to become ready before the typed refusal stands.
 
 ### Migration paths
 
 **Immediate migration**:
 The non-private ZIP 318 option ("migrate immediately"): every spendable
 Orchard note swept into one Ironwood output per transaction, real amounts
-visible on-chain, broadcast at once.
+visible on-chain, transmitted at once.
 _Avoid_: drain
 
 **Scheduled migration**:
 The private ZIP 318 flow: note splitting into denominations, then parts
-broadcast across buckets.
+transmitted across buckets.
 
 **Note splitting**:
 Phase 1 of the scheduled flow: Orchard self-sends that resize notes to

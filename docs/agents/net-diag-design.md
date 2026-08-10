@@ -20,14 +20,14 @@ reads the milestone lines below).
   (`LightClient::update_current_price` and
   `update_current_price_over_mixnet` fetch before any wallet lock is
   taken and re-acquire briefly to record). The remedy-3 audit of the
-  broadcast fan-out and attach validation under long-held locks remains
+  Transmission fan-out and attach validation under long-held locks remains
   open in issue #2552.
 - **Sync-path probes**: LANDED. `zingolib::nym::probe::probe_sync_server`
   (see the addendum below).
 - **Fielded integrations**: LANDED for the price fetch
   (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
-  untouched reqwest source), the fan-out (`FanoutError::AllFailed`
-  carries typed per-witness attempts), the attach validation
+  untouched reqwest source), the fan-out (`EscalationError::AllFailed`
+  carries typed per-correspondent attempts), the attach validation
   (`LightClient::mixnet_death_detail`), both probe shapes
   (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`), and
   the provider connect race in the `zingo-netutils` workspace
@@ -48,7 +48,7 @@ died with `tls handshake eof`. The root causes of two earlier outages
 (an uninitialized platform verifier, then an empty manual root store)
 each cost a debugging session because every error crossed the system as
 flattened prose. The wallet's own liveness verdict (`died`) says nothing
-about why. Send fan-out failures join per-witness errors into one
+about why. Send fan-out failures join per-correspondent errors into one
 string.
 
 The information exists at the failure site and is destroyed on the way
@@ -56,7 +56,7 @@ out. This design keeps it.
 
 ## Goals
 
-1. Every covered network operation (price fetch, broadcast fan-out,
+1. Every covered network operation (price fetch, Transmission fan-out,
    attach validation) reports failures as data: which stage failed,
    against what target, with the full cause chain.
 2. One taxonomy reused across all of them, so a consumer that learns to
@@ -217,10 +217,10 @@ up.
 `classify_reqwest`. The success payload keeps carrying `via_socks5` (the
 route attestation, consumed by zingo-mobile). Do not disturb that field.
 
-### Broadcast fan-out
+### Transmission fan-out
 
-`fanout_broadcast`'s per-witness failures become `NetOpFailure` values,
-target set to the witness host. The fan-out report becomes a vector of
+`escalating_transmit`'s per-correspondent failures become `NetOpFailure` values,
+target set to the correspondent host. The fan-out report becomes a vector of
 typed attempts. The joined-prose rendering may remain as a Display on
 top of the vector, for the existing consumers.
 
@@ -300,7 +300,7 @@ observability did not hold.
    Document the small race this admits (the route could die mid-fetch,
    which the fetch itself then reports as a typed failure).
 3. Audit the other covered operations for the same coupling. The
-   broadcast fan-out and attach validation also run under long-held
+   Transmission fan-out and attach validation also run under long-held
    locks. For each, either the lock is released across network waits or
    the operation's progress is observable through a side channel that
    shares no lock with it (zingo-mobile's DRAIN_PROGRESS idiom, an
@@ -374,7 +374,7 @@ Third, failure values travel whole below every seam: the transmit policy
 (`resilient_transmit`) is generic over each target's typed failure
 (`tonic::Status` for clearnet, `Socks5TransmitError` for the mixnet) and
 classifies only the server's own verdict text; the fan-out collects
-per-witness typed attempts and renders prose only in `Display`; the
+per-correspondent typed attempts and renders prose only in `Display`; the
 existing rendered-text seams (the indexer history's `FailureKind`, the
 send path's `Result<String, String>` boundary in the NotYetTyped backlog)
 were left where they were rather than adding new ones.

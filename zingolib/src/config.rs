@@ -18,7 +18,6 @@ use crate::wallet::{
     WalletBase, WalletSettings,
     error::{KeyError, WalletError},
     keys::unified::UnifiedKeyStore,
-    migration::MigrationBroadcastConfig,
 };
 
 /// The default indexer URIs, from the census (the sole source of truth for
@@ -310,8 +309,17 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// The caller-supplied migration broadcast candidate pool and synchronization-operator policy, empty by default.
-    migration_broadcast: MigrationBroadcastConfig,
+    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
+    /// different server than the one used for synchronization reduces the
+    /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
+    /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
+    /// must be https on a host distinct from the synchronization endpoint's
+    /// (a shared host is refused). Unset, parts go to one Correspondent
+    /// drawn at random per submission. On the clearnet opt-out path it falls
+    /// back to `indexer_uri` with a logged warning when unset. When both are
+    /// `None` the client emits no network traffic and transmission fails
+    /// with [`crate::lightclient::error::LightClientError::Offline`].
+    migration_transmission_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -335,10 +343,10 @@ impl ClientConfig {
         self.indexer_uri.clone()
     }
 
-    /// Returns the migration broadcast routing configuration.
+    /// Returns the migration transmission URI, if one is configured.
     #[must_use]
-    pub fn migration_broadcast(&self) -> MigrationBroadcastConfig {
-        self.migration_broadcast.clone()
+    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
+        self.migration_transmission_uri.clone()
     }
 
     /// Returns wallet directory.
@@ -379,7 +387,7 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
-    migration_broadcast: MigrationBroadcastConfig,
+    migration_transmission_uri: Option<http::Uri>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -403,9 +411,10 @@ impl ClientConfigBuilder {
         self
     }
 
-    /// Set the migration broadcast routing configuration.
-    pub fn set_migration_broadcast(mut self, migration_broadcast: MigrationBroadcastConfig) -> Self {
-        self.migration_broadcast = migration_broadcast;
+    /// Set a dedicated URI for transmitting Ironwood migration parts,
+    /// distinct from the synchronization endpoint.
+    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
+        self.migration_transmission_uri = Some(migration_transmission_uri);
         self
     }
 
@@ -447,7 +456,7 @@ impl ClientConfigBuilder {
 
         Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
-            migration_broadcast: self.migration_broadcast,
+            migration_transmission_uri: self.migration_transmission_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -460,7 +469,7 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_uri: None,
-            migration_broadcast: MigrationBroadcastConfig::default(),
+            migration_transmission_uri: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,

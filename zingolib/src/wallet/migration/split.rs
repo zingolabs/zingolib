@@ -192,8 +192,6 @@ pub struct MigrationPlan {
     /// [`MigrationParams::sweep_min`]) plus any balance too small to form
     /// even the smallest denomination.
     pub residual: u64,
-    /// The eligible broadcast set, filled by the client layer and excluded from [`plan_hash`].
-    pub broadcast_targets: Vec<super::BroadcastTarget>,
 }
 
 impl MigrationPlan {
@@ -382,9 +380,6 @@ pub fn plan_migration(
         split_rounds,
         parts,
         residual,
-        // The pure planner knows nothing of the caller's candidate pool; the
-        // client layer fills this from the `MigrationBroadcastConfig`.
-        broadcast_targets: Vec::new(),
     }
 }
 
@@ -658,7 +653,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
     pub(crate) fn build_note_split_transaction(
