@@ -634,7 +634,9 @@ pub(crate) async fn acquire_ready_transport(
     use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
-    let proxy = acquirer.acquire(PrioritisePrivacy::CLASS, clutch, publisher)?;
+    let proxy = acquirer
+        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
+        .await?;
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {

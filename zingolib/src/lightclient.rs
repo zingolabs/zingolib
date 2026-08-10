@@ -844,11 +844,36 @@ impl LightClient {
     pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
         binary_path: &std::path::Path,
-    ) -> Result<(), crate::nym::MixnetProxyError> {
+    ) -> Result<(), crate::nym::acquire::TransportError> {
+        self.enable_mixnet_from(
+            std::sync::Arc::new(crate::nym::acquire::SpawnedBinary::at(
+                binary_path.to_path_buf(),
+            )),
+            R::CLASS,
+        )
+        .await
+    }
+
+    /// Enables Mixnet Mode on a platform that forbids subprocesses, taking
+    /// every transport from `host` instead of spawning one.
+    pub async fn enable_mixnet_via_host<R: zingo_netutils::responsiveness::Responsiveness>(
+        &mut self,
+        host: std::sync::Arc<dyn crate::nym::acquire::ProxyHost>,
+    ) -> Result<(), crate::nym::acquire::TransportError> {
+        self.enable_mixnet_from(
+            std::sync::Arc::new(crate::nym::acquire::HostedProxy::owned_by(host)),
+            R::CLASS,
+        )
+        .await
+    }
+
+    /// Enables Mixnet Mode over `acquirer`, the one seam both platforms fill.
+    async fn enable_mixnet_from(
+        &mut self,
+        acquirer: std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>,
+        class: zingo_netutils::responsiveness::ResponsivenessClass,
+    ) -> Result<(), crate::nym::acquire::TransportError> {
         self.vacate_mixnet_slot().await;
-        let acquirer = std::sync::Arc::new(crate::nym::acquire::SpawnedBinary::at(
-            binary_path.to_path_buf(),
-        ));
         let clutch = match self
             .correspondent_pools
             .draw_clutch(acquirer.as_ref())
@@ -860,16 +885,18 @@ impl LightClient {
                 // the spawned binary must never self-draw outside the
                 // reservation ledger.
                 self.publish_mixnet_slot_state();
-                return Err(crate::nym::MixnetProxyError::Acquisition(Box::new(refusal)));
+                return Err(refusal);
             }
         };
         let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
         match crate::nym::acquire::TransportAcquirable::acquire(
             acquirer.as_ref(),
-            R::CLASS,
+            class,
             &nodes,
             std::sync::Arc::clone(&self.mixnet_status),
-        ) {
+        )
+        .await
+        {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
                 // channel; nothing further to announce here. The Clutch is
@@ -961,7 +988,7 @@ impl LightClient {
         &mut self,
         strategy: crate::nym::ProvisionStrategy<'_>,
         policy: crate::nym::MixnetStartPolicy,
-    ) -> Result<(), crate::nym::MixnetProxyError> {
+    ) -> Result<(), crate::nym::acquire::TransportError> {
         match policy {
             crate::nym::MixnetStartPolicy::OptedOutThisSession => {
                 self.disable_mixnet().await;
@@ -977,9 +1004,10 @@ impl LightClient {
                     )
                     .await
                 }
-                crate::nym::ProvisionStrategy::Attach { socks5_addr, exits } => {
-                    self.attach_mixnet(socks5_addr, exits).await
-                }
+                crate::nym::ProvisionStrategy::Attach { socks5_addr, exits } => self
+                    .attach_mixnet(socks5_addr, exits)
+                    .await
+                    .map_err(crate::nym::acquire::TransportError::from),
             },
         }
     }
@@ -1418,7 +1446,9 @@ mod tests {
                 .expect_err("a malformed attach address must refuse");
             assert!(matches!(
                 error,
-                crate::nym::MixnetProxyError::InvalidAddress { .. }
+                crate::nym::acquire::TransportError::Proxy(
+                    crate::nym::MixnetProxyError::InvalidAddress { .. }
+                )
             ));
 
             assert_eq!(client.mixnet_mode(), crate::nym::MixnetMode::Unattached);

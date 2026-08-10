@@ -11,7 +11,7 @@
 //! logic runs in CI without a reachable mixnet or real time.
 #![forbid(unsafe_code)]
 
-pub(crate) mod acquire;
+pub mod acquire;
 
 /// The party a failure stage charges, unattributed when the stage cannot
 /// say which side failed.

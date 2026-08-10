@@ -1140,7 +1140,7 @@ pub enum NetworkCommandError {
     #[error("failed to start the nym proxy at '{path}': {source}")]
     ProxyStart {
         path: String,
-        source: zingolib::nym::MixnetProxyError,
+        source: zingolib::nym::acquire::TransportError,
     },
     /// The proxy spawned but its bootstrap reached a terminal failure while
     /// the command waited; re-enabling spawns a fresh proxy.

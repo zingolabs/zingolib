@@ -101,7 +101,8 @@ impl LightClient {
             &nodes,
             publisher,
         )
-        .map_err(ServerSelectionError::ProxyStart)?;
+        .await
+        .map_err(ServerSelectionError::TransportAcquisition)?;
 
         progress(SweepProgress::TransportBootstrapping);
         let socks5_addr = await_sweep_ready(&mut receiver).await?;
