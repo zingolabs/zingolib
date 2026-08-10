@@ -58,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a platform that forbids subprocesses can now supply the mixnet
+  transport. `nym::acquire` is public and adds the `ProxyHost` trait, which
+  a host implements to answer a directory query and to start one proxy over
+  a drawn Clutch, together with the `HostedTransport` record it answers
+  with. `LightClient` gains `enable_mixnet_via_host`, the mobile twin of
+  `enable_mixnet`. Both, and `start_mixnet_session`, now return
+  `nym::acquire::TransportError` rather than `MixnetProxyError`, because an
+  acquisition can fail before any proxy exists.
 - BREAKING: the attach path carries the platform host's bound Exit Node
   identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
   parameter and `nym::ProvisionStrategy::Attach` gains an `exits` field;
