@@ -39,8 +39,10 @@ use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
+use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
+use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
     ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
@@ -2012,7 +2014,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
                                 "chain_name" => chain_name_string,
                                 "address_kind" => "unified",
                                 "receivers_available" => receivers_available,
-                                "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                                "shielded_only_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
                             }
                             .pretty(2)
                         } else {
@@ -2458,6 +2460,56 @@ fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
         .map_err(|_| format!("creating output. Memo '{:?}' is too long", memo_str))
 }
 
+fn shielded_pool_name(pool: ShieldedPool) -> &'static str {
+    match pool {
+        ShieldedPool::Sapling => "sapling",
+        ShieldedPool::Orchard => "orchard",
+        ShieldedPool::Ironwood => "ironwood",
+    }
+}
+
+fn pool_name(pool: PoolType) -> &'static str {
+    match pool {
+        PoolType::Transparent => "transparent",
+        PoolType::Shielded(shielded) => shielded_pool_name(shielded),
+    }
+}
+
+fn push_pool(pools: &mut Vec<&'static str>, pool: &'static str) {
+    if !pools.contains(&pool) {
+        pools.push(pool);
+    }
+}
+
+fn proposal_source_pools<FeeRuleT, NoteRef>(
+    proposal: &Proposal<FeeRuleT, NoteRef>,
+) -> Vec<&'static str> {
+    let mut pools = Vec::new();
+    for step in proposal.steps() {
+        if !step.transparent_inputs().is_empty() {
+            push_pool(&mut pools, "transparent");
+        }
+        if let Some(inputs) = step.shielded_inputs() {
+            for note in inputs.notes() {
+                push_pool(&mut pools, shielded_pool_name(note.note().pool()));
+            }
+        }
+    }
+    pools
+}
+
+fn proposal_destination_pools<FeeRuleT, NoteRef>(
+    proposal: &Proposal<FeeRuleT, NoteRef>,
+) -> Vec<&'static str> {
+    let mut pools = Vec::new();
+    for step in proposal.steps() {
+        for pool in step.payment_pools().values() {
+            push_pool(&mut pools, pool_name(*pool));
+        }
+    }
+    pools
+}
+
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -2506,7 +2558,12 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
                 .await
                 .map_err(|e| ffi_error(SendError::from(e).into()))?;
             let fee = total_fee(&proposal).map_err(|e| ZingolibError::Send(e.to_string()))?;
-            Ok(object! { "fee" => fee.into_u64() }.pretty(2))
+            Ok(object! {
+                "fee" => fee.into_u64(),
+                "source_pools" => proposal_source_pools(&proposal),
+                "destination_pools" => proposal_destination_pools(&proposal),
+            }
+            .pretty(2))
         })
     })
 }
