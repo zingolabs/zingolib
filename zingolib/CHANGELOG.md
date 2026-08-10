@@ -118,7 +118,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the Correspondent Pools land. A spawned session keeps an
   Indexer Pool (two Exit-Bound transports) and a Price Source
   Pool (one Shared-exit transport), refilled in the background under
-  `PrioritisePrivacy` and drained on disable. `update_current_price`
+  `PrioritisePrivacy` and drained on disable. A drain bumps a generation
+  and clears the acquirer, so a refill still in flight when the user
+  disables Mixnet Mode stops its child and recycles its exit rather than
+  admitting a live mixnet process into the drained pool. `update_current_price`
   on a spawned session consumes the price member — one fresh Shared
   exit per run, the refill draw excluding the spent exit — instead of
   riding the slot's shared tunnel; an attached session is unchanged.

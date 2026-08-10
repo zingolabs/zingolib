@@ -111,6 +111,9 @@ pub(crate) struct Pools {
     /// one, and always `None` for attached sessions.
     acquirer:
         std::sync::Mutex<Option<std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>>>,
+    /// Bumped by every drain, so a refill launched before the drain refuses
+    /// to admit its child into the drained pool.
+    generation: std::sync::atomic::AtomicU64,
 }
 
 impl Pools {
@@ -121,7 +124,13 @@ impl Pools {
             price: std::sync::Mutex::new(CorrespondentPool::new(PRICE_POOL_COMPLEMENT)),
             exits: std::sync::Arc::new(std::sync::Mutex::new(exit_pool::ExitPool::default())),
             acquirer: std::sync::Mutex::new(None),
+            generation: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    /// The current drain generation, captured by a refill at launch.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Draws a Clutch, seeding the Exit Pool from the directory first when
@@ -153,8 +162,15 @@ impl Pools {
         self.acquirer.lock().expect("pool acquirer mutex").clone()
     }
 
-    /// Stops every member of both pools, for session teardown.
+    /// Stops every member of both pools and forbids the session's in-flight
+    /// refills from admitting, for session teardown.
     pub(crate) async fn drain_all(&self) {
+        // Bump first, so a refill mid-acquisition sees the new generation and
+        // refuses to admit; then clear the acquirer so no later ensure_filled
+        // relaunches against a torn-down session.
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        *self.acquirer.lock().expect("pool acquirer mutex") = None;
         let drained: Vec<Member<crate::nym::MixnetProxy>> = {
             let mut members = self.indexer.lock().expect("indexer pool mutex").drain();
             members.extend(self.price.lock().expect("price pool mutex").drain());
@@ -215,6 +231,10 @@ pub(crate) enum PoolKind {
 /// One refill: acquire a ready transport excluding every in-use and spent
 /// exit, then admit it.
 async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
+    // The generation this refill was launched under; a drain that lands
+    // before we admit bumps it, and we then refuse rather than admit a live
+    // child into the drained pool.
+    let launched_at = pools.generation();
     let pool = match kind {
         PoolKind::Indexer => &pools.indexer,
         PoolKind::Price => &pools.price,
@@ -242,9 +262,23 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
                 .expect("the bound exit is one of the clutch's nodes");
             let lease = clutch.swap_remove(bound);
             drop(clutch);
-            let mut pool = pool.lock().expect("pool mutex");
-            pool.admit(Member { transport, lease });
-            pool.note_refill_finished();
+            // The generation check and the admit share one lock hold, so a
+            // drain cannot slip between them and orphan the child.
+            let stale = {
+                let mut pool = pool.lock().expect("pool mutex");
+                pool.note_refill_finished();
+                if pools.generation() == launched_at {
+                    pool.admit(Member { transport, lease });
+                    None
+                } else {
+                    Some(Member { transport, lease })
+                }
+            };
+            if let Some(member) = stale {
+                // A drain landed while we acquired: stop the child and drop
+                // the lease rather than admit into a torn-down session.
+                member.transport.stop().await;
+            }
         }
         Err(cause) => {
             // Dropping the clutch recycles every reservation.
@@ -338,5 +372,25 @@ mod tests {
             "a member is consumed, never reused"
         );
         assert!(pool.take().member.is_none(), "the pool is spent");
+    }
+
+    /// HYPOTHESIS: draining bumps the generation and clears the acquirer, the
+    /// two effects a refill launched before the drain checks to refuse
+    /// admitting its child into the torn-down session.
+    #[tokio::test]
+    async fn draining_bumps_the_generation_and_clears_the_acquirer() {
+        let pools = Pools::new();
+        let before = pools.generation();
+        // The pools hold no members, so the drain has nothing to stop.
+        pools.drain_all().await;
+        assert_ne!(
+            pools.generation(),
+            before,
+            "a drain must bump the generation so in-flight refills refuse"
+        );
+        assert!(
+            pools.acquirer().is_none(),
+            "a drain must clear the acquirer so ensure_filled cannot relaunch"
+        );
     }
 }
