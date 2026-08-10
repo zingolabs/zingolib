@@ -87,6 +87,9 @@ use std::fmt;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum NetOpStage {
+    /// The local proxy binary exited during launch, before announcing its
+    /// protocol.
+    ProxyLaunch,
     /// Refused before any network touch: the mixnet route resolved to
     /// off, bootstrapping, or died, or a policy check refused the target.
     RouteResolution,
@@ -121,6 +124,7 @@ pub enum NetOpStage {
 impl fmt::Display for NetOpStage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            NetOpStage::ProxyLaunch => write!(f, "proxy-launch"),
             NetOpStage::RouteResolution => write!(f, "route-resolution"),
             NetOpStage::RemoteConnect => write!(f, "remote-connect"),
             NetOpStage::LocalProxyConnect => write!(f, "local-proxy-connect"),
@@ -224,6 +228,7 @@ mod tests {
     #[test]
     fn stage_rendering_is_the_pinned_kebab_case_contract() {
         let table = [
+            (NetOpStage::ProxyLaunch, "proxy-launch"),
             (NetOpStage::RouteResolution, "route-resolution"),
             (NetOpStage::RemoteConnect, "remote-connect"),
             (NetOpStage::LocalProxyConnect, "local-proxy-connect"),

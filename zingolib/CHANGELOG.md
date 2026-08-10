@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- A spawned `nym-proxy` that dies before speaking its stdout protocol now
+  latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)
+  naming the binary, the launch arguments, and the child's stderr tail, so a
+  version-skewed older binary is diagnosed instead of reported as a bare
+  death.
 - `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
   deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
   Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
@@ -62,8 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: every pull of a mixnet Transmission binds its own Exclusive
+  exit (ADR 0039). A spawned session's send escalation consumes one
+  Indexer Pool member per pull, acquiring inline past the complement,
+  and tears each transport down when its pull ends, so an exit carries
+  exactly one Correspondent contact. `TransmitRoute::Mixnet` now
+  attests the winning pull's own tunnel rather than a shared one. An
+  attached session shares the slot's tunnel as before.
 - BREAKING: the Correspondent Pools land. A spawned session keeps an
-  Indexer Pool (two Correspondent-Bound transports) and a Price Source
+  Indexer Pool (two Exit-Bound transports) and a Price Source
   Pool (one Shared-exit transport), refilled in the background under
   `PrioritisePrivacy` and drained on disable. `update_current_price`
   on a spawned session consumes the price member — one fresh Shared

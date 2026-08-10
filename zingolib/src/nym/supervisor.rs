@@ -78,6 +78,9 @@ pub enum MixnetProxyError {
     /// The spawned child exposed no stdin to hold open as the liveness pipe.
     #[error("the nym-proxy child exposed no stdin")]
     NoStdin,
+    /// The spawned child exposed no stderr to collect its diagnostics from.
+    #[error("the nym-proxy child exposed no stderr")]
+    NoStderr,
     /// The address handed to `MixnetProxy::attach` is not a socket address.
     #[error("the attached SOCKS5 address '{addr}' does not parse as a socket address")]
     InvalidAddress {
@@ -134,8 +137,10 @@ fn publish_locked(guarded: &ProxyState, publisher: &StatusPublisher) {
 
 /// One latched death, read whole: when it happened and, when the watcher
 /// held one, the typed cause. The timestamp is always present because every
-/// death has a moment; the detail is `None` for a spawned child's closed
-/// stdout pipe, whose diagnostic is the child's own stderr.
+/// death has a moment; the detail is `None` for a spawned child whose
+/// stdout closed after speaking the protocol, while a child that dies
+/// without ever speaking it latches a typed `proxy-launch` cause carrying
+/// the launch arguments and its stderr tail — the version-skew diagnosis.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeathReport {
     /// When the death latched, by the system clock — renderable as wall
@@ -229,14 +234,17 @@ impl MixnetProxy {
         publisher: StatusPublisher,
         excluded_exits: &[String],
     ) -> Result<Self, MixnetProxyError> {
-        let mut command = Command::new(binary_path);
-        command.arg("--responsiveness").arg(R::CLASS.wire());
+        let mut launch_args = vec!["--responsiveness".to_string(), R::CLASS.wire().to_string()];
         for exit in excluded_exits {
-            command.arg("--exclude-exit").arg(exit);
+            launch_args.push("--exclude-exit".to_string());
+            launch_args.push(exit.clone());
         }
+        let mut command = Command::new(binary_path);
+        command.args(&launch_args);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         // A distinct process group detaches the child from the terminal's
         // foreground group, so a user's Ctrl-C aborts the wallet command
@@ -251,6 +259,14 @@ impl MixnetProxy {
         })?;
         let stdout = child.stdout.take().ok_or(MixnetProxyError::NoStdout)?;
         let stdin = child.stdin.take().ok_or(MixnetProxyError::NoStdin)?;
+        let stderr = child.stderr.take().ok_or(MixnetProxyError::NoStderr)?;
+        let stderr_tail = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+        tokio::spawn(collect_stderr(stderr, Arc::clone(&stderr_tail)));
+        let launch = LaunchContext {
+            binary: binary_path.display().to_string(),
+            args: launch_args,
+            stderr_tail,
+        };
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
@@ -259,7 +275,12 @@ impl MixnetProxy {
             death: None,
         }));
         publish_locked(&state.lock().expect("proxy state mutex"), &publisher);
-        let reader = tokio::spawn(drive_state(stdout, Arc::clone(&state), publisher));
+        let reader = tokio::spawn(drive_state(
+            stdout,
+            Arc::clone(&state),
+            publisher,
+            Some(launch),
+        ));
         Ok(MixnetProxy {
             state,
             transport: Transport::Spawned {
@@ -499,10 +520,13 @@ async fn drive_state<R: AsyncRead + Unpin>(
     stdout: R,
     state: Arc<Mutex<ProxyState>>,
     publisher: StatusPublisher,
+    launch: Option<LaunchContext>,
 ) {
+    let mut spoke_protocol = false;
     let mut lines = BufReader::new(stdout).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(exit) = parse_exit_line(&line) {
+            spoke_protocol = true;
             // Recorded silently: the exit becomes visible evidence in the
             // Ready snapshot the address announcement publishes.
             let mut guarded = state.lock().expect("proxy state mutex");
@@ -510,6 +534,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
             continue;
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
+            spoke_protocol = true;
             let mut guarded = state.lock().expect("proxy state mutex");
             guarded.socks5_addr = Some(addr.to_string());
             guarded.bootstrap_detail = None;
@@ -519,6 +544,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
             continue;
         }
         if let Some(detail) = parse_status_line(&line) {
+            spoke_protocol = true;
             let mut guarded = state.lock().expect("proxy state mutex");
             guarded.bootstrap_detail = Some(detail.to_string());
             publish_locked(&guarded, &publisher);
@@ -527,17 +553,70 @@ async fn drive_state<R: AsyncRead + Unpin>(
     // Stdout closed. The child exited without a deliberate stop(), so the
     // transport is lost: refuse, never leak to clearnet. A stale address is
     // cleared so no surface can dial a dead proxy.
+    let detail = if spoke_protocol {
+        // A closed pipe after protocol speech has no cause to hold.
+        None
+    } else {
+        launch.as_ref().map(launch_failure_report)
+    };
     let mut guarded = state.lock().expect("proxy state mutex");
     guarded.mode = MixnetMode::Died;
     guarded.socks5_addr = None;
     guarded.exits.clear();
     guarded.bootstrap_detail = None;
-    // A closed pipe has no cause to hold, but every death has a moment.
     guarded.death = Some(DeathReport {
         at: std::time::SystemTime::now(),
-        detail: None,
+        detail,
     });
     publish_locked(&guarded, &publisher);
+}
+
+/// The trailing child stderr lines a launch-death diagnosis carries.
+const STDERR_TAIL_CAPACITY: usize = 8;
+
+/// How the supervisor launched its child, held so a death before the child
+/// ever speaks the stdout protocol can be diagnosed.
+struct LaunchContext {
+    binary: String,
+    args: Vec<String>,
+    stderr_tail: Arc<Mutex<std::collections::VecDeque<String>>>,
+}
+
+/// Drains the child's stderr for its whole life, logging each line and
+/// keeping the trailing lines for the launch-death diagnosis.
+async fn collect_stderr<R: AsyncRead + Unpin>(
+    stderr: R,
+    tail: Arc<Mutex<std::collections::VecDeque<String>>>,
+) {
+    let mut lines = BufReader::new(stderr).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        tracing::warn!("nym-proxy stderr: {line}");
+        let mut guarded = tail.lock().expect("stderr tail mutex");
+        if guarded.len() == STDERR_TAIL_CAPACITY {
+            guarded.pop_front();
+        }
+        guarded.push_back(line);
+    }
+}
+
+/// The typed cause for a child that exited before speaking the wallet's
+/// stdout protocol: the launch arguments it may not have understood and the
+/// stderr it left behind.
+fn launch_failure_report(launch: &LaunchContext) -> zingo_net_diag::NetOpFailure {
+    let mut cause_chain = vec![
+        "the nym-proxy exited during launch without speaking the wallet's stdout protocol; \
+         an installed binary older than the wallet may not understand the launch arguments \
+         (version skew)"
+            .to_string(),
+        format!("launch arguments: {}", launch.args.join(" ")),
+    ];
+    let tail = launch.stderr_tail.lock().expect("stderr tail mutex");
+    cause_chain.extend(tail.iter().map(|line| format!("stderr: {line}")));
+    zingo_net_diag::NetOpFailure {
+        stage: zingo_net_diag::NetOpStage::ProxyLaunch,
+        target: launch.binary.clone(),
+        cause_chain,
+    }
 }
 
 /// Extract the SOCKS5 address from a child stdout line, if it is the
@@ -700,6 +779,7 @@ mod tests {
             OpenAfter::new(bytes),
             Arc::clone(&state),
             test_publisher(),
+            None,
         ));
         for _ in 0..1000 {
             if state.lock().unwrap().mode != MixnetMode::Bootstrapping {
@@ -801,6 +881,7 @@ mod tests {
             b"failed to reach any gateway\n".as_slice(),
             Arc::clone(&state),
             test_publisher(),
+            None,
         )
         .await;
         let s = state.lock().unwrap();
@@ -825,6 +906,7 @@ mod tests {
             b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
             Arc::clone(&state),
             test_publisher(),
+            None,
         )
         .await;
         let s = state.lock().unwrap();
@@ -844,6 +926,86 @@ mod tests {
         assert!(
             latch.detail.is_none(),
             "a closed pipe carries no cause; its diagnostic is the child's stderr"
+        );
+    }
+
+    /// A launch context whose stderr tail already holds `lines`.
+    fn launch_context(lines: &[&str]) -> LaunchContext {
+        LaunchContext {
+            binary: "/opt/zingo/nym-proxy".to_string(),
+            args: vec![
+                "--responsiveness".to_string(),
+                "prioritise-speed".to_string(),
+            ],
+            stderr_tail: Arc::new(Mutex::new(
+                lines.iter().map(|line| line.to_string()).collect(),
+            )),
+        }
+    }
+
+    /// HYPOTHESIS: a child that closes stdout without ever speaking the
+    /// protocol latches a typed proxy-launch cause naming the binary, the
+    /// launch arguments, and its stderr tail — the version-skew diagnosis.
+    /// Falsified if the death report stays bare.
+    #[tokio::test]
+    async fn a_launch_death_diagnoses_version_skew() {
+        let state = bootstrapping();
+        drive_state(
+            b"error: unrecognized flag\n".as_slice(),
+            Arc::clone(&state),
+            test_publisher(),
+            Some(launch_context(&["unexpected argument '--responsiveness'"])),
+        )
+        .await;
+        let s = state.lock().unwrap();
+        assert_eq!(s.mode, MixnetMode::Died);
+        let detail = s
+            .death
+            .as_ref()
+            .and_then(|report| report.detail.as_ref())
+            .expect("a pre-protocol death carries the launch diagnosis");
+        assert_eq!(detail.stage, zingo_net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.target, "/opt/zingo/nym-proxy");
+        assert!(
+            detail
+                .cause_chain
+                .iter()
+                .any(|text| text.contains("version skew"))
+        );
+        assert!(
+            detail
+                .cause_chain
+                .iter()
+                .any(|text| text.contains("--responsiveness prioritise-speed"))
+        );
+        assert!(
+            detail
+                .cause_chain
+                .iter()
+                .any(|text| text.contains("unexpected argument '--responsiveness'"))
+        );
+    }
+
+    /// HYPOTHESIS: one protocol line proves the child speaks the wallet's
+    /// stdout grammar, so its later death carries no launch diagnosis.
+    /// Falsified if every spawned death now claims a version skew.
+    #[tokio::test]
+    async fn a_protocol_line_disarms_the_launch_diagnosis() {
+        let state = bootstrapping();
+        drive_state(
+            b"NYM_STATUS=discovering exit gateways\n".as_slice(),
+            Arc::clone(&state),
+            test_publisher(),
+            Some(launch_context(&[])),
+        )
+        .await;
+        let s = state.lock().unwrap();
+        assert_eq!(s.mode, MixnetMode::Died);
+        assert!(
+            s.death
+                .as_ref()
+                .is_some_and(|report| report.detail.is_none()),
+            "a death after protocol speech is not a launch failure"
         );
     }
 
@@ -1009,6 +1171,7 @@ mod tests {
             OpenAfter::new(b"SOCKS5_ADDR=127.0.0.1:43210\n"),
             Arc::clone(&state),
             Arc::clone(&publisher),
+            None,
         ));
         {
             let ready = receiver
@@ -1033,6 +1196,7 @@ mod tests {
             b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
             Arc::clone(&state),
             Arc::clone(&publisher),
+            None,
         )
         .await;
         let latest = receiver.borrow().clone();
@@ -1218,6 +1382,7 @@ mod tests {
             b"SOCKS5_ADDR=127.0.0.1:43210\n".as_slice(),
             Arc::clone(&state),
             test_publisher(),
+            None,
         )
         .await;
         let proxy = proxy_over(&state);
