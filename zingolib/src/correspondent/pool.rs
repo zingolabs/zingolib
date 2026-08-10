@@ -125,17 +125,13 @@ impl Pools {
     pub(crate) async fn draw_clutch(
         &self,
         acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<String>, crate::nym::acquire::AcquireError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;
             self.exits.lock().expect("exit pool mutex").seed(discovered);
         }
-        self.exits
-            .lock()
-            .expect("exit pool mutex")
-            .draw_clutch()
-            .map_err(|refusal| refusal.to_string())
+        Ok(self.exits.lock().expect("exit pool mutex").draw_clutch()?)
     }
 
     /// Returns one transport's Exclusive Lease to the Exit Pool when its
@@ -255,13 +251,7 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
             pool.note_refill_finished();
         }
         Err(cause) => {
-            {
-                let mut exits = pools.exits.lock().expect("exit pool mutex");
-                for node in &clutch {
-                    exits.note_failure(node);
-                }
-                exits.recycle(clutch);
-            }
+            pools.exits.lock().expect("exit pool mutex").recycle(clutch);
             pool.lock().expect("pool mutex").note_refill_finished();
             log::warn!("pool refill failed: {cause}");
         }

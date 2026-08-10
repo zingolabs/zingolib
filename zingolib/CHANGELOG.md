@@ -80,9 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reservations. Every acquisition draws a Clutch from it, recycles the
   unbound reservations the moment it binds one, and returns the
   Exclusive Lease when the transport's lifecycle ends, so two transports
-  can never hold one exit. Session Retirement withholds a node whose
-  failure count stands more than a standard deviation above the pool's
-  mean. The exclusion lists this replaces are gone.
+  can never hold one exit. Every discovered node stays eligible for the
+  whole session: population hygiene belongs to the upstream directory,
+  not to an in-wallet statistic. The exclusion lists this replaces are
+  gone.
 - BREAKING: every pull of a mixnet Transmission binds its own Exclusive
   exit (ADR 0039). A spawned session's send escalation consumes one
   Indexer Pool member per pull, acquiring inline past the complement,

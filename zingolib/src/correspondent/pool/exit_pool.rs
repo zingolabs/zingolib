@@ -1,17 +1,9 @@
 //! The Exit Pool: the session's sole issuer of Exit Node Reservations.
 #![forbid(unsafe_code)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rand::seq::SliceRandom as _;
-
-/// How many standard deviations above the pool's mean failure count a node
-/// must stand before Session Retirement withholds it.
-const RETIREMENT_SIGMA_MULTIPLE: f64 = 1.0;
-
-/// The fewest nodes whose failure evidence can support a retirement
-/// judgment; below it a single unlucky node would retire itself.
-const RETIREMENT_MINIMUM_POPULATION: usize = 3;
 
 /// Why the pool could issue no clutch.
 #[derive(Debug, thiserror::Error)]
@@ -19,13 +11,11 @@ pub(crate) enum ExitPoolError {
     /// The session has not yet learned the exit population.
     #[error("the exit pool has no population yet")]
     NotSeeded,
-    /// Every reservation is held or retired, so nothing can be drawn.
-    #[error("every exit is held or retired: {held} held, {retired} retired, {population} known")]
+    /// Every reservation is held, so nothing can be drawn.
+    #[error("every exit is held: {held} held, {population} known")]
     Exhausted {
         /// Reservations currently issued to some holder.
         held: usize,
-        /// Nodes Session Retirement has withheld.
-        retired: usize,
         /// The whole discovered population.
         population: usize,
     },
@@ -37,8 +27,6 @@ pub(crate) enum ExitPoolError {
 pub(crate) struct ExitPool {
     population: Vec<String>,
     issued: HashSet<String>,
-    failures: HashMap<String, u32>,
-    retired: HashSet<String>,
 }
 
 impl ExitPool {
@@ -60,13 +48,12 @@ impl ExitPool {
         let drawable: Vec<String> = self
             .population
             .iter()
-            .filter(|node| !self.issued.contains(*node) && !self.retired.contains(*node))
+            .filter(|node| !self.issued.contains(*node))
             .cloned()
             .collect();
         if drawable.is_empty() {
             return Err(ExitPoolError::Exhausted {
                 held: self.issued.len(),
-                retired: self.retired.len(),
                 population: self.population.len(),
             });
         }
@@ -88,41 +75,6 @@ impl ExitPool {
         for node in reservations {
             self.issued.remove(&node);
         }
-    }
-
-    /// Charges one connection failure against a node, then re-judges
-    /// Session Retirement over the pool's evidence.
-    pub(crate) fn note_failure(&mut self, node: &str) {
-        *self.failures.entry(node.to_string()).or_default() += 1;
-        self.retire_outliers();
-    }
-
-    /// Withholds every node whose failure count stands more than
-    /// [`RETIREMENT_SIGMA_MULTIPLE`] deviations above the pool's mean.
-    fn retire_outliers(&mut self) {
-        if self.population.len() < RETIREMENT_MINIMUM_POPULATION {
-            return;
-        }
-        let counts: Vec<f64> = self
-            .population
-            .iter()
-            .map(|node| f64::from(self.failures.get(node).copied().unwrap_or_default()))
-            .collect();
-        let population = counts.len() as f64;
-        let mean = counts.iter().sum::<f64>() / population;
-        let variance = counts.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / population;
-        let threshold = mean + RETIREMENT_SIGMA_MULTIPLE * variance.sqrt();
-        for (node, count) in self.population.iter().zip(counts) {
-            if count > 0.0 && count > threshold {
-                self.retired.insert(node.clone());
-            }
-        }
-    }
-
-    /// The nodes Session Retirement has withheld this session.
-    #[cfg(test)]
-    pub(crate) fn retired(&self) -> &HashSet<String> {
-        &self.retired
     }
 }
 
@@ -164,20 +116,6 @@ mod tests {
         assert!(matches!(exhausted, ExitPoolError::Exhausted { .. }));
         pool.recycle(clutch);
         pool.draw_clutch().expect("recycled reservations reissue");
-    }
-
-    /// HYPOTHESIS: a node failing far more than its peers is withheld from
-    /// every later draw, while its unremarkable peers are not.
-    #[test]
-    fn session_retirement_withholds_the_outlier_alone() {
-        let mut pool = ExitPool::default();
-        let nodes = population(RESERVATION_CLUTCH_SIZE * 2);
-        pool.seed(nodes.clone());
-        for _ in 0..RESERVATION_CLUTCH_SIZE {
-            pool.note_failure(&nodes[0]);
-        }
-        assert!(pool.retired().contains(&nodes[0]), "the outlier retires");
-        assert_eq!(pool.retired().len(), 1, "its peers keep their standing");
     }
 
     /// HYPOTHESIS: an unseeded pool refuses rather than drawing nothing
