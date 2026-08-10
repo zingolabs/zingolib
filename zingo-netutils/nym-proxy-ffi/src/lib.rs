@@ -102,34 +102,62 @@ pub struct MixnetProxyHandle {
     monitor: Option<tokio::task::AbortHandle>,
 }
 
+/// Why one SOCKS5 method-selection round trip failed.
+#[derive(Debug, thiserror::Error)]
+enum HandshakeCheckError {
+    /// The TCP connect to the listener failed.
+    #[error("connect: {0}")]
+    Connect(std::io::Error),
+    /// The greeting write failed.
+    #[error("greeting write: {0}")]
+    GreetingWrite(std::io::Error),
+    /// The method-selection read failed.
+    #[error("method-selection read: {0}")]
+    MethodSelectionRead(std::io::Error),
+    /// The listener answered a method selection other than no-auth.
+    #[error("unexpected method selection {reply:?}")]
+    MethodSelection {
+        /// The two reply bytes the listener answered.
+        reply: [u8; 2],
+    },
+    /// The whole round trip missed its budget.
+    #[error("check timed out after {}ms", budget.as_millis())]
+    TimedOut {
+        /// The budget the round trip missed.
+        budget: Duration,
+    },
+}
+
 /// One purely local SOCKS5 method-selection round trip against the listener,
 /// answered `[0x05, 0x00]` when the no-auth method is accepted.
 async fn socks5_handshake_check(
     endpoint: &Socks5Endpoint,
     check_timeout: Duration,
-) -> Result<(), String> {
+) -> Result<(), HandshakeCheckError> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let attempt = async {
         let mut stream = tokio::net::TcpStream::connect((endpoint.host.as_str(), endpoint.port))
             .await
-            .map_err(|e| format!("connect: {e}"))?;
+            .map_err(HandshakeCheckError::Connect)?;
         stream
             .write_all(&[0x05, 0x01, 0x00])
             .await
-            .map_err(|e| format!("greeting write: {e}"))?;
+            .map_err(HandshakeCheckError::GreetingWrite)?;
         let mut reply = [0u8; 2];
         stream
             .read_exact(&mut reply)
             .await
-            .map_err(|e| format!("method-selection read: {e}"))?;
+            .map_err(HandshakeCheckError::MethodSelectionRead)?;
         if reply != [0x05, 0x00] {
-            return Err(format!("unexpected method selection {reply:?}"));
+            return Err(HandshakeCheckError::MethodSelection { reply });
         }
         Ok(())
     };
     tokio::time::timeout(check_timeout, attempt)
         .await
-        .map_err(|_| format!("check timed out after {}ms", check_timeout.as_millis()))?
+        .map_err(|_| HandshakeCheckError::TimedOut {
+            budget: check_timeout,
+        })?
 }
 
 /// Checks the listener until `strikes_allowed` consecutive failures, then
@@ -146,10 +174,14 @@ async fn monitor_listener(
         tokio::time::sleep(interval).await;
         match socks5_handshake_check(&endpoint, check_timeout).await {
             Ok(()) => strikes = 0,
-            Err(detail) => {
+            Err(failure) => {
                 strikes += 1;
                 if strikes >= strikes_allowed {
-                    observer.on_death(ProxyDeathReason::MixnetDisconnected { detail });
+                    // The typed failure is rendered only here, at the FFI
+                    // schema's existing prose field.
+                    observer.on_death(ProxyDeathReason::MixnetDisconnected {
+                        detail: failure.to_string(),
+                    });
                     return;
                 }
             }
@@ -323,6 +355,27 @@ mod tests {
         socks5_handshake_check(&endpoint, MONITOR_CHECK_TIMEOUT)
             .await
             .expect_err("a dead listener must fail the check");
+    }
+
+    /// HYPOTHESIS: a refusing listener is reported as the typed
+    /// method-selection variant carrying the reply bytes, not as prose.
+    /// Falsified if the variant or its payload differs.
+    #[tokio::test]
+    async fn check_names_the_refused_method_selection() {
+        let (endpoint, serving) = mock_socks5_listener([0x05, 0xff]).await;
+        let failure = socks5_handshake_check(&endpoint, MONITOR_CHECK_TIMEOUT)
+            .await
+            .expect_err("a refusing listener must fail the check");
+        assert!(
+            matches!(
+                failure,
+                super::HandshakeCheckError::MethodSelection {
+                    reply: [0x05, 0xff]
+                }
+            ),
+            "the reply bytes travel typed: {failure:?}"
+        );
+        serving.abort();
     }
 
     #[derive(Default)]

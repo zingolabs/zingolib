@@ -2288,10 +2288,10 @@ fn record_part_route(
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
     route: &crate::wallet::migration::TransmissionRoute,
     started: std::time::Instant,
-    outcome: Result<(), String>,
+    outcome: Result<(), crate::lightclient::indexer_history::FailureKind>,
 ) {
     use crate::lightclient::indexer_history::{
-        AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
+        AttemptKind, AttemptRoute, IndexerAttempt, now_unix_secs,
     };
     use crate::wallet::migration::TransmissionRoute;
 
@@ -2309,7 +2309,7 @@ fn record_part_route(
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         phase: None,
         exit: None,
-        outcome: outcome.map_err(|detail| FailureKind::classify(&detail)),
+        outcome,
     });
 }
 
@@ -2335,6 +2335,34 @@ mod tests {
     /// The value of the one fabricated note every scenario here binds a
     /// migration part to: the smallest canonical denomination.
     const NOTE_VALUE: u64 = 1_000_000;
+
+    /// HYPOTHESIS: a part's route evidence carries the typed failure
+    /// category whole, so no prose is classified at the recording seam.
+    /// Falsified if the recorded outcome differs from the category passed.
+    #[test]
+    fn part_route_evidence_records_the_typed_category() {
+        use crate::lightclient::indexer_history::{FailureKind, IndexerHistoryHandle};
+        use crate::wallet::migration::TransmissionRoute;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        history.set_recording(true);
+        super::record_part_route(
+            &history,
+            &TransmissionRoute::Clearnet {
+                endpoint: "indexer.example".to_string(),
+            },
+            std::time::Instant::now(),
+            Err(FailureKind::Rejected),
+        );
+        let recorded = history.load();
+        assert_eq!(recorded.len(), 1, "one attempt is recorded");
+        assert_eq!(
+            recorded[0].outcome,
+            Err(FailureKind::Rejected),
+            "the category passes through whole"
+        );
+    }
 
     /// The immediate-migration progress side channel: a fresh handle is idle, `begin` arms it,
     /// the per-transaction mutators advance a clone the same way a mobile poll
