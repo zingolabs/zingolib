@@ -8,6 +8,9 @@ use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
+#[cfg(feature = "nym")]
+use crate::nym::acquire;
+
 use super::output::OutputRef;
 
 /// Top level wallet errors
@@ -159,7 +162,7 @@ pub enum PriceError {
     NotInitialised,
     /// The Price Source Pool could not supply a transport for the run.
     #[error("price transport acquisition failed. {0}")]
-    TransportAcquisition(crate::nym::TransportAcquisitionError),
+    TransportAcquisition(acquire::TransportError),
 }
 
 /// Summary error

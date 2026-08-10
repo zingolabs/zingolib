@@ -3,6 +3,8 @@
 
 pub(crate) mod exit_pool;
 
+use crate::nym::acquire;
+
 /// The Indexer Pool's ratified complement of Exit-Bound members.
 pub(crate) const INDEXER_POOL_COMPLEMENT: usize = 2;
 
@@ -125,7 +127,7 @@ impl Pools {
     pub(crate) async fn draw_clutch(
         &self,
         acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    ) -> Result<Vec<String>, crate::nym::acquire::TransportAcquisitionError> {
+    ) -> Result<Vec<String>, acquire::TransportError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;

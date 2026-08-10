@@ -13,7 +13,7 @@ use crate::nym::supervisor::{MixnetProxy, MixnetProxyError};
 
 /// Why the session could acquire no ready transport.
 #[derive(Debug, thiserror::Error)]
-pub enum TransportAcquisitionError {
+pub enum TransportError {
     /// The session has no acquirer to draw transports from.
     #[error("this session acquires no transports")]
     NoAcquirer,
@@ -62,12 +62,12 @@ pub enum TransportAcquisitionError {
     },
 }
 
-impl From<ExitPoolError> for TransportAcquisitionError {
+impl From<ExitPoolError> for TransportError {
     fn from(refusal: ExitPoolError) -> Self {
         match refusal {
-            ExitPoolError::NotSeeded => TransportAcquisitionError::ExitPoolNotSeeded,
+            ExitPoolError::NotSeeded => TransportError::ExitPoolNotSeeded,
             ExitPoolError::Exhausted { held, population } => {
-                TransportAcquisitionError::ExitPoolExhausted { held, population }
+                TransportError::ExitPoolExhausted { held, population }
             }
         }
     }
@@ -80,7 +80,7 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportAcquisitionError>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>>;
 
     /// Acquires one transport that races `clutch` under `class`.
     fn acquire(
@@ -106,8 +106,7 @@ impl SpawnedBinary {
 impl TransportAcquirable for SpawnedBinary {
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportAcquisitionError>> + Send + '_>>
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>> {
         Box::pin(crate::nym::supervisor::discover_exit_nodes(&self.path))
     }
 

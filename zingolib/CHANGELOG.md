@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - BREAKING: the transport-acquisition path speaks the typed
-  `nym::TransportAcquisitionError` instead of `String`. The enum names the
+  `nym::TransportError` instead of `String`. The enum names the
   missing acquirer, the discover mode's spawn and exit failures, the
   unseeded and exhausted Exit Pool, and the transport's bootstrap death
   (carrying the typed `NetOpFailure` detail), closed status channel, and

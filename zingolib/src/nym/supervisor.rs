@@ -55,6 +55,7 @@ use zingo_netutils::time::{
 use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::nym::MixnetMode;
+use crate::nym::acquire;
 use crate::nym::driver::{MixnetStatus, StatusPublisher};
 
 /// Loopback readiness attempts against the attached listener before it is
@@ -601,19 +602,17 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
 /// reports, the parent's one window onto the directory.
 pub(crate) async fn discover_exit_nodes(
     binary_path: &Path,
-) -> Result<Vec<String>, crate::nym::acquire::TransportAcquisitionError> {
+) -> Result<Vec<String>, acquire::TransportError> {
     let output = Command::new(binary_path)
         .arg("--discover")
         .output()
         .await
-        .map_err(crate::nym::acquire::TransportAcquisitionError::DiscoverySpawn)?;
+        .map_err(acquire::TransportError::DiscoverySpawn)?;
     if !output.status.success() {
-        return Err(
-            crate::nym::acquire::TransportAcquisitionError::DiscoveryFailed {
-                status: output.status,
-                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            },
-        );
+        return Err(acquire::TransportError::DiscoveryFailed {
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
     }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -626,7 +625,7 @@ pub(crate) async fn discover_exit_nodes(
 pub(crate) async fn acquire_ready_transport(
     acquirer: &dyn crate::nym::acquire::TransportAcquirable,
     clutch: &[String],
-) -> Result<(MixnetProxy, String), crate::nym::acquire::TransportAcquisitionError> {
+) -> Result<(MixnetProxy, String), acquire::TransportError> {
     use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
@@ -643,20 +642,15 @@ pub(crate) async fn acquire_ready_transport(
                         }
                     }
                     MixnetMode::Died => {
-                        return Err(
-                            crate::nym::acquire::TransportAcquisitionError::DiedDuringBootstrap {
-                                detail: status
-                                    .death
-                                    .as_ref()
-                                    .and_then(|death| death.detail.clone()),
-                            },
-                        );
+                        return Err(acquire::TransportError::DiedDuringBootstrap {
+                            detail: status.death.as_ref().and_then(|death| death.detail.clone()),
+                        });
                     }
                     _ => {}
                 }
             }
             if receiver.changed().await.is_err() {
-                return Err(crate::nym::acquire::TransportAcquisitionError::StatusChannelClosed);
+                return Err(acquire::TransportError::StatusChannelClosed);
             }
         }
     })
@@ -669,7 +663,7 @@ pub(crate) async fn acquire_ready_transport(
         }
         Err(_elapsed) => {
             proxy.stop().await;
-            Err(crate::nym::acquire::TransportAcquisitionError::NotReady { budget })
+            Err(acquire::TransportError::NotReady { budget })
         }
     }
 }

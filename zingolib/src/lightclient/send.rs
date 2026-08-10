@@ -13,6 +13,8 @@ use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
+#[cfg(feature = "nym")]
+use crate::nym::acquire;
 use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
@@ -271,10 +273,8 @@ impl PullTransports {
     /// or a fresh acquisition when the pool is empty.
     async fn acquire(
         &self,
-    ) -> Result<
-        crate::correspondent::pool::Member<crate::nym::MixnetProxy>,
-        crate::nym::acquire::TransportAcquisitionError,
-    > {
+    ) -> Result<crate::correspondent::pool::Member<crate::nym::MixnetProxy>, acquire::TransportError>
+    {
         let take = {
             let mut pool = self.pools.indexer.lock().expect("indexer pool mutex");
             pool.take()
@@ -290,7 +290,7 @@ impl PullTransports {
         let acquirer = self
             .pools
             .acquirer()
-            .ok_or(crate::nym::acquire::TransportAcquisitionError::NoAcquirer)?;
+            .ok_or(acquire::TransportError::NoAcquirer)?;
         let clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
         let (transport, exit) =
             crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await?;
