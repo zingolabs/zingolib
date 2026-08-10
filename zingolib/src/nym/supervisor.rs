@@ -599,18 +599,21 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
 
 /// Runs the proxy binary's discover mode and returns the Exit Nodes it
 /// reports, the parent's one window onto the directory.
-pub(crate) async fn discover_exit_nodes(binary_path: &Path) -> Result<Vec<String>, String> {
+pub(crate) async fn discover_exit_nodes(
+    binary_path: &Path,
+) -> Result<Vec<String>, crate::nym::acquire::TransportAcquisitionError> {
     let output = Command::new(binary_path)
         .arg("--discover")
         .output()
         .await
-        .map_err(|source| format!("could not run the discover mode: {source}"))?;
+        .map_err(crate::nym::acquire::TransportAcquisitionError::DiscoverySpawn)?;
     if !output.status.success() {
-        return Err(format!(
-            "the discover mode exited {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
+        return Err(
+            crate::nym::acquire::TransportAcquisitionError::DiscoveryFailed {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            },
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -623,13 +626,11 @@ pub(crate) async fn discover_exit_nodes(binary_path: &Path) -> Result<Vec<String
 pub(crate) async fn acquire_ready_transport(
     acquirer: &dyn crate::nym::acquire::TransportAcquirable,
     clutch: &[String],
-) -> Result<(MixnetProxy, String), String> {
+) -> Result<(MixnetProxy, String), crate::nym::acquire::TransportAcquisitionError> {
     use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
-    let proxy = acquirer
-        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
-        .map_err(|e| e.to_string())?;
+    let proxy = acquirer.acquire(PrioritisePrivacy::CLASS, clutch, publisher)?;
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {
@@ -642,19 +643,20 @@ pub(crate) async fn acquire_ready_transport(
                         }
                     }
                     MixnetMode::Died => {
-                        return Err(status
-                            .death
-                            .as_ref()
-                            .and_then(|d| d.detail.as_ref().map(std::string::ToString::to_string))
-                            .unwrap_or_else(|| {
-                                "the pool transport died during bootstrap".to_string()
-                            }));
+                        return Err(
+                            crate::nym::acquire::TransportAcquisitionError::DiedDuringBootstrap {
+                                detail: status
+                                    .death
+                                    .as_ref()
+                                    .and_then(|death| death.detail.clone()),
+                            },
+                        );
                     }
                     _ => {}
                 }
             }
             if receiver.changed().await.is_err() {
-                return Err("the pool transport's status channel closed".to_string());
+                return Err(crate::nym::acquire::TransportAcquisitionError::StatusChannelClosed);
             }
         }
     })
@@ -667,10 +669,7 @@ pub(crate) async fn acquire_ready_transport(
         }
         Err(_elapsed) => {
             proxy.stop().await;
-            Err(format!(
-                "the pool transport did not become ready within {}s",
-                budget.as_secs()
-            ))
+            Err(crate::nym::acquire::TransportAcquisitionError::NotReady { budget })
         }
     }
 }

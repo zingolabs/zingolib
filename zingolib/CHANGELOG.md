@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the transport-acquisition path speaks the typed
+  `nym::TransportAcquisitionError` instead of `String`. The enum names the
+  missing acquirer, the discover mode's spawn and exit failures, the
+  unseeded and exhausted Exit Pool, and the transport's bootstrap death
+  (carrying the typed `NetOpFailure` detail), closed status channel, and
+  missed readiness budget, and it wraps `MixnetProxyError`.
+  `PriceError::TransportAcquisition` now carries it in place of `String`.
 - BREAKING: the editorial layer moved from `wallet::summary::data` to
   `zingolib::perspective` (`ValueTransfer` and its kinds, the finsight
   rollups, and the `value_transfers` / `messages_containing` / `finsight` /

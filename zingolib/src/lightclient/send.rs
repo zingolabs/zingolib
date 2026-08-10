@@ -271,7 +271,10 @@ impl PullTransports {
     /// or a fresh acquisition when the pool is empty.
     async fn acquire(
         &self,
-    ) -> Result<crate::correspondent::pool::Member<crate::nym::MixnetProxy>, String> {
+    ) -> Result<
+        crate::correspondent::pool::Member<crate::nym::MixnetProxy>,
+        crate::nym::acquire::TransportAcquisitionError,
+    > {
         let take = {
             let mut pool = self.pools.indexer.lock().expect("indexer pool mutex");
             pool.take()
@@ -287,7 +290,7 @@ impl PullTransports {
         let acquirer = self
             .pools
             .acquirer()
-            .ok_or_else(|| "this session acquires no transports".to_string())?;
+            .ok_or(crate::nym::acquire::TransportAcquisitionError::NoAcquirer)?;
         let clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
         let (transport, exit) =
             crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await?;
@@ -433,7 +436,7 @@ async fn mixnet_escalating_transmit(
                     zingo_net_diag::NetOpFailure::message(
                         zingo_net_diag::NetOpStage::RouteResolution,
                         host.clone(),
-                        cause,
+                        cause.to_string(),
                     )
                 })?),
                 None => None,

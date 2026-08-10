@@ -159,7 +159,7 @@ pub enum PriceError {
     NotInitialised,
     /// The Price Source Pool could not supply a transport for the run.
     #[error("price transport acquisition failed. {0}")]
-    TransportAcquisition(String),
+    TransportAcquisition(crate::nym::TransportAcquisitionError),
 }
 
 /// Summary error

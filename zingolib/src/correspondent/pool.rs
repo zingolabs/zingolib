@@ -125,17 +125,13 @@ impl Pools {
     pub(crate) async fn draw_clutch(
         &self,
         acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<String>, crate::nym::acquire::TransportAcquisitionError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;
             self.exits.lock().expect("exit pool mutex").seed(discovered);
         }
-        self.exits
-            .lock()
-            .expect("exit pool mutex")
-            .draw_clutch()
-            .map_err(|refusal| refusal.to_string())
+        Ok(self.exits.lock().expect("exit pool mutex").draw_clutch()?)
     }
 
     /// Returns one transport's Exclusive Lease to the Exit Pool when its

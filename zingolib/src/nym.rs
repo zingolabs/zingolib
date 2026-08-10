@@ -41,6 +41,7 @@ pub mod route;
 pub mod supervisor;
 pub mod sweep;
 
+pub use acquire::TransportAcquisitionError;
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
 pub(crate) use mode::MixnetSlot;
