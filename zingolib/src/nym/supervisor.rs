@@ -624,6 +624,14 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
     fn is_ready(&self) -> bool {
         self.mode() == MixnetMode::Ready
     }
+
+    fn socks5_addr(&self) -> Option<String> {
+        MixnetProxy::socks5_addr(self)
+    }
+
+    fn stop(self) -> impl std::future::Future<Output = ()> + Send {
+        MixnetProxy::stop(self)
+    }
 }
 
 /// Runs the proxy binary's discover mode and returns the Exit Nodes it

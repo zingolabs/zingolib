@@ -1,6 +1,11 @@
 # An Exit Node is Exclusive to one Correspondent or Shared across many
 
-Status: draft — ratified in session 2026-08-07, pending review
+Status: draft — ratified in session 2026-08-07, pending review.
+Amended 2026-08-10: the sealed categories are implemented as lease
+types — `Member<T, Exclusive>`'s one dial consumes the member, and
+`Member<T, Shared>` dials repeatedly for its one holder — declared at
+the Indexer Pool, Price Source Pool, and Server-Selection Sweep
+acquisition sites.
 
 ## Context
 

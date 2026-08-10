@@ -292,39 +292,18 @@ pub(crate) struct PullTransports;
 
 #[cfg(feature = "nym")]
 impl PullTransports {
-    /// One pull's own Exit-Bound transport: the Indexer Pool's next member,
-    /// or a fresh acquisition when the pool is empty.
+    /// One pull's own Exclusive-exit transport: the Indexer Pool's next
+    /// member, or a fresh acquisition when the pool is empty.
     async fn acquire(
         &self,
-    ) -> Result<crate::correspondent::pool::Member<crate::nym::MixnetProxy>, acquire::TransportError>
-    {
-        let take = {
-            let mut pool = self.pools.indexer.lock().expect("indexer pool mutex");
-            pool.take()
-        };
-        for dead in take.evicted {
-            // Dropping the dead member recycles its lease after the stop.
-            dead.transport.stop().await;
-        }
-        if let Some(member) = take.member {
-            return Ok(member);
-        }
-        let acquirer = self
-            .pools
-            .acquirer()
-            .ok_or(acquire::TransportError::NoAcquirer)?;
-        let mut clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
-        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-        let (transport, exit) =
-            crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &nodes).await?;
-        // Bind-time recycle: keeping only the bound lease drops the rest.
-        let bound = clutch
-            .iter()
-            .position(|reservation| reservation.node() == exit)
-            .expect("the bound exit is one of the clutch's nodes");
-        let lease = clutch.swap_remove(bound);
-        drop(clutch);
-        Ok(crate::correspondent::pool::Member { transport, lease })
+    ) -> Result<
+        crate::correspondent::pool::Member<
+            crate::nym::MixnetProxy,
+            crate::correspondent::pool::Exclusive,
+        >,
+        acquire::TransportError,
+    > {
+        self.pools.take_or_acquire(|pools| &pools.indexer).await
     }
 
     /// Tops the pools back up after a pull consumed a member.
@@ -469,20 +448,22 @@ async fn mixnet_escalating_transmit(
                 })?),
                 None => None,
             };
-            // A pooled member carries its own Exclusive exit; only an
+            // A pooled member carries its own Exclusive exit, and the one
+            // consuming dial is the only way to read its tunnel; only an
             // attached session (no member) rides the shared slot tunnel. A
             // member whose transport reports no address died between take
             // and use, so the pull refuses rather than silently degrading
             // to the shared tunnel and mislabeling the diary.
-            let socks5_addr = match member.as_ref() {
-                Some(member) => member.transport.socks5_addr().ok_or_else(|| {
-                    zingo_net_diag::NetOpFailure::message(
+            let (socks5_addr, spent) = match member.map(crate::correspondent::pool::Member::dial) {
+                Some((Some(addr), spent)) => (addr, Some(spent)),
+                Some((None, _spent)) => {
+                    return Err(zingo_net_diag::NetOpFailure::message(
                         zingo_net_diag::NetOpStage::LocalProxyConnect,
                         host.clone(),
                         "the pooled transport died before its pull could use it",
-                    )
-                })?,
-                None => shared_addr,
+                    ));
+                }
+                None => (shared_addr, None),
             };
             let target = SocksTarget {
                 socks5_addr,
@@ -505,15 +486,11 @@ async fn mixnet_escalating_transmit(
             .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
             // The consumed transport dies with its pull, whatever the
             // outcome, so its exit carries exactly this one Transmission;
-            // dropping the member recycles its lease even when the pull is
-            // cancelled mid-await.
-            let bound_exit = member
-                .as_ref()
-                .map(|member| member.lease.node().to_string());
-            if let Some(member) = member {
-                let crate::correspondent::pool::Member { transport, lease } = member;
-                transport.stop().await;
-                drop(lease);
+            // dropping the spent holder recycles its lease even when the
+            // pull is cancelled mid-await.
+            let bound_exit = spent.as_ref().map(|spent| spent.node().to_string());
+            if let Some(spent) = spent {
+                spent.retire().await;
                 if let Some(context) = pulls {
                     context.refill();
                 }
