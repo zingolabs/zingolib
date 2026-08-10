@@ -1,0 +1,36 @@
+[package]
+name = "zingo-nym-proxy-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "UniFFI shim hosting the Nym mixnet SOCKS5 proxy for mobile (ADR 0011, CP-3)."
+
+# The mobile host loads this as a dynamic library (cdylib for the loaded
+# framework) or links it statically (staticlib for the iOS XCFramework slices).
+# rlib keeps it usable as an ordinary dependency for host-side tests.
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+# NymProxy lives here, behind the nym feature; this shim always needs it.
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+    "nym",
+] }
+# Proc-macro scaffolding (setup_scaffolding! + #[uniffi::export]); no build.rs
+# and no UDL. Generating the Swift/Kotlin bindings is a later, separate step.
+uniffi = "0.28"
+# The shim owns a long-lived runtime that keeps the NymProxy client and its
+# SOCKS5 listener alive across start and stop.
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The tests read their temporal parameters from `time::test`.
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+    "testutils",
+] }
+
+# This crate resolves in its own lockfile, never the parent workspace's:
+# nym-sdk's transitive graph needs `crypto-common ^0.2`, irreconcilable
+# with the main workspace's pins (see the root manifest's exclude).
+[workspace]

@@ -1,5 +1,9 @@
 [workspace]
 members = ["lib", "android", "ios", "zingomobile_utils", "workbench", "uniffi-bindgen"]
+
+# The mixnet proxy shim resolves in its own lockfile: nym-sdk's transitive
+# graph needs `crypto-common ^0.2`, irreconcilable with this workspace's pins.
+exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
