@@ -81,16 +81,6 @@ pub enum NymProxyError {
         /// Every attempt's failure, in completion order.
         failures: Vec<zingo_net_diag::NetOpFailure>,
     },
-
-    /// Every discovered exit was excluded by the caller's known-exit set,
-    /// so no fresh Exit Node can be drawn.
-    #[error("all {discovered} discovered exits are excluded by the {excluded} known exits")]
-    AllExitsExcluded {
-        /// How many exits the directory advertised.
-        discovered: usize,
-        /// How many known exits the caller excluded.
-        excluded: usize,
-    },
 }
 
 /// The `Display` joining of the typed attempt records, semicolon-separated

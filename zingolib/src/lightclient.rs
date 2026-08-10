@@ -665,29 +665,20 @@ impl LightClient {
                         .correspondent_pools
                         .binary()
                         .expect("checked above; the binary is set");
-                    let excluded = {
-                        let mut exits = self.exits_in_use();
-                        let pool = self
-                            .correspondent_pools
-                            .price
-                            .lock()
-                            .expect("price pool mutex");
-                        for exit in pool.excluded_exits() {
-                            if !exits.contains(&exit) {
-                                exits.push(exit);
-                            }
-                        }
-                        exits
-                    };
+                    let clutch = self
+                        .correspondent_pools
+                        .draw_clutch(&binary)
+                        .await
+                        .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
                     let (transport, exit) =
-                        crate::nym::supervisor::spawn_ready_pool_transport(&binary, &excluded)
+                        crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch)
                             .await
                             .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
                     self.correspondent_pools
-                        .price
+                        .exits
                         .lock()
-                        .expect("price pool mutex")
-                        .note_spent_exit(exit.clone());
+                        .expect("exit pool mutex")
+                        .recycle(clutch.into_iter().filter(|node| node != &exit));
                     Some(crate::correspondent::pool::Member { transport, exit })
                 }
             }
@@ -707,8 +698,10 @@ impl LightClient {
         let dispatched = std::time::Instant::now();
         let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
         if let Some(member) = pooled {
+            let exit = member.exit.clone();
             member.transport.stop().await;
-            self.correspondent_pools.ensure_filled(self.exits_in_use());
+            self.correspondent_pools.recycle_lease(exit);
+            self.correspondent_pools.ensure_filled();
         }
         let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
@@ -853,7 +846,7 @@ impl LightClient {
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
                 self.correspondent_pools
                     .set_binary(binary_path.to_path_buf());
-                self.correspondent_pools.ensure_filled(self.exits_in_use());
+                self.correspondent_pools.ensure_filled();
                 Ok(())
             }
             Err(error) => {

@@ -249,12 +249,11 @@ impl TransmitTarget for SocksTarget {
     }
 }
 
-/// What a Transmission's pulls need to bind their own Exclusive exits: the
-/// session's Correspondent Pools and the exits it already holds.
+/// The session's Correspondent Pools, from which a Transmission's pulls
+/// draw their own Exclusive exits.
 #[cfg(feature = "nym")]
 pub(crate) struct PullTransports {
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-    session_exits: Vec<String>,
 }
 
 /// The placeholder a build without the mixnet carries in its place.
@@ -273,7 +272,9 @@ impl PullTransports {
             pool.take()
         };
         for dead in take.evicted {
+            let exit = dead.exit.clone();
             dead.transport.stop().await;
+            self.pools.recycle_lease(exit);
         }
         if let Some(member) = take.member {
             return Ok(member);
@@ -282,29 +283,21 @@ impl PullTransports {
             .pools
             .binary()
             .ok_or_else(|| "this session spawns no transports".to_string())?;
-        let excluded = {
-            let mut exits = self.session_exits.clone();
-            let pool = self.pools.indexer.lock().expect("indexer pool mutex");
-            for exit in pool.excluded_exits() {
-                if !exits.contains(&exit) {
-                    exits.push(exit);
-                }
-            }
-            exits
-        };
+        let clutch = self.pools.draw_clutch(&binary).await?;
         let (transport, exit) =
-            crate::nym::supervisor::spawn_ready_pool_transport(&binary, &excluded).await?;
+            crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch).await?;
+        // Bind-time recycle: only the bound reservation stays held.
         self.pools
-            .indexer
+            .exits
             .lock()
-            .expect("indexer pool mutex")
-            .note_spent_exit(exit.clone());
+            .expect("exit pool mutex")
+            .recycle(clutch.into_iter().filter(|node| node != &exit));
         Ok(crate::correspondent::pool::Member { transport, exit })
     }
 
     /// Tops the pools back up after a pull consumed a member.
     fn refill(&self) {
-        self.pools.ensure_filled(self.session_exits.clone());
+        self.pools.ensure_filled();
     }
 }
 
@@ -449,8 +442,10 @@ async fn mixnet_escalating_transmit(
             // The consumed transport dies with its pull, whatever the
             // outcome, so its exit carries exactly this one Transmission.
             if let Some(member) = member {
+                let exit = member.exit.clone();
                 member.transport.stop().await;
                 if let Some(context) = pulls {
+                    context.pools.recycle_lease(exit);
                     context.refill();
                 }
             }
@@ -850,7 +845,6 @@ impl LightClient {
             .is_some_and(crate::nym::MixnetProxy::is_spawned)
             .then(|| PullTransports {
                 pools: std::sync::Arc::clone(&self.correspondent_pools),
-                session_exits: self.exits_in_use(),
             })
             .filter(|context| context.pools.binary().is_some());
         #[cfg(not(feature = "nym"))]

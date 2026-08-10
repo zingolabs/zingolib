@@ -49,6 +49,15 @@ async fn main() -> std::process::ExitCode {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = parse_arguments(std::env::args().skip(1))?;
 
+    // The parent's one window onto the exit directory: it cannot query the
+    // Nym API itself, since the nym stack resolves only in this lockfile.
+    if arguments.discover {
+        for exit_node in NymProxy::discover_exit_nodes().await? {
+            emit(format!("{NYM_EXIT_LINE_PREFIX}{exit_node}"));
+        }
+        return Ok(());
+    }
+
     // The stdin watchdog covers the bootstrap too: a parent that dies while
     // this child is still drawing gateways must take the child with it, not
     // leave an orphan to finish bootstrapping against a closed pipe.
@@ -76,12 +85,19 @@ async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error:
     let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
     // The one point where the wire form re-enters the type system: each
     // class monomorphizes the same start.
-    let proxy = match arguments.class {
-        ResponsivenessClass::PrioritiseSpeed => {
-            NymProxy::start_with_progress::<PrioritiseSpeed>(arguments.excluded, narrate).await?
+    // A parent supplies the clutch; a standalone run draws its own.
+    let proxy = match (arguments.class, arguments.clutch.is_empty()) {
+        (ResponsivenessClass::PrioritiseSpeed, false) => {
+            NymProxy::start_over::<PrioritiseSpeed>(arguments.clutch, narrate).await?
         }
-        ResponsivenessClass::PrioritisePrivacy => {
-            NymProxy::start_with_progress::<PrioritisePrivacy>(arguments.excluded, narrate).await?
+        (ResponsivenessClass::PrioritisePrivacy, false) => {
+            NymProxy::start_over::<PrioritisePrivacy>(arguments.clutch, narrate).await?
+        }
+        (ResponsivenessClass::PrioritiseSpeed, true) => {
+            NymProxy::start::<PrioritiseSpeed>().await?
+        }
+        (ResponsivenessClass::PrioritisePrivacy, true) => {
+            NymProxy::start::<PrioritisePrivacy>().await?
         }
     };
 
@@ -101,24 +117,30 @@ fn emit(line: String) {
 
 /// The parent's spawn-time instructions, parsed from the argument grammar.
 struct Arguments {
-    /// The Exit Nodes excluded from this proxy's draw.
-    excluded: Vec<String>,
+    /// The clutch of Exit Node Reservations the parent drew for this
+    /// acquisition; empty means draw one locally.
+    clutch: Vec<String>,
     /// The acquisition's responsiveness class; a bare invocation defaults
     /// to prioritise-speed, matching a person waiting at a terminal.
     class: ResponsivenessClass,
+    /// Whether to print the discovered Exit Nodes and exit instead of
+    /// bootstrapping, the parent's one window onto the directory.
+    discover: bool,
 }
 
-/// Parse every `--exclude-exit <identity>` pair and the optional
-/// `--responsiveness <prioritise-speed|prioritise-privacy>` from `args`,
-/// refusing unknown arguments and unknown class tokens.
+/// Parse every `--exit <identity>` pair, the optional `--discover` flag, and
+/// the optional `--responsiveness <prioritise-speed|prioritise-privacy>`
+/// from `args`, refusing unknown arguments and unknown class tokens.
 fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, String> {
-    let mut excluded = Vec::new();
+    let mut clutch = Vec::new();
     let mut class = ResponsivenessClass::PrioritiseSpeed;
+    let mut discover = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--exclude-exit" => match args.next() {
-                Some(identity) => excluded.push(identity),
-                None => return Err("--exclude-exit needs an Exit Node identity".to_string()),
+            "--discover" => discover = true,
+            "--exit" => match args.next() {
+                Some(identity) => clutch.push(identity),
+                None => return Err("--exit needs an Exit Node identity".to_string()),
             },
             "--responsiveness" => match args.next() {
                 Some(token) => {
@@ -130,7 +152,11 @@ fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, 
             other => return Err(format!("unknown argument: {other}")),
         }
     }
-    Ok(Arguments { excluded, class })
+    Ok(Arguments {
+        clutch,
+        class,
+        discover,
+    })
 }
 
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
@@ -158,29 +184,34 @@ mod tests {
         parse_arguments(args.iter().map(ToString::to_string))
     }
 
-    /// HYPOTHESIS: the argument grammar accepts repeated `--exclude-exit`
-    /// pairs and refuses anything else, so a malformed spawn fails loudly
-    /// instead of silently dropping an exclusion.
+    /// HYPOTHESIS: the clutch grammar accepts repeated `--exit` pairs and
+    /// refuses anything else, so a malformed spawn fails loudly instead of
+    /// silently racing a short clutch.
     #[test]
-    fn the_exclusion_grammar_is_pairs_only() {
+    fn the_clutch_grammar_is_pairs_only() {
         assert_eq!(
-            parse(&[]).expect("no arguments, no exclusions").excluded,
+            parse(&[]).expect("no arguments, no clutch").clutch,
             Vec::<String>::new()
         );
         assert_eq!(
-            parse(&["--exclude-exit", "id-a", "--exclude-exit", "id-b"])
+            parse(&["--exit", "id-a", "--exit", "id-b"])
                 .expect("two well-formed pairs")
-                .excluded,
+                .clutch,
             vec!["id-a".to_string(), "id-b".to_string()]
         );
-        assert!(
-            parse(&["--exclude-exit"]).is_err(),
-            "a dangling flag refuses"
-        );
+        assert!(parse(&["--exit"]).is_err(), "a dangling flag refuses");
         assert!(
             parse(&["--unknown"]).is_err(),
             "an unknown argument refuses"
         );
+    }
+
+    /// HYPOTHESIS: `--discover` is a standalone flag that composes with the
+    /// rest of the grammar, and is off unless named.
+    #[test]
+    fn the_discover_flag_is_off_unless_named() {
+        assert!(!parse(&[]).expect("bare invocation").discover);
+        assert!(parse(&["--discover"]).expect("the flag alone").discover);
     }
 
     /// HYPOTHESIS: the class grammar accepts exactly the wire tokens of the
@@ -201,14 +232,9 @@ mod tests {
             ResponsivenessClass::PrioritisePrivacy
         );
         assert_eq!(
-            parse(&[
-                "--responsiveness",
-                "prioritise-speed",
-                "--exclude-exit",
-                "id-a"
-            ])
-            .expect("class and exclusions compose")
-            .class,
+            parse(&["--responsiveness", "prioritise-speed", "--exit", "id-a"])
+                .expect("class and exclusions compose")
+                .class,
             ResponsivenessClass::PrioritiseSpeed
         );
         assert!(

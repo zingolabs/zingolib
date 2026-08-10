@@ -232,11 +232,11 @@ impl MixnetProxy {
     pub(crate) fn spawn<R: zingo_netutils::responsiveness::Responsiveness>(
         binary_path: &Path,
         publisher: StatusPublisher,
-        excluded_exits: &[String],
+        clutch: &[String],
     ) -> Result<Self, MixnetProxyError> {
         let mut launch_args = vec!["--responsiveness".to_string(), R::CLASS.wire().to_string()];
-        for exit in excluded_exits {
-            launch_args.push("--exclude-exit".to_string());
+        for exit in clutch {
+            launch_args.push("--exit".to_string());
             launch_args.push(exit.clone());
         }
         let mut command = Command::new(binary_path);
@@ -643,18 +643,39 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
     }
 }
 
+/// Runs the proxy binary's discover mode and returns the Exit Nodes it
+/// reports, the parent's one window onto the directory.
+pub(crate) async fn discover_exit_nodes(binary_path: &Path) -> Result<Vec<String>, String> {
+    let output = Command::new(binary_path)
+        .arg("--discover")
+        .output()
+        .await
+        .map_err(|source| format!("could not run the discover mode: {source}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "the discover mode exited {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| parse_exit_line(line).map(str::to_string))
+        .collect())
+}
+
 /// Spawns one pool transport under `PrioritisePrivacy` and waits until it
 /// is ready, yielding the transport with its bound Exit Node.
 pub(crate) async fn spawn_ready_pool_transport(
     binary_path: &std::path::Path,
-    excluded_exits: &[String],
+    clutch: &[String],
 ) -> Result<(MixnetProxy, String), String> {
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
     let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::PrioritisePrivacy>(
         binary_path,
         publisher,
-        excluded_exits,
+        clutch,
     )
     .map_err(|e| e.to_string())?;
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;

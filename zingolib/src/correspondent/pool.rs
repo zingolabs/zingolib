@@ -1,7 +1,9 @@
 //! The Correspondent Pools: ready transports Exit Rotation consumes per run.
 #![forbid(unsafe_code)]
 
-/// The Indexer Pool's ratified complement of Correspondent-Bound members.
+pub(crate) mod exit_pool;
+
+/// The Indexer Pool's ratified complement of Exit-Bound members.
 pub(crate) const INDEXER_POOL_COMPLEMENT: usize = 2;
 
 /// The Price Source Pool's ratified complement of one Shared-exit member.
@@ -39,9 +41,6 @@ pub(crate) struct CorrespondentPool<T> {
     /// Refills already launched but not yet admitted, so deficit never
     /// over-spawns.
     inflight: usize,
-    /// The exit the previous run spent: the Price Fetch Cadence rule
-    /// excludes it from the next draw.
-    last_spent_exit: Option<String>,
 }
 
 impl<T: PoolTransport> CorrespondentPool<T> {
@@ -51,7 +50,6 @@ impl<T: PoolTransport> CorrespondentPool<T> {
             members: Vec::new(),
             complement,
             inflight: 0,
-            last_spent_exit: None,
         }
     }
 
@@ -71,24 +69,12 @@ impl<T: PoolTransport> CorrespondentPool<T> {
         self.inflight = self.inflight.saturating_sub(1);
     }
 
-    /// The exits the pool currently holds, for the acquisition exclusion.
+    /// The exits this pool's members currently hold.
     pub(crate) fn exits(&self) -> Vec<String> {
         self.members
             .iter()
             .map(|member| member.exit.clone())
             .collect()
-    }
-
-    /// The exits a refill's acquisition must exclude: every held exit,
-    /// plus the previous run's spent exit.
-    pub(crate) fn excluded_exits(&self) -> Vec<String> {
-        let mut exits = self.exits();
-        if let Some(spent) = &self.last_spent_exit
-            && !exits.contains(spent)
-        {
-            exits.push(spent.clone());
-        }
-        exits
     }
 
     /// Admits a ready member.
@@ -108,9 +94,6 @@ impl<T: PoolTransport> CorrespondentPool<T> {
                 evicted.push(candidate);
             }
         }
-        if let Some(taken) = &member {
-            self.last_spent_exit = Some(taken.exit.clone());
-        }
         Take { member, evicted }
     }
 
@@ -118,20 +101,16 @@ impl<T: PoolTransport> CorrespondentPool<T> {
     pub(crate) fn drain(&mut self) -> Vec<Member<T>> {
         std::mem::take(&mut self.members)
     }
-
-    /// Records an exit spent outside a take — the empty-pool inline
-    /// acquisition — so the next refill draw excludes it.
-    pub(crate) fn note_spent_exit(&mut self, exit: String) {
-        self.last_spent_exit = Some(exit);
-    }
 }
 
 /// The two Correspondent Pools with the spawn context their refills need.
 pub(crate) struct Pools {
-    /// The Indexer Pool of Correspondent-Bound members.
+    /// The Indexer Pool of Exit-Bound members.
     pub(crate) indexer: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy>>,
     /// The Price Source Pool's one Shared-exit member.
     pub(crate) price: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy>>,
+    /// The session's sole issuer of Exit Node Reservations.
+    pub(crate) exits: std::sync::Mutex<exit_pool::ExitPool>,
     /// The nym-proxy binary refills spawn from; `None` until a spawned
     /// session sets it, and always `None` for attached sessions.
     binary: std::sync::Mutex<Option<std::path::PathBuf>>,
@@ -143,8 +122,36 @@ impl Pools {
         std::sync::Arc::new(Pools {
             indexer: std::sync::Mutex::new(CorrespondentPool::new(INDEXER_POOL_COMPLEMENT)),
             price: std::sync::Mutex::new(CorrespondentPool::new(PRICE_POOL_COMPLEMENT)),
+            exits: std::sync::Mutex::new(exit_pool::ExitPool::default()),
             binary: std::sync::Mutex::new(None),
         })
+    }
+
+    /// Draws a Clutch, seeding the Exit Pool from the directory first when
+    /// this session has not yet learned the population.
+    pub(crate) async fn draw_clutch(
+        &self,
+        binary: &std::path::Path,
+    ) -> Result<Vec<String>, String> {
+        let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
+        if !seeded {
+            let discovered = crate::nym::supervisor::discover_exit_nodes(binary).await?;
+            self.exits.lock().expect("exit pool mutex").seed(discovered);
+        }
+        self.exits
+            .lock()
+            .expect("exit pool mutex")
+            .draw_clutch()
+            .map_err(|refusal| refusal.to_string())
+    }
+
+    /// Returns one transport's Exclusive Lease to the Exit Pool when its
+    /// lifecycle ends.
+    pub(crate) fn recycle_lease(&self, exit: String) {
+        self.exits
+            .lock()
+            .expect("exit pool mutex")
+            .recycle(std::iter::once(exit));
     }
 
     /// Records the spawned session's binary so refills can acquire.
@@ -157,7 +164,7 @@ impl Pools {
         self.binary.lock().expect("pool binary mutex").clone()
     }
 
-    /// Every exit both pools currently hold, for the session exclusion.
+    /// Every exit both pools currently hold, for the session's status.
     pub(crate) fn exits(&self) -> Vec<String> {
         let mut exits = self.indexer.lock().expect("indexer pool mutex").exits();
         exits.extend(self.price.lock().expect("price pool mutex").exits());
@@ -172,13 +179,15 @@ impl Pools {
             members
         };
         for member in drained {
+            let exit = member.exit.clone();
             member.transport.stop().await;
+            self.recycle_lease(exit);
         }
     }
 
     /// Launches one refill task per deficit in each pool; a no-op for
     /// attached sessions, which have no binary to spawn from.
-    pub(crate) fn ensure_filled(self: &std::sync::Arc<Self>, session_exits: Vec<String>) {
+    pub(crate) fn ensure_filled(self: &std::sync::Arc<Self>) {
         if self.binary().is_none() {
             return;
         }
@@ -192,9 +201,8 @@ impl Pools {
         };
         for _ in 0..indexer_deficit {
             let pools = std::sync::Arc::clone(self);
-            let session_exits = session_exits.clone();
             tokio::spawn(async move {
-                refill_one(&pools, PoolKind::Indexer, session_exits).await;
+                refill_one(&pools, PoolKind::Indexer).await;
             });
         }
         let price_deficit = {
@@ -207,9 +215,8 @@ impl Pools {
         };
         for _ in 0..price_deficit {
             let pools = std::sync::Arc::clone(self);
-            let session_exits = session_exits.clone();
             tokio::spawn(async move {
-                refill_one(&pools, PoolKind::Price, session_exits).await;
+                refill_one(&pools, PoolKind::Price).await;
             });
         }
     }
@@ -226,7 +233,7 @@ pub(crate) enum PoolKind {
 
 /// One refill: acquire a ready transport excluding every in-use and spent
 /// exit, then admit it.
-async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind, session_exits: Vec<String>) {
+async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
     let pool = match kind {
         PoolKind::Indexer => &pools.indexer,
         PoolKind::Price => &pools.price,
@@ -235,22 +242,35 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind, session_exits
         pool.lock().expect("pool mutex").note_refill_finished();
         return;
     };
-    let excluded = {
-        let mut exits = session_exits;
-        for exit in pool.lock().expect("pool mutex").excluded_exits() {
-            if !exits.contains(&exit) {
-                exits.push(exit);
-            }
+    let clutch = match pools.draw_clutch(&binary).await {
+        Ok(clutch) => clutch,
+        Err(cause) => {
+            pool.lock().expect("pool mutex").note_refill_finished();
+            log::warn!("pool refill drew no clutch: {cause}");
+            return;
         }
-        exits
     };
-    match crate::nym::supervisor::spawn_ready_pool_transport(&binary, &excluded).await {
+    match crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch).await {
         Ok((transport, exit)) => {
+            // Bind-time recycle: every reservation but the bound one goes
+            // back at once, so the pool drains only by what is leased.
+            pools
+                .exits
+                .lock()
+                .expect("exit pool mutex")
+                .recycle(clutch.into_iter().filter(|node| node != &exit));
             let mut pool = pool.lock().expect("pool mutex");
             pool.admit(Member { transport, exit });
             pool.note_refill_finished();
         }
         Err(cause) => {
+            {
+                let mut exits = pools.exits.lock().expect("exit pool mutex");
+                for node in &clutch {
+                    exits.note_failure(node);
+                }
+                exits.recycle(clutch);
+            }
             pool.lock().expect("pool mutex").note_refill_finished();
             log::warn!("pool refill failed: {cause}");
         }
@@ -307,7 +327,7 @@ mod tests {
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
         assert_eq!(taken.exit, "exit-live");
-        assert_eq!(pool.excluded_exits(), vec!["exit-live".to_string()]);
+        assert!(pool.exits().is_empty(), "both members left the pool");
     }
 
     /// HYPOTHESIS: an empty pool takes nothing and evicts nothing — the
@@ -322,15 +342,10 @@ mod tests {
         let second = pool.take();
         assert!(second.member.is_none());
         assert!(second.evicted.is_empty());
-        assert_eq!(
-            pool.excluded_exits(),
-            vec!["exit-a".to_string()],
-            "the spent exit stays excluded for the refill"
-        );
     }
 
-    /// HYPOTHESIS: consecutive takes never repeat an exit, because each
-    /// take records its spent exit into the next draw's exclusions.
+    /// HYPOTHESIS: consecutive takes never repeat an exit, because a member
+    /// is consumed rather than lent.
     #[test]
     fn consecutive_takes_never_repeat_an_exit() {
         let mut pool: CorrespondentPool<FakeTransport> =
@@ -340,9 +355,6 @@ mod tests {
         let first = pool.take().member.expect("first take").exit;
         let second = pool.take().member.expect("second take").exit;
         assert_ne!(first, second, "a member is consumed, never reused");
-        assert!(
-            pool.excluded_exits().contains(&second),
-            "the last spent exit is excluded from the refill draw"
-        );
+        assert!(pool.take().member.is_none(), "the pool is spent");
     }
 }

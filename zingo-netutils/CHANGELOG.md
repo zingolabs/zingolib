@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
   (whose "arm" was the verb, colliding with the bandit noun).
   `RaceState::new` names its first parameter `arms`.
+- BREAKING: an acquisition races a Clutch the parent draws, never a crawl
+  it filters itself. `NymProxy::start_over` replaces
+  `start_with_progress` and takes the drawn exits; `NymProxy::start`
+  draws its own for a standalone run. The proxy binary takes repeated
+  `--exit <identity>` arguments in place of `--exclude-exit`, and gains
+  `--discover`, which prints the directory's Exit Nodes and exits — the
+  parent's one window onto a population it cannot query itself.
+  `MAX_EXIT_NODE_ATTEMPTS` and `NymProxyError::AllExitsExcluded` are
+  removed, the clutch being the race's whole width.
 - BREAKING: the census has no default server. `DEFAULT_INDEXER_URI`,
   `DEFAULT_INDEXER_URI_TESTNET`, the `Indexer::default` field, and
   `default_uri` are removed; a session either pins a server explicitly
