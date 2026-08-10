@@ -700,10 +700,29 @@ impl LightClient {
         } else {
             None
         };
-        let via_socks5 = pooled
-            .as_ref()
-            .and_then(|member| member.transport.socks5_addr())
-            .unwrap_or(socks5_addr);
+        // A pooled member carries its own fresh Shared exit; only an attached
+        // session rides the slot's shared tunnel. A member whose transport
+        // reports no address died between take and use, so the run refuses
+        // rather than silently degrading to the slot tunnel.
+        let via_socks5 = match pooled.as_ref() {
+            Some(member) => match member.transport.socks5_addr() {
+                Some(addr) => addr,
+                None => {
+                    if let Some(member) = pooled {
+                        let crate::correspondent::pool::Member { transport, lease } = member;
+                        transport.stop().await;
+                        drop(lease);
+                        self.correspondent_pools.ensure_filled();
+                    }
+                    return Err(LightClientError::from(
+                        crate::wallet::error::PriceError::TransportAcquisition(
+                            crate::nym::acquire::TransportError::DiedBeforeUse,
+                        ),
+                    ));
+                }
+            },
+            None => socks5_addr,
+        };
 
         // The fetch runs outside the wallet lock (the net-diag
         // polling-blackout remedy), so a hung tunnel can no longer freeze

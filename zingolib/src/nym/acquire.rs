@@ -60,6 +60,10 @@ pub enum TransportError {
     /// The transport's status channel closed before readiness.
     #[error("the pool transport's status channel closed")]
     StatusChannelClosed,
+    /// A pooled transport that had reached readiness died before its
+    /// consumer could use it.
+    #[error("the pooled transport died before its run could use it")]
+    DiedBeforeUse,
     /// The transport missed the readiness budget.
     #[error("the pool transport did not become ready within {}s", budget.as_secs())]
     NotReady {

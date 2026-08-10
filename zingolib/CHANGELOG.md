@@ -114,7 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and tears each transport down when its pull ends, so an exit carries
   exactly one Correspondent contact. `TransmitRoute::Mixnet` now
   attests the winning pull's own tunnel rather than a shared one. An
-  attached session shares the slot's tunnel as before.
+  attached session shares the slot's tunnel as before. A pooled member
+  whose transport died between take and use makes its pull refuse — and
+  the price run refuse with `TransportError::DiedBeforeUse` — rather than
+  silently degrading onto the slot's shared tunnel and mislabeling the
+  diary's bound exit.
 - BREAKING: the Correspondent Pools land. A spawned session keeps an
   Indexer Pool (two Exit-Bound transports) and a Price Source
   Pool (one Shared-exit transport), refilled in the background under

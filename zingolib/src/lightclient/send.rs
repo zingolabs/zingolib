@@ -469,11 +469,23 @@ async fn mixnet_escalating_transmit(
                 })?),
                 None => None,
             };
+            // A pooled member carries its own Exclusive exit; only an
+            // attached session (no member) rides the shared slot tunnel. A
+            // member whose transport reports no address died between take
+            // and use, so the pull refuses rather than silently degrading
+            // to the shared tunnel and mislabeling the diary.
+            let socks5_addr = match member.as_ref() {
+                Some(member) => member.transport.socks5_addr().ok_or_else(|| {
+                    zingo_net_diag::NetOpFailure::message(
+                        zingo_net_diag::NetOpStage::LocalProxyConnect,
+                        host.clone(),
+                        "the pooled transport died before its pull could use it",
+                    )
+                })?,
+                None => shared_addr,
+            };
             let target = SocksTarget {
-                socks5_addr: member
-                    .as_ref()
-                    .and_then(|member| member.transport.socks5_addr())
-                    .unwrap_or(shared_addr),
+                socks5_addr,
                 indexer,
             };
             let started = std::time::Instant::now();
