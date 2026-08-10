@@ -62,8 +62,8 @@ use zingolib::wallet::keys::{
     unified::{ReceiverSelection, UnifiedKeyStore},
 };
 use zingolib::wallet::migration::{
-    MigrationBroadcastConfig, MigrationParams, MigrationPhase, RecommendedAction,
-    SyncEndpointBroadcast, parts::PartState, parts::SigningStrategy, split::plan_hash,
+    MigrationParams, MigrationPhase, RecommendedAction, parts::PartState, parts::SigningStrategy,
+    split::plan_hash,
 };
 
 use zingo_common_components::protocol::ActivationHeights;
@@ -168,13 +168,17 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             ZingolibError::Read(text)
         }
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
-        // A deliberate verdict (#1229): exhausting the eligible Broadcast
-        // Indexers is a server-topology problem, not a mixnet refusal —
-        // switching the synchronization endpoint changes eligibility, so
-        // the app's switch-and-retry routing can genuinely help. Mapping it
-        // to Mixnet would stamp it with the owned refusal marker and turn
-        // it never-retry.
-        LightClientError::NoEligibleBroadcastIndexer => ZingolibError::Indexer(text),
+        // A deliberate verdict (#1229): exhausting the eligible Correspondents
+        // is a server-topology problem, not a mixnet refusal — switching the
+        // synchronization endpoint changes eligibility, so the app's
+        // switch-and-retry routing can genuinely help. Mapping it to Mixnet
+        // would stamp it with the owned refusal marker and turn it
+        // never-retry.
+        LightClientError::NoEligibleCorrespondent
+        | LightClientError::IneligibleProbeTarget(_)
+        | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
+            ZingolibError::Indexer(text)
+        }
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -346,14 +350,13 @@ lazy_static! {
         RwLock::new(None);
 }
 
-// The app-supplied migration-broadcast config (indexer pool plus sync-endpoint
-// policy), read at every client construction: a custom server sends just itself
-// with `AllowWithCorrelationConsent`, a registry server sends the registry with
-// `Forbid` (the sync-operator exclusion), and while empty (before
-// `set_broadcast_candidates` runs) a mixnet migration refuses with
-// NoEligibleBroadcastIndexer.
-static BROADCAST_CONFIG: Lazy<RwLock<(Vec<http::Uri>, SyncEndpointBroadcast)>> =
-    Lazy::new(|| RwLock::new((Vec::new(), SyncEndpointBroadcast::Forbid)));
+// An optional dedicated migration-transmission endpoint, read at every client
+// construction. The library owns the curated Correspondent pool and always
+// excludes the synchronization operator (ADR 0022), so a mixnet migration works
+// without any app input. `Some` names one dedicated endpoint distinct from the
+// sync operator; `None` (the default) lets the library draw its curated pool.
+static MIGRATION_TRANSMISSION_URI: Lazy<RwLock<Option<http::Uri>>> =
+    Lazy::new(|| RwLock::new(None));
 
 static PENDING_INDEXER_URI: Lazy<RwLock<Option<http::Uri>>> = Lazy::new(|| RwLock::new(None));
 
@@ -607,66 +610,42 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    // Inject the app-supplied migration broadcast config: the library ships no
-    // default set, so migration-over-mixnet is unavailable until the app calls
-    // `set_broadcast_candidates`.
-    let (candidates, sync_endpoint) = BROADCAST_CONFIG
+    // Point migration transmission at a dedicated endpoint when the app set
+    // one. Absent it, the library draws its curated Correspondent pool.
+    let migration_uri = MIGRATION_TRANSMISSION_URI
         .read()
-        .map(|config| config.clone())
-        .unwrap_or_else(|_| (Vec::new(), SyncEndpointBroadcast::Forbid));
-    let builder = builder.set_migration_broadcast(MigrationBroadcastConfig {
-        candidates,
-        sync_endpoint,
-    });
+        .ok()
+        .and_then(|uri| uri.clone());
+    let builder = match migration_uri {
+        Some(uri) => builder.set_migration_transmission_uri(uri),
+        None => builder,
+    };
     builder.build().map_err(ZingolibError::init)
 }
 
-/// Set the migration broadcast candidate pool from the app's indexer registry
-/// (`serverUris` / `fetchServerList`, a JSON array of lightwalletd URIs),
-/// applied at the next client construction: the library embeds no pool, so a
-/// mixnet migration draws from this set minus the synchronization operator.
+/// Set an optional dedicated migration-transmission endpoint, applied at the
+/// next client construction. The library owns the curated Correspondent pool
+/// and always excludes the synchronization operator, so migration-over-mixnet
+/// works with no input here.
+///
+/// Accepts `{ transmissionUri: "<uri>" }` to name one dedicated endpoint
+/// distinct from the sync operator, or `null` / `{}` / the legacy
+/// `{ candidates, allowSyncEndpoint }` shape to clear it and use the curated
+/// pool. The legacy pool no longer feeds routing: the library embeds the pool.
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
     let parsed = json::parse(&candidates_json)
         .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
-    // Accept a bare array (candidates, Forbid) or an object `{ candidates,
-    // allowSyncEndpoint }`, where a custom server sets `allowSyncEndpoint` so the
-    // migration broadcasts through the user's own node instead of being excluded
-    // to nothing.
-    let (array, allow_sync) = if parsed.is_array() {
-        (parsed, false)
-    } else if parsed.is_object() {
-        let allow = parsed["allowSyncEndpoint"].as_bool().unwrap_or(false);
-        (parsed["candidates"].clone(), allow)
-    } else {
-        return Err(ZingolibError::InvalidInput(
-            "candidates must be a JSON array or { candidates, allowSyncEndpoint }".to_string(),
-        ));
+    let transmission_uri = match parsed["transmissionUri"].as_str() {
+        Some(uri) => Some(construct_indexer_uri(Some(uri.to_string())).map_err(|e| {
+            ZingolibError::InvalidInput(format!("invalid transmission uri {uri}: {e}"))
+        })?),
+        None => None,
     };
-    if !array.is_array() {
-        return Err(ZingolibError::InvalidInput(
-            "candidates must be an array of URIs".to_string(),
-        ));
-    }
-    let mut uris = Vec::with_capacity(array.len());
-    for member in array.members() {
-        let candidate = member.as_str().ok_or_else(|| {
-            ZingolibError::InvalidInput("each candidate must be a string".to_string())
-        })?;
-        let uri = construct_indexer_uri(Some(candidate.to_string())).map_err(|e| {
-            ZingolibError::InvalidInput(format!("invalid candidate uri {candidate}: {e}"))
-        })?;
-        uris.push(uri);
-    }
-    let count = uris.len();
-    let sync_endpoint = if allow_sync {
-        SyncEndpointBroadcast::AllowWithCorrelationConsent
-    } else {
-        SyncEndpointBroadcast::Forbid
-    };
-    *BROADCAST_CONFIG
+    let is_set = transmission_uri.is_some();
+    *MIGRATION_TRANSMISSION_URI
         .write()
-        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = (uris, sync_endpoint);
-    Ok(object! { "candidates_set" => count, "allow_sync_endpoint" => allow_sync }.pretty(2))
+        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = transmission_uri;
+    Ok(object! { "transmission_uri_set" => is_set }.pretty(2))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -989,7 +968,7 @@ mod ffi_error_routing_tests {
 
     #[test]
     fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleBroadcastIndexer);
+        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent);
         assert!(
             matches!(&mapped, ZingolibError::Indexer(_)),
             "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
@@ -2161,13 +2140,23 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 pub fn zec_price() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let price = lightclient
-                .update_current_price()
-                .await
-                .map_err(ffi_error)?;
-            // MixnetPriceFetch now carries source/round-trip/tunnel metadata
-            // beside the price; the JS contract only reads the USD number.
-            Ok(object! { "current_price" => price.usd }.pretty(2))
+            // zingolib fetches price only over the mixnet (ADR 0011). This
+            // wallet treats the price oracle as non-sensitive, so a mixnet
+            // deliberately switched off fetches over clearnet instead. A mixnet
+            // that is on but not ready still refuses, so an enabled private
+            // route never silently drops to clearnet.
+            let usd = match lightclient.update_current_price().await {
+                Ok(fetch) => fetch.usd,
+                Err(LightClientError::PriceFetchRequiresMixnet) => {
+                    zingo_price::race_current_price(None)
+                        .await
+                        .map_err(ZingolibError::read)?
+                        .price
+                        .price_usd
+                }
+                Err(e) => return Err(ffi_error(e)),
+            };
+            Ok(object! { "current_price" => usd }.pretty(2))
         })
     })
 }
@@ -2644,27 +2633,11 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
                     }
                 })
                 .collect::<Vec<_>>();
-            // The resolved broadcast route the migrate-now drain will use (the
-            // eligible candidate set after sync-operator exclusion), surfaced so
-            // the app can show and log which servers the migration broadcasts
-            // through.
-            let broadcast_targets = plan
-                .broadcast_targets
-                .iter()
-                .map(|target| {
-                    object! {
-                        "uri" => target.uri.to_string(),
-                        "operator" => target.operator.clone(),
-                        "reachable_over_mixnet" => target.reachable_over_mixnet,
-                    }
-                })
-                .collect::<Vec<_>>();
             Ok(object! {
                 "transactions" => transactions,
                 "migrated" => plan.migrated,
                 "fee" => plan.fee,
                 "residual" => plan.residual,
-                "broadcast_targets" => broadcast_targets,
             }
             .pretty(2))
         })
@@ -2907,7 +2880,7 @@ pub fn continue_note_splitting() -> Result<String, ZingolibError> {
                 .await
                 .map_err(ffi_error)?;
             Ok(match step {
-                SplitStep::RoundBroadcast { round, txids } => object! {
+                SplitStep::RoundTransmitted { round, txids } => object! {
                     "step" => "round_broadcast",
                     "round" => round,
                     "txids" => txids
@@ -3450,7 +3423,9 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             RT.block_on(async move {
                 lightclient
-                    .enable_mixnet(std::path::Path::new(&proxy_path))
+                    .enable_mixnet::<zingolib::nym::PrioritisePrivacy>(std::path::Path::new(
+                        &proxy_path,
+                    ))
                     .await
                     .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
                 Ok(

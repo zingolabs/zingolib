@@ -14,9 +14,13 @@ resolver = "2"
 [workspace.dependencies]
 zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect", features = [
     "nym",
+    "perspective",
 ] }
 pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect" }
 zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect" }
+zingo-price = { git = "https://github.com/zingolabs/zingolib", branch = "fix/nym-server-autoselect", features = [
+    "socks5-fetch",
+] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 

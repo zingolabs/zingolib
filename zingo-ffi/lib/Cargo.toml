@@ -7,6 +7,7 @@ edition = "2024"
 [dependencies]
 zingolib = { workspace = true }
 pepper-sync = { workspace = true }
+zingo-price = { workspace = true }
 
 zcash_keys = { workspace = true }
 zcash_address = { workspace = true }
