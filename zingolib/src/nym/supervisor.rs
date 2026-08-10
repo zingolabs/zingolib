@@ -57,7 +57,8 @@ use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_L
 use crate::nym::MixnetMode;
 use crate::nym::driver::{MixnetStatus, StatusPublisher};
 
-/// Loopback readiness attempts against the attached listener before it is declared dead.
+/// Loopback readiness attempts against the attached listener before it is
+/// declared dead.
 const ATTACH_LISTENER_ATTEMPTS: usize = 2;
 
 /// A failure starting the mixnet proxy child process or attaching to a
@@ -89,23 +90,20 @@ pub enum MixnetProxyError {
     },
 }
 
-/// The observable state shared between the supervisor and its stdout reader.
+/// The observable state shared between the supervisor and its transport
+/// driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProxyState {
     mode: MixnetMode,
     socks5_addr: Option<String>,
-    /// The Exit Node identities the child announced for its bound
-    /// transport.
+    /// The Exit Node identities the transport reports as bound.
     exits: Vec<String>,
-    /// The child's latest bootstrap progress line, live only while
+    /// The transport's latest bootstrap progress report, live only while
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
-    /// The one death latch: its moment and, when the watcher held one, the
-    /// typed cause (`docs/agents/net-diag-design.md`). A single field so a
-    /// cause can never exist without its moment (the #2569 review); the
-    /// latch is sticky by design (proxy-owner-remediates, issue #2564),
-    /// and the mode enum itself is unchanged.
+    /// The one sticky death latch, holding the moment and, when the watcher
+    /// held one, the typed cause.
     death: Option<DeathReport>,
 }
 
@@ -128,27 +126,19 @@ impl ProxyState {
     }
 }
 
-/// Publish `guarded`'s snapshot into the session channel. Called while the
-/// caller still holds the [`ProxyState`] lock, so publications reach
-/// subscribers in exactly the order the state changed.
+/// Publishes `guarded`'s snapshot into the session channel while the caller
+/// still holds the [`ProxyState`] lock, so publications reach subscribers in
+/// exactly the order the state changed.
 fn publish_locked(guarded: &ProxyState, publisher: &StatusPublisher) {
     publisher.send_replace(guarded.snapshot());
 }
 
 /// One latched death, read whole: when it happened and, when the watcher
-/// held one, the typed cause. The timestamp is always present because every
-/// death has a moment; the detail is `None` for a spawned child whose
-/// stdout closed after speaking the protocol, while a child that dies
-/// without ever speaking it latches a typed `proxy-launch` cause carrying
-/// the launch arguments and its stderr tail — the version-skew diagnosis.
+/// held one, the typed cause.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeathReport {
-    /// When the death latched, by the system clock — renderable as wall
-    /// time and FFI-crossable, unlike a monotonic instant, at the price of
-    /// NTP steps. Staleness math goes through [`DeathReport::age`], which
-    /// absorbs a stepped clock. Crosses the wire as milliseconds since the
-    /// Unix epoch (a JS `Date` on the far side), not serde's default
-    /// `{secs,nanos}` pair.
+    /// When the death latched, by the system clock, crossing the wire as
+    /// milliseconds since the Unix epoch.
     #[serde(with = "at_millis")]
     pub at: std::time::SystemTime,
     /// The typed cause, when one was held.
@@ -156,12 +146,8 @@ pub struct DeathReport {
     pub detail: Option<zingo_net_diag::NetOpFailure>,
 }
 
-/// serde codec for [`DeathReport::at`]: milliseconds since the Unix epoch as a
-/// `u64`. A pre-epoch instant (a clock set absurdly wrong) serializes as 0
-/// rather than erroring, since the timestamp is diagnostic, not load-bearing.
-/// Lifting is checked the same way: a millisecond count the platform's
-/// `SystemTime` cannot represent (Windows overflows far below `u64::MAX`)
-/// is refused as a deserialization error, never a panic.
+/// The serde codec carrying [`DeathReport::at`] as checked milliseconds
+/// since the Unix epoch in a `u64`.
 mod at_millis {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -182,11 +168,8 @@ mod at_millis {
 }
 
 impl DeathReport {
-    /// How long ago the death latched, measured against `now`. The system
-    /// clock can step between the latch and the read, so a moment reading
-    /// later than `now` clamps to zero: staleness never errors and never
-    /// goes negative. Consumers rendering "died N minutes ago" go through
-    /// this rather than subtracting timestamps themselves.
+    /// How long ago the death latched, measured against `now` and clamped
+    /// to zero when a stepped clock reads the moment later than `now`.
     pub fn age(&self, now: std::time::SystemTime) -> std::time::Duration {
         now.duration_since(self.at)
             .unwrap_or(std::time::Duration::ZERO)
@@ -200,20 +183,16 @@ pub struct MixnetProxy {
     transport: Transport,
 }
 
-/// How the proxy endpoint is provided (ADR 0011's mobile amendment): a child
-/// process this supervisor spawned and owns, or an already-running endpoint a
-/// platform handed the wallet. The state semantics are identical; only the
-/// liveness mechanism differs.
+/// How the proxy endpoint is provided: a child process this supervisor
+/// spawned and owns, or an already-running endpoint a platform handed the
+/// wallet.
 enum Transport {
     /// The bundled `nym-proxy` binary, spawned as an owned child.
     Spawned {
         child: Child,
         reader: JoinHandle<()>,
-        /// The child's stdin, held open for the child's life. The child
-        /// watches this pipe and exits when it closes, so dropping this
-        /// handle (on [`MixnetProxy::stop`] or when the whole process dies)
-        /// tears the proxy down. Never written to. Its openness is the
-        /// signal.
+        /// The child's stdin, held open for the child's life and never
+        /// written, whose closure on drop tears the proxy down.
         _stdin: ChildStdin,
     },
     /// A platform-hosted endpoint, watched by the readiness/liveness driver.
@@ -221,14 +200,9 @@ enum Transport {
 }
 
 impl MixnetProxy {
-    /// Spawn the `nym-proxy` binary at `binary_path`, its acquisition racing
-    /// under `R`'s launch policy. Returns immediately with
-    /// mode [`MixnetMode::Bootstrapping`], published into `publisher` along
-    /// with every later transition; poll [`Self::mode`] or subscribe to the
-    /// session channel for readiness.
-    /// The child is killed if this supervisor is dropped, spawned in its own
-    /// process group (terminal signals do not reach it) with its stdin piped
-    /// (its closure is how the child learns the parent is gone).
+    /// Spawns the `nym-proxy` binary at `binary_path` under `class`'s launch
+    /// policy, returning immediately with mode [`MixnetMode::Bootstrapping`]
+    /// published into `publisher` along with every later transition.
     pub(crate) fn spawn(
         binary_path: &Path,
         class: zingo_netutils::responsiveness::ResponsivenessClass,
@@ -358,9 +332,8 @@ impl MixnetProxy {
         }
     }
 
-    /// The child's latest bootstrap progress line, while
-    /// [`MixnetMode::Bootstrapping`]. `None` before the first report and
-    /// once the proxy is ready.
+    /// The transport's latest bootstrap progress report, if any, while
+    /// [`MixnetMode::Bootstrapping`].
     pub fn bootstrap_detail(&self) -> Option<String> {
         self.state
             .lock()
@@ -369,11 +342,9 @@ impl MixnetProxy {
             .clone()
     }
 
-    /// Why the transport died, while the mode is [`MixnetMode::Died`] and
-    /// the watcher held a typed cause: which stage failed, against what
-    /// target, with the cause chain as a vector. `None` in every other
-    /// mode, and `None` for a spawned child's death (a closed stdout pipe
-    /// carries no cause; the child's own stderr is the diagnostic there).
+    /// Why the transport died — the failed stage, its target, and the cause
+    /// chain — while the mode is [`MixnetMode::Died`] and the watcher held a
+    /// typed cause, and `None` otherwise.
     pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
         // Derived from the one latch, so this accessor and death_report
         // cannot disagree (the #2569 review).
@@ -381,10 +352,8 @@ impl MixnetProxy {
     }
 
     /// The latched death read whole — its moment, and its typed cause when
-    /// one was held — while the mode is [`MixnetMode::Died`]; `None` in
-    /// every other mode. The sticky latch (proxy-owner-remediates) makes
-    /// the timestamp the difference between "attach timed out twenty
-    /// minutes ago" and "the proxy is gone now" (issue #2564).
+    /// one was held — while the mode is [`MixnetMode::Died`], and `None` in
+    /// every other mode.
     pub fn death_report(&self) -> Option<DeathReport> {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == MixnetMode::Died {
@@ -394,18 +363,9 @@ impl MixnetProxy {
         }
     }
 
-    /// Shut the transport down deliberately and mark the mode
-    /// [`MixnetMode::Unattached`]: the transport is gone, and a deliberate
-    /// stop is neither a death nor the user's clearnet consent
-    /// (`SwitchedOff` is the wallet's to record, never a torn-down
-    /// transport's). The watcher task is aborted — and AWAITED, so a final
-    /// synchronous segment already running cannot publish a stale `Died`
-    /// after this returns — before the teardown; any stale reader of the
-    /// handle refuses rather than routes. Deliberately publishes nothing:
-    /// the slot owner that called this publishes the settled state
-    /// (switched off, or the next transport's bootstrapping), so
-    /// subscribers never glimpse a transient unattached between two
-    /// deliberate states.
+    /// Shuts the transport down deliberately, aborting and awaiting its
+    /// driver task, marking the mode [`MixnetMode::Unattached`], and
+    /// publishing nothing so the slot owner announces the settled state.
     pub(crate) async fn stop(self) {
         match self.transport {
             Transport::Spawned {
@@ -424,7 +384,8 @@ impl MixnetProxy {
     }
 }
 
-/// The attach readiness gate: the local listener must accept a loopback dial, retried once.
+/// The attach readiness gate: the local listener must accept a loopback
+/// dial, retried once.
 async fn listener_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
     for attempt in 0..ATTACH_LISTENER_ATTEMPTS {
         if attempt > 0 {
@@ -507,16 +468,8 @@ async fn drive_attached_state<RFut, P, PFut>(
     }
 }
 
-/// Read `stdout` for the child's whole life: the address announcement flips
-/// the mode to `Ready`, progress lines update the live bootstrap detail, and,
-/// the key coupling change, reading continues *past* `Ready` so a later close
-/// is observed. When stdout closes at all, whether before or after the address
-/// arrived, the mode becomes `Died`: an unexpected loss of the proxy, never
-/// a consented clearnet. Only [`MixnetProxy::stop`] tears down to
-/// `Unattached`, and it aborts this task first so a deliberate stop is never
-/// overwritten by this `Died`.
-/// Generic over the reader so the state machine is unit-tested without a
-/// process.
+/// Reads `stdout` for the child's whole life, driving the mode from the
+/// announcement lines and landing `Died` when the pipe closes.
 async fn drive_state<R: AsyncRead + Unpin>(
     stdout: R,
     state: Arc<Mutex<ProxyState>>,
