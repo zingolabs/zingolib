@@ -1233,18 +1233,21 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         });
     }
 
+    // The sweep binds the session's indexer, so it runs for every online
+    // session, not only a syncing one: a --nosync session still accepts
+    // interactive sync and send, which need an indexer bound. A pinned
+    // server is bound at config time and surveyed here; an unpinned online
+    // session has no indexer until the sweep selects one.
     #[cfg(feature = "nym")]
-    let sync_attachable = if filled_template.communication_mode == CommunicationMode::Online
-        && filled_template.sync
-    {
+    let indexer_ready = if filled_template.communication_mode == CommunicationMode::Online {
         sweep_select_sync_indexer(&mut lightclient, filled_template).await
     } else {
         true
     };
     #[cfg(not(feature = "nym"))]
-    let sync_attachable = true;
+    let indexer_ready = true;
 
-    if filled_template.sync && sync_attachable {
+    if filled_template.sync && indexer_ready {
         let sync_run = commands::CliCommand::Sync {
             sub: commands::SyncSubCommand::Run,
         };
@@ -1263,7 +1266,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     if filled_template.sync
-        && sync_attachable
+        && indexer_ready
         && filled_template.waitsync
         && let Err(e) = lightclient.await_sync().await
     {
