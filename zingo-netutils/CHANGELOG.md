@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
+  helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
+  proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
+
 ### Added
 
 - The `responsiveness` module partitions network operations at compile

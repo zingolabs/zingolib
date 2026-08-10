@@ -108,11 +108,7 @@ x509-parser.workspace = true
 # no zcash dependency, so its standalone graph carries no such pin.
 [workspace]
 resolver = "2"
-# The UniFFI proxy shim (ADR 0011 mobile amendment, CP-3): a cdylib/staticlib
-# that hosts NymProxy behind a UniFFI surface for mobile. A member so it shares
-# this standalone lockfile (where nym-sdk's crypto-common resolves without the
-# parent workspace's zcash pin).
-members = ["nym-proxy-ffi", "uniffi-bindgen", "webpki-verifier-shim"]
+members = ["webpki-verifier-shim"]
 
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the
