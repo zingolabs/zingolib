@@ -1845,23 +1845,18 @@ mod attached_exit_reporting {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{BootstrapOutcome, await_bootstrap_outcome, render_exit_nodes};
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
-    /// The identity the stand-in platform host reports as its bound exit,
-    /// within the render's unshortened width.
-    const HOST_BOUND_EXIT: &str = "host-bound-exit";
-
-    /// HYPOTHESIS: an attached transport that reaches `Ready` publishes
-    /// exactly the Exit Node identity its platform host bound, rendered by
-    /// the CLI's success report, so the session's exits-in-use draw is never
-    /// vacuous on the attach path. Falsified if the attach seam drops,
-    /// alters, or invents the host-reported identity (the #2660 headline
-    /// finding ran this red until the seam carried it).
+    /// HYPOTHESIS: an attached endpoint that accepts TCP but carries no data
+    /// fails closed — the readiness gate is a round trip through the tunnel,
+    /// not a loopback dial, so a dead mixnet path never reports `Ready`.
+    /// Falsified if a listener that answers no gRPC reaches `Ready` (the
+    /// #2662 headline finding ran this red while the gate was a bare dial).
     // Seam justification (ADR 0030): the block_on is the tokio::test
     // harness's own crossing, not a new seam in the CLI.
     #[tokio::test]
     #[allow(clippy::disallowed_methods)]
-    async fn an_attached_ready_transport_reports_its_bound_exit_node() {
+    async fn an_attached_endpoint_that_carries_no_data_fails_closed() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("a loopback listener binds");
@@ -1869,6 +1864,7 @@ mod attached_exit_reporting {
             .local_addr()
             .expect("the bound listener has an address")
             .to_string();
+        // A stand-in host that accepts the connection and answers nothing.
         let host = tokio::spawn(async move {
             loop {
                 drop(listener.accept().await);
@@ -1881,27 +1877,16 @@ mod attached_exit_reporting {
         .await;
         let receiver = client.subscribe_mixnet_status();
         client
-            .attach_mixnet(&addr, &[HOST_BOUND_EXIT.to_string()])
+            .attach_mixnet(&addr, &["host-bound-exit".to_string()])
             .await
             .expect("a valid loopback address attaches");
 
         let outcome = await_bootstrap_outcome(receiver).await;
         host.abort();
         match outcome {
+            BootstrapOutcome::Failed { .. } => {}
             BootstrapOutcome::Ready { exits } => {
-                assert_eq!(
-                    exits,
-                    vec![HOST_BOUND_EXIT.to_string()],
-                    "an attached Ready must report exactly the Exit Node its host bound"
-                );
-                assert_eq!(
-                    render_exit_nodes(&exits),
-                    format!(" Exit Node bound: {HOST_BOUND_EXIT}."),
-                    "the success report must render the host-bound identity"
-                );
-            }
-            BootstrapOutcome::Failed { report } => {
-                panic!("the attached endpoint must reach Ready: {report}")
+                panic!("a data-dead endpoint must never reach Ready; got exits {exits:?}")
             }
         }
     }

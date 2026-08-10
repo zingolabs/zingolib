@@ -95,12 +95,15 @@ pub const LISTENER_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
 /// endpoint.
 pub const ATTACH_WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Pause between the attach readiness gate's loopback attempts.
+/// Pause between the attach readiness gate's round-trip attempts.
 pub const ATTACH_LISTENER_RETRY_PAUSE: Duration = Duration::from_secs(1);
 
-/// The attach readiness gate's total worst-case budget: every loopback
-/// attempt's bound plus the pauses between attempts.
-pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(11);
+/// The attach readiness gate's total worst-case budget: every round-trip
+/// attempt's bound plus the pauses between attempts (two attempts of
+/// [`MIXNET_ROUND_TRIP_BOUND`] with one [`ATTACH_LISTENER_RETRY_PAUSE`]).
+pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(
+    MIXNET_ROUND_TRIP_BOUND.as_secs() * 2 + ATTACH_LISTENER_RETRY_PAUSE.as_secs(),
+);
 
 // ---------------------------------------------------------------------------
 // The gRPC data path (sync and send)

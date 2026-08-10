@@ -51,6 +51,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
 use zingo_netutils::time::{
     ATTACH_LISTENER_RETRY_PAUSE, ATTACH_WATCHDOG_INTERVAL, LOOPBACK_DIAL_BOUND,
+    MIXNET_ROUND_TRIP_BOUND,
 };
 use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
@@ -58,9 +59,13 @@ use crate::nym::MixnetMode;
 use crate::nym::acquire;
 use crate::nym::driver::{MixnetStatus, StatusPublisher};
 
-/// Loopback readiness attempts against the attached listener before it is
-/// declared dead.
-const ATTACH_LISTENER_ATTEMPTS: usize = 2;
+/// The census indexer an attached session round-trips against to prove its
+/// mixnet path carries data.
+const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
+
+/// Readiness round trips through the attached endpoint before it is declared
+/// dead.
+const ATTACH_HEALTH_ATTEMPTS: usize = 2;
 
 /// A failure starting the mixnet proxy child process or attaching to a
 /// platform-hosted endpoint.
@@ -296,7 +301,7 @@ impl MixnetProxy {
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
             addr.clone(),
-            listener_readiness(addr),
+            attach_readiness(addr),
             move || endpoint_alive(watch_addr.clone()),
             ATTACH_WATCHDOG_INTERVAL,
             publisher,
@@ -390,22 +395,40 @@ impl MixnetProxy {
     }
 }
 
-/// The attach readiness gate: the local listener must accept a loopback
-/// dial, retried once.
-async fn listener_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
-    for attempt in 0..ATTACH_LISTENER_ATTEMPTS {
+/// The attach readiness gate: a data round trip through the endpoint to
+/// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
+/// listener that accepts TCP proves nothing about the mixnet carrying data.
+async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
+    let indexer: http::Uri = ATTACH_HEALTH_INDEXER
+        .parse()
+        .expect("the static health-check URI parses");
+    let mut last_failure = None;
+    for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        if endpoint_alive(socks5_addr.clone()).await {
-            return Ok(());
+        match zingo_netutils::get_lightd_info_via_socks5(
+            &socks5_addr,
+            &indexer,
+            MIXNET_ROUND_TRIP_BOUND,
+        )
+        .await
+        {
+            Ok(_) => return Ok(()),
+            Err(error) => {
+                let stage = crate::nym::socks5_transmit_stage(&error);
+                let target = match stage {
+                    zingo_net_diag::NetOpStage::LocalProxyConnect
+                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.as_str(),
+                    _ => ATTACH_HEALTH_INDEXER,
+                };
+                last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
+                    stage, target, &error,
+                ));
+            }
         }
     }
-    Err(zingo_net_diag::NetOpFailure::message(
-        zingo_net_diag::NetOpStage::LocalProxyConnect,
-        &socks5_addr,
-        "the attached listener refused the loopback dial",
-    ))
+    Err(last_failure.expect("at least one readiness attempt ran"))
 }
 
 /// One watchdog tick: whether the local endpoint still accepts a dial.
@@ -1069,6 +1092,44 @@ mod tests {
         );
     }
 
+    /// HYPOTHESIS: a passing readiness gate publishes Ready carrying the
+    /// host-bound Exit Node identities the attach seam seeded. Falsified if
+    /// Ready drops or invents the identities.
+    #[tokio::test]
+    async fn attached_ready_carries_the_host_bound_exits() {
+        let state = Arc::new(Mutex::new(ProxyState {
+            mode: MixnetMode::Bootstrapping,
+            socks5_addr: None,
+            exits: vec!["host-bound-exit".to_string()],
+            bootstrap_detail: None,
+            death: None,
+        }));
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        // The watchdog sleeps far past the test; the readiness publish is
+        // what this isolates, observed on the channel before teardown.
+        let driver = tokio::spawn(drive_attached_state(
+            Arc::clone(&state),
+            "127.0.0.1:1080".to_string(),
+            std::future::ready(Ok(())),
+            || std::future::ready(true),
+            Duration::from_secs(3_600),
+            publisher.clone(),
+        ));
+        loop {
+            receiver.changed().await.expect("the publisher stays open");
+            if receiver.borrow().mode == MixnetMode::Ready {
+                break;
+            }
+        }
+        assert_eq!(
+            receiver.borrow().exits,
+            vec!["host-bound-exit".to_string()],
+            "an attached Ready must carry the host-bound Exit Node"
+        );
+        driver.abort();
+    }
+
     /// HYPOTHESIS: attach validates the address synchronously, and stop() on
     /// an attached transport is a deliberate teardown to Unattached — never
     /// Died, and never the wallet's SwitchedOff. Falsified if a malformed
@@ -1254,14 +1315,14 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: the named readiness budget equals the loopback gate it
+    /// HYPOTHESIS: the named readiness budget equals the round-trip gate it
     /// summarizes.
     #[test]
     fn the_readiness_budget_is_the_sum_of_its_gate() {
-        let attempts = u32::try_from(ATTACH_LISTENER_ATTEMPTS).expect("a small count");
+        let attempts = u32::try_from(ATTACH_HEALTH_ATTEMPTS).expect("a small count");
         assert_eq!(
             zingo_netutils::time::ATTACH_READINESS_BUDGET,
-            LOOPBACK_DIAL_BOUND * attempts + ATTACH_LISTENER_RETRY_PAUSE * (attempts - 1),
+            MIXNET_ROUND_TRIP_BOUND * attempts + ATTACH_LISTENER_RETRY_PAUSE * (attempts - 1),
             "retune the budget with its gate, never apart"
         );
     }

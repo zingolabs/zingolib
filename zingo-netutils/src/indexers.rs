@@ -83,6 +83,10 @@ impl Indexer {
     }
 }
 
+/// The census indexer an attached session round-trips against to prove its
+/// mixnet path carries data.
+pub const MIXNET_HEALTH_INDEXER: &str = "https://zec.rocks:443";
+
 /// The census, chains interleaved; use [`active`] for the common partition.
 pub const INDEXERS: &[Indexer] = &[
     Indexer {
@@ -392,5 +396,17 @@ mod tests {
         for indexer in INDEXERS {
             assert!(seen.insert(indexer.uri), "duplicate: {}", indexer.uri);
         }
+    }
+
+    /// HYPOTHESIS: the attach health target is an active mainnet census
+    /// member, so the readiness round trip dials a real indexer.
+    #[test]
+    fn the_health_indexer_is_an_active_census_member() {
+        let member = INDEXERS
+            .iter()
+            .find(|indexer| indexer.uri == MIXNET_HEALTH_INDEXER)
+            .expect("the health target must be in the census");
+        assert_eq!(member.chain, IndexerChain::Main);
+        assert!(!member.obsolete);
     }
 }

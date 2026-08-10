@@ -134,10 +134,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DEFAULT_INDEXER_URI` / `DEFAULT_INDEXER_URI_TESTNET` re-exports are
   removed; an unpinned online session starts Indexerless and the
   Server-Selection Sweep selects its sync indexer.
-- BREAKING: `LightClient::attach_mixnet` readiness is a loopback dial of the
-  platform-hosted listener, never a mixnet round trip; end-to-end
-  verification belongs to the session's Server-Selection Sweep, and every
-  Transmission thereafter doubles as a probe.
+- BREAKING: `LightClient::attach_mixnet` readiness is a data round trip
+  through the platform-hosted endpoint to a census health indexer, retried
+  once, because a listener that accepts TCP proves nothing about the mixnet
+  carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
+  loopback dial remains only as the cheap liveness watchdog after readiness.
 - BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
   is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
   pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
