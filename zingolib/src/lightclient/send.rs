@@ -280,9 +280,8 @@ impl PullTransports {
             pool.take()
         };
         for dead in take.evicted {
-            let exit = dead.exit.clone();
+            // Dropping the dead member recycles its lease after the stop.
             dead.transport.stop().await;
-            self.pools.recycle_lease(exit);
         }
         if let Some(member) = take.member {
             return Ok(member);
@@ -291,16 +290,18 @@ impl PullTransports {
             .pools
             .acquirer()
             .ok_or(acquire::TransportError::NoAcquirer)?;
-        let clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
+        let mut clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
+        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
         let (transport, exit) =
-            crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await?;
-        // Bind-time recycle: only the bound reservation stays held.
-        self.pools
-            .exits
-            .lock()
-            .expect("exit pool mutex")
-            .recycle(clutch.into_iter().filter(|node| node != &exit));
-        Ok(crate::correspondent::pool::Member { transport, exit })
+            crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &nodes).await?;
+        // Bind-time recycle: keeping only the bound lease drops the rest.
+        let bound = clutch
+            .iter()
+            .position(|reservation| reservation.node() == exit)
+            .expect("the bound exit is one of the clutch's nodes");
+        let lease = clutch.swap_remove(bound);
+        drop(clutch);
+        Ok(crate::correspondent::pool::Member { transport, lease })
     }
 
     /// Tops the pools back up after a pull consumed a member.
@@ -464,13 +465,17 @@ async fn mixnet_escalating_transmit(
             .await
             .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
             // The consumed transport dies with its pull, whatever the
-            // outcome, so its exit carries exactly this one Transmission.
-            let bound_exit = member.as_ref().map(|member| member.exit.clone());
+            // outcome, so its exit carries exactly this one Transmission;
+            // dropping the member recycles its lease even when the pull is
+            // cancelled mid-await.
+            let bound_exit = member
+                .as_ref()
+                .map(|member| member.lease.node().to_string());
             if let Some(member) = member {
-                let exit = member.exit.clone();
-                member.transport.stop().await;
+                let crate::correspondent::pool::Member { transport, lease } = member;
+                transport.stop().await;
+                drop(lease);
                 if let Some(context) = pulls {
-                    context.pools.recycle_lease(exit);
                     context.refill();
                 }
             }

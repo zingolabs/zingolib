@@ -46,6 +46,9 @@ pub enum SweepProgress {
 /// Why a Server-Selection Sweep produced no sync indexer.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerSelectionError {
+    /// The sweep could not draw a ledgered Clutch for its transport.
+    #[error("the sweep could not acquire a transport: {0}")]
+    TransportAcquisition(#[source] crate::nym::acquire::TransportError),
     /// The dedicated sweep proxy could not be spawned.
     #[error("the sweep proxy could not start: {0}")]
     ProxyStart(#[source] crate::nym::MixnetProxyError),
@@ -84,15 +87,18 @@ impl LightClient {
         // The sweep gates the Sync Session a user just asked to open.
         use zingo_netutils::responsiveness::{PrioritiseSpeed, Responsiveness as _};
         let acquirer = crate::nym::acquire::SpawnedBinary::at(binary_path.to_path_buf());
+        // The sweep refuses without a ledgered Clutch; its reservations are
+        // held for the sweep's life and recycled by drop on every return.
         let clutch = self
             .correspondent_pools
             .draw_clutch(&acquirer)
             .await
-            .unwrap_or_default();
+            .map_err(ServerSelectionError::TransportAcquisition)?;
+        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
         let proxy = crate::nym::acquire::TransportAcquirable::acquire(
             &acquirer,
             PrioritiseSpeed::CLASS,
-            &clutch,
+            &nodes,
             publisher,
         )
         .map_err(ServerSelectionError::ProxyStart)?;
@@ -116,10 +122,11 @@ impl LightClient {
             &mut rand::rngs::OsRng,
         )?;
 
-        // Exit Recycling: dropping the dedicated proxy tears its exit down
-        // (the child is killed on drop), so no later traffic rides the exit
-        // that observed the survey.
+        // Exit Recycling: dropping the dedicated proxy kills the child, and
+        // the Clutch's leases recycle when this function returns, so no
+        // later traffic rides the exit that observed the survey.
         drop(proxy);
+        drop(clutch);
         Ok(selection)
     }
 }

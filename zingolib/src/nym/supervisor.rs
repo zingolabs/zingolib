@@ -89,6 +89,9 @@ pub enum MixnetProxyError {
         /// The address that failed to parse.
         addr: String,
     },
+    /// The session could not draw a ledgered Clutch for the spawn.
+    #[error(transparent)]
+    Acquisition(Box<acquire::TransportError>),
 }
 
 /// The observable state shared between the supervisor and its transport

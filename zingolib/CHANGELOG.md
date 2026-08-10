@@ -95,7 +95,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can never hold one exit. Every discovered node stays eligible for the
   whole session: population hygiene belongs to the upstream directory,
   not to an in-wallet statistic. The exclusion lists this replaces are
-  gone.
+  gone. Reservations are owning values that recycle themselves when
+  dropped, so every path — success, failure, or a hedged pull's
+  cancellation — returns what it drew, and a session that cannot draw a
+  ledgered Clutch refuses instead of letting the spawned binary select
+  exits outside the ledger.
 - BREAKING: every pull of a mixnet Transmission binds its own Exclusive
   exit (ADR 0039). A spawned session's send escalation consumes one
   Indexer Pool member per pull, acquiring inline past the complement,

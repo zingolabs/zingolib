@@ -18,12 +18,13 @@ pub(crate) trait PoolTransport: Send + 'static {
     fn is_ready(&self) -> bool;
 }
 
-/// One ready member: an Exit-Bound transport and the Exit Node it bound.
+/// One ready member: an Exit-Bound transport and the Exclusive Lease of
+/// the Exit Node it bound.
 pub(crate) struct Member<T> {
     /// The ready transport a run consumes.
     pub(crate) transport: T,
-    /// The Exit Node the transport bound.
-    pub(crate) exit: String,
+    /// The bound Exit Node's owning lease, recycled when the member drops.
+    pub(crate) lease: exit_pool::Reservation,
 }
 
 /// What a take found: the member to consume, and any dead members evicted
@@ -103,8 +104,9 @@ pub(crate) struct Pools {
     pub(crate) indexer: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy>>,
     /// The Price Source Pool's one Shared-exit member.
     pub(crate) price: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy>>,
-    /// The session's sole issuer of Exit Node Reservations.
-    pub(crate) exits: std::sync::Mutex<exit_pool::ExitPool>,
+    /// The session's sole issuer of Exit Node Reservations; reservations
+    /// hold a weak ledger handle and recycle themselves on drop.
+    pub(crate) exits: std::sync::Arc<std::sync::Mutex<exit_pool::ExitPool>>,
     /// What refills acquire transports from; `None` until a session sets
     /// one, and always `None` for attached sessions.
     acquirer:
@@ -117,7 +119,7 @@ impl Pools {
         std::sync::Arc::new(Pools {
             indexer: std::sync::Mutex::new(CorrespondentPool::new(INDEXER_POOL_COMPLEMENT)),
             price: std::sync::Mutex::new(CorrespondentPool::new(PRICE_POOL_COMPLEMENT)),
-            exits: std::sync::Mutex::new(exit_pool::ExitPool::default()),
+            exits: std::sync::Arc::new(std::sync::Mutex::new(exit_pool::ExitPool::default())),
             acquirer: std::sync::Mutex::new(None),
         })
     }
@@ -127,22 +129,13 @@ impl Pools {
     pub(crate) async fn draw_clutch(
         &self,
         acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    ) -> Result<Vec<String>, acquire::TransportError> {
+    ) -> Result<Vec<exit_pool::Reservation>, acquire::TransportError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;
             self.exits.lock().expect("exit pool mutex").seed(discovered);
         }
-        Ok(self.exits.lock().expect("exit pool mutex").draw_clutch()?)
-    }
-
-    /// Returns one transport's Exclusive Lease to the Exit Pool when its
-    /// lifecycle ends.
-    pub(crate) fn recycle_lease(&self, exit: String) {
-        self.exits
-            .lock()
-            .expect("exit pool mutex")
-            .recycle(std::iter::once(exit));
+        Ok(exit_pool::ExitPool::draw_clutch(&self.exits)?)
     }
 
     /// Records what this session acquires transports from.
@@ -168,9 +161,8 @@ impl Pools {
             members
         };
         for member in drained {
-            let exit = member.exit.clone();
+            // Dropping the member recycles its lease after the stop.
             member.transport.stop().await;
-            self.recycle_lease(exit);
         }
     }
 
@@ -231,7 +223,7 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
         pool.lock().expect("pool mutex").note_refill_finished();
         return;
     };
-    let clutch = match pools.draw_clutch(acquirer.as_ref()).await {
+    let mut clutch = match pools.draw_clutch(acquirer.as_ref()).await {
         Ok(clutch) => clutch,
         Err(cause) => {
             pool.lock().expect("pool mutex").note_refill_finished();
@@ -239,21 +231,24 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
             return;
         }
     };
-    match crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await {
+    let nodes = exit_pool::clutch_nodes(&clutch);
+    match crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &nodes).await {
         Ok((transport, exit)) => {
-            // Bind-time recycle: every reservation but the bound one goes
-            // back at once, so the pool drains only by what is leased.
-            pools
-                .exits
-                .lock()
-                .expect("exit pool mutex")
-                .recycle(clutch.into_iter().filter(|node| node != &exit));
+            // Bind-time recycle: keeping only the bound lease drops the
+            // rest, so the pool drains only by what is leased.
+            let bound = clutch
+                .iter()
+                .position(|reservation| reservation.node() == exit)
+                .expect("the bound exit is one of the clutch's nodes");
+            let lease = clutch.swap_remove(bound);
+            drop(clutch);
             let mut pool = pool.lock().expect("pool mutex");
-            pool.admit(Member { transport, exit });
+            pool.admit(Member { transport, lease });
             pool.note_refill_finished();
         }
         Err(cause) => {
-            pools.exits.lock().expect("exit pool mutex").recycle(clutch);
+            // Dropping the clutch recycles every reservation.
+            drop(clutch);
             pool.lock().expect("pool mutex").note_refill_finished();
             log::warn!("pool refill failed: {cause}");
         }
@@ -277,7 +272,7 @@ mod tests {
     fn member(exit: &str, ready: bool) -> Member<FakeTransport> {
         Member {
             transport: FakeTransport { ready },
-            exit: exit.to_string(),
+            lease: exit_pool::Reservation::dangling_for_test(exit),
         }
     }
 
@@ -309,7 +304,7 @@ mod tests {
         let take = pool.take();
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
-        assert_eq!(taken.exit, "exit-live");
+        assert_eq!(taken.lease.node(), "exit-live");
         assert!(pool.take().member.is_none(), "both members left the pool");
     }
 
@@ -335,9 +330,13 @@ mod tests {
             CorrespondentPool::new(INDEXER_POOL_COMPLEMENT);
         pool.admit(member("exit-a", true));
         pool.admit(member("exit-b", true));
-        let first = pool.take().member.expect("first take").exit;
-        let second = pool.take().member.expect("second take").exit;
-        assert_ne!(first, second, "a member is consumed, never reused");
+        let first = pool.take().member.expect("first take");
+        let second = pool.take().member.expect("second take");
+        assert_ne!(
+            first.lease.node(),
+            second.lease.node(),
+            "a member is consumed, never reused"
+        );
         assert!(pool.take().member.is_none(), "the pool is spent");
     }
 }

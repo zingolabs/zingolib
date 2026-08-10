@@ -175,6 +175,10 @@ pub struct LightClient {
     /// run, refilled in the background under PrioritisePrivacy.
     #[cfg(feature = "nym")]
     correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    /// The session tunnel's Clutch, held for the spawned slot proxy's life
+    /// and recycled by drop on vacate.
+    #[cfg(feature = "nym")]
+    slot_clutch: Vec<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -254,6 +258,8 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
+            #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
@@ -291,6 +297,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -350,6 +358,8 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -656,6 +666,7 @@ impl LightClient {
                 pool.take()
             };
             for dead in take.evicted {
+                // Dropping the dead member recycles its lease after the stop.
                 dead.transport.stop().await;
             }
             match take.member {
@@ -665,21 +676,25 @@ impl LightClient {
                         .correspondent_pools
                         .acquirer()
                         .expect("checked above; the acquirer is set");
-                    let clutch = self
+                    let mut clutch = self
                         .correspondent_pools
                         .draw_clutch(acquirer.as_ref())
                         .await
                         .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
+                    let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
                     let (transport, exit) =
-                        crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch)
+                        crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &nodes)
                             .await
                             .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
-                    self.correspondent_pools
-                        .exits
-                        .lock()
-                        .expect("exit pool mutex")
-                        .recycle(clutch.into_iter().filter(|node| node != &exit));
-                    Some(crate::correspondent::pool::Member { transport, exit })
+                    // Bind-time recycle: keeping only the bound lease drops
+                    // the rest.
+                    let bound = clutch
+                        .iter()
+                        .position(|reservation| reservation.node() == exit)
+                        .expect("the bound exit is one of the clutch's nodes");
+                    let lease = clutch.swap_remove(bound);
+                    drop(clutch);
+                    Some(crate::correspondent::pool::Member { transport, lease })
                 }
             }
         } else {
@@ -698,9 +713,10 @@ impl LightClient {
         let dispatched = std::time::Instant::now();
         let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
         if let Some(member) = pooled {
-            let exit = member.exit.clone();
-            member.transport.stop().await;
-            self.correspondent_pools.recycle_lease(exit);
+            // The lease recycles by drop after the transport's stop.
+            let crate::correspondent::pool::Member { transport, lease } = member;
+            transport.stop().await;
+            drop(lease);
             self.correspondent_pools.ensure_filled();
         }
         let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
@@ -814,6 +830,9 @@ impl LightClient {
         {
             running.stop().await;
         }
+        // Dropping the slot's Clutch recycles the session tunnel's
+        // reservations after the transport is gone.
+        self.slot_clutch.clear();
     }
 
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
@@ -830,21 +849,33 @@ impl LightClient {
         let acquirer = std::sync::Arc::new(crate::nym::acquire::SpawnedBinary::at(
             binary_path.to_path_buf(),
         ));
-        let clutch = self
+        let clutch = match self
             .correspondent_pools
             .draw_clutch(acquirer.as_ref())
             .await
-            .unwrap_or_default();
+        {
+            Ok(clutch) => clutch,
+            Err(refusal) => {
+                // A session that cannot draw a ledgered Clutch refuses;
+                // the spawned binary must never self-draw outside the
+                // reservation ledger.
+                self.publish_mixnet_slot_state();
+                return Err(crate::nym::MixnetProxyError::Acquisition(Box::new(refusal)));
+            }
+        };
+        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
         match crate::nym::acquire::TransportAcquirable::acquire(
             acquirer.as_ref(),
             R::CLASS,
-            &clutch,
+            &nodes,
             std::sync::Arc::clone(&self.mixnet_status),
         ) {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
-                // channel; nothing further to announce here.
+                // channel; nothing further to announce here. The Clutch is
+                // held for the tunnel's life and recycled on vacate.
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
+                self.slot_clutch = clutch;
                 self.correspondent_pools.set_acquirer(acquirer);
                 self.correspondent_pools.ensure_filled();
                 Ok(())
@@ -852,6 +883,7 @@ impl LightClient {
             Err(error) => {
                 // A failed enable leaves Unattached (the user's enable revoked
                 // any standing clearnet consent); subscribers must see it.
+                // The drawn Clutch drops here, recycling its reservations.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }

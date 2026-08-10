@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex, Weak};
 
 use rand::seq::SliceRandom as _;
 
@@ -19,6 +20,56 @@ pub(crate) enum ExitPoolError {
         /// The whole discovered population.
         population: usize,
     },
+}
+
+/// One issued Exit Node Reservation; dropping it recycles the node.
+pub(crate) struct Reservation {
+    node: String,
+    ledger: Weak<Mutex<ExitPool>>,
+}
+
+impl Reservation {
+    /// The reserved Exit Node identity.
+    pub(crate) fn node(&self) -> &str {
+        &self.node
+    }
+
+    /// A ledgerless reservation for pool unit tests.
+    #[cfg(test)]
+    pub(crate) fn dangling_for_test(node: &str) -> Self {
+        Reservation {
+            node: node.to_string(),
+            ledger: Weak::new(),
+        }
+    }
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        if let Some(ledger) = self.ledger.upgrade() {
+            ledger
+                .lock()
+                .expect("exit pool mutex")
+                .issued
+                .remove(&self.node);
+        }
+    }
+}
+
+impl std::fmt::Debug for Reservation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reservation")
+            .field("node", &self.node)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The node identities of a clutch, for the process seam's `--exit` args.
+pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<String> {
+    clutch
+        .iter()
+        .map(|reservation| reservation.node().to_string())
+        .collect()
 }
 
 /// The session's Exit Pool: one reservation per discovered node, issued to
@@ -40,41 +91,41 @@ impl ExitPool {
         !self.population.is_empty()
     }
 
-    /// Draws a Clutch, transferring those reservations to the caller.
-    pub(crate) fn draw_clutch(&mut self) -> Result<Vec<String>, ExitPoolError> {
-        if self.population.is_empty() {
+    /// Draws a Clutch of owning reservations, each of which recycles
+    /// itself into `pool` when dropped.
+    pub(crate) fn draw_clutch(
+        pool: &Arc<Mutex<ExitPool>>,
+    ) -> Result<Vec<Reservation>, ExitPoolError> {
+        let mut guarded = pool.lock().expect("exit pool mutex");
+        if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        let drawable: Vec<String> = self
+        let drawable: Vec<String> = guarded
             .population
             .iter()
-            .filter(|node| !self.issued.contains(*node))
+            .filter(|node| !guarded.issued.contains(*node))
             .cloned()
             .collect();
         if drawable.is_empty() {
             return Err(ExitPoolError::Exhausted {
-                held: self.issued.len(),
-                population: self.population.len(),
+                held: guarded.issued.len(),
+                population: guarded.population.len(),
             });
         }
-        let clutch: Vec<String> = drawable
+        let clutch: Vec<Reservation> = drawable
             .choose_multiple(
                 &mut rand::rngs::OsRng,
                 zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
             )
-            .cloned()
+            .map(|node| {
+                guarded.issued.insert(node.clone());
+                Reservation {
+                    node: node.clone(),
+                    ledger: Arc::downgrade(pool),
+                }
+            })
             .collect();
-        for node in &clutch {
-            self.issued.insert(node.clone());
-        }
         Ok(clutch)
-    }
-
-    /// Returns reservations to the pool (Exit Recycling).
-    pub(crate) fn recycle<I: IntoIterator<Item = String>>(&mut self, reservations: I) {
-        for node in reservations {
-            self.issued.remove(&node);
-        }
     }
 }
 
@@ -83,50 +134,79 @@ mod tests {
     use super::*;
     use zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE;
 
-    fn population(count: usize) -> Vec<String> {
-        (0..count).map(|index| format!("exit-{index}")).collect()
+    fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
+        let pool = Arc::new(Mutex::new(ExitPool::default()));
+        pool.lock()
+            .unwrap()
+            .seed((0..count).map(|index| format!("exit-{index}")).collect());
+        pool
     }
 
     /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in
     /// it is transferred, so a second draw can never repeat one.
     #[test]
     fn a_reservation_is_never_issued_twice() {
-        let mut pool = ExitPool::default();
-        pool.seed(population(RESERVATION_CLUTCH_SIZE * 2));
-        let first = pool.draw_clutch().expect("the first clutch");
-        let second = pool.draw_clutch().expect("the second clutch");
+        let pool = seeded(RESERVATION_CLUTCH_SIZE * 2);
+        let first = ExitPool::draw_clutch(&pool).expect("the first clutch");
+        let second = ExitPool::draw_clutch(&pool).expect("the second clutch");
         assert_eq!(first.len(), RESERVATION_CLUTCH_SIZE);
         assert_eq!(second.len(), RESERVATION_CLUTCH_SIZE);
-        for node in &first {
+        for reservation in &first {
             assert!(
-                !second.contains(node),
-                "{node} was issued to two holders at once"
+                !second
+                    .iter()
+                    .any(|other| other.node() == reservation.node()),
+                "{} was issued to two holders at once",
+                reservation.node()
             );
         }
     }
 
-    /// HYPOTHESIS: recycling returns reservations, so an exhausted pool
-    /// issues again only after its holders release.
+    /// HYPOTHESIS: dropping reservations recycles them, so an exhausted
+    /// pool issues again only after its holders release.
     #[test]
-    fn recycling_replenishes_an_exhausted_pool() {
-        let mut pool = ExitPool::default();
-        pool.seed(population(RESERVATION_CLUTCH_SIZE));
-        let clutch = pool.draw_clutch().expect("the only clutch");
-        let exhausted = pool.draw_clutch().expect_err("nothing is left to issue");
+    fn dropping_replenishes_an_exhausted_pool() {
+        let pool = seeded(RESERVATION_CLUTCH_SIZE);
+        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        let exhausted = ExitPool::draw_clutch(&pool).expect_err("nothing is left to issue");
         assert!(matches!(exhausted, ExitPoolError::Exhausted { .. }));
-        pool.recycle(clutch);
-        pool.draw_clutch().expect("recycled reservations reissue");
+        drop(clutch);
+        ExitPool::draw_clutch(&pool).expect("dropped reservations reissue");
+    }
+
+    /// HYPOTHESIS: cancelling a future that owns a reservation recycles it,
+    /// the leak shape of a hedged race's losing pull.
+    #[test]
+    fn a_cancelled_owner_recycles_by_drop() {
+        let pool = seeded(RESERVATION_CLUTCH_SIZE);
+        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        let owner = async move {
+            let _held = clutch;
+            std::future::pending::<()>().await;
+        };
+        drop(owner);
+        ExitPool::draw_clutch(&pool).expect("the cancelled owner's reservations reissue");
+    }
+
+    /// HYPOTHESIS: a reservation outliving its pool recycles into nothing
+    /// rather than panicking.
+    #[test]
+    fn an_orphaned_reservation_drops_quietly() {
+        let pool = seeded(RESERVATION_CLUTCH_SIZE);
+        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        drop(pool);
+        drop(clutch);
     }
 
     /// HYPOTHESIS: an unseeded pool refuses rather than drawing nothing
     /// silently.
     #[test]
     fn an_unseeded_pool_refuses() {
-        let mut pool = ExitPool::default();
+        let pool = Arc::new(Mutex::new(ExitPool::default()));
         assert!(matches!(
-            pool.draw_clutch().expect_err("no population"),
+            ExitPool::draw_clutch(&pool).expect_err("no population"),
             ExitPoolError::NotSeeded
         ));
-        assert!(!pool.is_seeded());
+        assert!(!pool.lock().unwrap().is_seeded());
     }
 }
