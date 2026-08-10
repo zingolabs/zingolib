@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the mixnet route names the session slot's tunnel as a typed
+  Shared-exit surface. `MixnetRoute::Mixnet` carries a `nym::SlotTunnel`
+  instead of a bare address `String`; its borrowing `addr` accessor is the
+  declared Shared dial, and `MixnetRoute::socks5_proxy` is unchanged.
 - BREAKING: a platform that forbids subprocesses can now supply the mixnet
   transport. `nym::acquire` is public and adds the `ProxyHost` trait, which
   a host implements to answer a directory query and to start one proxy over

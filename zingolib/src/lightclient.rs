@@ -640,7 +640,7 @@ impl LightClient {
     #[cfg(feature = "nym")]
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
-            crate::nym::MixnetRoute::Mixnet(socks5_addr) => socks5_addr,
+            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.addr().to_string(),
             crate::nym::MixnetRoute::Clearnet => {
                 return Err(LightClientError::PriceFetchRequiresMixnet);
             }
@@ -1090,7 +1090,7 @@ impl LightClient {
     {
         let socks5_addr =
             match crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())? {
-                crate::nym::MixnetRoute::Mixnet(addr) => addr,
+                crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.addr().to_string(),
                 crate::nym::MixnetRoute::Clearnet => {
                     return Err(crate::nym::MixnetNotReady::Unattached.into());
                 }

@@ -14,6 +14,21 @@
 
 use crate::nym::MixnetMode;
 
+/// The session slot's tunnel, whose one exit is Shared across every
+/// Correspondent contact the slot's surfaces make.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotTunnel {
+    socks5_addr: String,
+}
+
+impl SlotTunnel {
+    /// The tunnel's local SOCKS5 address, for one more Correspondent
+    /// contact.
+    pub fn addr(&self) -> &str {
+        &self.socks5_addr
+    }
+}
+
 /// The resolved network route for a mixnet-only surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
@@ -21,8 +36,8 @@ pub enum MixnetRoute {
     /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
-    /// Route through the local SOCKS5 proxy at this address.
-    Mixnet(String),
+    /// Route through the session slot's tunnel.
+    Mixnet(SlotTunnel),
 }
 
 impl MixnetRoute {
@@ -31,7 +46,7 @@ impl MixnetRoute {
     pub fn socks5_proxy(&self) -> Option<&str> {
         match self {
             MixnetRoute::Clearnet => None,
-            MixnetRoute::Mixnet(addr) => Some(addr),
+            MixnetRoute::Mixnet(tunnel) => Some(tunnel.addr()),
         }
     }
 }
@@ -77,7 +92,7 @@ pub fn resolve_route(
         MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
         MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
         MixnetMode::Ready => socks5_addr
-            .map(MixnetRoute::Mixnet)
+            .map(|socks5_addr| MixnetRoute::Mixnet(SlotTunnel { socks5_addr }))
             .ok_or(MixnetNotReady::Bootstrapping),
         MixnetMode::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
         MixnetMode::Died => Err(MixnetNotReady::Died),
@@ -115,7 +130,12 @@ mod tests {
     #[test]
     fn ready_routes_through_the_proxy() {
         let route = resolve_route(MixnetMode::Ready, Some("127.0.0.1:9050".to_string()));
-        assert_eq!(route, Ok(MixnetRoute::Mixnet("127.0.0.1:9050".to_string())));
+        assert_eq!(
+            route,
+            Ok(MixnetRoute::Mixnet(SlotTunnel {
+                socks5_addr: "127.0.0.1:9050".to_string()
+            }))
+        );
         assert_eq!(route.unwrap().socks5_proxy(), Some("127.0.0.1:9050"));
     }
 

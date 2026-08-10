@@ -5,7 +5,8 @@ Amended 2026-08-10: the sealed categories are implemented as lease
 types — `Member<T, Exclusive>`'s one dial consumes the member, and
 `Member<T, Shared>` dials repeatedly for its one holder — declared at
 the Indexer Pool, Price Source Pool, and Server-Selection Sweep
-acquisition sites.
+acquisition sites. The session slot's tunnel crosses the route as
+`SlotTunnel`, whose borrowing accessor is its Shared declaration.
 
 ## Context
 

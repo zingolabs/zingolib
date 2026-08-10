@@ -121,7 +121,7 @@ fn resolve_transmit_route(
 ) -> Result<Option<String>, LightClientError> {
     use crate::nym::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
-        (_, Ok(MixnetRoute::Mixnet(socks5_addr))) => Ok(Some(socks5_addr)),
+        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.addr().to_string())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
         (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
