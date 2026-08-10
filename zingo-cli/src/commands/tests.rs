@@ -1837,3 +1837,57 @@ mod posture_surface {
         assert!(client.indexer_uri().is_none());
     }
 }
+
+#[cfg(all(test, feature = "nym"))]
+mod attached_exit_reporting {
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome, render_exit_nodes};
+
+    /// HYPOTHESIS: an attached transport that reaches `Ready` publishes the
+    /// Exit Node identity its platform host bound, so the CLI's success
+    /// report renders it and the session's exits-in-use draw is never
+    /// vacuous on the attach path. Falsified while the attach seam carries
+    /// no exit identity: the Ready publication then holds an empty set, and
+    /// this test runs red until the exit-reporting FFI roundtrips an
+    /// identity into it (the #2660 headline finding).
+    #[tokio::test]
+    async fn an_attached_ready_transport_reports_its_bound_exit_node() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("the bound listener has an address")
+            .to_string();
+        let host = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        let receiver = client.subscribe_mixnet_status();
+        client
+            .attach_mixnet(&addr)
+            .await
+            .expect("a valid loopback address attaches");
+
+        let outcome = await_bootstrap_outcome(receiver).await;
+        host.abort();
+        match outcome {
+            BootstrapOutcome::Ready { exits } => assert_ne!(
+                render_exit_nodes(&exits),
+                "",
+                "an attached Ready must report the Exit Node its host bound"
+            ),
+            BootstrapOutcome::Failed { report } => {
+                panic!("the attached endpoint must reach Ready: {report}")
+            }
+        }
+    }
+}
