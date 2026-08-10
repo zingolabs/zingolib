@@ -713,6 +713,8 @@ mod network_command_parsing {
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
+            phase: None,
+            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -1855,7 +1857,10 @@ mod attached_exit_reporting {
     /// vacuous on the attach path. Falsified if the attach seam drops,
     /// alters, or invents the host-reported identity (the #2660 headline
     /// finding ran this red until the seam carried it).
+    // Seam justification (ADR 0030): the block_on is the tokio::test
+    // harness's own crossing, not a new seam in the CLI.
     #[tokio::test]
+    #[allow(clippy::disallowed_methods)]
     async fn an_attached_ready_transport_reports_its_bound_exit_node() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
