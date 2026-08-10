@@ -87,9 +87,9 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Indexer server to connect to.")
-                .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
+                .help("Pin a specific Indexer server. Without it, an online session's \
+Server-Selection Sweep selects the sync indexer.")
+                .value_parser(parse_uri))
             .arg(Arg::new("offline")
                 .long("offline")
                 .action(clap::ArgAction::SetTrue)
@@ -851,12 +851,11 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
     communication_mode: CommunicationMode,
-    /// The Indexer to connect to. `None` exactly when the session is in
-    /// Offline mode.
+    /// The pinned Indexer: `None` when the session is Offline, and equally
+    /// when it is Online unpinned, where the Server-Selection Sweep selects.
     server: Option<http::Uri>,
-    /// True when `--server` was typed on the command line rather than
-    /// filled by the census default: the pin the Server-Selection Sweep
-    /// surveys and never substitutes (ADR 0034).
+    /// True when `--server` was typed on the command line: the pin the
+    /// Server-Selection Sweep surveys and never substitutes.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     server_pinned: bool,
     /// All servers that responded to `get_info()` during dynamic selection,
@@ -881,16 +880,61 @@ pub(crate) struct ConfigTemplate {
     indexer_diary: bool,
 }
 
+/// A refusal to fill the launch configuration template.
+#[derive(Debug, thiserror::Error)]
+enum ConfigTemplateError {
+    /// Both key sources arrived, and a wallet loads from exactly one.
+    #[error("Cannot load a wallet from both seed phrase and viewkey!")]
+    BothSeedAndViewkey,
+    /// A key-provided load arrived without the wallet birthday.
+    #[error(
+        "This should be the block height where the wallet was created.\
+If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain."
+    )]
+    BirthdayRequired,
+    /// The birthday token is not a block number.
+    #[error("Couldn't parse birthday. This should be a block number. Error={0}")]
+    BirthdayUnparseable(std::num::ParseIntError),
+    /// `--online` grants a connection the named command never uses.
+    #[error(
+        "`{command}` needs no network, so `--online` grants a connection it never \
+         uses. Drop `--online`, or run it at the interactive prompt."
+    )]
+    OnlineGrantUnused {
+        /// The offline-capable command that was launched with `--online`.
+        command: String,
+    },
+    /// The clearnet sweep resolved no server.
+    #[cfg(feature = "clearnet-test-mode")]
+    #[error(transparent)]
+    ResolveServer(#[from] server_select_clearnet::ResolveServerError),
+    /// The pinned `--server` is not a valid indexer URI.
+    #[cfg(not(feature = "clearnet-test-mode"))]
+    #[error("invalid --server URI. {0}")]
+    IndexerUri(#[from] http::uri::InvalidUri),
+    /// The pinned server misses its scheme, host, or port.
+    #[error(
+        "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
+    )]
+    ServerShape {
+        /// The under-specified server URI.
+        server: http::Uri,
+    },
+    /// The chain name is not a known chain.
+    #[error(transparent)]
+    Chain(#[from] zingolib::config::InvalidChainType),
+}
+
 impl ConfigTemplate {
     fn fill(
         mode: ModeOfOperation,
         communication_mode: CommunicationMode,
         matches: clap::ArgMatches,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ConfigTemplateError> {
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
-            return Err("Cannot load a wallet from both seed phrase and viewkey!".to_string());
+            return Err(ConfigTemplateError::BothSeedAndViewkey);
         }
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
@@ -901,18 +945,12 @@ impl ConfigTemplate {
             eprintln!(
                 "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
             );
-            return Err(
-                "This should be the block height where the wallet was created.\
-If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain."
-                    .to_string(),
-            );
+            return Err(ConfigTemplateError::BirthdayRequired);
         }
         let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
-                return Err(format!(
-                    "Couldn't parse birthday. This should be a block number. Error={e}"
-                ));
+                return Err(ConfigTemplateError::BirthdayUnparseable(e));
             }
         };
 
@@ -924,11 +962,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             && let ModeOfOperation::Command { command } = &mode
             && !command.requires_online()
         {
-            return Err(format!(
-                "`{}` needs no network, so `--online` grants a connection it never \
-                 uses. Drop `--online`, or run it at the interactive prompt.",
-                command.name()
-            ));
+            return Err(ConfigTemplateError::OnlineGrantUnused {
+                command: command.name().to_string(),
+            });
         }
 
         let data_dir = data_dir_from(&matches);
@@ -941,35 +977,33 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                 (None, vec![])
             }
             CommunicationMode::Online => {
-                let (server, ranked_servers) =
-                    server_select_clearnet::resolve_server(&matches).map_err(|e| e.to_string())?;
+                let (server, ranked_servers) = server_select_clearnet::resolve_server(&matches)?;
                 (Some(server), ranked_servers)
             }
         };
-        // Without the quarantined sweep, resolution is pure: the `--server`
-        // value (explicit or clap's census default), never a probe.
+        // Without the quarantined sweep, resolution is pure: the typed
+        // `--server` pin or nothing, never a probe and never a default.
         #[cfg(not(feature = "clearnet-test-mode"))]
         let server = match communication_mode {
             CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => None,
-            CommunicationMode::Online => Some(
-                zingolib::config::construct_indexer_uri(
-                    matches
-                        .get_one::<http::Uri>("server")
-                        .map(std::string::ToString::to_string),
-                )
-                .map_err(|e| e.to_string())?,
-            ),
+            CommunicationMode::Online => matches
+                .get_one::<http::Uri>("server")
+                .map(|server| {
+                    zingolib::config::construct_indexer_uri(server.to_string())
+                        .map_err(ConfigTemplateError::from)
+                })
+                .transpose()?,
         };
         if let Some(server) = &server {
             // Test to make sure the server has all of scheme, host and port
             if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-                return Err(format!(
-                    "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-                ));
+                return Err(ConfigTemplateError::ServerShape {
+                    server: server.clone(),
+                });
             }
         }
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
+            ChainType::try_from(chain.as_str()).map_err(ConfigTemplateError::from)?
         } else {
             ChainType::Mainnet
         };
@@ -1104,6 +1138,9 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         info!("Starting Zingo-CLI");
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
+            None if filled_template.communication_mode == CommunicationMode::Online => {
+                info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
+            }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
     }
@@ -1196,18 +1233,21 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         });
     }
 
+    // The sweep binds the session's indexer, so it runs for every online
+    // session, not only a syncing one: a --nosync session still accepts
+    // interactive sync and send, which need an indexer bound. A pinned
+    // server is bound at config time and surveyed here; an unpinned online
+    // session has no indexer until the sweep selects one.
     #[cfg(feature = "nym")]
-    let sync_attachable = if filled_template.communication_mode == CommunicationMode::Online
-        && filled_template.sync
-    {
+    let indexer_ready = if filled_template.communication_mode == CommunicationMode::Online {
         sweep_select_sync_indexer(&mut lightclient, filled_template).await
     } else {
         true
     };
     #[cfg(not(feature = "nym"))]
-    let sync_attachable = true;
+    let indexer_ready = true;
 
-    if filled_template.sync && sync_attachable {
+    if filled_template.sync && indexer_ready {
         let sync_run = commands::CliCommand::Sync {
             sub: commands::SyncSubCommand::Run,
         };
@@ -1226,7 +1266,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     }
 
     if filled_template.sync
-        && sync_attachable
+        && indexer_ready
         && filled_template.waitsync
         && let Err(e) = lightclient.await_sync().await
     {

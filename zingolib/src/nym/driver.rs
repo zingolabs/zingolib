@@ -151,6 +151,8 @@ pub enum ProvisionStrategy<'a> {
     Attach {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
+        /// The Exit Node identities the platform host reports as bound.
+        exits: &'a [String],
     },
 }
 
@@ -311,6 +313,7 @@ mod wire_contract {
         // must never drift from it. The match makes the list exhaustive:
         // a new variant fails to compile here until its token is pinned.
         let unit_stages = [
+            NetOpStage::ProxyLaunch,
             NetOpStage::RouteResolution,
             NetOpStage::RemoteConnect,
             NetOpStage::LocalProxyConnect,
@@ -322,7 +325,8 @@ mod wire_contract {
         ];
         for stage in &unit_stages {
             match stage {
-                NetOpStage::RouteResolution
+                NetOpStage::ProxyLaunch
+                | NetOpStage::RouteResolution
                 | NetOpStage::RemoteConnect
                 | NetOpStage::LocalProxyConnect
                 | NetOpStage::SocksHandshake

@@ -52,8 +52,8 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
-/// Returns the downloaded Sapling parameters as bytes.
-pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
+/// Returns the embedded Sapling parameters as bytes.
+pub(crate) fn read_sapling_params() -> (Vec<u8>, Vec<u8>) {
     use crate::SaplingParams;
     let mut sapling_output = vec![];
     sapling_output.extend_from_slice(
@@ -70,7 +70,7 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
             .data
             .as_ref(),
     );
-    Ok((sapling_output, sapling_spend))
+    (sapling_output, sapling_spend)
 }
 
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
@@ -82,6 +82,15 @@ pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HYPOTHESIS: the embedded Sapling parameters are present whole, so
+    /// loading them is infallible. Falsified if either blob is empty.
+    #[test]
+    fn embedded_sapling_params_load_whole() {
+        let (sapling_output, sapling_spend) = read_sapling_params();
+        assert!(!sapling_output.is_empty(), "output params are embedded");
+        assert!(!sapling_spend.is_empty(), "spend params are embedded");
+    }
 
     #[test]
     fn test_memo_bytes_from_string_plain_text() {

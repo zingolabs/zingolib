@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- A spawned `nym-proxy` that dies before speaking its stdout protocol now
+  latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)
+  naming the binary, the launch arguments, and the child's stderr tail, so a
+  version-skewed older binary is diagnosed instead of reported as a bare
+  death.
 - `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
   deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
   Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
@@ -53,6 +58,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a platform that forbids subprocesses can now supply the mixnet
+  transport. `nym::acquire` is public and adds the `ProxyHost` trait, which
+  a host implements to answer a directory query and to start one proxy over
+  a drawn Clutch, together with the `HostedTransport` record it answers
+  with. `LightClient` gains `enable_mixnet_via_host`, the mobile twin of
+  `enable_mixnet`. Both, and `start_mixnet_session`, now return
+  `nym::acquire::TransportError` rather than `MixnetProxyError`, because an
+  acquisition can fail before any proxy exists.
+- BREAKING: the attach path carries the platform host's bound Exit Node
+  identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
+  parameter and `nym::ProvisionStrategy::Attach` gains an `exits` field;
+  the attached transport's `Ready` publication reports them, so the
+  session's exits-in-use draw is no longer vacuous on the attach path.
+- BREAKING: the transport-acquisition path speaks the typed
+  `nym::TransportError` instead of `String`. The enum names the
+  missing acquirer, the discover mode's spawn and exit failures, the
+  unseeded and exhausted Exit Pool, and the transport's bootstrap death
+  (carrying the typed `NetOpFailure` detail), closed status channel, and
+  missed readiness budget, and it wraps `MixnetProxyError`.
+  `PriceError::TransportAcquisition` now carries it in place of `String`.
 - BREAKING: the editorial layer moved from `wallet::summary::data` to
   `zingolib::perspective` (`ValueTransfer` and its kinds, the finsight
   rollups, and the `value_transfers` / `messages_containing` / `finsight` /
@@ -62,6 +87,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: Health is implemented. `IndexerAttempt` gains a `phase` and an
+  `exit`, so a failure is charged to the party the evidence names rather
+  than to a category that cannot tell a tunnel failure from a server's.
+  Every attempt updates an always-on, in-memory, session-scoped Health,
+  whatever the diary's gates say; the feature-gated diary stays its
+  opt-in export view, and its line format grows two columns while still
+  loading six-column rows. The Correspondent draw consults Health as a
+  binary eligibility filter with a floor, never as a weight, so the draw
+  stays uniform and a partition cannot shrink the anonymity set.
+- BREAKING: the session holds an Exit Pool, the sole issuer of Exit Node
+  Reservations. Every acquisition draws a Clutch from it, recycles the
+  unbound reservations the moment it binds one, and returns the
+  Exclusive Lease when the transport's lifecycle ends, so two transports
+  can never hold one exit. Every discovered node stays eligible for the
+  whole session: population hygiene belongs to the upstream directory,
+  not to an in-wallet statistic. The exclusion lists this replaces are
+  gone. Reservations are owning values that recycle themselves when
+  dropped, so every path — success, failure, or a hedged pull's
+  cancellation — returns what it drew, and a session that cannot draw a
+  ledgered Clutch refuses instead of letting the spawned binary select
+  exits outside the ledger.
+- BREAKING: every pull of a mixnet Transmission binds its own Exclusive
+  exit (ADR 0039). A spawned session's send escalation consumes one
+  Indexer Pool member per pull, acquiring inline past the complement,
+  and tears each transport down when its pull ends, so an exit carries
+  exactly one Correspondent contact. `TransmitRoute::Mixnet` now
+  attests the winning pull's own tunnel rather than a shared one. An
+  attached session shares the slot's tunnel as before. A pooled member
+  whose transport died between take and use makes its pull refuse — and
+  the price run refuse with `TransportError::DiedBeforeUse` — rather than
+  silently degrading onto the slot's shared tunnel and mislabeling the
+  diary's bound exit.
+- BREAKING: the Correspondent Pools land. A spawned session keeps an
+  Indexer Pool (two Exit-Bound transports) and a Price Source
+  Pool (one Shared-exit transport), refilled in the background under
+  `PrioritisePrivacy` and drained on disable. A drain bumps a generation
+  and clears the acquirer, so a refill still in flight when the user
+  disables Mixnet Mode stops its child and recycles its exit rather than
+  admitting a live mixnet process into the drained pool. `update_current_price`
+  on a spawned session consumes the price member — one fresh Shared
+  exit per run, the refill draw excluding the spent exit — instead of
+  riding the slot's shared tunnel; an attached session is unchanged.
+  `PriceError` gains `TransportAcquisition`.
+- BREAKING: `nym::correspondents` is absorbed into the new top-level
+  `zingolib::correspondent` module, which compiles without the `nym`
+  feature and adds the `Correspondable` trait — the party a Transmission
+  addresses, implemented by the census `Indexer` and (under `nym`) by
+  `PriceSource`, each yielding an https address and an accountable
+  operator. The draw-eligibility functions stay `nym`-gated.
+- BREAKING: there is no default server. `config::construct_indexer_uri`
+  takes `String` instead of `Option<String>`, and the
+  `DEFAULT_INDEXER_URI` / `DEFAULT_INDEXER_URI_TESTNET` re-exports are
+  removed; an unpinned online session starts Indexerless and the
+  Server-Selection Sweep selects its sync indexer.
+- BREAKING: `LightClient::attach_mixnet` readiness is a data round trip
+  through the platform-hosted endpoint to a census health indexer, retried
+  once, because a listener that accepts TCP proves nothing about the mixnet
+  carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
+  loopback dial remains only as the cheap liveness watchdog after readiness.
 - BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
   is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
   pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in

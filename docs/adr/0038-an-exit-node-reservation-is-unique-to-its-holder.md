@@ -40,10 +40,17 @@ its parent recycles the spent clutch and draws a fresh one for the
 respawn. The clutch is therefore both the acquisition's width and its
 whole attempt budget: the design's only three-wide quantity.
 
-Per-node failure evidence accumulates in the pool as **Session
-Retirement**: a node whose per-session failure rate stands more than one
-standard deviation above the pool's mean is withheld from every later
-draw for the rest of the session.
+Amendment 2026-08-10: the ratified **Session Retirement** clause —
+per-node failure evidence withholding a node whose failure rate stands
+more than one standard deviation above the pool's mean — is excised
+before implementation review completed. The statistic retired a node on
+its first charged failure over a mostly-zero population (issue #2661,
+finding 5), and no reinstatement existed. The pool now assumes every
+discovered Exit Node is somewhat viable: population hygiene belongs to
+the upstream directory, which the session re-fetches at seed time, and
+any future quality filter adopts the nym-api's own performance
+annotations rather than an in-wallet statistic
+(`.agent-plans/exit-retirement-excision.md`).
 
 ## Consequences
 
@@ -55,9 +62,9 @@ because it cannot be launched without a clutch.
 
 Respawn moves to the parent. A transport no longer redraws internally
 after exhausting its attempts; it dies, and the supervisor that owns the
-pool decides whether to respawn with a fresh clutch. The pre-warm
-standing pool this enables races its acquisitions as
-`PrioritisePrivacy`, activating the second responsiveness class.
+pool decides whether to respawn with a fresh clutch. The Correspondent
+Pools this enables race their acquisitions as `PrioritisePrivacy`,
+activating the second responsiveness class.
 
 The model is ratified but not yet implemented; the glossary entries and
 this record govern the implementation (plan items 1 and 3 of

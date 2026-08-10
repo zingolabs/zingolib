@@ -148,17 +148,19 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
+    let stub_proxy = write_stub_proxy(tmp.path());
 
     let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
         // The mixnet is unconditional for a connected session, so hand the
-        // spawner a binary that exits at once: the spawn succeeds, the
-        // bootstrap dies, and the clearnet sync — the sole clearnet
-        // exception — still runs against the mock to produce the ERROR.
+        // spawner a stub that answers the directory query and then exits at
+        // once: the session goes online, the bootstrap dies, and the
+        // clearnet sync — the sole clearnet exception — still runs against
+        // the mock to produce the ERROR.
         .arg("--nym-proxy")
-        .arg("/bin/true")
+        .arg(&stub_proxy)
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -215,4 +217,24 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         !stderr.contains(" ERROR "),
         "Tracing errors should go to the log file, not stderr. Got:\n{stderr}"
     );
+}
+
+/// Writes a stub `nym-proxy` into `dir`: it answers `--discover` with one
+/// Exit Node so the session can draw a Clutch, and exits at once otherwise
+/// so the bootstrap dies exactly as this test intends.
+#[cfg(feature = "nym")]
+fn write_stub_proxy(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join("stub-nym-proxy");
+    std::fs::write(
+        &path,
+        "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = --discover ]; then\n    echo \"NYM_EXIT=stub-exit-node\"\n  fi\ndone\nexit 0\n",
+    )
+    .expect("write the stub proxy");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("make the stub proxy executable");
+    }
+    path
 }

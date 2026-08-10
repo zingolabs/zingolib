@@ -51,8 +51,13 @@ use crate::responsiveness::{Responsiveness, ResponsivenessClass};
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
 
-/// Maximum number of Exit Nodes to try before giving up.
-const MAX_EXIT_NODE_ATTEMPTS: usize = 10;
+/// Draw a clutch of [`RESERVATION_CLUTCH_SIZE`] Exit Nodes, or every
+/// discovered node when the population is smaller.
+fn draw_clutch(mut discovered: Vec<String>) -> Vec<String> {
+    seeded_shuffle(&mut discovered, time_entropy_seed());
+    discovered.truncate(crate::responsiveness::RESERVATION_CLUTCH_SIZE);
+    discovered
+}
 
 use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT};
 
@@ -64,35 +69,30 @@ pub struct NymProxy {
     client: Socks5MixnetClient,
     bind_port: u16,
     exit_node: String,
-    excluded: Vec<String>,
+    /// The clutch this acquisition raced, reused by a later redraw.
+    clutch: Vec<String>,
     /// The acquisition's responsiveness class, reused by every later redraw
     /// of this proxy.
     class: ResponsivenessClass,
 }
 
 impl NymProxy {
-    /// Start an embedded Nym SOCKS5 proxy using an auto-discovered public exit gateway.
-    ///
-    /// Queries the Nym API for active exit gateways, then races connect
-    /// attempts across them under `R`'s launch policy, keeping the first
-    /// winner. The proxy listens on a random available localhost port. This
-    /// is the recommended entry point, since no Nym-specific addresses are
-    /// required.
+    /// Start an embedded Nym SOCKS5 proxy over a clutch this call draws for
+    /// itself, for a standalone run with no parent to draw one.
     pub async fn start<R: Responsiveness>() -> Result<Self, NymProxyError> {
-        Self::start_with_progress::<R>(Vec::new(), |_| {}).await
+        let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
+        Self::start_over::<R>(draw_clutch(discovered), |_| {}).await
     }
 
-    /// [`Self::start`], excluding the caller's already-known Exit Nodes from
-    /// the draw and reporting each bootstrap step to `on_progress` as a
-    /// human-readable line. Exclusion holds for this start and for every
-    /// later redraw of this proxy.
-    pub async fn start_with_progress<R: Responsiveness>(
-        excluded: Vec<String>,
+    /// Start over exactly `clutch`, the Exit Node Reservations the parent
+    /// drew, reporting each bootstrap step to `on_progress`.
+    pub async fn start_over<R: Responsiveness>(
+        clutch: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         tokio::time::timeout(
             NYM_LIFECYCLE_TIMEOUT,
-            Self::start_inner(R::CLASS, excluded, on_progress),
+            Self::start_inner(R::CLASS, clutch, on_progress),
         )
         .await
         .map_err(|_| {
@@ -105,35 +105,21 @@ impl NymProxy {
 
     async fn start_inner(
         class: ResponsivenessClass,
-        excluded: Vec<String>,
+        clutch: Vec<String>,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        on_progress("discovering exit gateways".to_string());
-        let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
-        let exit_nodes = eligible_exit_nodes(discovered, &excluded)?;
-        if !excluded.is_empty() {
-            on_progress(format!(
-                "excluding {} known exits from the draw",
-                excluded.len()
-            ));
+        if clutch.is_empty() {
+            return Err(NymProxyError::NoExitNode);
         }
-        let mut proxy = Self::connect_across_exit_nodes(&exit_nodes, class, on_progress).await?;
-        proxy.excluded = excluded;
+        on_progress(format!("racing a clutch of {} exits", clutch.len()));
+        let mut proxy = Self::connect_across_exit_nodes(&clutch, class, on_progress).await?;
+        proxy.clutch = clutch;
         proxy.class = class;
         Ok(proxy)
     }
 
-    /// Race the pure plan ([`crate::arm_race`]) over `exit_nodes` under
-    /// `class`'s launch policy — saturating under PrioritiseSpeed, hedged
-    /// under PrioritisePrivacy — at most [`MAX_EXIT_NODE_ATTEMPTS`]
-    /// contacted. Each pull is bounded by
-    /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binds a fresh port, since a
-    /// timed-out pull may still hold the port it was given. A loser that
-    /// finishes connecting after the winner is disconnected, not leaked.
-    /// Each pull's failure is classified at this seam into a typed
-    /// [`NetOpFailure`] (issue #2562), and a lost race surfaces them all in
-    /// [`NymProxyError::AttemptsExhausted`]. Shared by [`Self::start`] and
-    /// [`Self::reconnect`].
+    /// Race the clutch under `class`'s launch policy, each pull bounded by
+    /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binding its own fresh port.
     async fn connect_across_exit_nodes(
         exit_nodes: &[String],
         class: ResponsivenessClass,
@@ -141,7 +127,7 @@ impl NymProxy {
     ) -> Result<Self, NymProxyError> {
         drive_acq_race(
             exit_nodes.len(),
-            MAX_EXIT_NODE_ATTEMPTS,
+            exit_nodes.len(),
             class.launch_policy(),
             |arm| {
                 let exit_node = exit_nodes[arm].clone();
@@ -221,7 +207,7 @@ impl NymProxy {
             client,
             bind_port,
             exit_node: exit_node_address.to_string(),
-            excluded: Vec::new(),
+            clutch: Vec::new(),
             // A pinned-Exit-Node start never races; the class only governs
             // this proxy's later redraws, which default to the speed
             // priority.
@@ -282,17 +268,27 @@ impl NymProxy {
     }
 
     async fn reconnect_inner(&mut self) -> Result<(), NymProxyError> {
+        // The spent clutch is redrawn rather than reused: a redraw that
+        // rebound the same exit would defeat the rotation it exists for.
         let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
-        let exit_nodes = eligible_exit_nodes(discovered, &self.excluded)?;
+        let fresh: Vec<String> = discovered
+            .into_iter()
+            .filter(|exit_node| !self.clutch.contains(exit_node))
+            .collect();
+        let clutch = draw_clutch(fresh);
+        if clutch.is_empty() {
+            return Err(NymProxyError::NoExitNode);
+        }
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_exit_nodes(&exit_nodes, self.class, |_| {}).await?;
+        let new_proxy = Self::connect_across_exit_nodes(&clutch, self.class, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
         let old_client = std::mem::replace(&mut self.client, new_proxy.client);
         self.bind_port = new_proxy.bind_port;
         self.exit_node = new_proxy.exit_node;
+        self.clutch = clutch;
         old_client.disconnect().await;
         Ok(())
     }
@@ -378,10 +374,9 @@ fn exit_node_attempt_stage(error: &NymProxyError) -> NetOpStage {
         // Client construction, the local port draw, discovery, and an
         // exclusion-emptied draw all fail before this pull touches the
         // network.
-        NymProxyError::Build(_)
-        | NymProxyError::DiscoveryApi(_)
-        | NymProxyError::NoExitNode
-        | NymProxyError::AllExitsExcluded { .. } => NetOpStage::RouteResolution,
+        NymProxyError::Build(_) | NymProxyError::DiscoveryApi(_) | NymProxyError::NoExitNode => {
+            NetOpStage::RouteResolution
+        }
         // Registering with the Exit Node is the pull's remote
         // connect. An exhausted race never occurs per pull; it summarizes
         // the connects it is made of, so it classifies with them.
@@ -414,26 +409,6 @@ fn acq_race_loss_error(lost: LostAcqRace<NetOpFailure>) -> NymProxyError {
             failures: lost.failures,
         }
     }
-}
-
-/// The discovered Exit Nodes minus the caller's known exits, refusing typed
-/// when the exclusion empties the draw.
-fn eligible_exit_nodes(
-    discovered: Vec<String>,
-    excluded: &[String],
-) -> Result<Vec<String>, NymProxyError> {
-    let discovered_count = discovered.len();
-    let eligible: Vec<String> = discovered
-        .into_iter()
-        .filter(|exit_node| !excluded.contains(exit_node))
-        .collect();
-    if eligible.is_empty() && discovered_count > 0 {
-        return Err(NymProxyError::AllExitsExcluded {
-            discovered: discovered_count,
-            excluded: excluded.len(),
-        });
-    }
-    Ok(eligible)
 }
 
 /// An Exit Node mix-address shortened for an error summary: the full base58
@@ -637,34 +612,27 @@ mod tests {
         assert!(port > 0);
     }
 
-    /// HYPOTHESIS: a known exit never re-enters the draw — the eligible set
-    /// is the discovered set minus the exclusions, an exclusion that empties
-    /// the draw refuses typed, and an empty discovery stays an empty draw
-    /// rather than a spurious exclusion error.
+    /// The arm count the paused-time races below run over; the clutch is
+    /// the race's whole width, so the candidate count is also its cap.
+    const RACED_ARMS: usize = 2;
+
+    /// HYPOTHESIS: a locally drawn clutch holds exactly
+    /// [`RESERVATION_CLUTCH_SIZE`] of the discovered nodes, takes every node
+    /// when the population is smaller, and never repeats one.
     #[test]
-    fn known_exits_never_reenter_the_draw() {
-        let discovered = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        let eligible = eligible_exit_nodes(discovered.clone(), &["b".to_string()])
-            .expect("two exit nodes survive");
-        assert_eq!(eligible, vec!["a".to_string(), "c".to_string()]);
+    fn a_drawn_clutch_is_clutch_sized_and_repetition_free() {
+        let discovered: Vec<String> = (0..RESERVATION_CLUTCH_SIZE * 3)
+            .map(|index| format!("exit-{index}"))
+            .collect();
+        let clutch = draw_clutch(discovered.clone());
+        assert_eq!(clutch.len(), RESERVATION_CLUTCH_SIZE);
+        let distinct: std::collections::HashSet<_> = clutch.iter().collect();
+        assert_eq!(distinct.len(), clutch.len(), "no node is drawn twice");
+        assert!(clutch.iter().all(|drawn| discovered.contains(drawn)));
 
-        let error = eligible_exit_nodes(
-            vec!["a".to_string()],
-            &["a".to_string(), "stale".to_string()],
-        )
-        .expect_err("an emptied draw refuses");
-        assert!(matches!(
-            error,
-            NymProxyError::AllExitsExcluded {
-                discovered: 1,
-                excluded: 2,
-            }
-        ));
-
-        assert_eq!(
-            eligible_exit_nodes(Vec::new(), &["a".to_string()]).expect("empty discovery passes"),
-            Vec::<String>::new()
-        );
+        let scarce = vec!["only".to_string()];
+        assert_eq!(draw_clutch(scarce.clone()), scarce, "a short population");
+        assert!(draw_clutch(Vec::new()).is_empty());
     }
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
@@ -690,8 +658,8 @@ mod tests {
     async fn a_hedged_pull_rescues_a_hanging_exit_node_at_the_hedge_interval() {
         let started = tokio::time::Instant::now();
         let winner = drive_acq_race(
-            2,
-            MAX_EXIT_NODE_ATTEMPTS,
+            RACED_ARMS,
+            RACED_ARMS,
             hedged(RESERVATION_CLUTCH_SIZE),
             |arm| async move {
                 if arm == 0 {
@@ -727,8 +695,8 @@ mod tests {
     async fn the_per_attempt_timeout_frees_a_wedged_slot() {
         let started = tokio::time::Instant::now();
         let winner = drive_acq_race(
-            2,
-            MAX_EXIT_NODE_ATTEMPTS,
+            RACED_ARMS,
+            RACED_ARMS,
             hedged(1),
             |arm| async move {
                 if arm == 0 {
@@ -762,8 +730,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_lost_acq_race_accounts_for_every_attempt() {
         let lost = drive_acq_race(
-            2,
-            MAX_EXIT_NODE_ATTEMPTS,
+            RACED_ARMS,
+            RACED_ARMS,
             hedged(RESERVATION_CLUTCH_SIZE),
             |arm| async move { Err::<&str, _>(format!("arm {arm} refused")) },
             no_abandon,
@@ -797,8 +765,8 @@ mod tests {
         // Pull 0 launches at t=0 and finishes at t=6; pull 1 launches at the
         // t=5 hedge and finishes at t=6 as well.
         let winner = drive_acq_race(
-            2,
-            MAX_EXIT_NODE_ATTEMPTS,
+            RACED_ARMS,
+            RACED_ARMS,
             hedged(RESERVATION_CLUTCH_SIZE),
             |arm| async move {
                 let finish = if arm == 0 {
@@ -834,8 +802,8 @@ mod tests {
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = std::sync::Arc::clone(&lines);
         let _ = drive_acq_race(
-            2,
-            MAX_EXIT_NODE_ATTEMPTS,
+            RACED_ARMS,
+            RACED_ARMS,
             hedged(RESERVATION_CLUTCH_SIZE),
             |arm| async move { Err::<&str, _>(format!("arm {arm} refused")) },
             no_abandon,

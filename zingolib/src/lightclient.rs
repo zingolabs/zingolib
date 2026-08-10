@@ -171,6 +171,14 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: crate::nym::MixnetSlot,
+    /// The Correspondent Pools: ready transports Exit Rotation consumes per
+    /// run, refilled in the background under PrioritisePrivacy.
+    #[cfg(feature = "nym")]
+    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    /// The session tunnel's Clutch, held for the spawned slot proxy's life
+    /// and recycled by drop on vacate.
+    #[cfg(feature = "nym")]
+    slot_clutch: Vec<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -250,6 +258,10 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         })
     }
@@ -285,6 +297,10 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         }
@@ -342,6 +358,10 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: Vec::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::nym::status_publisher(),
         })
@@ -626,24 +646,67 @@ impl LightClient {
             }
         };
 
+        // A spawned session runs the race over its own Price Source Pool
+        // member — one fresh Shared exit per run, never the slot's shared
+        // tunnel — while an attached session's single platform endpoint
+        // carries it as before. The consumed member is stopped whatever
+        // the outcome, and the refill draw excludes its exit.
+        let pooled = if self
+            .mixnet_slot
+            .proxy()
+            .is_some_and(crate::nym::MixnetProxy::is_spawned)
+            && self.correspondent_pools.acquirer().is_some()
+        {
+            Some(
+                self.correspondent_pools
+                    .take_or_acquire(|pools| &pools.price)
+                    .await
+                    .map_err(crate::wallet::error::PriceError::TransportAcquisition)?,
+            )
+        } else {
+            None
+        };
+        // A pooled member carries its own fresh Shared exit; only an attached
+        // session rides the slot's shared tunnel. A member whose transport
+        // reports no address died between take and use, so the run refuses
+        // rather than silently degrading to the slot tunnel.
+        let via_socks5 = match pooled.as_ref() {
+            Some(member) => match member.addr() {
+                Some(addr) => addr,
+                None => {
+                    if let Some(member) = pooled {
+                        member.retire().await;
+                        self.correspondent_pools.ensure_filled();
+                    }
+                    return Err(LightClientError::from(
+                        crate::wallet::error::PriceError::TransportAcquisition(
+                            crate::nym::acquire::TransportError::DiedBeforeUse,
+                        ),
+                    ));
+                }
+            },
+            None => socks5_addr,
+        };
+
         // The fetch runs outside the wallet lock (the net-diag
         // polling-blackout remedy), so a hung tunnel can no longer freeze
-        // every wallet-state observer. The route was resolved above and
-        // could die mid-fetch; the fetch itself then reports that as a
-        // typed transport failure rather than anything falling back. All
-        // three sources race through the tunnel; the first answer wins and
-        // the losing legs are cancelled (zingo-mobile parity).
+        // every wallet-state observer. All sources race through the one
+        // tunnel at full width; the first answer wins and the losing legs
+        // are cancelled.
         let dispatched = std::time::Instant::now();
-        let raced = zingo_price::race_current_price(Some(&socks5_addr))
-            .await
-            .map_err(crate::wallet::error::PriceError::from)?;
+        let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
+        if let Some(member) = pooled {
+            member.retire().await;
+            self.correspondent_pools.ensure_filled();
+        }
+        let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
         self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
             round_trip,
-            via_socks5: socks5_addr,
+            via_socks5,
         })
     }
 
@@ -741,17 +804,15 @@ impl LightClient {
     /// standing clearnet consent, and a failure must not silently reinstate
     /// a prior `SwitchedOff`.
     async fn vacate_mixnet_slot(&mut self) {
+        self.correspondent_pools.drain_all().await;
         if let crate::nym::MixnetSlot::Attached(running) =
             std::mem::replace(&mut self.mixnet_slot, crate::nym::MixnetSlot::Unattached)
         {
             running.stop().await;
         }
-    }
-
-    /// The Exit Nodes the session currently has in use, excluded from every
-    /// new acquisition's draw; a released exit re-enters the pool.
-    pub(crate) fn exits_in_use(&self) -> Vec<String> {
-        self.mixnet_slot.exits()
+        // Dropping the slot's Clutch recycles the session tunnel's
+        // reservations after the transport is gone.
+        self.slot_clutch.clear();
     }
 
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
@@ -763,43 +824,90 @@ impl LightClient {
     pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
         binary_path: &std::path::Path,
-    ) -> Result<(), crate::nym::MixnetProxyError> {
+    ) -> Result<(), crate::nym::acquire::TransportError> {
+        self.enable_mixnet_from(
+            std::sync::Arc::new(crate::nym::acquire::SpawnedBinary::at(
+                binary_path.to_path_buf(),
+            )),
+            R::CLASS,
+        )
+        .await
+    }
+
+    /// Enables Mixnet Mode on a platform that forbids subprocesses, taking
+    /// every transport from `host` instead of spawning one.
+    pub async fn enable_mixnet_via_host<R: zingo_netutils::responsiveness::Responsiveness>(
+        &mut self,
+        host: std::sync::Arc<dyn crate::nym::acquire::ProxyHost>,
+    ) -> Result<(), crate::nym::acquire::TransportError> {
+        self.enable_mixnet_from(
+            std::sync::Arc::new(crate::nym::acquire::HostedProxy::owned_by(host)),
+            R::CLASS,
+        )
+        .await
+    }
+
+    /// Enables Mixnet Mode over `acquirer`, the one seam both platforms fill.
+    async fn enable_mixnet_from(
+        &mut self,
+        acquirer: std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>,
+        class: zingo_netutils::responsiveness::ResponsivenessClass,
+    ) -> Result<(), crate::nym::acquire::TransportError> {
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::spawn::<R>(
-            binary_path,
+        let clutch = match self
+            .correspondent_pools
+            .draw_clutch(acquirer.as_ref())
+            .await
+        {
+            Ok(clutch) => clutch,
+            Err(refusal) => {
+                // A session that cannot draw a ledgered Clutch refuses;
+                // the spawned binary must never self-draw outside the
+                // reservation ledger.
+                self.publish_mixnet_slot_state();
+                return Err(refusal);
+            }
+        };
+        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
+        match crate::nym::acquire::TransportAcquirable::acquire(
+            acquirer.as_ref(),
+            class,
+            &nodes,
             std::sync::Arc::clone(&self.mixnet_status),
-            &self.exits_in_use(),
-        ) {
+        )
+        .await
+        {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
-                // channel; nothing further to announce here.
+                // channel; nothing further to announce here. The Clutch is
+                // held for the tunnel's life and recycled on vacate.
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
+                self.slot_clutch = clutch;
+                self.correspondent_pools.set_acquirer(acquirer);
+                self.correspondent_pools.ensure_filled();
                 Ok(())
             }
             Err(error) => {
                 // A failed enable leaves Unattached (the user's enable revoked
                 // any standing clearnet consent); subscribers must see it.
+                // The drawn Clutch drops here, recycling its reservations.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
         }
     }
 
-    /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5
-    /// endpoint (ADR 0011's mobile amendment) instead of spawning the bundled
-    /// nym-proxy binary. Returns immediately; [`Self::mixnet_mode`] reports
-    /// `Bootstrapping` while a data round trip validates the endpoint, then
-    /// `Ready`, or `Died` if validation or the ongoing liveness probe fails —
-    /// an attached transport refuses rather than falls back to clearnet,
-    /// exactly like a spawned one. Attaching while a proxy is running
-    /// replaces it.
+    /// Attaches Mixnet Mode to an already-running, platform-hosted SOCKS5
+    /// endpoint that bound `exits`, replacing any running transport.
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
+        exits: &[String],
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
         match crate::nym::MixnetProxy::attach(
             socks5_addr,
+            exits,
             std::sync::Arc::clone(&self.mixnet_status),
         ) {
             Ok(proxy) => {
@@ -860,7 +968,7 @@ impl LightClient {
         &mut self,
         strategy: crate::nym::ProvisionStrategy<'_>,
         policy: crate::nym::MixnetStartPolicy,
-    ) -> Result<(), crate::nym::MixnetProxyError> {
+    ) -> Result<(), crate::nym::acquire::TransportError> {
         match policy {
             crate::nym::MixnetStartPolicy::OptedOutThisSession => {
                 self.disable_mixnet().await;
@@ -876,9 +984,10 @@ impl LightClient {
                     )
                     .await
                 }
-                crate::nym::ProvisionStrategy::Attach { socks5_addr } => {
-                    self.attach_mixnet(socks5_addr).await
-                }
+                crate::nym::ProvisionStrategy::Attach { socks5_addr, exits } => self
+                    .attach_mixnet(socks5_addr, exits)
+                    .await
+                    .map_err(crate::nym::acquire::TransportError::from),
             },
         }
     }
@@ -994,7 +1103,7 @@ impl LightClient {
             );
         }
         let targets: Vec<http::Uri> = target
-            .map_or_else(crate::nym::correspondents::correspondent_indexers, |uri| {
+            .map_or_else(crate::correspondent::correspondent_indexers, |uri| {
                 vec![uri]
             })
             .into_iter()
@@ -1309,6 +1418,7 @@ mod tests {
                 .start_mixnet_session(
                     crate::nym::ProvisionStrategy::Attach {
                         socks5_addr: "not-a-socket-address",
+                        exits: &[],
                     },
                     crate::nym::MixnetStartPolicy::ForcedOn,
                 )
@@ -1316,7 +1426,9 @@ mod tests {
                 .expect_err("a malformed attach address must refuse");
             assert!(matches!(
                 error,
-                crate::nym::MixnetProxyError::InvalidAddress { .. }
+                crate::nym::acquire::TransportError::Proxy(
+                    crate::nym::MixnetProxyError::InvalidAddress { .. }
+                )
             ));
 
             assert_eq!(client.mixnet_mode(), crate::nym::MixnetMode::Unattached);
@@ -1344,6 +1456,7 @@ mod tests {
                     // the driver lands Died.
                     crate::nym::ProvisionStrategy::Attach {
                         socks5_addr: "127.0.0.1:9",
+                        exits: &[],
                     },
                     crate::nym::MixnetStartPolicy::ForcedOn,
                 )

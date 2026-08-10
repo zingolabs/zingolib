@@ -11,8 +11,28 @@
 //! logic runs in CI without a reachable mixnet or real time.
 #![forbid(unsafe_code)]
 
+pub mod acquire;
+
+/// The party a failure stage charges, unattributed when the stage cannot
+/// say which side failed.
+pub(crate) fn charge_phase(
+    stage: &zingo_net_diag::NetOpStage,
+) -> crate::correspondent::health::FailurePhase {
+    use crate::correspondent::health::FailurePhase;
+    use zingo_net_diag::NetOpStage;
+    match stage {
+        NetOpStage::RouteResolution
+        | NetOpStage::LocalProxyConnect
+        | NetOpStage::SocksHandshake
+        | NetOpStage::TunnelTransport => FailurePhase::Tunnel,
+        NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
+            FailurePhase::Correspondent
+        }
+        _ => FailurePhase::Unattributed,
+    }
+}
+
 pub mod correspondent_rotation;
-pub mod correspondents;
 pub mod driver;
 mod mode;
 pub mod probe;
@@ -21,6 +41,7 @@ pub mod route;
 pub mod supervisor;
 pub mod sweep;
 
+pub use acquire::TransportError;
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
 pub(crate) use mode::MixnetSlot;

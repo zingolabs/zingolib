@@ -713,6 +713,8 @@ mod network_command_parsing {
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
+            phase: None,
+            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -1835,5 +1837,57 @@ mod posture_surface {
         assert!(report.contains("`--forget-online` erases it"), "{report}");
         assert!(!report.contains("clearnet"), "{report}");
         assert!(client.indexer_uri().is_none());
+    }
+}
+
+#[cfg(all(test, feature = "nym"))]
+mod attached_exit_reporting {
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    /// HYPOTHESIS: an attached endpoint that accepts TCP but carries no data
+    /// fails closed — the readiness gate is a round trip through the tunnel,
+    /// not a loopback dial, so a dead mixnet path never reports `Ready`.
+    /// Falsified if a listener that answers no gRPC reaches `Ready` (the
+    /// #2662 headline finding ran this red while the gate was a bare dial).
+    // Seam justification (ADR 0030): the block_on is the tokio::test
+    // harness's own crossing, not a new seam in the CLI.
+    #[tokio::test]
+    #[allow(clippy::disallowed_methods)]
+    async fn an_attached_endpoint_that_carries_no_data_fails_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("the bound listener has an address")
+            .to_string();
+        // A stand-in host that accepts the connection and answers nothing.
+        let host = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        let receiver = client.subscribe_mixnet_status();
+        client
+            .attach_mixnet(&addr, &["host-bound-exit".to_string()])
+            .await
+            .expect("a valid loopback address attaches");
+
+        let outcome = await_bootstrap_outcome(receiver).await;
+        host.abort();
+        match outcome {
+            BootstrapOutcome::Failed { .. } => {}
+            BootstrapOutcome::Ready { exits } => {
+                panic!("a data-dead endpoint must never reach Ready; got exits {exits:?}")
+            }
+        }
     }
 }

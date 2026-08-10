@@ -472,3 +472,10 @@ adopts the converged stack; that consequence is accepted deliberately,
 as an incentive to converge rather than a cost to engineer around. The
 `MixnetPriceFetch` route evidence survives as the fetch's only success
 shape.
+
+## Amendment (2026-08-08)
+
+ADR 0040 supersedes the serially gated escalation ratified above: send
+escalates as a hedged race of full paths, each arm pairing its own
+Correspondent with its own exit. The consumption model, the mobile
+attach boundary, and the fail-closed posture stand.
