@@ -227,6 +227,11 @@ async fn probe_one(
         route: AttemptRoute::Mixnet,
         kind: AttemptKind::Probe,
         millis: 0,
+        phase: result
+            .as_ref()
+            .err()
+            .map(|error| crate::nym::charge_phase(&crate::nym::socks5_transmit_stage(error))),
+        exit: None,
         outcome,
     });
     reported

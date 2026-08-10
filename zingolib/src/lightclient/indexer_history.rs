@@ -192,6 +192,10 @@ pub struct IndexerAttempt {
     pub millis: u64,
     /// `Ok(())` on success, or the sanitized failure category.
     pub outcome: Result<(), FailureKind>,
+    /// Which party a failure is charged against, when the evidence says.
+    pub phase: Option<crate::correspondent::health::FailurePhase>,
+    /// The Exit Node the attempt rode, when it rode one.
+    pub exit: Option<String>,
 }
 
 impl IndexerAttempt {
@@ -201,24 +205,38 @@ impl IndexerAttempt {
             Err(kind) => format!("err {}", kind.as_str()),
         };
         format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             self.unix_secs,
             flatten(&self.host),
             self.route.as_str(),
             self.kind.as_str(),
             self.millis,
+            self.phase.map_or("-", |phase| phase.as_str()),
+            self.exit.as_deref().map_or("-".to_string(), flatten),
             outcome
         )
     }
 
     fn parse(line: &str) -> Option<Self> {
-        let mut fields = line.splitn(6, '\t');
-        let unix_secs = fields.next()?.parse().ok()?;
-        let host = fields.next()?.to_string();
-        let route = AttemptRoute::parse(fields.next()?)?;
-        let kind = AttemptKind::parse(fields.next()?)?;
-        let millis = fields.next()?.parse().ok()?;
-        let outcome = match fields.next()? {
+        let fields: Vec<&str> = line.split('\t').collect();
+        // A six-field line predates the phase and exit columns; it loads
+        // with neither rather than being skipped.
+        let (phase, exit, outcome_token) = match fields.len() {
+            6 => (None, None, fields[5]),
+            8 => (
+                (fields[5] != "-")
+                    .then(|| crate::correspondent::health::FailurePhase::parse(fields[5])),
+                (fields[6] != "-").then(|| fields[6].to_string()),
+                fields[7],
+            ),
+            _ => return None,
+        };
+        let unix_secs = fields[0].parse().ok()?;
+        let host = fields[1].to_string();
+        let route = AttemptRoute::parse(fields[2])?;
+        let kind = AttemptKind::parse(fields[3])?;
+        let millis = fields[4].parse().ok()?;
+        let outcome = match outcome_token {
             "ok" => Ok(()),
             other => Err(FailureKind::parse_or_classify(other.strip_prefix("err ")?)),
         };
@@ -228,6 +246,8 @@ impl IndexerAttempt {
             route,
             kind,
             millis,
+            phase,
+            exit,
             outcome,
         })
     }
@@ -254,6 +274,9 @@ pub(crate) fn now_unix_secs() -> u64 {
 pub struct IndexerHistoryHandle {
     path: Option<PathBuf>,
     recording: Arc<AtomicBool>,
+    /// The session's Health, updated by every attempt whatever the diary's
+    /// gates say, since a judgment kept in memory carries no at-rest risk.
+    health: Arc<std::sync::Mutex<crate::correspondent::health::Health>>,
 }
 
 impl IndexerHistoryHandle {
@@ -266,7 +289,14 @@ impl IndexerHistoryHandle {
                 .parent()
                 .map(|dir| dir.join("indexer-history.tsv")),
             recording: Arc::new(AtomicBool::new(false)),
+            health: Arc::default(),
         }
+    }
+
+    /// The session's Health, for the draws that consult it.
+    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
+    pub(crate) fn health(&self) -> &std::sync::Mutex<crate::correspondent::health::Health> {
+        &self.health
     }
 
     /// Turns recording on or off for every clone of this handle. A per-session
@@ -286,6 +316,11 @@ impl IndexerHistoryHandle {
     /// Best-effort by contract: an unwritable history must never fail the send
     /// or probe it describes, so I/O errors are swallowed after a log line.
     pub(crate) fn record(&self, attempt: &IndexerAttempt) {
+        self.health.lock().expect("health mutex").note(
+            &attempt.host,
+            attempt.outcome.is_err(),
+            attempt.phase,
+        );
         if !self.is_recording() {
             return;
         }
@@ -349,6 +384,10 @@ mod tests {
             route: AttemptRoute::Mixnet,
             kind: AttemptKind::Send,
             millis: 1234,
+            phase: outcome
+                .is_err()
+                .then_some(crate::correspondent::health::FailurePhase::Correspondent),
+            exit: Some("exit-alpha".to_string()),
             outcome,
         }
     }
@@ -406,7 +445,7 @@ mod tests {
             .expect("diary file exists");
         assert_eq!(
             raw,
-            "1700000000\ta.example\tmixnet\tsend\t1234\terr rejected\n"
+            "1700000000\ta.example\tmixnet\tsend\t1234\tcorrespondent\texit-alpha\terr rejected\n"
         );
     }
 

@@ -67,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `testutils` feature enables `perspective`, so the chain-generics
   value-transfer fixture is present whenever the test scaffolding is
   compiled.
+- BREAKING: Health is implemented. `IndexerAttempt` gains a `phase` and an
+  `exit`, so a failure is charged to the party the evidence names rather
+  than to a category that cannot tell a tunnel failure from a server's.
+  Every attempt updates an always-on, in-memory, session-scoped Health,
+  whatever the diary's gates say; the feature-gated diary stays its
+  opt-in export view, and its line format grows two columns while still
+  loading six-column rows. The Correspondent draw consults Health as a
+  binary eligibility filter with a floor, never as a weight, so the draw
+  stays uniform and a partition cannot shrink the anonymity set.
 - BREAKING: the session holds an Exit Pool, the sole issuer of Exit Node
   Reservations. Every acquisition draws a Clutch from it, recycles the
   unbound reservations the moment it binds one, and returns the

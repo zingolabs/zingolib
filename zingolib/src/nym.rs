@@ -12,6 +12,26 @@
 #![forbid(unsafe_code)]
 
 pub(crate) mod acquire;
+
+/// The party a failure stage charges, unattributed when the stage cannot
+/// say which side failed.
+pub(crate) fn charge_phase(
+    stage: &zingo_net_diag::NetOpStage,
+) -> crate::correspondent::health::FailurePhase {
+    use crate::correspondent::health::FailurePhase;
+    use zingo_net_diag::NetOpStage;
+    match stage {
+        NetOpStage::RouteResolution
+        | NetOpStage::LocalProxyConnect
+        | NetOpStage::SocksHandshake
+        | NetOpStage::TunnelTransport => FailurePhase::Tunnel,
+        NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
+            FailurePhase::Correspondent
+        }
+        _ => FailurePhase::Unattributed,
+    }
+}
+
 pub mod correspondent_rotation;
 pub mod driver;
 mod mode;

@@ -2307,6 +2307,8 @@ fn record_part_route(
         route: attempt_route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        phase: None,
+        exit: None,
         outcome: outcome.map_err(|detail| FailureKind::classify(&detail)),
     });
 }

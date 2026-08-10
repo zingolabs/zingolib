@@ -113,6 +113,12 @@ fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute,
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
+        phase: leg
+            .outcome
+            .as_ref()
+            .err()
+            .map(|failure| crate::nym::charge_phase(&failure.stage)),
+        exit: None,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam

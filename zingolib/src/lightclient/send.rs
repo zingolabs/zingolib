@@ -38,6 +38,8 @@ fn record_send_attempt(
     route: AttemptRoute,
     started: std::time::Instant,
     outcome: &Result<String, String>,
+    phase: Option<crate::correspondent::health::FailurePhase>,
+    exit: Option<String>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -45,12 +47,15 @@ fn record_send_attempt(
         route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        phase,
+        exit,
         outcome: match outcome {
             Ok(_) => Ok(()),
             Err(detail) => Err(FailureKind::classify(detail)),
         },
     });
 }
+
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
@@ -348,7 +353,19 @@ async fn transmit_one_transaction(
             )
             .await
             .map_err(|TransmitFailed(status)| status.to_string());
-            record_send_attempt(history, &host, AttemptRoute::Clearnet, started, &outcome);
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Clearnet,
+                started,
+                &outcome,
+                // A clearnet attempt rides no tunnel, so every failure it
+                // sees is the indexer's own.
+                outcome
+                    .is_err()
+                    .then_some(crate::correspondent::health::FailurePhase::Correspondent),
+                None,
+            );
             outcome.map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
         }
         #[cfg(feature = "nym")]
@@ -395,7 +412,11 @@ async fn mixnet_escalating_transmit(
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
 
-    let indexers = eligible_correspondents(sync_indexer).map_err(|e| e.to_string())?;
+    let indexers = eligible_correspondents(
+        sync_indexer,
+        &history.health().lock().expect("health mutex"),
+    )
+    .map_err(|e| e.to_string())?;
     let run_pull = |indexer: http::Uri| {
         let shared_addr = route.shared_socks5.to_string();
         let pulls = route.transports;
@@ -441,6 +462,7 @@ async fn mixnet_escalating_transmit(
             .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
             // The consumed transport dies with its pull, whatever the
             // outcome, so its exit carries exactly this one Transmission.
+            let bound_exit = member.as_ref().map(|member| member.exit.clone());
             if let Some(member) = member {
                 let exit = member.exit.clone();
                 member.transport.stop().await;
@@ -450,7 +472,18 @@ async fn mixnet_escalating_transmit(
                 }
             }
             let rendered = outcome.clone().map_err(|failure| failure.to_string());
-            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &rendered);
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Mixnet,
+                started,
+                &rendered,
+                outcome
+                    .as_ref()
+                    .err()
+                    .map(|failure| crate::nym::charge_phase(&failure.stage)),
+                bound_exit,
+            );
             outcome.map(|server_txid| {
                 (
                     server_txid,
@@ -495,7 +528,11 @@ async fn mock_escalating_transmit(
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
 
-    let correspondents = eligible_correspondents(Some(indexer.uri())).map_err(|e| e.to_string())?;
+    let correspondents = eligible_correspondents(
+        Some(indexer.uri()),
+        &history.health().lock().expect("health mutex"),
+    )
+    .map_err(|e| e.to_string())?;
     let run_arm = |correspondent: http::Uri| {
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
@@ -515,7 +552,15 @@ async fn mock_escalating_transmit(
             )
             .await
             .map_err(|TransmitFailed(status)| status.to_string());
-            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Mixnet,
+                started,
+                &outcome,
+                None,
+                None,
+            );
             outcome.map(|server_txid| (server_txid, host))
         }
     };

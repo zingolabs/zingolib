@@ -102,6 +102,7 @@ impl Correspondable for zingo_price::PriceSource {
     }
 }
 
+pub mod health;
 #[cfg(feature = "nym")]
 pub(crate) mod pool;
 
@@ -173,11 +174,13 @@ pub(crate) struct NoEligibleCorrespondents {
 #[cfg(feature = "nym")]
 pub(crate) fn eligible_correspondents(
     sync_indexer: Option<&Uri>,
+    health: &health::Health,
 ) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
-    match sync_indexer {
-        Some(sync_indexer) => eligible_from(correspondent_indexers(), sync_indexer),
-        None => Ok(correspondent_indexers()),
-    }
+    let pool = match sync_indexer {
+        Some(sync_indexer) => eligible_from(correspondent_indexers(), sync_indexer)?,
+        None => correspondent_indexers(),
+    };
+    Ok(health.filter_with_floor(pool))
 }
 
 /// Pure core of [`eligible_correspondents`], over an arbitrary pool for
@@ -308,7 +311,8 @@ mod tests {
         // ever weakens to exact-URI matching: the accumulating party is the
         // operator (ADR 0022).
         let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
-        let pool = eligible_correspondents(Some(&sync)).expect("ten operators remain");
+        let pool = eligible_correspondents(Some(&sync), &health::Health::default())
+            .expect("ten operators remain");
         assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len() - 1);
         assert!(
             pool.iter()
@@ -320,13 +324,15 @@ mod tests {
     #[test]
     fn a_sync_indexer_outside_the_pool_excludes_nothing() {
         let sync: Uri = "https://my.private.indexer.example:443".parse().unwrap();
-        let pool = eligible_correspondents(Some(&sync)).expect("nothing to exclude");
+        let pool = eligible_correspondents(Some(&sync), &health::Health::default())
+            .expect("nothing to exclude");
         assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len());
     }
 
     #[test]
     fn an_indexerless_session_draws_from_the_full_pool() {
-        let pool = eligible_correspondents(None).expect("nothing to exclude");
+        let pool =
+            eligible_correspondents(None, &health::Health::default()).expect("nothing to exclude");
         assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len());
     }
 
