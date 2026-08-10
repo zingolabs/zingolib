@@ -645,7 +645,7 @@ impl LightClient {
             .mixnet_slot
             .proxy()
             .is_some_and(crate::nym::MixnetProxy::is_spawned)
-            && self.correspondent_pools.binary().is_some()
+            && self.correspondent_pools.acquirer().is_some()
         {
             let take = {
                 let mut pool = self
@@ -661,17 +661,17 @@ impl LightClient {
             match take.member {
                 Some(member) => Some(member),
                 None => {
-                    let binary = self
+                    let acquirer = self
                         .correspondent_pools
-                        .binary()
-                        .expect("checked above; the binary is set");
+                        .acquirer()
+                        .expect("checked above; the acquirer is set");
                     let clutch = self
                         .correspondent_pools
-                        .draw_clutch(&binary)
+                        .draw_clutch(acquirer.as_ref())
                         .await
                         .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
                     let (transport, exit) =
-                        crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch)
+                        crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch)
                             .await
                             .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
                     self.correspondent_pools
@@ -816,14 +816,6 @@ impl LightClient {
         }
     }
 
-    /// The Exit Nodes the session currently has in use, excluded from every
-    /// new acquisition's draw; a released exit re-enters the pool.
-    pub(crate) fn exits_in_use(&self) -> Vec<String> {
-        let mut exits = self.mixnet_slot.exits();
-        exits.extend(self.correspondent_pools.exits());
-        exits
-    }
-
     /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
     /// `binary_path`. Returns immediately. [`Self::mixnet_mode`] reports
     /// `Bootstrapping` until the proxy announces its SOCKS5 address and becomes
@@ -835,17 +827,25 @@ impl LightClient {
         binary_path: &std::path::Path,
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::spawn::<R>(
-            binary_path,
+        let acquirer = std::sync::Arc::new(crate::nym::acquire::SpawnedBinary::at(
+            binary_path.to_path_buf(),
+        ));
+        let clutch = self
+            .correspondent_pools
+            .draw_clutch(acquirer.as_ref())
+            .await
+            .unwrap_or_default();
+        match crate::nym::acquire::TransportAcquirable::acquire(
+            acquirer.as_ref(),
+            R::CLASS,
+            &clutch,
             std::sync::Arc::clone(&self.mixnet_status),
-            &self.exits_in_use(),
         ) {
             Ok(proxy) => {
                 // The spawn already published Bootstrapping into the session
                 // channel; nothing further to announce here.
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
-                self.correspondent_pools
-                    .set_binary(binary_path.to_path_buf());
+                self.correspondent_pools.set_acquirer(acquirer);
                 self.correspondent_pools.ensure_filled();
                 Ok(())
             }

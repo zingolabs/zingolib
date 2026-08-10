@@ -15,9 +15,9 @@ use std::time::Duration;
 use http::Uri;
 
 use super::LightClient;
+use crate::nym::MixnetMode;
 use crate::nym::probe::ProbeSuccess;
 use crate::nym::sweep::{self, Selection, SurveyResult, SweepError};
-use crate::nym::{MixnetMode, MixnetProxy};
 
 /// Two blocks: the height tolerance around the observed median that counts
 /// as live (ADR 0034).
@@ -82,10 +82,18 @@ impl LightClient {
         let publisher = crate::nym::status_publisher();
         let mut receiver = publisher.subscribe();
         // The sweep gates the Sync Session a user just asked to open.
-        let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::PrioritiseSpeed>(
-            binary_path,
+        use zingo_netutils::responsiveness::{PrioritiseSpeed, Responsiveness as _};
+        let acquirer = crate::nym::acquire::SpawnedBinary::at(binary_path.to_path_buf());
+        let clutch = self
+            .correspondent_pools
+            .draw_clutch(&acquirer)
+            .await
+            .unwrap_or_default();
+        let proxy = crate::nym::acquire::TransportAcquirable::acquire(
+            &acquirer,
+            PrioritiseSpeed::CLASS,
+            &clutch,
             publisher,
-            &self.exits_in_use(),
         )
         .map_err(ServerSelectionError::ProxyStart)?;
 

@@ -69,14 +69,6 @@ impl<T: PoolTransport> CorrespondentPool<T> {
         self.inflight = self.inflight.saturating_sub(1);
     }
 
-    /// The exits this pool's members currently hold.
-    pub(crate) fn exits(&self) -> Vec<String> {
-        self.members
-            .iter()
-            .map(|member| member.exit.clone())
-            .collect()
-    }
-
     /// Admits a ready member.
     pub(crate) fn admit(&mut self, member: Member<T>) {
         self.members.push(member);
@@ -111,9 +103,10 @@ pub(crate) struct Pools {
     pub(crate) price: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy>>,
     /// The session's sole issuer of Exit Node Reservations.
     pub(crate) exits: std::sync::Mutex<exit_pool::ExitPool>,
-    /// The nym-proxy binary refills spawn from; `None` until a spawned
-    /// session sets it, and always `None` for attached sessions.
-    binary: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// What refills acquire transports from; `None` until a session sets
+    /// one, and always `None` for attached sessions.
+    acquirer:
+        std::sync::Mutex<Option<std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>>>,
 }
 
 impl Pools {
@@ -123,7 +116,7 @@ impl Pools {
             indexer: std::sync::Mutex::new(CorrespondentPool::new(INDEXER_POOL_COMPLEMENT)),
             price: std::sync::Mutex::new(CorrespondentPool::new(PRICE_POOL_COMPLEMENT)),
             exits: std::sync::Mutex::new(exit_pool::ExitPool::default()),
-            binary: std::sync::Mutex::new(None),
+            acquirer: std::sync::Mutex::new(None),
         })
     }
 
@@ -131,11 +124,11 @@ impl Pools {
     /// this session has not yet learned the population.
     pub(crate) async fn draw_clutch(
         &self,
-        binary: &std::path::Path,
+        acquirer: &dyn crate::nym::acquire::TransportAcquirable,
     ) -> Result<Vec<String>, String> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
-            let discovered = crate::nym::supervisor::discover_exit_nodes(binary).await?;
+            let discovered = acquirer.discover().await?;
             self.exits.lock().expect("exit pool mutex").seed(discovered);
         }
         self.exits
@@ -154,21 +147,19 @@ impl Pools {
             .recycle(std::iter::once(exit));
     }
 
-    /// Records the spawned session's binary so refills can acquire.
-    pub(crate) fn set_binary(&self, path: std::path::PathBuf) {
-        *self.binary.lock().expect("pool binary mutex") = Some(path);
+    /// Records what this session acquires transports from.
+    pub(crate) fn set_acquirer(
+        &self,
+        acquirer: std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>,
+    ) {
+        *self.acquirer.lock().expect("pool acquirer mutex") = Some(acquirer);
     }
 
-    /// The refill binary, when a spawned session has set one.
-    pub(crate) fn binary(&self) -> Option<std::path::PathBuf> {
-        self.binary.lock().expect("pool binary mutex").clone()
-    }
-
-    /// Every exit both pools currently hold, for the session's status.
-    pub(crate) fn exits(&self) -> Vec<String> {
-        let mut exits = self.indexer.lock().expect("indexer pool mutex").exits();
-        exits.extend(self.price.lock().expect("price pool mutex").exits());
-        exits
+    /// This session's acquirer, when one is set.
+    pub(crate) fn acquirer(
+        &self,
+    ) -> Option<std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>> {
+        self.acquirer.lock().expect("pool acquirer mutex").clone()
     }
 
     /// Stops every member of both pools, for session teardown.
@@ -188,7 +179,7 @@ impl Pools {
     /// Launches one refill task per deficit in each pool; a no-op for
     /// attached sessions, which have no binary to spawn from.
     pub(crate) fn ensure_filled(self: &std::sync::Arc<Self>) {
-        if self.binary().is_none() {
+        if self.acquirer().is_none() {
             return;
         }
         let indexer_deficit = {
@@ -238,11 +229,11 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
         PoolKind::Indexer => &pools.indexer,
         PoolKind::Price => &pools.price,
     };
-    let Some(binary) = pools.binary() else {
+    let Some(acquirer) = pools.acquirer() else {
         pool.lock().expect("pool mutex").note_refill_finished();
         return;
     };
-    let clutch = match pools.draw_clutch(&binary).await {
+    let clutch = match pools.draw_clutch(acquirer.as_ref()).await {
         Ok(clutch) => clutch,
         Err(cause) => {
             pool.lock().expect("pool mutex").note_refill_finished();
@@ -250,7 +241,7 @@ async fn refill_one(pools: &std::sync::Arc<Pools>, kind: PoolKind) {
             return;
         }
     };
-    match crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch).await {
+    match crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await {
         Ok((transport, exit)) => {
             // Bind-time recycle: every reservation but the bound one goes
             // back at once, so the pool drains only by what is leased.
@@ -327,7 +318,7 @@ mod tests {
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
         assert_eq!(taken.exit, "exit-live");
-        assert!(pool.exits().is_empty(), "both members left the pool");
+        assert!(pool.take().member.is_none(), "both members left the pool");
     }
 
     /// HYPOTHESIS: an empty pool takes nothing and evicts nothing — the

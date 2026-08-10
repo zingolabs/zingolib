@@ -279,13 +279,13 @@ impl PullTransports {
         if let Some(member) = take.member {
             return Ok(member);
         }
-        let binary = self
+        let acquirer = self
             .pools
-            .binary()
-            .ok_or_else(|| "this session spawns no transports".to_string())?;
-        let clutch = self.pools.draw_clutch(&binary).await?;
+            .acquirer()
+            .ok_or_else(|| "this session acquires no transports".to_string())?;
+        let clutch = self.pools.draw_clutch(acquirer.as_ref()).await?;
         let (transport, exit) =
-            crate::nym::supervisor::spawn_ready_pool_transport(&binary, &clutch).await?;
+            crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &clutch).await?;
         // Bind-time recycle: only the bound reservation stays held.
         self.pools
             .exits
@@ -846,7 +846,7 @@ impl LightClient {
             .then(|| PullTransports {
                 pools: std::sync::Arc::clone(&self.correspondent_pools),
             })
-            .filter(|context| context.pools.binary().is_some());
+            .filter(|context| context.pools.acquirer().is_some());
         #[cfg(not(feature = "nym"))]
         let pull_transports: Option<PullTransports> = None;
         let pull_route = socks5_proxy.as_deref().map(|shared_socks5| PullRoute {

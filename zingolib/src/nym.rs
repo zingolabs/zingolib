@@ -11,6 +11,7 @@
 //! logic runs in CI without a reachable mixnet or real time.
 #![forbid(unsafe_code)]
 
+pub(crate) mod acquire;
 pub mod correspondent_rotation;
 pub mod driver;
 mod mode;

@@ -229,12 +229,13 @@ impl MixnetProxy {
     /// The child is killed if this supervisor is dropped, spawned in its own
     /// process group (terminal signals do not reach it) with its stdin piped
     /// (its closure is how the child learns the parent is gone).
-    pub(crate) fn spawn<R: zingo_netutils::responsiveness::Responsiveness>(
+    pub(crate) fn spawn(
         binary_path: &Path,
+        class: zingo_netutils::responsiveness::ResponsivenessClass,
         publisher: StatusPublisher,
         clutch: &[String],
     ) -> Result<Self, MixnetProxyError> {
-        let mut launch_args = vec!["--responsiveness".to_string(), R::CLASS.wire().to_string()];
+        let mut launch_args = vec!["--responsiveness".to_string(), class.wire().to_string()];
         for exit in clutch {
             launch_args.push("--exit".to_string());
             launch_args.push(exit.clone());
@@ -664,20 +665,18 @@ pub(crate) async fn discover_exit_nodes(binary_path: &Path) -> Result<Vec<String
         .collect())
 }
 
-/// Spawns one pool transport under `PrioritisePrivacy` and waits until it
+/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
 /// is ready, yielding the transport with its bound Exit Node.
-pub(crate) async fn spawn_ready_pool_transport(
-    binary_path: &std::path::Path,
+pub(crate) async fn acquire_ready_transport(
+    acquirer: &dyn crate::nym::acquire::TransportAcquirable,
     clutch: &[String],
 ) -> Result<(MixnetProxy, String), String> {
+    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
-    let proxy = MixnetProxy::spawn::<zingo_netutils::responsiveness::PrioritisePrivacy>(
-        binary_path,
-        publisher,
-        clutch,
-    )
-    .map_err(|e| e.to_string())?;
+    let proxy = acquirer
+        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
+        .map_err(|e| e.to_string())?;
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {
