@@ -657,46 +657,12 @@ impl LightClient {
             .is_some_and(crate::nym::MixnetProxy::is_spawned)
             && self.correspondent_pools.acquirer().is_some()
         {
-            let take = {
-                let mut pool = self
-                    .correspondent_pools
-                    .price
-                    .lock()
-                    .expect("price pool mutex");
-                pool.take()
-            };
-            for dead in take.evicted {
-                // Dropping the dead member recycles its lease after the stop.
-                dead.transport.stop().await;
-            }
-            match take.member {
-                Some(member) => Some(member),
-                None => {
-                    let acquirer = self
-                        .correspondent_pools
-                        .acquirer()
-                        .expect("checked above; the acquirer is set");
-                    let mut clutch = self
-                        .correspondent_pools
-                        .draw_clutch(acquirer.as_ref())
-                        .await
-                        .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
-                    let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-                    let (transport, exit) =
-                        crate::nym::supervisor::acquire_ready_transport(acquirer.as_ref(), &nodes)
-                            .await
-                            .map_err(crate::wallet::error::PriceError::TransportAcquisition)?;
-                    // Bind-time recycle: keeping only the bound lease drops
-                    // the rest.
-                    let bound = clutch
-                        .iter()
-                        .position(|reservation| reservation.node() == exit)
-                        .expect("the bound exit is one of the clutch's nodes");
-                    let lease = clutch.swap_remove(bound);
-                    drop(clutch);
-                    Some(crate::correspondent::pool::Member { transport, lease })
-                }
-            }
+            Some(
+                self.correspondent_pools
+                    .take_or_acquire(|pools| &pools.price)
+                    .await
+                    .map_err(crate::wallet::error::PriceError::TransportAcquisition)?,
+            )
         } else {
             None
         };
@@ -705,13 +671,11 @@ impl LightClient {
         // reports no address died between take and use, so the run refuses
         // rather than silently degrading to the slot tunnel.
         let via_socks5 = match pooled.as_ref() {
-            Some(member) => match member.transport.socks5_addr() {
+            Some(member) => match member.addr() {
                 Some(addr) => addr,
                 None => {
                     if let Some(member) = pooled {
-                        let crate::correspondent::pool::Member { transport, lease } = member;
-                        transport.stop().await;
-                        drop(lease);
+                        member.retire().await;
                         self.correspondent_pools.ensure_filled();
                     }
                     return Err(LightClientError::from(
@@ -732,10 +696,7 @@ impl LightClient {
         let dispatched = std::time::Instant::now();
         let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
         if let Some(member) = pooled {
-            // The lease recycles by drop after the transport's stop.
-            let crate::correspondent::pool::Member { transport, lease } = member;
-            transport.stop().await;
-            drop(lease);
+            member.retire().await;
             self.correspondent_pools.ensure_filled();
         }
         let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
