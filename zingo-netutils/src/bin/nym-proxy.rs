@@ -116,6 +116,7 @@ fn emit(line: String) {
 }
 
 /// The parent's spawn-time instructions, parsed from the argument grammar.
+#[derive(Debug)]
 struct Arguments {
     /// The clutch of Exit Node Reservations the parent drew for this
     /// acquisition; empty means draw one locally.
@@ -128,10 +129,33 @@ struct Arguments {
     discover: bool,
 }
 
+/// A refusal of the proxy binary's argument grammar.
+#[derive(Debug, thiserror::Error)]
+enum ArgumentsError {
+    /// `--exit` arrived without an Exit Node identity.
+    #[error("--exit needs an Exit Node identity")]
+    MissingExitIdentity,
+    /// `--responsiveness` arrived without a class token.
+    #[error("--responsiveness needs a class token")]
+    MissingClassToken,
+    /// `--responsiveness` named a token outside the sealed partition.
+    #[error("unknown responsiveness class: {token}")]
+    UnknownClass {
+        /// The token that names no class.
+        token: String,
+    },
+    /// An argument outside the grammar.
+    #[error("unknown argument: {argument}")]
+    UnknownArgument {
+        /// The argument the grammar does not know.
+        argument: String,
+    },
+}
+
 /// Parse every `--exit <identity>` pair, the optional `--discover` flag, and
 /// the optional `--responsiveness <prioritise-speed|prioritise-privacy>`
 /// from `args`, refusing unknown arguments and unknown class tokens.
-fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, String> {
+fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, ArgumentsError> {
     let mut clutch = Vec::new();
     let mut class = ResponsivenessClass::PrioritiseSpeed;
     let mut discover = false;
@@ -140,16 +164,20 @@ fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, 
             "--discover" => discover = true,
             "--exit" => match args.next() {
                 Some(identity) => clutch.push(identity),
-                None => return Err("--exit needs an Exit Node identity".to_string()),
+                None => return Err(ArgumentsError::MissingExitIdentity),
             },
             "--responsiveness" => match args.next() {
                 Some(token) => {
                     class = ResponsivenessClass::parse(&token)
-                        .ok_or_else(|| format!("unknown responsiveness class: {token}"))?;
+                        .ok_or(ArgumentsError::UnknownClass { token })?;
                 }
-                None => return Err("--responsiveness needs a class token".to_string()),
+                None => return Err(ArgumentsError::MissingClassToken),
             },
-            other => return Err(format!("unknown argument: {other}")),
+            other => {
+                return Err(ArgumentsError::UnknownArgument {
+                    argument: other.to_string(),
+                });
+            }
         }
     }
     Ok(Arguments {
@@ -180,8 +208,31 @@ async fn wait_for_parent_exit() {
 mod tests {
     use super::{ResponsivenessClass, parse_arguments};
 
-    fn parse(args: &[&str]) -> Result<super::Arguments, String> {
+    fn parse(args: &[&str]) -> Result<super::Arguments, super::ArgumentsError> {
         parse_arguments(args.iter().map(ToString::to_string))
+    }
+
+    /// HYPOTHESIS: each grammar refusal is a distinct typed variant, so a
+    /// wrapper matches the refusal instead of parsing prose. Falsified if a
+    /// refusal loses its variant or its payload.
+    #[test]
+    fn refusals_are_typed_variants() {
+        assert!(matches!(
+            parse(&["--exit"]).unwrap_err(),
+            super::ArgumentsError::MissingExitIdentity
+        ));
+        assert!(matches!(
+            parse(&["--responsiveness"]).unwrap_err(),
+            super::ArgumentsError::MissingClassToken
+        ));
+        assert!(matches!(
+            parse(&["--responsiveness", "bogus"]).unwrap_err(),
+            super::ArgumentsError::UnknownClass { token } if token == "bogus"
+        ));
+        assert!(matches!(
+            parse(&["--bogus"]).unwrap_err(),
+            super::ArgumentsError::UnknownArgument { argument } if argument == "--bogus"
+        ));
     }
 
     /// HYPOTHESIS: the clutch grammar accepts repeated `--exit` pairs and

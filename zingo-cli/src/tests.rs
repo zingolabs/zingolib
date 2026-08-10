@@ -8,6 +8,26 @@ fn parse(args: &[&str]) -> clap::ArgMatches {
         .expect("valid args")
 }
 
+mod config_template_refusals {
+    /// HYPOTHESIS: the template's refusals are typed variants rendering the
+    /// CLI's exact prose. Falsified if a variant or its rendering drifts.
+    #[test]
+    fn refusals_render_their_cli_prose() {
+        assert_eq!(
+            crate::ConfigTemplateError::BothSeedAndViewkey.to_string(),
+            "Cannot load a wallet from both seed phrase and viewkey!"
+        );
+        assert_eq!(
+            crate::ConfigTemplateError::OnlineGrantUnused {
+                command: "balance".to_string()
+            }
+            .to_string(),
+            "`balance` needs no network, so `--online` grants a connection it never \
+             uses. Drop `--online`, or run it at the interactive prompt."
+        );
+    }
+}
+
 mod misplaced_session_option {
     use super::*;
     use crate::misplaced_session_option;
@@ -793,7 +813,7 @@ mod config_template {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
         let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
-        ConfigTemplate::fill(mode, communication_mode, matches)
+        ConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
     }
 
     /// Helper: build the ZingoConfig for a filled template. The builder is
