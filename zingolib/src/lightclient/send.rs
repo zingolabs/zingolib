@@ -39,7 +39,7 @@ fn record_send_attempt(
     host: &str,
     route: AttemptRoute,
     started: std::time::Instant,
-    outcome: &Result<String, String>,
+    outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
     exit: Option<String>,
 ) {
@@ -53,9 +53,32 @@ fn record_send_attempt(
         exit,
         outcome: match outcome {
             Ok(_) => Ok(()),
-            Err(detail) => Err(FailureKind::classify(detail)),
+            Err(failure) => Err(FailureKind::classify(&failure.to_string())),
         },
     });
+}
+
+/// Why one transaction's transmission failed.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TransmitError {
+    /// The clearnet arm has no configured indexer.
+    #[error("clearnet transmission requires a configured indexer")]
+    NoClearnetIndexer,
+    /// A mixnet route arrived in a build without the `nym` feature.
+    #[cfg(not(feature = "nym"))]
+    #[error("a mixnet route requires the nym feature")]
+    MixnetUnbuilt,
+    /// The single-target transmit's taxonomy record.
+    #[error(transparent)]
+    Failure(#[from] zingo_net_diag::NetOpFailure),
+    /// The Correspondent draw refused.
+    #[cfg(feature = "nym")]
+    #[error(transparent)]
+    Draw(#[from] crate::correspondent::NoEligibleCorrespondents),
+    /// Every arm of the escalation failed, reported whole.
+    #[cfg(feature = "nym")]
+    #[error("{0}")]
+    Escalation(crate::nym::correspondent_rotation::EscalationError<zingo_net_diag::NetOpFailure>),
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -331,22 +354,19 @@ async fn transmit_one_transaction(
     txid: &TxId,
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
-) -> Result<(String, TransmitRoute), String> {
+) -> Result<(String, TransmitRoute), TransmitError> {
     match route {
         None => {
             // The route resolver refuses an Indexerless clearnet route
             // before any transaction is built, so this arm always holds one.
             let Some(indexer) = indexer else {
-                return Err("clearnet transmission requires a configured indexer".to_string());
+                return Err(TransmitError::NoClearnetIndexer);
             };
             let host = indexer
                 .uri()
                 .host()
                 .map_or_else(|| indexer.uri().to_string(), str::to_string);
             let started = std::time::Instant::now();
-            // The typed status is rendered only at this boundary, which is
-            // the send path's existing prose seam (the NotYetTyped backlog);
-            // below it the failure travels whole.
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
                 tx_bytes,
@@ -356,7 +376,13 @@ async fn transmit_one_transaction(
                 |event| progress.set(format!("indexer {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(status)| status.to_string());
+            .map_err(|TransmitFailed(status)| {
+                zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RemoteHttp,
+                    &host,
+                    &status,
+                )
+            });
             record_send_attempt(
                 history,
                 &host,
@@ -370,7 +396,9 @@ async fn transmit_one_transaction(
                     .then_some(crate::correspondent::health::FailurePhase::Correspondent),
                 None,
             );
-            outcome.map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
+            outcome
+                .map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
+                .map_err(TransmitError::from)
         }
         #[cfg(feature = "nym")]
         Some(route) => {
@@ -386,7 +414,7 @@ async fn transmit_one_transaction(
             .await
         }
         #[cfg(not(feature = "nym"))]
-        Some(_) => Err("a mixnet route requires the nym feature".to_string()),
+        Some(_) => Err(TransmitError::MixnetUnbuilt),
     }
 }
 
@@ -410,7 +438,7 @@ async fn mixnet_escalating_transmit(
     txid: &TxId,
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
-) -> Result<(String, TransmitRoute), String> {
+) -> Result<(String, TransmitRoute), TransmitError> {
     use crate::correspondent::eligible_correspondents;
     use crate::nym::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
@@ -419,8 +447,7 @@ async fn mixnet_escalating_transmit(
     let indexers = eligible_correspondents(
         sync_indexer,
         &history.health().lock().expect("health mutex"),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
     let run_pull = |indexer: http::Uri| {
         let shared_addr = route.shared_socks5.to_string();
         let pulls = route.transports;
@@ -479,13 +506,12 @@ async fn mixnet_escalating_transmit(
                     context.refill();
                 }
             }
-            let rendered = outcome.clone().map_err(|failure| failure.to_string());
             record_send_attempt(
                 history,
                 &host,
                 AttemptRoute::Mixnet,
                 started,
-                &rendered,
+                &outcome,
                 outcome
                     .as_ref()
                     .err()
@@ -512,7 +538,7 @@ async fn mixnet_escalating_transmit(
         |line| progress.set(format!("mixnet escalation: {line}")),
     )
     .await
-    .map_err(|error| error.to_string())
+    .map_err(TransmitError::Escalation)
 }
 
 /// The chain-mock twin of [`mixnet_escalating_transmit`], paired with the
@@ -530,7 +556,7 @@ async fn mock_escalating_transmit(
     txid: &TxId,
     progress: &TransmitProgressHandle,
     history: &IndexerHistoryHandle,
-) -> Result<(String, String), String> {
+) -> Result<(String, String), TransmitError> {
     use crate::correspondent::eligible_correspondents;
     use crate::nym::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
@@ -539,8 +565,7 @@ async fn mock_escalating_transmit(
     let correspondents = eligible_correspondents(
         Some(indexer.uri()),
         &history.health().lock().expect("health mutex"),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
     let run_arm = |correspondent: http::Uri| {
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
@@ -559,7 +584,13 @@ async fn mock_escalating_transmit(
                 |event| progress.set(format!("correspondent {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(status)| status.to_string());
+            .map_err(|TransmitFailed(status)| {
+                zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RemoteHttp,
+                    &host,
+                    &status,
+                )
+            });
             record_send_attempt(
                 history,
                 &host,
@@ -581,7 +612,7 @@ async fn mock_escalating_transmit(
         |line| progress.set(format!("mixnet escalation: {line}")),
     )
     .await
-    .map_err(|error| error.to_string())
+    .map_err(TransmitError::Escalation)
 }
 
 impl LightClient {
@@ -1012,14 +1043,16 @@ impl LightClient {
             .await;
             let (txid_from_server, route) = match transmit_outcome {
                 Ok(server_txid_and_route) => server_txid_and_route,
-                Err(message) => {
+                Err(failure) => {
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
                         vec![*txid],
                     );
                     wallet.save_required = true;
+                    // The typed failure is rendered only here, at the
+                    // report's existing prose field.
                     return Err(SendError::TransmissionError(
-                        TransmissionError::TransmissionFailed(message),
+                        TransmissionError::TransmissionFailed(failure.to_string()),
                     )
                     .into());
                 }
@@ -1071,6 +1104,68 @@ impl LightClient {
 /// `LightWallet::calculate_transactions` is the build-without-transmit
 /// seam (it proves and stores the transaction without transmitting),
 /// so these cells run offline over a synthetic wallet.
+#[cfg(test)]
+mod transmit_error_seam {
+    use super::*;
+
+    /// The chain height a seam test hands the transmitter; nothing on the
+    /// refusal path reads it.
+    const ARBITRARY_HEIGHT: u64 = 0;
+
+    /// HYPOTHESIS: a send attempt's failure reaches the diary as the typed
+    /// taxonomy record, classified whole rather than from hand-rendered
+    /// prose. Falsified if the recorded category drifts.
+    #[test]
+    fn send_attempt_failure_is_classified_from_the_record() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        history.set_recording(true);
+        let failure = zingo_net_diag::NetOpFailure::message(
+            zingo_net_diag::NetOpStage::RemoteConnect,
+            "indexer.example",
+            "connection refused",
+        );
+        record_send_attempt(
+            &history,
+            "indexer.example",
+            AttemptRoute::Clearnet,
+            std::time::Instant::now(),
+            &Err(failure),
+            None,
+            None,
+        );
+        let recorded = history.load();
+        assert_eq!(recorded.len(), 1, "one attempt is recorded");
+        assert_eq!(
+            recorded[0].outcome,
+            Err(crate::lightclient::indexer_history::FailureKind::Unreachable),
+            "the category comes from the typed record"
+        );
+    }
+
+    /// HYPOTHESIS: the clearnet arm without a configured indexer refuses as
+    /// the typed variant before any network touch. Falsified if the refusal
+    /// is any other variant.
+    #[tokio::test]
+    async fn missing_clearnet_indexer_refuses_typed() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        let progress = TransmitProgressHandle::default();
+        let refusal = transmit_one_transaction(
+            None,
+            None,
+            &[],
+            ARBITRARY_HEIGHT,
+            &TxId::from_bytes([0u8; 32]),
+            &progress,
+            &history,
+        )
+        .await
+        .expect_err("no indexer must refuse");
+        assert!(matches!(refusal, TransmitError::NoClearnetIndexer));
+    }
+}
+
 #[cfg(test)]
 mod built_transaction_shape {
     use zcash_protocol::consensus::{BlockHeight, BranchId};
