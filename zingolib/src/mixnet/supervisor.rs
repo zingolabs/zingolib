@@ -17,8 +17,8 @@
 //! The spawned child is the desktop instance of a general rule (ADR 0011's
 //! mobile amendment): the transport meets the wallet at a runtime boundary
 //! carrying a SOCKS5 endpoint and a liveness signal. `MixnetProxy::attach`
-//! is the other instance — a platform (a mobile app hosting the proxy as a
-//! dynamic library) hands the wallet an already-running local SOCKS5
+//! is the other instance — a mobile platform (an app hosting the proxy as
+//! a dynamic library) hands the wallet an already-running local SOCKS5
 //! address. Readiness and continued life are judged by loopback dials
 //! alone, whose failure lands `Died` exactly as the closed stdout pipe
 //! does for the spawned child.
@@ -68,7 +68,7 @@ const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDE
 const ATTACH_HEALTH_ATTEMPTS: usize = 2;
 
 /// A failure starting the mixnet proxy child process or attaching to a
-/// platform-hosted endpoint.
+/// mobile-platform-hosted endpoint.
 #[derive(Debug, thiserror::Error)]
 pub enum MixnetProxyError {
     /// The `nym-proxy` binary could not be spawned.
@@ -186,15 +186,15 @@ impl DeathReport {
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
-/// platform-hosted endpoint — and exposes its state.
+/// mobile-platform-hosted endpoint — and exposes its state.
 pub struct MixnetProxy {
     state: Arc<Mutex<ProxyState>>,
     transport: Transport,
 }
 
 /// How the proxy endpoint is provided: a child process this supervisor
-/// spawned and owns, or an already-running endpoint a platform handed the
-/// wallet.
+/// spawned and owns, or an already-running endpoint a mobile platform
+/// handed the wallet.
 enum Transport {
     /// The bundled `nym-proxy` binary, spawned as an owned child.
     Spawned {
@@ -204,7 +204,7 @@ enum Transport {
         /// written, whose closure on drop tears the proxy down.
         _stdin: ChildStdin,
     },
-    /// A platform-hosted endpoint, watched by the readiness/liveness driver.
+    /// A mobile-platform-hosted endpoint, watched by the readiness/liveness driver.
     Attached { driver: JoinHandle<()> },
 }
 
@@ -275,7 +275,7 @@ impl MixnetProxy {
         })
     }
 
-    /// Attaches to an already-running, platform-hosted SOCKS5 endpoint that
+    /// Attaches to an already-running, mobile-platform-hosted SOCKS5 endpoint that
     /// bound `exits`, judging readiness and continued life by loopback dials
     /// alone.
     pub(crate) fn attach(
@@ -311,7 +311,7 @@ impl MixnetProxy {
     }
 
     /// Whether this transport is a spawned child rather than a
-    /// platform-attached endpoint.
+    /// mobile-platform-attached endpoint.
     pub(crate) fn is_spawned(&self) -> bool {
         matches!(self.transport, Transport::Spawned { .. })
     }

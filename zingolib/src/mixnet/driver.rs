@@ -160,19 +160,19 @@ pub enum MixnetStartPolicy {
 
 /// How the transport comes to exist at the go-online moment — the one
 /// dimension along which consumers legitimately differ (ADR 0011, ADR
-/// 0024): a desktop session spawns the bundled binary, a platform that
-/// hosts the proxy itself hands the wallet an address to attach to.
+/// 0024): a desktop session spawns the bundled binary, a mobile platform
+/// that hosts the proxy itself hands the wallet an address to attach to.
 #[derive(Debug)]
 pub enum ProvisionStrategy<'a> {
     /// Spawn the bundled `nym-proxy` binary, resolving its path from the
     /// consumer's platform hints through the one precedence rule in
     /// [`crate::mixnet::provision`].
     Spawn(crate::mixnet::provision::SpawnHints<'a>),
-    /// Attach to an already-running, platform-hosted SOCKS5 endpoint.
+    /// Attach to an already-running, mobile-platform-hosted SOCKS5 endpoint.
     Attach {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
-        /// The Exit Node identities the platform host reports as bound.
+        /// The Exit Node identities the mobile platform host reports as bound.
         exits: &'a [crate::mixnet::ExitNodeId],
     },
 }

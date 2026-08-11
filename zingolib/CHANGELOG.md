@@ -114,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switched off refuses with the new
   `LightClientError::ProbeRequiresMixnet`, which names the toggle-off,
   instead of mislabeling the state as `MixnetNotReady::Unattached`.
-- BREAKING: a platform that forbids subprocesses can now supply the mixnet
+- BREAKING: a mobile platform that forbids subprocesses can now supply the mixnet
   transport. `mixnet::acquire` is public and adds the `ProxyHost` trait, which
   a host implements to answer a directory query and to start one proxy over
   a drawn Clutch, together with the `HostedTransport` record it answers
@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enable_mixnet`. Both, and `start_mixnet_session`, now return
   `mixnet::acquire::TransportError` rather than `MixnetProxyError`, because an
   acquisition can fail before any proxy exists.
-- BREAKING: the attach path carries the platform host's bound Exit Node
+- BREAKING: the attach path carries the mobile platform host's bound Exit Node
   identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
   parameter and `mixnet::ProvisionStrategy::Attach` gains an `exits` field;
   the attached transport's `Ready` publication reports them, so the
@@ -198,7 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed; an unpinned online session starts Indexerless and the
   Server-Selection Sweep selects its sync indexer.
 - BREAKING: `LightClient::attach_mixnet` readiness is a data round trip
-  through the platform-hosted endpoint to a census health indexer, retried
+  through the mobile-platform-hosted endpoint to a census health indexer, retried
   once, because a listener that accepts TCP proves nothing about the mixnet
   carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
   loopback dial remains only as the cheap liveness watchdog after readiness.

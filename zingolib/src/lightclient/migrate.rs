@@ -559,7 +559,7 @@ pub struct MigrationStatus {
     pub value_total: u64,
     /// Value already confirmed into the Ironwood pool, in zatoshis.
     pub value_migrated: u64,
-    /// Coming transmission windows, what a platform scheduler feeds into its
+    /// Coming transmission windows, what a mobile platform scheduler feeds into its
     /// earliest-begin requests. Strictly *future* windows: the window the
     /// chain is currently inside is reported by [`Self::due_now`], not here.
     pub upcoming_windows: Vec<TransmissionWindow>,
@@ -854,7 +854,7 @@ impl LightClient {
     /// Fails with [`MigrationError::CadenceFixed`] once any part is signed,
     /// transmitted, confirmed, or otherwise past `Assigned`: the cadence the
     /// remaining parts were consented under is then already partly executed.
-    /// Afterwards, re-read [`Self::migration_status`] and re-arm platform
+    /// Afterwards, re-read [`Self::migration_status`] and re-arm mobile platform
     /// windows from `upcoming_windows`. The old schedule's times are void.
     pub async fn reschedule_parts(&mut self, per_bucket: u32) -> Result<(), LightClientError> {
         let mut wallet = self.wallet().write().await;

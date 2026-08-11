@@ -389,7 +389,7 @@ pub fn plan_schedule(
     Ok(())
 }
 
-/// One future transmission window: what a platform scheduler (for example
+/// One future transmission window: what a mobile platform scheduler (for example
 /// `BGTaskScheduler` or `WorkManager`) feeds into its earliest-begin request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransmissionWindow {
@@ -482,7 +482,7 @@ pub fn upcoming_windows(
 
 /// One window of the schedule's timeline: the bucket, its block range, and
 /// how far its parts have come. The rendering counterpart to
-/// [`TransmissionWindow`], which feeds platform schedulers strictly future
+/// [`TransmissionWindow`], which feeds mobile platform schedulers strictly future
 /// windows. This reports every window the schedule touches, finished ones
 /// included.
 #[derive(Debug, Clone, PartialEq, Eq)]

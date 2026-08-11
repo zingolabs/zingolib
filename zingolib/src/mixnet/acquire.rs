@@ -42,10 +42,10 @@ pub enum TransportError {
     /// The transport process could not be created.
     #[error(transparent)]
     Proxy(#[from] MixnetProxyError),
-    /// The platform host could not be reached to serve the acquisition.
+    /// The mobile platform host could not be reached to serve the acquisition.
     #[error("the proxy host did not answer: {0}")]
     HostUnavailable(String),
-    /// The platform host answered and refused the acquisition.
+    /// The mobile platform host answered and refused the acquisition.
     #[error("the proxy host refused")]
     HostRefused(#[source] HostRefusal),
     /// The transport died during bootstrap.
@@ -84,8 +84,8 @@ impl From<ExitPoolError> for TransportError {
 }
 
 /// Something a mixnet transport is acquirable from: the bundled binary a
-/// desktop spawns, or the host that owns the proxy where a platform forbids
-/// subprocesses.
+/// desktop spawns, or the host that owns the proxy where a mobile platform
+/// forbids subprocesses.
 pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
@@ -105,7 +105,7 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
 }
 
-/// One transport a platform host started on the wallet's behalf.
+/// One transport a mobile platform host started on the wallet's behalf.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostedTransport {
     /// The local SOCKS5 address the host's proxy listens on.
@@ -114,7 +114,7 @@ pub struct HostedTransport {
     pub exit_node: crate::mixnet::ExitNodeId,
 }
 
-/// Why the platform host declined or failed a request, with the host's own
+/// Why the mobile platform host declined or failed a request, with the host's own
 /// detail carried verbatim as the payload.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HostRefusal {
@@ -124,7 +124,7 @@ pub enum HostRefusal {
         /// The host's own account of the failure.
         detail: String,
     },
-    /// The host declined the request as a matter of platform policy.
+    /// The host declined the request as a matter of mobile platform policy.
     #[error("the host declined: {detail}")]
     Declined {
         /// The host's own account of the refusal.
@@ -132,7 +132,7 @@ pub enum HostRefusal {
     },
 }
 
-/// A platform host that owns the mixnet proxy, for a platform whose sandbox
+/// A mobile platform host that owns the mixnet proxy, for a mobile platform whose sandbox
 /// forbids the wallet from spawning one.
 pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
@@ -147,7 +147,7 @@ pub trait ProxyHost: Send + Sync + 'static {
     ) -> Result<HostedTransport, HostRefusal>;
 }
 
-/// The mobile acquirer: a platform host that owns the proxy library.
+/// The mobile acquirer: a mobile platform host that owns the proxy library.
 pub(crate) struct HostedProxy {
     host: std::sync::Arc<dyn ProxyHost>,
 }
@@ -237,7 +237,7 @@ mod tests {
     use super::*;
 
     /// A host that answers both calls from a script, standing in for the
-    /// platform library a phone loads.
+    /// mobile platform library a phone loads.
     struct ScriptedHost {
         directory: Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal>,
         transport: Result<HostedTransport, HostRefusal>,
@@ -281,12 +281,12 @@ mod tests {
     }
 
     /// HYPOTHESIS: a refusing host surfaces as a typed host refusal, never
-    /// as a spawn failure the platform could not have produced.
+    /// as a spawn failure the mobile platform could not have produced.
     #[tokio::test]
     async fn a_refusing_host_refuses_typed() {
         let acquirer = hosted(ScriptedHost {
             directory: Err(HostRefusal::Declined {
-                detail: "no directory on this platform".to_string(),
+                detail: "no directory on this mobile platform".to_string(),
             }),
             transport: Err(HostRefusal::Declined {
                 detail: "the app declined".to_string(),

@@ -19,6 +19,14 @@ trust. Above the seam, "mixnet" names the wallet's transport domain:
 channel, the probes, and the consent semantics.
 _Avoid_: "nym" for the wallet-side domain; "mixnet" for the vendor stack
 
+**Mobile platform** (ratified 2026-08-11):
+The embedding application layer on a subprocess-forbidding OS — the
+mobile app hosting the proxy shim — which implements `ProxyHost` below
+the seam and hands the wallet a ready SOCKS5 endpoint.
+_Avoid_: bare "platform" for this sense; the bare word stays only for
+the generic OS sense and for the desktop-or-mobile provisioning axis
+(ADR 0041's platform-typed session)
+
 ### Command classes
 
 **Transmitting command**:

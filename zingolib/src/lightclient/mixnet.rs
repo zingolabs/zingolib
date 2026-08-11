@@ -43,7 +43,7 @@ impl LightClient {
         .await
     }
 
-    /// Enables Mixnet Mode on a platform that forbids subprocesses, taking
+    /// Enables Mixnet Mode on a mobile platform that forbids subprocesses, taking
     /// every transport from `host` instead of spawning one.
     pub async fn enable_mixnet_via_host<R: zingo_netutils::responsiveness::Responsiveness>(
         &mut self,
@@ -106,7 +106,7 @@ impl LightClient {
         }
     }
 
-    /// Attaches Mixnet Mode to an already-running, platform-hosted SOCKS5
+    /// Attaches Mixnet Mode to an already-running, mobile-platform-hosted SOCKS5
     /// endpoint that bound `exits`, replacing any running transport.
     pub async fn attach_mixnet(
         &mut self,
@@ -170,7 +170,7 @@ impl LightClient {
     /// The driver entry a session calls at its go-online moment, which under
     /// [`MixnetStartPolicy::ForcedOn`](crate::mixnet::MixnetStartPolicy)
     /// provisions the transport by `strategy` (the bundled binary spawned
-    /// from the consumer's platform hints, or an attach to a platform-hosted
+    /// from the consumer's platform hints, or an attach to a mobile-platform-hosted
     /// endpoint) so the bootstrap overlaps sync, under
     /// [`MixnetStartPolicy::OptedOutThisSession`](crate::mixnet::MixnetStartPolicy)
     /// records the startup opt-out as the explicit act that reaches switched
@@ -352,7 +352,7 @@ impl LightClient {
 
         // A spawned session runs the race over its own Price Source Pool
         // member — one fresh Shared exit per run, never the slot's shared
-        // tunnel — while an attached session's single platform endpoint
+        // tunnel — while an attached session's single mobile-platform endpoint
         // carries it as before. The consumed member is stopped whatever
         // the outcome, and the refill draw excludes its exit.
         let pooled = if self
@@ -517,7 +517,7 @@ mod tests {
         }
 
         /// HYPOTHESIS: an enable act revokes standing clearnet consent even
-        /// when the platform address fails to parse — from `SwitchedOff`,
+        /// when the mobile platform address fails to parse — from `SwitchedOff`,
         /// a failed `attach_mixnet` lands `Unattached` and publishes it.
         /// Falsified if the mode remains `SwitchedOff` after the failed
         /// attach.
@@ -530,7 +530,7 @@ mod tests {
             client
                 .attach_mixnet("not-an-address", &[])
                 .await
-                .expect_err("an unparseable platform address must fail the attach");
+                .expect_err("an unparseable mobile platform address must fail the attach");
 
             assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::Unattached);
             assert_eq!(
