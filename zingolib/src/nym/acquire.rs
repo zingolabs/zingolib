@@ -46,7 +46,7 @@ pub enum TransportError {
     #[error("the proxy host did not answer: {0}")]
     HostUnavailable(String),
     /// The platform host answered and refused the acquisition.
-    #[error("the proxy host refused: {0}")]
+    #[error("the proxy host refused")]
     HostRefused(#[source] HostRefusal),
     /// The transport died during bootstrap.
     #[error(
