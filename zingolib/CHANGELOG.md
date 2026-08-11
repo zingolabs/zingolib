@@ -74,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wire string, and both host methods refuse with the typed
   `nym::acquire::HostRefusal` instead of `String`, which
   `TransportError::HostRefused` now carries as its source.
+- BREAKING: indexer endpoints are the typed `correspondent::Host` — the
+  Health ledger's key, `MixnetProbe::host`, and the diary's
+  `IndexerAttempt::host`, whose `exit` field is now the typed
+  `nym::ExitNodeId`. A Host is lowercased at construction because DNS
+  names compare case-insensitively, and the host-or-whole-URI fallback
+  that three call sites each derived by hand now lives in one
+  constructor. The `nym` module is declared in every build with its
+  transport machinery feature-gated item-by-item, so the identity
+  vocabulary is reachable from the always-compiled diary.
 - BREAKING: the SOCKS5 endpoint is `std::net::SocketAddr` everywhere the
   wallet holds one — `MixnetStatus::socks5_addr`, `HostedTransport`,
   `MixnetProxy::attach`, `LightClient::mixnet_socks5_addr`, and the probe

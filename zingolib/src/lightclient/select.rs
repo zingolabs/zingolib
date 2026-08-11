@@ -229,7 +229,7 @@ async fn probe_one(
     use crate::lightclient::indexer_history::{
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
-    let host = uri.host().map_or_else(|| uri.to_string(), str::to_string);
+    let host = crate::correspondent::Host::of_uri(uri);
     let result =
         zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), uri, timeout).await;
     let (reported, outcome) = match &result {

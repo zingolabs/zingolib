@@ -67,7 +67,7 @@ pub struct ProbeLeg {
 #[derive(Clone, Debug)]
 pub struct MixnetProbe {
     /// The probed indexer's host.
-    pub host: String,
+    pub host: crate::correspondent::Host,
     /// The probe's outcome through the session's SOCKS5 proxy.
     pub leg: ProbeLeg,
 }
@@ -91,7 +91,7 @@ async fn mixnet_leg(
     indexer: &Uri,
     timeout: Duration,
     history: &IndexerHistoryHandle,
-    host: &str,
+    host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
     let outcome =
@@ -107,10 +107,15 @@ async fn mixnet_leg(
     leg
 }
 
-fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute, leg: &ProbeLeg) {
+fn record_probe(
+    history: &IndexerHistoryHandle,
+    host: &crate::correspondent::Host,
+    route: AttemptRoute,
+    leg: &ProbeLeg,
+) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
-        host: host.to_string(),
+        host: host.clone(),
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
@@ -143,9 +148,7 @@ pub(crate) async fn probe_indexer(
     timeout: Duration,
     history: &IndexerHistoryHandle,
 ) -> MixnetProbe {
-    let host = indexer
-        .host()
-        .map_or_else(|| indexer.to_string(), str::to_string);
+    let host = crate::correspondent::Host::of_uri(indexer);
     let leg = mixnet_leg(socks5_addr, indexer, timeout, history, &host).await;
     MixnetProbe { host, leg }
 }

@@ -2297,10 +2297,14 @@ fn record_part_route(
     use crate::wallet::migration::TransmissionRoute;
 
     let (host, attempt_route) = match route {
-        TransmissionRoute::Mixnet { correspondent, .. } => {
-            (correspondent.clone(), AttemptRoute::Mixnet)
-        }
-        TransmissionRoute::Clearnet { endpoint } => (endpoint.clone(), AttemptRoute::Clearnet),
+        TransmissionRoute::Mixnet { correspondent, .. } => (
+            crate::correspondent::Host::of_host_str(correspondent),
+            AttemptRoute::Mixnet,
+        ),
+        TransmissionRoute::Clearnet { endpoint } => (
+            crate::correspondent::Host::of_host_str(endpoint),
+            AttemptRoute::Clearnet,
+        ),
     };
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),

@@ -36,16 +36,16 @@ use crate::lightclient::transmit::{
 /// failed, never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
-    host: &str,
+    host: &crate::correspondent::Host,
     route: AttemptRoute,
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
-    exit: Option<String>,
+    exit: Option<crate::nym::ExitNodeId>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
-        host: host.to_string(),
+        host: host.clone(),
         route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
@@ -341,10 +341,7 @@ async fn transmit_one_transaction(
             let Some(indexer) = indexer else {
                 return Err(TransmitError::NoClearnetIndexer);
             };
-            let host = indexer
-                .uri()
-                .host()
-                .map_or_else(|| indexer.uri().to_string(), str::to_string);
+            let host = crate::correspondent::Host::of_uri(indexer.uri());
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
@@ -376,7 +373,14 @@ async fn transmit_one_transaction(
                 None,
             );
             outcome
-                .map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
+                .map(|server_txid| {
+                    (
+                        server_txid,
+                        TransmitRoute::Clearnet {
+                            indexer: host.to_string(),
+                        },
+                    )
+                })
                 .map_err(TransmitError::from)
         }
         #[cfg(feature = "nym")]
@@ -432,9 +436,7 @@ async fn mixnet_escalating_transmit(
         let pulls = route.transports;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = indexer
-            .host()
-            .map_or_else(|| indexer.to_string(), str::to_string);
+        let host = crate::correspondent::Host::of_uri(&indexer);
         async move {
             // Each pull binds its own Exclusive exit when this session pools
             // transports; an attached session shares the slot's tunnel.
@@ -488,7 +490,7 @@ async fn mixnet_escalating_transmit(
             // outcome, so its exit carries exactly this one Transmission;
             // dropping the spent holder recycles its lease even when the
             // pull is cancelled mid-await.
-            let bound_exit = spent.as_ref().map(|spent| spent.node().to_string());
+            let bound_exit = spent.as_ref().map(|spent| spent.node().clone());
             if let Some(spent) = spent {
                 spent.retire().await;
                 if let Some(context) = pulls {
@@ -511,7 +513,7 @@ async fn mixnet_escalating_transmit(
                 (
                     server_txid,
                     TransmitRoute::Mixnet {
-                        correspondent: host,
+                        correspondent: host.to_string(),
                         via_socks5: target.socks5_addr.to_string(),
                     },
                 )
@@ -559,9 +561,7 @@ async fn mock_escalating_transmit(
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = correspondent
-            .host()
-            .map_or_else(|| correspondent.to_string(), str::to_string);
+        let host = crate::correspondent::Host::of_uri(&correspondent);
         async move {
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
@@ -589,7 +589,7 @@ async fn mock_escalating_transmit(
                 None,
                 None,
             );
-            outcome.map(|server_txid| (server_txid, host))
+            outcome.map(|server_txid| (server_txid, host.to_string()))
         }
     };
 
@@ -1118,7 +1118,7 @@ mod transmit_error_seam {
         );
         record_send_attempt(
             &history,
-            "indexer.example",
+            &crate::correspondent::Host::of_host_str("indexer.example"),
             AttemptRoute::Clearnet,
             std::time::Instant::now(),
             &Err(failure),

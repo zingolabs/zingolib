@@ -662,7 +662,7 @@ mod network_command_parsing {
         use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
-            host: "zec.rocks".to_string(),
+            host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
                 outcome: Ok(ProbeSuccess {
                     chain: "main".to_string(),
@@ -677,7 +677,7 @@ mod network_command_parsing {
         );
 
         let dead = MixnetProbe {
-            host: "carover0.xyz".to_string(),
+            host: zingolib::correspondent::Host::of_host_str("carover0.xyz"),
             leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
@@ -708,7 +708,7 @@ mod network_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: host.to_string(),
+            host: zingolib::correspondent::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,

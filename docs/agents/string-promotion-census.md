@@ -53,7 +53,12 @@ the declared eventual owner. One newtype ends the duplicated derivation,
 and the concurrent-Transmission correspondent ledger (open design) keys
 by it.
 
-**Indexer endpoint records → one host type.** Sites: `Health.standings`
+**Indexer endpoint records → one host type.** *Implemented 2026-08-10
+as the `Host` newtype (working name), chosen over `http::uri::Authority`
+because an Authority carries a port while Health judges at host grain;
+the diary's `exit` column rode along to `ExitNodeId`, and the `nym`
+module is now declared in every build so the identity vocabulary
+reaches the always-compiled diary.* Sites: `Health.standings`
 keyed by `HashMap<String, _>`, `probe::ProbeSuccess.host`, and the
 `server: String` diary fields. `http::uri::Authority` (or a thin `Host`
 newtype over it) makes Health's key, the probe records, and the diary

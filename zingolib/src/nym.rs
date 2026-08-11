@@ -11,6 +11,7 @@
 //! logic runs in CI without a reachable mixnet or real time.
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "nym")]
 pub mod acquire;
 
 /// The identity of a mixnet Exit Node, as the directory and the proxy announce it.
@@ -94,6 +95,7 @@ impl std::fmt::Display for ExitNodeId {
 
 /// The party a failure stage charges, unattributed when the stage cannot
 /// say which side failed.
+#[cfg(feature = "nym")]
 pub(crate) fn charge_phase(
     stage: &zingo_net_diag::NetOpStage,
 ) -> crate::correspondent::health::FailurePhase {
@@ -111,22 +113,38 @@ pub(crate) fn charge_phase(
     }
 }
 
+#[cfg(feature = "nym")]
 pub mod correspondent_rotation;
+#[cfg(feature = "nym")]
 pub mod driver;
+#[cfg(feature = "nym")]
 mod mode;
+#[cfg(feature = "nym")]
 pub mod probe;
+#[cfg(feature = "nym")]
 pub mod provision;
+#[cfg(feature = "nym")]
 pub mod route;
+#[cfg(feature = "nym")]
 pub mod supervisor;
+#[cfg(feature = "nym")]
 pub mod sweep;
 
+#[cfg(feature = "nym")]
 pub use acquire::TransportError;
+#[cfg(feature = "nym")]
 pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
+#[cfg(feature = "nym")]
 pub(crate) use driver::{StatusPublisher, status_publisher};
+#[cfg(feature = "nym")]
 pub(crate) use mode::MixnetSlot;
+#[cfg(feature = "nym")]
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
+#[cfg(feature = "nym")]
 pub use route::{MixnetNotReady, MixnetRoute, SlotTunnel, resolve_route};
+#[cfg(feature = "nym")]
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
+#[cfg(feature = "nym")]
 pub use zingo_netutils::responsiveness::{PrioritisePrivacy, PrioritiseSpeed, Responsiveness};
 
 /// The temporal calibration a consumer of the mixnet transport reads from
@@ -134,6 +152,7 @@ pub use zingo_netutils::responsiveness::{PrioritisePrivacy, PrioritiseSpeed, Res
 /// truth as the gates (`zingo_netutils::time`) instead of pinning copies
 /// across the FFI, where no compiler catches drift (issue #2564). Field
 /// names match the constants they carry.
+#[cfg(feature = "nym")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MixnetTiming {
     /// The attach readiness gate's total worst-case budget: how long
@@ -148,6 +167,7 @@ pub struct MixnetTiming {
 /// The current [`MixnetTiming`], read from the one place the constants
 /// live. Pure and infallible, so the FFI layer can surface it as a plain
 /// record.
+#[cfg(feature = "nym")]
 pub fn mixnet_timing() -> MixnetTiming {
     MixnetTiming {
         attach_readiness_budget: zingo_netutils::time::ATTACH_READINESS_BUDGET,
@@ -160,6 +180,7 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// variants — no substring inspection anywhere. This is the one classifier
 /// for [`zingo_netutils::Socks5TransmitError`], shared by the escalation, the
 /// mixnet probe leg, and the attach readiness gate.
+#[cfg(feature = "nym")]
 pub(crate) fn socks5_transmit_stage(
     error: &zingo_netutils::Socks5TransmitError,
 ) -> zingo_net_diag::NetOpStage {
@@ -187,6 +208,7 @@ pub(crate) fn socks5_transmit_stage(
 /// The [`zingo_net_diag::NetOpFailure`] record for one SOCKS5 transmit
 /// failure against `target`: stage from [`socks5_transmit_stage`], cause
 /// chain captured layer by layer from the error's `source()` walk.
+#[cfg(feature = "nym")]
 pub(crate) fn socks5_transmit_failure(
     error: &zingo_netutils::Socks5TransmitError,
     target: impl Into<String>,
@@ -194,7 +216,7 @@ pub(crate) fn socks5_transmit_failure(
     zingo_net_diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "nym"))]
 mod classifier_tests {
     use super::socks5_transmit_stage;
     use zingo_net_diag::NetOpStage;
