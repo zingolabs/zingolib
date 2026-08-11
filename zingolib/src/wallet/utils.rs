@@ -7,17 +7,35 @@ use std::{
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::MemoBytes;
 
-/// TODO: Add Doc Comment Here!
+pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
+
+/// ```
+/// use zingolib::wallet::utils::{read_string, write_string};
+///
+/// let mut encoded = Vec::new();
+/// write_string(&mut encoded, &"main".to_string()).unwrap();
+/// assert_eq!(read_string(encoded.as_slice()).unwrap(), "main");
+///
+/// let unbounded_length = u64::MAX.to_le_bytes();
+/// assert!(read_string(unbounded_length.as_slice()).is_err());
+/// ```
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
-    // Strings are written as <littleendian> len + bytes
     let str_len = reader.read_u64::<LittleEndian>()?;
+    read_string_body(reader, str_len)
+}
+
+pub(crate) fn read_string_body<R: Read>(mut reader: R, str_len: u64) -> io::Result<String> {
+    if str_len > MAX_STRING_LENGTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("string length {str_len} exceeds the wallet-file maximum {MAX_STRING_LENGTH}"),
+        ));
+    }
     let mut str_bytes = vec![0; str_len as usize];
     reader.read_exact(&mut str_bytes)?;
 
-    let str = String::from_utf8(str_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-    Ok(str)
+    String::from_utf8(str_bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
 /// TODO: Add Doc Comment Here!
