@@ -208,8 +208,10 @@ async fn survey(
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
     let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
+    let dial = crate::mixnet::Socks5Dial::of(socks5_addr);
+    let dial = &dial;
     futures::future::join_all(candidates.iter().map(|uri| async move {
-        let reported = probe_one(socks5_addr, uri, timeout, history).await;
+        let reported = probe_one(dial, uri, timeout, history).await;
         SurveyResult {
             uri: uri.clone(),
             reported,
@@ -221,7 +223,7 @@ async fn survey(
 /// One candidate's survey: `GetLightdInfo` over the sweep exit, its success
 /// mapped to the reported chain and height, any failure to `None`.
 async fn probe_one(
-    socks5_addr: std::net::SocketAddr,
+    dial: &crate::mixnet::Socks5Dial,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
@@ -230,8 +232,7 @@ async fn probe_one(
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = crate::correspondent::Host::of_uri(uri);
-    let result =
-        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), uri, timeout).await;
+    let result = zingo_netutils::get_lightd_info_via_socks5(dial.as_str(), uri, timeout).await;
     let (reported, outcome) = match &result {
         Ok(info) => (
             Some(ProbeSuccess {
