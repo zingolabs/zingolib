@@ -9,7 +9,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
 #[cfg(feature = "nym")]
-use crate::nym::acquire;
+use crate::mixnet::acquire;
 
 use super::output::OutputRef;
 

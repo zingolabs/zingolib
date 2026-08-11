@@ -75,7 +75,7 @@ struct ProgressPeek {
     drain: zingolib::lightclient::migrate::ImmediateMigrationProgressHandle,
     split: zingolib::lightclient::migrate::SplitProgressHandle,
     #[cfg(feature = "nym")]
-    mixnet: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
+    mixnet: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 }
 
 impl ProgressPeek {
@@ -1092,12 +1092,12 @@ async fn network(
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
 /// the explicit flag value and the executable-sibling bundled directory
 /// (where the `bundle-nym-proxy` workbench tool places the binary).
-/// [`zingolib::nym::provision`] owns the precedence rule and its tests
+/// [`zingolib::mixnet::provision`] owns the precedence rule and its tests
 /// (ADR 0024); this names only what zingolib cannot know by itself. Shared
 /// by the session driver call at startup and the `network on` command.
 #[cfg(feature = "nym")]
-pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::SpawnHints<'_> {
-    use zingolib::nym::provision::{self, SpawnHints};
+pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::mixnet::provision::SpawnHints<'_> {
+    use zingolib::mixnet::provision::{self, SpawnHints};
     SpawnHints {
         explicit,
         bundled_dir: provision::executable_sibling_dir(),
@@ -1108,7 +1108,7 @@ pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::S
 /// [`spawn_hints`], for the `network on` command's in-session enable.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
+    zingolib::mixnet::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
 /// Typed failure of the `network` command family. The family exists only
@@ -1140,7 +1140,7 @@ pub enum NetworkCommandError {
     #[error("failed to start the nym proxy at '{path}': {source}")]
     ProxyStart {
         path: String,
-        source: zingolib::nym::acquire::TransportError,
+        source: zingolib::mixnet::acquire::TransportError,
     },
     /// The proxy spawned but its bootstrap reached a terminal failure while
     /// the command waited; re-enabling spawns a fresh proxy.
@@ -1180,7 +1180,7 @@ fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
         .parse::<http::Uri>()
         .map_err(|_| "not a valid indexer uri to probe".to_string())?;
     #[cfg(feature = "nym")]
-    if !zingolib::nym::probe::probe_eligible(&uri) {
+    if !zingolib::mixnet::probe::probe_eligible(&uri) {
         return Err("probe targets must be https on port 443".to_string());
     }
     Ok(uri)
@@ -1191,8 +1191,8 @@ use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one mixnet liveness probe. Pure, pinned by unit tests.
 #[cfg(feature = "nym")]
-fn render_mixnet_probe(probe: &zingolib::nym::probe::MixnetProbe) -> String {
-    let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
+fn render_mixnet_probe(probe: &zingolib::mixnet::probe::MixnetProbe) -> String {
+    let leg = |leg: &zingolib::mixnet::probe::ProbeLeg| match &leg.outcome {
         Ok(success) => format!(
             "ok in {}ms: chain {}, height {}",
             leg.millis, success.chain, success.height
@@ -1309,11 +1309,11 @@ fn render_history(
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
-    mode: zingolib::nym::MixnetMode,
+    mode: zingolib::mixnet::MixnetMode,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
-    use zingolib::nym::MixnetMode;
+    use zingolib::mixnet::MixnetMode;
 
     match mode {
         MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
@@ -1347,18 +1347,18 @@ fn render_status(
 /// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
 /// synchronization stays on the ordinary connector, so a bare "ready" must
 /// never be read as end-to-end IP protection. The canonical text lives in
-/// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
+/// [`zingolib::mixnet::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
 /// wording.
 #[cfg(feature = "nym")]
 fn render_status_with_disclaimer(
-    mode: zingolib::nym::MixnetMode,
+    mode: zingolib::mixnet::MixnetMode,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
     format!(
         "{}\n\n{}",
         render_status(mode, socks5_addr, bootstrap_detail),
-        zingolib::nym::IP_CORRELATION_DISCLAIMER,
+        zingolib::mixnet::IP_CORRELATION_DISCLAIMER,
     )
 }
 
@@ -1367,7 +1367,7 @@ fn render_status_with_disclaimer(
 #[derive(Debug, PartialEq, Eq)]
 enum BootstrapOutcome {
     Ready {
-        exits: Vec<zingolib::nym::ExitNodeId>,
+        exits: Vec<zingolib::mixnet::ExitNodeId>,
     },
     Failed {
         report: String,
@@ -1377,7 +1377,7 @@ enum BootstrapOutcome {
 /// Renders the bound Exit Nodes for the `network on` success report,
 /// shortening each identity for the terminal.
 #[cfg(feature = "nym")]
-pub(crate) fn render_exit_nodes(exits: &[zingolib::nym::ExitNodeId]) -> String {
+pub(crate) fn render_exit_nodes(exits: &[zingolib::mixnet::ExitNodeId]) -> String {
     fn shorten(identity: &str) -> String {
         if identity.chars().count() > 15 {
             let head: String = identity.chars().take(12).collect();
@@ -1398,9 +1398,9 @@ pub(crate) fn render_exit_nodes(exits: &[zingolib::nym::ExitNodeId]) -> String {
 /// mode, so `network on` reports an outcome instead of a promise to poll.
 #[cfg(feature = "nym")]
 async fn await_bootstrap_outcome(
-    mut rx: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
+    mut rx: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 ) -> BootstrapOutcome {
-    use zingolib::nym::MixnetMode;
+    use zingolib::mixnet::MixnetMode;
     let mut was_bootstrapping = false;
     loop {
         let status = rx.borrow_and_update().clone();
@@ -1482,7 +1482,7 @@ async fn network_command(
             let path = resolve_proxy_path(path.as_deref());
             // `network on` is an interactive act: the user sits at the prompt.
             lightclient
-                .enable_mixnet::<zingolib::nym::PrioritiseSpeed>(std::path::Path::new(&path))
+                .enable_mixnet::<zingolib::mixnet::PrioritiseSpeed>(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
@@ -3111,8 +3111,8 @@ pub(crate) async fn dispatch_parsed(
 /// resolver at the transmit seam as the sole refusal authority.
 #[cfg(feature = "nym")]
 async fn wait_out_bootstrap(lightclient: &LightClient) {
+    use zingolib::mixnet::MixnetMode;
     use zingolib::netutils::time::{TRANSMIT_HEARTBEAT_INTERVAL, TRANSMIT_READINESS_BUDGET};
-    use zingolib::nym::MixnetMode;
 
     let mut status_rx = lightclient.subscribe_mixnet_status();
     let started = tokio::time::Instant::now();

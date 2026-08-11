@@ -1,18 +1,18 @@
 //! The fail-closed route resolver shared by every mixnet-only surface.
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
-//! [`Ready`](crate::nym::MixnetMode::Ready) they route through the local
+//! [`Ready`](crate::mixnet::MixnetMode::Ready) they route through the local
 //! SOCKS5 proxy. When it is
-//! [`SwitchedOff`](crate::nym::MixnetMode::SwitchedOff), reachable only by
+//! [`SwitchedOff`](crate::mixnet::MixnetMode::SwitchedOff), reachable only by
 //! the user's deliberate toggle-off, they route over clearnet as informed
-//! consent. While [`Unattached`](crate::nym::MixnetMode::Unattached),
-//! [`Bootstrapping`](crate::nym::MixnetMode::Bootstrapping), or after
-//! [`Died`](crate::nym::MixnetMode::Died) they refuse rather than leak to
+//! consent. While [`Unattached`](crate::mixnet::MixnetMode::Unattached),
+//! [`Bootstrapping`](crate::mixnet::MixnetMode::Bootstrapping), or after
+//! [`Died`](crate::mixnet::MixnetMode::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
 //! instead of each re-deriving the mode semantics.
 #![forbid(unsafe_code)]
 
-use crate::nym::MixnetMode;
+use crate::mixnet::MixnetMode;
 
 /// The session slot's tunnel, whose one exit is Shared across every
 /// request the slot's surfaces send to a Correspondent.

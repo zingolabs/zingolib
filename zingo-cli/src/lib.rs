@@ -565,7 +565,7 @@ pub(crate) fn command_loop(
                 CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
                 #[cfg(feature = "nym")]
-                _ if lightclient.mixnet_mode() != zingolib::nym::MixnetMode::Unattached => {
+                _ if lightclient.mixnet_mode() != zingolib::mixnet::MixnetMode::Unattached => {
                     CommunicationMode::Online
                 }
                 _ => CommunicationMode::UnconsentedOffline,
@@ -1172,7 +1172,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     // entirely.
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
-        use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
+        use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         lightclient
             .start_mixnet_session(
                 ProvisionStrategy::Spawn(commands::spawn_hints(
@@ -1210,12 +1210,12 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::nym::MixnetMode::Ready => info!(
+                    zingolib::mixnet::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
                     ),
-                    zingolib::nym::MixnetMode::Died => {
+                    zingolib::mixnet::MixnetMode::Died => {
                         let cause = status
                             .death
                             .as_ref()
@@ -1305,7 +1305,7 @@ async fn sweep_select_sync_indexer(
         .then(|| filled_template.server.clone())
         .flatten();
     if let Some(pinned) = &pin
-        && !zingolib::nym::probe::probe_eligible(pinned)
+        && !zingolib::mixnet::probe::probe_eligible(pinned)
     {
         eprintln!(
             "Server-Selection Sweep: pinned server {pinned} is outside the mixnet exit policy \

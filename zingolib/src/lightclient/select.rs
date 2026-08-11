@@ -15,9 +15,9 @@ use std::time::Duration;
 use http::Uri;
 
 use super::LightClient;
-use crate::nym::MixnetMode;
-use crate::nym::probe::ProbeSuccess;
-use crate::nym::sweep::{self, Selection, SurveyResult, SweepError};
+use crate::mixnet::MixnetMode;
+use crate::mixnet::probe::ProbeSuccess;
+use crate::mixnet::sweep::{self, Selection, SurveyResult, SweepError};
 
 /// Two blocks: the height tolerance around the observed median that counts
 /// as live (ADR 0034).
@@ -48,10 +48,10 @@ pub enum SweepProgress {
 pub enum ServerSelectionError {
     /// The sweep could not draw a ledgered Clutch for its transport.
     #[error("the sweep could not acquire a transport: {0}")]
-    TransportAcquisition(#[source] crate::nym::acquire::TransportError),
+    TransportAcquisition(#[source] crate::mixnet::acquire::TransportError),
     /// The dedicated sweep proxy could not be spawned.
     #[error("the sweep proxy could not start: {0}")]
-    ProxyStart(#[source] crate::nym::MixnetProxyError),
+    ProxyStart(#[source] crate::mixnet::MixnetProxyError),
     /// The sweep proxy did not reach readiness: it died or exceeded its
     /// bootstrap budget before any survey ran.
     #[error("the sweep transport did not become ready: {0}")]
@@ -82,11 +82,11 @@ impl LightClient {
         let chain = lightd_chain_name(&self.chain_type());
         // A dedicated status channel: the sweep proxy's lifecycle is private
         // to this call and must not touch the session's mixnet status.
-        let publisher = crate::nym::status_publisher();
+        let publisher = crate::mixnet::status_publisher();
         let mut receiver = publisher.subscribe();
         // The sweep gates the Sync Session a user just asked to open.
         use zingo_netutils::responsiveness::{PrioritiseSpeed, Responsiveness as _};
-        let acquirer = crate::nym::acquire::SpawnedBinary::at(binary_path.to_path_buf());
+        let acquirer = crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf());
         // The sweep refuses without a ledgered Clutch; its reservations are
         // held for the sweep's life and recycled by drop on every return.
         let mut clutch = self
@@ -95,7 +95,7 @@ impl LightClient {
             .await
             .map_err(ServerSelectionError::TransportAcquisition)?;
         let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-        let proxy = crate::nym::acquire::TransportAcquirable::acquire(
+        let proxy = crate::mixnet::acquire::TransportAcquirable::acquire(
             &acquirer,
             PrioritiseSpeed::CLASS,
             &nodes,
@@ -115,7 +115,7 @@ impl LightClient {
         let lease = clutch.swap_remove(bound);
         drop(clutch);
         let member: crate::correspondent::pool::Member<
-            crate::nym::MixnetProxy,
+            crate::mixnet::MixnetProxy,
             crate::correspondent::pool::Shared,
         > = crate::correspondent::pool::Member::new(proxy, lease);
         progress(SweepProgress::Surveying {
@@ -157,8 +157,8 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
 /// address with its bound Exit Nodes, or fail typed when it dies or its
 /// bootstrap budget elapses.
 async fn await_sweep_ready(
-    receiver: &mut tokio::sync::watch::Receiver<crate::nym::MixnetStatus>,
-) -> Result<(std::net::SocketAddr, Vec<crate::nym::ExitNodeId>), ServerSelectionError> {
+    receiver: &mut tokio::sync::watch::Receiver<crate::mixnet::MixnetStatus>,
+) -> Result<(std::net::SocketAddr, Vec<crate::mixnet::ExitNodeId>), ServerSelectionError> {
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {
@@ -251,7 +251,7 @@ async fn probe_one(
         phase: result
             .as_ref()
             .err()
-            .map(|error| crate::nym::charge_phase(&crate::nym::socks5_transmit_stage(error))),
+            .map(|error| crate::mixnet::charge_phase(&crate::mixnet::socks5_transmit_stage(error))),
         exit: None,
         outcome,
     });

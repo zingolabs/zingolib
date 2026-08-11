@@ -659,7 +659,7 @@ mod network_command_parsing {
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
             host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
@@ -737,7 +737,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(MixnetMode::Unattached, None, None),
@@ -780,7 +780,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(
@@ -807,7 +807,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         for mode in [
             MixnetMode::Unattached,
@@ -849,7 +849,7 @@ mod bootstrap_wait {
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use zingolib::nym::{MixnetMode, MixnetStatus};
+    use zingolib::mixnet::{MixnetMode, MixnetStatus};
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
@@ -876,7 +876,7 @@ mod bootstrap_wait {
         tokio::task::yield_now().await;
         let mut ready = status(MixnetMode::Ready);
         let exit_alpha =
-            zingolib::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+            zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
         ready.exits = vec![exit_alpha.clone()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
@@ -893,7 +893,7 @@ mod bootstrap_wait {
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
         let parsed = |identity: &str| {
-            zingolib::nym::ExitNodeId::parse(identity).expect("the test identity parses")
+            zingolib::mixnet::ExitNodeId::parse(identity).expect("the test identity parses")
         };
         assert_eq!(
             super::super::render_exit_nodes(&[parsed("short-exit")]),
@@ -1884,7 +1884,7 @@ mod attached_exit_reporting {
         client
             .attach_mixnet(
                 &addr,
-                &[zingolib::nym::ExitNodeId::parse("host-bound-exit")
+                &[zingolib::mixnet::ExitNodeId::parse("host-bound-exit")
                     .expect("the test identity parses")],
             )
             .await

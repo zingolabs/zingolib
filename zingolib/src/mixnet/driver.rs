@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::nym::{DeathReport, MixnetMode};
+use crate::mixnet::{DeathReport, MixnetMode};
 
 /// One observation of Mixnet Mode for subscribers: the mode plus the
 /// evidence scoped to it. Every field beyond the mode is `None` outside
@@ -37,7 +37,7 @@ pub struct MixnetStatus {
     /// The Exit Node identities the ready transport bound, present only
     /// while ready.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub exits: Vec<crate::nym::ExitNodeId>,
+    pub exits: Vec<crate::mixnet::ExitNodeId>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,16 +47,17 @@ pub struct MixnetStatus {
     pub death: Option<DeathReport>,
 }
 
-/// The lifted form before mode-scoping. serde reads the fields through this
-/// mirror, then [`TryFrom`] refuses any evidence outside its one mode, so a
-/// hand-built wire cannot smuggle, say, a death into a ready snapshot.
+/// The lifted form before mode-scoping, through whose untyped mirror serde
+/// reads the fields so that [`TryFrom`] can refuse any evidence outside its
+/// one mode and refuse a malformed address or exit entry as suspicious,
+/// because producer and consumer are pinned to one code revision.
 #[derive(serde::Deserialize)]
 struct RawMixnetStatus {
     mode: MixnetMode,
     #[serde(default)]
-    socks5_addr: Option<std::net::SocketAddr>,
+    socks5_addr: Option<String>,
     #[serde(default)]
-    exits: Vec<crate::nym::ExitNodeId>,
+    exits: Vec<String>,
     #[serde(default)]
     bootstrap_detail: Option<String>,
     #[serde(default)]
@@ -82,10 +83,30 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
         if raw.death.is_some() && raw.mode != MixnetMode::Died {
             return Err(stray("death", raw.mode));
         }
+        // Producer and consumer are pinned to one code revision, so a
+        // malformed wire value is not version skew: it is suspicious, and
+        // the snapshot refuses whole.
+        let socks5_addr = raw
+            .socks5_addr
+            .map(|addr| {
+                addr.parse::<std::net::SocketAddr>().map_err(|error| {
+                    format!("suspicious status wire: socks5_addr {addr:?} is malformed ({error})")
+                })
+            })
+            .transpose()?;
+        let exits = raw
+            .exits
+            .into_iter()
+            .map(|exit| {
+                crate::mixnet::ExitNodeId::try_from(exit.clone()).map_err(|error| {
+                    format!("suspicious status wire: exit {exit:?} is malformed ({error})")
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(MixnetStatus {
             mode: raw.mode,
-            socks5_addr: raw.socks5_addr,
-            exits: raw.exits,
+            socks5_addr,
+            exits,
             bootstrap_detail: raw.bootstrap_detail,
             death: raw.death,
         })
@@ -145,14 +166,14 @@ pub enum MixnetStartPolicy {
 pub enum ProvisionStrategy<'a> {
     /// Spawn the bundled `nym-proxy` binary, resolving its path from the
     /// consumer's platform hints through the one precedence rule in
-    /// [`crate::nym::provision`].
-    Spawn(crate::nym::provision::SpawnHints<'a>),
+    /// [`crate::mixnet::provision`].
+    Spawn(crate::mixnet::provision::SpawnHints<'a>),
     /// Attach to an already-running, platform-hosted SOCKS5 endpoint.
     Attach {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
         /// The Exit Node identities the platform host reports as bound.
-        exits: &'a [crate::nym::ExitNodeId],
+        exits: &'a [crate::mixnet::ExitNodeId],
     },
 }
 
@@ -168,7 +189,7 @@ mod wire_contract {
     use zingo_net_diag::{NetOpFailure, NetOpStage};
 
     use super::MixnetStatus;
-    use crate::nym::{DeathReport, MixnetMode};
+    use crate::mixnet::{DeathReport, MixnetMode};
 
     // A fixed latch moment (2025-07-30T18:26:40Z) so the death pins are
     // deterministic; the wire carries it as milliseconds since the epoch.
@@ -179,6 +200,22 @@ mod wire_contract {
     fn pin(status: &MixnetStatus, json: &str) {
         assert_eq!(serde_json::to_string(status).unwrap(), json);
         assert_eq!(&serde_json::from_str::<MixnetStatus>(json).unwrap(), status);
+    }
+
+    /// HYPOTHESIS: producer and consumer are pinned to one code revision,
+    /// so a malformed wire value is suspicious — a Ready snapshot whose
+    /// address is not a socket address, or whose exits carry a blank
+    /// entry, refuses to deserialize whole. Falsified if either form
+    /// lifts.
+    #[test]
+    fn a_malformed_snapshot_is_suspicious_and_refuses() {
+        for json in [
+            r#"{"mode":"ready","socks5_addr":"localhost:1080"}"#,
+            r#"{"mode":"ready","exits":[""]}"#,
+        ] {
+            serde_json::from_str::<MixnetStatus>(json)
+                .expect_err("a malformed wire value must refuse as suspicious");
+        }
     }
 
     #[test]

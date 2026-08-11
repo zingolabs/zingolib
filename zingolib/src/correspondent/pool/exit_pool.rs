@@ -24,13 +24,13 @@ pub(crate) enum ExitPoolError {
 
 /// One issued Exit Node Reservation; dropping it recycles the node.
 pub(crate) struct Reservation {
-    node: crate::nym::ExitNodeId,
+    node: crate::mixnet::ExitNodeId,
     ledger: Weak<Mutex<ExitPool>>,
 }
 
 impl Reservation {
     /// The reserved Exit Node identity.
-    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
+    pub(crate) fn node(&self) -> &crate::mixnet::ExitNodeId {
         &self.node
     }
 
@@ -38,7 +38,7 @@ impl Reservation {
     #[cfg(test)]
     pub(crate) fn dangling_for_test(node: &str) -> Self {
         Reservation {
-            node: crate::nym::ExitNodeId::from(node),
+            node: crate::mixnet::ExitNodeId::from(node),
             ledger: Weak::new(),
         }
     }
@@ -65,7 +65,7 @@ impl std::fmt::Debug for Reservation {
 }
 
 /// The node identities of a clutch, for the process seam's `--exit` args.
-pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::nym::ExitNodeId> {
+pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::mixnet::ExitNodeId> {
     clutch
         .iter()
         .map(|reservation| reservation.node().clone())
@@ -76,13 +76,13 @@ pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::nym::ExitNodeId
 /// at most one holder at a time.
 #[derive(Default)]
 pub(crate) struct ExitPool {
-    population: Vec<crate::nym::ExitNodeId>,
-    issued: HashSet<crate::nym::ExitNodeId>,
+    population: Vec<crate::mixnet::ExitNodeId>,
+    issued: HashSet<crate::mixnet::ExitNodeId>,
 }
 
 impl ExitPool {
     /// Records the discovered population, once per session.
-    pub(crate) fn seed(&mut self, discovered: Vec<crate::nym::ExitNodeId>) {
+    pub(crate) fn seed(&mut self, discovered: Vec<crate::mixnet::ExitNodeId>) {
         self.population = discovered;
     }
 
@@ -100,7 +100,7 @@ impl ExitPool {
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        let drawable: Vec<crate::nym::ExitNodeId> = guarded
+        let drawable: Vec<crate::mixnet::ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -138,7 +138,7 @@ mod tests {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         pool.lock().unwrap().seed(
             (0..count)
-                .map(|index| crate::nym::ExitNodeId::from(format!("exit-{index}").as_str()))
+                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()))
                 .collect(),
         );
         pool

@@ -123,7 +123,7 @@ fn record_probe(
             .outcome
             .as_ref()
             .err()
-            .map(|failure| crate::nym::charge_phase(&failure.stage)),
+            .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
         exit: None,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),

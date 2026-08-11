@@ -907,7 +907,7 @@ impl LightClient {
     /// transmitting surface.
     ///
     /// While the mode is on, parts travel ONLY over the mixnet (failing
-    /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
+    /// closed with [`MixnetNotReady`](crate::mixnet::MixnetNotReady) while the
     /// proxy bootstraps or after it dies) to one Correspondent drawn at
     /// random per submission, with the synchronization endpoint's operator
     /// forbidden as a target (ADR 0022: a `migration_transmission_uri` on the
@@ -921,7 +921,7 @@ impl LightClient {
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         #[cfg(feature = "nym")]
-        if let crate::nym::MixnetRoute::Mixnet(tunnel) = self.mixnet_route()? {
+        if let crate::mixnet::MixnetRoute::Mixnet(tunnel) = self.mixnet_route()? {
             let socks5_addr = tunnel.into_addr().to_string();
             let sync_indexer = self.indexer_uri();
             let candidates = transmission_route::eligible_candidates(

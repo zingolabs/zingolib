@@ -3,7 +3,7 @@
 
 pub(crate) mod exit_pool;
 
-use crate::nym::acquire;
+use crate::mixnet::acquire;
 
 /// The Indexer Pool's ratified complement of Exit-Bound members.
 pub(crate) const INDEXER_POOL_COMPLEMENT: usize = 2;
@@ -66,7 +66,7 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
 
     /// The bound Exit Node's identity.
     #[cfg(test)]
-    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
+    pub(crate) fn node(&self) -> &crate::mixnet::ExitNodeId {
         self.lease.node()
     }
 
@@ -107,7 +107,7 @@ pub(crate) struct SpentExit<T> {
 
 impl<T: PoolTransport> SpentExit<T> {
     /// The spent exit's identity, for the attempt record.
-    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
+    pub(crate) fn node(&self) -> &crate::mixnet::ExitNodeId {
         self.lease.node()
     }
 
@@ -192,16 +192,16 @@ impl<T: PoolTransport, U: ExitUse> CorrespondentPool<T, U> {
 pub(crate) struct Pools {
     /// The Indexer Pool of Exclusive-exit members a Transmission's pulls
     /// consume.
-    pub(crate) indexer: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy, Exclusive>>,
+    pub(crate) indexer: std::sync::Mutex<CorrespondentPool<crate::mixnet::MixnetProxy, Exclusive>>,
     /// The Price Source Pool's one Shared-exit member.
-    pub(crate) price: std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy, Shared>>,
+    pub(crate) price: std::sync::Mutex<CorrespondentPool<crate::mixnet::MixnetProxy, Shared>>,
     /// The session's sole issuer of Exit Node Reservations; reservations
     /// hold a weak ledger handle and recycle themselves on drop.
     pub(crate) exits: std::sync::Arc<std::sync::Mutex<exit_pool::ExitPool>>,
     /// What refills acquire transports from; `None` until a session sets
     /// one, and always `None` for attached sessions.
     acquirer:
-        std::sync::Mutex<Option<std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>>>,
+        std::sync::Mutex<Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>>>,
     /// Bumped by every drain, so a refill launched before the drain refuses
     /// to admit its child into the drained pool.
     generation: std::sync::atomic::AtomicU64,
@@ -228,7 +228,7 @@ impl Pools {
     /// this session has not yet learned the population.
     pub(crate) async fn draw_clutch(
         &self,
-        acquirer: &dyn crate::nym::acquire::TransportAcquirable,
+        acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
     ) -> Result<Vec<exit_pool::Reservation>, acquire::TransportError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
@@ -241,7 +241,7 @@ impl Pools {
     /// Records what this session acquires transports from.
     pub(crate) fn set_acquirer(
         &self,
-        acquirer: std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>,
+        acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
     ) {
         *self.acquirer.lock().expect("pool acquirer mutex") = Some(acquirer);
     }
@@ -249,7 +249,7 @@ impl Pools {
     /// This session's acquirer, when one is set.
     pub(crate) fn acquirer(
         &self,
-    ) -> Option<std::sync::Arc<dyn crate::nym::acquire::TransportAcquirable>> {
+    ) -> Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>> {
         self.acquirer.lock().expect("pool acquirer mutex").clone()
     }
 
@@ -260,8 +260,8 @@ impl Pools {
         pool: for<'a> fn(
             &'a Pools,
         )
-            -> &'a std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy, U>>,
-    ) -> Result<Member<crate::nym::MixnetProxy, U>, acquire::TransportError> {
+            -> &'a std::sync::Mutex<CorrespondentPool<crate::mixnet::MixnetProxy, U>>,
+    ) -> Result<Member<crate::mixnet::MixnetProxy, U>, acquire::TransportError> {
         let take = {
             let mut pool = pool(self).lock().expect("pool mutex");
             pool.take()
@@ -281,12 +281,12 @@ impl Pools {
     /// bound exit's lease.
     async fn acquire_bound(
         &self,
-        acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    ) -> Result<(crate::nym::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
+        acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
         let mut clutch = self.draw_clutch(acquirer).await?;
         let nodes = exit_pool::clutch_nodes(&clutch);
         let (transport, exit) =
-            crate::nym::supervisor::acquire_ready_transport(acquirer, &nodes).await?;
+            crate::mixnet::supervisor::acquire_ready_transport(acquirer, &nodes).await?;
         // Bind-time recycle: keeping only the bound lease drops the rest.
         let bound = clutch
             .iter()
@@ -359,7 +359,7 @@ async fn refill_one<U: ExitUse>(
     pools: &std::sync::Arc<Pools>,
     pool: for<'a> fn(
         &'a Pools,
-    ) -> &'a std::sync::Mutex<CorrespondentPool<crate::nym::MixnetProxy, U>>,
+    ) -> &'a std::sync::Mutex<CorrespondentPool<crate::mixnet::MixnetProxy, U>>,
 ) {
     // The generation this refill was launched under; a drain that lands
     // before we admit bumps it, and we then refuse rather than admit a live
@@ -376,7 +376,7 @@ async fn refill_one<U: ExitUse>(
         Ok((transport, lease)) => {
             // The generation check and the admit share one lock hold, so a
             // drain cannot slip between them and orphan the child.
-            let stale: Option<Member<crate::nym::MixnetProxy, U>> = {
+            let stale: Option<Member<crate::mixnet::MixnetProxy, U>> = {
                 let mut pool = pool(pools).lock().expect("pool mutex");
                 pool.note_refill_finished();
                 if pools.generation() == launched_at {
@@ -460,7 +460,7 @@ mod tests {
         let take = pool.take();
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
-        assert_eq!(taken.node(), &crate::nym::ExitNodeId::from("exit-live"));
+        assert_eq!(taken.node(), &crate::mixnet::ExitNodeId::from("exit-live"));
         assert!(pool.take().member.is_none(), "both members left the pool");
     }
 
@@ -539,7 +539,7 @@ mod tests {
         assert!(addr.is_some(), "a live exclusive member dials once");
         assert_eq!(
             spent.node(),
-            &crate::nym::ExitNodeId::from("exit-exclusive")
+            &crate::mixnet::ExitNodeId::from("exit-exclusive")
         );
         spent.retire().await;
     }

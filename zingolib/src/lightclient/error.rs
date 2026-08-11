@@ -67,7 +67,7 @@ pub enum LightClientError {
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error("{0}")]
-    MixnetNotReady(#[from] crate::nym::MixnetNotReady),
+    MixnetNotReady(#[from] crate::mixnet::MixnetNotReady),
     /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
     #[cfg(feature = "nym")]
     #[error(

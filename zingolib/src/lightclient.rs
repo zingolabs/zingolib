@@ -172,7 +172,7 @@ pub struct LightClient {
     /// or an attached transport. Explicit rather than `Option` so a
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
-    mixnet_slot: crate::nym::MixnetSlot,
+    mixnet_slot: crate::mixnet::MixnetSlot,
     /// The Correspondent Pools: ready transports Exit Rotation consumes per
     /// run, refilled in the background under PrioritisePrivacy.
     #[cfg(feature = "nym")]
@@ -188,7 +188,7 @@ pub struct LightClient {
     /// so an enable after a disable publishes into the same channel a
     /// subscriber already holds.
     #[cfg(feature = "nym")]
-    mixnet_status: crate::nym::StatusPublisher,
+    mixnet_status: crate::mixnet::StatusPublisher,
 }
 
 impl LightClient {
@@ -258,13 +258,13 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
             slot_clutch: Vec::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
-            mixnet_status: crate::nym::status_publisher(),
+            mixnet_status: crate::mixnet::status_publisher(),
         })
     }
 
@@ -298,13 +298,13 @@ impl LightClient {
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
             slot_clutch: Vec::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
-            mixnet_status: crate::nym::status_publisher(),
+            mixnet_status: crate::mixnet::status_publisher(),
         }
     }
 
@@ -359,13 +359,13 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::nym::MixnetSlot::Unattached,
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
             slot_clutch: Vec::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
-            mixnet_status: crate::nym::status_publisher(),
+            mixnet_status: crate::mixnet::status_publisher(),
         })
     }
 
@@ -673,7 +673,7 @@ impl LightClient {
 
     /// Record the deliberate clearnet consent for a test client: with the
     /// mixnet compiled in, the slot moves to
-    /// [`MixnetMode::SwitchedOff`](crate::nym::MixnetMode) — the same act
+    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — the same act
     /// the CLI's `network off` performs — so scenario sends transmit over
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.
