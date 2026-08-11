@@ -78,7 +78,7 @@ pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 pub(crate) use driver::{StatusPublisher, status_publisher};
 pub(crate) use mode::MixnetSlot;
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
-pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
+pub use route::{MixnetNotReady, MixnetRoute, SlotTunnel, resolve_route};
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
 pub use zingo_netutils::responsiveness::{PrioritisePrivacy, PrioritiseSpeed, Responsiveness};
 
