@@ -229,7 +229,7 @@ impl Pools {
     pub(crate) async fn draw_clutch(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
-    ) -> Result<Vec<exit_pool::Reservation>, acquire::TransportError> {
+    ) -> Result<std::collections::HashSet<exit_pool::Reservation>, acquire::TransportError> {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;

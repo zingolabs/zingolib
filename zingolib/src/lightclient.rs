@@ -185,7 +185,7 @@ pub struct LightClient {
     /// The session tunnel's Clutch, held for the spawned slot proxy's life
     /// and recycled by drop on vacate.
     #[cfg(feature = "nym")]
-    slot_clutch: Vec<crate::correspondent::pool::exit_pool::Reservation>,
+    slot_clutch: std::collections::HashSet<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -266,7 +266,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: Vec::new(),
+            slot_clutch: std::collections::HashSet::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -307,7 +307,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: Vec::new(),
+            slot_clutch: std::collections::HashSet::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -369,7 +369,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: Vec::new(),
+            slot_clutch: std::collections::HashSet::new(),
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]

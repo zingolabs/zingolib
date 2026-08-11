@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
-use rand::seq::SliceRandom as _;
+use rand::seq::IteratorRandom as _;
 
 /// Why the pool could issue no clutch.
 #[derive(Debug, thiserror::Error)]
@@ -64,8 +64,28 @@ impl std::fmt::Debug for Reservation {
     }
 }
 
+impl PartialEq for Reservation {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl Eq for Reservation {}
+
+impl std::hash::Hash for Reservation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+    }
+}
+
+impl std::borrow::Borrow<crate::mixnet::ExitNodeId> for Reservation {
+    fn borrow(&self) -> &crate::mixnet::ExitNodeId {
+        &self.node
+    }
+}
+
 /// The node identities of a clutch, for the process seam's `--exit` args.
-pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::mixnet::ExitNodeId> {
+pub(crate) fn clutch_nodes(clutch: &HashSet<Reservation>) -> Vec<crate::mixnet::ExitNodeId> {
     clutch
         .iter()
         .map(|reservation| reservation.node().clone())
@@ -76,13 +96,15 @@ pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::mixnet::ExitNod
 /// `clutch`, recycling the rest, or `None` when the report names no drawn
 /// node.
 pub(crate) fn take_bound_lease(
-    clutch: &mut Vec<Reservation>,
+    clutch: &mut HashSet<Reservation>,
     reported: &[crate::mixnet::ExitNodeId],
 ) -> Option<Reservation> {
     let bound = clutch
         .iter()
-        .position(|reservation| reported.contains(reservation.node()))?;
-    Some(clutch.swap_remove(bound))
+        .find(|reservation| reported.contains(reservation.node()))?
+        .node()
+        .clone();
+    clutch.take(&bound)
 }
 
 /// The session's Exit Pool: one reservation per discovered node, issued to
@@ -108,12 +130,15 @@ impl ExitPool {
     /// itself into `pool` when dropped.
     pub(crate) fn draw_clutch(
         pool: &Arc<Mutex<ExitPool>>,
-    ) -> Result<Vec<Reservation>, ExitPoolError> {
+    ) -> Result<HashSet<Reservation>, ExitPoolError> {
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        let drawable: Vec<crate::mixnet::ExitNodeId> = guarded
+        // The draw samples unique identities: a duplicated population entry
+        // must not mint twin reservations, whose collapse into the set would
+        // un-ledger the survivor by recycling its twin.
+        let drawable: HashSet<crate::mixnet::ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -125,15 +150,17 @@ impl ExitPool {
                 population: guarded.population.len(),
             });
         }
-        let clutch: Vec<Reservation> = drawable
+        let clutch: HashSet<Reservation> = drawable
+            .into_iter()
             .choose_multiple(
                 &mut rand::rngs::OsRng,
                 zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
             )
+            .into_iter()
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {
-                    node: node.clone(),
+                    node,
                     ledger: Arc::downgrade(pool),
                 }
             })
@@ -162,11 +189,13 @@ mod tests {
     /// the wrong reservation or disturbs the remainder.
     #[test]
     fn the_bound_lease_is_taken_and_the_rest_remain() {
-        let mut clutch = vec![
+        let mut clutch: HashSet<Reservation> = [
             Reservation::dangling_for_test("exit-a"),
             Reservation::dangling_for_test("exit-b"),
             Reservation::dangling_for_test("exit-c"),
-        ];
+        ]
+        .into_iter()
+        .collect();
         let lease = take_bound_lease(
             &mut clutch,
             std::slice::from_ref(&crate::mixnet::ExitNodeId::from("exit-b")),
@@ -181,7 +210,9 @@ mod tests {
     /// yielded or the clutch shrinks.
     #[test]
     fn a_foreign_or_empty_report_takes_no_lease() {
-        let mut clutch = vec![Reservation::dangling_for_test("exit-a")];
+        let mut clutch: HashSet<Reservation> = [Reservation::dangling_for_test("exit-a")]
+            .into_iter()
+            .collect();
         let foreign = [crate::mixnet::ExitNodeId::from("exit-foreign")];
         assert!(take_bound_lease(&mut clutch, &foreign).is_none());
         assert!(take_bound_lease(&mut clutch, &[]).is_none());
