@@ -653,7 +653,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
     pub(crate) fn build_note_split_transaction(
@@ -835,8 +835,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let build_result = builder

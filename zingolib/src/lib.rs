@@ -7,9 +7,12 @@ use crate::config::ChainType;
 
 pub mod config;
 pub mod connectivity;
+pub mod correspondent;
 pub mod data;
 pub mod lightclient;
 pub mod netutils;
+#[cfg(feature = "perspective")]
+pub mod perspective;
 pub mod sync;
 pub mod utils;
 pub mod wallet;

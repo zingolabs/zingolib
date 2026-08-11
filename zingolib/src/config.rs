@@ -25,7 +25,6 @@ use crate::wallet::{
 /// `:443`, retiring the old portless string this module completed to
 /// `:9067` — the drift between that completion and the mobile list's `:443`
 /// is what the census exists to end.
-pub use zingo_netutils::indexers::{DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET};
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -277,30 +276,22 @@ impl WalletConfig {
     }
 }
 
-/// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
-/// If the provided string is missing the http prefix, a prefix of `http://` will be added.
-/// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_indexer_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return Ok(http::Uri::default());
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse()?;
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
-        }
-        None => DEFAULT_INDEXER_URI.to_string(),
+/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
+/// `:9067` port when they are missing.
+pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
+    if server.is_empty() {
+        return Ok(http::Uri::default());
     }
-    .parse()
+    let mut s = if server.starts_with("http") {
+        server
+    } else {
+        "http://".to_string() + &server
+    };
+    let uri: http::Uri = s.parse()?;
+    if uri.port().is_none() {
+        s += ":9067";
+    }
+    s.parse()
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
@@ -309,17 +300,17 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// URI the Ironwood migration parts are broadcast to. Broadcasting to a
+    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
     /// different server than the one used for synchronization reduces the
     /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
     /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
     /// must be https on a host distinct from the synchronization endpoint's
-    /// (a shared host is refused). Unset, parts go to one Broadcast Indexer
+    /// (a shared host is refused). Unset, parts go to one Correspondent
     /// drawn at random per submission. On the clearnet opt-out path it falls
     /// back to `indexer_uri` with a logged warning when unset. When both are
-    /// `None` the client emits no network traffic and broadcasting fails
+    /// `None` the client emits no network traffic and transmission fails
     /// with [`crate::lightclient::error::LightClientError::Offline`].
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -343,10 +334,10 @@ impl ClientConfig {
         self.indexer_uri.clone()
     }
 
-    /// Returns the migration broadcast URI, if one is configured.
+    /// Returns the migration transmission URI, if one is configured.
     #[must_use]
-    pub fn migration_broadcast_uri(&self) -> Option<http::Uri> {
-        self.migration_broadcast_uri.clone()
+    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
+        self.migration_transmission_uri.clone()
     }
 
     /// Returns wallet directory.
@@ -387,7 +378,7 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -411,10 +402,10 @@ impl ClientConfigBuilder {
         self
     }
 
-    /// Set a dedicated URI for broadcasting Ironwood migration parts,
+    /// Set a dedicated URI for transmitting Ironwood migration parts,
     /// distinct from the synchronization endpoint.
-    pub fn set_migration_broadcast_uri(mut self, migration_broadcast_uri: http::Uri) -> Self {
-        self.migration_broadcast_uri = Some(migration_broadcast_uri);
+    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
+        self.migration_transmission_uri = Some(migration_transmission_uri);
         self
     }
 
@@ -456,7 +447,7 @@ impl ClientConfigBuilder {
 
         Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
-            migration_broadcast_uri: self.migration_broadcast_uri,
+            migration_transmission_uri: self.migration_transmission_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -469,7 +460,7 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_uri: None,
-            migration_broadcast_uri: None,
+            migration_transmission_uri: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -560,10 +551,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_indexer_uri(Some(
-            crate::config::DEFAULT_INDEXER_URI.to_string(),
-        ))
-        .unwrap();
+        let valid_uri =
+            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();

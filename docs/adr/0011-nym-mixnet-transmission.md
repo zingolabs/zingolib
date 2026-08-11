@@ -472,3 +472,21 @@ adopts the converged stack; that consequence is accepted deliberately,
 as an incentive to converge rather than a cost to engineer around. The
 `MixnetPriceFetch` route evidence survives as the fetch's only success
 shape.
+
+## Amendment (2026-08-08)
+
+ADR 0040 supersedes the serially gated escalation ratified above: send
+escalates as a hedged race of full paths, each arm pairing its own
+Correspondent with its own exit. The consumption model, the mobile
+attach boundary, and the fail-closed posture stand.
+
+## Amendment (2026-08-10): the mobile proxy shim moves to zingo-mobile
+
+The UniFFI proxy shim (`zingo-nym-proxy-ffi`), its binding generator
+(`uniffi-bindgen`), and the workbench Android bundler leave this
+repository. zingo-mobile now hosts the shim source in its own `nym-host`
+workspace and generates its own bindings (zingo-mobile PR #1251). The
+2026-07-21 rulings stand unchanged: the mobile proxy boundary remains
+UniFFI, and the runtime-boundary generalization remains in force; only
+the shim's hosting repository changes. This workspace keeps the desktop
+`nym-proxy` binary and its `bundle-nym-proxy` workbench tool.

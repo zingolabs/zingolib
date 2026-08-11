@@ -9,15 +9,9 @@
 //! SOCKS5_ADDR=127.0.0.1:43210
 //! ```
 //!
-//! The address is not announced the instant the SOCKS5 listener is up. A
-//! gateway draw can bring the listener up yet carry no data end to end (the
-//! tunnel establishes but a TLS handshake over it stalls), and announcing then
-//! would make the wallet mark Mixnet Mode ready against a dead path, so every
-//! send fails closed. Instead the binary health-gates readiness: it runs a real
-//! `GetLightdInfo` round trip through the mixnet, and only on success prints the
-//! address. On failure it redraws a fresh set of gateways and retries, and if
-//! the attempts exhaust it exits non-zero so the supervisor records the proxy
-//! as died rather than ready.
+//! The bound Exit Node and the address are announced the moment the bind
+//! completes; end-to-end verification belongs to the session's sweep, and
+//! every later Transmission doubles as a probe.
 //!
 //! The parent reads the announced line to learn where to dial, then routes send
 //! and price-fetch traffic through it. The process serves until either it is
@@ -37,9 +31,8 @@
 use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
-    NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX, get_lightd_info_via_socks5,
-    indexers::MIXNET_HEALTH_INDEXER,
-    time::{MIXNET_HEALTH_DRAWS, MIXNET_ROUND_TRIP_BOUND},
+    NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
+    responsiveness::{PrioritisePrivacy, PrioritiseSpeed, ResponsivenessClass},
 };
 
 #[tokio::main]
@@ -54,23 +47,24 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    // Narrate the bootstrap on stdout so the parent supervisor can surface
-    // live progress (`nym status`) instead of an opaque wait.
-    let mut proxy = NymProxy::start_with_progress(|line| {
-        println!("{NYM_STATUS_LINE_PREFIX}{line}");
-        let _ = std::io::stdout().flush();
-    })
-    .await?;
+    let arguments = parse_arguments(std::env::args().skip(1))?;
 
-    // Health-gate readiness: prove the mixnet carries data end to end before
-    // announcing, redrawing gateways on failure. Only a verified path is
-    // announced.
-    health_gate(&mut proxy).await?;
+    // The parent's one window onto the exit directory: it cannot query the
+    // Nym API itself, since the nym stack resolves only in this lockfile.
+    if arguments.discover {
+        for exit_node in NymProxy::discover_exit_nodes().await? {
+            emit(format!("{NYM_EXIT_LINE_PREFIX}{exit_node}"));
+        }
+        return Ok(());
+    }
 
-    // Announce the address on a single line and flush, so the parent sees it
-    // the moment the mixnet is verified reachable.
-    println!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr());
-    std::io::stdout().flush()?;
+    // The stdin watchdog covers the bootstrap too: a parent that dies while
+    // this child is still drawing gateways must take the child with it, not
+    // leave an orphan to finish bootstrapping against a closed pipe.
+    let proxy = tokio::select! {
+        _ = wait_for_parent_exit() => return Ok(()),
+        outcome = bootstrap(arguments) => outcome?,
+    };
 
     // Serve until either the parent goes away (stdin closes — the durable
     // coupling that survives even a SIGKILL of the parent) or an interrupt
@@ -83,48 +77,114 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Prove the mixnet carries data end to end, redrawing gateways until it does
-/// or the attempts exhaust. Each attempt runs a real `GetLightdInfo` round trip
-/// through the local SOCKS5 tunnel (the exact path a send takes, and the one a
-/// dead draw stalls at the TLS handshake) rather than a bare tunnel-establish
-/// check, which a dead-data-path draw would pass. Progress is narrated on
-/// stdout so `nym status` shows the verification. Returns an error only when
-/// every draw fails, which the caller turns into a non-zero exit.
-async fn health_gate(proxy: &mut NymProxy) -> Result<(), Box<dyn std::error::Error>> {
-    let indexer: http::Uri = MIXNET_HEALTH_INDEXER.parse()?;
-    for attempt in 1..=MIXNET_HEALTH_DRAWS {
-        report(format!(
-            "verifying the mixnet path (attempt {attempt}/{MIXNET_HEALTH_DRAWS})"
-        ));
-        match get_lightd_info_via_socks5(&proxy.socks5_addr(), &indexer, MIXNET_ROUND_TRIP_BOUND)
-            .await
-        {
-            Ok(_) => {
-                report("mixnet path verified".to_string());
-                return Ok(());
-            }
-            Err(e) if attempt < MIXNET_HEALTH_DRAWS => {
-                report(format!("mixnet path unverified ({e}); redrawing gateways"));
-                proxy.reconnect().await?;
-            }
-            Err(e) => {
-                return Err(format!(
-                    "the mixnet path failed verification after {MIXNET_HEALTH_DRAWS} draws: {e}"
-                )
-                .into());
+/// Bootstrap the proxy under the parent's responsiveness class, then
+/// announce the bound Exit Node and the SOCKS5 address at bind time.
+async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error::Error>> {
+    // Narrate the bootstrap on stdout so the parent supervisor can surface
+    // live progress (`nym status`) instead of an opaque wait.
+    let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
+    // The one point where the wire form re-enters the type system: each
+    // class monomorphizes the same start.
+    // A parent supplies the clutch; a standalone run draws its own.
+    let proxy = match (arguments.class, arguments.clutch.is_empty()) {
+        (ResponsivenessClass::PrioritiseSpeed, false) => {
+            NymProxy::start_over::<PrioritiseSpeed>(arguments.clutch, narrate).await?
+        }
+        (ResponsivenessClass::PrioritisePrivacy, false) => {
+            NymProxy::start_over::<PrioritisePrivacy>(arguments.clutch, narrate).await?
+        }
+        (ResponsivenessClass::PrioritiseSpeed, true) => {
+            NymProxy::start::<PrioritiseSpeed>().await?
+        }
+        (ResponsivenessClass::PrioritisePrivacy, true) => {
+            NymProxy::start::<PrioritisePrivacy>().await?
+        }
+    };
+
+    emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_node()));
+    emit(format!("{SOCKS5_ADDR_LINE_PREFIX}{}", proxy.socks5_addr()));
+    Ok(proxy)
+}
+
+/// Write one line to stdout, flushed, swallowing write errors: a broken pipe
+/// means the parent is gone, which the stdin watchdog turns into a clean
+/// exit — a panicking `println!` must never race it onto the terminal.
+fn emit(line: String) {
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{line}");
+    let _ = stdout.flush();
+}
+
+/// The parent's spawn-time instructions, parsed from the argument grammar.
+#[derive(Debug)]
+struct Arguments {
+    /// The clutch of Exit Node Reservations the parent drew for this
+    /// acquisition; empty means draw one locally.
+    clutch: Vec<String>,
+    /// The acquisition's responsiveness class; a bare invocation defaults
+    /// to prioritise-speed, matching a person waiting at a terminal.
+    class: ResponsivenessClass,
+    /// Whether to print the discovered Exit Nodes and exit instead of
+    /// bootstrapping, the parent's one window onto the directory.
+    discover: bool,
+}
+
+/// A refusal of the proxy binary's argument grammar.
+#[derive(Debug, thiserror::Error)]
+enum ArgumentsError {
+    /// `--exit` arrived without an Exit Node identity.
+    #[error("--exit needs an Exit Node identity")]
+    MissingExitIdentity,
+    /// `--responsiveness` arrived without a class token.
+    #[error("--responsiveness needs a class token")]
+    MissingClassToken,
+    /// `--responsiveness` named a token outside the sealed partition.
+    #[error("unknown responsiveness class: {token}")]
+    UnknownClass {
+        /// The token that names no class.
+        token: String,
+    },
+    /// An argument outside the grammar.
+    #[error("unknown argument: {argument}")]
+    UnknownArgument {
+        /// The argument the grammar does not know.
+        argument: String,
+    },
+}
+
+/// Parse every `--exit <identity>` pair, the optional `--discover` flag, and
+/// the optional `--responsiveness <prioritise-speed|prioritise-privacy>`
+/// from `args`, refusing unknown arguments and unknown class tokens.
+fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, ArgumentsError> {
+    let mut clutch = Vec::new();
+    let mut class = ResponsivenessClass::PrioritiseSpeed;
+    let mut discover = false;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--discover" => discover = true,
+            "--exit" => match args.next() {
+                Some(identity) => clutch.push(identity),
+                None => return Err(ArgumentsError::MissingExitIdentity),
+            },
+            "--responsiveness" => match args.next() {
+                Some(token) => {
+                    class = ResponsivenessClass::parse(&token)
+                        .ok_or(ArgumentsError::UnknownClass { token })?;
+                }
+                None => return Err(ArgumentsError::MissingClassToken),
+            },
+            other => {
+                return Err(ArgumentsError::UnknownArgument {
+                    argument: other.to_string(),
+                });
             }
         }
     }
-    // The loop returns on the final attempt; this is unreachable but keeps the
-    // function total without an explicit panic.
-    Err("health check exhausted".into())
-}
-
-/// Emit a bootstrap status line on stdout, flushed, so the supervisor's live
-/// `nym status` detail updates in step with the verification.
-fn report(line: String) {
-    println!("{NYM_STATUS_LINE_PREFIX}{line}");
-    let _ = std::io::stdout().flush();
+    Ok(Arguments {
+        clutch,
+        class,
+        discover,
+    })
 }
 
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
@@ -141,5 +201,100 @@ async fn wait_for_parent_exit() {
             Ok(0) | Err(_) => return,
             Ok(_) => continue,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResponsivenessClass, parse_arguments};
+
+    fn parse(args: &[&str]) -> Result<super::Arguments, super::ArgumentsError> {
+        parse_arguments(args.iter().map(ToString::to_string))
+    }
+
+    /// HYPOTHESIS: each grammar refusal is a distinct typed variant, so a
+    /// wrapper matches the refusal instead of parsing prose. Falsified if a
+    /// refusal loses its variant or its payload.
+    #[test]
+    fn refusals_are_typed_variants() {
+        assert!(matches!(
+            parse(&["--exit"]).unwrap_err(),
+            super::ArgumentsError::MissingExitIdentity
+        ));
+        assert!(matches!(
+            parse(&["--responsiveness"]).unwrap_err(),
+            super::ArgumentsError::MissingClassToken
+        ));
+        assert!(matches!(
+            parse(&["--responsiveness", "bogus"]).unwrap_err(),
+            super::ArgumentsError::UnknownClass { token } if token == "bogus"
+        ));
+        assert!(matches!(
+            parse(&["--bogus"]).unwrap_err(),
+            super::ArgumentsError::UnknownArgument { argument } if argument == "--bogus"
+        ));
+    }
+
+    /// HYPOTHESIS: the clutch grammar accepts repeated `--exit` pairs and
+    /// refuses anything else, so a malformed spawn fails loudly instead of
+    /// silently racing a short clutch.
+    #[test]
+    fn the_clutch_grammar_is_pairs_only() {
+        assert_eq!(
+            parse(&[]).expect("no arguments, no clutch").clutch,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse(&["--exit", "id-a", "--exit", "id-b"])
+                .expect("two well-formed pairs")
+                .clutch,
+            vec!["id-a".to_string(), "id-b".to_string()]
+        );
+        assert!(parse(&["--exit"]).is_err(), "a dangling flag refuses");
+        assert!(
+            parse(&["--unknown"]).is_err(),
+            "an unknown argument refuses"
+        );
+    }
+
+    /// HYPOTHESIS: `--discover` is a standalone flag that composes with the
+    /// rest of the grammar, and is off unless named.
+    #[test]
+    fn the_discover_flag_is_off_unless_named() {
+        assert!(!parse(&[]).expect("bare invocation").discover);
+        assert!(parse(&["--discover"]).expect("the flag alone").discover);
+    }
+
+    /// HYPOTHESIS: the class grammar accepts exactly the wire tokens of the
+    /// two responsiveness classes and defaults a bare invocation to
+    /// prioritise-speed, so a malformed spawn fails loudly instead of
+    /// silently racing under the wrong policy.
+    #[test]
+    fn the_class_grammar_speaks_the_wire_tokens() {
+        assert_eq!(
+            parse(&[]).expect("bare invocation").class,
+            ResponsivenessClass::PrioritiseSpeed,
+            "a person at a terminal is waiting"
+        );
+        assert_eq!(
+            parse(&["--responsiveness", "prioritise-privacy"])
+                .expect("the prioritise-privacy token")
+                .class,
+            ResponsivenessClass::PrioritisePrivacy
+        );
+        assert_eq!(
+            parse(&["--responsiveness", "prioritise-speed", "--exit", "id-a"])
+                .expect("class and exclusions compose")
+                .class,
+            ResponsivenessClass::PrioritiseSpeed
+        );
+        assert!(
+            parse(&["--responsiveness", "urgent"]).is_err(),
+            "an unknown class token refuses"
+        );
+        assert!(
+            parse(&["--responsiveness"]).is_err(),
+            "a dangling flag refuses"
+        );
     }
 }

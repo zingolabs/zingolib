@@ -118,7 +118,7 @@ where
     Ok((total_fee, s_shielded))
 }
 
-/// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
+/// given a just-transmitted proposal, confirms that it achieves all expected checkpoints.
 /// returns `Ok(total_fee`, `total_received`, `total_change`)
 pub async fn follow_proposal<ChainConductor, NoteRef>(
     environment: &mut ChainConductor,

@@ -8,6 +8,92 @@ fn parse(args: &[&str]) -> clap::ArgMatches {
         .expect("valid args")
 }
 
+mod config_template_refusals {
+    /// HYPOTHESIS: the template's refusals are typed variants rendering the
+    /// CLI's exact prose. Falsified if a variant or its rendering drifts.
+    #[test]
+    fn refusals_render_their_cli_prose() {
+        assert_eq!(
+            crate::ConfigTemplateError::BothSeedAndViewkey.to_string(),
+            "Cannot load a wallet from both seed phrase and viewkey!"
+        );
+        assert_eq!(
+            crate::ConfigTemplateError::OnlineGrantUnused {
+                command: "balance".to_string()
+            }
+            .to_string(),
+            "`balance` needs no network, so `--online` grants a connection it never \
+             uses. Drop `--online`, or run it at the interactive prompt."
+        );
+    }
+}
+
+mod misplaced_session_option {
+    use super::*;
+    use crate::misplaced_session_option;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        std::iter::once(examples::BIN_NAME)
+            .chain(parts.iter().copied())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A session option after the command is caught and the fix names the
+    /// option and the corrected order.
+    #[test]
+    fn a_long_option_after_the_command_is_caught() {
+        let guidance = misplaced_session_option(&args(&["sync", "run", "--online"]))
+            .expect("--online after the command is misplaced");
+        assert!(
+            guidance.contains("`--online` is a session option"),
+            "{guidance}"
+        );
+        assert!(
+            guidance.contains("zingo-cli --online sync run"),
+            "the fix moves the option ahead of the command: {guidance}"
+        );
+    }
+
+    /// The correctly ordered invocation is not flagged.
+    #[test]
+    fn a_long_option_before_the_command_is_accepted() {
+        assert!(misplaced_session_option(&args(&["--online", "sync", "run"])).is_none());
+    }
+
+    /// A `--flag=value` form after the command is caught by its name.
+    #[test]
+    fn an_equals_form_after_the_command_is_caught() {
+        let guidance = misplaced_session_option(&args(&["balance", "--data-dir=/tmp/w"]))
+            .expect("--data-dir after the command is misplaced");
+        assert!(
+            guidance.contains("`--data-dir` is a session option"),
+            "{guidance}"
+        );
+    }
+
+    /// A short session flag after the command is caught.
+    #[test]
+    fn a_short_flag_after_the_command_is_caught() {
+        // `-n` is --nosync's short form.
+        let guidance = misplaced_session_option(&args(&["balance", "-n"]))
+            .expect("-n after the command is misplaced");
+        assert!(guidance.contains("`-n` is a session option"), "{guidance}");
+    }
+
+    /// With no command token there is nothing after a command to misplace.
+    #[test]
+    fn options_without_a_command_are_not_flagged() {
+        assert!(misplaced_session_option(&args(&["--online"])).is_none());
+    }
+
+    /// A command's own value that follows `--` is never read as an option.
+    #[test]
+    fn tokens_after_the_end_of_options_marker_are_ignored() {
+        assert!(misplaced_session_option(&args(&["sync", "run", "--", "--online"])).is_none());
+    }
+}
+
 mod mode_of_operation {
     use super::*;
     use crate::commands::CliCommand;
@@ -727,7 +813,7 @@ mod config_template {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
         let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
-        ConfigTemplate::fill(mode, communication_mode, matches)
+        ConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
     }
 
     /// Helper: build the ZingoConfig for a filled template. The builder is
@@ -975,9 +1061,9 @@ mod config_template {
         /// so the propagation contract exists only in nym builds.
         #[cfg(feature = "nym")]
         #[test]
-        fn default_server_is_propagated() {
-            // --online is the consent act (ADR 0025); the default server
-            // then fills in because none was named explicitly.
+        fn unpinned_online_configures_no_indexer() {
+            // --online is the consent act; with no --server there is no
+            // default to fill in, and the sweep selects the sync indexer.
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
                 "--online",
@@ -986,10 +1072,10 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            let uri = zc.indexer_uri().expect("indexer_uri set").to_string();
             assert!(
-                uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
-                "expected URI to start with default server, got: {uri}"
+                zc.indexer_uri().is_none(),
+                "an unpinned online session must configure no indexer, got: {:?}",
+                zc.indexer_uri()
             );
         }
 
@@ -1088,6 +1174,45 @@ mod config_template {
                     },
                 }
             );
+        }
+    }
+
+    /// A one-shot `--online <command>` is valid only for a command that
+    /// requires online; an offline-capable command after `--online` is
+    /// refused at fill, before any network or wallet work. The flag is an
+    /// online consent act, which only nym builds accept (ADR 0026).
+    #[cfg(feature = "nym")]
+    mod online_one_shot {
+        use super::*;
+
+        #[test]
+        fn an_offline_capable_command_after_online_is_refused() {
+            let error = fill(&[examples::BIN_NAME, "--online", "addresses"])
+                .expect_err("addresses needs no network");
+            assert!(error.contains("needs no network"), "{error}");
+            assert!(error.contains("addresses"), "{error}");
+        }
+
+        #[test]
+        fn an_online_requiring_command_after_online_is_accepted() {
+            let config = fill(&[examples::BIN_NAME, "--online", "sync", "run"])
+                .expect("sync run requires online");
+            assert!(matches!(config.mode, ModeOfOperation::Command { .. }));
+        }
+
+        #[test]
+        fn an_offline_capable_command_without_online_is_accepted() {
+            // The gate keys on the flag, not the command: `addresses` is a
+            // legitimate offline one-shot.
+            fill(&[examples::BIN_NAME, "addresses"]).expect("addresses is a fine offline one-shot");
+        }
+
+        #[test]
+        fn online_alone_starts_an_interactive_session() {
+            // No command means no one-shot to judge; `--online` opens a
+            // connected prompt.
+            let config = fill(&[examples::BIN_NAME, "--online"]).expect("interactive online");
+            assert!(matches!(config.mode, ModeOfOperation::Interactive));
         }
     }
 }

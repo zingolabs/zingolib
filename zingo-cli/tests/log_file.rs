@@ -42,17 +42,10 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
 
+    // No consent act is passed, so every build shape launches offline:
+    // the session skips the mixnet driver, needs no proxy, and still
+    // writes its startup lines — this test observes log redirection only.
     let mut command = Command::new(zingo_cli_binary());
-    // Naming a server is an online act, which only a nym build accepts
-    // (ADR 0026); the offline-only build launches offline and still logs.
-    // The explicit server keeps the nym build from probing the curated
-    // list, and --no-mixnet opts out of the forced Mixnet Mode so the
-    // build needs no proxy: this test observes log redirection only.
-    #[cfg(feature = "nym")]
-    command
-        .arg("--server")
-        .arg("https://zec.rocks:443")
-        .arg("--no-mixnet");
     let mut child = command
         .env("RUST_LOG", "info")
         .arg("--data-dir")
@@ -155,14 +148,19 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
+    let stub_proxy = write_stub_proxy(tmp.path());
 
     let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg(&server_uri)
-        // This test observes log redirection, not transmission; opt out of
-        // the forced Mixnet Mode so a nym-featured build needs no proxy.
-        .arg("--no-mixnet")
+        // The mixnet is unconditional for a connected session, so hand the
+        // spawner a stub that answers the directory query and then exits at
+        // once: the session goes online, the bootstrap dies, and the
+        // clearnet sync — the sole clearnet exception — still runs against
+        // the mock to produce the ERROR.
+        .arg("--nym-proxy")
+        .arg(&stub_proxy)
         .arg("--data-dir")
         .arg(&data_dir)
         .arg("--log-file")
@@ -219,4 +217,24 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         !stderr.contains(" ERROR "),
         "Tracing errors should go to the log file, not stderr. Got:\n{stderr}"
     );
+}
+
+/// Writes a stub `nym-proxy` into `dir`: it answers `--discover` with one
+/// Exit Node so the session can draw a Clutch, and exits at once otherwise
+/// so the bootstrap dies exactly as this test intends.
+#[cfg(feature = "nym")]
+fn write_stub_proxy(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join("stub-nym-proxy");
+    std::fs::write(
+        &path,
+        "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = --discover ]; then\n    echo \"NYM_EXIT=stub-exit-node\"\n  fi\ndone\nexit 0\n",
+    )
+    .expect("write the stub proxy");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("make the stub proxy executable");
+    }
+    path
 }

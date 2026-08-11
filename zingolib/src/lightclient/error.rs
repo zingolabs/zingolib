@@ -68,27 +68,40 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("{0}")]
     MixnetNotReady(#[from] crate::nym::MixnetNotReady),
-    /// The configured migration broadcast target shares the synchronization
-    /// endpoint's host, which would let that server correlate the wallet's
-    /// sync stream with its migration cohort (ADR 0011, 2026-07-23).
+    /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
     #[cfg(feature = "nym")]
     #[error(
-        "the migration broadcast target '{host}' is the synchronization endpoint; migration \
-         parts never go to the sync server. Configure a different migration_broadcast_uri or \
-         remove it to use the Broadcast Indexer rotation."
+        "the mixnet liveness probe requires Mixnet Mode, which is off; \
+         enable it (`nym on`) to probe Correspondents"
     )]
-    MigrationBroadcastTargetIsSyncEndpoint {
+    ProbeRequiresMixnet,
+    /// A probe target outside the one endpoint shape the mixnet exit
+    /// policy carries.
+    #[cfg(feature = "nym")]
+    #[error("probe targets must be https on port 443; got '{0}'")]
+    IneligibleProbeTarget(http::Uri),
+    /// The configured migration transmission target shares the
+    /// synchronization endpoint's host, which would let that server correlate
+    /// the wallet's sync stream with its migration cohort (ADR 0011,
+    /// 2026-07-23).
+    #[cfg(feature = "nym")]
+    #[error(
+        "the migration transmission target '{host}' is the synchronization endpoint; migration \
+         parts never go to the sync server. Configure a different migration_transmission_uri or \
+         remove it to use the Correspondent Rotation."
+    )]
+    MigrationTransmissionTargetIsSyncEndpoint {
         /// The host both endpoints share.
         host: String,
     },
-    /// Excluding the synchronization endpoint left no Broadcast Indexer to
+    /// Excluding the synchronization endpoint left no Correspondent to
     /// carry migration parts over the mixnet.
     #[cfg(feature = "nym")]
     #[error(
-        "no eligible Broadcast Indexer remains after excluding the synchronization endpoint's \
+        "no eligible Correspondent remains after excluding the synchronization endpoint's \
          host from the curated list"
     )]
-    NoEligibleBroadcastIndexer,
+    NoEligibleCorrespondent,
 }
 
 /// Errors from the Orchard→Ironwood migration entry points
@@ -113,8 +126,8 @@ pub enum MigrationError {
     /// consented plan no longer describes what would be sent.
     #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
     ConsentStale,
-    /// The broadcast cadence can change only while every part is unsent.
-    #[error("Phase 2 has begun; the broadcast cadence can no longer change.")]
+    /// The transmission cadence can change only while every part is unsent.
+    #[error("Phase 2 has begun; the transmission cadence can no longer change.")]
     CadenceFixed,
     /// Note splitting kept producing new rounds past the round bound.
     #[error("Migration did not converge within {0} rounds.")]
@@ -136,14 +149,14 @@ pub enum MigrationError {
     /// The one-call immediate path found a consented scheduled migration
     /// and must not collapse its schedule.
     #[error(
-        "A consented scheduled migration is in progress. Let it run (auto broadcasting), advance \
+        "A consented scheduled migration is in progress. Let it run (auto transmitting), advance \
          it with catch-up, or cancel it before an immediate migration."
     )]
     ScheduledMigrationExists,
     /// The migration in progress belongs to a different account.
     #[error("The migration in progress belongs to a different account.")]
     DifferentAccount,
-    /// The Ironwood era is too young to hold a part. A part broadcasts in one
+    /// The Ironwood era is too young to hold a part. A part transmits in one
     /// bucket and anchors in a lower one, and both must sit above the NU6.3
     /// activation, so the earliest window that can hold a part opens two
     /// buckets above the activation's. Until then there is no legal anchor,
@@ -153,7 +166,7 @@ pub enum MigrationError {
          hold one opens at height {retry_after}. Retry after it."
     )]
     IronwoodEraTooYoung {
-        /// The first broadcast window boundary that can hold a part.
+        /// The first transmission window boundary that can hold a part.
         retry_after: zcash_protocol::consensus::BlockHeight,
     },
 }

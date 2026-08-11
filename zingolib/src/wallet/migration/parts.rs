@@ -58,7 +58,7 @@ pub struct BoundaryWitness {
 /// How Phase 2 transactions are signed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningStrategy {
-    /// Build and sign each part at its broadcast boundary. The only sound
+    /// Build and sign each part at its transmission boundary. The only sound
     /// strategy while ZIP 244 commits the anchor into the signature hash.
     LazyAtBoundary,
     /// Sign every part at consent time and persist the raw transactions.
@@ -73,13 +73,13 @@ pub enum SigningStrategy {
 pub enum PartState {
     /// Note bound, no bucket assigned yet.
     Bound,
-    /// Assigned to a broadcast window, with an anchor drawn below it.
+    /// Assigned to a transmission window, with an anchor drawn below it.
     Assigned,
     /// Built and signed (txid and expiry recorded). Transient under
     /// [`SigningStrategy::LazyAtBoundary`], durable under
     /// [`SigningStrategy::PreSigned`].
     Signed,
-    /// Submitted to the broadcast endpoint at least once.
+    /// Submitted to the transmission endpoint at least once.
     Broadcast,
     /// Mined and confirmed at this height. Terminal.
     Confirmed {
@@ -118,14 +118,14 @@ pub struct PartRecord {
     /// The split note this part spends. Set at binding time and kept through
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
-    /// The bucket this part broadcasts in: it is due while the chain tip is
+    /// The bucket this part transmits in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
     /// builder's target height comes from here. Distinct from
     /// `Self::anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
-    /// [`super::schedule::draw_anchor_age`]). Drawn per part at placement
+    /// [`super::schedule::draw_anchor_bucket`]). Drawn per part at placement
     /// time, so two parts of one batch usually carry different anchors.
     ///
     /// `None` on a part read from a migration section written before anchors
@@ -145,7 +145,7 @@ pub struct PartRecord {
     /// Expiry height of the built transaction, set when signed.
     pub expiry_height: Option<BlockHeight>,
     /// The raw signed transaction under [`SigningStrategy::PreSigned`].
-    /// `None` under the lazy strategy: between signing and broadcast the
+    /// `None` under the lazy strategy: between signing and transmission the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub(crate) signed_blob: Option<Vec<u8>>,
     /// The anchor root and witness at `Self::anchor_bucket`'s boundary,
@@ -154,7 +154,7 @@ pub struct PartRecord {
     /// discarded when a pre-anchor-age schedule is read, where it proves the
     /// note under the *window's* boundary instead.
     pub anchor_witness: Option<BoundaryWitness>,
-    /// Broadcast attempts so far. Incremented (and persisted) before every
+    /// Transmission attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
     pub attempts: u8,
 }
@@ -191,7 +191,7 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Bound → Assigned`: the schedule placed this part in a broadcast
+    /// `Bound → Assigned`: the schedule placed this part in a transmission
     /// window.
     ///
     /// Clears `Self::anchor_bucket`, as every bucket transition does: the
@@ -265,7 +265,7 @@ impl PartRecord {
 
     /// `{Assigned, Signed, Broadcast, Expired} → Confirmed`: the bound note's
     /// nullifier was revealed by this part's own transaction. Reachable from
-    /// pre-broadcast states because a crash between submit and record leaves
+    /// pre-transmission states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
     pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
@@ -344,7 +344,7 @@ pub enum MaterializeOutcome {
         /// The transaction's id.
         txid: TxId,
         /// The raw transaction bytes, ready for
-        /// [`super::broadcast::BroadcastClient::submit`].
+        /// [`super::transmission::TransmissionClient::submit`].
         raw_tx: Vec<u8>,
     },
     /// The part cannot be materialized right now. Never triggers a
@@ -384,7 +384,7 @@ pub enum SkipReason {
         activation: BlockHeight,
     },
     /// The part carries no anchor bucket: a schedule persisted before
-    /// anchors were drawn separately from broadcast windows (migration
+    /// anchors were drawn separately from transmission windows (migration
     /// section inner version 3 and below). Proving cannot invent one,
     /// because the age draw is what keeps the anchor out of the open window.
     /// `crate::wallet::LightWallet::refresh_part_witnesses` draws it at
@@ -392,7 +392,7 @@ pub enum SkipReason {
     /// capturable, so this reason clears itself.
     AnchorNotDrawn,
     /// The bound note is already spent (the user insistently spent it, or a
-    /// restart raced an earlier broadcast). Reconciliation invalidates the
+    /// restart raced an earlier transmission). Reconciliation invalidates the
     /// part and recommends a remainder replan.
     BoundNoteSpent {
         /// The spent note's wallet output id.
@@ -545,7 +545,7 @@ impl crate::wallet::LightWallet {
     /// retention window is finite and a captured witness is good forever.
     ///
     /// Because a part's anchor sits at least one full bucket below its
-    /// broadcast window, every part gets a whole window's worth of
+    /// transmission window, every part gets a whole window's worth of
     /// synchronizations in which to capture its witness before it is due.
     /// That runway is what makes it survivable that pepper-sync checkpoints
     /// wherever Orchard outputs happen to land rather than on the boundary
@@ -621,7 +621,7 @@ impl crate::wallet::LightWallet {
     /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
     /// the part record), so one part's condition never aborts the whole
-    /// broadcast pass. Skipped parts fall to reconciliation.
+    /// transmission pass. Skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
@@ -750,7 +750,7 @@ impl crate::wallet::LightWallet {
         let chain_type = self.chain_type;
         let denomination = part.denomination;
         let part_fee = params.part_fee;
-        // The target comes from the broadcast window, not the anchor. It
+        // The target comes from the transmission window, not the anchor. It
         // selects the consensus branch the transaction commits to, so it must
         // sit in the Ironwood era; the anchor is a historical Orchard root
         // and is legal at any retained boundary above the part's own note.
@@ -799,8 +799,7 @@ impl crate::wallet::LightWallet {
                 )
                 .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
 
-            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-                .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
             let sapling_prover =
                 zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
             let build_result = builder
@@ -1123,10 +1122,10 @@ mod tests {
                 "mark_signed from {from:?}"
             );
 
-            let legal_broadcast = matches!(from, PartState::Signed);
+            let legal_transmission = matches!(from, PartState::Signed);
             assert_eq!(
                 part_in(from).mark_broadcast().is_ok(),
-                legal_broadcast,
+                legal_transmission,
                 "mark_broadcast from {from:?}"
             );
 

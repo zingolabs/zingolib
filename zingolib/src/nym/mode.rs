@@ -149,7 +149,7 @@ pub(crate) enum MixnetSlot {
     /// A stand-in transport for chain-mock tests: reports
     /// [`MixnetMode::Ready`] at the given address without a child, watcher,
     /// or probe, so the tests exercise the fail-closed route resolver and
-    /// the fan-out orchestration for real. Only
+    /// the escalation orchestration for real. Only
     /// `LightClient::switch_on_mixnet_for_tests` constructs it, and the
     /// transmit path pairs it with arms that submit over the mock indexer's
     /// channel — the address is never dialed.
@@ -194,6 +194,16 @@ impl MixnetSlot {
             MixnetSlot::AttachedForTests { socks5_addr } => Some(socks5_addr.clone()),
         }
     }
+
+    /// The bound Exit Node identities, when an attached transport is ready.
+    pub(crate) fn exits(&self) -> Vec<String> {
+        match self {
+            MixnetSlot::Attached(proxy) => proxy.exits(),
+            MixnetSlot::Unattached | MixnetSlot::SwitchedOff => Vec::new(),
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { .. } => Vec::new(),
+        }
+    }
 }
 
 /// The IP-correlation disclaimer a frontend must show alongside Mixnet Mode
@@ -209,10 +219,10 @@ impl MixnetSlot {
 /// here as one canonical string so every frontend renders the same disclaimer
 /// rather than each paraphrasing the risk.
 pub const IP_CORRELATION_DISCLAIMER: &str = "\
-IP-correlation risk: Mixnet Mode covers only transaction broadcast and \
+IP-correlation risk: Mixnet Mode covers only transaction transmission and \
 price-fetch. Wallet synchronization always uses the ordinary connection, so \
 the sync indexer (and any network operator on that path) sees your IP \
-address and can correlate it with the transactions you broadcast; reusing the \
+address and can correlate it with the transactions you transmit; reusing the \
 same IP across sessions can reveal your wallet's total balance to that \
 operator. To hide your IP during synchronization as well, route the wallet \
 through a system-level VPN or NymVPN. See ZIP-0318.";

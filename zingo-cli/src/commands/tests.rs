@@ -121,10 +121,11 @@ mod table_invariants {
 }
 
 #[cfg(test)]
-mod transmit_heartbeat {
-    //! Paused-clock falsifiers for the transmit heartbeat's contract: silence
-    //! for fast transmissions, a narrated line on the ratified 20-40s cadence
-    //! for slow ones, always carrying the side channel's latest detail.
+mod progress_heartbeat {
+    //! Paused-clock falsifiers for the dispatch-seam progress heartbeat's
+    //! contract: silence for fast commands, a narrated line on the shared
+    //! eight-second cadence for slow ones, always carrying the side
+    //! channels' latest detail.
     //!
     //! Seam justification (ADR 0030): the `block_on` here is the one
     //! `#[tokio::test]` generates to drive each async test body; a test
@@ -134,19 +135,23 @@ mod transmit_heartbeat {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use zingo_netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
+
     use super::super::*;
 
-    /// HYPOTHESIS: a transmission finishing before the first tick emits
-    /// nothing, because the heartbeat must not add noise to a normal fast send.
+    /// HYPOTHESIS: a command finishing before the first tick emits nothing,
+    /// because the heartbeat must not add noise to a normal fast command.
     #[tokio::test(start_paused = true)]
-    async fn a_fast_transmission_stays_silent() {
+    async fn a_fast_command_stays_silent() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        let out = with_transmit_heartbeat(
+        let out = with_heartbeat(
             "confirm",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL / 2),
         )
         .await;
         let () = out;
@@ -156,48 +161,57 @@ mod transmit_heartbeat {
         );
     }
 
-    /// HYPOTHESIS: a slow transmission is narrated on the interval cadence,
-    /// each line carrying the label, the side channel's latest detail, and
-    /// the elapsed seconds. Falsified if the wait stays silent or drops the
-    /// detail.
+    /// HYPOTHESIS: a slow command is narrated on the interval cadence, each
+    /// line carrying the label, the side channels' latest detail, and the
+    /// elapsed seconds. Falsified if the wait stays silent or drops the
+    /// detail. Expectations derive from the interval so the pin holds at
+    /// any ratified cadence.
     #[tokio::test(start_paused = true)]
-    async fn a_slow_transmission_heartbeats_the_latest_detail() {
+    async fn a_slow_command_heartbeats_the_latest_detail() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "confirm",
-            || Some("witness zec.rocks: submitting".to_string()),
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
+            || Some("correspondent zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(95)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
         .await;
         let lines = lines.lock().expect("line sink poisoned").clone();
-        assert_eq!(
-            lines,
-            vec![
-                "confirm: witness zec.rocks: submitting (30s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (60s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (90s elapsed)".to_string(),
-            ]
-        );
+        let expected: Vec<String> = (1..=3)
+            .map(|tick| {
+                format!(
+                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
+                    PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
+                )
+            })
+            .collect();
+        assert_eq!(lines, expected);
     }
 
-    /// An empty side channel still heartbeats, falling back to a generic
-    /// line rather than skipping the tick.
+    /// A phase that publishes no detail still heartbeats, falling back to
+    /// the generic line rather than going silent past an interval.
     #[tokio::test(start_paused = true)]
     async fn an_empty_side_channel_still_heartbeats() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "transmit",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || None,
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(35)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL + Duration::from_millis(500)),
         )
         .await;
         assert_eq!(
             lines.lock().expect("line sink poisoned").clone(),
-            vec!["transmit: transmitting (30s elapsed)".to_string()]
+            vec![format!(
+                "transmit: working ({}s elapsed)",
+                PROGRESS_HEARTBEAT_INTERVAL.as_secs()
+            )]
         );
     }
 }
@@ -628,32 +642,43 @@ mod network_command_parsing {
             parse(&["probe", "http://zec.rocks:9067"]).is_err(),
             "a plaintext http target is refused: mixnet transmission is https-only"
         );
+        assert!(
+            parse(&["probe", "https://zec.rocks:9067"]).is_err(),
+            "an https target off port 443 is refused: the exit policy carries only 443"
+        );
         assert_eq!(
             parse(&["history"]).expect("history parses"),
             Some(NetworkSubCommand::History)
         );
     }
 
-    /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
-    /// legible at a glance: clearnet ok beside mixnet FAILED. Falsified if
-    /// either leg's outcome, timing, or the not-ready skip is dropped.
+    /// HYPOTHESIS: the mixnet-probe rendering carries the outcome, its
+    /// timing, and the typed failure's full text. Falsified if any of the
+    /// three is dropped.
     #[cfg(feature = "nym")]
     #[test]
-    fn paired_probe_renders_both_legs_side_by_side() {
+    fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
-        let tip = ProbeSuccess {
-            chain: "main".to_string(),
-            height: 3_420_400,
-        };
-        let mixnet_specific = PairedProbe {
-            host: "carover0.xyz".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip.clone()),
-                millis: 210,
+        let live = MixnetProbe {
+            host: "zec.rocks".to_string(),
+            leg: ProbeLeg {
+                outcome: Ok(ProbeSuccess {
+                    chain: "main".to_string(),
+                    height: 3_420_400,
+                }),
+                millis: 180,
             },
-            mixnet: Some(ProbeLeg {
+        };
+        assert_eq!(
+            render_mixnet_probe(&live),
+            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+        );
+
+        let dead = MixnetProbe {
+            host: "carover0.xyz".to_string(),
+            leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
                     target: "carover0.xyz".to_string(),
@@ -663,24 +688,11 @@ mod network_command_parsing {
                     ],
                 }),
                 millis: 20_000,
-            }),
-        };
-        assert_eq!(
-            render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
-        );
-
-        let proxy_not_ready = PairedProbe {
-            host: "zec.rocks".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip),
-                millis: 180,
             },
-            mixnet: None,
         };
         assert_eq!(
-            render_paired_probe(&proxy_not_ready),
-            "zec.rocks\n  clearnet: ok in 180ms: chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+            render_mixnet_probe(&dead),
+            "carover0.xyz\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
     }
 
@@ -701,6 +713,8 @@ mod network_command_parsing {
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
+            phase: None,
+            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -821,6 +835,126 @@ mod network_command_parsing {
                 );
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "nym"))]
+mod bootstrap_wait {
+    //! Falsifiers for the `network on` bootstrap wait's outcome reader over
+    //! the status subscription; the narration itself is the dispatch seam's
+    //! progress heartbeat, pinned in `progress_heartbeat`.
+    //!
+    //! Seam justification (ADR 0030): the `block_on` here is the one
+    //! `#[tokio::test]` generates to drive each async test body; a test
+    //! driver is a sync frontend, so it is an audited crossing.
+    #![allow(clippy::disallowed_methods)]
+
+    use zingolib::nym::{MixnetMode, MixnetStatus};
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    fn status(mode: MixnetMode) -> MixnetStatus {
+        MixnetStatus {
+            mode,
+            socks5_addr: None,
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: None,
+        }
+    }
+
+    /// HYPOTHESIS: the wait resolves `Ready` when the subscription reaches
+    /// the ready mode, carrying the bound Exit Nodes, even from an initial
+    /// unattached snapshot.
+    #[tokio::test]
+    async fn ready_resolves_the_wait_carrying_the_exits() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Bootstrapping))
+            .expect("the waiter holds the receiver");
+        tokio::task::yield_now().await;
+        let mut ready = status(MixnetMode::Ready);
+        ready.exits = vec!["exit-alpha".to_string()];
+        tx.send(ready).expect("the waiter holds the receiver");
+        assert_eq!(
+            waiter.await.expect("the waiter must not panic"),
+            BootstrapOutcome::Ready {
+                exits: vec!["exit-alpha".to_string()]
+            }
+        );
+    }
+
+    /// HYPOTHESIS: the success report names each bound Exit Node, shortened
+    /// for the terminal, and stays silent when none was announced.
+    #[test]
+    fn exit_nodes_render_shortened_by_count() {
+        assert_eq!(super::super::render_exit_nodes(&[]), "");
+        assert_eq!(
+            super::super::render_exit_nodes(&["short-exit".to_string()]),
+            " Exit Node bound: short-exit."
+        );
+        assert_eq!(
+            super::super::render_exit_nodes(&[
+                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".to_string(),
+                "short-exit".to_string(),
+            ]),
+            " Exit Nodes bound: AlphaBetaGam…, short-exit."
+        );
+    }
+
+    /// HYPOTHESIS: a death during the wait resolves `Failed` with the died
+    /// report rather than hanging until a timeout.
+    #[tokio::test]
+    async fn death_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Died))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet transport died".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a fall back to unattached after bootstrapping began is a
+    /// failure, but the initial unattached snapshot is not — the wait must
+    /// survive subscribing before the driver flips to bootstrapping.
+    #[tokio::test]
+    async fn unattached_fails_only_after_bootstrapping_began() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Unattached))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the bootstrap ended in mode unattached".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a closed status channel resolves `Failed` instead of
+    /// waiting forever on a sender that will never speak again.
+    #[tokio::test]
+    async fn a_closed_channel_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        drop(tx);
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet status channel closed".to_string()
+            }
+        );
     }
 }
 
@@ -1237,12 +1371,18 @@ mod offline_contract {
             assert!(output.contains("unattached"), "{output}");
         }
 
-        /// `network probe` emits probe traffic and, unlike `network on`,
-        /// grants no consent: an Offline session refuses.
+        /// `network probe` runs only over the mixnet route: a session whose
+        /// mixnet is unattached refuses with the mixnet refusal, never by
+        /// falling back to a clearnet probe.
         #[cfg(feature = "nym")]
         #[test]
-        fn network_probe_refuses_offline() {
-            assert_refuses_offline_via_err(&mut offline_client(), "network", &["probe"]);
+        fn network_probe_refuses_without_the_mixnet() {
+            let error = exec(&mut offline_client(), "network", &["probe"])
+                .expect_err("probe must refuse without the mixnet");
+            assert!(
+                error.to_string().contains("the Nym mixnet is not enabled"),
+                "the refusal names the mixnet state: {error}"
+            );
         }
 
         #[test]
@@ -1697,5 +1837,57 @@ mod posture_surface {
         assert!(report.contains("`--forget-online` erases it"), "{report}");
         assert!(!report.contains("clearnet"), "{report}");
         assert!(client.indexer_uri().is_none());
+    }
+}
+
+#[cfg(all(test, feature = "nym"))]
+mod attached_exit_reporting {
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    /// HYPOTHESIS: an attached endpoint that accepts TCP but carries no data
+    /// fails closed — the readiness gate is a round trip through the tunnel,
+    /// not a loopback dial, so a dead mixnet path never reports `Ready`.
+    /// Falsified if a listener that answers no gRPC reaches `Ready` (the
+    /// #2662 headline finding ran this red while the gate was a bare dial).
+    // Seam justification (ADR 0030): the block_on is the tokio::test
+    // harness's own crossing, not a new seam in the CLI.
+    #[tokio::test]
+    #[allow(clippy::disallowed_methods)]
+    async fn an_attached_endpoint_that_carries_no_data_fails_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("the bound listener has an address")
+            .to_string();
+        // A stand-in host that accepts the connection and answers nothing.
+        let host = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        let receiver = client.subscribe_mixnet_status();
+        client
+            .attach_mixnet(&addr, &["host-bound-exit".to_string()])
+            .await
+            .expect("a valid loopback address attaches");
+
+        let outcome = await_bootstrap_outcome(receiver).await;
+        host.abort();
+        match outcome {
+            BootstrapOutcome::Failed { .. } => {}
+            BootstrapOutcome::Ready { exits } => {
+                panic!("a data-dead endpoint must never reach Ready; got exits {exits:?}")
+            }
+        }
     }
 }

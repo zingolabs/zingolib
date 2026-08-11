@@ -14,6 +14,34 @@
 
 use crate::nym::MixnetMode;
 
+/// The session slot's tunnel, whose one exit is Shared across every
+/// request the slot's surfaces send to a Correspondent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotTunnel {
+    socks5_addr: String,
+}
+
+impl SlotTunnel {
+    /// The tunnel's local SOCKS5 address, for one more request to a
+    /// Correspondent.
+    pub fn addr(&self) -> &str {
+        &self.socks5_addr
+    }
+
+    /// Yields the tunnel's local SOCKS5 address as the owned dial string.
+    pub fn into_addr(self) -> String {
+        self.socks5_addr
+    }
+
+    /// Wraps a published proxy address, refusing any string that does not parse as a socket address.
+    fn validated(socks5_addr: String) -> Option<Self> {
+        socks5_addr
+            .parse::<std::net::SocketAddr>()
+            .ok()
+            .map(|_| Self { socks5_addr })
+    }
+}
+
 /// The resolved network route for a mixnet-only surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
@@ -21,19 +49,8 @@ pub enum MixnetRoute {
     /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
-    /// Route through the local SOCKS5 proxy at this address.
-    Mixnet(String),
-}
-
-impl MixnetRoute {
-    /// The SOCKS5 proxy address to fetch through, or `None` for clearnet.
-    /// Shapes the route for a proxy-aware client such as the price fetch.
-    pub fn socks5_proxy(&self) -> Option<&str> {
-        match self {
-            MixnetRoute::Clearnet => None,
-            MixnetRoute::Mixnet(addr) => Some(addr),
-        }
-    }
+    /// Route through the session slot's tunnel.
+    Mixnet(SlotTunnel),
 }
 
 /// A mixnet-only surface was attempted while the mixnet was unavailable
@@ -65,8 +82,8 @@ pub enum MixnetNotReady {
 
 /// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
 /// SOCKS5 address. `Ready` yields the mixnet route, `SwitchedOff` yields
-/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` with no
-/// address yet all refuse. Crucially, only the deliberate `SwitchedOff`
+/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` before a
+/// valid socket address is published all refuse. Crucially, only the deliberate `SwitchedOff`
 /// yields clearnet: a never-enabled session and a `Died` proxy both refuse
 /// rather than leaking the send to clearnet without consent.
 pub fn resolve_route(
@@ -77,6 +94,7 @@ pub fn resolve_route(
         MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
         MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
         MixnetMode::Ready => socks5_addr
+            .and_then(SlotTunnel::validated)
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
         MixnetMode::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
@@ -115,8 +133,26 @@ mod tests {
     #[test]
     fn ready_routes_through_the_proxy() {
         let route = resolve_route(MixnetMode::Ready, Some("127.0.0.1:9050".to_string()));
-        assert_eq!(route, Ok(MixnetRoute::Mixnet("127.0.0.1:9050".to_string())));
-        assert_eq!(route.unwrap().socks5_proxy(), Some("127.0.0.1:9050"));
+        match route.unwrap() {
+            MixnetRoute::Mixnet(tunnel) => assert_eq!(tunnel.addr(), "127.0.0.1:9050"),
+            MixnetRoute::Clearnet => panic!("ready must route through the proxy"),
+        }
+    }
+
+    #[test]
+    fn ready_with_an_unparseable_address_refuses() {
+        // drive_state publishes the child's SOCKS5_ADDR= line without a
+        // parse, so a broken proxy can hand this resolver an empty or
+        // garbage string. The route refuses instead of yielding a tunnel
+        // whose dial can only fail with an opaque connect error.
+        assert_eq!(
+            resolve_route(MixnetMode::Ready, Some(String::new())),
+            Err(MixnetNotReady::Bootstrapping)
+        );
+        assert_eq!(
+            resolve_route(MixnetMode::Ready, Some("not-an-address".to_string())),
+            Err(MixnetNotReady::Bootstrapping)
+        );
     }
 
     #[test]
@@ -169,10 +205,5 @@ mod tests {
             resolve_route(MixnetMode::Ready, None),
             Err(MixnetNotReady::Bootstrapping)
         );
-    }
-
-    #[test]
-    fn clearnet_has_no_proxy() {
-        assert_eq!(MixnetRoute::Clearnet.socks5_proxy(), None);
     }
 }
