@@ -138,18 +138,21 @@ pub fn correspondent_indexers() -> Vec<Uri> {
         .collect()
 }
 
-/// Every Correspondent the sync indexer's operator left in the pool was
-/// excluded — there is nothing safe to draw, so the send refuses (ADR 0022).
+/// Nothing safe to draw for a transmission, so the send refuses rather
+/// than transmit to the sync indexer.
 #[cfg(feature = "nym")]
-#[derive(Clone, Debug, thiserror::Error)]
-#[error(
-    "no eligible Correspondent: every entry in the pool belongs to the \
-     sync indexer's operator ({sync_operator}), and a Correspondent is never \
-     allowed to be the sync indexer"
-)]
-pub(crate) struct NoEligibleCorrespondents {
-    /// The Operator of the excluded sync indexer.
-    pub(crate) sync_operator: Operator,
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum NoEligibleCorrespondents {
+    /// Every pool entry belongs to the sync indexer's operator.
+    #[error(
+        "no eligible Correspondent: every entry in the pool belongs to the \
+         sync indexer's operator ({0}), and a Correspondent is never \
+         allowed to be the sync indexer"
+    )]
+    AllBelongToSyncOperator(Operator),
+    /// The pool held no Correspondents before any exclusion applied.
+    #[error("no eligible Correspondent: the pool is empty")]
+    EmptyPool,
 }
 
 /// The pool a transmission draw is allowed to use: the curated
@@ -192,17 +195,24 @@ pub(crate) fn eligible_from(
     pool: Vec<Uri>,
     sync_indexer: &Uri,
 ) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
-    let sync_operator = Operator::of_uri(sync_indexer);
-    let eligible: Vec<Uri> = pool
-        .into_iter()
-        .filter(|entry| Operator::of_uri(entry) != sync_operator || sync_operator.is_none())
-        .collect();
-    if eligible.is_empty() {
-        return Err(NoEligibleCorrespondents {
-            sync_operator: sync_operator.unwrap_or_default(),
-        });
+    if pool.is_empty() {
+        return Err(NoEligibleCorrespondents::EmptyPool);
     }
-    Ok(eligible)
+    match Operator::of_uri(sync_indexer) {
+        None => Ok(pool),
+        Some(sync_operator) => {
+            let eligible: Vec<Uri> = pool
+                .into_iter()
+                .filter(|entry| Operator::of_uri(entry).as_ref() != Some(&sync_operator))
+                .collect();
+            if eligible.is_empty() {
+                return Err(NoEligibleCorrespondents::AllBelongToSyncOperator(
+                    sync_operator,
+                ));
+            }
+            Ok(eligible)
+        }
+    }
 }
 
 /// Whether two hosts belong to the same accumulating operator: their
@@ -215,7 +225,7 @@ pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
 
 /// The accumulating administrative authority behind a Correspondable host, keyed by its registrable parent domain.
 #[cfg(feature = "nym")]
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Operator(String);
 
 #[cfg(feature = "nym")]
@@ -390,14 +400,36 @@ mod tests {
         assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len());
     }
 
+    /// HYPOTHESIS: a pool owned wholly by the sync indexer's operator
+    /// refuses by naming that operator, so the send fails closed instead
+    /// of falling back to transmitting through the sync indexer.
+    /// Falsified if the refusal is the empty-pool story or renders a
+    /// blank operator.
     #[test]
     fn an_emptied_pool_refuses_rather_than_drawing_the_sync_indexer() {
-        // With a one-operator pool, excluding the sync indexer's operator
-        // leaves nothing to draw; the send must fail closed, never fall back
-        // to transmitting through the sync indexer.
         let sync: Uri = "https://na.zec.rocks:443".parse().unwrap();
         let pool = vec!["https://zec.rocks:443".parse().unwrap()];
         let err = eligible_from(pool, &sync).expect_err("the pool must empty");
-        assert_eq!(err.sync_operator, Operator::of_host("zec.rocks"));
+        assert_eq!(
+            err,
+            NoEligibleCorrespondents::AllBelongToSyncOperator(Operator::of_host("zec.rocks"))
+        );
+        assert!(err.to_string().contains("zec.rocks"), "{err}");
+    }
+
+    /// HYPOTHESIS: an empty pool refuses as empty — never as an exclusion
+    /// story — whether or not the sync URI resolves an operator.
+    /// Falsified if either shape yields an operator-owned refusal or an
+    /// operator name in the rendering.
+    #[test]
+    fn an_empty_pool_refuses_as_empty_never_as_operator_owned() {
+        let hostless: Uri = "/no-host".parse().unwrap();
+        let resolvable: Uri = "https://na.zec.rocks:443".parse().unwrap();
+        for sync in [hostless, resolvable] {
+            let err = eligible_from(Vec::new(), &sync).expect_err("an empty pool must refuse");
+            assert_eq!(err, NoEligibleCorrespondents::EmptyPool);
+            assert!(err.to_string().contains("the pool is empty"), "{err}");
+            assert!(!err.to_string().contains("operator"), "{err}");
+        }
     }
 }
