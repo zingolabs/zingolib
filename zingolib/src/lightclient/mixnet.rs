@@ -113,23 +113,27 @@ impl LightClient {
         socks5_addr: &str,
         exits: &[crate::nym::ExitNodeId],
     ) -> Result<(), crate::nym::MixnetProxyError> {
-        let socks5_addr: std::net::SocketAddr =
-            socks5_addr
-                .parse()
-                .map_err(|_| crate::nym::MixnetProxyError::InvalidAddress {
-                    addr: socks5_addr.to_string(),
-                })?;
         self.vacate_mixnet_slot().await;
-        match crate::nym::MixnetProxy::attach(
-            socks5_addr,
-            exits,
-            std::sync::Arc::clone(&self.mixnet_status),
-        ) {
+        let attached = socks5_addr
+            .parse()
+            .map_err(|_| crate::nym::MixnetProxyError::InvalidAddress {
+                addr: socks5_addr.to_string(),
+            })
+            .and_then(|socks5_addr| {
+                crate::nym::MixnetProxy::attach(
+                    socks5_addr,
+                    exits,
+                    std::sync::Arc::clone(&self.mixnet_status),
+                )
+            });
+        match attached {
             Ok(proxy) => {
                 self.mixnet_slot = crate::nym::MixnetSlot::Attached(proxy);
                 Ok(())
             }
             Err(error) => {
+                // A failed enable leaves Unattached (the enable act revoked
+                // any standing clearnet consent); subscribers must see it.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -507,6 +511,30 @@ mod tests {
 
         fn wallet() -> crate::wallet::LightWallet {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// HYPOTHESIS: an enable act revokes standing clearnet consent even
+        /// when the platform address fails to parse — from `SwitchedOff`,
+        /// a failed `attach_mixnet` lands `Unattached` and publishes it.
+        /// Falsified if the mode remains `SwitchedOff` after the failed
+        /// attach.
+        #[tokio::test]
+        async fn a_failed_attach_revokes_clearnet_consent() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client.disable_mixnet().await;
+            let subscriber = client.subscribe_mixnet_status();
+
+            client
+                .attach_mixnet("not-an-address", &[])
+                .await
+                .expect_err("an unparseable platform address must fail the attach");
+
+            assert_eq!(client.mixnet_mode(), crate::nym::MixnetMode::Unattached);
+            assert_eq!(
+                subscriber.borrow().mode,
+                crate::nym::MixnetMode::Unattached,
+                "subscribers must see the revocation"
+            );
         }
 
         /// The driver entry honors the startup opt-out (ADR 0024, consent
