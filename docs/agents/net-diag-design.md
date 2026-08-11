@@ -81,7 +81,7 @@ beyond the stability contract below.
 New crate `zingo-net-diag` at the repository root, std-only, zero
 dependencies. Both cargo workspaces path-depend on it (the parent
 workspace from `zingo-price` and `zingolib`, the `zingo-netutils`
-standalone workspace optionally, for the shim follow-up). Zero
+standalone workspace optionally, from its nym stack). Zero
 dependencies is a hard requirement: it is what lets one crate serve two
 lockfile-isolated workspaces without resolver coupling.
 
