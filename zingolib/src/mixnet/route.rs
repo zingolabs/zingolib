@@ -77,12 +77,11 @@ pub enum MixnetNotReady {
     Died,
 }
 
-/// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
-/// SOCKS5 address. `Ready` yields the mixnet route, `SwitchedOff` yields
-/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` before an
-/// address is published all refuse. Crucially, only the deliberate `SwitchedOff`
-/// yields clearnet: a never-enabled session and a `Died` proxy both refuse
-/// rather than leaking the send to clearnet without consent.
+/// Resolve the fail-closed route for the given Mixnet Mode and SOCKS5
+/// address — `Ready` yields the mixnet route, only the deliberate
+/// `SwitchedOff` yields clearnet, and `Unattached`, `Bootstrapping`,
+/// `Died`, or `Ready` before an address is published all refuse rather
+/// than leak a send to clearnet without consent.
 pub fn resolve_route(
     mode: MixnetMode,
     socks5_addr: Option<std::net::SocketAddr>,
