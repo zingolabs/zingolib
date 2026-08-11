@@ -586,7 +586,7 @@ pub(crate) fn command_loop(
 
             let cmd_response = RT
                 .block_on(commands::dispatch_parsed(command, &mut lightclient))
-                .map_err(|e| format!("Error: {e}"));
+                .map_err(|e| format!("Error: {}", commands::render_error_chain(&e)));
             resp_transmitter.send(cmd_response).unwrap();
 
             if is_quit {
@@ -1253,7 +1253,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         };
         match commands::dispatch_parsed(sync_run, &mut lightclient).await {
             Ok(update) => eprintln!("{update}"),
-            Err(e) => eprintln!("Error: {e}"),
+            Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
         }
     }
 

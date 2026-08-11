@@ -144,6 +144,19 @@ pub enum CommandError {
     NotYetTyped(String),
 }
 
+/// Renders `error` and then every link of its source chain, one `caused
+/// by:` line per link, so no wrapper needs to embed its source's text.
+pub(crate) fn render_error_chain(error: &(impl std::error::Error + ?Sized)) -> String {
+    use std::fmt::Write;
+    let mut rendered = error.to_string();
+    let mut link = error.source();
+    while let Some(cause) = link {
+        let _ = write!(rendered, "\ncaused by: {cause}");
+        link = cause.source();
+    }
+    rendered
+}
+
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
@@ -1132,12 +1145,12 @@ pub enum NetworkCommandError {
     /// failed; the session stays offline. Reachable only from the
     /// quarantined clearnet resolution.
     #[cfg(feature = "clearnet-test-mode")]
-    #[error("failed to connect to '{uri}' while switching to Online Mode: {source}")]
+    #[error("failed to connect to '{uri}' while switching to Online Mode")]
     GoOnline {
         uri: String,
         source: zingolib::netutils::GetClientError,
     },
-    #[error("failed to start the nym proxy at '{path}': {source}")]
+    #[error("failed to start the nym proxy at '{path}'")]
     ProxyStart {
         path: String,
         source: zingolib::mixnet::acquire::TransportError,
