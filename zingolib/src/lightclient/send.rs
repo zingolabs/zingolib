@@ -121,7 +121,7 @@ fn resolve_transmit_route(
 ) -> Result<Option<String>, LightClientError> {
     use crate::nym::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
-        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.addr().to_string())),
+        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
         (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
@@ -898,8 +898,8 @@ impl LightClient {
         let indexer = self.indexer.clone();
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
-        // `Clearnet` submits through the configured indexer; `Mixnet(addr)`
-        // routes the escalation through the SOCKS5 proxy — with or without a
+        // `Clearnet` submits through the configured indexer; `Mixnet(tunnel)`
+        // routes the escalation through the tunnel's SOCKS5 proxy — with or without a
         // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
         // here, before any submission, rather than leaking to clearnet.
         // Without the `nym` feature there is no mixnet, so the route is
