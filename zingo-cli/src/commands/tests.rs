@@ -875,12 +875,14 @@ mod bootstrap_wait {
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
         let mut ready = status(MixnetMode::Ready);
-        ready.exits = vec!["exit-alpha".into()];
+        let exit_alpha =
+            zingolib::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+        ready.exits = vec![exit_alpha.clone()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
             waiter.await.expect("the waiter must not panic"),
             BootstrapOutcome::Ready {
-                exits: vec!["exit-alpha".into()]
+                exits: vec![exit_alpha]
             }
         );
     }
@@ -890,14 +892,17 @@ mod bootstrap_wait {
     #[test]
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
+        let parsed = |identity: &str| {
+            zingolib::nym::ExitNodeId::parse(identity).expect("the test identity parses")
+        };
         assert_eq!(
-            super::super::render_exit_nodes(&["short-exit".into()]),
+            super::super::render_exit_nodes(&[parsed("short-exit")]),
             " Exit Node bound: short-exit."
         );
         assert_eq!(
             super::super::render_exit_nodes(&[
-                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".into(),
-                "short-exit".into(),
+                parsed("AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta"),
+                parsed("short-exit"),
             ]),
             " Exit Nodes bound: AlphaBetaGam…, short-exit."
         );
@@ -1877,7 +1882,11 @@ mod attached_exit_reporting {
         .await;
         let receiver = client.subscribe_mixnet_status();
         client
-            .attach_mixnet(&addr, &["host-bound-exit".into()])
+            .attach_mixnet(
+                &addr,
+                &[zingolib::nym::ExitNodeId::parse("host-bound-exit")
+                    .expect("the test identity parses")],
+            )
             .await
             .expect("a valid loopback address attaches");
 

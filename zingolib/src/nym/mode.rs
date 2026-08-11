@@ -156,7 +156,7 @@ pub(crate) enum MixnetSlot {
     #[cfg(any(test, feature = "testutils"))]
     AttachedForTests {
         /// The address the route resolver hands to Ready-mode surfaces.
-        socks5_addr: String,
+        socks5_addr: std::net::SocketAddr,
     },
 }
 
@@ -186,12 +186,12 @@ impl MixnetSlot {
     /// The local SOCKS5 address the route resolver hands to Ready-mode
     /// surfaces, wherever the slot keeps it: the transport's announced
     /// address when one is attached, the pinned address of a test stand-in.
-    pub(crate) fn socks5_addr(&self) -> Option<String> {
+    pub(crate) fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         match self {
             MixnetSlot::Attached(proxy) => proxy.socks5_addr(),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
             #[cfg(any(test, feature = "testutils"))]
-            MixnetSlot::AttachedForTests { socks5_addr } => Some(socks5_addr.clone()),
+            MixnetSlot::AttachedForTests { socks5_addr } => Some(*socks5_addr),
         }
     }
 

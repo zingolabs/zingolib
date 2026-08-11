@@ -121,7 +121,7 @@ impl LightClient {
         progress(SweepProgress::Surveying {
             candidates: candidates.len(),
         });
-        let results = survey(&socks5_addr, candidates, &self.indexer_history).await;
+        let results = survey(socks5_addr, candidates, &self.indexer_history).await;
         progress(SweepProgress::Judging {
             answered: results.iter().filter(|r| r.reported.is_some()).count(),
             surveyed: results.len(),
@@ -158,7 +158,7 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
 /// bootstrap budget elapses.
 async fn await_sweep_ready(
     receiver: &mut tokio::sync::watch::Receiver<crate::nym::MixnetStatus>,
-) -> Result<(String, Vec<crate::nym::ExitNodeId>), ServerSelectionError> {
+) -> Result<(std::net::SocketAddr, Vec<crate::nym::ExitNodeId>), ServerSelectionError> {
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {
@@ -166,7 +166,7 @@ async fn await_sweep_ready(
                 let status = receiver.borrow_and_update();
                 match status.mode {
                     MixnetMode::Ready => {
-                        if let Some(addr) = status.socks5_addr.clone() {
+                        if let Some(addr) = status.socks5_addr {
                             return Ok((addr, status.exits.clone()));
                         }
                     }
@@ -203,7 +203,7 @@ async fn await_sweep_ready(
 /// Survey every candidate over the sweep exit concurrently, recording each
 /// attempt in the indexer history like any probe.
 async fn survey(
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     candidates: &[Uri],
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
@@ -221,7 +221,7 @@ async fn survey(
 /// One candidate's survey: `GetLightdInfo` over the sweep exit, its success
 /// mapped to the reported chain and height, any failure to `None`.
 async fn probe_one(
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
@@ -230,7 +230,8 @@ async fn probe_one(
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = uri.host().map_or_else(|| uri.to_string(), str::to_string);
-    let result = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, uri, timeout).await;
+    let result =
+        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), uri, timeout).await;
     let (reported, outcome) = match &result {
         Ok(info) => (
             Some(ProbeSuccess {

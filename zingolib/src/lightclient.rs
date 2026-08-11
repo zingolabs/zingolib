@@ -640,7 +640,7 @@ impl LightClient {
     #[cfg(feature = "nym")]
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
-            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr().to_string(),
+            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr(),
             crate::nym::MixnetRoute::Clearnet => {
                 return Err(LightClientError::PriceFetchRequiresMixnet);
             }
@@ -694,7 +694,7 @@ impl LightClient {
         // tunnel at full width; the first answer wins and the losing legs
         // are cancelled.
         let dispatched = std::time::Instant::now();
-        let raced = zingo_price::race_current_price(Some(&via_socks5)).await;
+        let raced = zingo_price::race_current_price(Some(&via_socks5.to_string())).await;
         if let Some(member) = pooled {
             member.retire().await;
             self.correspondent_pools.ensure_filled();
@@ -706,7 +706,7 @@ impl LightClient {
             usd: raced.price.price_usd,
             source: raced.source,
             round_trip,
-            via_socks5,
+            via_socks5: via_socks5.to_string(),
         })
     }
 
@@ -904,6 +904,12 @@ impl LightClient {
         socks5_addr: &str,
         exits: &[crate::nym::ExitNodeId],
     ) -> Result<(), crate::nym::MixnetProxyError> {
+        let socks5_addr: std::net::SocketAddr =
+            socks5_addr
+                .parse()
+                .map_err(|_| crate::nym::MixnetProxyError::InvalidAddress {
+                    addr: socks5_addr.to_string(),
+                })?;
         self.vacate_mixnet_slot().await;
         match crate::nym::MixnetProxy::attach(
             socks5_addr,
@@ -1016,7 +1022,7 @@ impl LightClient {
     }
 
     /// The local SOCKS5 address while Mixnet Mode is ready.
-    pub fn mixnet_socks5_addr(&self) -> Option<String> {
+    pub fn mixnet_socks5_addr(&self) -> Option<std::net::SocketAddr> {
         self.mixnet_slot.socks5_addr()
     }
 
@@ -1030,7 +1036,9 @@ impl LightClient {
     pub async fn switch_on_mixnet_for_tests(&mut self, socks5_addr: &str) {
         self.vacate_mixnet_slot().await;
         self.mixnet_slot = crate::nym::MixnetSlot::AttachedForTests {
-            socks5_addr: socks5_addr.to_string(),
+            socks5_addr: socks5_addr
+                .parse()
+                .expect("the test stand-in socks5 address parses"),
         };
         // Every slot transition publishes (the one-shared-watch invariant),
         // the stand-in included.
@@ -1089,7 +1097,7 @@ impl LightClient {
     ) -> Result<Vec<crate::nym::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
     {
         let socks5_addr = match self.mixnet_route()? {
-            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr().to_string(),
+            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr(),
             crate::nym::MixnetRoute::Clearnet => {
                 return Err(crate::lightclient::error::LightClientError::ProbeRequiresMixnet);
             }
@@ -1110,7 +1118,7 @@ impl LightClient {
             .collect();
         let history = self.indexer_history.clone();
         Ok(futures::future::join_all(targets.iter().map(|indexer| {
-            crate::nym::probe::probe_indexer(indexer, &socks5_addr, timeout, &history)
+            crate::nym::probe::probe_indexer(indexer, socks5_addr, timeout, &history)
         }))
         .await)
     }

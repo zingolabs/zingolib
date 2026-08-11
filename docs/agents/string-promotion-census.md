@@ -20,16 +20,15 @@ key. Construction is checked — `ExitNodeId::parse` trims and refuses a
 blank — so the invalid identity is unrepresentable. Serde stays
 wire-compatible via a validated string representation.
 
-**SOCKS5 endpoint → `std::net::SocketAddr`.** *Implemented for the
-tunnel 2026-08-10: `SlotTunnel` stores and yields the parsed
-`SocketAddr`, and its four consumer seams render the dial string at
-the boundary.* Remaining sites: `HostedTransport.socks5_addr`,
-`ProxyState.socks5_addr`, `MixnetStatus.socks5_addr`,
-`MixnetSlot::Ready { socks5_addr }`, and the `&str` threaded through
-`probe`/`select` survey calls. The attach path still parses
-to `SocketAddr` to validate and then discards the type; promotion moves
-the parse to the edge and makes `Ready` and the tunnel address-typed by
-construction.
+**SOCKS5 endpoint → `std::net::SocketAddr`.** *Implemented 2026-08-10,
+in two steps: first `SlotTunnel`, then every remaining wallet-held
+site — `HostedTransport.socks5_addr`, `ProxyState.socks5_addr`,
+`MixnetStatus.socks5_addr`, the test stand-in slot, and the
+`probe`/`select` survey parameters.* The parse happens once where an
+address enters (the child's announcement line, `attach_mixnet`'s
+parameter, the typed host report), and the string renders only at the
+zingo-netutils dial calls, whose `&str` parameters are a possible
+future cross-workspace promotion outside this census's scope.
 
 **Responsiveness class across the host seam → `ResponsivenessClass`.**
 *Implemented 2026-08-10.*

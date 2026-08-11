@@ -17,7 +17,7 @@ pub(crate) trait PoolTransport: Send + 'static {
     /// Whether the transport still reports itself ready.
     fn is_ready(&self) -> bool;
     /// The transport's local SOCKS5 address, while it lives.
-    fn socks5_addr(&self) -> Option<String>;
+    fn socks5_addr(&self) -> Option<std::net::SocketAddr>;
     /// Tears the transport down.
     fn stop(self) -> impl std::future::Future<Output = ()> + Send;
 }
@@ -79,7 +79,7 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
 impl<T: PoolTransport> Member<T, Exclusive> {
     /// The one dial: consumes the member, yielding the tunnel address for a
     /// single Correspondent contact and the spent holder to retire.
-    pub(crate) fn dial(self) -> (Option<String>, SpentExit<T>) {
+    pub(crate) fn dial(self) -> (Option<std::net::SocketAddr>, SpentExit<T>) {
         let addr = self.transport.socks5_addr();
         (
             addr,
@@ -94,7 +94,7 @@ impl<T: PoolTransport> Member<T, Exclusive> {
 impl<T: PoolTransport> Member<T, Shared> {
     /// The tunnel address for one more Correspondent contact, while the
     /// transport lives.
-    pub(crate) fn addr(&self) -> Option<String> {
+    pub(crate) fn addr(&self) -> Option<std::net::SocketAddr> {
         self.transport.socks5_addr()
     }
 }
@@ -415,8 +415,9 @@ mod tests {
             self.ready
         }
 
-        fn socks5_addr(&self) -> Option<String> {
-            self.ready.then(|| "127.0.0.1:7".to_string())
+        fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
+            self.ready
+                .then(|| "127.0.0.1:7".parse().expect("the fake address parses"))
         }
 
         fn stop(self) -> impl std::future::Future<Output = ()> + Send {

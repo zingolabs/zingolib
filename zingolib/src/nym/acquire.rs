@@ -107,7 +107,7 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostedTransport {
     /// The local SOCKS5 address the host's proxy listens on.
-    pub socks5_addr: String,
+    pub socks5_addr: std::net::SocketAddr,
     /// The Exit Node that proxy bound.
     pub exit_node: crate::nym::ExitNodeId,
 }
@@ -187,7 +187,7 @@ impl TransportAcquirable for HostedProxy {
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
                 .map_err(TransportError::HostRefused)?;
-            MixnetProxy::attach(&hosted.socks5_addr, &[hosted.exit_node], publisher)
+            MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
                 .map_err(TransportError::from)
         })
     }
@@ -303,30 +303,25 @@ mod tests {
         assert!(matches!(refusal, TransportError::HostRefused(_)));
     }
 
-    /// HYPOTHESIS: a host that answers with an unusable endpoint fails at
-    /// the attach seam, so a malformed host reply never reaches the slot.
+    /// HYPOTHESIS: a well-typed host report attaches, so the typed
+    /// `HostedTransport` is sufficient evidence to reach the slot seam.
     #[tokio::test]
-    async fn a_malformed_host_endpoint_fails_at_attach() {
+    async fn a_typed_host_endpoint_reaches_the_attach_seam() {
         let acquirer = hosted(ScriptedHost {
             directory: Ok(Vec::new()),
             transport: Ok(HostedTransport {
-                socks5_addr: "not-a-socket-address".to_string(),
+                socks5_addr: "127.0.0.1:1080".parse().expect("the test address parses"),
                 exit_node: "exit-a".into(),
             }),
         });
-        let Err(refusal) = acquirer
+        let proxy = acquirer
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
                 &["exit-a".into()],
                 crate::nym::status_publisher(),
             )
             .await
-        else {
-            panic!("an unparseable endpoint must not yield a transport");
-        };
-        assert!(matches!(
-            refusal,
-            TransportError::Proxy(MixnetProxyError::InvalidAddress { .. })
-        ));
+            .expect("a typed endpoint always constructs the attached transport");
+        proxy.stop().await;
     }
 }

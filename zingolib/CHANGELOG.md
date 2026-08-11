@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wire string, and both host methods refuse with the typed
   `nym::acquire::HostRefusal` instead of `String`, which
   `TransportError::HostRefused` now carries as its source.
+- BREAKING: the SOCKS5 endpoint is `std::net::SocketAddr` everywhere the
+  wallet holds one — `MixnetStatus::socks5_addr`, `HostedTransport`,
+  `MixnetProxy::attach`, `LightClient::mixnet_socks5_addr`, and the probe
+  and sweep parameters. The address is parsed once where it enters: the
+  spawned child's announcement line, `attach_mixnet`'s string parameter,
+  and the typed host report; it renders back to a string only at the
+  netutils dial calls. A spawned child announcing a non-parsing address
+  now stays bootstrapping (refused by the readiness budget) instead of
+  reaching Ready and failing at the route. The serialized `MixnetStatus`
+  wire is unchanged: serde carries the address as the same string.
 - BREAKING: the mixnet route names the session slot's tunnel.
   `MixnetRoute::Mixnet` carries a `nym::SlotTunnel` instead of a bare
   address `String`. The tunnel refuses an address that does not parse as

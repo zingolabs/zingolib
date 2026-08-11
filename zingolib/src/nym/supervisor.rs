@@ -104,7 +104,7 @@ pub enum MixnetProxyError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProxyState {
     mode: MixnetMode,
-    socks5_addr: Option<String>,
+    socks5_addr: Option<SocketAddr>,
     /// The Exit Node identities the transport reports as bound.
     exits: Vec<crate::nym::ExitNodeId>,
     /// The transport's latest bootstrap progress report, live only while
@@ -122,7 +122,7 @@ impl ProxyState {
     fn snapshot(&self) -> MixnetStatus {
         MixnetStatus {
             mode: self.mode,
-            socks5_addr: self.socks5_addr.clone(),
+            socks5_addr: self.socks5_addr,
             // Ready-only evidence: the wire refuses exits in any other mode.
             exits: if self.mode == MixnetMode::Ready {
                 self.exits.clone()
@@ -279,15 +279,10 @@ impl MixnetProxy {
     /// bound `exits`, judging readiness and continued life by loopback dials
     /// alone.
     pub(crate) fn attach(
-        socks5_addr: &str,
+        socks5_addr: SocketAddr,
         exits: &[crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
-        if socks5_addr.parse::<SocketAddr>().is_err() {
-            return Err(MixnetProxyError::InvalidAddress {
-                addr: socks5_addr.to_string(),
-            });
-        }
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
@@ -296,13 +291,11 @@ impl MixnetProxy {
             death: None,
         }));
         publish_locked(&state.lock().expect("proxy state mutex"), &publisher);
-        let addr = socks5_addr.to_string();
-        let watch_addr = addr.clone();
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
-            addr.clone(),
-            attach_readiness(addr),
-            move || endpoint_alive(watch_addr.clone()),
+            socks5_addr,
+            attach_readiness(socks5_addr),
+            move || endpoint_alive(socks5_addr),
             ATTACH_WATCHDOG_INTERVAL,
             publisher,
         ));
@@ -324,12 +317,8 @@ impl MixnetProxy {
     }
 
     /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
-    pub fn socks5_addr(&self) -> Option<String> {
-        self.state
-            .lock()
-            .expect("proxy state mutex")
-            .socks5_addr
-            .clone()
+    pub fn socks5_addr(&self) -> Option<SocketAddr> {
+        self.state.lock().expect("proxy state mutex").socks5_addr
     }
 
     /// The bound Exit Node identities, once the mode is
@@ -398,7 +387,7 @@ impl MixnetProxy {
 /// The attach readiness gate: a data round trip through the endpoint to
 /// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
 /// listener that accepts TCP proves nothing about the mixnet carrying data.
-async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::NetOpFailure> {
+async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag::NetOpFailure> {
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
@@ -408,7 +397,7 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
         match zingo_netutils::get_lightd_info_via_socks5(
-            &socks5_addr,
+            &socks5_addr.to_string(),
             &indexer,
             MIXNET_ROUND_TRIP_BOUND,
         )
@@ -419,8 +408,8 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
                 let stage = crate::nym::socks5_transmit_stage(&error);
                 let target = match stage {
                     zingo_net_diag::NetOpStage::LocalProxyConnect
-                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.as_str(),
-                    _ => ATTACH_HEALTH_INDEXER,
+                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
+                    _ => ATTACH_HEALTH_INDEXER.to_string(),
                 };
                 last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
                     stage, target, &error,
@@ -432,11 +421,11 @@ async fn attach_readiness(socks5_addr: String) -> Result<(), zingo_net_diag::Net
 }
 
 /// One watchdog tick: whether the local endpoint still accepts a dial.
-async fn endpoint_alive(socks5_addr: String) -> bool {
+async fn endpoint_alive(socks5_addr: SocketAddr) -> bool {
     matches!(
         tokio::time::timeout(
             LOOPBACK_DIAL_BOUND,
-            tokio::net::TcpStream::connect(&socks5_addr),
+            tokio::net::TcpStream::connect(socks5_addr),
         )
         .await,
         Ok(Ok(_))
@@ -447,7 +436,7 @@ async fn endpoint_alive(socks5_addr: String) -> bool {
 /// `Ready`, and a failed tick of the injected watchdog thereafter lands `Died`.
 async fn drive_attached_state<RFut, P, PFut>(
     state: Arc<Mutex<ProxyState>>,
-    socks5_addr: String,
+    socks5_addr: SocketAddr,
     readiness: RFut,
     mut watchdog: P,
     interval: Duration,
@@ -476,7 +465,7 @@ async fn drive_attached_state<RFut, P, PFut>(
     }
     {
         let mut guarded = state.lock().expect("proxy state mutex");
-        guarded.socks5_addr = Some(socks5_addr.clone());
+        guarded.socks5_addr = Some(socks5_addr);
         guarded.bootstrap_detail = None;
         guarded.mode = MixnetMode::Ready;
         publish_locked(&guarded, &publisher);
@@ -488,7 +477,7 @@ async fn drive_attached_state<RFut, P, PFut>(
                 &state,
                 zingo_net_diag::NetOpFailure::message(
                     zingo_net_diag::NetOpStage::LocalProxyConnect,
-                    &socks5_addr,
+                    socks5_addr.to_string(),
                     "the listener watchdog could not dial the attached endpoint",
                 ),
             );
@@ -518,11 +507,13 @@ async fn drive_state<R: AsyncRead + Unpin>(
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
             spoke_protocol = true;
-            let mut guarded = state.lock().expect("proxy state mutex");
-            guarded.socks5_addr = Some(addr.to_string());
-            guarded.bootstrap_detail = None;
-            guarded.mode = MixnetMode::Ready;
-            publish_locked(&guarded, &publisher);
+            if let Ok(addr) = addr.parse::<SocketAddr>() {
+                let mut guarded = state.lock().expect("proxy state mutex");
+                guarded.socks5_addr = Some(addr);
+                guarded.bootstrap_detail = None;
+                guarded.mode = MixnetMode::Ready;
+                publish_locked(&guarded, &publisher);
+            }
             // Keep reading: a close after this must be observed as Died.
             continue;
         }
@@ -626,7 +617,7 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
         self.mode() == MixnetMode::Ready
     }
 
-    fn socks5_addr(&self) -> Option<String> {
+    fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)
     }
 
@@ -823,7 +814,10 @@ mod tests {
     async fn ready_when_the_address_is_announced() {
         let s = state_over_open_stream(b"SOCKS5_ADDR=127.0.0.1:43210\n").await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.socks5_addr.as_deref(), Some("127.0.0.1:43210"));
+        assert_eq!(
+            s.socks5_addr,
+            Some("127.0.0.1:43210".parse().expect("the test address parses"))
+        );
     }
 
     #[tokio::test]
@@ -832,7 +826,10 @@ mod tests {
             state_over_open_stream(b"discovering gateways\nconnecting\nSOCKS5_ADDR=127.0.0.1:5\n")
                 .await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.socks5_addr.as_deref(), Some("127.0.0.1:5"));
+        assert_eq!(
+            s.socks5_addr,
+            Some("127.0.0.1:5".parse().expect("the test address parses"))
+        );
     }
 
     /// HYPOTHESIS: an exit announcement before the address is recorded and
@@ -888,7 +885,10 @@ mod tests {
         )
         .await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.socks5_addr.as_deref(), Some("127.0.0.1:7"));
+        assert_eq!(
+            s.socks5_addr,
+            Some("127.0.0.1:7".parse().expect("the test address parses"))
+        );
         assert_eq!(s.bootstrap_detail, None, "ready has no bootstrap detail");
     }
 
@@ -1040,7 +1040,7 @@ mod tests {
         let probed_flag = Arc::clone(&probed);
         drive_attached_state(
             Arc::clone(&state),
-            "127.0.0.1:1080".to_string(),
+            "127.0.0.1:1080".parse().expect("the test address parses"),
             std::future::ready(Err(readiness_failure("no data through the endpoint"))),
             move || {
                 *probed_flag.lock().unwrap() = true;
@@ -1075,7 +1075,7 @@ mod tests {
     async fn attached_watchdog_failure_lands_died_after_publishing_ready() {
         /// What the watchdog closure saw at one call: the mode and the
         /// published address at that instant.
-        type ProbeSnapshot = (MixnetMode, Option<String>);
+        type ProbeSnapshot = (MixnetMode, Option<std::net::SocketAddr>);
 
         let state = bootstrapping();
         let observed: Arc<Mutex<Vec<ProbeSnapshot>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1083,14 +1083,14 @@ mod tests {
         let observer_state = Arc::clone(&state);
         drive_attached_state(
             Arc::clone(&state),
-            "127.0.0.1:1080".to_string(),
+            "127.0.0.1:1080".parse().expect("the test address parses"),
             std::future::ready(Ok(())),
             move || {
                 let snapshot = observer_state.lock().unwrap();
                 observer
                     .lock()
                     .unwrap()
-                    .push((snapshot.mode, snapshot.socks5_addr.clone()));
+                    .push((snapshot.mode, snapshot.socks5_addr));
                 let calls = observer.lock().unwrap().len();
                 std::future::ready(calls < 3)
             },
@@ -1103,7 +1103,10 @@ mod tests {
         assert_eq!(observed.len(), 3, "two live ticks, then the fatal third");
         assert_eq!(
             observed[0],
-            (MixnetMode::Ready, Some("127.0.0.1:1080".to_string())),
+            (
+                MixnetMode::Ready,
+                Some("127.0.0.1:1080".parse().expect("the test address parses"))
+            ),
             "readiness success must publish Ready with the address"
         );
         let s = state.lock().unwrap();
@@ -1132,7 +1135,7 @@ mod tests {
         // what this isolates, observed on the channel before teardown.
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
-            "127.0.0.1:1080".to_string(),
+            "127.0.0.1:1080".parse().expect("the test address parses"),
             std::future::ready(Ok(())),
             || std::future::ready(true),
             Duration::from_secs(3_600),
@@ -1152,22 +1155,21 @@ mod tests {
         driver.abort();
     }
 
-    /// HYPOTHESIS: attach validates the address synchronously, and stop() on
-    /// an attached transport is a deliberate teardown to Unattached — never
-    /// Died, and never the wallet's SwitchedOff. Falsified if a malformed
-    /// address is accepted, or if a live attachment reports anything but the
-    /// transport lifecycle states.
+    /// HYPOTHESIS: stop() on an attached transport is a deliberate teardown
+    /// to Unattached — never Died, and never the wallet's SwitchedOff.
+    /// Falsified if a live attachment reports anything but the transport
+    /// lifecycle states. Address validation lives at the consumer seam,
+    /// because `attach` now takes the parsed address by type.
     #[tokio::test]
-    async fn attach_validates_the_address_and_stop_is_a_deliberate_teardown() {
-        assert!(matches!(
-            MixnetProxy::attach("not-a-socket-address", &[], test_publisher()),
-            Err(MixnetProxyError::InvalidAddress { .. })
-        ));
-
+    async fn attached_stop_is_a_deliberate_teardown() {
         // A refusing localhost endpoint: readiness will fail, but stop() must
         // win regardless of where the driver is when it lands.
-        let proxy = MixnetProxy::attach("127.0.0.1:9", &[], test_publisher())
-            .expect("a valid address attaches");
+        let proxy = MixnetProxy::attach(
+            "127.0.0.1:9".parse().expect("the test address parses"),
+            &[],
+            test_publisher(),
+        )
+        .expect("a valid address attaches");
         // The readiness gate races this assert (a refused port can land Died
         // fast), so assert only what is invariant: a live attachment is in
         // the transport lifecycle, never in a wallet slot state.
@@ -1193,8 +1195,12 @@ mod tests {
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.
-        let proxy = MixnetProxy::attach("127.0.0.1:9", &[], test_publisher())
-            .expect("a valid address attaches");
+        let proxy = MixnetProxy::attach(
+            "127.0.0.1:9".parse().expect("the test address parses"),
+            &[],
+            test_publisher(),
+        )
+        .expect("a valid address attaches");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while proxy.mode() != MixnetMode::Died {
             assert!(
@@ -1234,7 +1240,10 @@ mod tests {
                 .wait_for(|status| status.mode == MixnetMode::Ready)
                 .await
                 .expect("the publisher outlives the wait");
-            assert_eq!(ready.socks5_addr.as_deref(), Some("127.0.0.1:43210"));
+            assert_eq!(
+                ready.socks5_addr,
+                Some("127.0.0.1:43210".parse().expect("the test address parses"))
+            );
         }
         handle.abort();
     }

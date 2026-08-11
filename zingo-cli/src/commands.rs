@@ -1445,11 +1445,16 @@ async fn network_command(
     lightclient: &mut LightClient,
 ) -> Result<String, NetworkCommandError> {
     match sub {
-        NetworkSubCommand::Status => Ok(render_status_with_disclaimer(
-            lightclient.mixnet_mode(),
-            lightclient.mixnet_socks5_addr().as_deref(),
-            lightclient.mixnet_bootstrap_detail().as_deref(),
-        )),
+        NetworkSubCommand::Status => {
+            let socks5 = lightclient
+                .mixnet_socks5_addr()
+                .map(|addr| addr.to_string());
+            Ok(render_status_with_disclaimer(
+                lightclient.mixnet_mode(),
+                socks5.as_deref(),
+                lightclient.mixnet_bootstrap_detail().as_deref(),
+            ))
+        }
         NetworkSubCommand::On { path } => {
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's

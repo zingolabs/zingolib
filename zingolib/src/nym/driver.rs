@@ -33,7 +33,7 @@ pub struct MixnetStatus {
     pub mode: MixnetMode,
     /// The local SOCKS5 address, present exactly while ready.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub socks5_addr: Option<String>,
+    pub socks5_addr: Option<std::net::SocketAddr>,
     /// The Exit Node identities the ready transport bound, present only
     /// while ready.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -54,7 +54,7 @@ pub struct MixnetStatus {
 struct RawMixnetStatus {
     mode: MixnetMode,
     #[serde(default)]
-    socks5_addr: Option<String>,
+    socks5_addr: Option<std::net::SocketAddr>,
     #[serde(default)]
     exits: Vec<crate::nym::ExitNodeId>,
     #[serde(default)]
@@ -216,7 +216,7 @@ mod wire_contract {
         pin(
             &MixnetStatus {
                 mode: MixnetMode::Ready,
-                socks5_addr: Some("127.0.0.1:1080".into()),
+                socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
                 exits: Vec::new(),
                 bootstrap_detail: None,
                 death: None,
@@ -230,7 +230,7 @@ mod wire_contract {
         pin(
             &MixnetStatus {
                 mode: MixnetMode::Ready,
-                socks5_addr: Some("127.0.0.1:1080".into()),
+                socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
                 exits: vec!["exit-alpha".into(), "exit-beta".into()],
                 bootstrap_detail: None,
                 death: None,

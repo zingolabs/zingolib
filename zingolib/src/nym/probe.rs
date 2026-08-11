@@ -87,17 +87,18 @@ fn get_client_stage(error: &GetClientError) -> NetOpStage {
 
 /// Probes `indexer` through the SOCKS5 proxy, recording the attempt.
 async fn mixnet_leg(
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     indexer: &Uri,
     timeout: Duration,
     history: &IndexerHistoryHandle,
     host: &str,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, indexer, timeout)
-        .await
-        .map(|info| ProbeSuccess::of(&info))
-        .map_err(|e| super::socks5_transmit_failure(&e, host));
+    let outcome =
+        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), indexer, timeout)
+            .await
+            .map(|info| ProbeSuccess::of(&info))
+            .map_err(|e| super::socks5_transmit_failure(&e, host));
     let leg = ProbeLeg {
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         outcome,
@@ -138,7 +139,7 @@ pub fn probe_eligible(indexer: &Uri) -> bool {
 /// Runs the liveness probe against one indexer over the mixnet route.
 pub(crate) async fn probe_indexer(
     indexer: &Uri,
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     timeout: Duration,
     history: &IndexerHistoryHandle,
 ) -> MixnetProbe {

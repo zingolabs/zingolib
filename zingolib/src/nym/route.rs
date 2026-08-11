@@ -33,12 +33,9 @@ impl SlotTunnel {
         self.socks5_addr
     }
 
-    /// Wraps a published proxy address, refusing any string that does not parse as a socket address.
-    fn validated(socks5_addr: String) -> Option<Self> {
-        socks5_addr
-            .parse::<std::net::SocketAddr>()
-            .ok()
-            .map(|socks5_addr| Self { socks5_addr })
+    /// Wraps the published proxy address of a ready transport.
+    fn over(socks5_addr: std::net::SocketAddr) -> Self {
+        Self { socks5_addr }
     }
 }
 
@@ -82,19 +79,19 @@ pub enum MixnetNotReady {
 
 /// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
 /// SOCKS5 address. `Ready` yields the mixnet route, `SwitchedOff` yields
-/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` before a
-/// valid socket address is published all refuse. Crucially, only the deliberate `SwitchedOff`
+/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` before an
+/// address is published all refuse. Crucially, only the deliberate `SwitchedOff`
 /// yields clearnet: a never-enabled session and a `Died` proxy both refuse
 /// rather than leaking the send to clearnet without consent.
 pub fn resolve_route(
     mode: MixnetMode,
-    socks5_addr: Option<String>,
+    socks5_addr: Option<std::net::SocketAddr>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match mode {
         MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
         MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
         MixnetMode::Ready => socks5_addr
-            .and_then(SlotTunnel::validated)
+            .map(SlotTunnel::over)
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
         MixnetMode::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
@@ -124,7 +121,10 @@ mod tests {
             Err(MixnetNotReady::Unattached)
         );
         assert_eq!(
-            resolve_route(MixnetMode::Unattached, Some("127.0.0.1:9050".to_string())),
+            resolve_route(
+                MixnetMode::Unattached,
+                Some("127.0.0.1:9050".parse().expect("the test address parses"))
+            ),
             Err(MixnetNotReady::Unattached),
             "a stray address must not conjure a route without a transport"
         );
@@ -132,7 +132,10 @@ mod tests {
 
     #[test]
     fn ready_routes_through_the_proxy() {
-        let route = resolve_route(MixnetMode::Ready, Some("127.0.0.1:9050".to_string()));
+        let route = resolve_route(
+            MixnetMode::Ready,
+            Some("127.0.0.1:9050".parse().expect("the test address parses")),
+        );
         match route.unwrap() {
             MixnetRoute::Mixnet(tunnel) => assert_eq!(
                 tunnel.addr(),
@@ -142,22 +145,6 @@ mod tests {
             ),
             MixnetRoute::Clearnet => panic!("ready must route through the proxy"),
         }
-    }
-
-    #[test]
-    fn ready_with_an_unparseable_address_refuses() {
-        // drive_state publishes the child's SOCKS5_ADDR= line without a
-        // parse, so a broken proxy can hand this resolver an empty or
-        // garbage string. The route refuses instead of yielding a tunnel
-        // whose dial can only fail with an opaque connect error.
-        assert_eq!(
-            resolve_route(MixnetMode::Ready, Some(String::new())),
-            Err(MixnetNotReady::Bootstrapping)
-        );
-        assert_eq!(
-            resolve_route(MixnetMode::Ready, Some("not-an-address".to_string())),
-            Err(MixnetNotReady::Bootstrapping)
-        );
     }
 
     #[test]
@@ -177,7 +164,10 @@ mod tests {
             Err(MixnetNotReady::Died)
         );
         assert_eq!(
-            resolve_route(MixnetMode::Died, Some("127.0.0.1:9050".to_string())),
+            resolve_route(
+                MixnetMode::Died,
+                Some("127.0.0.1:9050".parse().expect("the test address parses"))
+            ),
             Err(MixnetNotReady::Died),
             "a stale address must not resurrect a dead proxy into a route"
         );

@@ -118,10 +118,10 @@ pub struct TransmitReport {
 fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady>,
-) -> Result<Option<String>, LightClientError> {
+) -> Result<Option<std::net::SocketAddr>, LightClientError> {
     use crate::nym::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
-        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr().to_string())),
+        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
         (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
@@ -235,7 +235,7 @@ impl TransmitTarget for ClearnetTarget {
 /// escalation builds one of these per pick.
 #[cfg(feature = "nym")]
 struct SocksTarget {
-    socks5_addr: String,
+    socks5_addr: std::net::SocketAddr,
     indexer: http::Uri,
 }
 
@@ -248,7 +248,7 @@ impl TransmitTarget for SocksTarget {
         raw_tx: &[u8],
         height: u64,
     ) -> impl Future<Output = Result<String, zingo_netutils::Socks5TransmitError>> + Send {
-        let socks5_addr = self.socks5_addr.clone();
+        let socks5_addr = self.socks5_addr.to_string();
         let indexer = self.indexer.clone();
         let data = raw_tx.to_vec();
         async move {
@@ -264,7 +264,7 @@ impl TransmitTarget for SocksTarget {
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
-        let socks5_addr = self.socks5_addr.clone();
+        let socks5_addr = self.socks5_addr.to_string();
         let indexer = self.indexer.clone();
         let hash = txid.as_ref().to_vec();
         async move {
@@ -317,7 +317,7 @@ impl PullTransports {
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 pub(crate) struct PullRoute<'a> {
-    shared_socks5: &'a str,
+    shared_socks5: std::net::SocketAddr,
     transports: Option<&'a PullTransports>,
 }
 
@@ -428,7 +428,7 @@ async fn mixnet_escalating_transmit(
         &history.health().lock().expect("health mutex"),
     )?;
     let run_pull = |indexer: http::Uri| {
-        let shared_addr = route.shared_socks5.to_string();
+        let shared_addr = route.shared_socks5;
         let pulls = route.transports;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
@@ -512,7 +512,7 @@ async fn mixnet_escalating_transmit(
                     server_txid,
                     TransmitRoute::Mixnet {
                         correspondent: host,
-                        via_socks5: target.socks5_addr,
+                        via_socks5: target.socks5_addr.to_string(),
                     },
                 )
             })
@@ -905,10 +905,10 @@ impl LightClient {
         // Without the `nym` feature there is no mixnet, so the route is
         // clearnet and demands the indexer.
         #[cfg(feature = "nym")]
-        let socks5_proxy: Option<String> =
+        let socks5_proxy: Option<std::net::SocketAddr> =
             resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(not(feature = "nym"))]
-        let socks5_proxy: Option<String> = None;
+        let socks5_proxy: Option<std::net::SocketAddr> = None;
         // A spawned session gives every pull its own Exclusive exit; an
         // attached session has no pools and shares the slot's tunnel.
         #[cfg(feature = "nym")]
@@ -922,7 +922,7 @@ impl LightClient {
             .filter(|context| context.pools.acquirer().is_some());
         #[cfg(not(feature = "nym"))]
         let pull_transports: Option<PullTransports> = None;
-        let pull_route = socks5_proxy.as_deref().map(|shared_socks5| PullRoute {
+        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute {
             shared_socks5,
             transports: pull_transports.as_ref(),
         });
@@ -1003,7 +1003,9 @@ impl LightClient {
                         server_txid,
                         TransmitRoute::Mixnet {
                             correspondent,
-                            via_socks5: socks5_proxy.clone().unwrap_or_default(),
+                            via_socks5: socks5_proxy
+                                .map(|addr| addr.to_string())
+                                .unwrap_or_default(),
                         },
                     )
                 })
