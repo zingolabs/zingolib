@@ -67,7 +67,7 @@ pub struct ProbeLeg {
 #[derive(Clone, Debug)]
 pub struct MixnetProbe {
     /// The probed indexer's host.
-    pub host: String,
+    pub host: crate::correspondent::Host,
     /// The probe's outcome through the session's SOCKS5 proxy.
     pub leg: ProbeLeg,
 }
@@ -87,17 +87,18 @@ fn get_client_stage(error: &GetClientError) -> NetOpStage {
 
 /// Probes `indexer` through the SOCKS5 proxy, recording the attempt.
 async fn mixnet_leg(
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     indexer: &Uri,
     timeout: Duration,
     history: &IndexerHistoryHandle,
-    host: &str,
+    host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, indexer, timeout)
-        .await
-        .map(|info| ProbeSuccess::of(&info))
-        .map_err(|e| super::socks5_transmit_failure(&e, host));
+    let outcome =
+        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), indexer, timeout)
+            .await
+            .map(|info| ProbeSuccess::of(&info))
+            .map_err(|e| super::socks5_transmit_failure(&e, host));
     let leg = ProbeLeg {
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         outcome,
@@ -106,10 +107,15 @@ async fn mixnet_leg(
     leg
 }
 
-fn record_probe(history: &IndexerHistoryHandle, host: &str, route: AttemptRoute, leg: &ProbeLeg) {
+fn record_probe(
+    history: &IndexerHistoryHandle,
+    host: &crate::correspondent::Host,
+    route: AttemptRoute,
+    leg: &ProbeLeg,
+) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
-        host: host.to_string(),
+        host: host.clone(),
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
@@ -138,13 +144,11 @@ pub fn probe_eligible(indexer: &Uri) -> bool {
 /// Runs the liveness probe against one indexer over the mixnet route.
 pub(crate) async fn probe_indexer(
     indexer: &Uri,
-    socks5_addr: &str,
+    socks5_addr: std::net::SocketAddr,
     timeout: Duration,
     history: &IndexerHistoryHandle,
 ) -> MixnetProbe {
-    let host = indexer
-        .host()
-        .map_or_else(|| indexer.to_string(), str::to_string);
+    let host = crate::correspondent::Host::of_uri(indexer);
     let leg = mixnet_leg(socks5_addr, indexer, timeout, history, &host).await;
     MixnetProbe { host, leg }
 }

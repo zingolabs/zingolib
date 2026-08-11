@@ -58,11 +58,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: mixnet Exit Node identities travel as the typed
+  `nym::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
+  `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
+  `HostedTransport`, and the `ProxyHost` seam — and the operator key
+  behind Correspondent exclusion is the typed `correspondent::Operator`
+  (String-promotion census of the ADR 0041 arc). Construction is checked:
+  `ExitNodeId::parse` (and `TryFrom<String>`, which deserialization uses)
+  trims the candidate and refuses a blank with the typed
+  `BlankExitNodeId`, so no blank identity can enter the Ready snapshot or
+  the Exit Pool ledger. The serialized `MixnetStatus` wire is a plain
+  string, unchanged.
+- BREAKING: the `ProxyHost` seam speaks types end-to-end — its
+  `start_transport` takes the `ResponsivenessClass` enum instead of the
+  wire string, and both host methods refuse with the typed
+  `nym::acquire::HostRefusal` instead of `String`, which
+  `TransportError::HostRefused` now carries as its source.
+- BREAKING: indexer endpoints are the typed `correspondent::Host` — the
+  Health ledger's key, `MixnetProbe::host`, and the diary's
+  `IndexerAttempt::host`, whose `exit` field is now the typed
+  `nym::ExitNodeId`. A Host is lowercased at construction because DNS
+  names compare case-insensitively, and the host-or-whole-URI fallback
+  that three call sites each derived by hand now lives in one
+  constructor. The `nym` module is declared in every build with its
+  transport machinery feature-gated item-by-item, so the identity
+  vocabulary is reachable from the always-compiled diary.
+- BREAKING: the SOCKS5 endpoint is `std::net::SocketAddr` everywhere the
+  wallet holds one — `MixnetStatus::socks5_addr`, `HostedTransport`,
+  `MixnetProxy::attach`, `LightClient::mixnet_socks5_addr`, and the probe
+  and sweep parameters. The address is parsed once where it enters: the
+  spawned child's announcement line, `attach_mixnet`'s string parameter,
+  and the typed host report; it renders back to a string only at the
+  netutils dial calls. A spawned child announcing a non-parsing address
+  now stays bootstrapping (refused by the readiness budget) instead of
+  reaching Ready and failing at the route. The serialized `MixnetStatus`
+  wire is unchanged: serde carries the address as the same string.
 - BREAKING: the mixnet route names the session slot's tunnel.
   `MixnetRoute::Mixnet` carries a `nym::SlotTunnel` instead of a bare
   address `String`. The tunnel refuses an address that does not parse as
-  a socket address, yields the owned dial string once through
-  `into_addr`, and lends it through `addr`. The zero-caller
+  a socket address, stores the parsed `std::net::SocketAddr`, yields it
+  once through `into_addr`, and lends it through `addr`; consumers render
+  the dial string at their own seams. The zero-caller
   `MixnetRoute::socks5_proxy` accessor is removed.
 - BREAKING: probing Correspondents while Mixnet Mode is deliberately
   switched off refuses with the new

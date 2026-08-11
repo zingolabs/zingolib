@@ -36,16 +36,16 @@ use crate::lightclient::transmit::{
 /// failed, never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
-    host: &str,
+    host: &crate::correspondent::Host,
     route: AttemptRoute,
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
-    exit: Option<String>,
+    exit: Option<crate::nym::ExitNodeId>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
-        host: host.to_string(),
+        host: host.clone(),
         route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
@@ -118,7 +118,7 @@ pub struct TransmitReport {
 fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady>,
-) -> Result<Option<String>, LightClientError> {
+) -> Result<Option<std::net::SocketAddr>, LightClientError> {
     use crate::nym::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
         (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
@@ -235,7 +235,7 @@ impl TransmitTarget for ClearnetTarget {
 /// escalation builds one of these per pick.
 #[cfg(feature = "nym")]
 struct SocksTarget {
-    socks5_addr: String,
+    socks5_addr: std::net::SocketAddr,
     indexer: http::Uri,
 }
 
@@ -248,7 +248,7 @@ impl TransmitTarget for SocksTarget {
         raw_tx: &[u8],
         height: u64,
     ) -> impl Future<Output = Result<String, zingo_netutils::Socks5TransmitError>> + Send {
-        let socks5_addr = self.socks5_addr.clone();
+        let socks5_addr = self.socks5_addr.to_string();
         let indexer = self.indexer.clone();
         let data = raw_tx.to_vec();
         async move {
@@ -264,7 +264,7 @@ impl TransmitTarget for SocksTarget {
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
-        let socks5_addr = self.socks5_addr.clone();
+        let socks5_addr = self.socks5_addr.to_string();
         let indexer = self.indexer.clone();
         let hash = txid.as_ref().to_vec();
         async move {
@@ -317,7 +317,7 @@ impl PullTransports {
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 pub(crate) struct PullRoute<'a> {
-    shared_socks5: &'a str,
+    shared_socks5: std::net::SocketAddr,
     transports: Option<&'a PullTransports>,
 }
 
@@ -341,10 +341,7 @@ async fn transmit_one_transaction(
             let Some(indexer) = indexer else {
                 return Err(TransmitError::NoClearnetIndexer);
             };
-            let host = indexer
-                .uri()
-                .host()
-                .map_or_else(|| indexer.uri().to_string(), str::to_string);
+            let host = crate::correspondent::Host::of_uri(indexer.uri());
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
@@ -376,7 +373,14 @@ async fn transmit_one_transaction(
                 None,
             );
             outcome
-                .map(|server_txid| (server_txid, TransmitRoute::Clearnet { indexer: host }))
+                .map(|server_txid| {
+                    (
+                        server_txid,
+                        TransmitRoute::Clearnet {
+                            indexer: host.to_string(),
+                        },
+                    )
+                })
                 .map_err(TransmitError::from)
         }
         #[cfg(feature = "nym")]
@@ -428,13 +432,11 @@ async fn mixnet_escalating_transmit(
         &history.health().lock().expect("health mutex"),
     )?;
     let run_pull = |indexer: http::Uri| {
-        let shared_addr = route.shared_socks5.to_string();
+        let shared_addr = route.shared_socks5;
         let pulls = route.transports;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = indexer
-            .host()
-            .map_or_else(|| indexer.to_string(), str::to_string);
+        let host = crate::correspondent::Host::of_uri(&indexer);
         async move {
             // Each pull binds its own Exclusive exit when this session pools
             // transports; an attached session shares the slot's tunnel.
@@ -488,7 +490,7 @@ async fn mixnet_escalating_transmit(
             // outcome, so its exit carries exactly this one Transmission;
             // dropping the spent holder recycles its lease even when the
             // pull is cancelled mid-await.
-            let bound_exit = spent.as_ref().map(|spent| spent.node().to_string());
+            let bound_exit = spent.as_ref().map(|spent| spent.node().clone());
             if let Some(spent) = spent {
                 spent.retire().await;
                 if let Some(context) = pulls {
@@ -511,8 +513,8 @@ async fn mixnet_escalating_transmit(
                 (
                     server_txid,
                     TransmitRoute::Mixnet {
-                        correspondent: host,
-                        via_socks5: target.socks5_addr,
+                        correspondent: host.to_string(),
+                        via_socks5: target.socks5_addr.to_string(),
                     },
                 )
             })
@@ -559,9 +561,7 @@ async fn mock_escalating_transmit(
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = correspondent
-            .host()
-            .map_or_else(|| correspondent.to_string(), str::to_string);
+        let host = crate::correspondent::Host::of_uri(&correspondent);
         async move {
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
@@ -589,7 +589,7 @@ async fn mock_escalating_transmit(
                 None,
                 None,
             );
-            outcome.map(|server_txid| (server_txid, host))
+            outcome.map(|server_txid| (server_txid, host.to_string()))
         }
     };
 
@@ -905,10 +905,10 @@ impl LightClient {
         // Without the `nym` feature there is no mixnet, so the route is
         // clearnet and demands the indexer.
         #[cfg(feature = "nym")]
-        let socks5_proxy: Option<String> =
+        let socks5_proxy: Option<std::net::SocketAddr> =
             resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(not(feature = "nym"))]
-        let socks5_proxy: Option<String> = None;
+        let socks5_proxy: Option<std::net::SocketAddr> = None;
         // A spawned session gives every pull its own Exclusive exit; an
         // attached session has no pools and shares the slot's tunnel.
         #[cfg(feature = "nym")]
@@ -922,7 +922,7 @@ impl LightClient {
             .filter(|context| context.pools.acquirer().is_some());
         #[cfg(not(feature = "nym"))]
         let pull_transports: Option<PullTransports> = None;
-        let pull_route = socks5_proxy.as_deref().map(|shared_socks5| PullRoute {
+        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute {
             shared_socks5,
             transports: pull_transports.as_ref(),
         });
@@ -1003,7 +1003,9 @@ impl LightClient {
                         server_txid,
                         TransmitRoute::Mixnet {
                             correspondent,
-                            via_socks5: socks5_proxy.clone().unwrap_or_default(),
+                            via_socks5: socks5_proxy
+                                .map(|addr| addr.to_string())
+                                .unwrap_or_default(),
                         },
                     )
                 })
@@ -1116,7 +1118,7 @@ mod transmit_error_seam {
         );
         record_send_attempt(
             &history,
-            "indexer.example",
+            &crate::correspondent::Host::of_host_str("indexer.example"),
             AttemptRoute::Clearnet,
             std::time::Instant::now(),
             &Err(failure),

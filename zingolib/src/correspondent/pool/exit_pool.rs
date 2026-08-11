@@ -24,13 +24,13 @@ pub(crate) enum ExitPoolError {
 
 /// One issued Exit Node Reservation; dropping it recycles the node.
 pub(crate) struct Reservation {
-    node: String,
+    node: crate::nym::ExitNodeId,
     ledger: Weak<Mutex<ExitPool>>,
 }
 
 impl Reservation {
     /// The reserved Exit Node identity.
-    pub(crate) fn node(&self) -> &str {
+    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
         &self.node
     }
 
@@ -38,7 +38,7 @@ impl Reservation {
     #[cfg(test)]
     pub(crate) fn dangling_for_test(node: &str) -> Self {
         Reservation {
-            node: node.to_string(),
+            node: crate::nym::ExitNodeId::from(node),
             ledger: Weak::new(),
         }
     }
@@ -65,10 +65,10 @@ impl std::fmt::Debug for Reservation {
 }
 
 /// The node identities of a clutch, for the process seam's `--exit` args.
-pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<String> {
+pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::nym::ExitNodeId> {
     clutch
         .iter()
-        .map(|reservation| reservation.node().to_string())
+        .map(|reservation| reservation.node().clone())
         .collect()
 }
 
@@ -76,13 +76,13 @@ pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<String> {
 /// at most one holder at a time.
 #[derive(Default)]
 pub(crate) struct ExitPool {
-    population: Vec<String>,
-    issued: HashSet<String>,
+    population: Vec<crate::nym::ExitNodeId>,
+    issued: HashSet<crate::nym::ExitNodeId>,
 }
 
 impl ExitPool {
     /// Records the discovered population, once per session.
-    pub(crate) fn seed(&mut self, discovered: Vec<String>) {
+    pub(crate) fn seed(&mut self, discovered: Vec<crate::nym::ExitNodeId>) {
         self.population = discovered;
     }
 
@@ -100,7 +100,7 @@ impl ExitPool {
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        let drawable: Vec<String> = guarded
+        let drawable: Vec<crate::nym::ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -136,9 +136,11 @@ mod tests {
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
-        pool.lock()
-            .unwrap()
-            .seed((0..count).map(|index| format!("exit-{index}")).collect());
+        pool.lock().unwrap().seed(
+            (0..count)
+                .map(|index| crate::nym::ExitNodeId::from(format!("exit-{index}").as_str()))
+                .collect(),
+        );
         pool
     }
 

@@ -53,14 +53,14 @@ struct Standing {
 /// The session's per-Correspondent Health, updated by real traffic only.
 #[derive(Debug, Default)]
 pub struct Health {
-    standings: HashMap<String, Standing>,
+    standings: HashMap<super::Host, Standing>,
 }
 
 impl Health {
     /// Charges one attempt's outcome against the host it contacted, counting
     /// a failure only when the evidence names this Correspondent.
-    pub(crate) fn note(&mut self, host: &str, failed: bool, phase: Option<FailurePhase>) {
-        let standing = self.standings.entry(host.to_string()).or_default();
+    pub(crate) fn note(&mut self, host: &super::Host, failed: bool, phase: Option<FailurePhase>) {
+        let standing = self.standings.entry(host.clone()).or_default();
         if !failed {
             standing.successes += 1;
         } else if phase == Some(FailurePhase::Correspondent) {
@@ -70,7 +70,7 @@ impl Health {
 
     /// Whether this session's evidence leaves the host worth contacting.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-    pub(crate) fn is_healthy(&self, host: &str) -> bool {
+    pub(crate) fn is_healthy(&self, host: &super::Host) -> bool {
         match self.standings.get(host) {
             None => true,
             Some(standing) => {
@@ -85,7 +85,10 @@ impl Health {
     pub(crate) fn filter_with_floor(&self, candidates: Vec<http::Uri>) -> Vec<http::Uri> {
         let healthy: Vec<http::Uri> = candidates
             .iter()
-            .filter(|uri| uri.host().is_none_or(|host| self.is_healthy(host)))
+            .filter(|uri| {
+                uri.host()
+                    .is_none_or(|host| self.is_healthy(&super::Host::of_host_str(host)))
+            })
             .cloned()
             .collect();
         if healthy.len() < MINIMUM_ELIGIBLE_CORRESPONDENTS {
@@ -107,19 +110,27 @@ mod tests {
             .collect()
     }
 
+    fn host(name: &str) -> super::super::Host {
+        super::super::Host::of_host_str(name)
+    }
+
     /// HYPOTHESIS: only a Correspondent-phase failure counts against a
     /// Correspondent; a tunnel failure is the exit's and never demotes it.
     #[test]
     fn a_tunnel_failure_never_charges_the_correspondent() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note("tunnelled.example", true, Some(FailurePhase::Tunnel));
-            health.note("unknown.example", true, None);
-            health.note("refusing.example", true, Some(FailurePhase::Correspondent));
+            health.note(&host("tunnelled.example"), true, Some(FailurePhase::Tunnel));
+            health.note(&host("unknown.example"), true, None);
+            health.note(
+                &host("refusing.example"),
+                true,
+                Some(FailurePhase::Correspondent),
+            );
         }
-        assert!(health.is_healthy("tunnelled.example"));
-        assert!(health.is_healthy("unknown.example"));
-        assert!(!health.is_healthy("refusing.example"));
+        assert!(health.is_healthy(&host("tunnelled.example")));
+        assert!(health.is_healthy(&host("unknown.example")));
+        assert!(!health.is_healthy(&host("refusing.example")));
     }
 
     /// HYPOTHESIS: one success redeems a Correspondent, so a transient
@@ -128,11 +139,15 @@ mod tests {
     fn a_success_redeems_a_failing_correspondent() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note("flaky.example", true, Some(FailurePhase::Correspondent));
+            health.note(
+                &host("flaky.example"),
+                true,
+                Some(FailurePhase::Correspondent),
+            );
         }
-        assert!(!health.is_healthy("flaky.example"));
-        health.note("flaky.example", false, None);
-        assert!(health.is_healthy("flaky.example"));
+        assert!(!health.is_healthy(&host("flaky.example")));
+        health.note(&host("flaky.example"), false, None);
+        assert!(health.is_healthy(&host("flaky.example")));
     }
 
     /// HYPOTHESIS: the filter removes the unhealthy while the floor holds,
@@ -142,7 +157,7 @@ mod tests {
         let mut health = Health::default();
         let roomy = uris(&["a", "b", "c", "d", "e", "f"]);
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note("a", true, Some(FailurePhase::Correspondent));
+            health.note(&host("a"), true, Some(FailurePhase::Correspondent));
         }
         let filtered = health.filter_with_floor(roomy.clone());
         assert_eq!(filtered.len(), roomy.len() - 1, "the unhealthy one goes");

@@ -1257,7 +1257,7 @@ fn render_history(
             AttemptRoute::Mixnet => "mixnet",
         };
         let stats = hosts
-            .entry(attempt.host.clone())
+            .entry(attempt.host.to_string())
             .or_default()
             .entry(route)
             .or_insert(RouteStats {
@@ -1366,14 +1366,18 @@ fn render_status_with_disclaimer(
 #[cfg(feature = "nym")]
 #[derive(Debug, PartialEq, Eq)]
 enum BootstrapOutcome {
-    Ready { exits: Vec<String> },
-    Failed { report: String },
+    Ready {
+        exits: Vec<zingolib::nym::ExitNodeId>,
+    },
+    Failed {
+        report: String,
+    },
 }
 
 /// Renders the bound Exit Nodes for the `network on` success report,
 /// shortening each identity for the terminal.
 #[cfg(feature = "nym")]
-pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
+pub(crate) fn render_exit_nodes(exits: &[zingolib::nym::ExitNodeId]) -> String {
     fn shorten(identity: &str) -> String {
         if identity.chars().count() > 15 {
             let head: String = identity.chars().take(12).collect();
@@ -1382,7 +1386,7 @@ pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
             identity.to_string()
         }
     }
-    let named: Vec<String> = exits.iter().map(|exit| shorten(exit)).collect();
+    let named: Vec<String> = exits.iter().map(|exit| shorten(exit.as_str())).collect();
     match named.len() {
         0 => String::new(),
         1 => format!(" Exit Node bound: {}.", named[0]),
@@ -1441,11 +1445,16 @@ async fn network_command(
     lightclient: &mut LightClient,
 ) -> Result<String, NetworkCommandError> {
     match sub {
-        NetworkSubCommand::Status => Ok(render_status_with_disclaimer(
-            lightclient.mixnet_mode(),
-            lightclient.mixnet_socks5_addr().as_deref(),
-            lightclient.mixnet_bootstrap_detail().as_deref(),
-        )),
+        NetworkSubCommand::Status => {
+            let socks5 = lightclient
+                .mixnet_socks5_addr()
+                .map(|addr| addr.to_string());
+            Ok(render_status_with_disclaimer(
+                lightclient.mixnet_mode(),
+                socks5.as_deref(),
+                lightclient.mixnet_bootstrap_detail().as_deref(),
+            ))
+        }
         NetworkSubCommand::On { path } => {
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
