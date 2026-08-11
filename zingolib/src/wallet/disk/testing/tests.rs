@@ -654,3 +654,69 @@ fn data_wallets_corpus_parses_or_salvages() {
         }
     }
 }
+
+mod version_forty {
+    use bip0039::Mnemonic;
+
+    use crate::config::ChainType;
+    use crate::wallet::{LightWallet, utils};
+
+    fn dev_v40_prefix() -> Vec<u8> {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        bytes.push(32);
+        bytes.extend_from_slice(&[0x55; 32]);
+        bytes
+    }
+
+    #[test]
+    fn dev_v40_truncated_file_errs_instead_of_aborting() {
+        let error = LightWallet::read(dev_v40_prefix().as_slice(), ChainType::Mainnet)
+            .expect_err("the prefix carries no body");
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn dev_v40_chain_tag_mismatch_is_reported() {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        bytes.push(1);
+        let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a testnet tag must refuse a mainnet load");
+        assert!(
+            error
+                .to_string()
+                .contains("wallet chain name testnet doesn't match expected mainnet"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn stable_v40_chain_string_reads_as_before() {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        utils::write_string(&mut bytes, &"test".to_string()).unwrap();
+        let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a testnet name must refuse a mainnet load");
+        assert!(
+            error
+                .to_string()
+                .contains("wallet chain name testnet doesn't match expected mainnet"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn dev_v40_recovery_info_reaches_the_seed() {
+        let mut bytes = dev_v40_prefix();
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.push(1);
+        let info = LightWallet::read_recovery_info(bytes.as_slice()).unwrap();
+        assert_eq!(info.birthday, 100);
+        assert_eq!(info.no_of_accounts, 1);
+        assert_eq!(
+            info.seed_phrase,
+            <Mnemonic>::from_entropy([0x55; 32].to_vec())
+                .unwrap()
+                .phrase()
+        );
+    }
+}

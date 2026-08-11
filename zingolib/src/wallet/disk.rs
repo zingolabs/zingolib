@@ -46,7 +46,70 @@ use pepper_sync::{
 /// the optional Orchard→Ironwood migration section.
 type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
 
+enum V40ChainField {
+    Tag(u8),
+    Name(String),
+}
+
+fn read_v40_chain_field<R: Read>(reader: &mut R) -> io::Result<V40ChainField> {
+    let first_byte = reader.read_u8()?;
+    if first_byte <= 2 {
+        Ok(V40ChainField::Tag(first_byte))
+    } else {
+        let mut length_bytes = [0u8; 8];
+        length_bytes[0] = first_byte;
+        reader.read_exact(&mut length_bytes[1..])?;
+        Ok(V40ChainField::Name(utils::read_string_body(
+            reader,
+            u64::from_le_bytes(length_bytes),
+        )?))
+    }
+}
+
+fn chain_type_from_tag(tag: u8) -> io::Result<ChainType> {
+    match tag {
+        0 => Ok(ChainType::Mainnet),
+        1 => Ok(ChainType::Testnet),
+        2 => Ok(ChainType::Regtest(ActivationHeights::default())),
+        other => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid chain type index stored in wallet file: {}", other,),
+        )),
+    }
+}
+
+fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
+    match stored {
+        "main" => Ok("mainnet"),
+        "test" => Ok("testnet"),
+        "regtest" => Ok("regtest"),
+        other => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid chain type stored in wallet file: {}", other,),
+        )),
+    }
+}
+
+fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
+    if saved_network == chain_type.to_string() {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
+        ))
+    }
+}
+
 impl LightWallet {
+    /// Version 40 was minted once per branch (Format Census, issue #2590,
+    /// rows 69 and 70). dev's revision (2026-03-25, `eda1dca85` via
+    /// `3f95e4520`) wrote the chain type as a u8 tag and outpoint indices
+    /// as u16; stable's revision (`5d8fda797`) kept the chain-name string
+    /// and widened outpoint indices to u32. The reader separates the two
+    /// grammars on the byte after the version word: a chain tag is 0
+    /// through 2, and a chain-name string length's low byte is 4 or 7.
+    ///
     /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
     ///
@@ -389,47 +452,26 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
-        if version >= 41 {
-            let saved_network = match reader.read_u8()? {
-                0 => ChainType::Mainnet,
-                1 => ChainType::Testnet,
-                2 => ChainType::Regtest(ActivationHeights::default()),
-                other => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("invalid chain type index stored in wallet file: {}", other,),
-                    ));
+        let dev_v40_grammar = if version >= 41 {
+            let saved_network = chain_type_from_tag(reader.read_u8()?)?;
+            check_saved_chain(&saved_network.to_string(), &chain_type)?;
+            false
+        } else if version == 40 {
+            match read_v40_chain_field(&mut reader)? {
+                V40ChainField::Tag(tag) => {
+                    check_saved_chain(&chain_type_from_tag(tag)?.to_string(), &chain_type)?;
+                    true
                 }
-            };
-            if saved_network.to_string() != chain_type.to_string() {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
-                    ),
-                ));
+                V40ChainField::Name(stored) => {
+                    check_saved_chain(chain_name_from_stored(&stored)?, &chain_type)?;
+                    false
+                }
             }
         } else {
-            let saved_network = match utils::read_string(&mut reader)?.as_str() {
-                "main" => "mainnet",
-                "test" => "testnet",
-                "regtest" => "regtest",
-                other => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("invalid chain type stored in wallet file: {}", other,),
-                    ));
-                }
-            };
-            if saved_network != chain_type.to_string() {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
-                    ),
-                ));
-            }
-        }
+            let stored = utils::read_string(&mut reader)?;
+            check_saved_chain(chain_name_from_stored(&stored)?, &chain_type)?;
+            false
+        };
 
         let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
         let mnemonic = if seed_bytes.is_empty() {
@@ -573,7 +615,7 @@ impl LightWallet {
         let nullifier_map = NullifierMap::read(&mut reader)?;
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
-            let output_index = if version >= 40 {
+            let output_index = if version >= 40 && !dev_v40_grammar {
                 r.read_u32::<LittleEndian>()?
             } else {
                 u32::from(r.read_u16::<LittleEndian>()?)
@@ -747,6 +789,8 @@ impl LightWallet {
         }
         if version >= 41 {
             let _chain_type_index = reader.read_u8()?;
+        } else if version == 40 {
+            let _chain_field = read_v40_chain_field(&mut reader)?;
         } else {
             let _chain_name = utils::read_string(&mut reader)?;
         }
