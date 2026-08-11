@@ -1,5 +1,12 @@
 [workspace]
-members = ["lib", "android", "ios", "zingomobile_utils", "workbench", "uniffi-bindgen"]
+members = [
+    "lib",
+    "android",
+    "ios",
+    "zingomobile_utils",
+    "workbench",
+    "uniffi-bindgen",
+]
 
 # The mixnet proxy shim resolves in its own lockfile: nym-sdk's transitive
 # graph needs `crypto-common ^0.2`, irreconcilable with this workspace's pins.
@@ -34,7 +41,9 @@ zcash_keys = { version = "0.15.0", features = [
 zcash_protocol = "0.10.0"
 
 zingo_common_components = "0.4.0"
-zingo-netutils = { version = "5.0.1", features = ["globally-public-transparent"] }
+zingo-netutils = { version = "5.0.1", features = [
+    "globally-public-transparent",
+] }
 zip32 = "0.2.0"
 uniffi = "0.29"
 tokio = "1"

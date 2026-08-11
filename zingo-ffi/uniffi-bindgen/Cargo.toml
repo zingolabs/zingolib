@@ -6,8 +6,8 @@ description = "Project-local uniffi-bindgen pinned to the Nym proxy shim's uniff
 publish = false
 
 [dependencies]
-# Pinned to the exact `uniffi` version `zingo-nym-proxy-ffi` (in zingolib's
-# zingo-netutils workspace) compiles against — NOT the workspace's 0.29 that
+# Pinned to the exact `uniffi` version `zingo-nym-proxy-ffi` (the shim at
+# rust/nym-proxy-ffi) compiles against — NOT the workspace's 0.29 that
 # the wallet library uses — so bindings generated here can never drift from
 # the shim's scaffolding.
 uniffi = { version = "0.28", features = ["cli"] }
