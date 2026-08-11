@@ -9167,6 +9167,15 @@ dependencies = [
  "tokio",
  "uniffi",
  "zingo-netutils",
+ "zingo-nym-tls-init",
+]
+
+[[package]]
+name = "zingo-nym-tls-init"
+version = "0.1.0"
+dependencies = [
+ "jni",
+ "rustls-platform-verifier",
 ]
 
 [[package]]

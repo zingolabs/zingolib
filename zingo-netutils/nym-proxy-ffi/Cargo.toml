@@ -30,7 +30,14 @@ zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev"
     "testutils",
 ] }
 
+# Linked for its exported JNI symbol: the Kotlin side's `NymTlsInit` calls it
+# to hand the app Context to rustls-platform-verifier before any mixnet TLS
+# (zingo-mobile ADR 0004).
+[target.'cfg(target_os = "android")'.dependencies]
+zingo-nym-tls-init = { path = "tls-init" }
+
 # This crate resolves in its own lockfile, never the parent workspace's:
 # nym-sdk's transitive graph needs `crypto-common ^0.2`, irreconcilable
 # with the main workspace's pins (see the root manifest's exclude).
 [workspace]
+members = ["tls-init"]

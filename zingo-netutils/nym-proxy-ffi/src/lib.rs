@@ -25,6 +25,9 @@ use zingo_netutils::responsiveness::PrioritiseSpeed;
 use zingo_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 use zingo_netutils::NymProxy;
 
+#[cfg(target_os = "android")]
+use zingo_nym_tls_init as _;
+
 /// Consecutive check failures required before the proxy is declared dead.
 const LISTENER_MONITOR_STRIKES: u32 = 2;
 

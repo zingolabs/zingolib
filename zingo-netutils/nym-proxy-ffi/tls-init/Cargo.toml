@@ -1,0 +1,16 @@
+[package]
+name = "zingo-nym-tls-init"
+version = "0.1.0"
+edition = "2021"
+description = "Android JNI initializer for the Nym proxy shim's rustls-platform-verifier (zingo-mobile ADR 0004)."
+
+# This crate cannot carry the shim's `#![forbid(unsafe_code)]`: exporting a
+# JNI symbol requires `#[no_mangle]`, which the `unsafe_code` lint rejects.
+# It is the one hand-written JNI seam, kept to a single function so the shim
+# crate itself stays forbid-clean.
+
+# `jni` must stay on the same minor version rustls-platform-verifier uses,
+# so the `Env` types unify in one graph.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.22", default-features = false }
+rustls-platform-verifier = "0.7"
