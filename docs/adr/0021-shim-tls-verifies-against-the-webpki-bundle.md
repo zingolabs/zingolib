@@ -1,6 +1,7 @@
 # The mixnet shim's TLS verifies against the compiled-in webpki bundle
 
-Status: accepted (zingolib#2531). Scoped to the mobile mixnet shim's own
+Status: accepted (zingolib#2531); amended 2026-08-10 after zingolib#2666.
+Scoped to the mobile mixnet shim's own
 TLS — the `zingo-netutils` standalone workspace, where the nym SDK's HTTP
 clients reach the Nym directory, API, and gateways. Wallet↔indexer TLS and
 every other TLS surface in the parent workspace are unaffected.
@@ -85,3 +86,22 @@ per-app ceremony; if the shim ever needs enterprise or user-installed CA
 trust; or if the Nym infrastructure's certificate chains stop resolving
 against the Mozilla bundle. The nightly upstream watch in the update
 policy is also the tripwire for the first of these.
+
+## Amendment (2026-08-10): the decision outlives the shim's departure
+
+zingolib#2666 moved the mobile UniFFI proxy shim to zingo-mobile's
+`nym-host` workspace, so this workspace no longer builds a mobile
+artifact. The scope named above therefore reads today as the
+`zingo-netutils` standalone workspace itself: the nym SDK's HTTP clients
+behind the desktop `nym-proxy` binary and the crate's library consumers.
+
+The decision stands on its surviving rationale, ratified 2026-08-10. The
+compiled-in bundle keeps certificate verification byte-identical on every
+host that builds this workspace, keeps the workspace free of hand-written
+unsafe, and stays testable in plain CI. The Android initialization story
+in "Why" is the decision's origin, not its continuing justification here.
+The relocated shim consumes this crate as a git dependency from its own
+standalone workspace, and a `[patch.crates-io]` substitution never
+crosses a workspace root, so the verifier the shim's TLS resolves is
+zingo-mobile's to declare and to record. The update policy and the
+reconsideration tripwires above are unchanged.
