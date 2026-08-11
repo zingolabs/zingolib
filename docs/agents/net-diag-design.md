@@ -230,13 +230,6 @@ The wallet's endpoint round-trip validation reports its failure as a
 `NetOpFailure` with the appropriate early stage, so a `died` verdict
 carries why. The mode enum itself does not change.
 
-### The shim (optional follow-up)
-
-`zingo-nym-proxy-ffi` may adopt the crate for `ProxyFfiError::Connect`
-detail. Not required for this PR. The shim workspace path-dep must not
-pull any new transitive dependency, which the zero-dependency rule
-guarantees.
-
 ## Clearnet price fetch, test-gated
 
 The production price fetch has no clearnet tier and must keep none (ADR
