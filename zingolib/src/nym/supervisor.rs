@@ -106,7 +106,7 @@ struct ProxyState {
     mode: MixnetMode,
     socks5_addr: Option<String>,
     /// The Exit Node identities the transport reports as bound.
-    exits: Vec<String>,
+    exits: Vec<crate::nym::ExitNodeId>,
     /// The transport's latest bootstrap progress report, live only while
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
@@ -216,12 +216,12 @@ impl MixnetProxy {
         binary_path: &Path,
         class: zingo_netutils::responsiveness::ResponsivenessClass,
         publisher: StatusPublisher,
-        clutch: &[String],
+        clutch: &[crate::nym::ExitNodeId],
     ) -> Result<Self, MixnetProxyError> {
         let mut launch_args = vec!["--responsiveness".to_string(), class.wire().to_string()];
         for exit in clutch {
             launch_args.push("--exit".to_string());
-            launch_args.push(exit.clone());
+            launch_args.push(exit.as_str().to_string());
         }
         let mut command = Command::new(binary_path);
         command.args(&launch_args);
@@ -280,7 +280,7 @@ impl MixnetProxy {
     /// alone.
     pub(crate) fn attach(
         socks5_addr: &str,
-        exits: &[String],
+        exits: &[crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
         if socks5_addr.parse::<SocketAddr>().is_err() {
@@ -334,7 +334,7 @@ impl MixnetProxy {
 
     /// The bound Exit Node identities, once the mode is
     /// [`MixnetMode::Ready`].
-    pub fn exits(&self) -> Vec<String> {
+    pub fn exits(&self) -> Vec<crate::nym::ExitNodeId> {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == MixnetMode::Ready {
             guarded.exits.clone()
@@ -513,7 +513,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
             // Recorded silently: the exit becomes visible evidence in the
             // Ready snapshot the address announcement publishes.
             let mut guarded = state.lock().expect("proxy state mutex");
-            guarded.exits.push(exit.to_string());
+            guarded.exits.push(crate::nym::ExitNodeId::from(exit));
             continue;
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
@@ -638,7 +638,7 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
 /// reports, the parent's one window onto the directory.
 pub(crate) async fn discover_exit_nodes(
     binary_path: &Path,
-) -> Result<Vec<String>, acquire::TransportError> {
+) -> Result<Vec<crate::nym::ExitNodeId>, acquire::TransportError> {
     let output = Command::new(binary_path)
         .arg("--discover")
         .output()
@@ -652,7 +652,7 @@ pub(crate) async fn discover_exit_nodes(
     }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter_map(|line| parse_exit_line(line).map(str::to_string))
+        .filter_map(|line| parse_exit_line(line).map(crate::nym::ExitNodeId::from))
         .collect())
 }
 
@@ -660,8 +660,8 @@ pub(crate) async fn discover_exit_nodes(
 /// is ready, yielding the transport with its bound Exit Node.
 pub(crate) async fn acquire_ready_transport(
     acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    clutch: &[String],
-) -> Result<(MixnetProxy, String), acquire::TransportError> {
+    clutch: &[crate::nym::ExitNodeId],
+) -> Result<(MixnetProxy, crate::nym::ExitNodeId), acquire::TransportError> {
     use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
     let publisher = crate::nym::status_publisher();
     let mut receiver = publisher.subscribe();
@@ -840,8 +840,11 @@ mod tests {
     async fn ready_carries_the_announced_exit() {
         let s = state_over_open_stream(b"NYM_EXIT=exit-alpha\nSOCKS5_ADDR=127.0.0.1:5\n").await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.exits, vec!["exit-alpha".to_string()]);
-        assert_eq!(s.snapshot().exits, vec!["exit-alpha".to_string()]);
+        assert_eq!(s.exits, vec![crate::nym::ExitNodeId::from("exit-alpha")]);
+        assert_eq!(
+            s.snapshot().exits,
+            vec![crate::nym::ExitNodeId::from("exit-alpha")]
+        );
     }
 
     /// HYPOTHESIS: a status line updates the live bootstrap detail while the
@@ -1108,7 +1111,7 @@ mod tests {
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
-            exits: vec!["host-bound-exit".to_string()],
+            exits: vec!["host-bound-exit".into()],
             bootstrap_detail: None,
             death: None,
         }));
@@ -1132,7 +1135,7 @@ mod tests {
         }
         assert_eq!(
             receiver.borrow().exits,
-            vec!["host-bound-exit".to_string()],
+            vec![crate::nym::ExitNodeId::from("host-bound-exit")],
             "an attached Ready must carry the host-bound Exit Node"
         );
         driver.abort();

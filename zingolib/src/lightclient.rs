@@ -902,7 +902,7 @@ impl LightClient {
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
-        exits: &[String],
+        exits: &[crate::nym::ExitNodeId],
     ) -> Result<(), crate::nym::MixnetProxyError> {
         self.vacate_mixnet_slot().await;
         match crate::nym::MixnetProxy::attach(

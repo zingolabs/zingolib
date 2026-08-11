@@ -1366,14 +1366,18 @@ fn render_status_with_disclaimer(
 #[cfg(feature = "nym")]
 #[derive(Debug, PartialEq, Eq)]
 enum BootstrapOutcome {
-    Ready { exits: Vec<String> },
-    Failed { report: String },
+    Ready {
+        exits: Vec<zingolib::nym::ExitNodeId>,
+    },
+    Failed {
+        report: String,
+    },
 }
 
 /// Renders the bound Exit Nodes for the `network on` success report,
 /// shortening each identity for the terminal.
 #[cfg(feature = "nym")]
-pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
+pub(crate) fn render_exit_nodes(exits: &[zingolib::nym::ExitNodeId]) -> String {
     fn shorten(identity: &str) -> String {
         if identity.chars().count() > 15 {
             let head: String = identity.chars().take(12).collect();
@@ -1382,7 +1386,7 @@ pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
             identity.to_string()
         }
     }
-    let named: Vec<String> = exits.iter().map(|exit| shorten(exit)).collect();
+    let named: Vec<String> = exits.iter().map(|exit| shorten(exit.as_str())).collect();
     match named.len() {
         0 => String::new(),
         1 => format!(" Exit Node bound: {}.", named[0]),

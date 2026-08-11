@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+### Changed
+- BREAKING: mixnet Exit Node identities travel as the typed
+  `nym::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
+  `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
+  `HostedTransport`, and the `ProxyHost` seam — and the operator key
+  behind Correspondent exclusion is the typed `correspondent::Operator`
+  (String-promotion census of the ADR 0041 arc). The serialized
+  `MixnetStatus` wire is unchanged: the newtype is serde-transparent.
+
 ### Added
 - A spawned `nym-proxy` that dies before speaking its stdout protocol now
   latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)

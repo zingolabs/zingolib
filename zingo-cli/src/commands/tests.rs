@@ -875,12 +875,12 @@ mod bootstrap_wait {
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
         let mut ready = status(MixnetMode::Ready);
-        ready.exits = vec!["exit-alpha".to_string()];
+        ready.exits = vec!["exit-alpha".into()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
             waiter.await.expect("the waiter must not panic"),
             BootstrapOutcome::Ready {
-                exits: vec!["exit-alpha".to_string()]
+                exits: vec!["exit-alpha".into()]
             }
         );
     }
@@ -891,13 +891,13 @@ mod bootstrap_wait {
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
         assert_eq!(
-            super::super::render_exit_nodes(&["short-exit".to_string()]),
+            super::super::render_exit_nodes(&["short-exit".into()]),
             " Exit Node bound: short-exit."
         );
         assert_eq!(
             super::super::render_exit_nodes(&[
-                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".to_string(),
-                "short-exit".to_string(),
+                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".into(),
+                "short-exit".into(),
             ]),
             " Exit Nodes bound: AlphaBetaGam…, short-exit."
         );
@@ -1877,7 +1877,7 @@ mod attached_exit_reporting {
         .await;
         let receiver = client.subscribe_mixnet_status();
         client
-            .attach_mixnet(&addr, &["host-bound-exit".to_string()])
+            .attach_mixnet(&addr, &["host-bound-exit".into()])
             .await
             .expect("a valid loopback address attaches");
 

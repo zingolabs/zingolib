@@ -37,7 +37,7 @@ pub struct MixnetStatus {
     /// The Exit Node identities the ready transport bound, present only
     /// while ready.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub exits: Vec<String>,
+    pub exits: Vec<crate::nym::ExitNodeId>,
     /// The transport's latest bootstrap progress line, present only while
     /// bootstrapping, so a subscriber can narrate the connect race.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,7 +56,7 @@ struct RawMixnetStatus {
     #[serde(default)]
     socks5_addr: Option<String>,
     #[serde(default)]
-    exits: Vec<String>,
+    exits: Vec<crate::nym::ExitNodeId>,
     #[serde(default)]
     bootstrap_detail: Option<String>,
     #[serde(default)]
@@ -152,7 +152,7 @@ pub enum ProvisionStrategy<'a> {
         /// The endpoint's socket address.
         socks5_addr: &'a str,
         /// The Exit Node identities the platform host reports as bound.
-        exits: &'a [String],
+        exits: &'a [crate::nym::ExitNodeId],
     },
 }
 

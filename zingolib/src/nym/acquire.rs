@@ -90,13 +90,15 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>>;
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    >;
 
     /// Acquires one transport that races `clutch` under `class`.
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
 }
@@ -107,18 +109,22 @@ pub struct HostedTransport {
     /// The local SOCKS5 address the host's proxy listens on.
     pub socks5_addr: String,
     /// The Exit Node that proxy bound.
-    pub exit_node: String,
+    pub exit_node: crate::nym::ExitNodeId,
 }
 
 /// A platform host that owns the mixnet proxy, for a platform whose sandbox
 /// forbids the wallet from spawning one.
 pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
-    fn discover_exit_nodes(&self) -> Result<Vec<String>, String>;
+    fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, String>;
 
     /// Starts one proxy racing `clutch` under the responsiveness class named
     /// by `class`, returning where it listens and which exit it bound.
-    fn start_transport(&self, class: &str, clutch: &[String]) -> Result<HostedTransport, String>;
+    fn start_transport(
+        &self,
+        class: &str,
+        clutch: &[crate::nym::ExitNodeId],
+    ) -> Result<HostedTransport, String>;
 }
 
 /// The mobile acquirer: a platform host that owns the proxy library.
@@ -136,7 +142,9 @@ impl HostedProxy {
 impl TransportAcquirable for HostedProxy {
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    > {
         let host = std::sync::Arc::clone(&self.host);
         Box::pin(async move {
             // The host's directory query blocks, so it runs off the runtime's
@@ -151,7 +159,7 @@ impl TransportAcquirable for HostedProxy {
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         let host = std::sync::Arc::clone(&self.host);
@@ -183,14 +191,16 @@ impl SpawnedBinary {
 impl TransportAcquirable for SpawnedBinary {
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    > {
         Box::pin(crate::nym::supervisor::discover_exit_nodes(&self.path))
     }
 
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         Box::pin(async move {
@@ -206,19 +216,19 @@ mod tests {
     /// A host that answers both calls from a script, standing in for the
     /// platform library a phone loads.
     struct ScriptedHost {
-        directory: Result<Vec<String>, String>,
+        directory: Result<Vec<crate::nym::ExitNodeId>, String>,
         transport: Result<HostedTransport, String>,
     }
 
     impl ProxyHost for ScriptedHost {
-        fn discover_exit_nodes(&self) -> Result<Vec<String>, String> {
+        fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, String> {
             self.directory.clone()
         }
 
         fn start_transport(
             &self,
             _class: &str,
-            _clutch: &[String],
+            _clutch: &[crate::nym::ExitNodeId],
         ) -> Result<HostedTransport, String> {
             self.transport.clone()
         }
@@ -233,12 +243,15 @@ mod tests {
     #[tokio::test]
     async fn a_host_directory_answers_discovery() {
         let acquirer = hosted(ScriptedHost {
-            directory: Ok(vec!["exit-a".to_string(), "exit-b".to_string()]),
+            directory: Ok(vec!["exit-a".into(), "exit-b".into()]),
             transport: Err("unused".to_string()),
         });
         assert_eq!(
             acquirer.discover().await.expect("the host answers"),
-            vec!["exit-a".to_string(), "exit-b".to_string()]
+            vec![
+                crate::nym::ExitNodeId::from("exit-a"),
+                crate::nym::ExitNodeId::from("exit-b")
+            ]
         );
     }
 
@@ -257,7 +270,7 @@ mod tests {
         let Err(refusal) = acquirer
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".to_string()],
+                &["exit-a".into()],
                 crate::nym::status_publisher(),
             )
             .await
@@ -275,13 +288,13 @@ mod tests {
             directory: Ok(Vec::new()),
             transport: Ok(HostedTransport {
                 socks5_addr: "not-a-socket-address".to_string(),
-                exit_node: "exit-a".to_string(),
+                exit_node: "exit-a".into(),
             }),
         });
         let Err(refusal) = acquirer
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".to_string()],
+                &["exit-a".into()],
                 crate::nym::status_publisher(),
             )
             .await

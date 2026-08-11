@@ -66,7 +66,7 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
 
     /// The bound Exit Node's identity.
     #[cfg(test)]
-    pub(crate) fn node(&self) -> &str {
+    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
         self.lease.node()
     }
 
@@ -107,7 +107,7 @@ pub(crate) struct SpentExit<T> {
 
 impl<T: PoolTransport> SpentExit<T> {
     /// The spent exit's identity, for the attempt record.
-    pub(crate) fn node(&self) -> &str {
+    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
         self.lease.node()
     }
 
@@ -290,7 +290,7 @@ impl Pools {
         // Bind-time recycle: keeping only the bound lease drops the rest.
         let bound = clutch
             .iter()
-            .position(|reservation| reservation.node() == exit)
+            .position(|reservation| reservation.node() == &exit)
             .expect("the bound exit is one of the clutch's nodes");
         let lease = clutch.swap_remove(bound);
         drop(clutch);
@@ -459,7 +459,7 @@ mod tests {
         let take = pool.take();
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
-        assert_eq!(taken.node(), "exit-live");
+        assert_eq!(taken.node(), &crate::nym::ExitNodeId::from("exit-live"));
         assert!(pool.take().member.is_none(), "both members left the pool");
     }
 
@@ -536,7 +536,10 @@ mod tests {
         let member = member("exit-exclusive", true);
         let (addr, spent) = member.dial();
         assert!(addr.is_some(), "a live exclusive member dials once");
-        assert_eq!(spent.node(), "exit-exclusive");
+        assert_eq!(
+            spent.node(),
+            &crate::nym::ExitNodeId::from("exit-exclusive")
+        );
         spent.retire().await;
     }
 }

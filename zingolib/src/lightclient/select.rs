@@ -110,7 +110,7 @@ impl LightClient {
         // of the one bound exit, and the unbound reservations return now.
         let bound = clutch
             .iter()
-            .position(|reservation| exits.iter().any(|exit| exit == reservation.node()))
+            .position(|reservation| exits.contains(reservation.node()))
             .expect("the bound exit is one of the clutch's nodes");
         let lease = clutch.swap_remove(bound);
         drop(clutch);
@@ -158,7 +158,7 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
 /// bootstrap budget elapses.
 async fn await_sweep_ready(
     receiver: &mut tokio::sync::watch::Receiver<crate::nym::MixnetStatus>,
-) -> Result<(String, Vec<String>), ServerSelectionError> {
+) -> Result<(String, Vec<crate::nym::ExitNodeId>), ServerSelectionError> {
     let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
     let outcome = tokio::time::timeout(budget, async {
         loop {

@@ -13,6 +13,38 @@
 
 pub mod acquire;
 
+/// The identity of a mixnet Exit Node, as the directory and the proxy announce it.
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct ExitNodeId(String);
+
+impl ExitNodeId {
+    /// The identity as the wire string the proxy seam speaks.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for ExitNodeId {
+    fn from(identity: String) -> Self {
+        ExitNodeId(identity)
+    }
+}
+
+impl From<&str> for ExitNodeId {
+    fn from(identity: &str) -> Self {
+        ExitNodeId(identity.to_string())
+    }
+}
+
+impl std::fmt::Display for ExitNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// The party a failure stage charges, unattributed when the stage cannot
 /// say which side failed.
 pub(crate) fn charge_phase(

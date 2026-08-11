@@ -196,7 +196,7 @@ impl MixnetSlot {
     }
 
     /// The bound Exit Node identities, when an attached transport is ready.
-    pub(crate) fn exits(&self) -> Vec<String> {
+    pub(crate) fn exits(&self) -> Vec<crate::nym::ExitNodeId> {
         match self {
             MixnetSlot::Attached(proxy) => proxy.exits(),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => Vec::new(),
