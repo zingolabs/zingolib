@@ -44,7 +44,7 @@ pub struct Socks5Endpoint {
     pub port: u16,
 }
 
-/// Why starting or driving the mixnet proxy failed. Crosses the FFI as a
+/// Why starting or driving the mixnet proxy failed, crossing the FFI as a
 /// UniFFI error the host language can match on.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum ProxyFfiError {
@@ -69,8 +69,8 @@ pub enum ProxyFfiError {
     },
 }
 
-/// Why a running proxy was lost. A typed cause the host can match on for
-/// policy (retry, narrate, escalate); each variant carries the underlying
+/// Why a running proxy was lost, as a typed cause the host can match on for
+/// policy (retry, narrate, escalate), each variant carrying the underlying
 /// diagnostic for logs.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum ProxyDeathReason {
@@ -81,19 +81,19 @@ pub enum ProxyDeathReason {
     },
 }
 
-/// The host implements this to learn that the proxy died after it was running,
-/// so the app can redraw a fresh path and re-attach (the proxy-owner-remediates
-/// contract). The shim invokes it at most once per proxy.
+/// The host implements this to learn — at most once per proxy — that the
+/// proxy died after it was running, so the app can redraw a fresh path and
+/// re-attach under the proxy-owner-remediates contract.
 #[uniffi::export(callback_interface)]
 pub trait ProxyDeathObserver: Send + Sync {
-    /// Called once when the running proxy is lost. The endpoint previously
-    /// reported is dead after this.
+    /// Called at most once when the running proxy is lost, after which the
+    /// previously reported endpoint is dead.
     fn on_death(&self, reason: ProxyDeathReason);
 }
 
-/// A running mixnet proxy the mobile host owns. Holds the tokio runtime that
-/// keeps the [`NymProxy`] client and its SOCKS5 listener alive; dropping the
-/// handle (or calling [`Self::stop`]) tears both down.
+/// A running mixnet proxy the mobile host owns, holding the tokio runtime
+/// that keeps the [`NymProxy`] client and its SOCKS5 listener alive until
+/// [`Self::stop`] or a drop of the handle tears both down.
 #[derive(uniffi::Object)]
 pub struct MixnetProxyHandle {
     // The runtime must outlive the proxy: NymProxy's client runs background
@@ -193,8 +193,8 @@ async fn monitor_listener(
 }
 
 /// Split a `NymProxy` listener address (`"127.0.0.1:43210"`) into the typed
-/// endpoint the FFI surface offers. Pure, so the derivation is unit-testable
-/// against round trips through [`SocketAddr`].
+/// endpoint the FFI surface offers, kept pure so the derivation is
+/// unit-testable against round trips through [`SocketAddr`].
 fn endpoint_from_listener_addr(addr: &str) -> Result<Socks5Endpoint, ProxyFfiError> {
     let parsed: SocketAddr = addr.parse().map_err(|e| ProxyFfiError::Address {
         reason: format!("{addr:?}: {e}"),
@@ -207,11 +207,10 @@ fn endpoint_from_listener_addr(addr: &str) -> Result<Socks5Endpoint, ProxyFfiErr
 
 #[uniffi::export]
 impl MixnetProxyHandle {
-    /// Bring up a mixnet proxy and return a handle once its SOCKS5 listener is
-    /// up. The returned handle's [`Self::socks5_endpoint`] is what the app
-    /// hands to the wallet's `attach_mixnet`, and when `observer` is given a
-    /// listener monitor reports through it, at most once, if the proxy is
-    /// lost.
+    /// Bring up a mixnet proxy and return, once its SOCKS5 listener is up, a
+    /// handle whose [`Self::socks5_endpoint`] the app hands to the wallet's
+    /// `attach_mixnet`, with a listener monitor that reports through
+    /// `observer`, at most once, if the proxy is lost.
     #[uniffi::constructor]
     pub fn start(
         observer: Option<Box<dyn ProxyDeathObserver>>,
@@ -261,10 +260,9 @@ impl MixnetProxyHandle {
             .map(|proxy| proxy.exit_node().to_string())
     }
 
-    /// Disconnect the mixnet client and stop the local SOCKS5 proxy. Idempotent:
-    /// a second call after the proxy is already stopped is a no-op. Deliberate
-    /// stop is not death: the liveness monitor is cancelled before the listener
-    /// goes down, so the observer never fires for a deliberate stop.
+    /// Disconnect the mixnet client and stop the local SOCKS5 proxy,
+    /// idempotently, cancelling the liveness monitor before the listener goes
+    /// down so a deliberate stop never fires the death observer.
     pub fn stop(&self) {
         if let Some(monitor) = &self.monitor {
             monitor.abort();

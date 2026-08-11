@@ -623,15 +623,12 @@ fn build_client_config(
     builder.build().map_err(ZingolibError::init)
 }
 
-/// Set an optional dedicated migration-transmission endpoint, applied at the
-/// next client construction. The library owns the curated Correspondent pool
-/// and always excludes the synchronization operator, so migration-over-mixnet
-/// works with no input here.
-///
-/// Accepts `{ transmissionUri: "<uri>" }` to name one dedicated endpoint
-/// distinct from the sync operator, or `null` / `{}` / the legacy
-/// `{ candidates, allowSyncEndpoint }` shape to clear it and use the curated
-/// pool. The legacy pool no longer feeds routing: the library embeds the pool.
+/// Set an optional dedicated migration-transmission endpoint for the next
+/// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
+/// distinct from the sync operator, while `null`, `{}`, or the legacy
+/// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
+/// embedded curated Correspondent pool, which always excludes the
+/// synchronization operator, routes instead.
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
     let parsed = json::parse(&candidates_json)
         .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
@@ -1687,9 +1684,9 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
 }
 
 /// One bounded redial of the URI left pending by `init_from_b64`'s
-/// Indexerless fallback. Success attaches the Indexer and clears the pending
-/// URI; failure leaves it for the next sync tick. A no-op when no URI is
-/// pending.
+/// Indexerless fallback, attaching the Indexer and clearing the pending URI
+/// on success, leaving it for the next sync tick on failure, and doing
+/// nothing when no URI is pending.
 fn attach_pending_indexer(lightclient: &mut LightClient) {
     let pending_uri = PENDING_INDEXER_URI
         .read()

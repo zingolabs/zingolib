@@ -23,8 +23,8 @@ use uniffi::{Lift, Lower};
 use zingo_nym_proxy_ffi::{ProxyDeathReason, ProxyFfiError, Socks5Endpoint, UniFfiTag};
 
 /// The canonical endpoint values, shared verbatim with the Kotlin and Swift
-/// suites. Change nothing here without changing all three suites and minting
-/// new pins as a deliberate contract revision.
+/// suites, changed only together with all three suites while minting new
+/// pins as a deliberate contract revision.
 fn canonical_endpoints() -> Vec<(&'static str, Socks5Endpoint)> {
     let at = |port| Socks5Endpoint {
         host: "127.0.0.1".to_string(),
@@ -143,9 +143,9 @@ fn every_error_variant_wire_encoding_matches_its_pin() {
     }
 }
 
-/// Creates any pin that does not exist yet; never overwrites. Re-pinning an
-/// existing golden is a deliberate contract revision: delete the file in the
-/// same change that justifies the new encoding, then run this.
+/// Creates any pin that does not exist yet and never overwrites, because
+/// re-pinning an existing golden is a deliberate contract revision that
+/// deletes the old file in the same change that justifies the new encoding.
 #[test]
 #[ignore = "bless: creates absent golden pins only"]
 fn bless_missing_goldens() {
