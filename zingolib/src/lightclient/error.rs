@@ -68,6 +68,13 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("{0}")]
     MixnetNotReady(#[from] crate::nym::MixnetNotReady),
+    /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
+    #[cfg(feature = "nym")]
+    #[error(
+        "the mixnet liveness probe requires Mixnet Mode, which is off; \
+         enable it (`nym on`) to probe Correspondents"
+    )]
+    ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
     /// policy carries.
     #[cfg(feature = "nym")]

@@ -58,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the mixnet route names the session slot's tunnel.
+  `MixnetRoute::Mixnet` carries a `nym::SlotTunnel` instead of a bare
+  address `String`. The tunnel refuses an address that does not parse as
+  a socket address, yields the owned dial string once through
+  `into_addr`, and lends it through `addr`. The zero-caller
+  `MixnetRoute::socks5_proxy` accessor is removed.
+- BREAKING: probing Correspondents while Mixnet Mode is deliberately
+  switched off refuses with the new
+  `LightClientError::ProbeRequiresMixnet`, which names the toggle-off,
+  instead of mislabeling the state as `MixnetNotReady::Unattached`.
 - BREAKING: a platform that forbids subprocesses can now supply the mixnet
   transport. `nym::acquire` is public and adds the `ProxyHost` trait, which
   a host implements to answer a directory query and to start one proxy over

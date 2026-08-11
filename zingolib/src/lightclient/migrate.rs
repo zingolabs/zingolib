@@ -921,7 +921,8 @@ impl LightClient {
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         #[cfg(feature = "nym")]
-        if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
+        if let crate::nym::MixnetRoute::Mixnet(tunnel) = self.mixnet_route()? {
+            let socks5_addr = tunnel.into_addr();
             let sync_indexer = self.indexer_uri();
             let candidates = transmission_route::eligible_candidates(
                 self.migration_transmission_uri.clone(),
