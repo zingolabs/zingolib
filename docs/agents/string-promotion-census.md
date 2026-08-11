@@ -16,16 +16,18 @@ name ratified 2026-08-10.* Sites: `Reservation.node`,
 `HostedTransport.exit_node`, `ProxyState.exits`, `MixnetStatus.exits`,
 `MixnetSlot::exits()`. One newtype ends the possibility of an exit
 identity and a host string trading places, and gives the ledger a typed
-key. Serde stays wire-compatible via a transparent representation.
+key. Construction is checked — `ExitNodeId::parse` trims and refuses a
+blank — so the invalid identity is unrepresentable. Serde stays
+wire-compatible via a validated string representation.
 
-**SOCKS5 endpoint → `std::net::SocketAddr`.** Sites: the
-`SlotTunnel.socks5_addr` field (PR #2665 wrapped the route's address and
-validates the `SocketAddr` parse at construction, but still stores and
-yields the `String`), `HostedTransport.socks5_addr`,
+**SOCKS5 endpoint → `std::net::SocketAddr`.** *Implemented for the
+tunnel 2026-08-10: `SlotTunnel` stores and yields the parsed
+`SocketAddr`, and its four consumer seams render the dial string at
+the boundary.* Remaining sites: `HostedTransport.socks5_addr`,
 `ProxyState.socks5_addr`, `MixnetStatus.socks5_addr`,
 `MixnetSlot::Ready { socks5_addr }`, and the `&str` threaded through
-`probe`/`select` survey calls. Both the attach path and the tunnel parse
-to `SocketAddr` to validate and then discard the type; promotion moves
+`probe`/`select` survey calls. The attach path still parses
+to `SocketAddr` to validate and then discards the type; promotion moves
 the parse to the edge and makes `Ready` and the tunnel address-typed by
 construction.
 

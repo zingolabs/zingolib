@@ -18,18 +18,18 @@ use crate::nym::MixnetMode;
 /// request the slot's surfaces send to a Correspondent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SlotTunnel {
-    socks5_addr: String,
+    socks5_addr: std::net::SocketAddr,
 }
 
 impl SlotTunnel {
     /// The tunnel's local SOCKS5 address, for one more request to a
     /// Correspondent.
-    pub fn addr(&self) -> &str {
-        &self.socks5_addr
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.socks5_addr
     }
 
-    /// Yields the tunnel's local SOCKS5 address as the owned dial string.
-    pub fn into_addr(self) -> String {
+    /// Yields the tunnel's local SOCKS5 address for the one owned dial.
+    pub fn into_addr(self) -> std::net::SocketAddr {
         self.socks5_addr
     }
 
@@ -38,7 +38,7 @@ impl SlotTunnel {
         socks5_addr
             .parse::<std::net::SocketAddr>()
             .ok()
-            .map(|_| Self { socks5_addr })
+            .map(|socks5_addr| Self { socks5_addr })
     }
 }
 
@@ -134,7 +134,12 @@ mod tests {
     fn ready_routes_through_the_proxy() {
         let route = resolve_route(MixnetMode::Ready, Some("127.0.0.1:9050".to_string()));
         match route.unwrap() {
-            MixnetRoute::Mixnet(tunnel) => assert_eq!(tunnel.addr(), "127.0.0.1:9050"),
+            MixnetRoute::Mixnet(tunnel) => assert_eq!(
+                tunnel.addr(),
+                "127.0.0.1:9050"
+                    .parse::<std::net::SocketAddr>()
+                    .expect("the test address parses")
+            ),
             MixnetRoute::Clearnet => panic!("ready must route through the proxy"),
         }
     }

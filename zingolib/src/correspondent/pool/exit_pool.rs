@@ -138,7 +138,7 @@ mod tests {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         pool.lock().unwrap().seed(
             (0..count)
-                .map(|index| crate::nym::ExitNodeId::from(format!("exit-{index}")))
+                .map(|index| crate::nym::ExitNodeId::from(format!("exit-{index}").as_str()))
                 .collect(),
         );
         pool

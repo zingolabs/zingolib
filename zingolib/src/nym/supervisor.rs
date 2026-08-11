@@ -513,7 +513,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
             // Recorded silently: the exit becomes visible evidence in the
             // Ready snapshot the address announcement publishes.
             let mut guarded = state.lock().expect("proxy state mutex");
-            guarded.exits.push(crate::nym::ExitNodeId::from(exit));
+            guarded.exits.push(exit);
             continue;
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
@@ -615,9 +615,10 @@ fn parse_status_line(line: &str) -> Option<&str> {
 }
 
 /// Extract the Exit Node identity from a child stdout line, if it is an
-/// exit announcement line.
-fn parse_exit_line(line: &str) -> Option<&str> {
-    line.strip_prefix(NYM_EXIT_LINE_PREFIX).map(str::trim)
+/// exit announcement line naming a non-blank identity.
+fn parse_exit_line(line: &str) -> Option<crate::nym::ExitNodeId> {
+    line.strip_prefix(NYM_EXIT_LINE_PREFIX)
+        .and_then(|identity| crate::nym::ExitNodeId::parse(identity).ok())
 }
 
 impl crate::correspondent::pool::PoolTransport for MixnetProxy {
@@ -652,7 +653,7 @@ pub(crate) async fn discover_exit_nodes(
     }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter_map(|line| parse_exit_line(line).map(crate::nym::ExitNodeId::from))
+        .filter_map(parse_exit_line)
         .collect())
 }
 
@@ -845,6 +846,16 @@ mod tests {
             s.snapshot().exits,
             vec![crate::nym::ExitNodeId::from("exit-alpha")]
         );
+    }
+
+    /// HYPOTHESIS: a bare or whitespace-only exit announcement records no
+    /// exit, so no blank identity reaches the snapshot. Falsified if the
+    /// blank is pushed as an `ExitNodeId`.
+    #[tokio::test]
+    async fn a_blank_exit_announcement_records_no_exit() {
+        let s = state_over_open_stream(b"NYM_EXIT=\nNYM_EXIT=   \nSOCKS5_ADDR=127.0.0.1:5\n").await;
+        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.exits, Vec::<crate::nym::ExitNodeId>::new());
     }
 
     /// HYPOTHESIS: a status line updates the live bootstrap detail while the

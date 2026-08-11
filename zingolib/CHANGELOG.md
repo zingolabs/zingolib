@@ -63,8 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
   `HostedTransport`, and the `ProxyHost` seam — and the operator key
   behind Correspondent exclusion is the typed `correspondent::Operator`
-  (String-promotion census of the ADR 0041 arc). The serialized
-  `MixnetStatus` wire is unchanged: the newtype is serde-transparent.
+  (String-promotion census of the ADR 0041 arc). Construction is checked:
+  `ExitNodeId::parse` (and `TryFrom<String>`, which deserialization uses)
+  trims the candidate and refuses a blank with the typed
+  `BlankExitNodeId`, so no blank identity can enter the Ready snapshot or
+  the Exit Pool ledger. The serialized `MixnetStatus` wire is a plain
+  string, unchanged.
 - BREAKING: the `ProxyHost` seam speaks types end-to-end — its
   `start_transport` takes the `ResponsivenessClass` enum instead of the
   wire string, and both host methods refuse with the typed
@@ -73,8 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the mixnet route names the session slot's tunnel.
   `MixnetRoute::Mixnet` carries a `nym::SlotTunnel` instead of a bare
   address `String`. The tunnel refuses an address that does not parse as
-  a socket address, yields the owned dial string once through
-  `into_addr`, and lends it through `addr`. The zero-caller
+  a socket address, stores the parsed `std::net::SocketAddr`, yields it
+  once through `into_addr`, and lends it through `addr`; consumers render
+  the dial string at their own seams. The zero-caller
   `MixnetRoute::socks5_proxy` accessor is removed.
 - BREAKING: probing Correspondents while Mixnet Mode is deliberately
   switched off refuses with the new
