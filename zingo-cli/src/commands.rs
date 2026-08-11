@@ -1257,7 +1257,7 @@ fn render_history(
             AttemptRoute::Mixnet => "mixnet",
         };
         let stats = hosts
-            .entry(attempt.host.clone())
+            .entry(attempt.host.to_string())
             .or_default()
             .entry(route)
             .or_insert(RouteStats {
