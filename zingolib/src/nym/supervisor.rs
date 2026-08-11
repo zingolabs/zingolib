@@ -507,12 +507,36 @@ async fn drive_state<R: AsyncRead + Unpin>(
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
             spoke_protocol = true;
-            if let Ok(addr) = addr.parse::<SocketAddr>() {
-                let mut guarded = state.lock().expect("proxy state mutex");
-                guarded.socks5_addr = Some(addr);
-                guarded.bootstrap_detail = None;
-                guarded.mode = MixnetMode::Ready;
-                publish_locked(&guarded, &publisher);
+            match addr.parse::<SocketAddr>() {
+                Ok(addr) => {
+                    let mut guarded = state.lock().expect("proxy state mutex");
+                    guarded.socks5_addr = Some(addr);
+                    guarded.bootstrap_detail = None;
+                    guarded.mode = MixnetMode::Ready;
+                    publish_locked(&guarded, &publisher);
+                }
+                Err(error) => {
+                    // The announcement comes once, so an address that does
+                    // not parse can never become Ready: the defect latches as
+                    // the death cause now, instead of burning the caller's
+                    // whole bootstrap budget with no diagnosis.
+                    let mut guarded = state.lock().expect("proxy state mutex");
+                    guarded.mode = MixnetMode::Died;
+                    guarded.socks5_addr = None;
+                    guarded.exits.clear();
+                    guarded.bootstrap_detail = None;
+                    guarded.death = Some(DeathReport {
+                        at: std::time::SystemTime::now(),
+                        detail: Some(zingo_net_diag::NetOpFailure::message(
+                            zingo_net_diag::NetOpStage::ProxyLaunch,
+                            addr,
+                            format!(
+                                "the nym-proxy announced an unparseable SOCKS5 address: {error}"
+                            ),
+                        )),
+                    });
+                    publish_locked(&guarded, &publisher);
+                }
             }
             // Keep reading: a close after this must be observed as Died.
             continue;
@@ -538,10 +562,14 @@ async fn drive_state<R: AsyncRead + Unpin>(
     guarded.socks5_addr = None;
     guarded.exits.clear();
     guarded.bootstrap_detail = None;
-    guarded.death = Some(DeathReport {
-        at: std::time::SystemTime::now(),
-        detail,
-    });
+    // The latch is sticky: a close after a diagnosed defect (an unparseable
+    // announcement) must not wash the held cause out with a cause-less one.
+    if guarded.death.is_none() {
+        guarded.death = Some(DeathReport {
+            at: std::time::SystemTime::now(),
+            detail,
+        });
+    }
     publish_locked(&guarded, &publisher);
 }
 
@@ -853,6 +881,43 @@ mod tests {
         let s = state_over_open_stream(b"NYM_EXIT=\nNYM_EXIT=   \nSOCKS5_ADDR=127.0.0.1:5\n").await;
         assert_eq!(s.mode, MixnetMode::Ready);
         assert_eq!(s.exits, Vec::<crate::nym::ExitNodeId>::new());
+    }
+
+    /// HYPOTHESIS: an unparseable address announcement latches `Died` with a
+    /// typed cause while the stream is still open, so the caller fails fast
+    /// instead of burning its whole bootstrap budget. Falsified if the line
+    /// is dropped silently and the mode stays `Bootstrapping`.
+    #[tokio::test]
+    async fn an_unparseable_address_announcement_dies_with_a_cause() {
+        let s = state_over_open_stream(b"SOCKS5_ADDR=not-a-socket\n").await;
+        assert_eq!(s.mode, MixnetMode::Died);
+        assert_eq!(s.socks5_addr, None);
+        let death = s.death.expect("the defect latches a death report");
+        let detail = death.detail.expect("the death carries the typed cause");
+        assert_eq!(detail.stage, zingo_net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.target, "not-a-socket");
+    }
+
+    /// HYPOTHESIS: the close after a diagnosed defect keeps that defect as
+    /// the death cause. Falsified if the close overwrites the sticky latch
+    /// with a cause-less report.
+    #[tokio::test]
+    async fn the_close_preserves_the_diagnosed_cause() {
+        let state = bootstrapping();
+        drive_state(
+            b"SOCKS5_ADDR=not-a-socket\n".as_slice(),
+            Arc::clone(&state),
+            test_publisher(),
+            None,
+        )
+        .await;
+        let s = state.lock().expect("proxy state mutex");
+        assert_eq!(s.mode, MixnetMode::Died);
+        let death = s.death.clone().expect("the defect latches a death report");
+        assert!(
+            death.detail.is_some(),
+            "the diagnosed cause survives the close"
+        );
     }
 
     /// HYPOTHESIS: a status line updates the live bootstrap detail while the
