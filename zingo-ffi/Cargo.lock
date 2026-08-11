@@ -2386,7 +2386,7 @@ dependencies = [
  "zcash_protocol 0.10.0",
  "zcash_transparent 0.9.0",
  "zingo-memo",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingo-netutils",
  "zingo-status",
  "zip32",
 ]
@@ -5152,7 +5152,6 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol 0.10.0",
- "zingo-netutils 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-price",
  "zingo_common_components",
  "zingolib",
@@ -5181,20 +5180,6 @@ version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#7d92ee4d263b8325e24e13e7fd073aaeab57e73c"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "zingo-netutils"
-version = "5.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "338411422fb22781f131d934b29cd82313189b5c9a6f3bbd035b958464716b46"
-dependencies = [
- "http",
- "lightwallet-protocol",
- "thiserror 1.0.69",
- "tokio-rustls",
- "tokio-stream",
- "tonic",
 ]
 
 [[package]]
@@ -5313,7 +5298,7 @@ dependencies = [
  "zcash_transparent 0.9.0",
  "zingo-memo",
  "zingo-net-diag",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingo-netutils",
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
@@ -5336,7 +5321,7 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives 0.29.0",
  "zcash_protocol 0.10.0",
- "zingo-netutils 5.0.1 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingo-netutils",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",

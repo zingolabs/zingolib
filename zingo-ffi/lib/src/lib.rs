@@ -43,7 +43,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingo_netutils::{GrpcIndexer, Indexer};
+use zingolib::netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
     ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
     construct_indexer_uri, lib_birthday,

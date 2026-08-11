@@ -40,9 +40,6 @@ zcash_keys = { version = "0.15.0", features = [
 zcash_protocol = "0.10.0"
 
 zingo_common_components = "0.4.0"
-zingo-netutils = { version = "5.0.1", features = [
-    "globally-public-transparent",
-] }
 zip32 = "0.2.0"
 uniffi = "0.29"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
