@@ -133,6 +133,9 @@ pub enum CommandError {
     Migration(#[from] MigrationCommandError),
     #[cfg(feature = "nym")]
     #[error(transparent)]
+    Mixnet(#[from] MixnetCommandError),
+    #[cfg(feature = "nym")]
+    #[error(transparent)]
     Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
@@ -1183,6 +1186,133 @@ pub(crate) enum NetworkSubCommand {
     },
     #[command(about = "Show per-indexer attempts across sessions")]
     History,
+}
+
+/// A parsed `mixnet` command, its arguments parsed completely at the clap
+/// derive grammar before any wallet access.
+#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+#[command(rename_all = "snake_case")]
+pub(crate) enum MixnetSubCommand {
+    #[command(
+        about = "Run the Server-Selection Sweep over the mixnet and bind its verdict as the \
+                 sync indexer"
+    )]
+    IndexerSweep {
+        #[arg(value_name = "proxy_path")]
+        path: Option<String>,
+    },
+}
+
+/// Typed failure of the `mixnet` command family. Like the `network` family,
+/// it exists only with the mixnet capability compiled in (ADR 0026).
+#[cfg(feature = "nym")]
+#[derive(Debug, thiserror::Error)]
+pub enum MixnetCommandError {
+    /// The sweep emits mixnet traffic, so it refuses in a session whose
+    /// Mixnet Mode has not been taken online; the remedy is the consent act.
+    #[error(
+        "the indexer sweep runs over the mixnet, and Mixnet Mode is {mode}. Run `network on` \
+         first."
+    )]
+    SweepNeedsMixnet { mode: zingolib::mixnet::MixnetMode },
+    /// The session's chain has no curated census for the sweep to survey.
+    #[error("no curated mixnet census exists for {chain}; bind an indexer with `changeserver`.")]
+    NoCensus { chain: String },
+    /// The sweep itself refused, or judged no live cohort.
+    #[error(transparent)]
+    Sweep(#[from] zingolib::lightclient::select::ServerSelectionError),
+    /// The sweep chose a sync indexer, but connecting to it failed.
+    #[error("the sweep selected {uri}, but binding it failed: {source}")]
+    Bind {
+        uri: String,
+        source: zingolib::netutils::GetClientError,
+    },
+}
+
+/// The bound outcome of one Server-Selection Sweep: the chosen sync indexer
+/// and the cohort evidence for the success report.
+#[cfg(feature = "nym")]
+pub(crate) struct SweepBinding {
+    pub(crate) chosen: http::Uri,
+    pub(crate) cohort: usize,
+    pub(crate) transmit_candidates: usize,
+}
+
+/// Runs the Server-Selection Sweep over `candidates`, narrating each phase
+/// on stderr, and binds its verdict as the session's sync indexer.
+#[cfg(feature = "nym")]
+pub(crate) async fn sweep_and_bind_sync_indexer(
+    lightclient: &mut LightClient,
+    proxy_path: &str,
+    candidates: &[http::Uri],
+    pin: Option<&http::Uri>,
+) -> Result<SweepBinding, MixnetCommandError> {
+    use zingolib::lightclient::select::SweepProgress;
+    let selection = lightclient
+        .run_server_selection_sweep(std::path::Path::new(proxy_path), candidates, pin, |phase| {
+            match phase {
+                SweepProgress::TransportBootstrapping => eprintln!(
+                    "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
+                     (its Exit Node is recycled when the sweep completes)..."
+                ),
+                SweepProgress::Surveying { candidates } => eprintln!(
+                    "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
+                ),
+                SweepProgress::Judging { answered, surveyed } => eprintln!(
+                    "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
+                     judging the live cohort..."
+                ),
+            }
+        })
+        .await?;
+    let chosen = selection.sync_indexer.clone();
+    lightclient
+        .set_indexer_uri(chosen.clone())
+        .await
+        .map_err(|source| MixnetCommandError::Bind {
+            uri: chosen.to_string(),
+            source,
+        })?;
+    Ok(SweepBinding {
+        chosen,
+        cohort: selection.cohort.len(),
+        transmit_candidates: selection.transmit_candidates.len(),
+    })
+}
+
+/// One `mixnet` sub-command against the session, the family's single
+/// dispatch surface.
+#[cfg(feature = "nym")]
+async fn mixnet_command(
+    sub: MixnetSubCommand,
+    lightclient: &mut LightClient,
+) -> Result<String, MixnetCommandError> {
+    match sub {
+        MixnetSubCommand::IndexerSweep { path } => {
+            use zingolib::mixnet::MixnetMode;
+            let mode = lightclient.mixnet_mode();
+            if !matches!(mode, MixnetMode::Ready | MixnetMode::Bootstrapping) {
+                return Err(MixnetCommandError::SweepNeedsMixnet { mode });
+            }
+            let chain_type = lightclient.chain_type();
+            let Some(chain) = crate::census_chain(&chain_type) else {
+                return Err(MixnetCommandError::NoCensus {
+                    chain: format!("{chain_type}"),
+                });
+            };
+            let candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
+                .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
+                .collect();
+            let proxy_path = resolve_proxy_path(path.as_deref());
+            let binding =
+                sweep_and_bind_sync_indexer(lightclient, &proxy_path, &candidates, None).await?;
+            Ok(format!(
+                "Server-Selection Sweep: sync attaches to {} (live cohort of {}, {} transmit \
+                 candidates exclude its operator).",
+                binding.chosen, binding.cohort, binding.transmit_candidates,
+            ))
+        }
+    }
 }
 
 /// https on port 443 only in a mixnet build — the one endpoint shape the
@@ -2281,6 +2411,30 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         sub: MigrationSubCommand,
     },
+    // Like `network` below, the family exists only with the mixnet
+    // capability compiled in.
+    #[cfg(feature = "nym")]
+    #[command(
+        about = "Mixnet-carried session maintenance; `mixnet indexer_sweep` binds the sync indexer",
+        long_about = indoc! {r"
+            Mixnet-carried session maintenance acts.
+
+            `indexer_sweep` runs the Server-Selection Sweep (ADR 0034): one
+            GetLightdInfo per census candidate, carried entirely over the
+            mixnet on a dedicated transport whose Exit Node is recycled when
+            the sweep completes. The live cohort is judged against its median
+            height, and the verdict is bound as the session's sync indexer —
+            the step an --online launch runs automatically and an in-session
+            `network on` does not. It needs a session whose Mixnet Mode is
+            ready or bootstrapping (run `network on` first), and takes the
+            nym-proxy binary from the given path, else $ZINGO_NYM_PROXY,
+            else one bundled beside this binary, else PATH.
+        "}
+    )]
+    Mixnet {
+        #[command(subcommand)]
+        sub: MixnetSubCommand,
+    },
     // Without the mixnet capability there is no `network` command at all:
     // Offline Mode is the only mode such a build can be in (ADR 0026), so
     // no command may exist that could change the session's posture.
@@ -2297,9 +2451,9 @@ pub(crate) enum CliCommand {
 
             WARNING: in an unconsented offline session, `network on` is itself
             the consent act: it switches the session to ONLINE MODE, for this
-            session only. The session selects an indexer over the same curated
-            ranking that `--online` uses at launch, and only then bootstraps
-            the mixnet (ADR 0026). A deliberate --offline session does not
+            session only, and bootstraps the mixnet (ADR 0026). It binds no
+            sync indexer; run `mixnet indexer_sweep` afterward to select and
+            bind one over the mixnet. A deliberate --offline session does not
             offer this command; relaunch without --offline instead.
 
             `status` reports off, bootstrapping or ready. `on` starts the
@@ -2672,6 +2826,8 @@ impl CliCommand {
             CliCommand::Migrate => "Migrate",
             CliCommand::Migration { .. } => "Migration",
             #[cfg(feature = "nym")]
+            CliCommand::Mixnet { .. } => "Mixnet",
+            #[cfg(feature = "nym")]
             CliCommand::Network { .. } => "Network",
             CliCommand::NewAddress { .. } => "NewAddress",
             CliCommand::NewTaddress => "NewTaddress",
@@ -2733,6 +2889,8 @@ impl CliCommand {
             | CliCommand::Servers
             | CliCommand::Version => false,
             #[cfg(feature = "nym")]
+            CliCommand::Mixnet { .. } => true,
+            #[cfg(feature = "nym")]
             CliCommand::Network { .. } => true,
             CliCommand::Addresses
             | CliCommand::Balance
@@ -2793,6 +2951,8 @@ impl CliCommand {
             | CliCommand::Quicksend { .. }
             | CliCommand::Quickshield
             | CliCommand::Transmit { .. } => true,
+            #[cfg(feature = "nym")]
+            CliCommand::Mixnet { .. } => false,
             #[cfg(feature = "nym")]
             CliCommand::Network { sub } => matches!(sub, Some(NetworkSubCommand::Probe { .. })),
             CliCommand::Drain { sub } => matches!(sub, DrainSubCommand::Now),
@@ -2876,7 +3036,7 @@ impl CliCommand {
             crate::CommunicationMode::Online => false,
             crate::CommunicationMode::DeliberateOffline => {
                 #[cfg(feature = "nym")]
-                if matches!(self, CliCommand::Network { .. }) {
+                if matches!(self, CliCommand::Network { .. } | CliCommand::Mixnet { .. }) {
                     return true;
                 }
                 self.transmits() || self.requires_indexer()
@@ -2885,6 +3045,12 @@ impl CliCommand {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return false;
+                }
+                // The sweep emits mixnet traffic but is not a consent act,
+                // so it stays suppressed until `network on` grants consent.
+                #[cfg(feature = "nym")]
+                if matches!(self, CliCommand::Mixnet { .. }) {
+                    return true;
                 }
                 self.transmits() || self.requires_indexer()
             }
@@ -2972,6 +3138,10 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Migrate,
         CliCommand::Migration {
             sub: MigrationSubCommand::Plan,
+        },
+        #[cfg(feature = "nym")]
+        CliCommand::Mixnet {
+            sub: MixnetSubCommand::IndexerSweep { path: None },
         },
         #[cfg(feature = "nym")]
         CliCommand::Network { sub: None },
@@ -3183,6 +3353,8 @@ async fn run_parsed(
         CliCommand::NewTaddress => taddress(lightclient, true).await,
         CliCommand::NewTaddressAllowGap => taddress(lightclient, false).await,
         CliCommand::Notes { scope } => notes(scope, lightclient).await,
+        #[cfg(feature = "nym")]
+        CliCommand::Mixnet { sub } => Ok(mixnet_command(sub, lightclient).await?),
         #[cfg(feature = "nym")]
         CliCommand::Network { sub } => network(sub, lightclient).await,
         CliCommand::ParseAddress { address } => parse_address(&address),

@@ -1295,8 +1295,6 @@ async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
     filled_template: &ConfigTemplate,
 ) -> bool {
-    use zingolib::lightclient::select::SweepProgress;
-
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
     };
@@ -1322,47 +1320,24 @@ async fn sweep_select_sync_indexer(
         candidates.push(pinned.clone());
     }
     let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
-    let selection = lightclient
-        .run_server_selection_sweep(
-            std::path::Path::new(&proxy_path),
-            &candidates,
-            pin.as_ref(),
-            |phase| match phase {
-                SweepProgress::TransportBootstrapping => eprintln!(
-                    "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
-                     (its Exit Node is recycled when the sweep completes)..."
-                ),
-                SweepProgress::Surveying { candidates } => eprintln!(
-                    "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
-                ),
-                SweepProgress::Judging { answered, surveyed } => eprintln!(
-                    "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
-                     judging the live cohort..."
-                ),
-            },
-        )
-        .await;
-    match selection {
-        Ok(selection) => {
-            let chosen = selection.sync_indexer.clone();
-            match lightclient.set_indexer_uri(chosen.clone()).await {
-                Ok(()) => {
-                    eprintln!(
-                        "Server-Selection Sweep: sync attaches to {chosen} (live cohort of {}, \
-                         {} transmit candidates exclude its operator).",
-                        selection.cohort.len(),
-                        selection.transmit_candidates.len(),
-                    );
-                    true
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {e}. \
-                         This Sync Session does not open."
-                    );
-                    false
-                }
-            }
+    let binding =
+        commands::sweep_and_bind_sync_indexer(lightclient, &proxy_path, &candidates, pin.as_ref())
+            .await;
+    match binding {
+        Ok(binding) => {
+            eprintln!(
+                "Server-Selection Sweep: sync attaches to {} (live cohort of {}, \
+                 {} transmit candidates exclude its operator).",
+                binding.chosen, binding.cohort, binding.transmit_candidates,
+            );
+            true
+        }
+        Err(commands::MixnetCommandError::Bind { uri, source }) => {
+            eprintln!(
+                "Server-Selection Sweep: selected {uri}, but binding it failed: {source}. \
+                 This Sync Session does not open."
+            );
+            false
         }
         Err(e) => {
             eprintln!(

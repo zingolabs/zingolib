@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- The `mixnet` command family, with `mixnet indexer_sweep`: it runs the
+  Server-Selection Sweep over the mixnet in-session and binds the verdict
+  as the sync indexer. This closes the gap where an in-session `network on`
+  granted consent and bootstrapped the mixnet but left the session
+  Indexerless, so `sync run` refused; an `--online` launch already ran the
+  sweep automatically. The sub-command refuses unless Mixnet Mode is ready
+  or bootstrapping, and takes an optional nym-proxy path with the same
+  precedence as `network on`.
 
 ### Changed
 - **Breaking.** `--server` has no default value. An online session without
