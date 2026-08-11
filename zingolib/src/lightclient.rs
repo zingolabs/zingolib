@@ -1070,8 +1070,8 @@ impl LightClient {
     /// Resolve the fail-closed route every mixnet-only surface must obey: the
     /// mixnet proxy when [`MixnetMode::Ready`](crate::nym::MixnetMode::Ready),
     /// clearnet only when switched off (the deliberate toggle-off), and a
-    /// refusal while unattached, bootstrapping, or died. Send and price-fetch
-    /// share this single resolver.
+    /// refusal while unattached, bootstrapping, or died. Send, price-fetch,
+    /// and the liveness probe share this single resolver.
     pub fn mixnet_route(&self) -> Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady> {
         crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
     }
@@ -1088,13 +1088,12 @@ impl LightClient {
         timeout: std::time::Duration,
     ) -> Result<Vec<crate::nym::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
     {
-        let socks5_addr =
-            match crate::nym::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())? {
-                crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.addr().to_string(),
-                crate::nym::MixnetRoute::Clearnet => {
-                    return Err(crate::nym::MixnetNotReady::Unattached.into());
-                }
-            };
+        let socks5_addr = match self.mixnet_route()? {
+            crate::nym::MixnetRoute::Mixnet(tunnel) => tunnel.addr().to_string(),
+            crate::nym::MixnetRoute::Clearnet => {
+                return Err(crate::lightclient::error::LightClientError::ProbeRequiresMixnet);
+            }
+        };
         if let Some(uri) = &target
             && !crate::nym::probe::probe_eligible(uri)
         {

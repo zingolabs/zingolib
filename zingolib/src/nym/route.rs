@@ -15,15 +15,15 @@
 use crate::nym::MixnetMode;
 
 /// The session slot's tunnel, whose one exit is Shared across every
-/// Correspondent contact the slot's surfaces make.
+/// request the slot's surfaces send to a Correspondent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SlotTunnel {
     socks5_addr: String,
 }
 
 impl SlotTunnel {
-    /// The tunnel's local SOCKS5 address, for one more Correspondent
-    /// contact.
+    /// The tunnel's local SOCKS5 address, for one more request to a
+    /// Correspondent.
     pub fn addr(&self) -> &str {
         &self.socks5_addr
     }
