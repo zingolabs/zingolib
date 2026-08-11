@@ -148,8 +148,8 @@ pub fn correspondent_indexers() -> Vec<Uri> {
      allowed to be the sync indexer"
 )]
 pub(crate) struct NoEligibleCorrespondents {
-    /// The operator domain of the excluded sync indexer.
-    pub(crate) sync_operator: String,
+    /// The Operator of the excluded sync indexer.
+    pub(crate) sync_operator: Operator,
 }
 
 /// The pool a transmission draw is allowed to use: the curated
@@ -192,12 +192,10 @@ pub(crate) fn eligible_from(
     pool: Vec<Uri>,
     sync_indexer: &Uri,
 ) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
-    let sync_operator = sync_indexer.host().map(operator_domain);
+    let sync_operator = Operator::of_uri(sync_indexer);
     let eligible: Vec<Uri> = pool
         .into_iter()
-        .filter(|entry| {
-            entry.host().map(operator_domain) != sync_operator || sync_operator.is_none()
-        })
+        .filter(|entry| Operator::of_uri(entry) != sync_operator || sync_operator.is_none())
         .collect();
     if eligible.is_empty() {
         return Err(NoEligibleCorrespondents {
@@ -212,27 +210,82 @@ pub(crate) fn eligible_from(
 /// surface uses to compare a candidate against the sync indexer (ADR 0022).
 #[cfg(feature = "nym")]
 pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
-    operator_domain(host_a) == operator_domain(host_b)
+    Operator::of_host(host_a) == Operator::of_host(host_b)
 }
 
-/// The operator key of a host: its registrable parent domain, approximated as
-/// the last two dot-separated labels (the whole host when it has fewer),
-/// lowercased because DNS names compare case-insensitively. Two hosts with
-/// the same key are treated as one accumulating party. The approximation can
-/// only over-exclude (two unrelated hosts sharing a suffix collapse
-/// together), which merely shrinks the pool — it never lets the sync
-/// indexer's operator through.
+/// The accumulating administrative authority behind a Correspondable host, keyed by its registrable parent domain.
 #[cfg(feature = "nym")]
-fn operator_domain(host: &str) -> String {
-    let host = host.to_ascii_lowercase();
-    let labels: Vec<&str> = host.rsplit('.').collect();
-    labels
-        .iter()
-        .take(2)
-        .rev()
-        .copied()
-        .collect::<Vec<_>>()
-        .join(".")
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Operator(String);
+
+#[cfg(feature = "nym")]
+impl Operator {
+    /// The Operator of `host`, approximated as the lowercased last two dot-separated labels (the whole host when it has fewer) — an approximation that can only over-exclude, never letting the sync indexer's operator through.
+    pub(crate) fn of_host(host: &str) -> Self {
+        let host = host.to_ascii_lowercase();
+        let labels: Vec<&str> = host.rsplit('.').collect();
+        Operator(
+            labels
+                .iter()
+                .take(2)
+                .rev()
+                .copied()
+                .collect::<Vec<_>>()
+                .join("."),
+        )
+    }
+
+    /// The Operator of `uri`'s host, or `None` when the URI has no host.
+    pub(crate) fn of_uri(uri: &Uri) -> Option<Self> {
+        uri.host().map(Self::of_host)
+    }
+}
+
+#[cfg(feature = "nym")]
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The endpoint-grain identity of a Correspondable host, lowercased because DNS names compare case-insensitively.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Host(String);
+
+impl Host {
+    /// The Host a raw host string names, lowercased and otherwise verbatim.
+    pub fn of_host_str(candidate: &str) -> Self {
+        Host(candidate.to_ascii_lowercase())
+    }
+
+    /// The Host of `uri`, falling back to the whole URI's text when it names no host.
+    pub fn of_uri(uri: &Uri) -> Self {
+        uri.host()
+            .map_or_else(|| Host::of_host_str(&uri.to_string()), Host::of_host_str)
+    }
+
+    /// The identity as the string the diary and the displays render.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<Host> for String {
+    fn from(host: Host) -> Self {
+        host.0
+    }
+}
+
+impl From<&Host> for String {
+    fn from(host: &Host) -> Self {
+        host.0.clone()
+    }
 }
 
 #[cfg(all(test, feature = "nym"))]
@@ -283,7 +336,7 @@ mod tests {
     fn one_endpoint_per_operator() {
         // Correspondent Rotation defends against the operator, not the DNS
         // name: no two entries may share a registrable parent domain.
-        let operator_domains: Vec<String> = CORRESPONDENT_INDEXERS
+        let operator_domains: Vec<Operator> = CORRESPONDENT_INDEXERS
             .iter()
             .map(|entry| {
                 let host = entry
@@ -292,7 +345,7 @@ mod tests {
                     .host()
                     .expect("every Correspondent URI has a host")
                     .to_string();
-                operator_domain(&host)
+                Operator::of_host(&host)
             })
             .collect();
         let mut deduped = operator_domains.clone();
@@ -316,7 +369,8 @@ mod tests {
         assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len() - 1);
         assert!(
             pool.iter()
-                .all(|entry| operator_domain(entry.host().unwrap()) != "zec.rocks"),
+                .all(|entry| Operator::of_host(entry.host().unwrap())
+                    != Operator::of_host("zec.rocks")),
             "the sync indexer's operator must never appear in the Correspondent pool"
         );
     }
@@ -344,6 +398,6 @@ mod tests {
         let sync: Uri = "https://na.zec.rocks:443".parse().unwrap();
         let pool = vec!["https://zec.rocks:443".parse().unwrap()];
         let err = eligible_from(pool, &sync).expect_err("the pool must empty");
-        assert_eq!(err.sync_operator, "zec.rocks");
+        assert_eq!(err.sync_operator, Operator::of_host("zec.rocks"));
     }
 }

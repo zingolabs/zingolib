@@ -46,8 +46,8 @@ pub enum TransportError {
     #[error("the proxy host did not answer: {0}")]
     HostUnavailable(String),
     /// The platform host answered and refused the acquisition.
-    #[error("the proxy host refused: {0}")]
-    HostRefused(String),
+    #[error("the proxy host refused")]
+    HostRefused(#[source] HostRefusal),
     /// The transport died during bootstrap.
     #[error(
         "the pool transport died during bootstrap: {}",
@@ -90,13 +90,15 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>>;
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    >;
 
     /// Acquires one transport that races `clutch` under `class`.
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
 }
@@ -105,20 +107,42 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostedTransport {
     /// The local SOCKS5 address the host's proxy listens on.
-    pub socks5_addr: String,
+    pub socks5_addr: std::net::SocketAddr,
     /// The Exit Node that proxy bound.
-    pub exit_node: String,
+    pub exit_node: crate::nym::ExitNodeId,
+}
+
+/// Why the platform host declined or failed a request, with the host's own
+/// detail carried verbatim as the payload.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum HostRefusal {
+    /// The host tried to satisfy the request and could not.
+    #[error("the host failed: {detail}")]
+    Failed {
+        /// The host's own account of the failure.
+        detail: String,
+    },
+    /// The host declined the request as a matter of platform policy.
+    #[error("the host declined: {detail}")]
+    Declined {
+        /// The host's own account of the refusal.
+        detail: String,
+    },
 }
 
 /// A platform host that owns the mixnet proxy, for a platform whose sandbox
 /// forbids the wallet from spawning one.
 pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
-    fn discover_exit_nodes(&self) -> Result<Vec<String>, String>;
+    fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal>;
 
-    /// Starts one proxy racing `clutch` under the responsiveness class named
-    /// by `class`, returning where it listens and which exit it bound.
-    fn start_transport(&self, class: &str, clutch: &[String]) -> Result<HostedTransport, String>;
+    /// Starts one proxy racing `clutch` under `class`, returning where it
+    /// listens and which exit it bound.
+    fn start_transport(
+        &self,
+        class: ResponsivenessClass,
+        clutch: &[crate::nym::ExitNodeId],
+    ) -> Result<HostedTransport, HostRefusal>;
 }
 
 /// The mobile acquirer: a platform host that owns the proxy library.
@@ -136,7 +160,9 @@ impl HostedProxy {
 impl TransportAcquirable for HostedProxy {
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    > {
         let host = std::sync::Arc::clone(&self.host);
         Box::pin(async move {
             // The host's directory query blocks, so it runs off the runtime's
@@ -151,18 +177,17 @@ impl TransportAcquirable for HostedProxy {
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         let host = std::sync::Arc::clone(&self.host);
-        let class = class.wire().to_string();
         let clutch = clutch.to_vec();
         Box::pin(async move {
-            let hosted = tokio::task::spawn_blocking(move || host.start_transport(&class, &clutch))
+            let hosted = tokio::task::spawn_blocking(move || host.start_transport(class, &clutch))
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
                 .map_err(TransportError::HostRefused)?;
-            MixnetProxy::attach(&hosted.socks5_addr, &[hosted.exit_node], publisher)
+            MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
                 .map_err(TransportError::from)
         })
     }
@@ -183,14 +208,16 @@ impl SpawnedBinary {
 impl TransportAcquirable for SpawnedBinary {
     fn discover(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, TransportError>> + Send + '_>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+    > {
         Box::pin(crate::nym::supervisor::discover_exit_nodes(&self.path))
     }
 
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [String],
+        clutch: &'a [crate::nym::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         Box::pin(async move {
@@ -206,20 +233,20 @@ mod tests {
     /// A host that answers both calls from a script, standing in for the
     /// platform library a phone loads.
     struct ScriptedHost {
-        directory: Result<Vec<String>, String>,
-        transport: Result<HostedTransport, String>,
+        directory: Result<Vec<crate::nym::ExitNodeId>, HostRefusal>,
+        transport: Result<HostedTransport, HostRefusal>,
     }
 
     impl ProxyHost for ScriptedHost {
-        fn discover_exit_nodes(&self) -> Result<Vec<String>, String> {
+        fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal> {
             self.directory.clone()
         }
 
         fn start_transport(
             &self,
-            _class: &str,
-            _clutch: &[String],
-        ) -> Result<HostedTransport, String> {
+            _class: ResponsivenessClass,
+            _clutch: &[crate::nym::ExitNodeId],
+        ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
         }
     }
@@ -233,12 +260,17 @@ mod tests {
     #[tokio::test]
     async fn a_host_directory_answers_discovery() {
         let acquirer = hosted(ScriptedHost {
-            directory: Ok(vec!["exit-a".to_string(), "exit-b".to_string()]),
-            transport: Err("unused".to_string()),
+            directory: Ok(vec!["exit-a".into(), "exit-b".into()]),
+            transport: Err(HostRefusal::Declined {
+                detail: "unused".to_string(),
+            }),
         });
         assert_eq!(
             acquirer.discover().await.expect("the host answers"),
-            vec!["exit-a".to_string(), "exit-b".to_string()]
+            vec![
+                crate::nym::ExitNodeId::from("exit-a"),
+                crate::nym::ExitNodeId::from("exit-b")
+            ]
         );
     }
 
@@ -247,8 +279,12 @@ mod tests {
     #[tokio::test]
     async fn a_refusing_host_refuses_typed() {
         let acquirer = hosted(ScriptedHost {
-            directory: Err("no directory on this platform".to_string()),
-            transport: Err("the app declined".to_string()),
+            directory: Err(HostRefusal::Declined {
+                detail: "no directory on this platform".to_string(),
+            }),
+            transport: Err(HostRefusal::Declined {
+                detail: "the app declined".to_string(),
+            }),
         });
         assert!(matches!(
             acquirer.discover().await.expect_err("the host refuses"),
@@ -257,7 +293,7 @@ mod tests {
         let Err(refusal) = acquirer
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".to_string()],
+                &["exit-a".into()],
                 crate::nym::status_publisher(),
             )
             .await
@@ -267,30 +303,25 @@ mod tests {
         assert!(matches!(refusal, TransportError::HostRefused(_)));
     }
 
-    /// HYPOTHESIS: a host that answers with an unusable endpoint fails at
-    /// the attach seam, so a malformed host reply never reaches the slot.
+    /// HYPOTHESIS: a well-typed host report attaches, so the typed
+    /// `HostedTransport` is sufficient evidence to reach the slot seam.
     #[tokio::test]
-    async fn a_malformed_host_endpoint_fails_at_attach() {
+    async fn a_typed_host_endpoint_reaches_the_attach_seam() {
         let acquirer = hosted(ScriptedHost {
             directory: Ok(Vec::new()),
             transport: Ok(HostedTransport {
-                socks5_addr: "not-a-socket-address".to_string(),
-                exit_node: "exit-a".to_string(),
+                socks5_addr: "127.0.0.1:1080".parse().expect("the test address parses"),
+                exit_node: "exit-a".into(),
             }),
         });
-        let Err(refusal) = acquirer
+        let proxy = acquirer
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".to_string()],
+                &["exit-a".into()],
                 crate::nym::status_publisher(),
             )
             .await
-        else {
-            panic!("an unparseable endpoint must not yield a transport");
-        };
-        assert!(matches!(
-            refusal,
-            TransportError::Proxy(MixnetProxyError::InvalidAddress { .. })
-        ));
+            .expect("a typed endpoint always constructs the attached transport");
+        proxy.stop().await;
     }
 }

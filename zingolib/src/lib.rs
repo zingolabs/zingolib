@@ -17,7 +17,6 @@ pub mod sync;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(feature = "nym")]
 pub mod nym;
 
 #[cfg(any(test, feature = "testutils"))]

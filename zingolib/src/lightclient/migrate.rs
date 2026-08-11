@@ -922,7 +922,7 @@ impl LightClient {
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         #[cfg(feature = "nym")]
         if let crate::nym::MixnetRoute::Mixnet(tunnel) = self.mixnet_route()? {
-            let socks5_addr = tunnel.into_addr();
+            let socks5_addr = tunnel.into_addr().to_string();
             let sync_indexer = self.indexer_uri();
             let candidates = transmission_route::eligible_candidates(
                 self.migration_transmission_uri.clone(),
@@ -2297,10 +2297,14 @@ fn record_part_route(
     use crate::wallet::migration::TransmissionRoute;
 
     let (host, attempt_route) = match route {
-        TransmissionRoute::Mixnet { correspondent, .. } => {
-            (correspondent.clone(), AttemptRoute::Mixnet)
-        }
-        TransmissionRoute::Clearnet { endpoint } => (endpoint.clone(), AttemptRoute::Clearnet),
+        TransmissionRoute::Mixnet { correspondent, .. } => (
+            crate::correspondent::Host::of_host_str(correspondent),
+            AttemptRoute::Mixnet,
+        ),
+        TransmissionRoute::Clearnet { endpoint } => (
+            crate::correspondent::Host::of_host_str(endpoint),
+            AttemptRoute::Clearnet,
+        ),
     };
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),

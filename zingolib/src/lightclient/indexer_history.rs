@@ -183,7 +183,7 @@ pub struct IndexerAttempt {
     /// Seconds since the Unix epoch when the attempt finished.
     pub unix_secs: u64,
     /// The indexer host the attempt targeted.
-    pub host: String,
+    pub host: crate::correspondent::Host,
     /// The route the attempt used.
     pub route: AttemptRoute,
     /// Whether the attempt was a send or a probe.
@@ -195,7 +195,7 @@ pub struct IndexerAttempt {
     /// Which party a failure is charged against, when the evidence says.
     pub phase: Option<crate::correspondent::health::FailurePhase>,
     /// The Exit Node the attempt rode, when it rode one.
-    pub exit: Option<String>,
+    pub exit: Option<crate::nym::ExitNodeId>,
 }
 
 impl IndexerAttempt {
@@ -207,12 +207,14 @@ impl IndexerAttempt {
         format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             self.unix_secs,
-            flatten(&self.host),
+            flatten(self.host.as_str()),
             self.route.as_str(),
             self.kind.as_str(),
             self.millis,
             self.phase.map_or("-", |phase| phase.as_str()),
-            self.exit.as_deref().map_or("-".to_string(), flatten),
+            self.exit
+                .as_ref()
+                .map_or("-".to_string(), |exit| flatten(exit.as_str())),
             outcome
         )
     }
@@ -226,13 +228,16 @@ impl IndexerAttempt {
             8 => (
                 (fields[5] != "-")
                     .then(|| crate::correspondent::health::FailurePhase::parse(fields[5])),
-                (fields[6] != "-").then(|| fields[6].to_string()),
+                match fields[6] {
+                    "-" => None,
+                    token => Some(crate::nym::ExitNodeId::parse(token).ok()?),
+                },
                 fields[7],
             ),
             _ => return None,
         };
         let unix_secs = fields[0].parse().ok()?;
-        let host = fields[1].to_string();
+        let host = crate::correspondent::Host::of_host_str(fields[1]);
         let route = AttemptRoute::parse(fields[2])?;
         let kind = AttemptKind::parse(fields[3])?;
         let millis = fields[4].parse().ok()?;
@@ -380,14 +385,16 @@ mod tests {
     fn an_attempt(host: &str, outcome: Result<(), FailureKind>) -> IndexerAttempt {
         IndexerAttempt {
             unix_secs: 1_700_000_000,
-            host: host.to_string(),
+            host: crate::correspondent::Host::of_host_str(host),
             route: AttemptRoute::Mixnet,
             kind: AttemptKind::Send,
             millis: 1234,
             phase: outcome
                 .is_err()
                 .then_some(crate::correspondent::health::FailurePhase::Correspondent),
-            exit: Some("exit-alpha".to_string()),
+            exit: Some(
+                crate::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses"),
+            ),
             outcome,
         }
     }
@@ -543,7 +550,10 @@ mod tests {
 
         let loaded = handle.load();
         assert_eq!(loaded.len(), 2, "both records survive: {loaded:?}");
-        assert_eq!(loaded[0].host, "tab here and newline");
+        assert_eq!(
+            loaded[0].host,
+            crate::correspondent::Host::of_host_str("tab here and newline")
+        );
     }
 
     /// A corrupt tail (torn write) is skipped rather than poisoning the load.

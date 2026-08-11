@@ -662,7 +662,7 @@ mod network_command_parsing {
         use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
-            host: "zec.rocks".to_string(),
+            host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
                 outcome: Ok(ProbeSuccess {
                     chain: "main".to_string(),
@@ -677,7 +677,7 @@ mod network_command_parsing {
         );
 
         let dead = MixnetProbe {
-            host: "carover0.xyz".to_string(),
+            host: zingolib::correspondent::Host::of_host_str("carover0.xyz"),
             leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
@@ -708,7 +708,7 @@ mod network_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: host.to_string(),
+            host: zingolib::correspondent::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,
@@ -875,12 +875,14 @@ mod bootstrap_wait {
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
         let mut ready = status(MixnetMode::Ready);
-        ready.exits = vec!["exit-alpha".to_string()];
+        let exit_alpha =
+            zingolib::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+        ready.exits = vec![exit_alpha.clone()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
             waiter.await.expect("the waiter must not panic"),
             BootstrapOutcome::Ready {
-                exits: vec!["exit-alpha".to_string()]
+                exits: vec![exit_alpha]
             }
         );
     }
@@ -890,14 +892,17 @@ mod bootstrap_wait {
     #[test]
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
+        let parsed = |identity: &str| {
+            zingolib::nym::ExitNodeId::parse(identity).expect("the test identity parses")
+        };
         assert_eq!(
-            super::super::render_exit_nodes(&["short-exit".to_string()]),
+            super::super::render_exit_nodes(&[parsed("short-exit")]),
             " Exit Node bound: short-exit."
         );
         assert_eq!(
             super::super::render_exit_nodes(&[
-                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".to_string(),
-                "short-exit".to_string(),
+                parsed("AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta"),
+                parsed("short-exit"),
             ]),
             " Exit Nodes bound: AlphaBetaGam…, short-exit."
         );
@@ -1877,7 +1882,11 @@ mod attached_exit_reporting {
         .await;
         let receiver = client.subscribe_mixnet_status();
         client
-            .attach_mixnet(&addr, &["host-bound-exit".to_string()])
+            .attach_mixnet(
+                &addr,
+                &[zingolib::nym::ExitNodeId::parse("host-bound-exit")
+                    .expect("the test identity parses")],
+            )
             .await
             .expect("a valid loopback address attaches");
 

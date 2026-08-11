@@ -17,7 +17,7 @@ pub(crate) trait PoolTransport: Send + 'static {
     /// Whether the transport still reports itself ready.
     fn is_ready(&self) -> bool;
     /// The transport's local SOCKS5 address, while it lives.
-    fn socks5_addr(&self) -> Option<String>;
+    fn socks5_addr(&self) -> Option<std::net::SocketAddr>;
     /// Tears the transport down.
     fn stop(self) -> impl std::future::Future<Output = ()> + Send;
 }
@@ -66,7 +66,7 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
 
     /// The bound Exit Node's identity.
     #[cfg(test)]
-    pub(crate) fn node(&self) -> &str {
+    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
         self.lease.node()
     }
 
@@ -79,7 +79,7 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
 impl<T: PoolTransport> Member<T, Exclusive> {
     /// The one dial: consumes the member, yielding the tunnel address for a
     /// single Correspondent contact and the spent holder to retire.
-    pub(crate) fn dial(self) -> (Option<String>, SpentExit<T>) {
+    pub(crate) fn dial(self) -> (Option<std::net::SocketAddr>, SpentExit<T>) {
         let addr = self.transport.socks5_addr();
         (
             addr,
@@ -94,7 +94,7 @@ impl<T: PoolTransport> Member<T, Exclusive> {
 impl<T: PoolTransport> Member<T, Shared> {
     /// The tunnel address for one more Correspondent contact, while the
     /// transport lives.
-    pub(crate) fn addr(&self) -> Option<String> {
+    pub(crate) fn addr(&self) -> Option<std::net::SocketAddr> {
         self.transport.socks5_addr()
     }
 }
@@ -107,7 +107,7 @@ pub(crate) struct SpentExit<T> {
 
 impl<T: PoolTransport> SpentExit<T> {
     /// The spent exit's identity, for the attempt record.
-    pub(crate) fn node(&self) -> &str {
+    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
         self.lease.node()
     }
 
@@ -290,7 +290,7 @@ impl Pools {
         // Bind-time recycle: keeping only the bound lease drops the rest.
         let bound = clutch
             .iter()
-            .position(|reservation| reservation.node() == exit)
+            .position(|reservation| reservation.node() == &exit)
             .expect("the bound exit is one of the clutch's nodes");
         let lease = clutch.swap_remove(bound);
         drop(clutch);
@@ -415,8 +415,9 @@ mod tests {
             self.ready
         }
 
-        fn socks5_addr(&self) -> Option<String> {
-            self.ready.then(|| "127.0.0.1:7".to_string())
+        fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
+            self.ready
+                .then(|| "127.0.0.1:7".parse().expect("the fake address parses"))
         }
 
         fn stop(self) -> impl std::future::Future<Output = ()> + Send {
@@ -459,7 +460,7 @@ mod tests {
         let take = pool.take();
         assert_eq!(take.evicted.len(), 1, "the dead member is evicted");
         let taken = take.member.expect("the live member is taken");
-        assert_eq!(taken.node(), "exit-live");
+        assert_eq!(taken.node(), &crate::nym::ExitNodeId::from("exit-live"));
         assert!(pool.take().member.is_none(), "both members left the pool");
     }
 
@@ -536,7 +537,10 @@ mod tests {
         let member = member("exit-exclusive", true);
         let (addr, spent) = member.dial();
         assert!(addr.is_some(), "a live exclusive member dials once");
-        assert_eq!(spent.node(), "exit-exclusive");
+        assert_eq!(
+            spent.node(),
+            &crate::nym::ExitNodeId::from("exit-exclusive")
+        );
         spent.retire().await;
     }
 }

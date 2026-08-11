@@ -64,25 +64,7 @@ pub struct Selection {
     pub cohort: Vec<LiveCandidate>,
 }
 
-/// The operator key of a host: its registrable parent domain (last two
-/// labels), lowercased. One domain is one administrative authority, so
-/// endpoints group by this value for the one-ticket-per-operator draw and
-/// the transmit exclusion. Mirrors `correspondent::operator_domain`;
-/// the census-level `Indexer::operator` is the eventual single owner.
-fn operator_domain(host: &str) -> String {
-    let host = host.to_ascii_lowercase();
-    host.rsplit('.')
-        .take(2)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join(".")
-}
-
-fn operator_of(uri: &Uri) -> String {
-    uri.host().map(operator_domain).unwrap_or_default()
-}
+use crate::correspondent::Operator;
 
 /// The median of a nonempty height list, taking the lower of the two middle
 /// values for an even count. Integer-only, so the tolerance test needs no
@@ -158,10 +140,10 @@ pub fn select(
         }
     };
 
-    let sync_operator = operator_of(&sync_indexer);
+    let sync_operator = Operator::of_uri(&sync_indexer);
     let transmit_candidates = cohort
         .iter()
-        .filter(|c| operator_of(&c.uri) != sync_operator)
+        .filter(|c| Operator::of_uri(&c.uri) != sync_operator)
         .map(|c| c.uri.clone())
         .collect();
 
@@ -176,7 +158,8 @@ pub fn select(
 /// a uniform draw among the operators, then any live endpoint of the winner.
 /// `cohort` is nonempty here.
 fn draw_one_per_operator(cohort: &[LiveCandidate], rng: &mut impl rand::Rng) -> Uri {
-    let mut operators: Vec<String> = cohort.iter().map(|c| operator_of(&c.uri)).collect();
+    let mut operators: Vec<Option<Operator>> =
+        cohort.iter().map(|c| Operator::of_uri(&c.uri)).collect();
     operators.sort();
     operators.dedup();
     let winner = operators
@@ -184,7 +167,7 @@ fn draw_one_per_operator(cohort: &[LiveCandidate], rng: &mut impl rand::Rng) -> 
         .expect("a nonempty cohort has at least one operator");
     let endpoints: Vec<&LiveCandidate> = cohort
         .iter()
-        .filter(|c| &operator_of(&c.uri) == winner)
+        .filter(|c| &Operator::of_uri(&c.uri) == winner)
         .collect();
     endpoints
         .choose(rng)
@@ -297,10 +280,10 @@ mod tests {
         // winner against the transmit set.
         let selection = select(&results, "main", 2, None, &mut StdRng::seed_from_u64(1))
             .expect("a live cohort selects");
-        let sync_op = operator_of(&selection.sync_indexer);
+        let sync_op = Operator::of_uri(&selection.sync_indexer);
         for candidate in &selection.transmit_candidates {
             assert_ne!(
-                operator_of(candidate),
+                Operator::of_uri(candidate),
                 sync_op,
                 "no transmit candidate shares the sync operator"
             );
@@ -324,7 +307,9 @@ mod tests {
         for seed in 0..2_000 {
             let selection = select(&results, "main", 2, None, &mut StdRng::seed_from_u64(seed))
                 .expect("selects");
-            match operator_of(&selection.sync_indexer).as_str() {
+            let winner = Operator::of_uri(&selection.sync_indexer)
+                .expect("every selected sync indexer has a host");
+            match winner.to_string().as_str() {
                 "solo.example" => solo_wins += 1,
                 "zec.rocks" => rocks_wins += 1,
                 other => panic!("unexpected operator {other}"),
