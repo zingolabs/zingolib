@@ -58,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a failure detail lives in exactly one chain link. The
+  wrapper variants of `LightClientError` and
+  `PriceError::TransportAcquisition` stop embedding their sources' text
+  and carry them as `source()` links (the pure `{0}` wrappers become
+  transparent), because every consumer walks the chain;
+  `TransportError::HostRefused` follows the same rule.
+  `LightClientError::NoEligibleCorrespondent` now carries the typed
+  `correspondent::NoEligibleCorrespondents` union — that union and
+  `correspondent::Operator` are public — so the empty-pool and
+  all-excluded stories reach consumers distinctly. The mixnet refusals
+  prescribe `network on` / `network off`, the commands that exist.
 - BREAKING: the `zingolib::nym` module is renamed `zingolib::mixnet`,
   per the seam rule (ratified 2026-08-11): above the local SOCKS5 seam
   the wallet's transport domain speaks "mixnet", while "Nym" stays the

@@ -62,8 +62,8 @@ pub enum MixnetNotReady {
     /// Absence is not consent, so the surface refuses.
     #[error(
         "the Nym mixnet is not enabled; this operation refuses rather than use \
-         clearnet without consent. Run `nym on` to enable the mixnet, or `nym off` \
-         to choose clearnet"
+         clearnet without consent. Run `network on` to enable the mixnet, or \
+         `network off` to choose clearnet"
     )]
     Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
@@ -72,7 +72,7 @@ pub enum MixnetNotReady {
     /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet. Run `nym on` to restart the proxy"
+         clearnet. Run `network on` to restart the proxy"
     )]
     Died,
 }
@@ -173,7 +173,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: the refusal names the actual state, so a user with a dead
-    /// proxy is told to run `nym on` rather than that the mixnet is
+    /// proxy is told to run `network on` rather than that the mixnet is
     /// bootstrapping. Falsified if the Died refusal renders the
     /// bootstrapping message.
     #[test]
@@ -183,12 +183,12 @@ mod tests {
 
         let died = MixnetNotReady::Died.to_string();
         assert!(died.contains("died"), "{died}");
-        assert!(died.contains("nym on"), "{died}");
+        assert!(died.contains("network on"), "{died}");
         assert!(!died.contains("bootstrapping"), "{died}");
 
         let unattached = MixnetNotReady::Unattached.to_string();
         assert!(unattached.contains("not enabled"), "{unattached}");
-        assert!(unattached.contains("nym on"), "{unattached}");
+        assert!(unattached.contains("network on"), "{unattached}");
         assert!(!unattached.contains("bootstrapping"), "{unattached}");
         assert!(!unattached.contains("died"), "{unattached}");
     }

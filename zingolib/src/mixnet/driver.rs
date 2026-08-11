@@ -47,17 +47,18 @@ pub struct MixnetStatus {
     pub death: Option<DeathReport>,
 }
 
-/// The lifted form before mode-scoping, through whose untyped mirror serde
-/// reads the fields so that [`TryFrom`] can refuse any evidence outside its
-/// one mode and refuse a malformed address or exit entry as suspicious,
-/// because producer and consumer are pinned to one code revision.
+/// The lifted form before mode-scoping, through whose mirror serde reads
+/// the typed fields — whose own deserializers refuse a malformed address
+/// or exit entry as suspicious, because producer and consumer are pinned
+/// to one code revision — so that [`TryFrom`] can refuse any evidence
+/// outside its one mode.
 #[derive(serde::Deserialize)]
 struct RawMixnetStatus {
     mode: MixnetMode,
     #[serde(default)]
-    socks5_addr: Option<String>,
+    socks5_addr: Option<std::net::SocketAddr>,
     #[serde(default)]
-    exits: Vec<String>,
+    exits: Vec<crate::mixnet::ExitNodeId>,
     #[serde(default)]
     bootstrap_detail: Option<String>,
     #[serde(default)]
@@ -83,30 +84,10 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
         if raw.death.is_some() && raw.mode != MixnetMode::Died {
             return Err(stray("death", raw.mode));
         }
-        // Producer and consumer are pinned to one code revision, so a
-        // malformed wire value is not version skew: it is suspicious, and
-        // the snapshot refuses whole.
-        let socks5_addr = raw
-            .socks5_addr
-            .map(|addr| {
-                addr.parse::<std::net::SocketAddr>().map_err(|error| {
-                    format!("suspicious status wire: socks5_addr {addr:?} is malformed ({error})")
-                })
-            })
-            .transpose()?;
-        let exits = raw
-            .exits
-            .into_iter()
-            .map(|exit| {
-                crate::mixnet::ExitNodeId::try_from(exit.clone()).map_err(|error| {
-                    format!("suspicious status wire: exit {exit:?} is malformed ({error})")
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
         Ok(MixnetStatus {
             mode: raw.mode,
-            socks5_addr,
-            exits,
+            socks5_addr: raw.socks5_addr,
+            exits: raw.exits,
             bootstrap_detail: raw.bootstrap_detail,
             death: raw.death,
         })

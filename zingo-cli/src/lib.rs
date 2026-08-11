@@ -294,7 +294,7 @@ async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, St
             PollReport::Ready(result) => {
                 return result
                     .map(|sync_result| sync_result.to_string())
-                    .map_err(|e| format!("Error: {e}"));
+                    .map_err(|e| format!("Error: {}", commands::render_error_chain(&e)));
             }
         }
     }
@@ -1262,7 +1262,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     };
     match commands::dispatch_parsed(save_run, &mut lightclient).await {
         Ok(update) => eprintln!("{update}"),
-        Err(e) => eprintln!("Error: {e}"),
+        Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
     }
 
     if filled_template.sync

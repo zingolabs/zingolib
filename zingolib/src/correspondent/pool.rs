@@ -397,7 +397,10 @@ async fn refill_one<U: ExitUse>(
                 .lock()
                 .expect("pool mutex")
                 .note_refill_finished();
-            log::warn!("pool refill failed: {cause}");
+            log::warn!(
+                "pool refill failed: {}",
+                zingo_net_diag::chain_texts(&cause).join(": ")
+            );
         }
     }
 }

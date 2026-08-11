@@ -177,10 +177,10 @@ fn candidates_from(
         return Ok(vec![configured]);
     }
     match sync_indexer {
-        Some(sync) => {
-            eligible_from(pool, sync).map_err(|_| LightClientError::NoEligibleCorrespondent)
+        Some(sync) => eligible_from(pool, sync).map_err(LightClientError::from),
+        None if pool.is_empty() => {
+            Err(crate::correspondent::NoEligibleCorrespondents::EmptyPool.into())
         }
-        None if pool.is_empty() => Err(LightClientError::NoEligibleCorrespondent),
         None => Ok(pool),
     }
 }
@@ -294,7 +294,9 @@ mod tests {
         let refused = candidates_from(None, Some(&sync), vec![uri("https://only.example:443")]);
         assert!(matches!(
             refused,
-            Err(LightClientError::NoEligibleCorrespondent)
+            Err(LightClientError::NoEligibleCorrespondent(
+                crate::correspondent::NoEligibleCorrespondents::AllBelongToSyncOperator(_)
+            ))
         ));
     }
 

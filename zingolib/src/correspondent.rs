@@ -142,7 +142,7 @@ pub fn correspondent_indexers() -> Vec<Uri> {
 /// than transmit to the sync indexer.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum NoEligibleCorrespondents {
+pub enum NoEligibleCorrespondents {
     /// Every pool entry belongs to the sync indexer's operator.
     #[error(
         "no eligible Correspondent: every entry in the pool belongs to the \
@@ -226,7 +226,7 @@ pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
 /// The accumulating administrative authority behind a Correspondable host, keyed by its registrable parent domain.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Operator(String);
+pub struct Operator(String);
 
 #[cfg(feature = "nym")]
 impl Operator {

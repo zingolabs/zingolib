@@ -47,10 +47,10 @@ pub enum SweepProgress {
 #[derive(Debug, thiserror::Error)]
 pub enum ServerSelectionError {
     /// The sweep could not draw a ledgered Clutch for its transport.
-    #[error("the sweep could not acquire a transport: {0}")]
+    #[error("the sweep could not acquire a transport")]
     TransportAcquisition(#[source] crate::mixnet::acquire::TransportError),
     /// The dedicated sweep proxy could not be spawned.
-    #[error("the sweep proxy could not start: {0}")]
+    #[error("the sweep proxy could not start")]
     ProxyStart(#[source] crate::mixnet::MixnetProxyError),
     /// The sweep proxy did not reach readiness: it died or exceeded its
     /// bootstrap budget before any survey ran.

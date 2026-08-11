@@ -145,14 +145,13 @@ pub enum CommandError {
 }
 
 /// Renders `error` and then every link of its source chain, one `caused
-/// by:` line per link, so no wrapper needs to embed its source's text.
-pub(crate) fn render_error_chain(error: &(impl std::error::Error + ?Sized)) -> String {
-    use std::fmt::Write;
-    let mut rendered = error.to_string();
-    let mut link = error.source();
-    while let Some(cause) = link {
-        let _ = write!(rendered, "\ncaused by: {cause}");
-        link = cause.source();
+/// by:` line per link, over the one sanctioned chain walk.
+pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> String {
+    let mut texts = zingo_net_diag::chain_texts(error).into_iter();
+    let mut rendered = texts.next().unwrap_or_default();
+    for cause in texts {
+        rendered.push_str("\ncaused by: ");
+        rendered.push_str(&cause);
     }
     rendered
 }
@@ -1608,7 +1607,7 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 pub enum MigrationCommandError {
     #[error("sync failed: {0}")]
     Sync(zingolib::lightclient::error::LightClientError),
-    #[error("{0}")]
+    #[error(transparent)]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
