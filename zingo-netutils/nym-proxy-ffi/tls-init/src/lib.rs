@@ -1,8 +1,8 @@
 #[cfg(target_os = "android")]
 mod android {
-    use jni::EnvUnowned;
     use jni::errors::ThrowRuntimeExAndDefault;
     use jni::objects::{JClass, JObject};
+    use jni::EnvUnowned;
 
     /// Captures the JVM and the application context so the shim library's `rustls-platform-verifier` can reach Android's certificate verifier.
     #[no_mangle]
