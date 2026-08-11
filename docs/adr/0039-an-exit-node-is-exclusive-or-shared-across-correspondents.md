@@ -6,7 +6,9 @@ types — `Member<T, Exclusive>`'s one dial consumes the member, and
 `Member<T, Shared>` dials repeatedly for its one holder — declared at
 the Indexer Pool, Price Source Pool, and Server-Selection Sweep
 acquisition sites. The session slot's tunnel crosses the route as
-`SlotTunnel`, whose borrowing accessor is its Shared declaration.
+`SlotTunnel`, which names the Shared category without enforcing it:
+the tunnel is a plain address carrier, not a lease, and the
+one-exit-many-requests discipline rests on the slot supervisor.
 
 ## Context
 
