@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
@@ -383,6 +383,7 @@ pub async fn sync<C, P, W>(
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
+    progress: watch::Sender<Option<SyncStatus>>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
@@ -495,6 +496,8 @@ where
 
     expire_transactions(&mut *wallet.write().await)?;
 
+    publish_sync_status(&*wallet.read().await, &progress).await;
+
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -527,6 +530,7 @@ where
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                publish_sync_status(&*wallet_guard, &progress).await;
                 drop(wallet_guard);
             }
 
@@ -569,6 +573,7 @@ where
                         wallet_guard
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
+                        let _ = progress.send(Some(sync_status.clone()));
                         drop(wallet_guard);
                         mempool_handle.abort();
                         fetcher_handle.abort();
@@ -954,6 +959,16 @@ where
         total_outputs_scanned,
         total_outputs,
     })
+}
+
+/// Publishes the wallet's current sync status to the progress channel, ignoring an unreadable status and a closed channel.
+async fn publish_sync_status<W>(wallet: &W, progress: &watch::Sender<Option<SyncStatus>>)
+where
+    W: SyncWallet + SyncBlocks,
+{
+    if let Ok(status) = sync_status(wallet).await {
+        let _ = progress.send(Some(status));
+    }
 }
 
 /// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.

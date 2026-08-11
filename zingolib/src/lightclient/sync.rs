@@ -43,8 +43,18 @@ impl LightClient {
             .clone();
         let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();
+        let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
+        self.sync_progress = progress_receiver;
         let sync_handle = tokio::spawn(async move {
-            pepper_sync::sync(client, &chain_type, wallet, sync_mode, sync_config).await
+            pepper_sync::sync(
+                client,
+                &chain_type,
+                wallet,
+                sync_mode,
+                progress_sender,
+                sync_config,
+            )
+            .await
         });
         self.sync_handle = Some(sync_handle);
 
@@ -113,6 +123,11 @@ impl LightClient {
         }
         self.sync_mode
             .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+    }
+
+    /// Returns the sync engine's most recently published status without touching the wallet lock.
+    pub fn latest_sync_status(&self) -> Option<pepper_sync::sync::SyncStatus> {
+        self.sync_progress.borrow().clone()
     }
 
     /// Returns the lightclient's sync mode in non-atomic (enum) form.

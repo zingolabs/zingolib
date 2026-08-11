@@ -19,7 +19,10 @@ use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
-    error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
+    error::SyncError,
+    keys::transparent::TransparentAddressId,
+    sync::{SyncResult, SyncStatus},
+    wallet::SyncMode,
 };
 use zingo_netutils::Indexer as _;
 
@@ -138,6 +141,8 @@ pub struct LightClient {
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
+    /// The receiving end of the sync engine's progress channel, answering status queries without the wallet lock.
+    sync_progress: tokio::sync::watch::Receiver<Option<SyncStatus>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
     /// Held while a stored proposal is pending, so the wallet state the
@@ -244,6 +249,7 @@ impl LightClient {
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
@@ -287,6 +293,7 @@ impl LightClient {
             ),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
@@ -345,6 +352,7 @@ impl LightClient {
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
