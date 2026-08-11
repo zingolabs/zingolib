@@ -47,7 +47,7 @@ pub enum TransportError {
     HostUnavailable(String),
     /// The platform host answered and refused the acquisition.
     #[error("the proxy host refused: {0}")]
-    HostRefused(String),
+    HostRefused(#[source] HostRefusal),
     /// The transport died during bootstrap.
     #[error(
         "the pool transport died during bootstrap: {}",
@@ -112,19 +112,37 @@ pub struct HostedTransport {
     pub exit_node: crate::nym::ExitNodeId,
 }
 
+/// Why the platform host declined or failed a request, with the host's own
+/// detail carried verbatim as the payload.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum HostRefusal {
+    /// The host tried to satisfy the request and could not.
+    #[error("the host failed: {detail}")]
+    Failed {
+        /// The host's own account of the failure.
+        detail: String,
+    },
+    /// The host declined the request as a matter of platform policy.
+    #[error("the host declined: {detail}")]
+    Declined {
+        /// The host's own account of the refusal.
+        detail: String,
+    },
+}
+
 /// A platform host that owns the mixnet proxy, for a platform whose sandbox
 /// forbids the wallet from spawning one.
 pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
-    fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, String>;
+    fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal>;
 
-    /// Starts one proxy racing `clutch` under the responsiveness class named
-    /// by `class`, returning where it listens and which exit it bound.
+    /// Starts one proxy racing `clutch` under `class`, returning where it
+    /// listens and which exit it bound.
     fn start_transport(
         &self,
-        class: &str,
+        class: ResponsivenessClass,
         clutch: &[crate::nym::ExitNodeId],
-    ) -> Result<HostedTransport, String>;
+    ) -> Result<HostedTransport, HostRefusal>;
 }
 
 /// The mobile acquirer: a platform host that owns the proxy library.
@@ -163,10 +181,9 @@ impl TransportAcquirable for HostedProxy {
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         let host = std::sync::Arc::clone(&self.host);
-        let class = class.wire().to_string();
         let clutch = clutch.to_vec();
         Box::pin(async move {
-            let hosted = tokio::task::spawn_blocking(move || host.start_transport(&class, &clutch))
+            let hosted = tokio::task::spawn_blocking(move || host.start_transport(class, &clutch))
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
                 .map_err(TransportError::HostRefused)?;
@@ -216,20 +233,20 @@ mod tests {
     /// A host that answers both calls from a script, standing in for the
     /// platform library a phone loads.
     struct ScriptedHost {
-        directory: Result<Vec<crate::nym::ExitNodeId>, String>,
-        transport: Result<HostedTransport, String>,
+        directory: Result<Vec<crate::nym::ExitNodeId>, HostRefusal>,
+        transport: Result<HostedTransport, HostRefusal>,
     }
 
     impl ProxyHost for ScriptedHost {
-        fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, String> {
+        fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal> {
             self.directory.clone()
         }
 
         fn start_transport(
             &self,
-            _class: &str,
+            _class: ResponsivenessClass,
             _clutch: &[crate::nym::ExitNodeId],
-        ) -> Result<HostedTransport, String> {
+        ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
         }
     }
@@ -244,7 +261,9 @@ mod tests {
     async fn a_host_directory_answers_discovery() {
         let acquirer = hosted(ScriptedHost {
             directory: Ok(vec!["exit-a".into(), "exit-b".into()]),
-            transport: Err("unused".to_string()),
+            transport: Err(HostRefusal::Declined {
+                detail: "unused".to_string(),
+            }),
         });
         assert_eq!(
             acquirer.discover().await.expect("the host answers"),
@@ -260,8 +279,12 @@ mod tests {
     #[tokio::test]
     async fn a_refusing_host_refuses_typed() {
         let acquirer = hosted(ScriptedHost {
-            directory: Err("no directory on this platform".to_string()),
-            transport: Err("the app declined".to_string()),
+            directory: Err(HostRefusal::Declined {
+                detail: "no directory on this platform".to_string(),
+            }),
+            transport: Err(HostRefusal::Declined {
+                detail: "the app declined".to_string(),
+            }),
         });
         assert!(matches!(
             acquirer.discover().await.expect_err("the host refuses"),

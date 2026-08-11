@@ -4,38 +4,48 @@ This census records every String in the nym/correspondent stack that the
 2026-08-10 audit walked, with the structured type each should become and a
 verdict on feasibility and benefit. It implements the ADR 0041 ruling that
 the seam's vocabulary is typed, with strings surviving only at true wire
-and FFI edges. Working type names below are unratified identifiers.
+and FFI edges. Working type names below are unratified identifiers,
+except where an entry records its ratification: `ExitNodeId`,
+`Operator`, and `HostRefusal` were ratified 2026-08-10.
 
 ## Promote — feasible and beneficial
 
-**Exit Node identity → `ExitNodeId` newtype.** *Implemented 2026-08-10.* Sites: `Reservation.node`,
+**Exit Node identity → `ExitNodeId` newtype.** *Implemented 2026-08-10;
+name ratified 2026-08-10.* Sites: `Reservation.node`,
 `ExitPool.population`/`issued`, `clutch_nodes() -> Vec<String>`,
 `HostedTransport.exit_node`, `ProxyState.exits`, `MixnetStatus.exits`,
 `MixnetSlot::exits()`. One newtype ends the possibility of an exit
 identity and a host string trading places, and gives the ledger a typed
 key. Serde stays wire-compatible via a transparent representation.
 
-**SOCKS5 endpoint → `std::net::SocketAddr`.** Sites:
-`MixnetRoute::Mixnet(String)`, `HostedTransport.socks5_addr`,
+**SOCKS5 endpoint → `std::net::SocketAddr`.** Sites: the
+`SlotTunnel.socks5_addr` field (PR #2665 wrapped the route's address and
+validates the `SocketAddr` parse at construction, but still stores and
+yields the `String`), `HostedTransport.socks5_addr`,
 `ProxyState.socks5_addr`, `MixnetStatus.socks5_addr`,
 `MixnetSlot::Ready { socks5_addr }`, and the `&str` threaded through
-`probe`/`select` survey calls. The attach path already parses to
-`SocketAddr` to validate and then discards the type; promotion moves the
-parse to the edge, and `Ready` becomes address-typed by construction.
-Coordinate with PR #2665, which is amending `MixnetRoute`.
+`probe`/`select` survey calls. Both the attach path and the tunnel parse
+to `SocketAddr` to validate and then discard the type; promotion moves
+the parse to the edge and makes `Ready` and the tunnel address-typed by
+construction.
 
 **Responsiveness class across the host seam → `ResponsivenessClass`.**
+*Implemented 2026-08-10.*
 Site: `ProxyHost::start_transport(class: &str, …)` and the `class.wire()`
 flattening in `HostedProxy::acquire`. The enum crosses the ADR 0041
 request channel intact; `wire()` renders only inside the mobile FFI crate.
 
-**Host refusals → typed `HostRefusal`.** Sites: `ProxyHost`'s
-`Result<_, String>` returns, absorbed by
+**Host refusals → typed `HostRefusal`.** *Implemented 2026-08-10; the
+name and its two-variant shape (`Failed` versus `Declined`) are ratified
+2026-08-10 — see Host Refusal in `zingolib/CONTEXT.md`.* Sites:
+`ProxyHost`'s `Result<_, String>` returns, absorbed by
 `TransportError::HostUnavailable(String)` and `HostRefused(String)`.
 The ADR 0041 channel replies carry the typed refusal; prose survives only
-as a display of the type, never as the type.
+as a display of the type, never as the type. Endpoint defects are
+deliberately not a variant: the wallet judges a host's reports itself.
 
-**Operator identity → `Operator` newtype.** *Implemented 2026-08-10.* Sites:
+**Operator identity → `Operator` newtype.** *Implemented 2026-08-10;
+name ratified 2026-08-10.* Sites:
 `sweep::operator_domain(&str) -> String` and its acknowledged mirror
 `correspondent::operator_domain`; the census-level `Indexer::operator` is
 the declared eventual owner. One newtype ends the duplicated derivation,
