@@ -828,10 +828,13 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Status => {
-            match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
-                Ok(status) => Ok(json::JsonValue::from(status).pretty(JSON_INDENT)),
-                Err(e) => Err(not_yet_typed(e)),
-            }
+            let status = match lightclient.latest_sync_status() {
+                Some(status) if lightclient.sync_mode() != SyncMode::NotRunning => status,
+                _ => pepper_sync::sync_status(&*lightclient.wallet().read().await)
+                    .await
+                    .map_err(not_yet_typed)?,
+            };
+            Ok(json::JsonValue::from(status).pretty(JSON_INDENT))
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),

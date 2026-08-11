@@ -309,17 +309,20 @@ struct ScanProgress {
     complete: bool,
 }
 
-/// Reads the wallet's scan progress, or `None` if sync status is
-/// unavailable.
+/// Reads the scan progress from the sync engine's progress channel while sync runs, from the wallet otherwise, or `None` if sync status is unavailable.
 async fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
-    pepper_sync::sync_status(&*lightclient.wallet().read().await)
-        .await
-        .ok()
-        .map(|status| ScanProgress {
-            outputs_scanned: status.total_outputs_scanned,
-            total_outputs: status.total_outputs,
-            complete: status.is_complete(),
-        })
+    let status = if lightclient.sync_mode() == pepper_sync::wallet::SyncMode::NotRunning {
+        pepper_sync::sync_status(&*lightclient.wallet().read().await)
+            .await
+            .ok()?
+    } else {
+        lightclient.latest_sync_status()?
+    };
+    Some(ScanProgress {
+        outputs_scanned: status.total_outputs_scanned,
+        total_outputs: status.total_outputs,
+        complete: status.is_complete(),
+    })
 }
 
 /// Formats a prompt indicator: `" [{labeled} X / Y outputs]"` when the
