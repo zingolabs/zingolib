@@ -72,6 +72,19 @@ pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::mixnet::ExitNod
         .collect()
 }
 
+/// Takes the one reservation a ready transport reports as bound out of
+/// `clutch`, recycling the rest, or `None` when the report names no drawn
+/// node.
+pub(crate) fn take_bound_lease(
+    clutch: &mut Vec<Reservation>,
+    reported: &[crate::mixnet::ExitNodeId],
+) -> Option<Reservation> {
+    let bound = clutch
+        .iter()
+        .position(|reservation| reported.contains(reservation.node()))?;
+    Some(clutch.swap_remove(bound))
+}
+
 /// The session's Exit Pool: one reservation per discovered node, issued to
 /// at most one holder at a time.
 #[derive(Default)]
@@ -142,6 +155,37 @@ mod tests {
                 .collect(),
         );
         pool
+    }
+
+    /// HYPOTHESIS: the bind-time take yields exactly the reported
+    /// reservation and leaves the rest for recycling. Falsified if it takes
+    /// the wrong reservation or disturbs the remainder.
+    #[test]
+    fn the_bound_lease_is_taken_and_the_rest_remain() {
+        let mut clutch = vec![
+            Reservation::dangling_for_test("exit-a"),
+            Reservation::dangling_for_test("exit-b"),
+            Reservation::dangling_for_test("exit-c"),
+        ];
+        let lease = take_bound_lease(
+            &mut clutch,
+            std::slice::from_ref(&crate::mixnet::ExitNodeId::from("exit-b")),
+        )
+        .expect("the reported exit is drawn");
+        assert_eq!(lease.node(), &crate::mixnet::ExitNodeId::from("exit-b"));
+        assert_eq!(clutch.len(), 2, "the unbound reservations remain");
+    }
+
+    /// HYPOTHESIS: a report naming no drawn node (foreign or empty) takes
+    /// nothing, so the caller can refuse typed. Falsified if a lease is
+    /// yielded or the clutch shrinks.
+    #[test]
+    fn a_foreign_or_empty_report_takes_no_lease() {
+        let mut clutch = vec![Reservation::dangling_for_test("exit-a")];
+        let foreign = [crate::mixnet::ExitNodeId::from("exit-foreign")];
+        assert!(take_bound_lease(&mut clutch, &foreign).is_none());
+        assert!(take_bound_lease(&mut clutch, &[]).is_none());
+        assert_eq!(clutch.len(), 1, "the clutch is undisturbed");
     }
 
     /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in

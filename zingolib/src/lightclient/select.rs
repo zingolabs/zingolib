@@ -107,12 +107,18 @@ impl LightClient {
         progress(SweepProgress::TransportBootstrapping);
         let (socks5_addr, exits) = await_sweep_ready(&mut receiver).await?;
         // Bind-time recycle: the survey's fan-out is a declared Shared use
-        // of the one bound exit, and the unbound reservations return now.
-        let bound = clutch
-            .iter()
-            .position(|reservation| exits.contains(reservation.node()))
-            .expect("the bound exit is one of the clutch's nodes");
-        let lease = clutch.swap_remove(bound);
+        // of the one bound exit, and the unbound reservations return now. A
+        // Ready with no exit from the drawn Clutch (a blank announcement or
+        // a version-skewed proxy) refuses typed at the user's go-online
+        // moment, never a panic.
+        let Some(lease) =
+            crate::correspondent::pool::exit_pool::take_bound_lease(&mut clutch, &exits)
+        else {
+            proxy.stop().await;
+            return Err(ServerSelectionError::TransportAcquisition(
+                crate::mixnet::acquire::TransportError::ExitOutsideClutch { reported: exits },
+            ));
+        };
         drop(clutch);
         let member: crate::correspondent::pool::Member<
             crate::mixnet::MixnetProxy,

@@ -48,6 +48,16 @@ pub enum TransportError {
     /// The mobile platform host answered and refused the acquisition.
     #[error("the proxy host refused")]
     HostRefused(#[source] HostRefusal),
+    /// The ready transport reported no bound exit from the drawn Clutch, a
+    /// defective report the wallet refuses instead of trusting.
+    #[error(
+        "the ready transport reported no bound exit from the drawn clutch ({} reported)",
+        reported.len()
+    )]
+    ExitOutsideClutch {
+        /// The exit identities the transport reported as bound.
+        reported: Vec<crate::mixnet::ExitNodeId>,
+    },
     /// The transport died during bootstrap.
     #[error(
         "the pool transport died during bootstrap: {}",

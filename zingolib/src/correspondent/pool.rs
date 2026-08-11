@@ -287,12 +287,18 @@ impl Pools {
         let nodes = exit_pool::clutch_nodes(&clutch);
         let (transport, exit) =
             crate::mixnet::supervisor::acquire_ready_transport(acquirer, &nodes).await?;
-        // Bind-time recycle: keeping only the bound lease drops the rest.
-        let bound = clutch
-            .iter()
-            .position(|reservation| reservation.node() == &exit)
-            .expect("the bound exit is one of the clutch's nodes");
-        let lease = clutch.swap_remove(bound);
+        // Bind-time recycle: keeping only the bound lease drops the rest. A
+        // report naming no drawn node (a defective host or child) refuses
+        // typed, with the transport stopped and every reservation recycled:
+        // a panic here would be swallowed by the spawned refill and leak the
+        // pool's inflight count for the session's life.
+        let Some(lease) = exit_pool::take_bound_lease(&mut clutch, std::slice::from_ref(&exit))
+        else {
+            transport.stop().await;
+            return Err(acquire::TransportError::ExitOutsideClutch {
+                reported: vec![exit],
+            });
+        };
         drop(clutch);
         Ok((transport, lease))
     }
