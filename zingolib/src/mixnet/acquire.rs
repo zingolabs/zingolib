@@ -18,7 +18,7 @@ pub enum TransportError {
     #[error("this session acquires no transports")]
     NoAcquirer,
     /// The proxy binary's discover mode could not be run.
-    #[error("could not run the discover mode: {0}")]
+    #[error("could not run the discover mode")]
     DiscoverySpawn(#[source] std::io::Error),
     /// The proxy binary's discover mode ran and reported failure.
     #[error("the discover mode exited {status}: {stderr}")]
@@ -245,6 +245,25 @@ impl TransportAcquirable for SpawnedBinary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The number of times one detail may appear across a whole cause chain.
+    const DETAIL_RENDERINGS: usize = 1;
+
+    /// HYPOTHESIS: a discovery spawn failure states its own layer only, so
+    /// the underlying detail reaches the reader exactly once across the
+    /// sanctioned chain walk. Falsified if the detail appears more than
+    /// once, which is what a Display embedding its own source produces.
+    #[test]
+    fn a_discovery_spawn_failure_renders_its_detail_once() {
+        const DETAIL: &str = "the discover binary is absent";
+        let failure = TransportError::DiscoverySpawn(std::io::Error::other(DETAIL));
+        let chain = zingo_net_diag::chain_texts(&failure);
+        assert_eq!(
+            chain.join("\n").matches(DETAIL).count(),
+            DETAIL_RENDERINGS,
+            "the chain rendered was {chain:?}"
+        );
+    }
 
     /// A host that answers both calls from a script, standing in for the
     /// mobile platform library a phone loads.

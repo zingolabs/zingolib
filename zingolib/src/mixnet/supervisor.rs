@@ -72,7 +72,7 @@ const ATTACH_HEALTH_ATTEMPTS: usize = 2;
 #[derive(Debug, thiserror::Error)]
 pub enum MixnetProxyError {
     /// The `nym-proxy` binary could not be spawned.
-    #[error("failed to spawn the nym-proxy binary at {path}: {source}")]
+    #[error("failed to spawn the nym-proxy binary at {path}")]
     Spawn {
         /// The binary path that failed to spawn.
         path: String,
@@ -736,6 +736,28 @@ mod tests {
     use tokio::io::ReadBuf;
 
     use super::*;
+
+    /// The number of times one detail may appear across a whole cause chain.
+    const DETAIL_RENDERINGS: usize = 1;
+
+    /// HYPOTHESIS: a proxy spawn failure names the path it tried without
+    /// restating its source, so the underlying detail reaches the reader
+    /// exactly once across the sanctioned chain walk. Falsified if the
+    /// detail appears more than once.
+    #[test]
+    fn a_proxy_spawn_failure_renders_its_detail_once() {
+        const DETAIL: &str = "the nym-proxy binary is absent";
+        let failure = MixnetProxyError::Spawn {
+            path: "/no/such/nym-proxy".to_string(),
+            source: std::io::Error::other(DETAIL),
+        };
+        let chain = zingo_net_diag::chain_texts(&failure);
+        assert_eq!(
+            chain.join("\n").matches(DETAIL).count(),
+            DETAIL_RENDERINGS,
+            "the chain rendered was {chain:?}"
+        );
+    }
 
     fn bootstrapping() -> Arc<Mutex<ProxyState>> {
         Arc::new(Mutex::new(ProxyState {

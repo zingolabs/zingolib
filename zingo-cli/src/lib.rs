@@ -257,7 +257,10 @@ async fn prompt_indicator(lightclient: &mut LightClient) -> String {
             // the historical output byte for byte, where the polled command
             // string (itself prefixed "Error:") was interpolated after
             // "Sync error: ".
-            eprintln!("Sync error: Error: {e}\nPlease restart sync with `sync run`.");
+            eprintln!(
+                "Sync error: Error: {}\nPlease restart sync with `sync run`.",
+                commands::render_error_chain(&e)
+            );
             " [Sync error]".to_string()
         }
         PollReport::Ready(Ok(sync_result)) => {
