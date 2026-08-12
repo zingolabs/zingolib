@@ -277,6 +277,22 @@ pub async fn sync_client_to_validator_tip<V, I>(
     sync_to_target_height(client, tip).await.unwrap();
 }
 
+/// Zebra's mempool rejection text for a spend of, or anchored at, the tip
+/// block; the leaf link of the send failure's cause chain carries it.
+const TIP_BLOCK_REJECTION: &str = "until the next chain tip block";
+
+/// Reports whether any link of `error`'s cause chain carries zebra's tip-block rejection text.
+fn rejects_tip_block_spend(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut link: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = link {
+        if current.to_string().contains(TIP_BLOCK_REJECTION) {
+            return true;
+        }
+        link = current.source();
+    }
+    false
+}
+
 /// The single lag-safe send primitive: sends `receivers` from `sender` in
 /// one transaction, then mines one block at a time (waiting for `sender`'s
 /// wallet to reach each new height) until the transaction is confirmed.
@@ -313,7 +329,7 @@ where
 {
     let txids = match from_inputs::quick_send(sender, receivers.clone()).await {
         Ok(txids) => txids,
-        Err(e) if e.to_string().contains("until the next chain tip block") => {
+        Err(e) if rejects_tip_block_spend(&e) => {
             // Tip-block spend rejected: separate from the tip and retry once.
             increase_height_and_wait_for_client(local_net, sender, 1)
                 .await
