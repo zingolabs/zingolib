@@ -111,14 +111,14 @@ pub(crate) fn take_bound_lease(
 /// at most one holder at a time.
 #[derive(Default)]
 pub(crate) struct ExitPool {
-    population: Vec<crate::mixnet::ExitNodeId>,
+    population: HashSet<crate::mixnet::ExitNodeId>,
     issued: HashSet<crate::mixnet::ExitNodeId>,
 }
 
 impl ExitPool {
     /// Records the discovered population, once per session.
     pub(crate) fn seed(&mut self, discovered: Vec<crate::mixnet::ExitNodeId>) {
-        self.population = discovered;
+        self.population = discovered.into_iter().collect();
     }
 
     /// Whether the population is known yet.
@@ -135,10 +135,9 @@ impl ExitPool {
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        // The draw samples unique identities: a duplicated population entry
-        // must not mint twin reservations, whose collapse into the set would
-        // un-ledger the survivor by recycling its twin.
-        let drawable: HashSet<crate::mixnet::ExitNodeId> = guarded
+        // The candidates are collected before any issue, so the ledger is
+        // written while the population is no longer borrowed.
+        let drawable: Vec<crate::mixnet::ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -236,6 +235,36 @@ mod tests {
                 "{} was issued to two holders at once",
                 reservation.node()
             );
+        }
+    }
+
+    /// HYPOTHESIS: a discovery naming one exit twice seeds a single
+    /// reservation, so the pool can never double-issue that identity and
+    /// counts it once. Falsified if the refusal reports a population larger
+    /// than the identities the pool can issue.
+    #[test]
+    fn a_duplicated_discovery_seeds_one_reservation() {
+        const DISTINCT_IDENTITIES: usize = 1;
+        let pool = Arc::new(Mutex::new(ExitPool::default()));
+        let repeated = crate::mixnet::ExitNodeId::from("exit-repeated");
+        pool.lock()
+            .unwrap()
+            .seed(vec![repeated.clone(), repeated.clone()]);
+        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        assert_eq!(
+            clutch.len(),
+            DISTINCT_IDENTITIES,
+            "the repeated identity reserves once"
+        );
+        match ExitPool::draw_clutch(&pool).expect_err("nothing is left to issue") {
+            ExitPoolError::Exhausted { held, population } => {
+                assert_eq!(held, DISTINCT_IDENTITIES, "the sole identity is held");
+                assert_eq!(
+                    population, DISTINCT_IDENTITIES,
+                    "the population counts identities rather than repeats"
+                );
+            }
+            other => panic!("the pool refused with {other:?} rather than exhaustion"),
         }
     }
 
