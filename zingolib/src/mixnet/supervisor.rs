@@ -39,6 +39,7 @@
 //!   dead parent.
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -659,7 +660,7 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
 /// reports, the parent's one window onto the directory.
 pub(crate) async fn discover_exit_nodes(
     binary_path: &Path,
-) -> Result<Vec<crate::mixnet::ExitNodeId>, acquire::TransportError> {
+) -> Result<HashSet<crate::mixnet::ExitNodeId>, acquire::TransportError> {
     let output = Command::new(binary_path)
         .arg("--discover")
         .output()
@@ -671,10 +672,15 @@ pub(crate) async fn discover_exit_nodes(
             stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         });
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(parse_exit_line)
-        .collect())
+    Ok(parse_discovery_output(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+/// Reads every Exit Node identity the child's discover mode announced on
+/// `stdout`.
+fn parse_discovery_output(stdout: &str) -> HashSet<crate::mixnet::ExitNodeId> {
+    stdout.lines().filter_map(parse_exit_line).collect()
 }
 
 /// Acquires one pool transport under `PrioritisePrivacy` and waits until it
@@ -756,6 +762,27 @@ mod tests {
             chain.join("\n").matches(DETAIL).count(),
             DETAIL_RENDERINGS,
             "the chain rendered was {chain:?}"
+        );
+    }
+
+    /// The identities a duplicating child names, counted once each.
+    const DISTINCT_DISCOVERED: usize = 2;
+
+    /// HYPOTHESIS: a child announcing one identity on two lines discovers
+    /// that identity once, so the discovery edge carries a population
+    /// rather than a transcript. Falsified if the repeated line reaches the
+    /// caller twice.
+    #[test]
+    fn a_duplicated_child_line_discovers_once() {
+        let stdout = format!(
+            "{NYM_EXIT_LINE_PREFIX}exit-a\n\
+             {NYM_EXIT_LINE_PREFIX}exit-b\n\
+             {NYM_EXIT_LINE_PREFIX}exit-a\n"
+        );
+        assert_eq!(
+            parse_discovery_output(&stdout).len(),
+            DISTINCT_DISCOVERED,
+            "the repeated announcement names one exit"
         );
     }
 

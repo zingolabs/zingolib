@@ -117,7 +117,7 @@ pub(crate) struct ExitPool {
 
 impl ExitPool {
     /// Records the discovered population, once per session.
-    pub(crate) fn seed(&mut self, discovered: Vec<crate::mixnet::ExitNodeId>) {
+    pub(crate) fn seed(&mut self, discovered: impl IntoIterator<Item = crate::mixnet::ExitNodeId>) {
         self.population = discovered.into_iter().collect();
     }
 
@@ -177,8 +177,7 @@ mod tests {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         pool.lock().unwrap().seed(
             (0..count)
-                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()))
-                .collect(),
+                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str())),
         );
         pool
     }

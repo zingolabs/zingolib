@@ -1,6 +1,7 @@
 //! The acquisition seam: where a mixnet transport comes from.
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -102,7 +103,9 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
         &self,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<crate::mixnet::ExitNodeId>, TransportError>> + Send + '_,
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
         >,
     >;
 
@@ -174,17 +177,20 @@ impl TransportAcquirable for HostedProxy {
         &self,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<crate::mixnet::ExitNodeId>, TransportError>> + Send + '_,
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
         >,
     > {
         let host = std::sync::Arc::clone(&self.host);
         Box::pin(async move {
             // The host's directory query blocks, so it runs off the runtime's
             // worker threads.
-            tokio::task::spawn_blocking(move || host.discover_exit_nodes())
+            let reported = tokio::task::spawn_blocking(move || host.discover_exit_nodes())
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
-                .map_err(TransportError::HostRefused)
+                .map_err(TransportError::HostRefused)?;
+            Ok(reported.into_iter().collect())
         })
     }
 
@@ -224,7 +230,9 @@ impl TransportAcquirable for SpawnedBinary {
         &self,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<crate::mixnet::ExitNodeId>, TransportError>> + Send + '_,
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
         >,
     > {
         Box::pin(crate::mixnet::supervisor::discover_exit_nodes(&self.path))
@@ -302,10 +310,31 @@ mod tests {
         });
         assert_eq!(
             acquirer.discover().await.expect("the host answers"),
-            vec![
+            HashSet::from([
                 crate::mixnet::ExitNodeId::from("exit-a"),
                 crate::mixnet::ExitNodeId::from("exit-b")
-            ]
+            ])
+        );
+    }
+
+    /// The identities a duplicating host names, counted once each.
+    const DISTINCT_DISCOVERED: usize = 2;
+
+    /// HYPOTHESIS: a host naming one identity twice discovers that identity
+    /// once, so the discovery edge carries a population rather than the
+    /// host's sequence. Falsified if the repeat reaches the caller twice.
+    #[tokio::test]
+    async fn a_duplicated_host_directory_discovers_once() {
+        let acquirer = hosted(ScriptedHost {
+            directory: Ok(vec!["exit-a".into(), "exit-b".into(), "exit-a".into()]),
+            transport: Err(HostRefusal::Declined {
+                detail: "unused".to_string(),
+            }),
+        });
+        assert_eq!(
+            acquirer.discover().await.expect("the host answers").len(),
+            DISTINCT_DISCOVERED,
+            "the repeated identity is one Exit Node"
         );
     }
 
