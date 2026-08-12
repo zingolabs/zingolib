@@ -22,7 +22,7 @@ reads the milestone lines below).
   taken and re-acquire briefly to record). The remedy-3 audit of the
   Transmission fan-out and attach validation under long-held locks remains
   open in issue #2552.
-- **Sync-path probes**: LANDED. `zingolib::nym::probe::probe_sync_server`
+- **Sync-path probes**: LANDED. `zingolib::mixnet::probe::probe_sync_server`
   (see the addendum below).
 - **Fielded integrations**: LANDED for the price fetch
   (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
@@ -360,7 +360,7 @@ the transport reports its whole connect phase as one failure. The reqwest
 classifier lives in `zingo-price` as a pure table over extracted signals
 (`classify_stage`), because a `reqwest::Error` cannot be fabricated in
 tests; the `Socks5TransmitError` classifier is a pure typed match in
-`zingolib::nym` (`socks5_transmit_stage`) with no substring inspection at
+`zingolib::mixnet` (`socks5_transmit_stage`) with no substring inspection at
 all.
 
 Third, failure values travel whole below every seam: the transmit policy
@@ -374,7 +374,7 @@ were left where they were rather than adding new ones.
 
 ### The sync-path probe (zingo-mobile Workstream A, item 1)
 
-`zingolib::nym::probe::probe_sync_server(server, stage_timeout)` walks
+`zingolib::mixnet::probe::probe_sync_server(server, stage_timeout)` walks
 one configured server through three bounded, individually timed stages —
 `tcp-connect` (raw reachability), `tls-channel` (TLS and the HTTP/2
 session, one stage because the transport establishes them as one connect
