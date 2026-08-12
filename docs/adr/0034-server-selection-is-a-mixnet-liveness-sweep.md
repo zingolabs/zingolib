@@ -93,3 +93,16 @@ transmissions-are-probes Health economy. The sweep itself gains a
 ratified second role: it is the session's baseline health probe, the
 last probe-only act a session performs. The judgment this record calls
 liveness is since named Health in the glossary.
+
+## Addendum (2026-08-12)
+
+Two rulings amend the mechanism. First, a user's pinned clearnet sync
+indexer (`--sync-server`, renamed from `--server`) never enters the
+sweep: the sweep surveys the census minus the pin, and the pin binds
+for sync by the user's own selection. A refused sweep therefore no
+longer closes a pinned session's Sync Session, and the DeadPin outcome
+is gone with it. Second, the survey's probe is `GetLatestBlock`, the
+lightest tip call an indexer answers, replacing `GetLightdInfo`. The
+liveness judgment rests on the height tolerance alone; the census's
+chain partition carries the chain distinction the old reply's chain
+name used to confirm.
