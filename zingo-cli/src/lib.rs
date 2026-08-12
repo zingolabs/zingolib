@@ -1368,13 +1368,21 @@ async fn sweep_select_sync_indexer(
             }
         }
         Err(e) => {
-            eprintln!(
-                "Server-Selection Sweep: no sync indexer selected: {e}. This Sync Session does \
-                 not open; the mixnet posture stands, and send and price-fetch continue."
-            );
+            eprintln!("{}", sweep_refusal_notice(&e));
             false
         }
     }
+}
+
+/// Composes the notice a refused Server-Selection Sweep prints, stating the
+/// whole source chain of `error`.
+#[cfg(feature = "nym")]
+fn sweep_refusal_notice(error: &zingolib::lightclient::select::ServerSelectionError) -> String {
+    format!(
+        "Server-Selection Sweep: no sync indexer selected: {}. This Sync Session does \
+         not open; the mixnet posture stands, and send and price-fetch continue.",
+        commands::render_error_chain(error)
+    )
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for
