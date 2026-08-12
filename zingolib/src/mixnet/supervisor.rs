@@ -682,27 +682,25 @@ fn parse_discovery_output(stdout: &str) -> HashSet<crate::mixnet::ExitNodeId> {
     stdout.lines().filter_map(parse_exit_line).collect()
 }
 
-/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
-/// is ready, yielding the transport with its bound Exit Node.
-pub(crate) async fn acquire_ready_transport(
-    acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
-    clutch: &[crate::mixnet::ExitNodeId],
-) -> Result<(MixnetProxy, crate::mixnet::ExitNodeId), acquire::TransportError> {
-    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
-    let publisher = crate::mixnet::status_publisher();
-    let mut receiver = publisher.subscribe();
-    let proxy = acquirer
-        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
-        .await?;
-    let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
+/// Waits until the status channel reports Ready with an announced address
+/// and at least one bound exit, yielding both, or fails typed when the
+/// transport dies, the channel closes, or `budget` elapses.
+pub(crate) async fn await_ready_endpoint(
+    receiver: &mut tokio::sync::watch::Receiver<MixnetStatus>,
+    budget: Duration,
+) -> Result<(SocketAddr, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
     let outcome = tokio::time::timeout(budget, async {
         loop {
             {
                 let status = receiver.borrow_and_update();
                 match status.mode {
                     MixnetMode::Ready => {
-                        if let Some(exit) = status.exits.first() {
-                            return Ok(exit.clone());
+                        // Readiness is the address AND a bound exit: the
+                        // child announces them on separate lines, so a Ready
+                        // with no exit yet is a transient to wait through,
+                        // never a defect to refuse.
+                        if let (Some(addr), Some(_)) = (status.socks5_addr, status.exits.first()) {
+                            return Ok((addr, status.exits.clone()));
                         }
                     }
                     MixnetMode::Died => {
@@ -720,14 +718,28 @@ pub(crate) async fn acquire_ready_transport(
     })
     .await;
     match outcome {
-        Ok(Ok(exit)) => Ok((proxy, exit)),
-        Ok(Err(cause)) => {
+        Ok(ready) => ready,
+        Err(_elapsed) => Err(acquire::TransportError::NotReady { budget }),
+    }
+}
+
+/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
+/// is ready, yielding the transport with the exits it announced as bound.
+pub(crate) async fn acquire_ready_transport(
+    acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+    clutch: &[crate::mixnet::ExitNodeId],
+) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
+    let publisher = crate::mixnet::status_publisher();
+    let mut receiver = publisher.subscribe();
+    let proxy = acquirer
+        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
+        .await?;
+    match await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
+        Ok((_addr, exits)) => Ok((proxy, exits)),
+        Err(cause) => {
             proxy.stop().await;
             Err(cause)
-        }
-        Err(_elapsed) => {
-            proxy.stop().await;
-            Err(acquire::TransportError::NotReady { budget })
         }
     }
 }
