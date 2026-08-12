@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `lightclient::LightClient::shutdown_save_task` returns
+  `std::io::Result<SaveShutdown>` instead of `std::io::Result<()>`, where the
+  new `lightclient::SaveShutdown` enum distinguishes a stopped task
+  (`ShutDown`) from an absent one (`NotRunning`), so callers can report a
+  shutdown request against a never-launched saver accurately.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and
