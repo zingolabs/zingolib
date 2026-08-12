@@ -902,6 +902,14 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     /// The birthday token is not a block number.
     #[error("Couldn't parse birthday. This should be a block number. Error={0}")]
     BirthdayUnparseable(std::num::ParseIntError),
+    /// `--birthday` names a restore height, and a new online wallet is born
+    /// at the chain tip.
+    #[error(
+        "`--birthday` names a restore height, but this session creates a NEW \
+         wallet born at the chain tip. Drop --birthday, or pass --seed or \
+         --viewkey to restore."
+    )]
+    BirthdayWithoutRestore,
     /// `--online` grants a connection the named command never uses.
     #[error(
         "`{command}` needs no network, so `--online` grants a connection it never \
@@ -954,6 +962,7 @@ impl ConfigTemplate {
             );
             return Err(ConfigTemplateError::BirthdayRequired);
         }
+        let birthday_explicit = maybe_birthday.is_some();
         let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
@@ -976,6 +985,18 @@ impl ConfigTemplate {
 
         let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", data_dir.to_str().unwrap());
+        // An online session with no key source and no wallet file creates a
+        // NEW wallet born at the chain tip, where an explicit --birthday
+        // would be silently ignored; the launch refuses instead (ruling
+        // 2026-08-12). The offline arm keeps honoring the flag as its
+        // birthday-floor override.
+        if birthday_explicit
+            && !from_provided
+            && communication_mode == CommunicationMode::Online
+            && !data_dir.join(DEFAULT_WALLET_NAME).exists()
+        {
+            return Err(ConfigTemplateError::BirthdayWithoutRestore);
+        }
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "clearnet-test-mode")]
