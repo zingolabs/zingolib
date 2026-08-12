@@ -1209,10 +1209,7 @@ use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 #[cfg(feature = "nym")]
 fn render_mixnet_probe(probe: &zingolib::mixnet::probe::MixnetProbe) -> String {
     let leg = |leg: &zingolib::mixnet::probe::ProbeLeg| match &leg.outcome {
-        Ok(success) => format!(
-            "ok in {}ms: chain {}, height {}",
-            leg.millis, success.chain, success.height
-        ),
+        Ok(success) => format!("ok in {}ms: height {}", leg.millis, success.height),
         Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
     format!("{}\n  mixnet:   {}", probe.host, leg(&probe.leg))
@@ -2310,7 +2307,7 @@ pub(crate) enum CliCommand {
             $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
             `off` disconnects every network capability of the session, keeping
             any stored standing consent; `network on` re-consents (ADR 0032).
-            `probe` runs GetLightdInfo over the mixnet route to establish an
+            `probe` runs GetLatestBlock over the mixnet route to establish an
             indexer's liveness; it requires the mixnet and touches no
             clearnet endpoint. `history` shows per-indexer attempts across
             sessions, and needs the nym-diary feature plus --indexer-diary.

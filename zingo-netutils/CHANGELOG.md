@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- BREAKING: `get_lightd_info_via_socks5` is removed. Every probe wraps
+  the single `GetLatestBlock` RPC through `get_latest_block_via_socks5`,
+  and `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
+  where it carried `info: LightdInfo`.
 - BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
   helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
   proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).

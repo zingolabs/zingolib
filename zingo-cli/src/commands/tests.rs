@@ -664,16 +664,13 @@ mod network_command_parsing {
         let live = MixnetProbe {
             host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
-                outcome: Ok(ProbeSuccess {
-                    chain: "main".to_string(),
-                    height: 3_420_400,
-                }),
+                outcome: Ok(ProbeSuccess { height: 3_420_400 }),
                 millis: 180,
             },
         };
         assert_eq!(
             render_mixnet_probe(&live),
-            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+            "zec.rocks\n  mixnet:   ok in 180ms: height 3420400"
         );
 
         let dead = MixnetProbe {
