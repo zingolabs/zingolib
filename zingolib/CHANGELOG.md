@@ -59,10 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - BREAKING: the survey bounds its fan-out and reports its refusal causes.
-  The sweep opens at most `lightclient::select::SURVEY_TUNNEL_WIDTH`
-  tunnels at a time, because every tunnel shares the one sweep exit's
-  packet pipeline and an unbounded fan-out blew every probe's budget at
-  once — the 0-of-17 signature. `mixnet::sweep::SurveyResult` gains a
+  The sweep opens `lightclient::select::survey_tunnel_width(candidates)`
+  tunnels at a time — at least one, at most a quarter of the census, and
+  never past the measured `MAX_SURVEY_TUNNEL_WIDTH` — because every
+  tunnel shares the one sweep exit's packet pipeline and an unbounded
+  fan-out blew every probe's budget at once — the 0-of-17 signature. `mixnet::sweep::SurveyResult` gains a
   `refusal` field carrying the diary's `FailureKind`, and
   `SweepError::EmptyCohort` gains a `causes` tally, so the refusal itself
   says whether the transport or the indexers failed, e.g. "0 of 17

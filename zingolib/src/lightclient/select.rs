@@ -177,16 +177,33 @@ async fn await_sweep_ready(
     })
 }
 
-/// The number of survey tunnels the sweep opens at once, kept small because
-/// every tunnel shares the one sweep exit's packet pipeline, where a single
-/// measured round trip costs seconds and an unbounded fan-out queues enough
-/// concurrent TLS handshakes to blow every probe's
-/// [`zingo_netutils::time::PROBE_LEG_TIMEOUT`] at once — the 0-of-17
+/// The saturation bound on concurrent survey tunnels: every tunnel shares
+/// the one sweep exit's packet pipeline, a single measured round trip costs
+/// seconds, and four concurrent TLS handshakes was the widest fan-out that
+/// kept each near its solo cost instead of blowing every probe's
+/// [`zingo_netutils::time::PROBE_LEG_TIMEOUT`] together — the 0-of-17
 /// signature.
-pub const SURVEY_TUNNEL_WIDTH: usize = 4;
+pub const MAX_SURVEY_TUNNEL_WIDTH: usize = 4;
+
+/// The divisor bounding the fan-out to a fraction of the candidate list, so
+/// a small census is never surveyed all at once.
+const SURVEY_FANOUT_DIVISOR: usize = 4;
+
+/// The narrowest survey: one tunnel, the sequential floor.
+const MIN_SURVEY_TUNNEL_WIDTH: usize = 1;
+
+/// The number of survey tunnels open at once for a survey of `candidates`,
+/// a bounded function of the census size: at least one, at most a
+/// [`SURVEY_FANOUT_DIVISOR`]th of the list, and never past the measured
+/// [`MAX_SURVEY_TUNNEL_WIDTH`] the shared exit pipeline carries.
+pub fn survey_tunnel_width(candidates: usize) -> usize {
+    candidates
+        .div_ceil(SURVEY_FANOUT_DIVISOR)
+        .clamp(MIN_SURVEY_TUNNEL_WIDTH, MAX_SURVEY_TUNNEL_WIDTH)
+}
 
 /// Survey every candidate over the sweep exit, at most
-/// [`SURVEY_TUNNEL_WIDTH`] tunnels at a time, recording each attempt in the
+/// [`survey_tunnel_width`] tunnels at a time, recording each attempt in the
 /// indexer history like any probe.
 async fn survey(
     socks5_addr: std::net::SocketAddr,
@@ -204,7 +221,7 @@ async fn survey(
                 refusal,
             }
         })
-        .buffer_unordered(SURVEY_TUNNEL_WIDTH)
+        .buffer_unordered(survey_tunnel_width(candidates.len()))
         .collect()
         .await
 }
@@ -252,6 +269,22 @@ async fn probe_one(
 mod tests {
     use super::*;
     use crate::mixnet::MixnetMode;
+
+    /// HYPOTHESIS: the survey width is a bounded function of the census —
+    /// at least one tunnel, at most a quarter of the candidates, never past
+    /// the measured saturation bound — so a small census is never surveyed
+    /// all at once and a large one never saturates the shared exit.
+    /// Falsified if any bound moves.
+    #[test]
+    fn the_survey_width_is_bounded_by_the_census() {
+        assert_eq!(survey_tunnel_width(0), MIN_SURVEY_TUNNEL_WIDTH);
+        assert_eq!(survey_tunnel_width(1), 1);
+        assert_eq!(survey_tunnel_width(4), 1);
+        assert_eq!(survey_tunnel_width(5), 2);
+        assert_eq!(survey_tunnel_width(16), 4);
+        assert_eq!(survey_tunnel_width(17), MAX_SURVEY_TUNNEL_WIDTH);
+        assert_eq!(survey_tunnel_width(100), MAX_SURVEY_TUNNEL_WIDTH);
+    }
 
     /// The status a died sweep proxy publishes, carrying `detail` as its
     /// latched typed cause.
