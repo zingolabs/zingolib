@@ -58,6 +58,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `lightclient::select::ServerSelectionError` gains the
+  `ExitOutsideClutch` variant, which carries the exits the ready transport
+  reported. The bind refusal previously reached callers wrapped in
+  `TransportAcquisition`, whose message names a Clutch that could not be
+  drawn, and an exhaustive match over the enum needs the new arm.
+- BREAKING: `lightclient::LightClient::attach_mixnet` now refuses an empty
+  exit report. `mixnet::MixnetProxyError` gains the `NoExits` variant, which
+  the attach returns when the host names no bound Exit Node, and an
+  exhaustive match over the enum needs the new arm. A host that attaches
+  must name the Exit Node its proxy bound, so Ready means the address and a
+  bound exit at every door.
+- The readiness gate now bounds its wait for the transport's first Exit Node
+  announcement with the new `zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE`,
+  which runs from the moment the address arrives. A proxy that latches ready
+  and never announces a usable exit refuses within the grace instead of
+  holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
+  refusal is the existing `NotReady` variant, carrying the grace as the
+  budget it exceeded.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and
