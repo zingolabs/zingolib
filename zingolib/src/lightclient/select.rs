@@ -214,43 +214,20 @@ async fn survey(
     .await
 }
 
-/// One candidate's survey: `GetLightdInfo` over the sweep exit, its success
-/// mapped to the reported chain and height, any failure to `None`.
+/// One candidate's survey: the shared mixnet probe over the sweep exit,
+/// which times and records the attempt, its success mapped to the reported
+/// chain and height and any failure to `None`.
 async fn probe_one(
     socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Option<ProbeSuccess> {
-    use crate::lightclient::indexer_history::{
-        AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
-    };
-    let host = crate::correspondent::Host::of_uri(uri);
-    let result = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, uri, timeout).await;
-    let (reported, outcome) = match &result {
-        Ok(info) => (
-            Some(ProbeSuccess {
-                chain: info.chain_name.clone(),
-                height: info.block_height,
-            }),
-            Ok(()),
-        ),
-        Err(error) => (None, Err(FailureKind::classify(&error.to_string()))),
-    };
-    history.record(&IndexerAttempt {
-        unix_secs: now_unix_secs(),
-        host,
-        route: AttemptRoute::Mixnet,
-        kind: AttemptKind::Probe,
-        millis: 0,
-        phase: result
-            .as_ref()
-            .err()
-            .map(|error| crate::mixnet::charge_phase(&crate::mixnet::socks5_transmit_stage(error))),
-        exit: None,
-        outcome,
-    });
-    reported
+    crate::mixnet::probe::probe_indexer(uri, socks5_addr, timeout, history)
+        .await
+        .leg
+        .outcome
+        .ok()
 }
 
 #[cfg(test)]
@@ -285,6 +262,75 @@ mod tests {
             crate::config::ChainType::Mainnet.to_string(),
             "the Display form is not the wire form"
         );
+    }
+
+    /// The port value that asks the operating system to assign a free one.
+    const ANY_PORT: u16 = 0;
+
+    /// The fraction of its bound a probe against a proxy that never answers
+    /// must be seen to spend, loose enough that a coarse clock cannot make a
+    /// measured wait look unmeasured.
+    const MEASURED_WAIT_DIVISOR: u32 = 2;
+
+    /// The candidate the survey asks about, which the silent proxy never
+    /// reaches.
+    const UNANSWERED_CANDIDATE: &str = "https://sweep-candidate.example";
+
+    /// HYPOTHESIS: the sweep's per-candidate probe rides the shared probe
+    /// machinery, so the attempt it writes to the indexer diary carries the
+    /// latency it measured. Falsified if a sweep attempt lands with an
+    /// unmeasured duration while a liveness probe records a real one.
+    #[tokio::test]
+    async fn a_surveyed_candidate_records_the_latency_it_measured() {
+        use zingo_netutils::time::test::FAST_STAGE_BOUND;
+
+        // A stand-in proxy that accepts the dial and never speaks SOCKS5,
+        // so the probe spends its whole bound waiting for an answer.
+        let proxy = tokio::net::TcpListener::bind(std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            ANY_PORT,
+        ))
+        .await
+        .expect("a loopback listener binds");
+        let socks5_addr = proxy
+            .local_addr()
+            .expect("the listener reports its address");
+        let silence = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = proxy.accept().await {
+                held.push(socket);
+            }
+        });
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::beside_wallet(
+            &dir.path().join("zingo-wallet.dat"),
+        );
+        history.set_recording(true);
+
+        let reported = probe_one(
+            socks5_addr,
+            &UNANSWERED_CANDIDATE.parse().expect("the static uri parses"),
+            FAST_STAGE_BOUND,
+            &history,
+        )
+        .await;
+
+        assert!(
+            reported.is_none(),
+            "a proxy that never answers reports no candidate"
+        );
+        let attempt = history
+            .load()
+            .pop()
+            .expect("the survey records its attempt");
+        let floor = FAST_STAGE_BOUND / MEASURED_WAIT_DIVISOR;
+        assert!(
+            u128::from(attempt.millis) >= floor.as_millis(),
+            "the recorded latency must be the measured wait, got {}ms against a {}ms floor",
+            attempt.millis,
+            floor.as_millis()
+        );
+        silence.abort();
     }
 
     /// The status a died sweep proxy publishes, carrying `detail` as its
