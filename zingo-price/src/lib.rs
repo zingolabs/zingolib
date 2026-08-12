@@ -294,6 +294,19 @@ pub struct PriceRaceFailure {
     pub failures: Vec<(PriceSource, PriceError)>,
 }
 
+/// Separates a source's name from its rendered failure in a race report.
+#[cfg(feature = "socks5-fetch")]
+const RACE_LABEL_SEPARATOR: &str = ": ";
+
+/// Separates one link of a rendered cause chain from the next in a race
+/// report, which keeps every link on the one line.
+#[cfg(feature = "socks5-fetch")]
+const RACE_CHAIN_SEPARATOR: &str = ": ";
+
+/// Separates one source's rendered failure from the next in a race report.
+#[cfg(feature = "socks5-fetch")]
+const RACE_SOURCE_SEPARATOR: &str = "; ";
+
 #[cfg(feature = "socks5-fetch")]
 impl PriceRaceFailure {
     /// One line per source: its name, its error, and the full cause chain.
@@ -301,17 +314,14 @@ impl PriceRaceFailure {
         self.failures
             .iter()
             .map(|(source, error)| {
-                let mut line = format!("{}: {error}", source.name());
-                let mut cause = std::error::Error::source(error);
-                while let Some(layer) = cause {
-                    line.push_str(": ");
-                    line.push_str(&layer.to_string());
-                    cause = layer.source();
-                }
-                line
+                format!(
+                    "{}{RACE_LABEL_SEPARATOR}{}",
+                    source.name(),
+                    chain_texts(error).join(RACE_CHAIN_SEPARATOR)
+                )
             })
             .collect::<Vec<_>>()
-            .join("; ")
+            .join(RACE_SOURCE_SEPARATOR)
     }
 }
 
@@ -960,6 +970,28 @@ mod tests {
 
     /// Generous bounds for tests whose subject is not the timeout.
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// HYPOTHESIS: the race report renders a source's two-link cause chain
+    /// exactly as the one sanctioned chain walk joined by this module's
+    /// separator does, so the report keeps no private copy of the walk.
+    /// Falsified if the two renderings differ by a single byte.
+    #[test]
+    fn the_race_report_matches_the_sanctioned_walk() {
+        let parse_failure = "not a price"
+            .parse::<f32>()
+            .expect_err("the text is not a float");
+        let error = PriceError::ParseError(parse_failure);
+        let expected = format!(
+            "{}: {}",
+            PriceSource::Gemini.name(),
+            chain_texts(&error).join(": ")
+        );
+        let failure = PriceRaceFailure {
+            failures: vec![(PriceSource::Gemini, error)],
+        };
+
+        assert_eq!(failure.report(), expected);
+    }
 
     /// Serves exactly one Gemini-shaped trades response over plain HTTP and
     /// returns the URL to hit it. One connection, then the socket closes.

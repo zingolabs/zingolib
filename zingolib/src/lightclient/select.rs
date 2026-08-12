@@ -15,9 +15,8 @@ use std::time::Duration;
 use http::Uri;
 
 use super::LightClient;
-use crate::nym::MixnetMode;
-use crate::nym::probe::ProbeSuccess;
-use crate::nym::sweep::{self, Selection, SurveyResult, SweepError};
+use crate::mixnet::probe::ProbeSuccess;
+use crate::mixnet::sweep::{self, Selection, SurveyResult, SweepError};
 
 /// Two blocks: the height tolerance around the observed median that counts
 /// as live (ADR 0034).
@@ -47,15 +46,29 @@ pub enum SweepProgress {
 #[derive(Debug, thiserror::Error)]
 pub enum ServerSelectionError {
     /// The sweep could not draw a ledgered Clutch for its transport.
-    #[error("the sweep could not acquire a transport: {0}")]
-    TransportAcquisition(#[source] crate::nym::acquire::TransportError),
+    #[error("the sweep could not acquire a transport")]
+    TransportAcquisition(#[source] crate::mixnet::acquire::TransportError),
     /// The dedicated sweep proxy could not be spawned.
-    #[error("the sweep proxy could not start: {0}")]
-    ProxyStart(#[source] crate::nym::MixnetProxyError),
-    /// The sweep proxy did not reach readiness: it died or exceeded its
-    /// bootstrap budget before any survey ran.
-    #[error("the sweep transport did not become ready: {0}")]
-    TransportUnready(String),
+    #[error("the sweep proxy could not start")]
+    ProxyStart(#[source] crate::mixnet::MixnetProxyError),
+    /// The dedicated sweep proxy died before any survey ran.
+    #[error("the sweep transport died before it became ready")]
+    TransportDied {
+        /// The typed cause the death report latched, when it held one.
+        #[source]
+        detail: Option<zingo_net_diag::NetOpFailure>,
+    },
+    /// The dedicated sweep proxy exceeded its bootstrap budget before any
+    /// survey ran.
+    #[error("the sweep transport did not become ready within {}s", budget.as_secs())]
+    TransportTimeout {
+        /// The bootstrap budget that elapsed without a readiness
+        /// announcement.
+        budget: Duration,
+    },
+    /// The dedicated sweep proxy's status channel closed before readiness.
+    #[error("the sweep transport's status channel closed before readiness")]
+    TransportStatusClosed,
     /// The survey ran but no sync indexer could be selected.
     #[error(transparent)]
     Selection(#[from] SweepError),
@@ -82,11 +95,11 @@ impl LightClient {
         let chain = lightd_chain_name(&self.chain_type());
         // A dedicated status channel: the sweep proxy's lifecycle is private
         // to this call and must not touch the session's mixnet status.
-        let publisher = crate::nym::status_publisher();
+        let publisher = crate::mixnet::status_publisher();
         let mut receiver = publisher.subscribe();
         // The sweep gates the Sync Session a user just asked to open.
         use zingo_netutils::responsiveness::{PrioritiseSpeed, Responsiveness as _};
-        let acquirer = crate::nym::acquire::SpawnedBinary::at(binary_path.to_path_buf());
+        let acquirer = crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf());
         // The sweep refuses without a ledgered Clutch; its reservations are
         // held for the sweep's life and recycled by drop on every return.
         let mut clutch = self
@@ -95,7 +108,7 @@ impl LightClient {
             .await
             .map_err(ServerSelectionError::TransportAcquisition)?;
         let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-        let proxy = crate::nym::acquire::TransportAcquirable::acquire(
+        let proxy = crate::mixnet::acquire::TransportAcquirable::acquire(
             &acquirer,
             PrioritiseSpeed::CLASS,
             &nodes,
@@ -108,14 +121,20 @@ impl LightClient {
         let (socks5_addr, exits) = await_sweep_ready(&mut receiver).await?;
         // Bind-time recycle: the survey's fan-out is a declared Shared use
         // of the one bound exit, and the unbound reservations return now.
-        let bound = clutch
-            .iter()
-            .position(|reservation| exits.contains(reservation.node()))
-            .expect("the bound exit is one of the clutch's nodes");
-        let lease = clutch.swap_remove(bound);
+        // The shared gate guarantees an announced exit, so this refusal
+        // fires only on a genuinely foreign one (a version-skewed proxy),
+        // typed at the user's go-online moment, never a panic.
+        let Some(lease) =
+            crate::correspondent::pool::exit_pool::take_bound_lease(&mut clutch, &exits)
+        else {
+            proxy.stop().await;
+            return Err(ServerSelectionError::TransportAcquisition(
+                crate::mixnet::acquire::TransportError::ExitOutsideClutch { reported: exits },
+            ));
+        };
         drop(clutch);
         let member: crate::correspondent::pool::Member<
-            crate::nym::MixnetProxy,
+            crate::mixnet::MixnetProxy,
             crate::correspondent::pool::Shared,
         > = crate::correspondent::pool::Member::new(proxy, lease);
         progress(SweepProgress::Surveying {
@@ -153,51 +172,28 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
     }
 }
 
-/// Wait for the dedicated sweep proxy to reach `Ready` and yield its SOCKS5
-/// address with its bound Exit Nodes, or fail typed when it dies or its
-/// bootstrap budget elapses.
+/// Wait for the dedicated sweep proxy to reach readiness through the one
+/// shared gate, mapping each typed outcome into the sweep's own vocabulary.
 async fn await_sweep_ready(
-    receiver: &mut tokio::sync::watch::Receiver<crate::nym::MixnetStatus>,
-) -> Result<(std::net::SocketAddr, Vec<crate::nym::ExitNodeId>), ServerSelectionError> {
-    let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
-    let outcome = tokio::time::timeout(budget, async {
-        loop {
-            {
-                let status = receiver.borrow_and_update();
-                match status.mode {
-                    MixnetMode::Ready => {
-                        if let Some(addr) = status.socks5_addr {
-                            return Ok((addr, status.exits.clone()));
-                        }
-                    }
-                    MixnetMode::Died => {
-                        return Err(status
-                            .death
-                            .as_ref()
-                            .and_then(|d| d.detail.as_ref().map(std::string::ToString::to_string))
-                            .unwrap_or_else(|| {
-                                "the sweep proxy died during bootstrap".to_string()
-                            }));
-                    }
-                    MixnetMode::Unattached
-                    | MixnetMode::SwitchedOff
-                    | MixnetMode::Bootstrapping => {}
-                }
-            }
-            if receiver.changed().await.is_err() {
-                return Err("the sweep proxy status channel closed".to_string());
-            }
+    receiver: &mut tokio::sync::watch::Receiver<crate::mixnet::MixnetStatus>,
+) -> Result<(std::net::SocketAddr, Vec<crate::mixnet::ExitNodeId>), ServerSelectionError> {
+    crate::mixnet::supervisor::await_ready_endpoint(
+        receiver,
+        zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+    )
+    .await
+    .map_err(|refusal| match refusal {
+        crate::mixnet::acquire::TransportError::DiedDuringBootstrap { detail } => {
+            ServerSelectionError::TransportDied { detail }
         }
+        crate::mixnet::acquire::TransportError::StatusChannelClosed => {
+            ServerSelectionError::TransportStatusClosed
+        }
+        crate::mixnet::acquire::TransportError::NotReady { budget } => {
+            ServerSelectionError::TransportTimeout { budget }
+        }
+        other => ServerSelectionError::TransportAcquisition(other),
     })
-    .await;
-    match outcome {
-        Ok(Ok(ready)) => Ok(ready),
-        Ok(Err(reason)) => Err(ServerSelectionError::TransportUnready(reason)),
-        Err(_elapsed) => Err(ServerSelectionError::TransportUnready(format!(
-            "no readiness within {}s",
-            budget.as_secs()
-        ))),
-    }
 }
 
 /// Survey every candidate over the sweep exit concurrently, recording each
@@ -230,8 +226,7 @@ async fn probe_one(
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = crate::correspondent::Host::of_uri(uri);
-    let result =
-        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), uri, timeout).await;
+    let result = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, uri, timeout).await;
     let (reported, outcome) = match &result {
         Ok(info) => (
             Some(ProbeSuccess {
@@ -251,7 +246,7 @@ async fn probe_one(
         phase: result
             .as_ref()
             .err()
-            .map(|error| crate::nym::charge_phase(&crate::nym::socks5_transmit_stage(error))),
+            .map(|error| crate::mixnet::charge_phase(&crate::mixnet::socks5_transmit_stage(error))),
         exit: None,
         outcome,
     });
@@ -261,6 +256,7 @@ async fn probe_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mixnet::MixnetMode;
 
     /// HYPOTHESIS: the judgment compares against the wire's chain
     /// vocabulary (`main`, `test`, `regtest`), never `ChainType`'s own
@@ -288,6 +284,127 @@ mod tests {
             lightd_chain_name(&crate::config::ChainType::Mainnet),
             crate::config::ChainType::Mainnet.to_string(),
             "the Display form is not the wire form"
+        );
+    }
+
+    /// The status a died sweep proxy publishes, carrying `detail` as its
+    /// latched typed cause.
+    fn died_with(detail: Option<zingo_net_diag::NetOpFailure>) -> crate::mixnet::MixnetStatus {
+        crate::mixnet::MixnetStatus {
+            mode: MixnetMode::Died,
+            socks5_addr: None,
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: Some(crate::mixnet::DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail,
+            }),
+        }
+    }
+
+    /// The status a ready sweep proxy publishes, with `exits` as announced
+    /// so far.
+    fn ready_with(exits: Vec<crate::mixnet::ExitNodeId>) -> crate::mixnet::MixnetStatus {
+        crate::mixnet::MixnetStatus {
+            mode: MixnetMode::Ready,
+            socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
+            exits,
+            bootstrap_detail: None,
+            death: None,
+        }
+    }
+
+    /// HYPOTHESIS: a Ready that has announced its address but no exit yet is
+    /// a transient the waiter waits through, yielding once the exit arrives,
+    /// so a healthy transport is never refused for its announcement order.
+    /// Falsified if the waiter returns the empty announcement.
+    #[tokio::test(start_paused = true)]
+    async fn a_ready_without_an_exit_is_awaited_through() {
+        let publisher = crate::mixnet::status_publisher();
+        publisher.send_replace(ready_with(Vec::new()));
+        let mut receiver = publisher.subscribe();
+        let waiter = tokio::spawn(async move { await_sweep_ready(&mut receiver).await });
+        // Let the waiter observe the exitless Ready and park on the channel.
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        publisher.send_replace(ready_with(vec![crate::mixnet::ExitNodeId::from(
+            "exit-alpha",
+        )]));
+        let (_, exits) = waiter
+            .await
+            .expect("the waiter task completes")
+            .expect("the transport becomes ready");
+        assert_eq!(
+            exits,
+            vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
+            "the waiter yields the announced exit, never the empty transient"
+        );
+    }
+
+    /// HYPOTHESIS: a transport that reaches Ready but never announces an
+    /// exit exceeds the bootstrap budget as a typed timeout, so an empty
+    /// announcement is a wait, never an ExitOutsideClutch refusal.
+    /// Falsified if the waiter yields the empty announcement to the bind.
+    #[tokio::test(start_paused = true)]
+    async fn a_ready_that_never_announces_an_exit_times_out() {
+        let publisher = crate::mixnet::status_publisher();
+        publisher.send_replace(ready_with(Vec::new()));
+        let mut receiver = publisher.subscribe();
+        let refusal = await_sweep_ready(&mut receiver)
+            .await
+            .expect_err("no exit ever arrives");
+        assert!(
+            matches!(refusal, ServerSelectionError::TransportTimeout { .. }),
+            "an exitless Ready exhausts the budget as a timeout, got: {refusal}"
+        );
+    }
+
+    /// HYPOTHESIS: a sweep transport that dies and a sweep transport that
+    /// exceeds its bootstrap budget refuse as two distinct typed variants,
+    /// and the death carries its `NetOpFailure` down the source chain, so a
+    /// caller separates the two without reading prose. Falsified if the two
+    /// paths share one variant, or if the death's typed cause reaches the
+    /// caller only as formatted text.
+    #[tokio::test(start_paused = true)]
+    async fn the_death_and_the_bootstrap_timeout_refuse_as_distinct_variants() {
+        let handshake = zingo_net_diag::NetOpFailure::from_error(
+            zingo_net_diag::NetOpStage::SocksHandshake,
+            "127.0.0.1:1080",
+            &std::io::Error::other("the handshake was refused"),
+        );
+        let death_publisher = crate::mixnet::status_publisher();
+        death_publisher.send_replace(died_with(Some(handshake.clone())));
+        let mut death_receiver = death_publisher.subscribe();
+        let died = await_sweep_ready(&mut death_receiver)
+            .await
+            .expect_err("a died transport never reaches readiness");
+
+        let idle_publisher = crate::mixnet::status_publisher();
+        let mut idle_receiver = idle_publisher.subscribe();
+        let timed_out = await_sweep_ready(&mut idle_receiver)
+            .await
+            .expect_err("a transport that never announces exceeds its budget");
+
+        assert_ne!(
+            std::mem::discriminant(&died),
+            std::mem::discriminant(&timed_out),
+            "a death and a bootstrap timeout are distinct refusals"
+        );
+        assert!(
+            matches!(
+                timed_out,
+                ServerSelectionError::TransportTimeout { budget }
+                    if budget == zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT
+            ),
+            "the timeout refusal carries the budget it exceeded"
+        );
+        let cause = std::error::Error::source(&died)
+            .expect("the death refusal carries its typed cause as a source");
+        assert_eq!(
+            cause.downcast_ref::<zingo_net_diag::NetOpFailure>(),
+            Some(&handshake),
+            "the typed failure reaches the caller whole"
         );
     }
 }

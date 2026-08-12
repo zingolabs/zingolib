@@ -54,15 +54,13 @@ impl std::fmt::Display for ProbeStage {
     }
 }
 
+/// Separates one link of a rendered cause chain from the next in a probe
+/// report, which keeps every link on the one line.
+const PROBE_CHAIN_SEPARATOR: &str = ": ";
+
 /// Renders an error and its full source chain as one line, outermost cause first.
 fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
-    let mut texts = vec![error.to_string()];
-    let mut cursor = error.source();
-    while let Some(source) = cursor {
-        texts.push(source.to_string());
-        cursor = source.source();
-    }
-    texts.join(": ")
+    zingo_net_diag::chain_texts(error).join(PROBE_CHAIN_SEPARATOR)
 }
 
 /// Probes every URI concurrently within one shared budget and reports each

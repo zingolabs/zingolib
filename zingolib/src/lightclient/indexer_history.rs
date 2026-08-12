@@ -195,7 +195,7 @@ pub struct IndexerAttempt {
     /// Which party a failure is charged against, when the evidence says.
     pub phase: Option<crate::correspondent::health::FailurePhase>,
     /// The Exit Node the attempt rode, when it rode one.
-    pub exit: Option<crate::nym::ExitNodeId>,
+    pub exit: Option<crate::mixnet::ExitNodeId>,
 }
 
 impl IndexerAttempt {
@@ -230,7 +230,7 @@ impl IndexerAttempt {
                     .then(|| crate::correspondent::health::FailurePhase::parse(fields[5])),
                 match fields[6] {
                     "-" => None,
-                    token => Some(crate::nym::ExitNodeId::parse(token).ok()?),
+                    token => Some(crate::mixnet::ExitNodeId::parse(token).ok()?),
                 },
                 fields[7],
             ),
@@ -393,7 +393,7 @@ mod tests {
                 .is_err()
                 .then_some(crate::correspondent::health::FailurePhase::Correspondent),
             exit: Some(
-                crate::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses"),
+                crate::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses"),
             ),
             outcome,
         }

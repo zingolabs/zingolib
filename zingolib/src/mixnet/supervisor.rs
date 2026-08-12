@@ -17,8 +17,8 @@
 //! The spawned child is the desktop instance of a general rule (ADR 0011's
 //! mobile amendment): the transport meets the wallet at a runtime boundary
 //! carrying a SOCKS5 endpoint and a liveness signal. `MixnetProxy::attach`
-//! is the other instance — a platform (a mobile app hosting the proxy as a
-//! dynamic library) hands the wallet an already-running local SOCKS5
+//! is the other instance — a mobile platform (an app hosting the proxy as
+//! a dynamic library) hands the wallet an already-running local SOCKS5
 //! address. Readiness and continued life are judged by loopback dials
 //! alone, whose failure lands `Died` exactly as the closed stdout pipe
 //! does for the spawned child.
@@ -39,6 +39,7 @@
 //!   dead parent.
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -55,9 +56,9 @@ use zingo_netutils::time::{
 };
 use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
-use crate::nym::MixnetMode;
-use crate::nym::acquire;
-use crate::nym::driver::{MixnetStatus, StatusPublisher};
+use crate::mixnet::MixnetMode;
+use crate::mixnet::acquire;
+use crate::mixnet::driver::{MixnetStatus, StatusPublisher};
 
 /// The census indexer an attached session round-trips against to prove its
 /// mixnet path carries data.
@@ -68,11 +69,11 @@ const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDE
 const ATTACH_HEALTH_ATTEMPTS: usize = 2;
 
 /// A failure starting the mixnet proxy child process or attaching to a
-/// platform-hosted endpoint.
+/// mobile-platform-hosted endpoint.
 #[derive(Debug, thiserror::Error)]
 pub enum MixnetProxyError {
     /// The `nym-proxy` binary could not be spawned.
-    #[error("failed to spawn the nym-proxy binary at {path}: {source}")]
+    #[error("failed to spawn the nym-proxy binary at {path}")]
     Spawn {
         /// The binary path that failed to spawn.
         path: String,
@@ -106,7 +107,7 @@ struct ProxyState {
     mode: MixnetMode,
     socks5_addr: Option<SocketAddr>,
     /// The Exit Node identities the transport reports as bound.
-    exits: Vec<crate::nym::ExitNodeId>,
+    exits: Vec<crate::mixnet::ExitNodeId>,
     /// The transport's latest bootstrap progress report, live only while
     /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
@@ -186,15 +187,15 @@ impl DeathReport {
 }
 
 /// Supervises the mixnet proxy — a spawned child or an attached
-/// platform-hosted endpoint — and exposes its state.
+/// mobile-platform-hosted endpoint — and exposes its state.
 pub struct MixnetProxy {
     state: Arc<Mutex<ProxyState>>,
     transport: Transport,
 }
 
 /// How the proxy endpoint is provided: a child process this supervisor
-/// spawned and owns, or an already-running endpoint a platform handed the
-/// wallet.
+/// spawned and owns, or an already-running endpoint a mobile platform
+/// handed the wallet.
 enum Transport {
     /// The bundled `nym-proxy` binary, spawned as an owned child.
     Spawned {
@@ -204,7 +205,7 @@ enum Transport {
         /// written, whose closure on drop tears the proxy down.
         _stdin: ChildStdin,
     },
-    /// A platform-hosted endpoint, watched by the readiness/liveness driver.
+    /// A mobile-platform-hosted endpoint, watched by the readiness/liveness driver.
     Attached { driver: JoinHandle<()> },
 }
 
@@ -216,7 +217,7 @@ impl MixnetProxy {
         binary_path: &Path,
         class: zingo_netutils::responsiveness::ResponsivenessClass,
         publisher: StatusPublisher,
-        clutch: &[crate::nym::ExitNodeId],
+        clutch: &[crate::mixnet::ExitNodeId],
     ) -> Result<Self, MixnetProxyError> {
         let mut launch_args = vec!["--responsiveness".to_string(), class.wire().to_string()];
         for exit in clutch {
@@ -275,12 +276,12 @@ impl MixnetProxy {
         })
     }
 
-    /// Attaches to an already-running, platform-hosted SOCKS5 endpoint that
+    /// Attaches to an already-running, mobile-platform-hosted SOCKS5 endpoint that
     /// bound `exits`, judging readiness and continued life by loopback dials
     /// alone.
     pub(crate) fn attach(
         socks5_addr: SocketAddr,
-        exits: &[crate::nym::ExitNodeId],
+        exits: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
         let state = Arc::new(Mutex::new(ProxyState {
@@ -311,7 +312,7 @@ impl MixnetProxy {
     }
 
     /// Whether this transport is a spawned child rather than a
-    /// platform-attached endpoint.
+    /// mobile-platform-attached endpoint.
     pub(crate) fn is_spawned(&self) -> bool {
         matches!(self.transport, Transport::Spawned { .. })
     }
@@ -323,7 +324,7 @@ impl MixnetProxy {
 
     /// The bound Exit Node identities, once the mode is
     /// [`MixnetMode::Ready`].
-    pub fn exits(&self) -> Vec<crate::nym::ExitNodeId> {
+    pub fn exits(&self) -> Vec<crate::mixnet::ExitNodeId> {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == MixnetMode::Ready {
             guarded.exits.clone()
@@ -397,7 +398,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
         match zingo_netutils::get_lightd_info_via_socks5(
-            &socks5_addr.to_string(),
+            socks5_addr,
             &indexer,
             MIXNET_ROUND_TRIP_BOUND,
         )
@@ -405,7 +406,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
         {
             Ok(_) => return Ok(()),
             Err(error) => {
-                let stage = crate::nym::socks5_transmit_stage(&error);
+                let stage = crate::mixnet::socks5_transmit_stage(&error);
                 let target = match stage {
                     zingo_net_diag::NetOpStage::LocalProxyConnect
                     | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
@@ -635,9 +636,9 @@ fn parse_status_line(line: &str) -> Option<&str> {
 
 /// Extract the Exit Node identity from a child stdout line, if it is an
 /// exit announcement line naming a non-blank identity.
-fn parse_exit_line(line: &str) -> Option<crate::nym::ExitNodeId> {
+fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
     line.strip_prefix(NYM_EXIT_LINE_PREFIX)
-        .and_then(|identity| crate::nym::ExitNodeId::parse(identity).ok())
+        .and_then(|identity| crate::mixnet::ExitNodeId::parse(identity).ok())
 }
 
 impl crate::correspondent::pool::PoolTransport for MixnetProxy {
@@ -658,7 +659,7 @@ impl crate::correspondent::pool::PoolTransport for MixnetProxy {
 /// reports, the parent's one window onto the directory.
 pub(crate) async fn discover_exit_nodes(
     binary_path: &Path,
-) -> Result<Vec<crate::nym::ExitNodeId>, acquire::TransportError> {
+) -> Result<HashSet<crate::mixnet::ExitNodeId>, acquire::TransportError> {
     let output = Command::new(binary_path)
         .arg("--discover")
         .output()
@@ -670,33 +671,36 @@ pub(crate) async fn discover_exit_nodes(
             stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         });
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(parse_exit_line)
-        .collect())
+    Ok(parse_discovery_output(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
 }
 
-/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
-/// is ready, yielding the transport with its bound Exit Node.
-pub(crate) async fn acquire_ready_transport(
-    acquirer: &dyn crate::nym::acquire::TransportAcquirable,
-    clutch: &[crate::nym::ExitNodeId],
-) -> Result<(MixnetProxy, crate::nym::ExitNodeId), acquire::TransportError> {
-    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
-    let publisher = crate::nym::status_publisher();
-    let mut receiver = publisher.subscribe();
-    let proxy = acquirer
-        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
-        .await?;
-    let budget = zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT;
+/// Reads every Exit Node identity the child's discover mode announced on
+/// `stdout`.
+fn parse_discovery_output(stdout: &str) -> HashSet<crate::mixnet::ExitNodeId> {
+    stdout.lines().filter_map(parse_exit_line).collect()
+}
+
+/// Waits until the status channel reports Ready with an announced address
+/// and at least one bound exit, yielding both, or fails typed when the
+/// transport dies, the channel closes, or `budget` elapses.
+pub(crate) async fn await_ready_endpoint(
+    receiver: &mut tokio::sync::watch::Receiver<MixnetStatus>,
+    budget: Duration,
+) -> Result<(SocketAddr, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
     let outcome = tokio::time::timeout(budget, async {
         loop {
             {
                 let status = receiver.borrow_and_update();
                 match status.mode {
                     MixnetMode::Ready => {
-                        if let Some(exit) = status.exits.first() {
-                            return Ok(exit.clone());
+                        // Readiness is the address AND a bound exit: the
+                        // child announces them on separate lines, so a Ready
+                        // with no exit yet is a transient to wait through,
+                        // never a defect to refuse.
+                        if let (Some(addr), Some(_)) = (status.socks5_addr, status.exits.first()) {
+                            return Ok((addr, status.exits.clone()));
                         }
                     }
                     MixnetMode::Died => {
@@ -714,14 +718,28 @@ pub(crate) async fn acquire_ready_transport(
     })
     .await;
     match outcome {
-        Ok(Ok(exit)) => Ok((proxy, exit)),
-        Ok(Err(cause)) => {
+        Ok(ready) => ready,
+        Err(_elapsed) => Err(acquire::TransportError::NotReady { budget }),
+    }
+}
+
+/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
+/// is ready, yielding the transport with the exits it announced as bound.
+pub(crate) async fn acquire_ready_transport(
+    acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+    clutch: &[crate::mixnet::ExitNodeId],
+) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
+    let publisher = crate::mixnet::status_publisher();
+    let mut receiver = publisher.subscribe();
+    let proxy = acquirer
+        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
+        .await?;
+    match await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
+        Ok((_addr, exits)) => Ok((proxy, exits)),
+        Err(cause) => {
             proxy.stop().await;
             Err(cause)
-        }
-        Err(_elapsed) => {
-            proxy.stop().await;
-            Err(acquire::TransportError::NotReady { budget })
         }
     }
 }
@@ -736,6 +754,49 @@ mod tests {
 
     use super::*;
 
+    /// The number of times one detail may appear across a whole cause chain.
+    const DETAIL_RENDERINGS: usize = 1;
+
+    /// HYPOTHESIS: a proxy spawn failure names the path it tried without
+    /// restating its source, so the underlying detail reaches the reader
+    /// exactly once across the sanctioned chain walk. Falsified if the
+    /// detail appears more than once.
+    #[test]
+    fn a_proxy_spawn_failure_renders_its_detail_once() {
+        const DETAIL: &str = "the nym-proxy binary is absent";
+        let failure = MixnetProxyError::Spawn {
+            path: "/no/such/nym-proxy".to_string(),
+            source: std::io::Error::other(DETAIL),
+        };
+        let chain = zingo_net_diag::chain_texts(&failure);
+        assert_eq!(
+            chain.join("\n").matches(DETAIL).count(),
+            DETAIL_RENDERINGS,
+            "the chain rendered was {chain:?}"
+        );
+    }
+
+    /// The identities a duplicating child names, counted once each.
+    const DISTINCT_DISCOVERED: usize = 2;
+
+    /// HYPOTHESIS: a child announcing one identity on two lines discovers
+    /// that identity once, so the discovery edge carries a population
+    /// rather than a transcript. Falsified if the repeated line reaches the
+    /// caller twice.
+    #[test]
+    fn a_duplicated_child_line_discovers_once() {
+        let stdout = format!(
+            "{NYM_EXIT_LINE_PREFIX}exit-a\n\
+             {NYM_EXIT_LINE_PREFIX}exit-b\n\
+             {NYM_EXIT_LINE_PREFIX}exit-a\n"
+        );
+        assert_eq!(
+            parse_discovery_output(&stdout).len(),
+            DISTINCT_DISCOVERED,
+            "the repeated announcement names one exit"
+        );
+    }
+
     fn bootstrapping() -> Arc<Mutex<ProxyState>> {
         Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
@@ -749,7 +810,7 @@ mod tests {
     /// A throwaway session channel for tests that exercise the state
     /// machine without asserting on publications.
     fn test_publisher() -> StatusPublisher {
-        crate::nym::status_publisher()
+        crate::mixnet::status_publisher()
     }
 
     /// A fabricated readiness failure for the attach falsifiers.
@@ -866,10 +927,10 @@ mod tests {
     async fn ready_carries_the_announced_exit() {
         let s = state_over_open_stream(b"NYM_EXIT=exit-alpha\nSOCKS5_ADDR=127.0.0.1:5\n").await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.exits, vec![crate::nym::ExitNodeId::from("exit-alpha")]);
+        assert_eq!(s.exits, vec![crate::mixnet::ExitNodeId::from("exit-alpha")]);
         assert_eq!(
             s.snapshot().exits,
-            vec![crate::nym::ExitNodeId::from("exit-alpha")]
+            vec![crate::mixnet::ExitNodeId::from("exit-alpha")]
         );
     }
 
@@ -880,7 +941,7 @@ mod tests {
     async fn a_blank_exit_announcement_records_no_exit() {
         let s = state_over_open_stream(b"NYM_EXIT=\nNYM_EXIT=   \nSOCKS5_ADDR=127.0.0.1:5\n").await;
         assert_eq!(s.mode, MixnetMode::Ready);
-        assert_eq!(s.exits, Vec::<crate::nym::ExitNodeId>::new());
+        assert_eq!(s.exits, Vec::<crate::mixnet::ExitNodeId>::new());
     }
 
     /// HYPOTHESIS: an unparseable address announcement latches `Died` with a
@@ -1214,7 +1275,7 @@ mod tests {
         }
         assert_eq!(
             receiver.borrow().exits,
-            vec![crate::nym::ExitNodeId::from("host-bound-exit")],
+            vec![crate::mixnet::ExitNodeId::from("host-bound-exit")],
             "an attached Ready must carry the host-bound Exit Node"
         );
         driver.abort();
@@ -1255,8 +1316,8 @@ mod tests {
     /// ever yields clearnet or the mixnet for the dead endpoint.
     #[tokio::test]
     async fn an_attached_endpoint_that_dies_refuses_the_route() {
-        use crate::nym::route::MixnetNotReady;
-        use crate::nym::route::resolve_route;
+        use crate::mixnet::route::MixnetNotReady;
+        use crate::mixnet::route::resolve_route;
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.

@@ -659,7 +659,7 @@ mod network_command_parsing {
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
             host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
@@ -737,7 +737,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(MixnetMode::Unattached, None, None),
@@ -780,7 +780,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(
@@ -807,7 +807,7 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         for mode in [
             MixnetMode::Unattached,
@@ -849,7 +849,7 @@ mod bootstrap_wait {
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use zingolib::nym::{MixnetMode, MixnetStatus};
+    use zingolib::mixnet::{MixnetMode, MixnetStatus};
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
@@ -876,7 +876,7 @@ mod bootstrap_wait {
         tokio::task::yield_now().await;
         let mut ready = status(MixnetMode::Ready);
         let exit_alpha =
-            zingolib::nym::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+            zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
         ready.exits = vec![exit_alpha.clone()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
@@ -893,7 +893,7 @@ mod bootstrap_wait {
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
         let parsed = |identity: &str| {
-            zingolib::nym::ExitNodeId::parse(identity).expect("the test identity parses")
+            zingolib::mixnet::ExitNodeId::parse(identity).expect("the test identity parses")
         };
         assert_eq!(
             super::super::render_exit_nodes(&[parsed("short-exit")]),
@@ -998,7 +998,9 @@ mod offline_contract {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+    use super::super::{
+        CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+    };
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -1056,7 +1058,7 @@ mod offline_contract {
     fn assert_unblocked_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
         let rendered = match exec(client, command, args) {
             Ok(output) => output,
-            Err(error) => error.to_string(),
+            Err(error) => render_error_chain(&error),
         };
         assert!(
             !rendered.contains(OFFLINE_REFUSAL),
@@ -1076,12 +1078,13 @@ mod offline_contract {
     }
 
     /// Asserts `command` refuses offline through its `Err` channel with the
-    /// typed Offline refusal.
+    /// typed Offline refusal, judged over the whole rendered chain.
     fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
         let error = exec(client, command, args).expect_err(command);
+        let rendered = render_error_chain(&error);
         assert!(
-            error.to_string().contains(OFFLINE_REFUSAL),
-            "`{command}` must refuse with the typed Offline error: {error}"
+            rendered.contains(OFFLINE_REFUSAL),
+            "`{command}` must refuse with the typed Offline error: {rendered}"
         );
     }
 
@@ -1520,17 +1523,62 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
+    use pepper_sync::error::SyncModeError;
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
-    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+    use super::super::{
+        JSON_INDENT, MigrationCommandError, address_check_json, not_yet_typed, render_error_chain,
+        txids_json,
+    };
 
     /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
     /// "Error: " prefix, so the edge renderer adds it exactly once.
     #[test]
     fn not_yet_typed_renders_the_message_unprefixed() {
         assert_eq!(
-            not_yet_typed("no such wallet file").to_string(),
+            not_yet_typed(std::io::Error::other("no such wallet file")).to_string(),
             "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the wrapper carries the failure itself rather than its
+    /// outermost line, so the dispatch renderer walks the whole source
+    /// chain; a rendering that drops the innermost detail falsifies it.
+    #[test]
+    fn not_yet_typed_keeps_the_source_chain_renderable() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+        assert_eq!(
+            render_error_chain(&wrapped),
+            "Send error.\ncaused by: No proposal found in the wallet."
+        );
+    }
+
+    /// HYPOTHESIS: the dispatch seam renders a two-link cause chain exactly
+    /// as the one sanctioned chain walk joined by the seam's separator does,
+    /// so the seam keeps no private copy of the walk. Falsified if the two
+    /// renderings differ by a single byte.
+    #[test]
+    fn the_dispatch_rendering_matches_the_sanctioned_walk() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+
+        assert_eq!(
+            render_error_chain(&wrapped),
+            zingo_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+        );
+    }
+
+    /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
+    /// as its source, so the chain walk reaches the innermost detail; a
+    /// rendering that stops at the wrapper line falsifies it.
+    #[test]
+    fn migration_sync_failure_keeps_its_source_chain() {
+        let refused = MigrationCommandError::Sync(LightClientError::SyncModeError(
+            SyncModeError::SyncAlreadyRunning,
+        ));
+        assert_eq!(
+            render_error_chain(&refused),
+            "sync failed\ncaused by: Sync mode error.\ncaused by: sync is already running"
         );
     }
 
@@ -1749,7 +1797,7 @@ mod finding_pins {
     fn network_arguments_meet_the_unknown_command_refusal() {
         use super::super::{CommandError, dispatch_parsed};
         let rendered = match parse_command_tokens(&tokens(&["network", "probe", "http://x.com"]))
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
         {
             Ok(output) => output,
@@ -1835,7 +1883,7 @@ mod posture_surface {
         ));
         let tokens: Vec<String> = ["network", "off"].map(String::from).into();
         let report = parse_command_tokens(&tokens)
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
             .expect("network off succeeds offline");
         assert!(report.contains("Network off"), "{report}");
@@ -1884,7 +1932,7 @@ mod attached_exit_reporting {
         client
             .attach_mixnet(
                 &addr,
-                &[zingolib::nym::ExitNodeId::parse("host-bound-exit")
+                &[zingolib::mixnet::ExitNodeId::parse("host-bound-exit")
                     .expect("the test identity parses")],
             )
             .await

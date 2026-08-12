@@ -17,7 +17,7 @@ pub mod sync;
 pub mod utils;
 pub mod wallet;
 
-pub mod nym;
+pub mod mixnet;
 
 #[cfg(any(test, feature = "testutils"))]
 pub mod mocks;

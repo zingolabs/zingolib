@@ -1,6 +1,7 @@
 //! The acquisition seam: where a mixnet transport comes from.
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -8,8 +9,8 @@ use std::pin::Pin;
 use zingo_netutils::responsiveness::ResponsivenessClass;
 
 use crate::correspondent::pool::exit_pool::ExitPoolError;
-use crate::nym::driver::StatusPublisher;
-use crate::nym::supervisor::{MixnetProxy, MixnetProxyError};
+use crate::mixnet::driver::StatusPublisher;
+use crate::mixnet::supervisor::{MixnetProxy, MixnetProxyError};
 
 /// Why the session could acquire no ready transport.
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +19,7 @@ pub enum TransportError {
     #[error("this session acquires no transports")]
     NoAcquirer,
     /// The proxy binary's discover mode could not be run.
-    #[error("could not run the discover mode: {0}")]
+    #[error("could not run the discover mode")]
     DiscoverySpawn(#[source] std::io::Error),
     /// The proxy binary's discover mode ran and reported failure.
     #[error("the discover mode exited {status}: {stderr}")]
@@ -42,12 +43,22 @@ pub enum TransportError {
     /// The transport process could not be created.
     #[error(transparent)]
     Proxy(#[from] MixnetProxyError),
-    /// The platform host could not be reached to serve the acquisition.
+    /// The mobile platform host could not be reached to serve the acquisition.
     #[error("the proxy host did not answer: {0}")]
     HostUnavailable(String),
-    /// The platform host answered and refused the acquisition.
+    /// The mobile platform host answered and refused the acquisition.
     #[error("the proxy host refused")]
     HostRefused(#[source] HostRefusal),
+    /// The ready transport reported no bound exit from the drawn Clutch, a
+    /// defective report the wallet refuses instead of trusting.
+    #[error(
+        "the ready transport reported no bound exit from the drawn clutch ({} reported)",
+        reported.len()
+    )]
+    ExitOutsideClutch {
+        /// The exit identities the transport reported as bound.
+        reported: Vec<crate::mixnet::ExitNodeId>,
+    },
     /// The transport died during bootstrap.
     #[error(
         "the pool transport died during bootstrap: {}",
@@ -84,35 +95,39 @@ impl From<ExitPoolError> for TransportError {
 }
 
 /// Something a mixnet transport is acquirable from: the bundled binary a
-/// desktop spawns, or the host that owns the proxy where a platform forbids
-/// subprocesses.
+/// desktop spawns, or the host that owns the proxy where a mobile platform
+/// forbids subprocesses.
 pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
         &self,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+        Box<
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
+        >,
     >;
 
     /// Acquires one transport that races `clutch` under `class`.
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [crate::nym::ExitNodeId],
+        clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
 }
 
-/// One transport a platform host started on the wallet's behalf.
+/// One transport a mobile platform host started on the wallet's behalf.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostedTransport {
     /// The local SOCKS5 address the host's proxy listens on.
     pub socks5_addr: std::net::SocketAddr,
     /// The Exit Node that proxy bound.
-    pub exit_node: crate::nym::ExitNodeId,
+    pub exit_node: crate::mixnet::ExitNodeId,
 }
 
-/// Why the platform host declined or failed a request, with the host's own
+/// Why the mobile platform host declined or failed a request, with the host's own
 /// detail carried verbatim as the payload.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HostRefusal {
@@ -122,7 +137,7 @@ pub enum HostRefusal {
         /// The host's own account of the failure.
         detail: String,
     },
-    /// The host declined the request as a matter of platform policy.
+    /// The host declined the request as a matter of mobile platform policy.
     #[error("the host declined: {detail}")]
     Declined {
         /// The host's own account of the refusal.
@@ -130,22 +145,22 @@ pub enum HostRefusal {
     },
 }
 
-/// A platform host that owns the mixnet proxy, for a platform whose sandbox
+/// A mobile platform host that owns the mixnet proxy, for a mobile platform whose sandbox
 /// forbids the wallet from spawning one.
 pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
-    fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal>;
+    fn discover_exit_nodes(&self) -> Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal>;
 
     /// Starts one proxy racing `clutch` under `class`, returning where it
     /// listens and which exit it bound.
     fn start_transport(
         &self,
         class: ResponsivenessClass,
-        clutch: &[crate::nym::ExitNodeId],
+        clutch: &[crate::mixnet::ExitNodeId],
     ) -> Result<HostedTransport, HostRefusal>;
 }
 
-/// The mobile acquirer: a platform host that owns the proxy library.
+/// The mobile acquirer: a mobile platform host that owns the proxy library.
 pub(crate) struct HostedProxy {
     host: std::sync::Arc<dyn ProxyHost>,
 }
@@ -161,23 +176,28 @@ impl TransportAcquirable for HostedProxy {
     fn discover(
         &self,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+        Box<
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
+        >,
     > {
         let host = std::sync::Arc::clone(&self.host);
         Box::pin(async move {
             // The host's directory query blocks, so it runs off the runtime's
             // worker threads.
-            tokio::task::spawn_blocking(move || host.discover_exit_nodes())
+            let reported = tokio::task::spawn_blocking(move || host.discover_exit_nodes())
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
-                .map_err(TransportError::HostRefused)
+                .map_err(TransportError::HostRefused)?;
+            Ok(reported.into_iter().collect())
         })
     }
 
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [crate::nym::ExitNodeId],
+        clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         let host = std::sync::Arc::clone(&self.host);
@@ -209,15 +229,19 @@ impl TransportAcquirable for SpawnedBinary {
     fn discover(
         &self,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Vec<crate::nym::ExitNodeId>, TransportError>> + Send + '_>,
+        Box<
+            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
+                + Send
+                + '_,
+        >,
     > {
-        Box::pin(crate::nym::supervisor::discover_exit_nodes(&self.path))
+        Box::pin(crate::mixnet::supervisor::discover_exit_nodes(&self.path))
     }
 
     fn acquire<'a>(
         &'a self,
         class: ResponsivenessClass,
-        clutch: &'a [crate::nym::ExitNodeId],
+        clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         Box::pin(async move {
@@ -230,22 +254,41 @@ impl TransportAcquirable for SpawnedBinary {
 mod tests {
     use super::*;
 
+    /// The number of times one detail may appear across a whole cause chain.
+    const DETAIL_RENDERINGS: usize = 1;
+
+    /// HYPOTHESIS: a discovery spawn failure states its own layer only, so
+    /// the underlying detail reaches the reader exactly once across the
+    /// sanctioned chain walk. Falsified if the detail appears more than
+    /// once, which is what a Display embedding its own source produces.
+    #[test]
+    fn a_discovery_spawn_failure_renders_its_detail_once() {
+        const DETAIL: &str = "the discover binary is absent";
+        let failure = TransportError::DiscoverySpawn(std::io::Error::other(DETAIL));
+        let chain = zingo_net_diag::chain_texts(&failure);
+        assert_eq!(
+            chain.join("\n").matches(DETAIL).count(),
+            DETAIL_RENDERINGS,
+            "the chain rendered was {chain:?}"
+        );
+    }
+
     /// A host that answers both calls from a script, standing in for the
-    /// platform library a phone loads.
+    /// mobile platform library a phone loads.
     struct ScriptedHost {
-        directory: Result<Vec<crate::nym::ExitNodeId>, HostRefusal>,
+        directory: Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal>,
         transport: Result<HostedTransport, HostRefusal>,
     }
 
     impl ProxyHost for ScriptedHost {
-        fn discover_exit_nodes(&self) -> Result<Vec<crate::nym::ExitNodeId>, HostRefusal> {
+        fn discover_exit_nodes(&self) -> Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal> {
             self.directory.clone()
         }
 
         fn start_transport(
             &self,
             _class: ResponsivenessClass,
-            _clutch: &[crate::nym::ExitNodeId],
+            _clutch: &[crate::mixnet::ExitNodeId],
         ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
         }
@@ -267,20 +310,41 @@ mod tests {
         });
         assert_eq!(
             acquirer.discover().await.expect("the host answers"),
-            vec![
-                crate::nym::ExitNodeId::from("exit-a"),
-                crate::nym::ExitNodeId::from("exit-b")
-            ]
+            HashSet::from([
+                crate::mixnet::ExitNodeId::from("exit-a"),
+                crate::mixnet::ExitNodeId::from("exit-b")
+            ])
+        );
+    }
+
+    /// The identities a duplicating host names, counted once each.
+    const DISTINCT_DISCOVERED: usize = 2;
+
+    /// HYPOTHESIS: a host naming one identity twice discovers that identity
+    /// once, so the discovery edge carries a population rather than the
+    /// host's sequence. Falsified if the repeat reaches the caller twice.
+    #[tokio::test]
+    async fn a_duplicated_host_directory_discovers_once() {
+        let acquirer = hosted(ScriptedHost {
+            directory: Ok(vec!["exit-a".into(), "exit-b".into(), "exit-a".into()]),
+            transport: Err(HostRefusal::Declined {
+                detail: "unused".to_string(),
+            }),
+        });
+        assert_eq!(
+            acquirer.discover().await.expect("the host answers").len(),
+            DISTINCT_DISCOVERED,
+            "the repeated identity is one Exit Node"
         );
     }
 
     /// HYPOTHESIS: a refusing host surfaces as a typed host refusal, never
-    /// as a spawn failure the platform could not have produced.
+    /// as a spawn failure the mobile platform could not have produced.
     #[tokio::test]
     async fn a_refusing_host_refuses_typed() {
         let acquirer = hosted(ScriptedHost {
             directory: Err(HostRefusal::Declined {
-                detail: "no directory on this platform".to_string(),
+                detail: "no directory on this mobile platform".to_string(),
             }),
             transport: Err(HostRefusal::Declined {
                 detail: "the app declined".to_string(),
@@ -294,7 +358,7 @@ mod tests {
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
                 &["exit-a".into()],
-                crate::nym::status_publisher(),
+                crate::mixnet::status_publisher(),
             )
             .await
         else {
@@ -318,7 +382,7 @@ mod tests {
             .acquire(
                 ResponsivenessClass::PrioritisePrivacy,
                 &["exit-a".into()],
-                crate::nym::status_publisher(),
+                crate::mixnet::status_publisher(),
             )
             .await
             .expect("a typed endpoint always constructs the attached transport");

@@ -94,11 +94,10 @@ async fn mixnet_leg(
     host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome =
-        zingo_netutils::get_lightd_info_via_socks5(&socks5_addr.to_string(), indexer, timeout)
-            .await
-            .map(|info| ProbeSuccess::of(&info))
-            .map_err(|e| super::socks5_transmit_failure(&e, host));
+    let outcome = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, indexer, timeout)
+        .await
+        .map(|info| ProbeSuccess::of(&info))
+        .map_err(|e| super::socks5_transmit_failure(&e, host));
     let leg = ProbeLeg {
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         outcome,
@@ -123,7 +122,7 @@ fn record_probe(
             .outcome
             .as_ref()
             .err()
-            .map(|failure| crate::nym::charge_phase(&failure.stage)),
+            .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
         exit: None,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),

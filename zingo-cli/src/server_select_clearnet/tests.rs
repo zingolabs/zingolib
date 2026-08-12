@@ -2,7 +2,29 @@
 
 use std::time::Duration;
 
-use super::{ProbeStage, probe_servers};
+use super::{ProbeStage, error_chain, probe_servers};
+
+#[derive(Debug, thiserror::Error)]
+#[error("the inner layer gave out")]
+struct InnerLayer;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the outer layer gave out")]
+struct OuterLayer(#[source] InnerLayer);
+
+/// HYPOTHESIS: the probe report renders a two-link cause chain exactly as
+/// the one sanctioned chain walk joined by this module's separator does, so
+/// the module keeps no private copy of the walk. Falsified if the two
+/// renderings differ by a single byte.
+#[test]
+fn the_probe_rendering_matches_the_sanctioned_walk() {
+    let error = OuterLayer(InnerLayer);
+
+    assert_eq!(
+        error_chain(&error),
+        zingo_net_diag::chain_texts(&error).join(": ")
+    );
+}
 
 /// A budget generous enough that a fast local failure is never misread as a timeout.
 const CLASSIFICATION_BUDGET: Duration = Duration::from_secs(10);

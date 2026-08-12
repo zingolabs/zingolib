@@ -66,7 +66,7 @@
 //! ```
 //!
 //! For a production producer in a Nym-touching context, see
-//! `zingolib::nym::socks5_transmit_stage`: a pure typed match that
+//! `zingolib::mixnet::socks5_transmit_stage`: a pure typed match that
 //! classifies every `Socks5TransmitError` variant into its stage with no
 //! substring inspection. For the consumer-visible payoff, see
 //! `LightClient::mixnet_death_detail`, which answers *why* the mixnet
@@ -81,7 +81,7 @@ use std::fmt;
 /// is kebab-case (`remote-tls`, `timed-out(25000ms)`) and is part of the
 /// stability contract described on [`NetOpFailure`]. Behind the `serde`
 /// feature the wire discriminant is minted from the same kebab tokens by
-/// `rename_all`, and zingolib's `nym::driver::wire_contract` pins every
+/// `rename_all`, and zingolib's `mixnet::driver::wire_contract` pins every
 /// variant's token against its `Display` rendering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

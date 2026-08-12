@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
-use rand::seq::SliceRandom as _;
+use rand::seq::IteratorRandom as _;
 
 /// Why the pool could issue no clutch.
 #[derive(Debug, thiserror::Error)]
@@ -24,13 +24,13 @@ pub(crate) enum ExitPoolError {
 
 /// One issued Exit Node Reservation; dropping it recycles the node.
 pub(crate) struct Reservation {
-    node: crate::nym::ExitNodeId,
+    node: crate::mixnet::ExitNodeId,
     ledger: Weak<Mutex<ExitPool>>,
 }
 
 impl Reservation {
     /// The reserved Exit Node identity.
-    pub(crate) fn node(&self) -> &crate::nym::ExitNodeId {
+    pub(crate) fn node(&self) -> &crate::mixnet::ExitNodeId {
         &self.node
     }
 
@@ -38,7 +38,7 @@ impl Reservation {
     #[cfg(test)]
     pub(crate) fn dangling_for_test(node: &str) -> Self {
         Reservation {
-            node: crate::nym::ExitNodeId::from(node),
+            node: crate::mixnet::ExitNodeId::from(node),
             ledger: Weak::new(),
         }
     }
@@ -64,26 +64,61 @@ impl std::fmt::Debug for Reservation {
     }
 }
 
+impl PartialEq for Reservation {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl Eq for Reservation {}
+
+impl std::hash::Hash for Reservation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+    }
+}
+
+impl std::borrow::Borrow<crate::mixnet::ExitNodeId> for Reservation {
+    fn borrow(&self) -> &crate::mixnet::ExitNodeId {
+        &self.node
+    }
+}
+
 /// The node identities of a clutch, for the process seam's `--exit` args.
-pub(crate) fn clutch_nodes(clutch: &[Reservation]) -> Vec<crate::nym::ExitNodeId> {
+pub(crate) fn clutch_nodes(clutch: &HashSet<Reservation>) -> Vec<crate::mixnet::ExitNodeId> {
     clutch
         .iter()
         .map(|reservation| reservation.node().clone())
         .collect()
 }
 
+/// Takes the one reservation a ready transport reports as bound out of
+/// `clutch`, recycling the rest, or `None` when the report names no drawn
+/// node.
+pub(crate) fn take_bound_lease(
+    clutch: &mut HashSet<Reservation>,
+    reported: &[crate::mixnet::ExitNodeId],
+) -> Option<Reservation> {
+    let bound = clutch
+        .iter()
+        .find(|reservation| reported.contains(reservation.node()))?
+        .node()
+        .clone();
+    clutch.take(&bound)
+}
+
 /// The session's Exit Pool: one reservation per discovered node, issued to
 /// at most one holder at a time.
 #[derive(Default)]
 pub(crate) struct ExitPool {
-    population: Vec<crate::nym::ExitNodeId>,
-    issued: HashSet<crate::nym::ExitNodeId>,
+    population: HashSet<crate::mixnet::ExitNodeId>,
+    issued: HashSet<crate::mixnet::ExitNodeId>,
 }
 
 impl ExitPool {
     /// Records the discovered population, once per session.
-    pub(crate) fn seed(&mut self, discovered: Vec<crate::nym::ExitNodeId>) {
-        self.population = discovered;
+    pub(crate) fn seed(&mut self, discovered: impl IntoIterator<Item = crate::mixnet::ExitNodeId>) {
+        self.population = discovered.into_iter().collect();
     }
 
     /// Whether the population is known yet.
@@ -95,12 +130,14 @@ impl ExitPool {
     /// itself into `pool` when dropped.
     pub(crate) fn draw_clutch(
         pool: &Arc<Mutex<ExitPool>>,
-    ) -> Result<Vec<Reservation>, ExitPoolError> {
+    ) -> Result<HashSet<Reservation>, ExitPoolError> {
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
         }
-        let drawable: Vec<crate::nym::ExitNodeId> = guarded
+        // The candidates are collected before any issue, so the ledger is
+        // written while the population is no longer borrowed.
+        let drawable: Vec<crate::mixnet::ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -112,15 +149,17 @@ impl ExitPool {
                 population: guarded.population.len(),
             });
         }
-        let clutch: Vec<Reservation> = drawable
+        let clutch: HashSet<Reservation> = drawable
+            .into_iter()
             .choose_multiple(
                 &mut rand::rngs::OsRng,
                 zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
             )
+            .into_iter()
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {
-                    node: node.clone(),
+                    node,
                     ledger: Arc::downgrade(pool),
                 }
             })
@@ -138,10 +177,44 @@ mod tests {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         pool.lock().unwrap().seed(
             (0..count)
-                .map(|index| crate::nym::ExitNodeId::from(format!("exit-{index}").as_str()))
-                .collect(),
+                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str())),
         );
         pool
+    }
+
+    /// HYPOTHESIS: the bind-time take yields exactly the reported
+    /// reservation and leaves the rest for recycling. Falsified if it takes
+    /// the wrong reservation or disturbs the remainder.
+    #[test]
+    fn the_bound_lease_is_taken_and_the_rest_remain() {
+        let mut clutch: HashSet<Reservation> = [
+            Reservation::dangling_for_test("exit-a"),
+            Reservation::dangling_for_test("exit-b"),
+            Reservation::dangling_for_test("exit-c"),
+        ]
+        .into_iter()
+        .collect();
+        let lease = take_bound_lease(
+            &mut clutch,
+            std::slice::from_ref(&crate::mixnet::ExitNodeId::from("exit-b")),
+        )
+        .expect("the reported exit is drawn");
+        assert_eq!(lease.node(), &crate::mixnet::ExitNodeId::from("exit-b"));
+        assert_eq!(clutch.len(), 2, "the unbound reservations remain");
+    }
+
+    /// HYPOTHESIS: a report naming no drawn node (foreign or empty) takes
+    /// nothing, so the caller can refuse typed. Falsified if a lease is
+    /// yielded or the clutch shrinks.
+    #[test]
+    fn a_foreign_or_empty_report_takes_no_lease() {
+        let mut clutch: HashSet<Reservation> = [Reservation::dangling_for_test("exit-a")]
+            .into_iter()
+            .collect();
+        let foreign = [crate::mixnet::ExitNodeId::from("exit-foreign")];
+        assert!(take_bound_lease(&mut clutch, &foreign).is_none());
+        assert!(take_bound_lease(&mut clutch, &[]).is_none());
+        assert_eq!(clutch.len(), 1, "the clutch is undisturbed");
     }
 
     /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in
@@ -161,6 +234,36 @@ mod tests {
                 "{} was issued to two holders at once",
                 reservation.node()
             );
+        }
+    }
+
+    /// HYPOTHESIS: a discovery naming one exit twice seeds a single
+    /// reservation, so the pool can never double-issue that identity and
+    /// counts it once. Falsified if the refusal reports a population larger
+    /// than the identities the pool can issue.
+    #[test]
+    fn a_duplicated_discovery_seeds_one_reservation() {
+        const DISTINCT_IDENTITIES: usize = 1;
+        let pool = Arc::new(Mutex::new(ExitPool::default()));
+        let repeated = crate::mixnet::ExitNodeId::from("exit-repeated");
+        pool.lock()
+            .unwrap()
+            .seed(vec![repeated.clone(), repeated.clone()]);
+        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        assert_eq!(
+            clutch.len(),
+            DISTINCT_IDENTITIES,
+            "the repeated identity reserves once"
+        );
+        match ExitPool::draw_clutch(&pool).expect_err("nothing is left to issue") {
+            ExitPoolError::Exhausted { held, population } => {
+                assert_eq!(held, DISTINCT_IDENTITIES, "the sole identity is held");
+                assert_eq!(
+                    population, DISTINCT_IDENTITIES,
+                    "the population counts identities rather than repeats"
+                );
+            }
+            other => panic!("the pool refused with {other:?} rather than exhaustion"),
         }
     }
 

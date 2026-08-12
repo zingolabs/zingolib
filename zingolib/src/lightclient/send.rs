@@ -14,7 +14,7 @@ use zcash_protocol::consensus::BranchId;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 #[cfg(feature = "nym")]
-use crate::nym::acquire;
+use crate::mixnet::acquire;
 use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
@@ -41,7 +41,7 @@ fn record_send_attempt(
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
-    exit: Option<crate::nym::ExitNodeId>,
+    exit: Option<crate::mixnet::ExitNodeId>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -78,7 +78,9 @@ pub(crate) enum TransmitError {
     /// Every arm of the escalation failed, reported whole.
     #[cfg(feature = "nym")]
     #[error("{0}")]
-    Escalation(crate::nym::correspondent_rotation::EscalationError<zingo_net_diag::NetOpFailure>),
+    Escalation(
+        crate::mixnet::correspondent_rotation::EscalationError<zingo_net_diag::NetOpFailure>,
+    ),
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -117,9 +119,9 @@ pub struct TransmitReport {
 #[cfg(feature = "nym")]
 fn resolve_transmit_route(
     has_indexer: bool,
-    route: Result<crate::nym::MixnetRoute, crate::nym::MixnetNotReady>,
+    route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
 ) -> Result<Option<std::net::SocketAddr>, LightClientError> {
-    use crate::nym::{MixnetNotReady, MixnetRoute};
+    use crate::mixnet::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
         (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
@@ -243,34 +245,27 @@ struct SocksTarget {
 impl TransmitTarget for SocksTarget {
     type Failure = zingo_netutils::Socks5TransmitError;
 
-    fn submit(
+    async fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, zingo_netutils::Socks5TransmitError>> + Send {
-        let socks5_addr = self.socks5_addr.to_string();
-        let indexer = self.indexer.clone();
-        let data = raw_tx.to_vec();
-        async move {
-            zingo_netutils::send_transaction_via_socks5(
-                &socks5_addr,
-                &indexer,
-                &data,
-                height,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
-        }
+    ) -> Result<String, zingo_netutils::Socks5TransmitError> {
+        zingo_netutils::send_transaction_via_socks5(
+            self.socks5_addr,
+            &self.indexer,
+            raw_tx,
+            height,
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
-        let socks5_addr = self.socks5_addr.to_string();
-        let indexer = self.indexer.clone();
         let hash = txid.as_ref().to_vec();
         async move {
             zingo_netutils::transaction_known_via_socks5(
-                &socks5_addr,
-                &indexer,
+                self.socks5_addr,
+                &self.indexer,
                 &hash,
                 DEFAULT_REQUEST_TIMEOUT,
             )
@@ -298,7 +293,7 @@ impl PullTransports {
         &self,
     ) -> Result<
         crate::correspondent::pool::Member<
-            crate::nym::MixnetProxy,
+            crate::mixnet::MixnetProxy,
             crate::correspondent::pool::Exclusive,
         >,
         acquire::TransportError,
@@ -423,7 +418,7 @@ async fn mixnet_escalating_transmit(
     history: &IndexerHistoryHandle,
 ) -> Result<(String, TransmitRoute), TransmitError> {
     use crate::correspondent::eligible_correspondents;
-    use crate::nym::correspondent_rotation::{
+    use crate::mixnet::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
 
@@ -485,7 +480,7 @@ async fn mixnet_escalating_transmit(
                 |event| progress.set(format!("correspondent {host}: {event}")),
             )
             .await
-            .map_err(|TransmitFailed(error)| crate::nym::socks5_transmit_failure(&error, &host));
+            .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
             // The consumed transport dies with its pull, whatever the
             // outcome, so its exit carries exactly this one Transmission;
             // dropping the spent holder recycles its lease even when the
@@ -506,7 +501,7 @@ async fn mixnet_escalating_transmit(
                 outcome
                     .as_ref()
                     .err()
-                    .map(|failure| crate::nym::charge_phase(&failure.stage)),
+                    .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
                 bound_exit,
             );
             outcome.map(|server_txid| {
@@ -549,7 +544,7 @@ async fn mock_escalating_transmit(
     history: &IndexerHistoryHandle,
 ) -> Result<(String, String), TransmitError> {
     use crate::correspondent::eligible_correspondents;
-    use crate::nym::correspondent_rotation::{
+    use crate::mixnet::correspondent_rotation::{
         MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
     };
 
@@ -915,7 +910,7 @@ impl LightClient {
         let pull_transports: Option<PullTransports> = self
             .mixnet_slot
             .proxy()
-            .is_some_and(crate::nym::MixnetProxy::is_spawned)
+            .is_some_and(crate::mixnet::MixnetProxy::is_spawned)
             .then(|| PullTransports {
                 pools: std::sync::Arc::clone(&self.correspondent_pools),
             })
@@ -937,7 +932,7 @@ impl LightClient {
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
             self.mixnet_slot,
-            crate::nym::MixnetSlot::AttachedForTests { .. }
+            crate::mixnet::MixnetSlot::AttachedForTests { .. }
         );
 
         // Narrate the transmission into the side channel; the scope clears it

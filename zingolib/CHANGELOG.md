@@ -58,8 +58,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a refused Server-Selection Sweep names its transport failure by
+  type. `lightclient::select::ServerSelectionError::TransportUnready(String)`
+  is replaced by three variants: `TransportDied`, which carries the death
+  report's typed `zingo_net_diag::NetOpFailure` as a `source()` link;
+  `TransportTimeout`, which carries the bootstrap budget that elapsed; and
+  `TransportStatusClosed`, for a status channel that closed before
+  readiness. A caller now distinguishes a handshake-stage death from a
+  bootstrap timeout by matching, never by parsing prose.
+- BREAKING: a failure detail lives in exactly one chain link. The
+  wrapper variants of `LightClientError` and
+  `PriceError::TransportAcquisition` stop embedding their sources' text
+  and carry them as `source()` links (the pure `{0}` wrappers become
+  transparent), because every consumer walks the chain;
+  `TransportError::HostRefused` follows the same rule.
+  `LightClientError::NoEligibleCorrespondent` now carries the typed
+  `correspondent::NoEligibleCorrespondents` union — that union and
+  `correspondent::Operator` are public — so the empty-pool and
+  all-excluded stories reach consumers distinctly. The mixnet refusals
+  prescribe `network on` / `network off`, the commands that exist.
+- BREAKING: the `zingolib::nym` module is renamed `zingolib::mixnet`,
+  per the seam rule (ratified 2026-08-11): above the local SOCKS5 seam
+  the wallet's transport domain speaks "mixnet", while "Nym" stays the
+  name of the vendor stack below it (the `nym` cargo feature, the
+  `nym-proxy` binary, and the netutils Nym types are unchanged). Every
+  `zingolib::nym::…` import becomes `zingolib::mixnet::…`; no type,
+  function, or variant is renamed.
 - BREAKING: mixnet Exit Node identities travel as the typed
-  `nym::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
+  `mixnet::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
   `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
   `HostedTransport`, and the `ProxyHost` seam — and the operator key
   behind Correspondent exclusion is the typed `correspondent::Operator`
@@ -68,19 +94,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trims the candidate and refuses a blank with the typed
   `BlankExitNodeId`, so no blank identity can enter the Ready snapshot or
   the Exit Pool ledger. The serialized `MixnetStatus` wire is a plain
-  string, unchanged.
+  string, unchanged; a malformed exit entry on that wire now refuses
+  deserialization as suspicious, because producer and consumer are
+  pinned to one code revision.
 - BREAKING: the `ProxyHost` seam speaks types end-to-end — its
   `start_transport` takes the `ResponsivenessClass` enum instead of the
   wire string, and both host methods refuse with the typed
-  `nym::acquire::HostRefusal` instead of `String`, which
+  `mixnet::acquire::HostRefusal` instead of `String`, which
   `TransportError::HostRefused` now carries as its source.
 - BREAKING: indexer endpoints are the typed `correspondent::Host` — the
   Health ledger's key, `MixnetProbe::host`, and the diary's
   `IndexerAttempt::host`, whose `exit` field is now the typed
-  `nym::ExitNodeId`. A Host is lowercased at construction because DNS
+  `mixnet::ExitNodeId`. A Host is lowercased at construction because DNS
   names compare case-insensitively, and the host-or-whole-URI fallback
   that three call sites each derived by hand now lives in one
-  constructor. The `nym` module is declared in every build with its
+  constructor. The `mixnet` module is declared in every build with its
   transport machinery feature-gated item-by-item, so the identity
   vocabulary is reachable from the always-compiled diary.
 - BREAKING: the SOCKS5 endpoint is `std::net::SocketAddr` everywhere the
@@ -92,9 +120,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   netutils dial calls. A spawned child announcing a non-parsing address
   now stays bootstrapping (refused by the readiness budget) instead of
   reaching Ready and failing at the route. The serialized `MixnetStatus`
-  wire is unchanged: serde carries the address as the same string.
+  wire is unchanged: serde carries the address as the same string, and a
+  malformed address on that wire refuses deserialization as suspicious.
 - BREAKING: the mixnet route names the session slot's tunnel.
-  `MixnetRoute::Mixnet` carries a `nym::SlotTunnel` instead of a bare
+  `MixnetRoute::Mixnet` carries a `mixnet::SlotTunnel` instead of a bare
   address `String`. The tunnel refuses an address that does not parse as
   a socket address, stores the parsed `std::net::SocketAddr`, yields it
   once through `into_addr`, and lends it through `addr`; consumers render
@@ -104,21 +133,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switched off refuses with the new
   `LightClientError::ProbeRequiresMixnet`, which names the toggle-off,
   instead of mislabeling the state as `MixnetNotReady::Unattached`.
-- BREAKING: a platform that forbids subprocesses can now supply the mixnet
-  transport. `nym::acquire` is public and adds the `ProxyHost` trait, which
+- BREAKING: a mobile platform that forbids subprocesses can now supply the mixnet
+  transport. `mixnet::acquire` is public and adds the `ProxyHost` trait, which
   a host implements to answer a directory query and to start one proxy over
   a drawn Clutch, together with the `HostedTransport` record it answers
   with. `LightClient` gains `enable_mixnet_via_host`, the mobile twin of
   `enable_mixnet`. Both, and `start_mixnet_session`, now return
-  `nym::acquire::TransportError` rather than `MixnetProxyError`, because an
+  `mixnet::acquire::TransportError` rather than `MixnetProxyError`, because an
   acquisition can fail before any proxy exists.
-- BREAKING: the attach path carries the platform host's bound Exit Node
+- BREAKING: the attach path carries the mobile platform host's bound Exit Node
   identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
-  parameter and `nym::ProvisionStrategy::Attach` gains an `exits` field;
+  parameter and `mixnet::ProvisionStrategy::Attach` gains an `exits` field;
   the attached transport's `Ready` publication reports them, so the
   session's exits-in-use draw is no longer vacuous on the attach path.
 - BREAKING: the transport-acquisition path speaks the typed
-  `nym::TransportError` instead of `String`. The enum names the
+  `mixnet::TransportError` instead of `String`. The enum names the
   missing acquirer, the discover mode's spawn and exit failures, the
   unseeded and exhausted Exit Pool, and the transport's bootstrap death
   (carrying the typed `NetOpFailure` detail), closed status channel, and
@@ -176,7 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit per run, the refill draw excluding the spent exit — instead of
   riding the slot's shared tunnel; an attached session is unchanged.
   `PriceError` gains `TransportAcquisition`.
-- BREAKING: `nym::correspondents` is absorbed into the new top-level
+- BREAKING: `mixnet::correspondents` is absorbed into the new top-level
   `zingolib::correspondent` module, which compiles without the `nym`
   feature and adds the `Correspondable` trait — the party a Transmission
   addresses, implemented by the census `Indexer` and (under `nym`) by
@@ -188,7 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed; an unpinned online session starts Indexerless and the
   Server-Selection Sweep selects its sync indexer.
 - BREAKING: `LightClient::attach_mixnet` readiness is a data round trip
-  through the platform-hosted endpoint to a census health indexer, retried
+  through the mobile-platform-hosted endpoint to a census health indexer, retried
   once, because a listener that accepts TCP proves nothing about the mixnet
   carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
   loopback dial remains only as the cheap liveness watchdog after readiness.
@@ -224,8 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `probe_correspondents`, `broadcast_due_parts` is `transmit_due_parts`, and
   `auto_broadcast_if_due` is `auto_transmit_if_due`.
   `TransmitRoute::Mixnet`'s field `witness` is `correspondent`. The nym
-  modules rename: `nym::broadcast` to `nym::correspondent_rotation` and
-  `nym::broadcast_indexers` to `nym::correspondents`, with
+  modules rename: `mixnet::broadcast` to `mixnet::correspondent_rotation` and
+  `mixnet::broadcast_indexers` to `mixnet::correspondents`, with
   `CORRESPONDENT_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
   `lightclient::migrate::{broadcast_grpc, broadcast_route}` rename to
   `{transmission_grpc, transmission_route}` with `GrpcTransmissionClient`,

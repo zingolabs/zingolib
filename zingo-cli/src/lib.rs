@@ -257,7 +257,10 @@ async fn prompt_indicator(lightclient: &mut LightClient) -> String {
             // the historical output byte for byte, where the polled command
             // string (itself prefixed "Error:") was interpolated after
             // "Sync error: ".
-            eprintln!("Sync error: Error: {e}\nPlease restart sync with `sync run`.");
+            eprintln!(
+                "Sync error: Error: {}\nPlease restart sync with `sync run`.",
+                commands::render_error_chain(&e)
+            );
             " [Sync error]".to_string()
         }
         PollReport::Ready(Ok(sync_result)) => {
@@ -294,7 +297,7 @@ async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, St
             PollReport::Ready(result) => {
                 return result
                     .map(|sync_result| sync_result.to_string())
-                    .map_err(|e| format!("Error: {e}"));
+                    .map_err(|e| format!("Error: {}", commands::render_error_chain(&e)));
             }
         }
     }
@@ -568,7 +571,7 @@ pub(crate) fn command_loop(
                 CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
                 #[cfg(feature = "nym")]
-                _ if lightclient.mixnet_mode() != zingolib::nym::MixnetMode::Unattached => {
+                _ if lightclient.mixnet_mode() != zingolib::mixnet::MixnetMode::Unattached => {
                     CommunicationMode::Online
                 }
                 _ => CommunicationMode::UnconsentedOffline,
@@ -589,7 +592,7 @@ pub(crate) fn command_loop(
 
             let cmd_response = RT
                 .block_on(commands::dispatch_parsed(command, &mut lightclient))
-                .map_err(|e| format!("Error: {e}"));
+                .map_err(|e| format!("Error: {}", commands::render_error_chain(&e)));
             resp_transmitter.send(cmd_response).unwrap();
 
             if is_quit {
@@ -1175,7 +1178,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     // entirely.
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
-        use zingolib::nym::{MixnetStartPolicy, ProvisionStrategy};
+        use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         lightclient
             .start_mixnet_session(
                 ProvisionStrategy::Spawn(commands::spawn_hints(
@@ -1213,12 +1216,12 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::nym::MixnetMode::Ready => info!(
+                    zingolib::mixnet::MixnetMode::Ready => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
                     ),
-                    zingolib::nym::MixnetMode::Died => {
+                    zingolib::mixnet::MixnetMode::Died => {
                         let cause = status
                             .death
                             .as_ref()
@@ -1256,7 +1259,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         };
         match commands::dispatch_parsed(sync_run, &mut lightclient).await {
             Ok(update) => eprintln!("{update}"),
-            Err(e) => eprintln!("Error: {e}"),
+            Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
         }
     }
 
@@ -1265,7 +1268,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     };
     match commands::dispatch_parsed(save_run, &mut lightclient).await {
         Ok(update) => eprintln!("{update}"),
-        Err(e) => eprintln!("Error: {e}"),
+        Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
     }
 
     if filled_template.sync
@@ -1308,7 +1311,7 @@ async fn sweep_select_sync_indexer(
         .then(|| filled_template.server.clone())
         .flatten();
     if let Some(pinned) = &pin
-        && !zingolib::nym::probe::probe_eligible(pinned)
+        && !zingolib::mixnet::probe::probe_eligible(pinned)
     {
         eprintln!(
             "Server-Selection Sweep: pinned server {pinned} is outside the mixnet exit policy \
@@ -1368,13 +1371,21 @@ async fn sweep_select_sync_indexer(
             }
         }
         Err(e) => {
-            eprintln!(
-                "Server-Selection Sweep: no sync indexer selected: {e}. This Sync Session does \
-                 not open; the mixnet posture stands, and send and price-fetch continue."
-            );
+            eprintln!("{}", sweep_refusal_notice(&e));
             false
         }
     }
+}
+
+/// Composes the notice a refused Server-Selection Sweep prints, stating the
+/// whole source chain of `error`.
+#[cfg(feature = "nym")]
+fn sweep_refusal_notice(error: &zingolib::lightclient::select::ServerSelectionError) -> String {
+    format!(
+        "Server-Selection Sweep: no sync indexer selected: {}. This Sync Session does \
+         not open; the mixnet posture stands, and send and price-fetch continue.",
+        commands::render_error_chain(error)
+    )
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for

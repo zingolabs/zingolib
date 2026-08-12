@@ -1,18 +1,18 @@
 //! The fail-closed route resolver shared by every mixnet-only surface.
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
-//! [`Ready`](crate::nym::MixnetMode::Ready) they route through the local
+//! [`Ready`](crate::mixnet::MixnetMode::Ready) they route through the local
 //! SOCKS5 proxy. When it is
-//! [`SwitchedOff`](crate::nym::MixnetMode::SwitchedOff), reachable only by
+//! [`SwitchedOff`](crate::mixnet::MixnetMode::SwitchedOff), reachable only by
 //! the user's deliberate toggle-off, they route over clearnet as informed
-//! consent. While [`Unattached`](crate::nym::MixnetMode::Unattached),
-//! [`Bootstrapping`](crate::nym::MixnetMode::Bootstrapping), or after
-//! [`Died`](crate::nym::MixnetMode::Died) they refuse rather than leak to
+//! consent. While [`Unattached`](crate::mixnet::MixnetMode::Unattached),
+//! [`Bootstrapping`](crate::mixnet::MixnetMode::Bootstrapping), or after
+//! [`Died`](crate::mixnet::MixnetMode::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
 //! instead of each re-deriving the mode semantics.
 #![forbid(unsafe_code)]
 
-use crate::nym::MixnetMode;
+use crate::mixnet::MixnetMode;
 
 /// The session slot's tunnel, whose one exit is Shared across every
 /// request the slot's surfaces send to a Correspondent.
@@ -62,8 +62,8 @@ pub enum MixnetNotReady {
     /// Absence is not consent, so the surface refuses.
     #[error(
         "the Nym mixnet is not enabled; this operation refuses rather than use \
-         clearnet without consent. Run `nym on` to enable the mixnet, or `nym off` \
-         to choose clearnet"
+         clearnet without consent. Run `network on` to enable the mixnet, or \
+         `network off` to choose clearnet"
     )]
     Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
@@ -72,17 +72,16 @@ pub enum MixnetNotReady {
     /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet. Run `nym on` to restart the proxy"
+         clearnet. Run `network on` to restart the proxy"
     )]
     Died,
 }
 
-/// Resolve the fail-closed route for the given Mixnet Mode and the proxy's
-/// SOCKS5 address. `Ready` yields the mixnet route, `SwitchedOff` yields
-/// clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready` before an
-/// address is published all refuse. Crucially, only the deliberate `SwitchedOff`
-/// yields clearnet: a never-enabled session and a `Died` proxy both refuse
-/// rather than leaking the send to clearnet without consent.
+/// Resolve the fail-closed route for the given Mixnet Mode and SOCKS5
+/// address — `Ready` yields the mixnet route, only the deliberate
+/// `SwitchedOff` yields clearnet, and `Unattached`, `Bootstrapping`,
+/// `Died`, or `Ready` before an address is published all refuse rather
+/// than leak a send to clearnet without consent.
 pub fn resolve_route(
     mode: MixnetMode,
     socks5_addr: Option<std::net::SocketAddr>,
@@ -174,7 +173,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: the refusal names the actual state, so a user with a dead
-    /// proxy is told to run `nym on` rather than that the mixnet is
+    /// proxy is told to run `network on` rather than that the mixnet is
     /// bootstrapping. Falsified if the Died refusal renders the
     /// bootstrapping message.
     #[test]
@@ -184,12 +183,12 @@ mod tests {
 
         let died = MixnetNotReady::Died.to_string();
         assert!(died.contains("died"), "{died}");
-        assert!(died.contains("nym on"), "{died}");
+        assert!(died.contains("network on"), "{died}");
         assert!(!died.contains("bootstrapping"), "{died}");
 
         let unattached = MixnetNotReady::Unattached.to_string();
         assert!(unattached.contains("not enabled"), "{unattached}");
-        assert!(unattached.contains("nym on"), "{unattached}");
+        assert!(unattached.contains("network on"), "{unattached}");
         assert!(!unattached.contains("bootstrapping"), "{unattached}");
         assert!(!unattached.contains("died"), "{unattached}");
     }

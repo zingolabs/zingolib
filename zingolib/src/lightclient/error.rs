@@ -23,28 +23,28 @@ pub enum LightClientError {
     #[error("No sync handle. Sync is not running.")]
     SyncNotRunning,
     /// Sync error.
-    #[error("Sync error. {0}")]
+    #[error("Sync error.")]
     SyncError(#[from] SyncError<WalletError>),
     /// Sync mode error.
-    #[error("Sync mode error. {0}")]
+    #[error("Sync mode error.")]
     SyncModeError(#[from] SyncModeError),
     /// Send error.
-    #[error("Send error. {0}")]
+    #[error("Send error.")]
     SendError(#[from] SendError),
     /// gPRC client error.
-    #[error("gRPC client error. {0}")]
+    #[error("gRPC client error.")]
     ClientError(#[from] GetClientError),
     /// Indexer request error.
-    #[error("Indexer request error. {0}")]
+    #[error("Indexer request error.")]
     IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
-    #[error("Wallet error. {0}")]
+    #[error("Wallet error.")]
     WalletError(#[from] WalletError),
     /// Ironwood migration error.
-    #[error("Ironwood migration error. {0}")]
+    #[error("Ironwood migration error.")]
     MigrationError(#[from] MigrationError),
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
@@ -52,27 +52,27 @@ pub enum LightClientError {
     /// Price fetch error. Exists only in nym builds: the mixnet-only price
     /// rule leaves other builds with no fetch to fail.
     #[cfg(feature = "nym")]
-    #[error("Price fetch error. {0}")]
+    #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
     /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
     /// off. The opt-in route fails closed rather than falling back to clearnet
     /// (ADR 0011); use the clearnet default `update_current_price` instead, or
-    /// enable Mixnet Mode (`nym on`).
+    /// enable Mixnet Mode (`network on`).
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable it (`nym on`), or use the clearnet price fetch"
+         enable it (`network on`), or use the clearnet price fetch"
     )]
     PriceFetchRequiresMixnet,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
-    #[error("{0}")]
-    MixnetNotReady(#[from] crate::nym::MixnetNotReady),
+    #[error(transparent)]
+    MixnetNotReady(#[from] crate::mixnet::MixnetNotReady),
     /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable it (`nym on`) to probe Correspondents"
+         enable it (`network on`) to probe Correspondents"
     )]
     ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
@@ -94,14 +94,12 @@ pub enum LightClientError {
         /// The host both endpoints share.
         host: String,
     },
-    /// Excluding the synchronization endpoint left no Correspondent to
-    /// carry migration parts over the mixnet.
+    /// No Correspondent remains to carry migration parts over the mixnet,
+    /// with the typed refusal saying whether exclusion or an empty pool
+    /// emptied the draw.
     #[cfg(feature = "nym")]
-    #[error(
-        "no eligible Correspondent remains after excluding the synchronization endpoint's \
-         host from the curated list"
-    )]
-    NoEligibleCorrespondent,
+    #[error(transparent)]
+    NoEligibleCorrespondent(#[from] crate::correspondent::NoEligibleCorrespondents),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

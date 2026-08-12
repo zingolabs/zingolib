@@ -1379,3 +1379,23 @@ mod offline_mode_pin {
         );
     }
 }
+
+#[cfg(feature = "nym")]
+mod sweep_refusal_notice {
+    use zingolib::lightclient::select::ServerSelectionError;
+    use zingolib::mixnet::MixnetProxyError;
+
+    /// HYPOTHESIS: the refusal notice states the whole source chain of a
+    /// source-only sweep failure, so a reader learns the cause; a notice
+    /// carrying only the outermost line falsifies it.
+    #[test]
+    fn the_refusal_states_the_cause_of_a_source_only_failure() {
+        let refused = ServerSelectionError::ProxyStart(MixnetProxyError::NoStdout);
+        assert_eq!(
+            crate::sweep_refusal_notice(&refused),
+            "Server-Selection Sweep: no sync indexer selected: the sweep proxy could not \
+             start\ncaused by: the nym-proxy child exposed no stdout. This Sync Session does \
+             not open; the mixnet posture stands, and send and price-fetch continue."
+        );
+    }
+}
