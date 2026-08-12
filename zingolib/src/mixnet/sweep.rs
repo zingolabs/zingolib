@@ -154,6 +154,95 @@ pub fn select(
     })
 }
 
+/// Whether `result` is a healthy answer for `chain`: it answered the survey
+/// and its reported chain matches.
+fn healthy(result: &SurveyResult, chain: &str) -> bool {
+    result
+        .reported
+        .as_ref()
+        .is_some_and(|info| info.chain == chain)
+}
+
+/// The first-healthy verdict over the results seen so far: the pin the
+/// moment it answers on `chain`, any healthy candidate once the pin has
+/// refused or no pin exists, and `None` while the decision still awaits the
+/// pin or a first healthy answer.
+pub fn first_healthy_verdict(
+    results: &[SurveyResult],
+    chain: &str,
+    pin: Option<&Uri>,
+) -> Option<Uri> {
+    let first_healthy = || {
+        results
+            .iter()
+            .find(|result| healthy(result, chain))
+            .map(|result| result.uri.clone())
+    };
+    match pin {
+        Some(pin) => match results.iter().find(|result| &result.uri == pin) {
+            Some(of_pin) if healthy(of_pin, chain) => Some(pin.clone()),
+            Some(_refused) => first_healthy(),
+            None => None,
+        },
+        None => first_healthy(),
+    }
+}
+
+/// The [`Selection`] a first-healthy verdict yields: the verdict as the
+/// sync indexer, every healthy answer seen so far as the height-descending
+/// cohort, and the transmit candidates that exclude the verdict's operator.
+pub fn first_healthy_selection(
+    results: &[SurveyResult],
+    chain: &str,
+    sync_indexer: Uri,
+) -> Selection {
+    let mut cohort: Vec<LiveCandidate> = results
+        .iter()
+        .filter(|result| healthy(result, chain))
+        .map(|result| LiveCandidate {
+            uri: result.uri.clone(),
+            height: result
+                .reported
+                .as_ref()
+                .expect("healthy answers carry a report")
+                .height,
+        })
+        .collect();
+    cohort.sort_by_key(|candidate| std::cmp::Reverse(candidate.height));
+    let sync_operator = Operator::of_uri(&sync_indexer);
+    let transmit_candidates = cohort
+        .iter()
+        .filter(|candidate| Operator::of_uri(&candidate.uri) != sync_operator)
+        .map(|candidate| candidate.uri.clone())
+        .collect();
+    Selection {
+        sync_indexer,
+        transmit_candidates,
+        cohort,
+    }
+}
+
+/// The survey order for `candidates`: uniformly shuffled with `rng` so the
+/// lane assignment is random, except that `first`, when present, is swapped
+/// into the opening `width` lanes, because the user's own selection must
+/// get its answer before any first-healthy verdict can supersede it.
+pub fn wave_order(
+    candidates: &[Uri],
+    first: Option<&Uri>,
+    width: usize,
+    rng: &mut impl rand::Rng,
+) -> Vec<Uri> {
+    let mut order: Vec<Uri> = candidates.to_vec();
+    order.shuffle(rng);
+    if let Some(first) = first
+        && let Some(position) = order.iter().position(|candidate| candidate == first)
+        && position >= width
+    {
+        order.swap(0, position);
+    }
+    order
+}
+
 /// Draw one live endpoint by the sync-attach rule: one ticket per operator,
 /// a uniform draw among the operators, then any live endpoint of the winner.
 /// `cohort` is nonempty here.
@@ -382,5 +471,100 @@ mod tests {
                 answered: 0,
             }
         );
+    }
+
+    /// HYPOTHESIS: without a pin, the first healthy answer is the verdict
+    /// the moment it exists, and a wrong-chain answer is not healthy.
+    /// Falsified if silence or a wrong-chain answer forms the verdict.
+    #[test]
+    fn the_first_healthy_answer_is_the_unpinned_verdict() {
+        let mut seen = vec![
+            silent("https://a.example:443"),
+            answered("https://test.example:443", "test", 100),
+        ];
+        assert_eq!(first_healthy_verdict(&seen, "main", None), None);
+        seen.push(answered("https://b.example:443", "main", 100));
+        assert_eq!(
+            first_healthy_verdict(&seen, "main", None),
+            Some(uri("https://b.example:443"))
+        );
+    }
+
+    /// HYPOTHESIS: a pinned decision waits for the pin's own outcome — an
+    /// earlier healthy answer does not preempt it — and chooses the pin the
+    /// moment it answers. Falsified if another candidate wins first.
+    #[test]
+    fn the_pin_preempts_earlier_answers_when_it_answers() {
+        let pin = uri("https://pin.example:443");
+        let mut seen = vec![answered("https://fast.example:443", "main", 100)];
+        assert_eq!(first_healthy_verdict(&seen, "main", Some(&pin)), None);
+        seen.push(answered("https://pin.example:443", "main", 100));
+        assert_eq!(first_healthy_verdict(&seen, "main", Some(&pin)), Some(pin));
+    }
+
+    /// HYPOTHESIS: once the pin has refused, the verdict is the first
+    /// healthy answer already seen. Falsified if the refusal blocks it.
+    #[test]
+    fn a_refused_pin_yields_to_the_first_healthy_answer() {
+        let pin = uri("https://pin.example:443");
+        let seen = vec![
+            answered("https://fast.example:443", "main", 100),
+            silent("https://pin.example:443"),
+        ];
+        assert_eq!(
+            first_healthy_verdict(&seen, "main", Some(&pin)),
+            Some(uri("https://fast.example:443"))
+        );
+    }
+
+    /// HYPOTHESIS: the first-healthy selection carries every healthy answer
+    /// as its height-descending cohort and excludes the verdict's operator
+    /// from the transmit candidates. Falsified if either property drifts.
+    #[test]
+    fn the_first_healthy_selection_reports_its_evidence() {
+        let results = vec![
+            answered("https://na.zec.rocks:443", "main", 101),
+            answered("https://other.example:443", "main", 102),
+            silent("https://dead.example:443"),
+        ];
+        let selection = first_healthy_selection(&results, "main", uri("https://na.zec.rocks:443"));
+        assert_eq!(
+            selection
+                .cohort
+                .iter()
+                .map(|candidate| candidate.height)
+                .collect::<Vec<_>>(),
+            vec![102, 101]
+        );
+        assert_eq!(
+            selection.transmit_candidates,
+            vec![uri("https://other.example:443")]
+        );
+    }
+
+    /// HYPOTHESIS: the wave order always seats `first` in the opening
+    /// `width` lanes, whatever the shuffle drew, because the pin must get
+    /// its answer before any first-healthy verdict can supersede it.
+    /// Falsified if any seed leaves it outside the opening lanes.
+    #[test]
+    fn the_first_candidate_always_rides_the_opening_lanes() {
+        let candidates: Vec<Uri> = (0..17)
+            .map(|n| uri(&format!("https://c{n}.example:443")))
+            .collect();
+        let pin = uri("https://c13.example:443");
+        const WIDTH: usize = 4;
+        for seed in 0..200 {
+            let order = wave_order(
+                &candidates,
+                Some(&pin),
+                WIDTH,
+                &mut StdRng::seed_from_u64(seed),
+            );
+            assert_eq!(order.len(), candidates.len(), "a permutation, whole");
+            assert!(
+                order[..WIDTH].contains(&pin),
+                "seed {seed} left the pin outside the opening lanes: {order:?}"
+            );
+        }
     }
 }

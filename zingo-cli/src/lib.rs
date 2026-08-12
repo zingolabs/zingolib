@@ -1352,6 +1352,14 @@ async fn sweep_select_sync_indexer(
     match selection {
         Ok(selection) => {
             let chosen = selection.sync_indexer.clone();
+            if let Some(pinned) = &pin
+                && *pinned != chosen
+            {
+                eprintln!(
+                    "Server-Selection Sweep: the pinned server {pinned} did not answer the \
+                     survey; sync attaches to the first healthy indexer instead."
+                );
+            }
             match lightclient.set_indexer_uri(chosen.clone()).await {
                 Ok(()) => {
                     eprintln!(
