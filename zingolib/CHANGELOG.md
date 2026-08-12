@@ -73,7 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidate guaranteed an opening-wave lane — the caller's pin); the
   candidates a formed verdict leaves unsurveyed continue in the
   background as the health sweep, and the sweep transport recycles its
-  exit when that finishes. `mixnet::sweep::SurveyResult` gains a
+  exit when that finishes. The session holds the health sweep's handle,
+  and `go_offline` aborts it: revoking consent stops all networking,
+  the health sweep included. `mixnet::sweep::SurveyResult` gains a
   `refusal` field carrying the diary's `FailureKind`, and
   `SweepError::EmptyCohort` gains a `causes` tally, so the refusal itself
   says whether the transport or the indexers failed, e.g. "0 of 17

@@ -185,7 +185,7 @@ impl LightClient {
             member.retire().await;
         } else {
             let history = self.indexer_history.clone();
-            tokio::spawn(async move {
+            let continuation = tokio::spawn(async move {
                 let health_width = survey_tunnel_width(rest.len());
                 let _health_only = survey(socks5_addr, rest, health_width, &history).await;
                 // Exit Recycling: retiring the member kills the child and
@@ -193,6 +193,16 @@ impl LightClient {
                 // that observed the survey.
                 member.retire().await;
             });
+            // The session holds the continuation so `go_offline` can abort
+            // it: revoked consent must stop the health sweep too.
+            if let Some(superseded) = self
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned")
+                .replace(continuation)
+            {
+                superseded.abort();
+            }
         }
         Ok(selection)
     }
@@ -318,6 +328,32 @@ async fn probe_one(
 mod tests {
     use super::*;
     use crate::mixnet::MixnetMode;
+
+    /// HYPOTHESIS: revoking consent aborts the detached health sweep — the
+    /// held task is cancelled and the slot empties — so no probe outlives
+    /// `network off`. Falsified if the task survives going offline.
+    #[tokio::test]
+    async fn going_offline_aborts_the_health_sweep() {
+        let wallet = crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(
+            zingo_test_vectors::seeds::ABANDON_ART_SEED,
+        )
+        .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+        let held = tokio::spawn(std::future::pending::<()>());
+        *client
+            .health_sweep
+            .lock()
+            .expect("the health-sweep slot is never poisoned") = Some(held);
+        client.go_offline().await;
+        assert!(
+            client
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned")
+                .is_none(),
+            "going offline empties the health-sweep slot"
+        );
+    }
 
     /// HYPOTHESIS: the survey width is a bounded function of the census —
     /// at least one tunnel, at most a quarter of the candidates, never past
