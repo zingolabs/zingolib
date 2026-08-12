@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: every probe wraps the single `GetLatestBlock` RPC. The mixnet
+  probe leg, the staged sync-path probe, and the attach readiness round
+  trip all probe the tip, the same primitive the sweep surveys with.
+  `mixnet::probe::ProbeSuccess` loses its `chain` field and carries the
+  tip height alone, and `SyncProbeStep::GrpcInfo` is renamed `GrpcTip`,
+  rendering `grpc-tip`.
 - BREAKING: the Server-Selection Sweep no longer knows a pin, and its
   survey probes with `GetLatestBlock` instead of `GetLightdInfo`.
   `lightclient::select::run_server_selection_sweep` loses its `pin`

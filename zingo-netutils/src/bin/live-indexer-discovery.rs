@@ -1,7 +1,7 @@
 //! Demonstrates ADR 0029's boot phase: probe every mixnet-eligible census
 //! endpoint through its own uniformly-sampled exit, then hold the
 //! successes as maintained connections and prove they still answer with a
-//! second `GetLightdInfo` round over the same transports.
+//! second `GetLatestBlock` round over the same transports.
 //!
 //! ```text
 //! pool-discovery [--budget N]
@@ -15,7 +15,7 @@ use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use zingo_netutils::ensure_default_crypto_provider;
-use zingo_netutils::get_lightd_info_via_socks5;
+use zingo_netutils::get_latest_block_via_socks5;
 use zingo_netutils::indexers::IndexerChain;
 use zingo_netutils::live_indexer_discovery::{DiscoveryFailureKind, discover_live_indexers};
 use zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND;
@@ -67,11 +67,10 @@ async fn main() -> ExitCode {
     );
     for found in &report.live {
         println!(
-            "  LIVE {} operator={} height={} vendor={} ({:.1?})",
+            "  LIVE {} operator={} height={} ({:.1?})",
             found.indexer.uri,
             found.indexer.operator(),
-            found.info.block_height,
-            found.info.vendor,
+            found.tip.height,
             found.elapsed
         );
     }
@@ -102,10 +101,10 @@ async fn main() -> ExitCode {
             );
             continue;
         };
-        match get_lightd_info_via_socks5(socks5_addr, &uri, MIXNET_ROUND_TRIP_BOUND).await {
-            Ok(info) => println!(
+        match get_latest_block_via_socks5(socks5_addr, &uri, MIXNET_ROUND_TRIP_BOUND).await {
+            Ok(tip) => println!(
                 "  OK {} height={} (same transport, same exit)",
-                found.indexer.uri, info.block_height
+                found.indexer.uri, tip.height
             ),
             Err(source) => println!("  LOST {} ({source})", found.indexer.uri),
         }

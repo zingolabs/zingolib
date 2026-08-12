@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the pin is a census member), and the pin holds sync whatever the
   sweep concludes: a refused sweep no longer closes a pinned session's
   Sync Session. The survey's probe is `GetLatestBlock`, the lightest tip
-  call an indexer answers, where it was `GetLightdInfo`.
+  call an indexer answers, where it was `GetLightdInfo`; `network probe`
+  uses the same single RPC and reports the tip height alone.
 - A failed command renders its whole cause chain at the dispatch seam,
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the
