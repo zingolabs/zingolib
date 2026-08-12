@@ -152,13 +152,16 @@ impl LightClient {
             SWEEP_HEIGHT_TOLERANCE,
             pin,
             &mut rand::rngs::OsRng,
-        )?;
+        );
 
         // Exit Recycling: retiring the member kills the child and recycles
         // its lease, so no later traffic rides the exit that observed the
-        // survey.
+        // survey. The judgment's verdict is held rather than propagated with
+        // the question mark, because a refusal that returned early would drop
+        // the member instead, recycling the reservation before the child's
+        // death is confirmed. Retiring here covers every post-bind exit.
         member.retire().await;
-        Ok(selection)
+        selection.map_err(ServerSelectionError::Selection)
     }
 }
 
