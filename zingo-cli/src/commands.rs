@@ -143,16 +143,14 @@ pub enum CommandError {
     NotYetTyped(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
+/// Separates one link of a rendered cause chain from the next at the
+/// dispatch seam, which gives each link its own line.
+const DISPATCH_CHAIN_SEPARATOR: &str = "\ncaused by: ";
+
 /// Renders `error` and then every link of its source chain, one `caused
 /// by:` line per link, over the one sanctioned chain walk.
 pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> String {
-    let mut texts = zingo_net_diag::chain_texts(error).into_iter();
-    let mut rendered = texts.next().unwrap_or_default();
-    for cause in texts {
-        rendered.push_str("\ncaused by: ");
-        rendered.push_str(&cause);
-    }
-    rendered
+    zingo_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
 }
 
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,

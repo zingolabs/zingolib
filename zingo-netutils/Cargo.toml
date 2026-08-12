@@ -61,7 +61,17 @@ testutils = []
 # no nym-sdk, so it resolves in the main workspace's lockfile. The wallet
 # enables this to route a transaction through the spawned nym-proxy's local
 # SOCKS5 port.
-socks5-transmit = ["dep:tokio-socks", "dep:hyper-util", "dep:tower", "dep:tokio"]
+socks5-transmit = [
+    "dep:tokio-socks",
+    "dep:hyper-util",
+    "dep:tower",
+    "dep:tokio",
+    # Transmit failures render their cause chains over the one sanctioned
+    # chain walk rather than a private copy of it. Std-only and
+    # zero-dependency, so it resolves in both this crate's own lockfile and
+    # the parent workspace's without coupling either.
+    "dep:zingo-net-diag",
+]
 nym = [
     "dep:nym-sdk",
     "dep:nym-http-api-client",

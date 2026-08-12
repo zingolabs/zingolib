@@ -1554,6 +1554,20 @@ mod pure_helpers {
         );
     }
 
+    /// HYPOTHESIS: the dispatch seam renders a two-link cause chain exactly
+    /// as the one sanctioned chain walk joined by the seam's separator does,
+    /// so the seam keeps no private copy of the walk. Falsified if the two
+    /// renderings differ by a single byte.
+    #[test]
+    fn the_dispatch_rendering_matches_the_sanctioned_walk() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+
+        assert_eq!(
+            render_error_chain(&wrapped),
+            zingo_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+        );
+    }
+
     /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
     /// as its source, so the chain walk reaches the innermost detail; a
     /// rendering that stops at the wrapper line falsifies it.

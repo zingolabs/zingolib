@@ -173,17 +173,14 @@ impl Socks5TransmitError {
     }
 }
 
+/// Separates one link of a rendered cause chain from the next in a transmit
+/// detail, which keeps every link on the one line.
+const TRANSMIT_CHAIN_SEPARATOR: &str = ": ";
+
 /// Renders `error` with its complete `source()` chain, which the top-level
 /// `Display` of transport errors (tonic's "transport error") otherwise hides.
 fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
-    let mut rendered = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        rendered.push_str(": ");
-        rendered.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    rendered
+    zingo_net_diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
 }
 
 /// How a post-tunnel RPC status reads for the failover policy.
@@ -480,6 +477,28 @@ mod tests {
 
     fn an_indexer() -> Uri {
         "https://indexer.example:443".parse().expect("static uri")
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("the inner layer gave out")]
+    struct InnerLayer;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("the outer layer gave out")]
+    struct OuterLayer(#[source] InnerLayer);
+
+    /// HYPOTHESIS: this module renders a two-link cause chain exactly as the
+    /// one sanctioned chain walk does, so the rendering carries no private
+    /// copy of the walk. Falsified if the two renderings differ by a single
+    /// byte.
+    #[test]
+    fn the_chain_rendering_matches_the_sanctioned_walk() {
+        let error = OuterLayer(InnerLayer);
+
+        assert_eq!(
+            error_chain(&error),
+            zingo_net_diag::chain_texts(&error).join(": ")
+        );
     }
 
     /// HYPOTHESIS: an RPC that never answers lands the typed timeout with the

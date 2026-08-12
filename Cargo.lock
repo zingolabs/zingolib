@@ -4735,6 +4735,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tower",
+ "zingo-net-diag",
 ]
 
 [[package]]
