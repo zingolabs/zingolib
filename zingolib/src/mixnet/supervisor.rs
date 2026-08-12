@@ -95,6 +95,9 @@ pub enum MixnetProxyError {
         /// The address that failed to parse.
         addr: String,
     },
+    /// The exit report handed to `MixnetProxy::attach` names no Exit Node.
+    #[error("the attached endpoint reported no bound exit node")]
+    NoExits,
     /// The session could not draw a ledgered Clutch for the spawn.
     #[error(transparent)]
     Acquisition(Box<acquire::TransportError>),
@@ -284,6 +287,12 @@ impl MixnetProxy {
         exits: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
+        // Ready means the address AND a bound exit, at every door: an
+        // attach that accepted an empty report would mint an exitless Ready
+        // that no later announcement can correct.
+        if exits.is_empty() {
+            return Err(MixnetProxyError::NoExits);
+        }
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
@@ -1310,6 +1319,25 @@ mod tests {
         driver.abort();
     }
 
+    /// HYPOTHESIS: an attach whose report names no Exit Node refuses typed,
+    /// so the attach door and the acquisition gate share one definition of
+    /// Ready. Falsified if an exitless report mints a permanent Ready.
+    #[tokio::test]
+    async fn an_exitless_report_refuses_the_attach() {
+        match MixnetProxy::attach(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            &[],
+            test_publisher(),
+        ) {
+            Err(MixnetProxyError::NoExits) => {}
+            Err(other) => panic!("the attach refused with '{other}' rather than the empty report"),
+            Ok(proxy) => {
+                proxy.stop().await;
+                panic!("an exitless report must never mint an attached transport")
+            }
+        }
+    }
+
     /// HYPOTHESIS: stop() on an attached transport is a deliberate teardown
     /// to Unattached — never Died, and never the wallet's SwitchedOff.
     /// Falsified if a live attachment reports anything but the transport
@@ -1321,10 +1349,10 @@ mod tests {
         // win regardless of where the driver is when it lands.
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
-            &[],
+            &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
             test_publisher(),
         )
-        .expect("a valid address attaches");
+        .expect("a valid address and a named exit attach");
         // The readiness gate races this assert (a refused port can land Died
         // fast), so assert only what is invariant: a live attachment is in
         // the transport lifecycle, never in a wallet slot state.
@@ -1352,10 +1380,10 @@ mod tests {
         // fails fast and the driver lands Died.
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
-            &[],
+            &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
             test_publisher(),
         )
-        .expect("a valid address attaches");
+        .expect("a valid address and a named exit attach");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while proxy.mode() != MixnetMode::Died {
             assert!(
