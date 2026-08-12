@@ -1295,8 +1295,11 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 }
 
 /// Runs the Server-Selection Sweep (ADR 0034), narrating each phase, and
-/// binds its verdict as the sync indexer; returns whether this Sync Session
-/// may open.
+/// binds a sync indexer; returns whether this Sync Session may open. A
+/// pinned server rides the survey and is chosen when it answers; a pin the
+/// survey found unresponsive is reported with the sweep's verdict offered
+/// as the alternative, and a sweep whose own transport failed never counts
+/// against the pin.
 #[cfg(feature = "nym")]
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
@@ -1330,11 +1333,8 @@ async fn sweep_select_sync_indexer(
     }
     let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
     let selection = lightclient
-        .run_server_selection_sweep(
-            std::path::Path::new(&proxy_path),
-            &candidates,
-            pin.as_ref(),
-            |phase| match phase {
+        .run_server_selection_sweep(std::path::Path::new(&proxy_path), &candidates, |phase| {
+            match phase {
                 SweepProgress::TransportBootstrapping => eprintln!(
                     "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
                      (its Exit Node is recycled when the sweep completes)..."
@@ -1346,11 +1346,33 @@ async fn sweep_select_sync_indexer(
                     "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
                      judging the live cohort..."
                 ),
-            },
-        )
+            }
+        })
         .await;
     match selection {
         Ok(selection) => {
+            if let Some(pinned) = &pin {
+                if selection.cohort.iter().any(|live| &live.uri == pinned) {
+                    // The user's selection answered the survey: it is chosen,
+                    // and it is already bound from config.
+                    eprintln!(
+                        "Server-Selection Sweep: sync attaches to the pinned server {pinned} \
+                         (live cohort of {}).",
+                        selection.cohort.len(),
+                    );
+                    return true;
+                }
+                eprintln!(
+                    "Server-Selection Sweep: the pinned server {pinned} did not answer the \
+                     survey or lags the live cohort of {}. A live alternative: {}. This Sync \
+                     Session does not open; run `changeserver {}` at the prompt, or relaunch \
+                     pinning a live server.",
+                    selection.cohort.len(),
+                    selection.sync_indexer,
+                    selection.sync_indexer,
+                );
+                return false;
+            }
             let chosen = selection.sync_indexer.clone();
             match lightclient.set_indexer_uri(chosen.clone()).await {
                 Ok(()) => {
@@ -1373,6 +1395,14 @@ async fn sweep_select_sync_indexer(
             }
         }
         Err(e) => {
+            if let Some(pinned) = &pin {
+                eprintln!(
+                    "Server-Selection Sweep: no verdict: {}. The survey never judged the pinned \
+                     server {pinned}; it stands, and this Sync Session opens against it.",
+                    commands::render_error_chain(&e),
+                );
+                return true;
+            }
             eprintln!("{}", sweep_refusal_notice(&e));
             false
         }

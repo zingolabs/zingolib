@@ -152,7 +152,7 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
 
     let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
-        .arg("--sync-server")
+        .arg("--server")
         .arg(&server_uri)
         // The mixnet is unconditional for a connected session, so hand the
         // spawner a stub that answers the directory query and then exits at

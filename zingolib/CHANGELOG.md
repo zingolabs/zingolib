@@ -70,9 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameter; `mixnet::sweep::select` and `live_cohort` lose their `pin`
   and `chain` parameters; `SweepError::DeadPin` is removed; and
   `mixnet::sweep::SurveyResult::reported` carries the bare tip height.
-  The judgment rests on the height tolerance alone, and a caller holds
-  any pinned clearnet sync indexer out of the candidates, binding it for
-  sync by the user's own selection.
+  The judgment rests on the height tolerance alone. A pinned server rides
+  the candidate list like any other, and the caller judges the pin against
+  the returned cohort: it is chosen when it answered, and an unanswered pin
+  is reported with the sweep's verdict offered as the alternative.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and
