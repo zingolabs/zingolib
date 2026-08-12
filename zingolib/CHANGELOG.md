@@ -71,7 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PriceError::TransportAcquisition` stop embedding their sources' text
   and carry them as `source()` links (the pure `{0}` wrappers become
   transparent), because every consumer walks the chain;
-  `TransportError::HostRefused` follows the same rule.
+  `TransportError::HostRefused` and the wrapper variants of
+  `lightclient::error::SendError` and `wallet::error::PriceError` follow
+  the same rule.
   `LightClientError::NoEligibleCorrespondent` now carries the typed
   `correspondent::NoEligibleCorrespondents` union — that union and
   `correspondent::Operator` are public — so the empty-pool and

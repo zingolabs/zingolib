@@ -172,10 +172,10 @@ pub enum MigrationError {
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
     /// Propose send error.
-    #[error("Propose send error. {0}")]
+    #[error("Propose send error.")]
     ProposeSendError(#[from] ProposeSendError),
     /// Propose shield error.
-    #[error("Propose shield error. {0}")]
+    #[error("Propose shield error.")]
     ProposeShieldError(#[from] ProposeShieldError),
     /// Failed to construct sending transaction.
     #[error("Failed to construct sending transaction. {0}")]
@@ -190,7 +190,7 @@ pub enum SendError {
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,
     /// Transmission error.
-    #[error("Transmission error. {0}")]
+    #[error("Transmission error.")]
     TransmissionError(#[from] TransmissionError),
 }
 
