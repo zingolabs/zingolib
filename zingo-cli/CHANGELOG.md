@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `transparent_gap_limit` to `settings` command.
 
 ### Changed
 - A failed command renders its whole cause chain at the dispatch seam,
