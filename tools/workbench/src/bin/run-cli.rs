@@ -17,7 +17,7 @@
 //!
 //! The launched session decides its own connectivity: first boot is offline,
 //! and only a consent act — a stored standing Connectivity Consent from a
-//! previous run, an explicit `--online`/`--server` passed through in the
+//! previous run, an explicit `--online`/`--sync-server` passed through in the
 //! trailing arguments, or the in-session `network on` command (ADR 0026) —
 //! takes it online (ADR 0025). Neither this tool nor a bundled proxy binary
 //! implies consent.
