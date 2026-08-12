@@ -913,7 +913,9 @@ impl MockNet {
         // clearnet, so the same tests cover both routes across the
         // feature matrix.
         #[cfg(feature = "nym")]
-        lightclient.switch_on_mixnet_for_tests("127.0.0.1:1").await;
+        lightclient
+            .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
+            .await;
         lightclient
     }
 }

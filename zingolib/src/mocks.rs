@@ -690,9 +690,16 @@ pub(crate) mod transmission {
         PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
     };
 
+    /// The port of the mock's stand-in tunnel endpoint, reserved by no
+    /// service the tests run.
+    pub const MOCK_SOCKS5_PORT: u16 = 1;
+
     /// The mock's stand-in mixnet tunnel endpoint, the address a chain-mock
-    /// session reports as its SOCKS5 route. Never dialed.
-    pub const MOCK_SOCKS5_ADDR: &str = "127.0.0.1:1";
+    /// session reports as its SOCKS5 route and never dials.
+    pub const MOCK_SOCKS5_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        MOCK_SOCKS5_PORT,
+    );
 
     /// The mock's stand-in Correspondent host.
     pub const MOCK_CORRESPONDENT: &str = "mock.correspondent.indexer";
