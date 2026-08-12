@@ -40,7 +40,7 @@
 //! This list carries only Transmission targets reached over the mixnet, so an
 //! endpoint the mixnet cannot reach is worse than useless: it wastes
 //! escalation rounds on a certain failure. A 2026-07-21 paired clearnet/mixnet
-//! probe (the `nym probe` diagnostic) found a clean split: every port-443
+//! probe (the `network probe` diagnostic) found a clean split: every port-443
 //! Correspondent answered over the mixnet, while all three port-9067 entries
 //! (`lwd.zcashexplorer.app`, `zec.alexxiy.top`, `carover0.xyz`) completed the
 //! SOCKS5 tunnel but then failed the TLS handshake with an EOF. The mixnet
@@ -127,7 +127,7 @@ pub const CORRESPONDENT_INDEXERS: &[&str] = &[
 /// Parses [`CORRESPONDENT_INDEXERS`] into `Uri`s, skipping any that fail to parse.
 ///
 /// This is the raw curated list, for diagnostic surfaces that carry no wallet
-/// data (the `nym probe` pairing). A transmission draw MUST NOT use it
+/// data (the `network probe` pairing). A transmission draw MUST NOT use it
 /// directly: it goes through `eligible_correspondents` (crate-private, so no
 /// intra-doc link from this public item), which enforces the
 /// correspondent-is-never-the-sync-indexer invariant (ADR 0022).

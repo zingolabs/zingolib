@@ -46,7 +46,7 @@ pub enum MixnetMode {
     /// after reaching ready. Distinct from [`MixnetMode::SwitchedOff`]: this
     /// is an unconsented loss of the transport, so mixnet-only surfaces
     /// refuse rather than fall back to clearnet. Recover by re-enabling the
-    /// mixnet (`nym on`), which spawns a fresh proxy.
+    /// mixnet (`network on`), which spawns a fresh proxy.
     Died,
 }
 

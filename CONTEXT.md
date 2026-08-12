@@ -13,7 +13,7 @@ recommendations, and the session's network posture.
 The local SOCKS5 seam divides the vocabulary. Below the seam, "Nym"
 names the vendor stack: nym-sdk, the Nym directory and gateways, the
 `nym-proxy` binary, the `nym` cargo feature that compiles that stack
-in, and the `nym` CLI command where a user names the network they
+in, and the `network` CLI command where a user names the network they
 trust. Above the seam, "mixnet" names the wallet's transport domain:
 `zingolib::mixnet`, Mixnet Mode, the slot, the route, the status
 channel, the probes, and the consent semantics.
