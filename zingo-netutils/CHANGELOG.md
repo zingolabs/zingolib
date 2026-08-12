@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BREAKING: the free functions `send_transaction_via_socks5`,
+  `get_lightd_info_via_socks5`, and `transaction_known_via_socks5` are
+  replaced by the `Socks5Indexer` struct. `Socks5Indexer::new` groups
+  the proxy address, the indexer URI, and the round-trip bound once,
+  and the methods `send_transaction`, `get_lightd_info`, and
+  `transaction_known` run the operations through one private
+  dial-and-bound pipeline. Every operation still opens its own SOCKS5
+  tunnel.
 - BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
   and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
   `std::net::SocketAddr` instead of a `&str`. The one dial-string

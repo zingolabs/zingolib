@@ -14,8 +14,8 @@
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use zingo_netutils::Socks5Indexer;
 use zingo_netutils::ensure_default_crypto_provider;
-use zingo_netutils::get_lightd_info_via_socks5;
 use zingo_netutils::indexers::IndexerChain;
 use zingo_netutils::live_indexer_discovery::{DiscoveryFailureKind, discover_live_indexers};
 use zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND;
@@ -102,7 +102,8 @@ async fn main() -> ExitCode {
             );
             continue;
         };
-        match get_lightd_info_via_socks5(socks5_addr, &uri, MIXNET_ROUND_TRIP_BOUND).await {
+        let heartbeat = Socks5Indexer::new(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND);
+        match heartbeat.get_lightd_info().await {
             Ok(info) => println!(
                 "  OK {} height={} (same transport, same exit)",
                 found.indexer.uri, info.block_height

@@ -97,10 +97,7 @@ pub mod live_indexer_discovery;
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
-pub use socks5_transmit::{
-    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
-    send_transaction_via_socks5, transaction_known_via_socks5,
-};
+pub use socks5_transmit::{ProxyDialFailure, Socks5Indexer, Socks5TransmitError, TunnelFailure};
 
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make

@@ -19,7 +19,7 @@ use crate::NymProxy;
 use crate::error::NymProxyError;
 use crate::indexers::{Indexer, IndexerChain, mixnet_eligible};
 use crate::mixnet_connect::seeded_shuffle;
-use crate::socks5_transmit::{Socks5TransmitError, get_lightd_info_via_socks5};
+use crate::socks5_transmit::{Socks5Indexer, Socks5TransmitError};
 use crate::time::{
     ATTACH_LISTENER_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT,
 };
@@ -226,9 +226,10 @@ async fn probe_once_listening(
             source: None,
         }
     })?;
+    let probe = Socks5Indexer::new(socks5_addr, uri.clone(), MIXNET_ROUND_TRIP_BOUND);
     let deadline = Instant::now() + MIXNET_ROUND_TRIP_BOUND;
     loop {
-        match get_lightd_info_via_socks5(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND).await {
+        match probe.get_lightd_info().await {
             Err(Socks5TransmitError::ProxyUnreachable { .. }) if Instant::now() < deadline => {
                 tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
             }
