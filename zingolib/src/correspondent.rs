@@ -179,9 +179,13 @@ pub(crate) fn eligible_correspondents(
     sync_indexer: Option<&Uri>,
     health: &health::Health,
 ) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
+    let candidates = correspondent_indexers();
+    if candidates.is_empty() {
+        return Err(NoEligibleCorrespondents::EmptyPool);
+    }
     let pool = match sync_indexer {
-        Some(sync_indexer) => eligible_from(correspondent_indexers(), sync_indexer)?,
-        None => correspondent_indexers(),
+        Some(sync_indexer) => eligible_from(candidates, sync_indexer)?,
+        None => candidates,
     };
     Ok(health.filter_with_floor(pool))
 }
