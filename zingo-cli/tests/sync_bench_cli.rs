@@ -47,8 +47,13 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
             .and_then(|raw| raw.parse().ok())
             .unwrap_or(DEFAULT_BUDGET_SECS),
     );
+    // An empty SYNC_BENCH_INDEXER omits --server entirely, measuring the
+    // commit's own indexer resolution instead of a pin.
     let indexer =
         std::env::var("SYNC_BENCH_INDEXER").unwrap_or_else(|_| DEFAULT_INDEXER.to_string());
+    // Whitespace-split launch flags for A/B cells the fixed grammar lacks,
+    // e.g. `--no-mixnet` at commits that still offer it, or `--online`.
+    let extra_args = std::env::var("SYNC_BENCH_EXTRA_ARGS").unwrap_or_default();
 
     let cli = env!("CARGO_BIN_EXE_zingo-cli");
     // The nym-proxy built from the same checkout sits beside the CLI binary,
@@ -57,19 +62,28 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
     let proxy = std::path::Path::new(cli).with_file_name("nym-proxy");
     let data_dir = tempfile::tempdir().expect("a wallet tempdir opens");
 
+    let mut args: Vec<String> = vec![
+        "--data-dir".into(),
+        data_dir
+            .path()
+            .to_str()
+            .expect("the tempdir path renders")
+            .into(),
+        "--seed".into(),
+        BENCH_MNEMONIC.into(),
+        "--birthday".into(),
+        BENCH_BIRTHDAY.to_string(),
+        "--waitsync".into(),
+    ];
+    if !indexer.is_empty() {
+        args.push("--server".into());
+        args.push(indexer.clone());
+    }
+    args.extend(extra_args.split_whitespace().map(String::from));
+    args.push("height".into());
+
     let mut child = Command::new(cli)
-        .args([
-            "--data-dir",
-            data_dir.path().to_str().expect("the tempdir path renders"),
-            "--server",
-            &indexer,
-            "--seed",
-            BENCH_MNEMONIC,
-            "--birthday",
-            &BENCH_BIRTHDAY.to_string(),
-            "--waitsync",
-            "height",
-        ])
+        .args(&args)
         .env("ZINGO_NYM_PROXY", &proxy)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
