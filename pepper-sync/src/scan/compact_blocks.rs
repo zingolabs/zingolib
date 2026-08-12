@@ -347,6 +347,7 @@ fn check_tree_size(
 
         return Err(ScanError::IncorrectTreeSize {
             shielded_protocol: PoolType::Shielded(pool),
+            height: wallet_block.block_height(),
             block_metadata_size: metadata_size,
             calculated_size,
         });
@@ -599,6 +600,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 ..
             })
@@ -697,6 +699,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 block_metadata_size: 105,
                 calculated_size: 5,
@@ -733,6 +736,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 block_metadata_size: 1354,
                 calculated_size: 0,
@@ -751,6 +755,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
                 block_metadata_size: 1354,
                 calculated_size: 10,
