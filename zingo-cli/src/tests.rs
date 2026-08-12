@@ -25,6 +25,12 @@ mod config_template_refusals {
             "`balance` needs no network, so `--online` grants a connection it never \
              uses. Drop `--online`, or run it at the interactive prompt."
         );
+        assert_eq!(
+            crate::ConfigTemplateError::BirthdayWithoutRestore.to_string(),
+            "`--birthday` names a restore height, but this session creates a NEW \
+             wallet born at the chain tip. Drop --birthday, or pass --seed or \
+             --viewkey to restore."
+        );
     }
 }
 
@@ -840,6 +846,64 @@ mod config_template {
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
     fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
         build(&fill(args).unwrap())
+    }
+
+    /// HYPOTHESIS: an online session with no key source and no wallet file
+    /// creates a NEW wallet born at the chain tip, so an explicit
+    /// --birthday would be silently ignored, and the launch refuses
+    /// instead. Falsified if the fill accepts the flag.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn a_new_online_wallet_refuses_an_explicit_birthday() {
+        let dir = tempfile::tempdir().expect("a scratch dir opens");
+        let err = fill(&[
+            examples::BIN_NAME,
+            "--sync-server",
+            examples::SERVER_URI,
+            "--birthday",
+            "400000",
+            "--data-dir",
+            dir.path().to_str().expect("the scratch path renders"),
+        ])
+        .expect_err("a new online wallet refuses --birthday");
+        assert!(err.contains("NEW wallet born at the chain tip"), "{err}");
+    }
+
+    /// A seed restore keeps its explicit birthday: the flag names the
+    /// restore height there, never a dead letter.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn a_seed_restore_keeps_its_birthday() {
+        let dir = tempfile::tempdir().expect("a scratch dir opens");
+        let config = fill(&[
+            examples::BIN_NAME,
+            "--sync-server",
+            examples::SERVER_URI,
+            "--seed",
+            examples::SEED_PHRASE,
+            "--birthday",
+            "400000",
+            "--data-dir",
+            dir.path().to_str().expect("the scratch path renders"),
+        ])
+        .expect("a seed restore accepts --birthday");
+        assert_eq!(config.birthday, 400_000);
+    }
+
+    /// An offline new wallet keeps honoring --birthday as its
+    /// birthday-floor override, exactly as before the online refusal.
+    #[test]
+    fn an_offline_new_wallet_keeps_its_birthday_override() {
+        let dir = tempfile::tempdir().expect("a scratch dir opens");
+        let config = fill(&[
+            examples::BIN_NAME,
+            "--birthday",
+            "400000",
+            "--data-dir",
+            dir.path().to_str().expect("the scratch path renders"),
+        ])
+        .expect("an offline new wallet accepts --birthday");
+        assert_eq!(config.birthday, 400_000);
     }
 
     mod offline {

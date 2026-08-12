@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** An online session that would create a NEW wallet refuses an
+  explicit `--birthday` instead of silently ignoring it. A new wallet is
+  born at the chain tip, so the flag names a restore height that cannot
+  apply; the refusal says so and points at `--seed` and `--viewkey`. Seed
+  and viewkey restores keep the flag as the restore height, and an offline
+  new wallet keeps it as the birthday-floor override.
 - **Breaking.** The `--server` flag is renamed `--sync-server`, naming what
   the pin is: a clearnet sync indexer, selected by the user. The old
   spelling survives as a visible alias, so existing command lines keep
