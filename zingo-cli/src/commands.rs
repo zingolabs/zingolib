@@ -1609,8 +1609,8 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 /// the type, and prose is produced at exactly one rendering site per command.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationCommandError {
-    #[error("sync failed: {0}")]
-    Sync(zingolib::lightclient::error::LightClientError),
+    #[error("sync failed")]
+    Sync(#[source] zingolib::lightclient::error::LightClientError),
     #[error(transparent)]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }

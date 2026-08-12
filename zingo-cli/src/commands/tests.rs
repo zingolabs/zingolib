@@ -998,7 +998,9 @@ mod offline_contract {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+    use super::super::{
+        CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+    };
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -1056,7 +1058,7 @@ mod offline_contract {
     fn assert_unblocked_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
         let rendered = match exec(client, command, args) {
             Ok(output) => output,
-            Err(error) => error.to_string(),
+            Err(error) => render_error_chain(&error),
         };
         assert!(
             !rendered.contains(OFFLINE_REFUSAL),
@@ -1076,12 +1078,13 @@ mod offline_contract {
     }
 
     /// Asserts `command` refuses offline through its `Err` channel with the
-    /// typed Offline refusal.
+    /// typed Offline refusal, judged over the whole rendered chain.
     fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
         let error = exec(client, command, args).expect_err(command);
+        let rendered = render_error_chain(&error);
         assert!(
-            error.to_string().contains(OFFLINE_REFUSAL),
-            "`{command}` must refuse with the typed Offline error: {error}"
+            rendered.contains(OFFLINE_REFUSAL),
+            "`{command}` must refuse with the typed Offline error: {rendered}"
         );
     }
 
@@ -1520,11 +1523,13 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
+    use pepper_sync::error::SyncModeError;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
     use super::super::{
-        JSON_INDENT, address_check_json, not_yet_typed, render_error_chain, txids_json,
+        JSON_INDENT, MigrationCommandError, address_check_json, not_yet_typed, render_error_chain,
+        txids_json,
     };
 
     /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
@@ -1546,6 +1551,20 @@ mod pure_helpers {
         assert_eq!(
             render_error_chain(&wrapped),
             "Send error.\ncaused by: No proposal found in the wallet."
+        );
+    }
+
+    /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
+    /// as its source, so the chain walk reaches the innermost detail; a
+    /// rendering that stops at the wrapper line falsifies it.
+    #[test]
+    fn migration_sync_failure_keeps_its_source_chain() {
+        let refused = MigrationCommandError::Sync(LightClientError::SyncModeError(
+            SyncModeError::SyncAlreadyRunning,
+        ));
+        assert_eq!(
+            render_error_chain(&refused),
+            "sync failed\ncaused by: Sync mode error.\ncaused by: sync is already running"
         );
     }
 
