@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_latest_block_via_socks5`: the `GetLatestBlock` tip fetch through
+  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
+  now the Server-Selection Sweep's survey primitive.
 - The `responsiveness` module partitions network operations at compile
   time: the sealed `Responsiveness` trait with the `Critical` and
   `NonCritical` marker types, the `ResponsivenessClass` enum with
