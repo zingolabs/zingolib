@@ -58,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the Server-Selection Sweep no longer knows a pin, and its
+  survey probes with `GetLatestBlock` instead of `GetLightdInfo`.
+  `lightclient::select::run_server_selection_sweep` loses its `pin`
+  parameter; `mixnet::sweep::select` and `live_cohort` lose their `pin`
+  and `chain` parameters; `SweepError::DeadPin` is removed; and
+  `mixnet::sweep::SurveyResult::reported` carries the bare tip height.
+  The judgment rests on the height tolerance alone, and a caller holds
+  any pinned clearnet sync indexer out of the candidates, binding it for
+  sync by the user's own selection.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and
