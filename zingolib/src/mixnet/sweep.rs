@@ -191,6 +191,27 @@ pub fn select(
     })
 }
 
+/// The survey order for `candidates`: uniformly shuffled with `rng` so the
+/// lane assignment is random, except that `first`, when present, is swapped
+/// into the opening wave of `width` lanes, because the user's own selection
+/// must ride the wave whose verdict is offered early.
+pub fn wave_order(
+    candidates: &[Uri],
+    first: Option<&Uri>,
+    width: usize,
+    rng: &mut impl rand::Rng,
+) -> Vec<Uri> {
+    let mut order: Vec<Uri> = candidates.to_vec();
+    order.shuffle(rng);
+    if let Some(first) = first
+        && let Some(position) = order.iter().position(|candidate| candidate == first)
+        && position >= width
+    {
+        order.swap(0, position);
+    }
+    order
+}
+
 /// Draw one live endpoint by the sync-attach rule: one ticket per operator,
 /// a uniform draw among the operators, then any live endpoint of the winner.
 /// `cohort` is nonempty here.
@@ -404,5 +425,31 @@ mod tests {
     #[test]
     fn a_causeless_tally_renders_nothing() {
         assert_eq!(RefusalTally::of(&[]).to_string(), "");
+    }
+
+    /// HYPOTHESIS: the wave order always seats `first` in the opening wave
+    /// of `width` lanes, whatever the shuffle drew, because the user's own
+    /// selection must ride the wave whose verdict is offered early.
+    /// Falsified if any seed leaves it outside the opening wave.
+    #[test]
+    fn the_first_candidate_always_rides_the_opening_wave() {
+        let candidates: Vec<Uri> = (0..17)
+            .map(|n| uri(&format!("https://c{n}.example:443")))
+            .collect();
+        let pin = uri("https://c13.example:443");
+        const WIDTH: usize = 4;
+        for seed in 0..200 {
+            let order = wave_order(
+                &candidates,
+                Some(&pin),
+                WIDTH,
+                &mut StdRng::seed_from_u64(seed),
+            );
+            assert_eq!(order.len(), candidates.len(), "a permutation, whole");
+            assert!(
+                order[..WIDTH].contains(&pin),
+                "seed {seed} left the pin outside the opening wave: {order:?}"
+            );
+        }
     }
 }

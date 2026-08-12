@@ -1333,8 +1333,11 @@ async fn sweep_select_sync_indexer(
     }
     let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
     let selection = lightclient
-        .run_server_selection_sweep(std::path::Path::new(&proxy_path), &candidates, |phase| {
-            match phase {
+        .run_server_selection_sweep(
+            std::path::Path::new(&proxy_path),
+            &candidates,
+            pin.as_ref(),
+            |phase| match phase {
                 SweepProgress::TransportBootstrapping => eprintln!(
                     "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
                      (its Exit Node is recycled when the sweep completes)..."
@@ -1346,8 +1349,8 @@ async fn sweep_select_sync_indexer(
                     "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
                      judging the live cohort..."
                 ),
-            }
-        })
+            },
+        )
         .await;
     match selection {
         Ok(selection) => {

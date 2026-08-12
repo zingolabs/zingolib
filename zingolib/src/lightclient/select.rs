@@ -79,15 +79,18 @@ impl LightClient {
     /// operator, and the height-ordered live cohort.
     ///
     /// `binary_path` is the `nym-proxy` binary the dedicated sweep proxy
-    /// spawns from. A pinned clearnet sync indexer never enters a sweep: the
-    /// caller holds it out of `candidates`, and the pin binds for sync by
-    /// the user's own selection.
-    ///
-    /// The sweep proxy is dropped before this returns, recycling its exit.
+    /// spawns from. The candidates are assigned to survey lanes at random,
+    /// with `first` — the caller's pinned clearnet sync indexer, when one
+    /// exists — guaranteed a lane in the opening wave, and the opening
+    /// wave's verdict is offered to the session as soon as it forms: the
+    /// remaining candidates keep being surveyed in the background purely as
+    /// the health sweep, and the sweep transport recycles its exit when
+    /// that finishes.
     pub async fn run_server_selection_sweep(
         &self,
         binary_path: &Path,
         candidates: &[Uri],
+        first: Option<&Uri>,
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
         // A dedicated status channel: the sweep proxy's lifecycle is private
@@ -137,18 +140,59 @@ impl LightClient {
         progress(SweepProgress::Surveying {
             candidates: candidates.len(),
         });
-        let results = survey(socks5_addr, candidates, &self.indexer_history).await;
-        progress(SweepProgress::Judging {
-            answered: results.iter().filter(|r| r.reported.is_some()).count(),
-            surveyed: results.len(),
-        });
+        let width = survey_tunnel_width(candidates.len());
+        let order = sweep::wave_order(candidates, first, width, &mut rand::rngs::OsRng);
 
-        let selection = sweep::select(&results, SWEEP_HEIGHT_TOLERANCE, &mut rand::rngs::OsRng)?;
+        // Waves run inline only until a verdict forms; every candidate a
+        // formed verdict leaves unsurveyed continues in the background as
+        // the health sweep, and the transport's exit recycles after it.
+        let mut results: Vec<SurveyResult> = Vec::new();
+        let mut surveyed_through = 0;
+        let mut verdict: Option<Selection> = None;
+        for wave in order.chunks(width) {
+            results.extend(survey(socks5_addr, wave.to_vec(), &self.indexer_history).await);
+            surveyed_through += wave.len();
+            progress(SweepProgress::Judging {
+                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                surveyed: surveyed_through,
+            });
+            match sweep::select(&results, SWEEP_HEIGHT_TOLERANCE, &mut rand::rngs::OsRng) {
+                Ok(selection) => {
+                    verdict = Some(selection);
+                    break;
+                }
+                Err(SweepError::EmptyCohort { .. }) if surveyed_through < order.len() => {}
+                Err(refusal) => {
+                    member.retire().await;
+                    return Err(refusal.into());
+                }
+            }
+        }
+        let Some(selection) = verdict else {
+            // Reached only by an empty candidate list, which surveys
+            // nothing and forms no verdict.
+            member.retire().await;
+            return Err(SweepError::EmptyCohort {
+                surveyed: results.len(),
+                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                causes: sweep::RefusalTally::of(&results),
+            }
+            .into());
+        };
 
-        // Exit Recycling: retiring the member kills the child and recycles
-        // its lease, so no later traffic rides the exit that observed the
-        // survey.
-        member.retire().await;
+        let rest: Vec<Uri> = order[surveyed_through.min(order.len())..].to_vec();
+        if rest.is_empty() {
+            member.retire().await;
+        } else {
+            let history = self.indexer_history.clone();
+            tokio::spawn(async move {
+                let _health_only = survey(socks5_addr, rest, &history).await;
+                // Exit Recycling: retiring the member kills the child and
+                // recycles its lease, so no later traffic rides the exit
+                // that observed the survey.
+                member.retire().await;
+            });
+        }
         Ok(selection)
     }
 }
@@ -194,7 +238,7 @@ const MIN_SURVEY_TUNNEL_WIDTH: usize = 1;
 
 /// The number of survey tunnels open at once for a survey of `candidates` —
 /// a bounded function of the census size: at least one, at most a
-/// [`SURVEY_FANOUT_DIVISOR`]th of the list, never past the measured
+/// `SURVEY_FANOUT_DIVISOR`th of the list, never past the measured
 /// [`MAX_SURVEY_TUNNEL_WIDTH`] — counting connections through the one Nym
 /// client rather than processes, so the same calibration serves a spawned
 /// desktop binary and the in-process client Android and iOS host under the
@@ -210,21 +254,22 @@ pub fn survey_tunnel_width(candidates: usize) -> usize {
 /// indexer history like any probe.
 async fn survey(
     socks5_addr: std::net::SocketAddr,
-    candidates: &[Uri],
+    candidates: Vec<Uri>,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
     use futures::StreamExt as _;
     let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
-    futures::stream::iter(candidates.iter())
+    let width = survey_tunnel_width(candidates.len());
+    futures::stream::iter(candidates)
         .map(|uri| async move {
-            let (reported, refusal) = probe_one(socks5_addr, uri, timeout, history).await;
+            let (reported, refusal) = probe_one(socks5_addr, &uri, timeout, history).await;
             SurveyResult {
-                uri: uri.clone(),
+                uri,
                 reported,
                 refusal,
             }
         })
-        .buffer_unordered(survey_tunnel_width(candidates.len()))
+        .buffer_unordered(width)
         .collect()
         .await
 }
