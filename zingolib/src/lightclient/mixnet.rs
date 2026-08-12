@@ -325,12 +325,9 @@ impl LightClient {
             .filter(crate::mixnet::probe::probe_eligible)
             .collect();
         let history = self.indexer_history.clone();
-        let dial = crate::mixnet::Socks5Dial::of(socks5_addr);
-        Ok(futures::future::join_all(
-            targets.iter().map(|indexer| {
-                crate::mixnet::probe::probe_indexer(indexer, &dial, timeout, &history)
-            }),
-        )
+        Ok(futures::future::join_all(targets.iter().map(|indexer| {
+            crate::mixnet::probe::probe_indexer(indexer, socks5_addr, timeout, &history)
+        }))
         .await)
     }
 

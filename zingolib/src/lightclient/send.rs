@@ -237,7 +237,7 @@ impl TransmitTarget for ClearnetTarget {
 /// escalation builds one of these per pick.
 #[cfg(feature = "nym")]
 struct SocksTarget {
-    dial: crate::mixnet::Socks5Dial,
+    socks5_addr: std::net::SocketAddr,
     indexer: http::Uri,
 }
 
@@ -251,7 +251,7 @@ impl TransmitTarget for SocksTarget {
         height: u64,
     ) -> Result<String, zingo_netutils::Socks5TransmitError> {
         zingo_netutils::send_transaction_via_socks5(
-            self.dial.as_str(),
+            self.socks5_addr,
             &self.indexer,
             raw_tx,
             height,
@@ -264,7 +264,7 @@ impl TransmitTarget for SocksTarget {
         let hash = txid.as_ref().to_vec();
         async move {
             zingo_netutils::transaction_known_via_socks5(
-                self.dial.as_str(),
+                self.socks5_addr,
                 &self.indexer,
                 &hash,
                 DEFAULT_REQUEST_TIMEOUT,
@@ -463,7 +463,7 @@ async fn mixnet_escalating_transmit(
                 None => (shared_addr, None),
             };
             let target = SocksTarget {
-                dial: crate::mixnet::Socks5Dial::of(socks5_addr),
+                socks5_addr,
                 indexer,
             };
             let started = std::time::Instant::now();
@@ -509,7 +509,7 @@ async fn mixnet_escalating_transmit(
                     server_txid,
                     TransmitRoute::Mixnet {
                         correspondent: host.to_string(),
-                        via_socks5: target.dial.as_str().to_string(),
+                        via_socks5: target.socks5_addr.to_string(),
                     },
                 )
             })
@@ -1846,43 +1846,5 @@ mod transparent_policy {
                 }
             )))
         ));
-    }
-}
-
-#[cfg(all(test, feature = "nym"))]
-mod socks_target_dial {
-    use super::SocksTarget;
-
-    /// The loopback SOCKS5 endpoint this seam test names, never contacted.
-    const TEST_SOCKS5_ENDPOINT: &str = "127.0.0.1:1080";
-
-    /// The Correspondent uri this seam test names, never contacted.
-    const TEST_INDEXER_URI: &str = "https://zec.rocks:443";
-
-    /// HYPOTHESIS: a Correspondent target renders its tunnel endpoint once,
-    /// when the pull builds it, and lends that one rendering to every seam
-    /// call, so a retried submission and its delivery check never re-render
-    /// the address. Falsified if two seam-facing reads hand back separate
-    /// renderings.
-    #[test]
-    fn one_rendering_serves_every_seam_call() {
-        let target = SocksTarget {
-            dial: crate::mixnet::Socks5Dial::of(
-                TEST_SOCKS5_ENDPOINT
-                    .parse()
-                    .expect("the literal endpoint parses"),
-            ),
-            indexer: TEST_INDEXER_URI
-                .parse()
-                .expect("the literal indexer uri parses"),
-        };
-        let submission: &str = target.dial.as_str();
-        let delivery_check: &str = target.dial.as_str();
-        assert_eq!(
-            submission.as_ptr(),
-            delivery_check.as_ptr(),
-            "every seam call must lend the one rendering the pull made"
-        );
-        assert_eq!(submission, TEST_SOCKS5_ENDPOINT);
     }
 }

@@ -20,6 +20,7 @@
 //! routes for diagnosis.
 #![forbid(unsafe_code)]
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -254,7 +255,7 @@ fn destination_of(indexer: &Uri) -> String {
 /// caller fail over to a different indexer. A server-side rejection yields
 /// [`Socks5TransmitError::Rejected`].
 pub async fn send_transaction_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     raw_tx: &[u8],
     height: u64,
@@ -290,7 +291,7 @@ pub async fn send_transaction_via_socks5(
 /// failures as the send path, so a probe diagnoses exactly what a send
 /// would hit.
 pub async fn get_lightd_info_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     timeout: Duration,
 ) -> Result<LightdInfo, Socks5TransmitError> {
@@ -317,7 +318,7 @@ pub async fn get_lightd_info_via_socks5(
 /// failure in a slot this function reads back in preference to tonic's
 /// rendering.
 async fn connect_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     timeout: Duration,
 ) -> Result<CompactTxStreamerClient<Channel>, Socks5TransmitError> {
@@ -342,6 +343,8 @@ async fn connect_via_socks5(
         .to_string();
     let port = indexer.port_u16().unwrap_or(443);
     let destination = format!("{host}:{port}");
+    // The one dial-string rendering: every socket address has exactly one
+    // dial form, and it is derived here alone, never by a caller.
     let socks5_addr = socks5_addr.to_string();
 
     let endpoint = Endpoint::from_shared(indexer.to_string())
@@ -446,7 +449,7 @@ async fn connect_via_socks5(
 /// its retries. A transport failure or an error status both read as "not
 /// known", so the result is a plain bool the caller treats as not-yet-delivered.
 pub async fn transaction_known_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     txid_hash: &[u8],
     timeout: Duration,
@@ -672,12 +675,32 @@ mod tests {
     #[tokio::test]
     async fn a_non_https_indexer_is_refused() {
         let http = "http://indexer.example:9067".parse().expect("static uri");
-        let err = send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, MOCK_OP_BOUND)
+        let refused_port = "127.0.0.1:1".parse().expect("the static address parses");
+        let err = send_transaction_via_socks5(refused_port, &http, b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("http must be refused");
         assert!(
             matches!(err, Socks5TransmitError::InsecureScheme { .. }),
             "expected InsecureScheme, got: {err}"
+        );
+    }
+
+    /// HYPOTHESIS: the seam accepts the typed socket address a caller holds,
+    /// so no caller renders the address and the one dial-string rendering
+    /// lives inside the connector. Falsified if the call demands text.
+    #[tokio::test]
+    async fn the_seam_accepts_the_typed_address() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port");
+        let addr: std::net::SocketAddr = listener.local_addr().expect("local addr");
+        drop(listener);
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("no proxy is listening");
+        assert!(
+            matches!(err, Socks5TransmitError::ProxyUnreachable { .. }),
+            "expected ProxyUnreachable, got: {err}"
         );
     }
 
@@ -689,10 +712,10 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind an ephemeral port");
-        let addr = listener.local_addr().expect("local addr").to_string();
+        let addr = listener.local_addr().expect("local addr");
         drop(listener);
 
-        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("no proxy is listening");
         assert!(
@@ -712,14 +735,14 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind an ephemeral port");
-        let addr = listener.local_addr().expect("local addr").to_string();
+        let addr = listener.local_addr().expect("local addr");
         tokio::spawn(async move {
             while let Ok((socket, _)) = listener.accept().await {
                 drop(socket);
             }
         });
 
-        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("the handshake dies");
         assert!(

@@ -65,26 +65,6 @@ impl From<&str> for ExitNodeId {
     }
 }
 
-/// The rendered dial form of a SOCKS5 socket address, derived once per
-/// fan-out so a loop threads the typed rendering instead of re-deriving
-/// it or passing a bare string.
-#[cfg(feature = "nym")]
-pub(crate) struct Socks5Dial(String);
-
-#[cfg(feature = "nym")]
-impl Socks5Dial {
-    /// Renders `addr` once — total, because every socket address has
-    /// exactly one dial form, unlike the partial parse direction.
-    pub(crate) fn of(addr: std::net::SocketAddr) -> Self {
-        Socks5Dial(addr.to_string())
-    }
-
-    /// Lends the dial string to the netutils seam.
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
 #[cfg(test)]
 mod identity_tests {
     use super::{BlankExitNodeId, ExitNodeId};

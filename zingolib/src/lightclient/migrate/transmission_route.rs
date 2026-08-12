@@ -66,7 +66,7 @@ impl TransmissionClient for RoutedTransmissionClient {
 /// for the clearnet client.
 #[cfg(feature = "nym")]
 pub struct MixnetTransmissionClient {
-    socks5_addr: String,
+    socks5_addr: std::net::SocketAddr,
     /// The eligible targets ([`eligible_candidates`]): nonempty, and never
     /// operated by the synchronization endpoint's operator (ADR 0022).
     candidates: Vec<http::Uri>,
@@ -76,7 +76,7 @@ pub struct MixnetTransmissionClient {
 impl MixnetTransmissionClient {
     /// A client dialing through the proxy at `socks5_addr`, drawing each
     /// submission's target from `candidates`.
-    pub(crate) fn new(socks5_addr: String, candidates: Vec<http::Uri>) -> Self {
+    pub(crate) fn new(socks5_addr: std::net::SocketAddr, candidates: Vec<http::Uri>) -> Self {
         MixnetTransmissionClient {
             socks5_addr,
             candidates,
@@ -100,7 +100,7 @@ impl TransmissionClient for MixnetTransmissionClient {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;
         let txid_hex = zingo_netutils::send_transaction_via_socks5(
-            &self.socks5_addr,
+            self.socks5_addr,
             indexer,
             &raw_tx,
             u64::from(u32::from(expiry_height)),
@@ -126,7 +126,7 @@ impl TransmissionClient for MixnetTransmissionClient {
             txid,
             route: TransmissionRoute::Mixnet {
                 correspondent: super::transmission_grpc::host_of(indexer),
-                via_socks5: self.socks5_addr.clone(),
+                via_socks5: self.socks5_addr.to_string(),
             },
         })
     }

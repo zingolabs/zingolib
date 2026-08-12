@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
+  and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
+  `std::net::SocketAddr` instead of a `&str`. The one dial-string
+  rendering now happens inside the connector, so callers pass the typed
+  address they already hold and never render it.
+
 ### Removed
 
 - BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`

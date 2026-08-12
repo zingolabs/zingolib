@@ -392,14 +392,13 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
-    let dial = crate::mixnet::Socks5Dial::of(socks5_addr);
     let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
         match zingo_netutils::get_lightd_info_via_socks5(
-            dial.as_str(),
+            socks5_addr,
             &indexer,
             MIXNET_ROUND_TRIP_BOUND,
         )
@@ -410,7 +409,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
                 let stage = crate::mixnet::socks5_transmit_stage(&error);
                 let target = match stage {
                     zingo_net_diag::NetOpStage::LocalProxyConnect
-                    | zingo_net_diag::NetOpStage::SocksHandshake => dial.as_str().to_string(),
+                    | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
                     _ => ATTACH_HEALTH_INDEXER.to_string(),
                 };
                 last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
