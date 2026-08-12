@@ -194,6 +194,10 @@ pub struct LightClient {
     /// subscriber already holds.
     #[cfg(feature = "nym")]
     mixnet_status: crate::mixnet::StatusPublisher,
+    /// The detached health sweep of the most recent Server-Selection Sweep,
+    /// held so revoking consent aborts its traffic with everything else.
+    #[cfg(feature = "nym")]
+    health_sweep: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl LightClient {
@@ -271,6 +275,8 @@ impl LightClient {
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
         })
     }
 
@@ -312,6 +318,8 @@ impl LightClient {
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
         }
     }
 
@@ -374,6 +382,8 @@ impl LightClient {
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
         })
     }
 
@@ -540,11 +550,30 @@ impl LightClient {
         self.abort_sync().await;
         #[cfg(feature = "nym")]
         {
+            self.abort_health_sweep().await;
             self.vacate_mixnet_slot().await;
             self.publish_mixnet_slot_state();
         }
         self.indexer = None;
         self.migration_transmission_uri = None;
+    }
+
+    /// Aborts the detached health sweep, if one is still surveying, so a
+    /// revoked consent stops every emission the session started.
+    #[cfg(feature = "nym")]
+    pub(crate) async fn abort_health_sweep(&self) {
+        let held = self
+            .health_sweep
+            .lock()
+            .expect("the health-sweep slot is never poisoned")
+            .take();
+        if let Some(sweep) = held {
+            sweep.abort();
+            // Await the cancellation, so the caller's offline promise holds
+            // the moment this returns; dropping the sweep's transport kills
+            // its child and recycles its lease.
+            let _cancelled = sweep.await;
+        }
     }
 
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.

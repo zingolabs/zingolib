@@ -88,15 +88,18 @@ impl LightClient {
     /// operator, and the height-ordered live cohort.
     ///
     /// `binary_path` is the `nym-proxy` binary the dedicated sweep proxy
-    /// spawns from. A pinned clearnet sync indexer never enters a sweep: the
-    /// caller holds it out of `candidates`, and the pin binds for sync by
-    /// the user's own selection.
-    ///
-    /// The sweep proxy is dropped before this returns, recycling its exit.
+    /// spawns from. The candidates are assigned to survey lanes at random,
+    /// with `first` — the caller's pinned clearnet sync indexer, when one
+    /// exists — guaranteed a lane in the opening wave, and the opening
+    /// wave's verdict is offered to the session as soon as it forms: the
+    /// remaining candidates keep being surveyed in the background purely as
+    /// the health sweep, and the sweep transport recycles its exit when
+    /// that finishes.
     pub async fn run_server_selection_sweep(
         &self,
         binary_path: &Path,
         candidates: &[Uri],
+        first: Option<&Uri>,
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
         // A dedicated status channel: the sweep proxy's lifecycle is private
@@ -144,24 +147,71 @@ impl LightClient {
         progress(SweepProgress::Surveying {
             candidates: candidates.len(),
         });
-        let results = survey(socks5_addr, candidates, &self.indexer_history).await;
-        progress(SweepProgress::Judging {
-            answered: results.iter().filter(|r| r.reported.is_some()).count(),
-            surveyed: results.len(),
-        });
+        let width = survey_tunnel_width(candidates.len());
+        let order = sweep::wave_order(candidates, first, width, &mut rand::rngs::OsRng);
 
-        // The pin-free judgment (tip_probe_primitive) held rather than
-        // propagated (readiness_exit_contract): both merged rules apply.
-        let selection = sweep::select(&results, SWEEP_HEIGHT_TOLERANCE, &mut rand::rngs::OsRng);
+        // Waves run inline only until a verdict forms; every candidate a
+        // formed verdict leaves unsurveyed continues in the background as
+        // the health sweep, and the transport's exit recycles after it.
+        let mut results: Vec<SurveyResult> = Vec::new();
+        let mut surveyed_through = 0;
+        let mut verdict: Option<Selection> = None;
+        for wave in order.chunks(width) {
+            results.extend(survey(socks5_addr, wave.to_vec(), width, &self.indexer_history).await);
+            surveyed_through += wave.len();
+            progress(SweepProgress::Judging {
+                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                surveyed: surveyed_through,
+            });
+            match sweep::select(&results, SWEEP_HEIGHT_TOLERANCE, &mut rand::rngs::OsRng) {
+                Ok(selection) => {
+                    verdict = Some(selection);
+                    break;
+                }
+                Err(SweepError::EmptyCohort { .. }) if surveyed_through < order.len() => {}
+                Err(refusal) => {
+                    member.retire().await;
+                    return Err(refusal.into());
+                }
+            }
+        }
+        let Some(selection) = verdict else {
+            // Reached only by an empty candidate list, which surveys
+            // nothing and forms no verdict.
+            member.retire().await;
+            return Err(SweepError::EmptyCohort {
+                surveyed: results.len(),
+                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                causes: sweep::RefusalTally::of(&results),
+            }
+            .into());
+        };
 
-        // Exit Recycling: retiring the member kills the child and recycles
-        // its lease, so no later traffic rides the exit that observed the
-        // survey. The judgment's verdict is held rather than propagated with
-        // the question mark, because a refusal that returned early would drop
-        // the member instead, recycling the reservation before the child's
-        // death is confirmed. Retiring here covers every post-bind exit.
-        member.retire().await;
-        selection.map_err(ServerSelectionError::Selection)
+        let rest: Vec<Uri> = order[surveyed_through.min(order.len())..].to_vec();
+        if rest.is_empty() {
+            member.retire().await;
+        } else {
+            let history = self.indexer_history.clone();
+            let continuation = tokio::spawn(async move {
+                let health_width = survey_tunnel_width(rest.len());
+                let _health_only = survey(socks5_addr, rest, health_width, &history).await;
+                // Exit Recycling: retiring the member kills the child and
+                // recycles its lease, so no later traffic rides the exit
+                // that observed the survey.
+                member.retire().await;
+            });
+            // The session holds the continuation so `go_offline` can abort
+            // it: revoked consent must stop the health sweep too.
+            if let Some(superseded) = self
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned")
+                .replace(continuation)
+            {
+                superseded.abort();
+            }
+        }
+        Ok(selection)
     }
 }
 
@@ -204,40 +254,78 @@ fn sweep_refusal(refusal: crate::mixnet::acquire::TransportError) -> ServerSelec
     }
 }
 
-/// Survey every candidate over the sweep exit concurrently, recording each
-/// attempt in the indexer history like any probe.
+/// The saturation bound on concurrent survey tunnels: every tunnel shares
+/// the one sweep exit's packet pipeline, a single measured round trip costs
+/// seconds, and four concurrent TLS handshakes was the widest fan-out that
+/// kept each near its solo cost instead of blowing every probe's
+/// [`zingo_netutils::time::PROBE_LEG_TIMEOUT`] together — the 0-of-17
+/// signature.
+pub const MAX_SURVEY_TUNNEL_WIDTH: usize = 4;
+
+/// The divisor bounding the fan-out to a fraction of the candidate list, so
+/// a small census is never surveyed all at once.
+const SURVEY_FANOUT_DIVISOR: usize = 4;
+
+/// The narrowest survey: one tunnel, the sequential floor.
+const MIN_SURVEY_TUNNEL_WIDTH: usize = 1;
+
+/// The number of survey tunnels open at once for a survey of `candidates` —
+/// a bounded function of the census size: at least one, at most a
+/// `SURVEY_FANOUT_DIVISOR`th of the list, never past the measured
+/// [`MAX_SURVEY_TUNNEL_WIDTH`] — counting connections through the one Nym
+/// client rather than processes, so the same calibration serves a spawned
+/// desktop binary and the in-process client Android and iOS host under the
+/// single-process constraint.
+pub fn survey_tunnel_width(candidates: usize) -> usize {
+    candidates
+        .div_ceil(SURVEY_FANOUT_DIVISOR)
+        .clamp(MIN_SURVEY_TUNNEL_WIDTH, MAX_SURVEY_TUNNEL_WIDTH)
+}
+
+/// Survey every candidate over the sweep exit, at most
+/// [`survey_tunnel_width`] tunnels at a time, recording each attempt in the
+/// indexer history like any probe.
 async fn survey(
     socks5_addr: std::net::SocketAddr,
-    candidates: &[Uri],
+    candidates: Vec<Uri>,
+    width: usize,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
+    use futures::StreamExt as _;
     let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
-    futures::future::join_all(candidates.iter().map(|uri| async move {
-        let reported = probe_one(socks5_addr, uri, timeout, history).await;
-        SurveyResult {
-            uri: uri.clone(),
-            reported,
-        }
-    }))
-    .await
+    futures::stream::iter(candidates)
+        .map(|uri| async move {
+            let (reported, refusal) = probe_one(socks5_addr, &uri, timeout, history).await;
+            SurveyResult {
+                uri,
+                reported,
+                refusal,
+            }
+        })
+        .buffer_unordered(width)
+        .collect()
+        .await
 }
 
 /// One candidate's survey: `GetLatestBlock` over the sweep exit, its success
-/// mapped to the reported tip height, any failure to `None`.
+/// mapped to the reported tip height, any failure to a classified refusal.
 async fn probe_one(
     socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
-) -> Option<u64> {
+) -> (
+    Option<u64>,
+    Option<crate::lightclient::indexer_history::FailureKind>,
+) {
     use crate::lightclient::indexer_history::{
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = crate::correspondent::Host::of_uri(uri);
     let result = zingo_netutils::get_latest_block_via_socks5(socks5_addr, uri, timeout).await;
-    let (reported, outcome) = match &result {
-        Ok(tip) => (Some(tip.height), Ok(())),
-        Err(error) => (None, Err(FailureKind::classify(&error.to_string()))),
+    let (reported, refusal) = match &result {
+        Ok(tip) => (Some(tip.height), None),
+        Err(error) => (None, Some(FailureKind::classify(&error.to_string()))),
     };
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -250,15 +338,60 @@ async fn probe_one(
             .err()
             .map(|error| crate::mixnet::charge_phase(&crate::mixnet::socks5_transmit_stage(error))),
         exit: None,
-        outcome,
+        outcome: match refusal {
+            None => Ok(()),
+            Some(kind) => Err(kind),
+        },
     });
-    reported
+    (reported, refusal)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mixnet::MixnetMode;
+
+    /// HYPOTHESIS: revoking consent aborts the detached health sweep — the
+    /// held task is cancelled and the slot empties — so no probe outlives
+    /// `network off`. Falsified if the task survives going offline.
+    #[tokio::test]
+    async fn going_offline_aborts_the_health_sweep() {
+        let wallet = crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(
+            zingo_test_vectors::seeds::ABANDON_ART_SEED,
+        )
+        .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+        let held = tokio::spawn(std::future::pending::<()>());
+        *client
+            .health_sweep
+            .lock()
+            .expect("the health-sweep slot is never poisoned") = Some(held);
+        client.go_offline().await;
+        assert!(
+            client
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned")
+                .is_none(),
+            "going offline empties the health-sweep slot"
+        );
+    }
+
+    /// HYPOTHESIS: the survey width is a bounded function of the census —
+    /// at least one tunnel, at most a quarter of the candidates, never past
+    /// the measured saturation bound — so a small census is never surveyed
+    /// all at once and a large one never saturates the shared exit.
+    /// Falsified if any bound moves.
+    #[test]
+    fn the_survey_width_is_bounded_by_the_census() {
+        assert_eq!(survey_tunnel_width(0), MIN_SURVEY_TUNNEL_WIDTH);
+        assert_eq!(survey_tunnel_width(1), 1);
+        assert_eq!(survey_tunnel_width(4), 1);
+        assert_eq!(survey_tunnel_width(5), 2);
+        assert_eq!(survey_tunnel_width(16), 4);
+        assert_eq!(survey_tunnel_width(17), MAX_SURVEY_TUNNEL_WIDTH);
+        assert_eq!(survey_tunnel_width(100), MAX_SURVEY_TUNNEL_WIDTH);
+    }
 
     /// The status a died sweep proxy publishes, carrying `detail` as its
     /// latched typed cause.

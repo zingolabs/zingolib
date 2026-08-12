@@ -76,6 +76,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
   refusal is the existing `NotReady` variant, carrying the grace as the
   budget it exceeded.
+- BREAKING: the survey bounds its fan-out and reports its refusal causes.
+  The sweep opens `lightclient::select::survey_tunnel_width(candidates)`
+  tunnels at a time — at least one, at most a quarter of the census, and
+  never past the measured `MAX_SURVEY_TUNNEL_WIDTH` — because every
+  tunnel shares the one sweep exit's packet pipeline and an unbounded
+  fan-out blew every probe's budget at once — the 0-of-17 signature.
+  The width counts connections through the one Nym client, never
+  processes, so Android and iOS — hosting the client in-process under
+  the single-process constraint — share the same calibration unchanged.
+  The survey assigns candidates to lanes at random and offers the opening
+  wave's verdict to the session as soon as it forms
+  (`run_server_selection_sweep` gains a `first` parameter naming the
+  candidate guaranteed an opening-wave lane — the caller's pin); the
+  candidates a formed verdict leaves unsurveyed continue in the
+  background as the health sweep, and the sweep transport recycles its
+  exit when that finishes. The session holds the health sweep's handle,
+  and `go_offline` aborts it: revoking consent stops all networking,
+  the health sweep included. `mixnet::sweep::SurveyResult` gains a
+  `refusal` field carrying the diary's `FailureKind`, and
+  `SweepError::EmptyCohort` gains a `causes` tally, so the refusal itself
+  says whether the transport or the indexers failed, e.g. "0 of 17
+  answered, none within the cohort (17 timeout)".
 - BREAKING: every probe wraps the single `GetLatestBlock` RPC. The mixnet
   probe leg, the staged sync-path probe, and the attach readiness round
   trip all probe the tip, the same primitive the sweep surveys with.
