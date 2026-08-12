@@ -4,6 +4,8 @@
 //! deliberate disable, never as a silent fallback: a session that never
 //! enabled the mixnet, or whose enable failed, is `Unattached` and refuses.
 
+#![forbid(unsafe_code)]
+
 use super::error::LightClientError;
 use super::{LightClient, MixnetPriceFetch};
 

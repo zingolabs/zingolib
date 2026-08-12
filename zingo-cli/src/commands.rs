@@ -212,9 +212,7 @@ async fn change_server(
 ) -> Result<String, CommandError> {
     match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
         Ok(()) => Ok("server set".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(
-            format!("failed to set server: {e}").into(),
-        )),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -550,7 +548,7 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.shutdown_save_task().await {
         Ok(()) => eprintln!("Save task shutdown successfully."),
-        Err(e) => eprintln!("Error: save failed. {e}"),
+        Err(e) => eprintln!("Error: save failed. {}", render_error_chain(&e)),
     }
     Ok("Zingo CLI quit successfully.".to_string())
 }
@@ -613,13 +611,17 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
         SaveSubCommand::Check => match lightclient.check_save_error().await {
             Ok(()) => Ok(String::new()),
             Err(e) => Err(CommandError::NotYetTyped(
-                format!("save failed. {e}\nRestarting save task...").into(),
+                format!(
+                    "save failed. {}\nRestarting save task...",
+                    render_error_chain(&e)
+                )
+                .into(),
             )),
         },
         SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
             Ok(()) => Ok("Save task shutdown successfully.".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(
-                format!("save failed. {e}").into(),
+                format!("save failed. {}", render_error_chain(&e)).into(),
             )),
         },
     }
@@ -1140,7 +1142,7 @@ pub enum NetworkCommandError {
     /// switching the session to Online Mode; the session stays offline.
     /// Reachable only from the quarantined clearnet resolution.
     #[cfg(feature = "clearnet-test-mode")]
-    #[error("no indexer could be resolved for going online: {0}")]
+    #[error("no indexer could be resolved for going online")]
     ServerResolution(#[from] crate::server_select_clearnet::ResolveServerError),
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the

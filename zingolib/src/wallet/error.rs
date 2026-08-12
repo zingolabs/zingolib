@@ -151,11 +151,11 @@ pub enum WalletError {
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// Price error
-    #[error("price error. {0}")]
+    #[error("price error.")]
     PriceError(#[from] zingo_price::PriceError),
     /// Every source in the three-source race failed; the report names each
     /// source's typed failure with its cause chain.
-    #[error("price race failed. {0}")]
+    #[error("price race failed.")]
     RaceFailed(#[from] zingo_price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]

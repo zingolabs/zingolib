@@ -317,7 +317,8 @@ impl LightClient {
         match self.poll_sync() {
             PollReport::Ready(Err(e)) => {
                 let action = e.recovery_recommendation();
-                let description = e.to_string();
+                let description =
+                    zingo_net_diag::chain_texts(&e).join(super::migrate::CAUSE_CHAIN_SEPARATOR);
                 Some((action, description))
             }
             _ => None,

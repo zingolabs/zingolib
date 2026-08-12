@@ -2282,7 +2282,7 @@ fn immediate_migration_entry_gate(
 
 /// The separator between two layers of a rendered cause chain, matching the
 /// rendering `zingo_net_diag` gives its own failure records.
-const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
 
 /// Renders every layer of a failure's cause chain into the one text a batch
 /// report carries across serde.

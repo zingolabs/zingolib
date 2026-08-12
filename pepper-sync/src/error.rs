@@ -9,6 +9,21 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::wallet::OutputId;
 
+/// The separator between two layers of a rendered cause chain.
+pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+
+/// Renders `error` and every `source()` link as one separated line, so a log
+/// message keeps the whole cause chain.
+pub(crate) fn cause_chain_text(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut texts = vec![error.to_string()];
+    let mut link = error.source();
+    while let Some(cause) = link {
+        texts.push(cause.to_string());
+        link = cause.source();
+    }
+    texts.join(CAUSE_CHAIN_SEPARATOR)
+}
+
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError<E>

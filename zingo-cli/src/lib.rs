@@ -916,7 +916,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     ResolveServer(#[from] server_select_clearnet::ResolveServerError),
     /// The pinned `--server` is not a valid indexer URI.
     #[cfg(not(feature = "clearnet-test-mode"))]
-    #[error("invalid --server URI. {0}")]
+    #[error("invalid --server URI.")]
     IndexerUri(#[from] http::uri::InvalidUri),
     /// The pinned server misses its scheme, host, or port.
     #[error(
@@ -1189,9 +1189,10 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
             .await
             .map_err(|e| {
                 std::io::Error::other(format!(
-                    "Failed to start the Nym mixnet proxy: {e}. Mixnet Mode is required for a \
+                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
                      connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
                      or set $ZINGO_NYM_PROXY.",
+                    commands::render_error_chain(&e),
                 ))
             })?;
         info!(
@@ -1276,7 +1277,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         && filled_template.waitsync
         && let Err(e) = lightclient.await_sync().await
     {
-        eprintln!("error: {e}");
+        eprintln!("error: {}", commands::render_error_chain(&e));
     }
 
     Ok(lightclient)
@@ -1363,8 +1364,9 @@ async fn sweep_select_sync_indexer(
                 }
                 Err(e) => {
                     eprintln!(
-                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {e}. \
-                         This Sync Session does not open."
+                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {}. \
+                         This Sync Session does not open.",
+                        commands::render_error_chain(&e),
                     );
                     false
                 }
