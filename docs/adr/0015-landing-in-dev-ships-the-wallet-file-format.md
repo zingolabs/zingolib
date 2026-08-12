@@ -2,6 +2,8 @@
 
 ## Status
 Accepted. Supersedes the "never shipped" justification recorded in `4158e20c2`.
+Amended 2026-07-29: the readability guarantee is floored at `cc78c2358` (see
+the Amendment at the end of this document).
 
 ## Context
 zingolib supports users who build and run `dev`. No release gate stands between
@@ -105,3 +107,47 @@ wallet-file test that checks only recovery info proves nothing about the tail.
 The version-42 dual parse is permanent. It costs one buffered read of the file
 tail and a second parse of it on every load of a version-42 file. Until the
 next format bump, that is every file current code writes.
+
+## Amendment (2026-07-29): the readability floor
+
+The Format Census (issue #2590) falsified rule 1 as a statement of fact.
+Every format older than `cc78c2358` (2022-10-26, the WalletCapability
+inception) rejects or garbage-parses at `read_v0`'s opening
+`WalletCapability::read` — forty-one grammars, back through the inherited
+zecwallet lineage, that no current reader opens. Three younger windows
+misparse for one shared root cause, a sub-record grammar that changed while
+its version field stood still.
+
+The guarantee is scoped, not abandoned. Its floor is `cc78c2358`, the oldest
+grammar the modern reader ever opened.
+
+At or above the floor, rules 1–3 bind as written, and the three misparse
+windows are breaches owed fixes in the same arc that lands Format
+Recognition: dev-v40 files (2026-03-25 to 06-15, the unbounded `read_string`
+allocation abort), `cc78c2358`-era files (2022-10-26 to 11-08, the trailing
+encrypted-byte desync), and version-34 price files (2025-05-15 to 05-23, the
+api-key Optional shift). Each is restored by dispatching the read on the
+Recognition Verdict — identification by Defining Commit — rather than on the
+Wallet Version alone, which these windows prove insufficient.
+
+Below the floor, the promise is identification plus salvage: a pre-floor file
+receives a precise naming of its grammar by Defining Commit and, where its
+prefix permits, the salvage floor above. No pre-floor reader will be
+resurrected; readability restoration for any such format, if ever wanted,
+is its own decision.
+
+Recognition itself promises identification only, never readability (see
+Format Recognition in `zingolib/CONTEXT.md`): a recognized verdict does not
+imply the running build can load the file.
+
+Rule 3 extends to recognition (ratified 2026-07-29). A layout change lands
+in `dev` only together with its Format Recognition arm and the neighbor
+tests pinning its Discriminator, in the same change. Two standing tests
+enforce the extension. The fixture-corpus test asserts that every census
+fixture is recognized as exactly its own arm and no other, pinning the
+frozen grammars' transcriptions forever. The live round-trip tripwire
+serializes a wallet with the current writer and asserts the bytes are
+recognized as the newest arm: a writer change without its matching
+recognizer arm turns the build's own output unrecognizable and fails
+immediately, so the extension cannot be forgotten, only defeated on
+purpose.

@@ -61,7 +61,17 @@ testutils = []
 # no nym-sdk, so it resolves in the main workspace's lockfile. The wallet
 # enables this to route a transaction through the spawned nym-proxy's local
 # SOCKS5 port.
-socks5-transmit = ["dep:tokio-socks", "dep:hyper-util", "dep:tower", "dep:tokio"]
+socks5-transmit = [
+    "dep:tokio-socks",
+    "dep:hyper-util",
+    "dep:tower",
+    "dep:tokio",
+    # Transmit failures render their cause chains over the one sanctioned
+    # chain walk rather than a private copy of it. Std-only and
+    # zero-dependency, so it resolves in both this crate's own lockfile and
+    # the parent workspace's without coupling either.
+    "dep:zingo-net-diag",
+]
 nym = [
     "dep:nym-sdk",
     "dep:nym-http-api-client",
@@ -84,6 +94,10 @@ nym = [
 name = "nym-proxy"
 required-features = ["nym"]
 
+[[bin]]
+name = "live-indexer-discovery"
+required-features = ["nym"]
+
 [dev-dependencies]
 tokio-stream.workspace = true
 hyper-rustls.workspace = true
@@ -104,11 +118,7 @@ x509-parser.workspace = true
 # no zcash dependency, so its standalone graph carries no such pin.
 [workspace]
 resolver = "2"
-# The UniFFI proxy shim (ADR 0011 mobile amendment, CP-3): a cdylib/staticlib
-# that hosts NymProxy behind a UniFFI surface for mobile. A member so it shares
-# this standalone lockfile (where nym-sdk's crypto-common resolves without the
-# parent workspace's zcash pin).
-members = ["nym-proxy-ffi", "uniffi-bindgen", "webpki-verifier-shim"]
+members = ["webpki-verifier-shim"]
 
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the
@@ -144,11 +154,12 @@ x509-parser = "0.18"
 # (paired with the `rebuild-proto` feature above) and the time v0.3.47 pin.
 [patch.crates-io]
 time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
-# ADR 0021 (zingolib#2531): the mixnet shim's TLS verifies against the
-# compiled-in Mozilla bundle instead of rustls-platform-verifier's
-# OS-trust-store integration, which on Android demands JNI initialization
-# the shim's zero-unsafe invariant rules out. The stand-in lives in this
-# workspace under the upstream crate's name; see the ADR for the update
-# policy that keeps it tracking upstream.
+# ADR 0021 (zingolib#2531, amended 2026-08-10): this workspace's nym-stack
+# TLS verifies against the compiled-in Mozilla bundle instead of
+# rustls-platform-verifier's OS-trust-store integration, keeping
+# verification byte-identical on every platform and the workspace free of
+# hand-written unsafe. The stand-in lives in this workspace under the
+# upstream crate's name; see the ADR for the update policy that keeps it
+# tracking upstream.
 rustls-platform-verifier = { path = "webpki-verifier-shim" }
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }

@@ -548,12 +548,12 @@ use zcash_local_net::validator::Validator;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::perspective::value_transfer::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib::testutils::build_fvks_from_unified_keystore;
 use zingolib::wallet::error::CalculateTransactionError;
 use zingolib::wallet::output::SpendStatus;
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
-};
 
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
@@ -674,7 +674,9 @@ async fn test_scanning_in_watch_only_mode() {
             })
             .build()
             .unwrap();
-        let mut watch_client = LightClient::new(zingo_config, false).await.unwrap();
+        let mut watch_client = LightClient::new_clearnet_consented(zingo_config, false)
+            .await
+            .unwrap();
         // assert empty wallet before rescan
         let balance = watch_client
             .account_balance(zip32::AccountId::ZERO)
@@ -1691,10 +1693,13 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ClientConfig, DEFAULT_INDEXER_URI_TESTNET, WalletConfig},
+        config::{ChainType, ClientConfig, WalletConfig},
         lightclient::LightClient,
         testutils::{default_test_wallet_settings, tempfile::TempDir},
     };
+
+    /// The testnet indexer these wallet-load tests pin explicitly.
+    const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 
     #[ignore = "testnet cannot be run offline"]
     #[tokio::test]
@@ -1708,7 +1713,7 @@ mod testnet_test {
             let wallet_dir = TempDir::new().unwrap();
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
@@ -1740,7 +1745,7 @@ mod testnet_test {
             // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build()

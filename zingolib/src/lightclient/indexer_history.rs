@@ -183,7 +183,7 @@ pub struct IndexerAttempt {
     /// Seconds since the Unix epoch when the attempt finished.
     pub unix_secs: u64,
     /// The indexer host the attempt targeted.
-    pub host: String,
+    pub host: crate::correspondent::Host,
     /// The route the attempt used.
     pub route: AttemptRoute,
     /// Whether the attempt was a send or a probe.
@@ -192,6 +192,10 @@ pub struct IndexerAttempt {
     pub millis: u64,
     /// `Ok(())` on success, or the sanitized failure category.
     pub outcome: Result<(), FailureKind>,
+    /// Which party a failure is charged against, when the evidence says.
+    pub phase: Option<crate::correspondent::health::FailurePhase>,
+    /// The Exit Node the attempt rode, when it rode one.
+    pub exit: Option<crate::mixnet::ExitNodeId>,
 }
 
 impl IndexerAttempt {
@@ -201,24 +205,43 @@ impl IndexerAttempt {
             Err(kind) => format!("err {}", kind.as_str()),
         };
         format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             self.unix_secs,
-            flatten(&self.host),
+            flatten(self.host.as_str()),
             self.route.as_str(),
             self.kind.as_str(),
             self.millis,
+            self.phase.map_or("-", |phase| phase.as_str()),
+            self.exit
+                .as_ref()
+                .map_or("-".to_string(), |exit| flatten(exit.as_str())),
             outcome
         )
     }
 
     fn parse(line: &str) -> Option<Self> {
-        let mut fields = line.splitn(6, '\t');
-        let unix_secs = fields.next()?.parse().ok()?;
-        let host = fields.next()?.to_string();
-        let route = AttemptRoute::parse(fields.next()?)?;
-        let kind = AttemptKind::parse(fields.next()?)?;
-        let millis = fields.next()?.parse().ok()?;
-        let outcome = match fields.next()? {
+        let fields: Vec<&str> = line.split('\t').collect();
+        // A six-field line predates the phase and exit columns; it loads
+        // with neither rather than being skipped.
+        let (phase, exit, outcome_token) = match fields.len() {
+            6 => (None, None, fields[5]),
+            8 => (
+                (fields[5] != "-")
+                    .then(|| crate::correspondent::health::FailurePhase::parse(fields[5])),
+                match fields[6] {
+                    "-" => None,
+                    token => Some(crate::mixnet::ExitNodeId::parse(token).ok()?),
+                },
+                fields[7],
+            ),
+            _ => return None,
+        };
+        let unix_secs = fields[0].parse().ok()?;
+        let host = crate::correspondent::Host::of_host_str(fields[1]);
+        let route = AttemptRoute::parse(fields[2])?;
+        let kind = AttemptKind::parse(fields[3])?;
+        let millis = fields[4].parse().ok()?;
+        let outcome = match outcome_token {
             "ok" => Ok(()),
             other => Err(FailureKind::parse_or_classify(other.strip_prefix("err ")?)),
         };
@@ -228,6 +251,8 @@ impl IndexerAttempt {
             route,
             kind,
             millis,
+            phase,
+            exit,
             outcome,
         })
     }
@@ -254,6 +279,9 @@ pub(crate) fn now_unix_secs() -> u64 {
 pub struct IndexerHistoryHandle {
     path: Option<PathBuf>,
     recording: Arc<AtomicBool>,
+    /// The session's Health, updated by every attempt whatever the diary's
+    /// gates say, since a judgment kept in memory carries no at-rest risk.
+    health: Arc<std::sync::Mutex<crate::correspondent::health::Health>>,
 }
 
 impl IndexerHistoryHandle {
@@ -266,7 +294,14 @@ impl IndexerHistoryHandle {
                 .parent()
                 .map(|dir| dir.join("indexer-history.tsv")),
             recording: Arc::new(AtomicBool::new(false)),
+            health: Arc::default(),
         }
+    }
+
+    /// The session's Health, for the draws that consult it.
+    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
+    pub(crate) fn health(&self) -> &std::sync::Mutex<crate::correspondent::health::Health> {
+        &self.health
     }
 
     /// Turns recording on or off for every clone of this handle. A per-session
@@ -286,6 +321,11 @@ impl IndexerHistoryHandle {
     /// Best-effort by contract: an unwritable history must never fail the send
     /// or probe it describes, so I/O errors are swallowed after a log line.
     pub(crate) fn record(&self, attempt: &IndexerAttempt) {
+        self.health.lock().expect("health mutex").note(
+            &attempt.host,
+            attempt.outcome.is_err(),
+            attempt.phase,
+        );
         if !self.is_recording() {
             return;
         }
@@ -345,10 +385,16 @@ mod tests {
     fn an_attempt(host: &str, outcome: Result<(), FailureKind>) -> IndexerAttempt {
         IndexerAttempt {
             unix_secs: 1_700_000_000,
-            host: host.to_string(),
+            host: crate::correspondent::Host::of_host_str(host),
             route: AttemptRoute::Mixnet,
             kind: AttemptKind::Send,
             millis: 1234,
+            phase: outcome
+                .is_err()
+                .then_some(crate::correspondent::health::FailurePhase::Correspondent),
+            exit: Some(
+                crate::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses"),
+            ),
             outcome,
         }
     }
@@ -406,7 +452,7 @@ mod tests {
             .expect("diary file exists");
         assert_eq!(
             raw,
-            "1700000000\ta.example\tmixnet\tsend\t1234\terr rejected\n"
+            "1700000000\ta.example\tmixnet\tsend\t1234\tcorrespondent\texit-alpha\terr rejected\n"
         );
     }
 
@@ -504,7 +550,10 @@ mod tests {
 
         let loaded = handle.load();
         assert_eq!(loaded.len(), 2, "both records survive: {loaded:?}");
-        assert_eq!(loaded[0].host, "tab here and newline");
+        assert_eq!(
+            loaded[0].host,
+            crate::correspondent::Host::of_host_str("tab here and newline")
+        );
     }
 
     /// A corrupt tail (torn write) is skipped rather than poisoning the load.

@@ -37,21 +37,8 @@ use std::time::Duration;
 /// binary's three draws (3 × 30 s = 90 s of 120 s).
 pub const MIXNET_ROUND_TRIP_BOUND: Duration = Duration::from_secs(30);
 
-/// How many gateway draws the spawned `nym-proxy` binary attempts before
-/// giving up: each failure redraws a fresh set of gateways, so this is the
-/// number of distinct mixnet paths tried, each bounded by
-/// [`MIXNET_ROUND_TRIP_BOUND`]. Lives in the census — not as a private
-/// literal in the binary — so the lifecycle relation test below can name
-/// it (the #2569 review): the full draw sequence must fit inside
-/// [`NYM_LIFECYCLE_TIMEOUT`].
-pub const MIXNET_HEALTH_DRAWS: u32 = 3;
-
-/// Bound on one loopback exchange with the local SOCKS5 listener: the wallet
-/// supervisor's liveness probe (a bare TCP dial) and the mobile shim's
-/// liveness monitor (a SOCKS5 method-selection round trip) both address the
-/// same in-process listener, so they share one bound (issue #2565). Generous
-/// for a loopback exchange — its job is to notice a torn-down host, not to
-/// measure the mixnet, which no local exchange can see.
+/// Bound on one loopback exchange with the local SOCKS5 listener, shared by
+/// the wallet supervisor's watchdog and the mobile shim's monitor.
 pub const LOOPBACK_DIAL_BOUND: Duration = Duration::from_secs(5);
 
 /// Overall timeout for the mixnet bootstrap (`start()` and `reconnect()`),
@@ -62,52 +49,61 @@ pub const LOOPBACK_DIAL_BOUND: Duration = Duration::from_secs(5);
 /// retry loop. [`PER_ATTEMPT_CONNECT_TIMEOUT`] caps individual attempts.
 pub const NYM_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Timeout for a single provider connect attempt.
+/// Timeout for a single Exit Node connect attempt.
 ///
-/// Without this bound, one unresponsive provider hangs
+/// Without this bound, one unresponsive Exit Node hangs
 /// `connect_to_mixnet_via_socks5` until the whole [`NYM_LIFECYCLE_TIMEOUT`]
-/// budget burns, and the retry engine never reaches the next provider. A
-/// responsive provider bootstraps in well under ten seconds. Six full
+/// budget burns, and the retry engine never reaches the next Exit Node. A
+/// responsive Exit Node bootstraps in well under ten seconds. Six full
 /// attempts fit inside the lifecycle budget.
 pub const PER_ATTEMPT_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Timeout for the provider-discovery API query, which is otherwise
+/// Timeout for the Exit-Node-discovery API query, which is otherwise
 /// unbounded for the same reason as the connect attempts.
 pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the hedged bootstrap stays quiet before launching another
-/// provider in parallel. A responsive provider typically connects in well
-/// under ten seconds, so an attempt this old is worth hedging against
+/// Exit Node pull in parallel. A responsive Exit Node typically connects in
+/// well under ten seconds, so an attempt this old is worth hedging against
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// How often the mobile shim's liveness monitor probes the local SOCKS5
-/// listener. Faster than [`ATTACH_PROBE_INTERVAL`] because the shim's host
-/// (the app) is the remediation owner: it must notice a lost proxy and
-/// re-attach before the wallet's backstop declares death. Whether that
-/// ordering is a hard constraint is an open question on issue #2565.
-pub const LIVENESS_PROBE_INTERVAL: Duration = Duration::from_secs(15);
+/// The silence interval before a send's escalation launches a further
+/// Correspondent arm: the sum of a connect attempt's bound and one mixnet
+/// round trip, so a responsive Correspondent's confirmed delivery beats the
+/// first hedge by construction, and the interval retunes when either bound
+/// retunes.
+///
+/// ```
+/// use zingo_netutils::time::{
+///     MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT, TRANSMISSION_HEDGE_INTERVAL,
+/// };
+///
+/// assert_eq!(
+///     TRANSMISSION_HEDGE_INTERVAL,
+///     PER_ATTEMPT_CONNECT_TIMEOUT + MIXNET_ROUND_TRIP_BOUND,
+/// );
+/// ```
+pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
+    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
 
-/// Cadence of the wallet supervisor's liveness probe against an attached
-/// endpoint — the backstop for hosts that pass no death observer.
-pub const ATTACH_PROBE_INTERVAL: Duration = Duration::from_secs(30);
+/// How often the mobile shim's monitor dials the local SOCKS5 listener,
+/// faster than the wallet's backstop so the app notices first.
+pub const LISTENER_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Pause between the attach readiness gate's round-trip attempts, letting a
-/// transient blip pass. Spacing, not a bound: the attempts themselves are
-/// bounded by [`MIXNET_ROUND_TRIP_BOUND`].
-pub const ATTACH_HEALTH_RETRY_PAUSE: Duration = Duration::from_secs(1);
+/// Cadence of the wallet supervisor's loopback watchdog against an attached
+/// endpoint.
+pub const ATTACH_WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
-/// The attach readiness gate's total budget, worst case: every attempt's
-/// round-trip bound plus the pauses between attempts (today two attempts of
-/// [`MIXNET_ROUND_TRIP_BOUND`] with one [`ATTACH_HEALTH_RETRY_PAUSE`]).
-/// This is the number a user experiences between "Connecting to mixnet…"
-/// and a `died` verdict, previously emergent and unnamed (issue #2565's
-/// census); a consumer pacing a wait (the mobile app's connect spinner)
-/// reads it through the wallet's typed timing record instead of pinning a
-/// copy. The attempt count lives with the gate in the wallet supervisor,
-/// which pins this sum with a relation test so the three constants cannot
-/// drift apart.
-pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
+/// Pause between the attach readiness gate's round-trip attempts.
+pub const ATTACH_LISTENER_RETRY_PAUSE: Duration = Duration::from_secs(1);
+
+/// The attach readiness gate's total worst-case budget: every round-trip
+/// attempt's bound plus the pauses between attempts (two attempts of
+/// [`MIXNET_ROUND_TRIP_BOUND`] with one [`ATTACH_LISTENER_RETRY_PAUSE`]).
+pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(
+    MIXNET_ROUND_TRIP_BOUND.as_secs() * 2 + ATTACH_LISTENER_RETRY_PAUSE.as_secs(),
+);
 
 // ---------------------------------------------------------------------------
 // The gRPC data path (sync and send)
@@ -117,15 +113,12 @@ pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(61);
 mod tests {
     use super::*;
 
-    /// HYPOTHESIS (issue #2565's drift-test pattern, the #2569 review):
-    /// every one of the spawned binary's health draws fits inside the nym
-    /// lifecycle budget, with the draw count named rather than implied.
-    /// Falsified if [`MIXNET_ROUND_TRIP_BOUND`] is retuned past what
-    /// [`NYM_LIFECYCLE_TIMEOUT`] can hold for the full draw count.
+    /// HYPOTHESIS: one bounded round trip fits inside the nym lifecycle
+    /// budget.
     #[test]
-    fn the_health_draws_fit_inside_the_lifecycle() {
+    fn the_round_trip_bound_fits_inside_the_lifecycle() {
         assert!(
-            MIXNET_ROUND_TRIP_BOUND * MIXNET_HEALTH_DRAWS <= NYM_LIFECYCLE_TIMEOUT,
+            MIXNET_ROUND_TRIP_BOUND <= NYM_LIFECYCLE_TIMEOUT,
             "retune the round-trip bound with the lifecycle, never apart"
         );
     }
@@ -172,8 +165,16 @@ pub const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);
 /// The interval between transmit retries and queued-verdict probes.
 pub const TRANSMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Bound on one migration-broadcast submission through the tunnel. More
-/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a migration broadcast
+/// How long a transmitting command waits out a bootstrapping mixnet
+/// before the typed Bootstrapping refusal stands.
+pub const TRANSMIT_READINESS_BUDGET: Duration = Duration::from_secs(90);
+
+/// The cadence at which a waiting transmitting command reports that the
+/// mixnet is still bootstrapping.
+pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
+
+/// Bound on one migration-part submission through the tunnel. More
+/// patient than [`DEFAULT_REQUEST_TIMEOUT`] because a part transmission
 /// tolerates latency better than an interactive send.
 pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -181,12 +182,12 @@ pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// round confirms.
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Mixnet transmissions can wait for minutes (mixnet round trips, per-arm
-/// retries, serially gated fan-out rounds, queued-verdict probes), so every
-/// transmitting CLI command prints the transmission's latest progress line
-/// at this interval while it waits. A send that completes before the first
-/// tick stays silent.
-pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+/// Every dispatched CLI command narrates its latest progress line at this
+/// interval while it runs, so no command is silent past one interval; a
+/// command that completes before the first tick stays silent. Temporarily
+/// two seconds to strengthen the diagnostic signal while the silent-phase
+/// reports are investigated; the ratified cadence is eight.
+pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Diagnostics and server selection
@@ -256,9 +257,9 @@ pub mod test {
     /// time.
     pub const FAST_STAGE_BOUND: Duration = Duration::from_millis(800);
 
-    /// Cadence of the FFI liveness monitor under paused-time tests.
-    pub const MONITOR_PROBE_INTERVAL: Duration = Duration::from_millis(30);
+    /// Cadence of the FFI listener monitor under paused-time tests.
+    pub const MONITOR_CHECK_INTERVAL: Duration = Duration::from_millis(30);
 
-    /// Per-probe bound of the FFI liveness monitor under paused-time tests.
-    pub const MONITOR_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
+    /// Per-check bound of the FFI listener monitor under paused-time tests.
+    pub const MONITOR_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
 }

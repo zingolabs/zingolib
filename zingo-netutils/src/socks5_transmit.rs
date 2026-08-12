@@ -14,12 +14,13 @@
 //! rejection code and message), so a failed send distinguishes "the proxy
 //! child is dead" from "the mixnet exit refused this destination" from "the
 //! indexer itself said no". The caller decides what to do with a failure.
-//! [`Socks5TransmitError::is_failover_candidate`] offers the fan-out's
+//! [`Socks5TransmitError::is_failover_candidate`] offers the escalation's
 //! reading without discarding anything. [`get_lightd_info_via_socks5`]
 //! mirrors the clearnet probe through the same tunnel, pairing the two
 //! routes for diagnosis.
 #![forbid(unsafe_code)]
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -35,7 +36,7 @@ use lightwallet_protocol::{CompactTxStreamerClient, Empty, LightdInfo, RawTransa
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data
 /// (sources, elapsed times, codes, and messages), so the caller decides what
-/// to make of a failure. One reading, whether another Broadcast Indexer is
+/// to make of a failure. One reading, whether another Correspondent is
 /// worth trying, is offered as [`Self::is_failover_candidate`]. Nothing is
 /// flattened away to support it.
 #[derive(Debug, thiserror::Error)]
@@ -57,7 +58,7 @@ pub enum Socks5TransmitError {
     },
     /// The proxy accepted the dial but the SOCKS5 tunnel to the destination
     /// could not be established: the mixnet exit refused, could not reach, or
-    /// timed out on the destination, including a provider whose exit policy
+    /// timed out on the destination, including an Exit Node whose exit policy
     /// blocks the destination host or port.
     #[error("the mixnet exit could not reach {destination} ({source} after {elapsed:.1?})")]
     TunnelRefused {
@@ -86,7 +87,7 @@ pub enum Socks5TransmitError {
     /// rather than a response. The status is carried whole (code, message,
     /// and any transport source chain), and
     /// [`Self::is_failover_candidate`] reads its code as either a transport
-    /// failure worth another witness or a server verdict that is not.
+    /// failure worth another Correspondent or a server verdict that is not.
     #[error(
         "rpc to {destination} ended in status {code:?}: {message}",
         code = .status.code(),
@@ -113,8 +114,8 @@ pub enum Socks5TransmitError {
     },
     /// The indexer heard the submission and rejected it on its merits: a
     /// lightwalletd `SendResponse` with a nonzero error code, carried with
-    /// both its fields. Never a failover candidate, since another witness would
-    /// hear the same transaction and say the same.
+    /// both its fields. Never a failover candidate, since another
+    /// Correspondent would hear the same transaction and say the same.
     #[error("indexer rejected the transaction: {0}")]
     Rejected(#[from] SendRejection),
     /// The indexer URI is not https. Mixnet transmission is TLS-only so the
@@ -151,10 +152,11 @@ pub enum TunnelFailure {
 
 impl Socks5TransmitError {
     /// The failover policy's reading of this failure: whether submitting to
-    /// another Broadcast Indexer could plausibly succeed. A server verdict on
+    /// another Correspondent could plausibly succeed. A server verdict on
     /// the transaction ([`Self::Rejected`], or an [`Self::Rpc`] status whose
-    /// code is a verdict) is final, because every other witness would answer the
-    /// same, while every phase or transport failure is worth another arm.
+    /// code is a verdict) is final, because every other Correspondent would
+    /// answer the same, while every phase or transport failure is worth
+    /// another arm.
     /// This is one interpretation of the complete data above. The caller
     /// decides what to do with it.
     pub fn is_failover_candidate(&self) -> bool {
@@ -172,27 +174,24 @@ impl Socks5TransmitError {
     }
 }
 
+/// Separates one link of a rendered cause chain from the next in a transmit
+/// detail, which keeps every link on the one line.
+const TRANSMIT_CHAIN_SEPARATOR: &str = ": ";
+
 /// Renders `error` with its complete `source()` chain, which the top-level
 /// `Display` of transport errors (tonic's "transport error") otherwise hides.
 fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
-    let mut rendered = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        rendered.push_str(": ");
-        rendered.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    rendered
+    zingo_net_diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
 }
 
 /// How a post-tunnel RPC status reads for the failover policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StatusDisposition {
     /// The RPC ended without a server verdict (the tunnel, channel, or
-    /// deadline gave out), so another witness is worth trying.
+    /// deadline gave out), so another Correspondent is worth trying.
     Transport,
-    /// The server judged the request and said no. Another witness would
-    /// hear the same request and say the same.
+    /// The server judged the request and said no. Another Correspondent
+    /// would hear the same request and say the same.
     Verdict,
 }
 
@@ -200,7 +199,7 @@ enum StatusDisposition {
 /// asymmetry is deliberate: a verdict misread as transport merely costs a
 /// redundant arm (a duplicate submission already counts as success), while
 /// transport misread as a verdict suppresses exactly the failover the
-/// escalating fan-out exists for. Codes that are not clearly server verdicts
+/// escalation exists for. Codes that are not clearly server verdicts
 /// therefore read as transport, including `Unknown`, which tonic uses for
 /// mid-RPC connection failures (server-side rejections arrive as a
 /// `SendResponse` error code over this path, not as a status).
@@ -256,7 +255,7 @@ fn destination_of(indexer: &Uri) -> String {
 /// caller fail over to a different indexer. A server-side rejection yields
 /// [`Socks5TransmitError::Rejected`].
 pub async fn send_transaction_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     raw_tx: &[u8],
     height: u64,
@@ -292,7 +291,7 @@ pub async fn send_transaction_via_socks5(
 /// failures as the send path, so a probe diagnoses exactly what a send
 /// would hit.
 pub async fn get_lightd_info_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     timeout: Duration,
 ) -> Result<LightdInfo, Socks5TransmitError> {
@@ -319,7 +318,7 @@ pub async fn get_lightd_info_via_socks5(
 /// failure in a slot this function reads back in preference to tonic's
 /// rendering.
 async fn connect_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     timeout: Duration,
 ) -> Result<CompactTxStreamerClient<Channel>, Socks5TransmitError> {
@@ -344,6 +343,8 @@ async fn connect_via_socks5(
         .to_string();
     let port = indexer.port_u16().unwrap_or(443);
     let destination = format!("{host}:{port}");
+    // The one dial-string rendering: every socket address has exactly one
+    // dial form, and it is derived here alone, never by a caller.
     let socks5_addr = socks5_addr.to_string();
 
     let endpoint = Endpoint::from_shared(indexer.to_string())
@@ -356,7 +357,7 @@ async fn connect_via_socks5(
         // `connect_timeout` bounds the channel establishment — critically
         // the TLS handshake tonic runs on top of the SOCKS5 tunnel, which
         // the connector's own per-phase timeouts do not cover. Without this
-        // a witness that completes the tunnel but stalls the handshake
+        // a Correspondent that completes the tunnel but stalls the handshake
         // (observed: a lightwalletd on a non-standard port the mixnet exit
         // mishandles) hangs for minutes instead of failing over. The RPC
         // itself is deliberately NOT bounded here: tonic's channel timeout
@@ -448,7 +449,7 @@ async fn connect_via_socks5(
 /// its retries. A transport failure or an error status both read as "not
 /// known", so the result is a plain bool the caller treats as not-yet-delivered.
 pub async fn transaction_known_via_socks5(
-    socks5_addr: &str,
+    socks5_addr: SocketAddr,
     indexer: &Uri,
     txid_hash: &[u8],
     timeout: Duration,
@@ -481,13 +482,35 @@ mod tests {
         "https://indexer.example:443".parse().expect("static uri")
     }
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("the inner layer gave out")]
+    struct InnerLayer;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("the outer layer gave out")]
+    struct OuterLayer(#[source] InnerLayer);
+
+    /// HYPOTHESIS: this module renders a two-link cause chain exactly as the
+    /// one sanctioned chain walk does, so the rendering carries no private
+    /// copy of the walk. Falsified if the two renderings differ by a single
+    /// byte.
+    #[test]
+    fn the_chain_rendering_matches_the_sanctioned_walk() {
+        let error = OuterLayer(InnerLayer);
+
+        assert_eq!(
+            error_chain(&error),
+            zingo_net_diag::chain_texts(&error).join(": ")
+        );
+    }
+
     /// HYPOTHESIS: an RPC that never answers lands the typed timeout with the
     /// exact bound and destination, proven on paused time so no wall clock
     /// passes. Falsified if the elapse surfaces as any other variant or the
     /// record loses the bound. (The full tunnel-and-TLS path cannot stall in
     /// a unit test — the connector pins webpki roots by the https-only rule —
     /// so the bounding seam itself is the unit under test; the Android field
-    /// run of issue #2564 is the end-to-end witness.)
+    /// run of issue #2564 is the end-to-end evidence.)
     #[tokio::test(start_paused = true)]
     async fn a_stalled_rpc_lands_the_typed_timeout() {
         let outcome = bounded_rpc::<()>(
@@ -506,8 +529,9 @@ mod tests {
     }
 
     /// HYPOTHESIS: an elapsed client bound is typed as its own variant, reads
-    /// as a failover candidate (a slow round trip is worth another witness,
-    /// never a verdict), and renders the bound it carries. Falsified if the
+    /// as a failover candidate (a slow round trip is worth another
+    /// Correspondent, never a verdict), and renders the bound it carries.
+    /// Falsified if the
     /// variant is misread as final or loses the bound.
     #[test]
     fn a_timed_out_rpc_is_a_failover_candidate_and_names_its_bound() {
@@ -533,7 +557,7 @@ mod tests {
     /// HYPOTHESIS: an RPC status whose code is transport-shaped (the tunnel,
     /// channel, or deadline gave out without a server verdict) is a failover
     /// candidate. Falsified if any such code reads as final, which would
-    /// suppress exactly the failover the escalating fan-out exists for
+    /// suppress exactly the failover the escalation exists for
     /// (the PR #2470 review's finding M2).
     #[test]
     fn transport_shaped_statuses_are_failover_candidates() {
@@ -548,13 +572,13 @@ mod tests {
         ] {
             assert!(
                 an_rpc_error(code).is_failover_candidate(),
-                "{code:?} must be worth another witness"
+                "{code:?} must be worth another Correspondent"
             );
         }
     }
 
     /// HYPOTHESIS: an RPC status whose code is a server verdict is final, since
-    /// another witness would hear the same request and say the same.
+    /// another Correspondent would hear the same request and say the same.
     /// Falsified if a verdict code triggers pointless failover arms.
     #[test]
     fn verdict_statuses_are_not_failover_candidates() {
@@ -617,7 +641,7 @@ mod tests {
     }
 
     /// Every phase failure (proxy, tunnel, transport, scheme) stays a
-    /// failover candidate, the contract the fan-out relies on.
+    /// failover candidate, the contract the escalation relies on.
     #[test]
     fn phase_failures_are_failover_candidates() {
         let phases = [
@@ -651,12 +675,32 @@ mod tests {
     #[tokio::test]
     async fn a_non_https_indexer_is_refused() {
         let http = "http://indexer.example:9067".parse().expect("static uri");
-        let err = send_transaction_via_socks5("127.0.0.1:1", &http, b"tx", 1, MOCK_OP_BOUND)
+        let refused_port = "127.0.0.1:1".parse().expect("the static address parses");
+        let err = send_transaction_via_socks5(refused_port, &http, b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("http must be refused");
         assert!(
             matches!(err, Socks5TransmitError::InsecureScheme { .. }),
             "expected InsecureScheme, got: {err}"
+        );
+    }
+
+    /// HYPOTHESIS: the seam accepts the typed socket address a caller holds,
+    /// so no caller renders the address and the one dial-string rendering
+    /// lives inside the connector. Falsified if the call demands text.
+    #[tokio::test]
+    async fn the_seam_accepts_the_typed_address() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port");
+        let addr: std::net::SocketAddr = listener.local_addr().expect("local addr");
+        drop(listener);
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+            .await
+            .expect_err("no proxy is listening");
+        assert!(
+            matches!(err, Socks5TransmitError::ProxyUnreachable { .. }),
+            "expected ProxyUnreachable, got: {err}"
         );
     }
 
@@ -668,10 +712,10 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind an ephemeral port");
-        let addr = listener.local_addr().expect("local addr").to_string();
+        let addr = listener.local_addr().expect("local addr");
         drop(listener);
 
-        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("no proxy is listening");
         assert!(
@@ -691,14 +735,14 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind an ephemeral port");
-        let addr = listener.local_addr().expect("local addr").to_string();
+        let addr = listener.local_addr().expect("local addr");
         tokio::spawn(async move {
             while let Ok((socket, _)) = listener.accept().await {
                 drop(socket);
             }
         });
 
-        let err = send_transaction_via_socks5(&addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
+        let err = send_transaction_via_socks5(addr, &an_indexer(), b"tx", 1, MOCK_OP_BOUND)
             .await
             .expect_err("the handshake dies");
         assert!(

@@ -1,22 +1,59 @@
 # zingolib
 
-A Rust Zcash light-wallet library. The vocabulary below is the migration
-domain (ZIP 318, Orchard → Ironwood); it follows the ZIP's language, with
-gaps filled from the Shielded Labs migration-security recommendations.
+A Rust Zcash light-wallet library. The vocabulary below covers the
+migration domain (ZIP 318, Orchard → Ironwood), which follows the ZIP's
+language with gaps filled from the Shielded Labs migration-security
+recommendations, and the session's network posture.
 
 ## Language
+
+### Network vocabulary
+
+**Nym / mixnet (the seam rule)** (ratified 2026-08-11):
+The local SOCKS5 seam divides the vocabulary. Below the seam, "Nym"
+names the vendor stack: nym-sdk, the Nym directory and gateways, the
+`nym-proxy` binary, the `nym` cargo feature that compiles that stack
+in, and the `network` CLI command where a user names the network they
+trust. Above the seam, "mixnet" names the wallet's transport domain:
+`zingolib::mixnet`, Mixnet Mode, the slot, the route, the status
+channel, the probes, and the consent semantics.
+_Avoid_: "nym" for the wallet-side domain; "mixnet" for the vendor stack
+
+**Mobile platform** (ratified 2026-08-11):
+The embedding application layer on a subprocess-forbidding OS — the
+mobile app hosting the proxy shim — which implements `ProxyHost` below
+the seam and hands the wallet a ready SOCKS5 endpoint.
+_Avoid_: bare "platform" for this sense; the bare word stays only for
+the generic OS sense and for the desktop-or-mobile provisioning axis
+(ADR 0041's platform-typed session)
+
+### Command classes
+
+**Transmitting command**:
+A command whose execution emits mixnet-bound traffic: a transaction
+Transmission, the price fetch, or the mixnet probe. The Online consent
+covers exactly this class.
+_Avoid_: network command (conflates this class with sync-class commands)
+
+**Sync-class command**:
+A command that speaks only to the sync Indexer over the session route.
+It needs a configured Indexer, never the Online transmission consent.
+
+**Readiness budget**:
+The bounded time a transmitting command waits for a bootstrapping mixnet
+to become ready before the typed refusal stands.
 
 ### Migration paths
 
 **Immediate migration**:
 The non-private ZIP 318 option ("migrate immediately"): every spendable
 Orchard note swept into one Ironwood output per transaction, real amounts
-visible on-chain, broadcast at once.
+visible on-chain, transmitted at once.
 _Avoid_: drain
 
 **Scheduled migration**:
 The private ZIP 318 flow: note splitting into denominations, then parts
-broadcast across buckets.
+transmitted across buckets.
 
 **Note splitting**:
 Phase 1 of the scheduled flow: Orchard self-sends that resize notes to

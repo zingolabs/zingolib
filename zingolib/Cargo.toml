@@ -10,6 +10,10 @@ license = "MIT"
 
 [features]
 default = []
+# The editorial layer (`zingolib::perspective`). Off by default: a consumer
+# that wants the editorial layer opts in, and the default build proves core
+# stands without it.
+perspective = []
 nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 # Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
 # the wallet). Off by default; even when compiled, recording is a per-session
@@ -17,6 +21,7 @@ nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 # file is capped. Without this feature the handle is inert.
 nym-diary = []
 testutils = [
+    "perspective",
     "portpicker",
     "zingo_test_vectors",
     "tempfile",
@@ -85,13 +90,19 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
     "grpc_proxy_server",
 ], optional = true }
 tokio-stream = { workspace = true, optional = true }
-zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", version = "0.1.0-rc.1", default-features = false }
+# rev-pinned: the branch tip removed MIGRATION_MAX_DENOMINATION_ZEC and
+# RESIDUAL_MIGRATION_MIN, which wallet/migration/params.rs imports.
+zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", rev = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031", version = "0.1.0-rc.1", default-features = false }
 zingo-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
+# Self dev-dependency: activates these features for every test target, so
+# the feature-gated integration tests always compile and run in
+# package-scoped invocations instead of silently building empty binaries.
+zingolib = { path = ".", features = ["perspective", "testutils"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 # The nym tests read their temporal parameters from `time::test`.
 zingo-netutils = { workspace = true, features = ["testutils"] }

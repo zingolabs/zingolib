@@ -23,28 +23,28 @@ pub enum LightClientError {
     #[error("No sync handle. Sync is not running.")]
     SyncNotRunning,
     /// Sync error.
-    #[error("Sync error. {0}")]
+    #[error("Sync error.")]
     SyncError(#[from] SyncError<WalletError>),
     /// Sync mode error.
-    #[error("Sync mode error. {0}")]
+    #[error("Sync mode error.")]
     SyncModeError(#[from] SyncModeError),
     /// Send error.
-    #[error("Send error. {0}")]
+    #[error("Send error.")]
     SendError(#[from] SendError),
     /// gPRC client error.
-    #[error("gRPC client error. {0}")]
+    #[error("gRPC client error.")]
     ClientError(#[from] GetClientError),
     /// Indexer request error.
-    #[error("Indexer request error. {0}")]
+    #[error("Indexer request error.")]
     IndexerError(#[from] zingo_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),
     /// Wallet error.
-    #[error("Wallet error. {0}")]
+    #[error("Wallet error.")]
     WalletError(#[from] WalletError),
     /// Ironwood migration error.
-    #[error("Ironwood migration error. {0}")]
+    #[error("Ironwood migration error.")]
     MigrationError(#[from] MigrationError),
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
@@ -52,43 +52,54 @@ pub enum LightClientError {
     /// Price fetch error. Exists only in nym builds: the mixnet-only price
     /// rule leaves other builds with no fetch to fail.
     #[cfg(feature = "nym")]
-    #[error("Price fetch error. {0}")]
+    #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
     /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
     /// off. The opt-in route fails closed rather than falling back to clearnet
     /// (ADR 0011); use the clearnet default `update_current_price` instead, or
-    /// enable Mixnet Mode (`nym on`).
+    /// enable Mixnet Mode (`network on`).
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable it (`nym on`), or use the clearnet price fetch"
+         enable it (`network on`), or use the clearnet price fetch"
     )]
     PriceFetchRequiresMixnet,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
-    #[error("{0}")]
-    MixnetNotReady(#[from] crate::nym::MixnetNotReady),
-    /// The configured migration broadcast target shares the synchronization
-    /// endpoint's host, which would let that server correlate the wallet's
-    /// sync stream with its migration cohort (ADR 0011, 2026-07-23).
+    #[error(transparent)]
+    MixnetNotReady(#[from] crate::mixnet::MixnetNotReady),
+    /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
     #[cfg(feature = "nym")]
     #[error(
-        "the migration broadcast target '{host}' is the synchronization endpoint; migration \
-         parts never go to the sync server. Configure a different migration_broadcast_uri or \
-         remove it to use the Broadcast Indexer rotation."
+        "the mixnet liveness probe requires Mixnet Mode, which is off; \
+         enable it (`network on`) to probe Correspondents"
     )]
-    MigrationBroadcastTargetIsSyncEndpoint {
+    ProbeRequiresMixnet,
+    /// A probe target outside the one endpoint shape the mixnet exit
+    /// policy carries.
+    #[cfg(feature = "nym")]
+    #[error("probe targets must be https on port 443; got '{0}'")]
+    IneligibleProbeTarget(http::Uri),
+    /// The configured migration transmission target shares the
+    /// synchronization endpoint's host, which would let that server correlate
+    /// the wallet's sync stream with its migration cohort (ADR 0011,
+    /// 2026-07-23).
+    #[cfg(feature = "nym")]
+    #[error(
+        "the migration transmission target '{host}' is the synchronization endpoint; migration \
+         parts never go to the sync server. Configure a different migration_transmission_uri or \
+         remove it to use the Correspondent Rotation."
+    )]
+    MigrationTransmissionTargetIsSyncEndpoint {
         /// The host both endpoints share.
         host: String,
     },
-    /// Excluding the synchronization endpoint left no Broadcast Indexer to
-    /// carry migration parts over the mixnet.
+    /// No Correspondent remains to carry migration parts over the mixnet,
+    /// with the typed refusal saying whether exclusion or an empty pool
+    /// emptied the draw.
     #[cfg(feature = "nym")]
-    #[error(
-        "no eligible Broadcast Indexer remains after excluding the synchronization endpoint's \
-         host from the curated list"
-    )]
-    NoEligibleBroadcastIndexer,
+    #[error(transparent)]
+    NoEligibleCorrespondent(#[from] crate::correspondent::NoEligibleCorrespondents),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points
@@ -113,8 +124,8 @@ pub enum MigrationError {
     /// consented plan no longer describes what would be sent.
     #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
     ConsentStale,
-    /// The broadcast cadence can change only while every part is unsent.
-    #[error("Phase 2 has begun; the broadcast cadence can no longer change.")]
+    /// The transmission cadence can change only while every part is unsent.
+    #[error("Phase 2 has begun; the transmission cadence can no longer change.")]
     CadenceFixed,
     /// Note splitting kept producing new rounds past the round bound.
     #[error("Migration did not converge within {0} rounds.")]
@@ -136,14 +147,14 @@ pub enum MigrationError {
     /// The one-call immediate path found a consented scheduled migration
     /// and must not collapse its schedule.
     #[error(
-        "A consented scheduled migration is in progress. Let it run (auto broadcasting), advance \
+        "A consented scheduled migration is in progress. Let it run (auto transmitting), advance \
          it with catch-up, or cancel it before an immediate migration."
     )]
     ScheduledMigrationExists,
     /// The migration in progress belongs to a different account.
     #[error("The migration in progress belongs to a different account.")]
     DifferentAccount,
-    /// The Ironwood era is too young to hold a part. A part broadcasts in one
+    /// The Ironwood era is too young to hold a part. A part transmits in one
     /// bucket and anchors in a lower one, and both must sit above the NU6.3
     /// activation, so the earliest window that can hold a part opens two
     /// buckets above the activation's. Until then there is no legal anchor,
@@ -153,7 +164,7 @@ pub enum MigrationError {
          hold one opens at height {retry_after}. Retry after it."
     )]
     IronwoodEraTooYoung {
-        /// The first broadcast window boundary that can hold a part.
+        /// The first transmission window boundary that can hold a part.
         retry_after: zcash_protocol::consensus::BlockHeight,
     },
 }
@@ -161,10 +172,10 @@ pub enum MigrationError {
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
     /// Propose send error.
-    #[error("Propose send error. {0}")]
+    #[error("Propose send error.")]
     ProposeSendError(#[from] ProposeSendError),
     /// Propose shield error.
-    #[error("Propose shield error. {0}")]
+    #[error("Propose shield error.")]
     ProposeShieldError(#[from] ProposeShieldError),
     /// Failed to construct sending transaction.
     #[error("Failed to construct sending transaction. {0}")]
@@ -179,7 +190,7 @@ pub enum SendError {
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,
     /// Transmission error.
-    #[error("Transmission error. {0}")]
+    #[error("Transmission error.")]
     TransmissionError(#[from] TransmissionError),
 }
 

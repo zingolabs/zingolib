@@ -106,9 +106,11 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
-  # (ADR 0011) in zingolib and zingo-cli. It is off by default, so the
-  # --workspace jobs above never compile it; this job builds and lints the
-  # gated code and runs its deterministic, mixnet-free unit tests.
+  # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
+  # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
+  # code; zingolib's own default remains nym-off. This job adds the
+  # `nym-diary` combination, zingolib's gated tests, and the CLI's explicit
+  # opt-out build, whose refusal strings must keep compiling and rendering.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
     runs-on: ubuntu-24.04
@@ -147,6 +149,11 @@ jobs:
 
       - name: Doc-test zingolib under the nym features
         run: cargo test -p zingolib --features nym,nym-diary --doc
+
+      # The opt-out shape (`--no-default-features`, run-cli's `--clearnet`)
+      # must keep building, and its typed refusals must keep rendering.
+      - name: Test zingo-cli without the default nym feature
+        run: cargo test -p zingo-cli --no-default-features --lib
 
   run-doc-tests:
     name: Run doc tests

@@ -13,7 +13,7 @@
 //! localhost port and builds `LightClient`s pointed at it.
 //!
 //! Funding: a "faucet" is a [`SyntheticWalletBuilder`] wallet whose
-//! BUILT transactions (via the build-without-broadcast seam) are
+//! BUILT transactions (via the build-without-transmit seam) are
 //! cryptographically real: the recipient can decrypt and later spend
 //! their outputs once they are mined into mock blocks, because the mock
 //! appends every output to its commitment trees and the wallet's scan
@@ -906,7 +906,7 @@ impl MockNet {
             .expect("sapling-only address generation succeeds");
         // Mock-net clients run with Mixnet Mode switched on, so every
         // chain-mock send walks the fail-closed route resolver and the
-        // fan-out orchestration instead of quietly consenting to clearnet.
+        // escalation orchestration instead of quietly consenting to clearnet.
         // The address is never dialed: the transmit path pairs this slot
         // state with arms that submit over the mock indexer's channel.
         // Without the nym feature there is no mixnet and sends stay
@@ -918,7 +918,7 @@ impl MockNet {
     }
 }
 
-/// Builds (without broadcasting) one real transaction from a synthetic
+/// Builds (without transmitting) one real transaction from a synthetic
 /// faucet to the given receivers, returning its raw bytes, the mock
 /// chain's funding primitive. Each call uses a fresh faucet whose
 /// fabricated backing note never exists on the mock chain. Nothing

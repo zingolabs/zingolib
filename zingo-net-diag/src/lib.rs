@@ -66,7 +66,7 @@
 //! ```
 //!
 //! For a production producer in a Nym-touching context, see
-//! `zingolib::nym::socks5_transmit_stage`: a pure typed match that
+//! `zingolib::mixnet::socks5_transmit_stage`: a pure typed match that
 //! classifies every `Socks5TransmitError` variant into its stage with no
 //! substring inspection. For the consumer-visible payoff, see
 //! `LightClient::mixnet_death_detail`, which answers *why* the mixnet
@@ -81,12 +81,15 @@ use std::fmt;
 /// is kebab-case (`remote-tls`, `timed-out(25000ms)`) and is part of the
 /// stability contract described on [`NetOpFailure`]. Behind the `serde`
 /// feature the wire discriminant is minted from the same kebab tokens by
-/// `rename_all`, and zingolib's `nym::driver::wire_contract` pins every
+/// `rename_all`, and zingolib's `mixnet::driver::wire_contract` pins every
 /// variant's token against its `Display` rendering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum NetOpStage {
+    /// The local proxy binary exited during launch, before announcing its
+    /// protocol.
+    ProxyLaunch,
     /// Refused before any network touch: the mixnet route resolved to
     /// off, bootstrapping, or died, or a policy check refused the target.
     RouteResolution,
@@ -121,6 +124,7 @@ pub enum NetOpStage {
 impl fmt::Display for NetOpStage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            NetOpStage::ProxyLaunch => write!(f, "proxy-launch"),
             NetOpStage::RouteResolution => write!(f, "route-resolution"),
             NetOpStage::RemoteConnect => write!(f, "remote-connect"),
             NetOpStage::LocalProxyConnect => write!(f, "local-proxy-connect"),
@@ -224,6 +228,7 @@ mod tests {
     #[test]
     fn stage_rendering_is_the_pinned_kebab_case_contract() {
         let table = [
+            (NetOpStage::ProxyLaunch, "proxy-launch"),
             (NetOpStage::RouteResolution, "route-resolution"),
             (NetOpStage::RemoteConnect, "remote-connect"),
             (NetOpStage::LocalProxyConnect, "local-proxy-connect"),

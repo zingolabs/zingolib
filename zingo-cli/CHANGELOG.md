@@ -12,6 +12,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- A failed command renders its whole cause chain at the dispatch seam,
+  one `caused by:` line per source link, over the sanctioned
+  `zingo-net-diag` chain walk; the closing save's failure renders the
+  same way.
+- The commands whose failures are not yet typed now carry the failure
+  itself across the dispatch seam instead of its outermost line, so the
+  chain walk reaches their detail too. `quicksend` names the send
+  refusal that stopped it, and `current_price` reports the whole price
+  race, where both printed one bare summary line before.
+- **Breaking.** `--server` has no default value. An online session without
+  the flag configures no indexer at launch; the Server-Selection Sweep
+  binds one at startup for every online session, whether or not it syncs,
+  so an `--online --nosync` session still has an indexer for later
+  interactive sync and send. `--server` remains the explicit pin the sweep
+  surveys and never substitutes.
+- **Breaking.** The send-path vocabulary of ADRs 0036 and 0037 reaches the
+  CLI's output grammar. The mixnet route report's JSON key `witness` is now
+  `correspondent`, and `migrate auto`'s success key `broadcast` is now
+  `transmitted`. Progress narration says `correspondent <host>` and
+  `mixnet escalation`, and help text says transmit where it said broadcast.
+- **Breaking.** The `--no-mixnet` flag is retired. A connected session
+  runs the mixnet unconditionally and fails closed; clearnet carries
+  sync alone. The clearnet server-selection sweep now compiles only
+  under the non-default `clearnet-test-mode` feature, and a default
+  build resolves its indexer from `--server` without probing.
+- Every dispatched command now narrates its latest progress line to stderr
+  every eight seconds while it runs (`PROGRESS_HEARTBEAT_INTERVAL`), so no
+  command is silent past one interval. The narration moved from individual
+  command bodies to the dispatch seam, which reads every live progress
+  side channel (transmit, migration batch, drain, split, and mixnet
+  bootstrap). The transmit-family cadence therefore tightens from thirty
+  seconds to eight. A command finishing before the first tick stays
+  silent, as before.
+- **Breaking.** A deliberate `--offline` session is unliftable (ADR 0032).
+  The session offers no network-requiring command, the whole `network`
+  family included. Suppressed commands leave `help` and refuse if typed,
+  with exit code 1 in one-shot mode, and the refusal names the only exit:
+  relaunch without `--offline`. A launch notice states the contract. The
+  suppression is granular where a family splits: `migration` keeps its
+  stored-state subcommands (`plan`, `status`, `windows`, `cadence`,
+  `cancel`), and `sync`, `drain`, and `split` keep their non-emitting
+  subcommands.
+- **Breaking.** An unconsented session refuses network-requiring commands
+  at the dispatch gate instead of deep in a command body, and the refusal
+  names `network on` as the consent act. The `network` family stays
+  offered there, since `network on` is how consent is granted. `help`
+  reflects the live posture in every session.
+- **Breaking.** `network off` is a zero-emission teardown, not a mixnet
+  toggle (ADR 0032). It stops the nym proxy, drops the Indexer
+  connection, clears the Migration Broadcast Endpoint, and aborts
+  in-flight sync, returning only when teardown completes. The session
+  drops to the unconsented posture, so `network on` re-consents, and the
+  stored standing consent is untouched. The clearnet-transmit act is
+  retired: no CLI command routes Transmission or price-fetch over
+  clearnet.
+- The `servers` report is a Last Known report: it renders the launch
+  probe's ranking from session state and never probes.
 - **Breaking.** A failing command now renders exactly once, as `Error: …` on
   stderr, and one-shot mode exits nonzero. Both the message and the failure
   itself previously went to stdout with an exit code of 0, so a failed send was

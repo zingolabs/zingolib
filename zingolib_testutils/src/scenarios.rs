@@ -277,6 +277,22 @@ pub async fn sync_client_to_validator_tip<V, I>(
     sync_to_target_height(client, tip).await.unwrap();
 }
 
+/// Zebra's mempool rejection text for a spend of, or anchored at, the tip
+/// block; the leaf link of the send failure's cause chain carries it.
+const TIP_BLOCK_REJECTION: &str = "until the next chain tip block";
+
+/// Reports whether any link of `error`'s cause chain carries zebra's tip-block rejection text.
+fn rejects_tip_block_spend(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut link: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = link {
+        if current.to_string().contains(TIP_BLOCK_REJECTION) {
+            return true;
+        }
+        link = current.source();
+    }
+    false
+}
+
 /// The single lag-safe send primitive: sends `receivers` from `sender` in
 /// one transaction, then mines one block at a time (waiting for `sender`'s
 /// wallet to reach each new height) until the transaction is confirmed.
@@ -313,7 +329,7 @@ where
 {
     let txids = match from_inputs::quick_send(sender, receivers.clone()).await {
         Ok(txids) => txids,
-        Err(e) if e.to_string().contains("until the next chain tip block") => {
+        Err(e) if rejects_tip_block_spend(&e) => {
             // Tip-block spend rejected: separate from the tip and retry once.
             increase_height_and_wait_for_client(local_net, sender, 1)
                 .await
@@ -509,7 +525,9 @@ impl ClientBuilder {
         overwrite: bool,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_create_config(wallet_config);
-        let mut lightclient = LightClient::new(config, overwrite).await.unwrap();
+        let mut lightclient = LightClient::new_clearnet_consented(config, overwrite)
+            .await
+            .unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await
@@ -1007,20 +1025,6 @@ pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     (local_net, client_builder)
 }
 
-/// Records the deliberate clearnet consent a regtest scenario client needs
-/// before it may transmit. The five-state wallet refuses an unconsented
-/// send — a never-enabled client is Unattached, and absence is never
-/// consent (ADR 0011) — so a nym-feature build of these scenarios lands
-/// each sending client in SwitchedOff first, exactly as a `--no-mixnet`
-/// session would. Without the feature the wallet has no mixnet surface and
-/// nothing needs recording.
-#[cfg(feature = "nym")]
-async fn consent_to_clearnet(client: &mut zingolib::lightclient::LightClient) {
-    client.disable_mixnet().await;
-}
-#[cfg(not(feature = "nym"))]
-async fn consent_to_clearnet(_client: &mut zingolib::lightclient::LightClient) {}
-
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
@@ -1054,7 +1058,6 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
     let mut faucet = client_builder.build_faucet(true).await;
-    consent_to_clearnet(&mut faucet).await;
     let recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -1103,8 +1106,6 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
-    consent_to_clearnet(&mut recipient).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
@@ -1171,7 +1172,6 @@ pub async fn funded_transparent_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;

@@ -29,7 +29,7 @@ mod table_invariants {
     /// rather than any debug-only assertion.
     #[test]
     fn help_sections_agree_with_requires_wallet() {
-        let listing = format_help(None);
+        let listing = format_help(crate::CommunicationMode::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -121,10 +121,11 @@ mod table_invariants {
 }
 
 #[cfg(test)]
-mod transmit_heartbeat {
-    //! Paused-clock falsifiers for the transmit heartbeat's contract: silence
-    //! for fast transmissions, a narrated line on the ratified 20-40s cadence
-    //! for slow ones, always carrying the side channel's latest detail.
+mod progress_heartbeat {
+    //! Paused-clock falsifiers for the dispatch-seam progress heartbeat's
+    //! contract: silence for fast commands, a narrated line on the shared
+    //! eight-second cadence for slow ones, always carrying the side
+    //! channels' latest detail.
     //!
     //! Seam justification (ADR 0030): the `block_on` here is the one
     //! `#[tokio::test]` generates to drive each async test body; a test
@@ -134,19 +135,23 @@ mod transmit_heartbeat {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use zingo_netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
+
     use super::super::*;
 
-    /// HYPOTHESIS: a transmission finishing before the first tick emits
-    /// nothing, because the heartbeat must not add noise to a normal fast send.
+    /// HYPOTHESIS: a command finishing before the first tick emits nothing,
+    /// because the heartbeat must not add noise to a normal fast command.
     #[tokio::test(start_paused = true)]
-    async fn a_fast_transmission_stays_silent() {
+    async fn a_fast_command_stays_silent() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        let out = with_transmit_heartbeat(
+        let out = with_heartbeat(
             "confirm",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || Some("submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(zingo_netutils::time::test::SIMULATED_TRANSMIT),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL / 2),
         )
         .await;
         let () = out;
@@ -156,48 +161,57 @@ mod transmit_heartbeat {
         );
     }
 
-    /// HYPOTHESIS: a slow transmission is narrated on the interval cadence,
-    /// each line carrying the label, the side channel's latest detail, and
-    /// the elapsed seconds. Falsified if the wait stays silent or drops the
-    /// detail.
+    /// HYPOTHESIS: a slow command is narrated on the interval cadence, each
+    /// line carrying the label, the side channels' latest detail, and the
+    /// elapsed seconds. Falsified if the wait stays silent or drops the
+    /// detail. Expectations derive from the interval so the pin holds at
+    /// any ratified cadence.
     #[tokio::test(start_paused = true)]
-    async fn a_slow_transmission_heartbeats_the_latest_detail() {
+    async fn a_slow_command_heartbeats_the_latest_detail() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "confirm",
-            || Some("witness zec.rocks: submitting".to_string()),
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
+            || Some("correspondent zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(95)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
         .await;
         let lines = lines.lock().expect("line sink poisoned").clone();
-        assert_eq!(
-            lines,
-            vec![
-                "confirm: witness zec.rocks: submitting (30s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (60s elapsed)".to_string(),
-                "confirm: witness zec.rocks: submitting (90s elapsed)".to_string(),
-            ]
-        );
+        let expected: Vec<String> = (1..=3)
+            .map(|tick| {
+                format!(
+                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
+                    PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
+                )
+            })
+            .collect();
+        assert_eq!(lines, expected);
     }
 
-    /// An empty side channel still heartbeats, falling back to a generic
-    /// line rather than skipping the tick.
+    /// A phase that publishes no detail still heartbeats, falling back to
+    /// the generic line rather than going silent past an interval.
     #[tokio::test(start_paused = true)]
     async fn an_empty_side_channel_still_heartbeats() {
         let lines: Arc<Mutex<Vec<String>>> = Arc::default();
         let sink = lines.clone();
-        with_transmit_heartbeat(
+        with_heartbeat(
             "transmit",
+            PROGRESS_HEARTBEAT_INTERVAL,
+            "working",
             || None,
             move |line| sink.lock().expect("line sink poisoned").push(line),
-            tokio::time::sleep(Duration::from_secs(35)),
+            tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL + Duration::from_millis(500)),
         )
         .await;
         assert_eq!(
             lines.lock().expect("line sink poisoned").clone(),
-            vec!["transmit: transmitting (30s elapsed)".to_string()]
+            vec![format!(
+                "transmit: working ({}s elapsed)",
+                PROGRESS_HEARTBEAT_INTERVAL.as_secs()
+            )]
         );
     }
 }
@@ -539,34 +553,43 @@ mod typed_argument_parsing {
         assert!(parse(&["messages", "-1ZEC"]).is_err());
     }
 
-    /// HYPOTHESIS: every advertised `nym` subcommand parses in every build,
-    /// so a build without the feature refuses with the typed error instead
-    /// of a usage error.
+    /// HYPOTHESIS: the `network` command exists only with the mixnet
+    /// capability compiled in, so its subcommands parse there and nowhere
+    /// else.
+    #[cfg(feature = "nym")]
     #[test]
-    fn nym_subcommands_parse_in_every_build() {
+    fn network_subcommands_parse_with_the_capability() {
         assert_eq!(
-            parse(&["nym", "status"]).expect("nym status parses"),
-            CliCommand::Nym {
-                sub: Some(NymSubCommand::Status),
+            parse(&["network", "status"]).expect("network status parses"),
+            CliCommand::Network {
+                sub: Some(NetworkSubCommand::Status),
             }
         );
     }
+
+    /// HYPOTHESIS: the opt-out build's grammar has no `network` command,
+    /// so no command exists that could change the session's posture.
+    #[cfg(not(feature = "nym"))]
+    #[test]
+    fn network_is_absent_from_the_opt_out_grammar() {
+        assert!(parse(&["network", "status"]).is_err());
+    }
 }
 
-#[cfg(test)]
-mod nym_command_parsing {
-    //! Pins the clap derive grammar of the `nym` family and the pure
+#[cfg(all(test, feature = "nym"))]
+mod network_command_parsing {
+    //! Pins the clap derive grammar of the `network` family and the pure
     //! renderers whose strings every frontend shares.
 
     use super::super::*;
 
     #[cfg(feature = "nym")]
-    fn parse(args: &[&str]) -> Result<Option<NymSubCommand>, clap::Error> {
+    fn parse(args: &[&str]) -> Result<Option<NetworkSubCommand>, clap::Error> {
         use clap::Parser as _;
-        let line = std::iter::once("nym").chain(args.iter().copied());
+        let line = std::iter::once("network").chain(args.iter().copied());
         CommandLine::try_parse_from(line).map(|line| match line.command {
-            CliCommand::Nym { sub } => sub,
-            other => panic!("`nym` must parse to the nym family: {other:?}"),
+            CliCommand::Network { sub } => sub,
+            other => panic!("`network` must parse to the network family: {other:?}"),
         })
     }
 
@@ -575,8 +598,8 @@ mod nym_command_parsing {
     fn bare_parses_to_no_subcommand_and_status_to_status() {
         assert_eq!(parse(&[]).expect("a bare nym parses"), None);
         assert_eq!(
-            parse(&["status"]).expect("nym status parses"),
-            Some(NymSubCommand::Status)
+            parse(&["status"]).expect("network status parses"),
+            Some(NetworkSubCommand::Status)
         );
     }
 
@@ -584,12 +607,12 @@ mod nym_command_parsing {
     #[test]
     fn on_captures_the_optional_path() {
         assert_eq!(
-            parse(&["on"]).expect("bare nym on parses"),
-            Some(NymSubCommand::On { path: None })
+            parse(&["on"]).expect("bare network on parses"),
+            Some(NetworkSubCommand::On { path: None })
         );
         assert_eq!(
-            parse(&["on", "/opt/nym-proxy"]).expect("nym on with a path parses"),
-            Some(NymSubCommand::On {
+            parse(&["on", "/opt/nym-proxy"]).expect("network on with a path parses"),
+            Some(NetworkSubCommand::On {
                 path: Some("/opt/nym-proxy".to_string()),
             })
         );
@@ -606,11 +629,11 @@ mod nym_command_parsing {
     fn probe_parses_its_optional_target_and_rejects_junk() {
         assert_eq!(
             parse(&["probe"]).expect("bare probe parses"),
-            Some(NymSubCommand::Probe { target: None })
+            Some(NetworkSubCommand::Probe { target: None })
         );
         assert_eq!(
             parse(&["probe", "https://zec.rocks:443"]).expect("probe with a uri parses"),
-            Some(NymSubCommand::Probe {
+            Some(NetworkSubCommand::Probe {
                 target: Some("https://zec.rocks:443".parse().expect("static uri")),
             })
         );
@@ -619,32 +642,43 @@ mod nym_command_parsing {
             parse(&["probe", "http://zec.rocks:9067"]).is_err(),
             "a plaintext http target is refused: mixnet transmission is https-only"
         );
+        assert!(
+            parse(&["probe", "https://zec.rocks:9067"]).is_err(),
+            "an https target off port 443 is refused: the exit policy carries only 443"
+        );
         assert_eq!(
             parse(&["history"]).expect("history parses"),
-            Some(NymSubCommand::History)
+            Some(NetworkSubCommand::History)
         );
     }
 
-    /// HYPOTHESIS: the paired-probe rendering makes a mixnet-specific failure
-    /// legible at a glance: clearnet ok beside mixnet FAILED. Falsified if
-    /// either leg's outcome, timing, or the not-ready skip is dropped.
+    /// HYPOTHESIS: the mixnet-probe rendering carries the outcome, its
+    /// timing, and the typed failure's full text. Falsified if any of the
+    /// three is dropped.
     #[cfg(feature = "nym")]
     #[test]
-    fn paired_probe_renders_both_legs_side_by_side() {
+    fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{PairedProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
-        let tip = ProbeSuccess {
-            chain: "main".to_string(),
-            height: 3_420_400,
-        };
-        let mixnet_specific = PairedProbe {
-            host: "carover0.xyz".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip.clone()),
-                millis: 210,
+        let live = MixnetProbe {
+            host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
+            leg: ProbeLeg {
+                outcome: Ok(ProbeSuccess {
+                    chain: "main".to_string(),
+                    height: 3_420_400,
+                }),
+                millis: 180,
             },
-            mixnet: Some(ProbeLeg {
+        };
+        assert_eq!(
+            render_mixnet_probe(&live),
+            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+        );
+
+        let dead = MixnetProbe {
+            host: zingolib::correspondent::Host::of_host_str("carover0.xyz"),
+            leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
                     target: "carover0.xyz".to_string(),
@@ -654,24 +688,11 @@ mod nym_command_parsing {
                     ],
                 }),
                 millis: 20_000,
-            }),
-        };
-        assert_eq!(
-            render_paired_probe(&mixnet_specific),
-            "carover0.xyz\n  clearnet: ok in 210ms: chain main, height 3420400\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
-        );
-
-        let proxy_not_ready = PairedProbe {
-            host: "zec.rocks".to_string(),
-            clearnet: ProbeLeg {
-                outcome: Ok(tip),
-                millis: 180,
             },
-            mixnet: None,
         };
         assert_eq!(
-            render_paired_probe(&proxy_not_ready),
-            "zec.rocks\n  clearnet: ok in 180ms: chain main, height 3420400\n  mixnet:   skipped (mixnet proxy not ready)"
+            render_mixnet_probe(&dead),
+            "carover0.xyz\n  mixnet:   FAILED after 20000ms: failed at socks-handshake to carover0.xyz: the mixnet exit could not reach carover0.xyz:9067 (timed out after 20.0s)"
         );
     }
 
@@ -687,11 +708,13 @@ mod nym_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: host.to_string(),
+            host: zingolib::correspondent::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
+            phase: None,
+            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -710,26 +733,17 @@ mod nym_command_parsing {
         assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
 
-    #[cfg(not(feature = "nym"))]
-    #[test]
-    fn feature_absent_renders_byte_identically_to_the_replaced_string() {
-        assert_eq!(
-            NymCommandError::FeatureAbsent.to_string(),
-            "This build has no Nym mixnet support. Rebuild zingo-cli with `--features nym`."
-        );
-    }
-
-    /// Pins the `nym status` mode strings via the pure renderer.
+    /// Pins the `network status` mode strings via the pure renderer.
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(MixnetMode::Unattached, None, None),
             "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `nym on` to enable \
-             the mixnet, or `nym off` to use clearnet.",
+             clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
+             the mixnet, or `network off` to use clearnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(
@@ -753,20 +767,20 @@ mod nym_command_parsing {
         assert_eq!(
             render_status(MixnetMode::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
-             refuse and will not fall back to clearnet. Run `nym on` to restart the proxy.",
+             refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
              recover"
         );
     }
 
-    /// HYPOTHESIS: live bootstrap progress reaches the `nym status` line, so
+    /// HYPOTHESIS: live bootstrap progress reaches the `network status` line, so
     /// the connect race is narrated rather than an opaque wait. Falsified if
     /// the detail is dropped by the renderer. The detail is shown only while
     /// bootstrapping: a ready proxy has no bootstrap left to narrate.
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         assert_eq!(
             render_status(
@@ -784,7 +798,7 @@ mod nym_command_parsing {
         );
     }
 
-    /// HYPOTHESIS: `nym status` always carries the IP-correlation disclaimer in
+    /// HYPOTHESIS: `network status` always carries the IP-correlation disclaimer in
     /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
     /// protection while synchronization stays on clearnet (ZIP-0318). The mode
     /// line is preserved verbatim as the first line. Falsified if the
@@ -793,7 +807,7 @@ mod nym_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::MixnetMode;
 
         for mode in [
             MixnetMode::Unattached,
@@ -824,6 +838,131 @@ mod nym_command_parsing {
     }
 }
 
+#[cfg(all(test, feature = "nym"))]
+mod bootstrap_wait {
+    //! Falsifiers for the `network on` bootstrap wait's outcome reader over
+    //! the status subscription; the narration itself is the dispatch seam's
+    //! progress heartbeat, pinned in `progress_heartbeat`.
+    //!
+    //! Seam justification (ADR 0030): the `block_on` here is the one
+    //! `#[tokio::test]` generates to drive each async test body; a test
+    //! driver is a sync frontend, so it is an audited crossing.
+    #![allow(clippy::disallowed_methods)]
+
+    use zingolib::mixnet::{MixnetMode, MixnetStatus};
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    fn status(mode: MixnetMode) -> MixnetStatus {
+        MixnetStatus {
+            mode,
+            socks5_addr: None,
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: None,
+        }
+    }
+
+    /// HYPOTHESIS: the wait resolves `Ready` when the subscription reaches
+    /// the ready mode, carrying the bound Exit Nodes, even from an initial
+    /// unattached snapshot.
+    #[tokio::test]
+    async fn ready_resolves_the_wait_carrying_the_exits() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Bootstrapping))
+            .expect("the waiter holds the receiver");
+        tokio::task::yield_now().await;
+        let mut ready = status(MixnetMode::Ready);
+        let exit_alpha =
+            zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+        ready.exits = vec![exit_alpha.clone()];
+        tx.send(ready).expect("the waiter holds the receiver");
+        assert_eq!(
+            waiter.await.expect("the waiter must not panic"),
+            BootstrapOutcome::Ready {
+                exits: vec![exit_alpha]
+            }
+        );
+    }
+
+    /// HYPOTHESIS: the success report names each bound Exit Node, shortened
+    /// for the terminal, and stays silent when none was announced.
+    #[test]
+    fn exit_nodes_render_shortened_by_count() {
+        assert_eq!(super::super::render_exit_nodes(&[]), "");
+        let parsed = |identity: &str| {
+            zingolib::mixnet::ExitNodeId::parse(identity).expect("the test identity parses")
+        };
+        assert_eq!(
+            super::super::render_exit_nodes(&[parsed("short-exit")]),
+            " Exit Node bound: short-exit."
+        );
+        assert_eq!(
+            super::super::render_exit_nodes(&[
+                parsed("AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta"),
+                parsed("short-exit"),
+            ]),
+            " Exit Nodes bound: AlphaBetaGam…, short-exit."
+        );
+    }
+
+    /// HYPOTHESIS: a death during the wait resolves `Failed` with the died
+    /// report rather than hanging until a timeout.
+    #[tokio::test]
+    async fn death_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Died))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet transport died".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a fall back to unattached after bootstrapping began is a
+    /// failure, but the initial unattached snapshot is not — the wait must
+    /// survive subscribing before the driver flips to bootstrapping.
+    #[tokio::test]
+    async fn unattached_fails_only_after_bootstrapping_began() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        tx.send(status(MixnetMode::Unattached))
+            .expect("the waiter holds the receiver");
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the bootstrap ended in mode unattached".to_string()
+            }
+        );
+    }
+
+    /// HYPOTHESIS: a closed status channel resolves `Failed` instead of
+    /// waiting forever on a sender that will never speak again.
+    #[tokio::test]
+    async fn a_closed_channel_resolves_the_wait_as_failed() {
+        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let waiter = tokio::spawn(await_bootstrap_outcome(rx));
+        tokio::task::yield_now().await;
+        drop(tx);
+        let outcome = waiter.await.expect("the waiter must not panic");
+        assert_eq!(
+            outcome,
+            BootstrapOutcome::Failed {
+                report: "the mixnet status channel closed".to_string()
+            }
+        );
+    }
+}
+
 #[cfg(test)]
 mod offline_contract {
     //! The Offline-mode contract at the command surface (issue #2286,
@@ -846,18 +985,22 @@ mod offline_contract {
     //! Deliberately untested, with the reasoning on record: `drain now`,
     //! `split now`, and `migration catchup` refuse at the transmit stage,
     //! whose pre-flight `transmit` and `quicksend` pin below (each extra
-    //! case would buy another proving run, not another guarantee); `nym on`
-    //! and `nym probe` currently carry NO offline gate (they would emit
-    //! traffic from an Offline session — a known gap tracked for the ADR
-    //! 0024 session driver), and the REPL-owned `servers` command likewise
-    //! probes the network unguarded.
+    //! case would buy another proving run, not another guarantee).
+    //! `network probe` refuses offline and is pinned below. `network on`
+    //! is deliberately untested here: it is the consent act that switches
+    //! an offline session to Online Mode (ADR 0026), and both its indexer
+    //! selection and the proxy bootstrap emit real traffic. The REPL-owned
+    //! `servers` command still probes the network unguarded; that gap
+    //! remains open.
 
     #![allow(clippy::disallowed_methods)]
 
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+    use super::super::{
+        CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+    };
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -915,7 +1058,7 @@ mod offline_contract {
     fn assert_unblocked_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
         let rendered = match exec(client, command, args) {
             Ok(output) => output,
-            Err(error) => error.to_string(),
+            Err(error) => render_error_chain(&error),
         };
         assert!(
             !rendered.contains(OFFLINE_REFUSAL),
@@ -935,28 +1078,24 @@ mod offline_contract {
     }
 
     /// Asserts `command` refuses offline through its `Err` channel with the
-    /// typed Offline refusal.
+    /// typed Offline refusal, judged over the whole rendered chain.
     fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
         let error = exec(client, command, args).expect_err(command);
+        let rendered = render_error_chain(&error);
         assert!(
-            error.to_string().contains(OFFLINE_REFUSAL),
-            "`{command}` must refuse with the typed Offline error: {error}"
+            rendered.contains(OFFLINE_REFUSAL),
+            "`{command}` must refuse with the typed Offline error: {rendered}"
         );
     }
 
-    /// A build without the nym feature answers a well-formed `nym`
-    /// subcommand with the typed feature-absent refusal, not a usage error.
+    /// A build without the nym feature has no `network` command at all,
+    /// so the grammar itself refuses before any body could run.
     #[cfg(not(feature = "nym"))]
     #[test]
-    fn nym_refuses_with_the_typed_feature_absent_error() {
-        use super::super::NymCommandError;
-
-        let mut client = offline_client();
-        let error = exec(&mut client, "nym", &["status"]).expect_err("nym status must refuse");
-        assert!(matches!(
-            error,
-            CommandError::Nym(NymCommandError::FeatureAbsent)
-        ));
+    fn network_is_unknown_to_the_opt_out_build() {
+        let tokens: Vec<String> = ["network", "status"].map(String::from).into();
+        let error = parse_command_tokens(&tokens).expect_err("network status must refuse");
+        assert!(error.contains("unrecognized subcommand"), "{error}");
     }
 
     /// A fresh unified address from the wallet itself, so send-family tests
@@ -1231,13 +1370,27 @@ mod offline_contract {
             assert_unblocked_offline(&mut funded_offline_client(), "migration", &["windows"]);
         }
 
-        /// `nym status` reads the wallet's mode: an offline session never
+        /// `network status` reads the wallet's mode: an offline session never
         /// bootstraps the mixnet, so a fresh client reports unattached.
         #[cfg(feature = "nym")]
         #[test]
-        fn nym_status_reports_unattached() {
-            let output = assert_works_offline(&mut offline_client(), "nym", &["status"]);
+        fn network_status_reports_unattached() {
+            let output = assert_works_offline(&mut offline_client(), "network", &["status"]);
             assert!(output.contains("unattached"), "{output}");
+        }
+
+        /// `network probe` runs only over the mixnet route: a session whose
+        /// mixnet is unattached refuses with the mixnet refusal, never by
+        /// falling back to a clearnet probe.
+        #[cfg(feature = "nym")]
+        #[test]
+        fn network_probe_refuses_without_the_mixnet() {
+            let error = exec(&mut offline_client(), "network", &["probe"])
+                .expect_err("probe must refuse without the mixnet");
+            assert!(
+                error.to_string().contains("the Nym mixnet is not enabled"),
+                "the refusal names the mixnet state: {error}"
+            );
         }
 
         #[test]
@@ -1370,17 +1523,62 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
+    use pepper_sync::error::SyncModeError;
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
-    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+    use super::super::{
+        JSON_INDENT, MigrationCommandError, address_check_json, not_yet_typed, render_error_chain,
+        txids_json,
+    };
 
     /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
     /// "Error: " prefix, so the edge renderer adds it exactly once.
     #[test]
     fn not_yet_typed_renders_the_message_unprefixed() {
         assert_eq!(
-            not_yet_typed("no such wallet file").to_string(),
+            not_yet_typed(std::io::Error::other("no such wallet file")).to_string(),
             "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the wrapper carries the failure itself rather than its
+    /// outermost line, so the dispatch renderer walks the whole source
+    /// chain; a rendering that drops the innermost detail falsifies it.
+    #[test]
+    fn not_yet_typed_keeps_the_source_chain_renderable() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+        assert_eq!(
+            render_error_chain(&wrapped),
+            "Send error.\ncaused by: No proposal found in the wallet."
+        );
+    }
+
+    /// HYPOTHESIS: the dispatch seam renders a two-link cause chain exactly
+    /// as the one sanctioned chain walk joined by the seam's separator does,
+    /// so the seam keeps no private copy of the walk. Falsified if the two
+    /// renderings differ by a single byte.
+    #[test]
+    fn the_dispatch_rendering_matches_the_sanctioned_walk() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+
+        assert_eq!(
+            render_error_chain(&wrapped),
+            zingo_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+        );
+    }
+
+    /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
+    /// as its source, so the chain walk reaches the innermost detail; a
+    /// rendering that stops at the wrapper line falsifies it.
+    #[test]
+    fn migration_sync_failure_keeps_its_source_chain() {
+        let refused = MigrationCommandError::Sync(LightClientError::SyncModeError(
+            SyncModeError::SyncAlreadyRunning,
+        ));
+        assert_eq!(
+            render_error_chain(&refused),
+            "sync failed\ncaused by: Sync mode error.\ncaused by: sync is already running"
         );
     }
 
@@ -1453,7 +1651,7 @@ mod finding_pins {
     /// exists to drift.
     #[test]
     fn the_standalone_section_derives_from_requires_wallet() {
-        let listing = format_help(None);
+        let listing = format_help(crate::CommunicationMode::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1470,11 +1668,12 @@ mod finding_pins {
         assert_eq!(rendered, derived);
     }
 
-    const FAMILIES: [&str; 7] = [
+    const FAMILIES: &[&str] = &[
         "save",
         "settings",
         "sync",
-        "nym",
+        #[cfg(feature = "nym")]
+        "network",
         "migration",
         "drain",
         "split",
@@ -1484,8 +1683,8 @@ mod finding_pins {
     /// the grammar refuses.
     #[test]
     fn family_long_help_never_advertises_nested_help() {
-        for family in FAMILIES {
-            let help = format_help(Some(family));
+        for &family in FAMILIES {
+            let help = format_help(crate::CommunicationMode::Online, Some(family));
             assert!(
                 !help
                     .lines()
@@ -1517,8 +1716,8 @@ mod finding_pins {
     /// `help <family>` lists no bare names.
     #[test]
     fn family_sub_commands_all_carry_abouts() {
-        for family in FAMILIES {
-            let help = format_help(Some(family));
+        for &family in FAMILIES {
+            let help = format_help(crate::CommunicationMode::Online, Some(family));
             let listing = help
                 .split("Commands:")
                 .nth(1)
@@ -1590,20 +1789,162 @@ mod finding_pins {
         }
     }
 
-    /// HYPOTHESIS: in a build without the nym feature, a nym invocation
-    /// with arguments explains the feature is absent instead of grading
-    /// the arguments for a transport that was never compiled.
+    /// HYPOTHESIS: in a build without the nym feature the whole `network`
+    /// family sits outside the grammar, so an invocation with arguments
+    /// meets the unknown-command refusal and nothing ever grades them.
     #[cfg(not(feature = "nym"))]
     #[test]
-    fn nym_arguments_meet_the_absent_feature_not_the_grammar() {
+    fn network_arguments_meet_the_unknown_command_refusal() {
         use super::super::{CommandError, dispatch_parsed};
-        let rendered = match parse_command_tokens(&tokens(&["nym", "probe", "http://x.com"]))
-            .map_err(CommandError::NotYetTyped)
+        let rendered = match parse_command_tokens(&tokens(&["network", "probe", "http://x.com"]))
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
         {
             Ok(output) => output,
             Err(error) => error.to_string(),
         };
-        assert!(rendered.contains("no Nym mixnet support"), "{rendered}");
+        assert!(rendered.contains("unrecognized subcommand"), "{rendered}");
+    }
+}
+
+#[cfg(test)]
+mod posture_surface {
+    //! ADR 0032's rendered surface: `help` offers only what the live
+    //! posture leaves unsuppressed, and `network off` is a zero-emission
+    //! teardown, never a clearnet fallback.
+    #![allow(clippy::disallowed_methods)]
+
+    use crate::CommunicationMode;
+
+    use super::super::format_help;
+
+    /// HYPOTHESIS: a deliberate `--offline` help hides the whole
+    /// network-requiring surface, the network family included, while the
+    /// Indexerless surface stays listed.
+    #[test]
+    fn a_deliberate_offline_help_hides_the_network_requiring_surface() {
+        let listing = format_help(CommunicationMode::DeliberateOffline, None);
+        for hidden in [
+            "  confirm - ",
+            "  transmit - ",
+            "  rescan - ",
+            "  network - ",
+        ] {
+            assert!(
+                !listing.contains(hidden),
+                "{hidden:?} must be hidden from a deliberate offline help:\n{listing}"
+            );
+        }
+        for offered in ["  balance - ", "  send - ", "  migration - ", "  height - "] {
+            assert!(
+                listing.contains(offered),
+                "{offered:?} must stay offered:\n{listing}"
+            );
+        }
+    }
+
+    /// HYPOTHESIS: an unconsented session's help keeps the network family,
+    /// because `network on` is its consent act, while the rest of the
+    /// network-requiring surface stays hidden.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn an_unconsented_help_keeps_the_network_family() {
+        let listing = format_help(CommunicationMode::UnconsentedOffline, None);
+        assert!(listing.contains("  network - "), "{listing}");
+        assert!(!listing.contains("  confirm - "), "{listing}");
+    }
+
+    /// HYPOTHESIS: a suppressed command's long help reads as not found, so
+    /// the command has disappeared rather than gone forbidden-but-visible.
+    #[test]
+    fn a_suppressed_commands_long_help_is_not_found() {
+        assert_eq!(
+            format_help(CommunicationMode::DeliberateOffline, Some("confirm")),
+            "Command confirm not found"
+        );
+        assert!(
+            format_help(CommunicationMode::Online, Some("confirm")).contains("Usage:"),
+            "online help must still render the long help"
+        );
+    }
+
+    /// HYPOTHESIS: `network off` reports the minted teardown, leaves the
+    /// client Indexerless, and never mentions a clearnet fallback.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn network_off_tears_down_and_keeps_the_stored_consent() {
+        use zingolib::lightclient::LightClient;
+        use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+
+        let mut client = RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ));
+        let tokens: Vec<String> = ["network", "off"].map(String::from).into();
+        let report = parse_command_tokens(&tokens)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
+            .expect("network off succeeds offline");
+        assert!(report.contains("Network off"), "{report}");
+        assert!(report.contains("`--forget-online` erases it"), "{report}");
+        assert!(!report.contains("clearnet"), "{report}");
+        assert!(client.indexer_uri().is_none());
+    }
+}
+
+#[cfg(all(test, feature = "nym"))]
+mod attached_exit_reporting {
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    /// HYPOTHESIS: an attached endpoint that accepts TCP but carries no data
+    /// fails closed — the readiness gate is a round trip through the tunnel,
+    /// not a loopback dial, so a dead mixnet path never reports `Ready`.
+    /// Falsified if a listener that answers no gRPC reaches `Ready` (the
+    /// #2662 headline finding ran this red while the gate was a bare dial).
+    // Seam justification (ADR 0030): the block_on is the tokio::test
+    // harness's own crossing, not a new seam in the CLI.
+    #[tokio::test]
+    #[allow(clippy::disallowed_methods)]
+    async fn an_attached_endpoint_that_carries_no_data_fails_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("the bound listener has an address")
+            .to_string();
+        // A stand-in host that accepts the connection and answers nothing.
+        let host = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        let receiver = client.subscribe_mixnet_status();
+        client
+            .attach_mixnet(
+                &addr,
+                &[zingolib::mixnet::ExitNodeId::parse("host-bound-exit")
+                    .expect("the test identity parses")],
+            )
+            .await
+            .expect("a valid loopback address attaches");
+
+        let outcome = await_bootstrap_outcome(receiver).await;
+        host.abort();
+        match outcome {
+            BootstrapOutcome::Failed { .. } => {}
+            BootstrapOutcome::Ready { exits } => {
+                panic!("a data-dead endpoint must never reach Ready; got exits {exits:?}")
+            }
+        }
     }
 }

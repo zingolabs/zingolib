@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
@@ -383,6 +383,7 @@ pub async fn sync<C, P, W>(
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
+    progress: watch::Sender<Option<SyncStatus>>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
@@ -503,6 +504,8 @@ where
 
     expire_transactions(&mut *wallet.write().await)?;
 
+    publish_sync_status(&*wallet.read().await, &progress).await;
+
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -533,6 +536,7 @@ where
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                publish_sync_status(&*wallet_guard, &progress).await;
                 drop(wallet_guard);
             }
 
@@ -575,6 +579,7 @@ where
                         wallet_guard
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
+                        let _ = progress.send(Some(sync_status.clone()));
                         drop(wallet_guard);
                         mempool_handle.abort();
                         fetcher_handle.abort();
@@ -867,10 +872,11 @@ where
         total_ironwood_outputs,
     );
 
-    let session_blocks_scanned =
-        total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
+    let session_blocks_scanned = total_blocks_scanned
+        .saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
     let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
-        / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
+        / total_blocks.saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks)
+            as f32)
         * 100.0)
         .clamp(0.0, 100.0);
     if percentage_session_blocks_scanned.is_nan() {
@@ -882,18 +888,21 @@ where
         percentage_total_blocks_scanned = 100.0;
     }
 
-    let session_sapling_outputs_scanned = total_sapling_outputs_scanned
-        - sync_state
+    let session_sapling_outputs_scanned = total_sapling_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_sapling_outputs;
-    let session_orchard_outputs_scanned = total_orchard_outputs_scanned
-        - sync_state
+            .previously_scanned_sapling_outputs,
+    );
+    let session_orchard_outputs_scanned = total_orchard_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_orchard_outputs;
-    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned
-        - sync_state
+            .previously_scanned_orchard_outputs,
+    );
+    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_ironwood_outputs;
+            .previously_scanned_ironwood_outputs,
+    );
     let session_outputs_scanned = output_pool_total(
         session_sapling_outputs_scanned,
         session_orchard_outputs_scanned,
@@ -911,7 +920,7 @@ where
             .previously_scanned_ironwood_outputs,
     );
     let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
-        / (total_outputs - previously_scanned_outputs) as f32)
+        / total_outputs.saturating_sub(previously_scanned_outputs) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
     if percentage_session_outputs_scanned.is_nan() {
@@ -960,6 +969,16 @@ where
         total_outputs_scanned,
         total_outputs,
     })
+}
+
+/// Publishes the wallet's current sync status to the progress channel, ignoring an unreadable status and a closed channel.
+async fn publish_sync_status<W>(wallet: &W, progress: &watch::Sender<Option<SyncStatus>>)
+where
+    W: SyncWallet + SyncBlocks,
+{
+    if let Ok(status) = sync_status(wallet).await {
+        let _ = progress.send(Some(status));
+    }
 }
 
 /// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.
@@ -2393,7 +2412,10 @@ where
             }
             Err(e @ MempoolError::ShutdownWithoutStream) => return Err(e),
             Err(MempoolError::ServerError(e)) => {
-                tracing::warn!("Mempool stream request failed! Status: {e}.\nRetrying...");
+                tracing::warn!(
+                    "Mempool stream request failed! Status: {}.\nRetrying...",
+                    crate::error::cause_chain_text(&e)
+                );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
         }

@@ -2,11 +2,11 @@
 //!
 //! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
 //! Bucket `i` spans heights `[i·M, (i+1)·M)`. A part assigned to bucket `i`
-//! broadcasts while the chain is inside it.
+//! transmits while the chain is inside it.
 //!
-//! A part's *anchor* is a separate bucket from its broadcast window. The
+//! A part's *anchor* is a separate bucket from its transmission window. The
 //! anchor sits a canonically drawn age below the window, never zero
-//! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
+//! (`ANCHOR_AGE_CAP` bounds how far), so a part always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
 //! information, and because its window has closed, its ZIP 318 *cohort* (the
@@ -23,7 +23,7 @@ use crate::wallet::error::WalletError;
 use super::params::MigrationParams;
 use super::parts::{PartId, PartRecord, PartState};
 
-/// Draws the advisory broadcast target for one part from the canonical
+/// Draws the advisory transmission target for one part from the canonical
 /// transfer-delay law: the ZIP 318 exponential inter-arrival distribution
 /// (mean 144 blocks, capped at 576), offset from the part's window boundary
 /// (<https://zips.z.cash/zip-0318#transferscheduling>). The draw can land
@@ -64,17 +64,17 @@ use std::num::NonZeroU32;
 use rand::CryptoRng;
 use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 
-/// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
-/// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
-/// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
+/// The canonical ZIP 318 expiry for a transfer scheduled to transmit at
+/// `transmission_height`: the most recent multiple of `EXPIRY_MODULUS` at or
+/// below it, plus `EXPIRY_WINDOW`. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
-pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
+pub fn canonical_expiry_height(transmission_height: BlockHeight) -> BlockHeight {
     // Delegates to the canonical implementation; heights cross the git
     // dependency's type divide as u32, the workspace's standard insulation.
     BlockHeight::from_u32(u32::from(zcash_pool_migration::scheduling::expiry_height(
-        u32::from(broadcast_height).into(),
+        u32::from(transmission_height).into(),
     )))
 }
 
@@ -85,7 +85,7 @@ pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
 
 /// The boundary that opens `bucket_index`. It is the anchor height of every
 /// part whose *anchor bucket* this is, which is never the same bucket the
-/// part broadcasts in.
+/// part transmits in.
 pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
     BlockHeight::from_u32(
         u32::try_from(bucket_index * u64::from(bucket_modulus))
@@ -138,7 +138,7 @@ impl AnchorFloor {
         era.max(anchorability)
     }
 
-    /// The earliest broadcast window this part may be scheduled into: one
+    /// The earliest transmission window this part may be scheduled into: one
     /// bucket above its lowest legal anchor, because an anchor always sits
     /// at least one bucket below its window.
     ///
@@ -152,9 +152,9 @@ impl AnchorFloor {
     }
 }
 
-/// The anchor bucket for a part broadcasting in `window`: `window − a` for a
+/// The anchor bucket for a part transmitting in `window`: `window − a` for a
 /// canonically drawn age (`Geometric(1/2)`, never zero, capped at
-/// [`ANCHOR_AGE_CAP`]), redrawn until it clears `floor`.
+/// `ANCHOR_AGE_CAP`), redrawn until it clears `floor`.
 ///
 /// Delegates to the canonical
 /// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
@@ -203,7 +203,7 @@ pub fn first_permitted_bucket(
         .max(floor.earliest_window(params.bucket_modulus))
 }
 
-/// The first broadcast window boundary that can hold an Ironwood part at
+/// The first transmission window boundary that can hold an Ironwood part at
 /// all: two buckets above the Pool Activation's bucket, since the lowest
 /// legal anchor is the bucket above the activation's and a window sits a
 /// further bucket above its anchor.
@@ -242,7 +242,7 @@ fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
 ///
 /// Re-drawing the anchor here is what keeps the age honest. A part shifted
 /// into a later window while keeping an old anchor would silently age past
-/// [`ANCHOR_AGE_CAP`]; because every move lands here, none can.
+/// `ANCHOR_AGE_CAP`; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
 pub fn place(
     part: &mut PartRecord,
@@ -310,8 +310,8 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
     }
 }
 
-/// Assigns every [`PartState::Bound`] part to a broadcast window, draws its
-/// anchor below that window, and picks a random broadcast target inside it.
+/// Assigns every [`PartState::Bound`] part to a transmission window, draws its
+/// anchor below that window, and picks a random transmission target inside it.
 ///
 /// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
 /// share each *batch*. Batches fill consecutive buckets, largest
@@ -389,10 +389,10 @@ pub fn plan_schedule(
     Ok(())
 }
 
-/// One future broadcast window: what a platform scheduler (for example
+/// One future transmission window: what a mobile platform scheduler (for example
 /// `BGTaskScheduler` or `WorkManager`) feeds into its earliest-begin request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BroadcastWindow {
+pub struct TransmissionWindow {
     /// The bucket the parts are assigned to.
     pub bucket_index: u64,
     /// The bucket's opening boundary, also the parts' anchor height.
@@ -417,15 +417,15 @@ fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
-/// Whether a part is due to broadcast right now: it still awaits broadcast
+/// Whether a part is due to transmit right now: it still awaits transmission
 /// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open,
 /// meaning it is assigned to `current_bucket`, whose boundary is at or below the tip
 /// by definition. The part's random `target_height` no longer gates
 /// sendability. It is advisory, exposed only as the reminder hint
-/// [`BroadcastWindow::latest_target_unix_time`], so a part is due for the whole
+/// [`TransmissionWindow::latest_target_unix_time`], so a part is due for the whole
 /// open window rather than only from its target onward.
 ///
-/// The single-part rule shared by the broadcast loop and the "due now" status
+/// The single-part rule shared by the transmission loop and the "due now" status
 /// read, so a status can never advertise a part a send would decline. It does
 /// *not* fold in earlier, missed windows: an overdue part sits in a bucket
 /// below `current_bucket` and is catch-up's business.
@@ -434,7 +434,7 @@ pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
         && part.bucket_index == Some(current_bucket)
 }
 
-/// The broadcast windows within the next `horizon` buckets, soonest first.
+/// The transmission windows within the next `horizon` buckets, soonest first.
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has
 /// already passed are reconciliation's business and are not listed here.
@@ -444,7 +444,7 @@ pub fn upcoming_windows(
     now_unix: u64,
     horizon: u64,
     params: &MigrationParams,
-) -> Vec<BroadcastWindow> {
+) -> Vec<TransmissionWindow> {
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
     let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
@@ -469,7 +469,7 @@ pub fn upcoming_windows(
             // A part without a target (a catch-up shift) is due at the
             // window opening, which every in-window target is at or past.
             let latest_target = latest_target.unwrap_or(boundary + 1);
-            BroadcastWindow {
+            TransmissionWindow {
                 bucket_index: bucket,
                 boundary,
                 part_ids,
@@ -482,7 +482,7 @@ pub fn upcoming_windows(
 
 /// One window of the schedule's timeline: the bucket, its block range, and
 /// how far its parts have come. The rendering counterpart to
-/// [`BroadcastWindow`], which feeds platform schedulers strictly future
+/// [`TransmissionWindow`], which feeds mobile platform schedulers strictly future
 /// windows. This reports every window the schedule touches, finished ones
 /// included.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -613,7 +613,7 @@ mod tests {
     /// must not schedule any part whose *anchor* predates the activation.
     /// The window such an anchor belongs to would commit to a pre-NU6.3
     /// consensus branch, in which no Ironwood bundle exists, so every
-    /// broadcast attempt skips and the whole consented batch slides into the
+    /// transmission attempt skips and the whole consented batch slides into the
     /// correlation-disclosed catch-up path. Note splitting is explicitly
     /// permitted before activation (module doc), so a fully split wallet at a
     /// pre-activation consent height is a supported state.
@@ -647,7 +647,7 @@ mod tests {
             // activation without the floor being restated on it.
             assert!(
                 part.bucket_index.unwrap() > part.anchor_bucket.unwrap(),
-                "part {:?} must broadcast above the bucket it anchors in",
+                "part {:?} must transmit above the bucket it anchors in",
                 part.id,
             );
         }
@@ -656,7 +656,7 @@ mod tests {
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
     /// cap. The first bound is the age-never-zero rule: a part must never
-    /// prove against the boundary of the window it is broadcasting in,
+    /// prove against the boundary of the window it is transmitting in,
     /// because that boundary is the newest tree state there is and its
     /// cohort has not accumulated yet. The delegated `draw_anchor_boundary`
     /// enforces every one of these bounds now that the local rejection loop
@@ -880,9 +880,9 @@ mod tests {
     }
 
     /// The random target no longer gates sendability: a current-bucket part
-    /// awaiting broadcast is due for the whole open window, the exact case the
+    /// awaiting transmission is due for the whole open window, the exact case the
     /// old target-gated predicate rejected. Bucket membership plus
-    /// awaiting-broadcast state is the whole rule.
+    /// awaiting-transmission state is the whole rule.
     #[test]
     fn part_in_current_bucket_ignores_the_target_height() {
         let params = params();

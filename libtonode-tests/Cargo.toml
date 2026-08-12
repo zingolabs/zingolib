@@ -26,7 +26,7 @@ extra-credit-tests = ["sentinels", "unit_test_twins", "slow"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { workspace = true, features = ["testutils"] }
+zingolib = { workspace = true, features = ["perspective", "testutils"] }
 zingolib_testutils = { path = "../zingolib_testutils" }
 zcash_local_net = { workspace = true }
 http = { workspace = true }

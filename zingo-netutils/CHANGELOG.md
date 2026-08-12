@@ -7,9 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
+  and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
+  `std::net::SocketAddr` instead of a `&str`. The one dial-string
+  rendering now happens inside the connector, so callers pass the typed
+  address they already hold and never render it.
+
+### Removed
+
+- BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
+  helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
+  proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
+
 ### Added
 
+- The `responsiveness` module partitions network operations at compile
+  time: the sealed `Responsiveness` trait with the `Critical` and
+  `NonCritical` marker types, the `ResponsivenessClass` enum with
+  `wire`, `parse`, and `launch_policy`, and the
+  `RESERVATION_CLUTCH_SIZE` constant.
+- `LaunchPolicy::Saturating` launches the full clutch at once; a
+  Critical acquisition races under it.
+- The proxy binary accepts `--responsiveness <critical|non-critical>`
+  and defaults a bare invocation to critical.
+- `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
+  silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
+  MIXNET_ROUND_TRIP_BOUND` so a responsive Correspondent's confirmed
+  delivery beats the first hedge (ADR 0040).
+
 ### Changed
+
+- BREAKING: `NymProxy::start` and `NymProxy::start_with_progress` take
+  a `R: Responsiveness` type parameter that names the acquisition's
+  responsiveness class.
+- BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
+  `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
+  reservations, never an independent parameter (ADR 0035).
+- BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
+  `PullFailure` (was `ArmFailure`) carries an `arm` field (was
+  `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
+  `RaceAction::Launch`'s field is `arm`, and
+  `RaceAction::SetHedgeTimer` replaces `RaceAction::ArmHedgeTimer`
+  (whose "arm" was the verb, colliding with the bandit noun).
+  `RaceState::new` names its first parameter `arms`.
+- BREAKING: an acquisition races a Clutch the parent draws, never a crawl
+  it filters itself. `NymProxy::start_over` replaces
+  `start_with_progress` and takes the drawn exits; `NymProxy::start`
+  draws its own for a standalone run. The proxy binary takes repeated
+  `--exit <identity>` arguments in place of `--exclude-exit`, and gains
+  `--discover`, which prints the directory's Exit Nodes and exits — the
+  parent's one window onto a population it cannot query itself.
+  `MAX_EXIT_NODE_ATTEMPTS` and `NymProxyError::AllExitsExcluded` are
+  removed, the clutch being the race's whole width.
+- BREAKING: the census has no default server. `DEFAULT_INDEXER_URI`,
+  `DEFAULT_INDEXER_URI_TESTNET`, the `Indexer::default` field, and
+  `default_uri` are removed; a session either pins a server explicitly
+  or lets the Server-Selection Sweep select one.
+- BREAKING: the spawned binary's health gate is deleted. The bound Exit
+  Node and the SOCKS5 address are announced at bind time, end-to-end
+  verification belongs to the session's sweep, and `MIXNET_HEALTH_DRAWS`
+  and `indexers::MIXNET_HEALTH_INDEXER` are removed.
+- BREAKING: the periodic probe convention is retired. Attach readiness
+  and the recurring check are loopback dials only; the timing constants
+  rename accordingly: `LISTENER_MONITOR_INTERVAL` (was
+  `LIVENESS_PROBE_INTERVAL`), `ATTACH_WATCHDOG_INTERVAL` (was
+  `ATTACH_PROBE_INTERVAL`), and `ATTACH_LISTENER_RETRY_PAUSE` (was
+  `ATTACH_HEALTH_RETRY_PAUSE`), and `ATTACH_READINESS_BUDGET` retunes
+  from 61 s to 11 s.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `PrioritiseSpeed` (was `Critical`, saturating) and
+  `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker
+  types, the `ResponsivenessClass` variants, and the wire tokens
+  (`--responsiveness <prioritise-speed|prioritise-privacy>`). A class
+  names the acquisition's declared priority, never who waits.
+- BREAKING: the Exit Node vocabulary replaces "provider" throughout the
+  proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
+  gateway role, a false friend). `NymProxy::exit_node`,
+  `NymProxy::start_with_exit_node`, and `NymProxy::discover_exit_nodes`
+  replace `exit_provider`, `start_with_provider`, and
+  `discover_exit_providers`. `NymProxyError::NoExitNode` replaces
+  `NoProvider`, and the `AttemptTimeout` and `AttemptsExhausted`
+  `Display` renderings now say "exit node" where they said "provider".
+  `DiscoveredIndexer` and `DiscoveryFailure` carry `exit_node` (was
+  `exit_provider`).
 
 ### Removed
 
