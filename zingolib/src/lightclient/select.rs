@@ -150,7 +150,7 @@ impl LightClient {
         let mut surveyed_through = 0;
         let mut verdict: Option<Selection> = None;
         for wave in order.chunks(width) {
-            results.extend(survey(socks5_addr, wave.to_vec(), &self.indexer_history).await);
+            results.extend(survey(socks5_addr, wave.to_vec(), width, &self.indexer_history).await);
             surveyed_through += wave.len();
             progress(SweepProgress::Judging {
                 answered: results.iter().filter(|r| r.reported.is_some()).count(),
@@ -186,7 +186,8 @@ impl LightClient {
         } else {
             let history = self.indexer_history.clone();
             tokio::spawn(async move {
-                let _health_only = survey(socks5_addr, rest, &history).await;
+                let health_width = survey_tunnel_width(rest.len());
+                let _health_only = survey(socks5_addr, rest, health_width, &history).await;
                 // Exit Recycling: retiring the member kills the child and
                 // recycles its lease, so no later traffic rides the exit
                 // that observed the survey.
@@ -255,11 +256,11 @@ pub fn survey_tunnel_width(candidates: usize) -> usize {
 async fn survey(
     socks5_addr: std::net::SocketAddr,
     candidates: Vec<Uri>,
+    width: usize,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
     use futures::StreamExt as _;
     let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
-    let width = survey_tunnel_width(candidates.len());
     futures::stream::iter(candidates)
         .map(|uri| async move {
             let (reported, refusal) = probe_one(socks5_addr, &uri, timeout, history).await;

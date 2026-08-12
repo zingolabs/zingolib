@@ -33,8 +33,10 @@ const RPC: &str = "cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock";
 /// How long the proxy may bootstrap before the harness gives up.
 const BOOTSTRAP_BUDGET: Duration = Duration::from_secs(150);
 
-/// How long one bridged probe may take, matching the sweep's own leg budget.
-const PROBE_BUDGET: Duration = Duration::from_secs(30);
+/// How long one bridged probe may take: a hand-copied mirror of the
+/// sweep's `PROBE_LEG_TIMEOUT` (this dependency-free workspace cannot
+/// import it), retuned together with that constant.
+const PROBE_BUDGET: Duration = Duration::from_secs(20);
 
 /// How many rounds ride the same exit without `--rounds`.
 const DEFAULT_ROUNDS: usize = 2;
