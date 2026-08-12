@@ -688,14 +688,20 @@ fn parse_discovery_output(stdout: &str) -> HashSet<crate::mixnet::ExitNodeId> {
 
 /// Waits until the status channel reports Ready with an announced address
 /// and at least one bound exit, yielding both, or fails typed when the
-/// transport dies, the channel closes, or `budget` elapses.
+/// transport dies, the channel closes, `budget` elapses, or the first exit
+/// misses its grace after the address.
 pub(crate) async fn await_ready_endpoint(
     receiver: &mut tokio::sync::watch::Receiver<MixnetStatus>,
     budget: Duration,
 ) -> Result<(SocketAddr, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+    // The grace runs from the first addressed Ready, so a transport that
+    // latches Ready and never binds an exit is refused well inside the
+    // lifecycle budget instead of holding the user's go-online moment for
+    // the whole of it.
+    let mut exit_deadline: Option<tokio::time::Instant> = None;
     let outcome = tokio::time::timeout(budget, async {
         loop {
-            {
+            let addressed = {
                 let status = receiver.borrow_and_update();
                 match status.mode {
                     MixnetMode::Ready => {
@@ -706,16 +712,35 @@ pub(crate) async fn await_ready_endpoint(
                         if let (Some(addr), Some(_)) = (status.socks5_addr, status.exits.first()) {
                             return Ok((addr, status.exits.clone()));
                         }
+                        status.socks5_addr.is_some()
                     }
                     MixnetMode::Died => {
                         return Err(acquire::TransportError::DiedDuringBootstrap {
                             detail: status.death.as_ref().and_then(|death| death.detail.clone()),
                         });
                     }
-                    _ => {}
+                    _ => false,
                 }
+            };
+            if addressed && exit_deadline.is_none() {
+                exit_deadline = Some(
+                    tokio::time::Instant::now() + zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+                );
             }
-            if receiver.changed().await.is_err() {
+            let changed = match exit_deadline {
+                Some(deadline) => {
+                    match tokio::time::timeout_at(deadline, receiver.changed()).await {
+                        Ok(changed) => changed,
+                        Err(_elapsed) => {
+                            return Err(acquire::TransportError::NotReady {
+                                budget: zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+                            });
+                        }
+                    }
+                }
+                None => receiver.changed().await,
+            };
+            if changed.is_err() {
                 return Err(acquire::TransportError::StatusChannelClosed);
             }
         }
@@ -1378,6 +1403,40 @@ mod tests {
             "the waiter yields the exit announced after the address"
         );
         handle.abort();
+    }
+
+    /// HYPOTHESIS: a Ready that announces its address but never an Exit
+    /// Node refuses once the exit-announcement grace elapses, so the
+    /// go-online moment is not held for the whole lifecycle budget.
+    #[tokio::test(start_paused = true)]
+    async fn an_exitless_ready_refuses_after_the_grace() {
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        publisher.send_replace(MixnetStatus {
+            mode: MixnetMode::Ready,
+            socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: None,
+        });
+        let started = tokio::time::Instant::now();
+        let refusal =
+            await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT)
+                .await
+                .expect_err("no exit ever arrives");
+        assert!(
+            matches!(
+                refusal,
+                acquire::TransportError::NotReady { budget }
+                    if budget == zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE
+            ),
+            "the refusal names the grace it exceeded, got: {refusal}"
+        );
+        assert_eq!(
+            started.elapsed(),
+            zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+            "the wait ends at the grace, never at the lifecycle budget"
+        );
     }
 
     /// HYPOTHESIS: transport transitions are published into the session

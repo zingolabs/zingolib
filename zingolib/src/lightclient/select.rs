@@ -343,8 +343,9 @@ mod tests {
     }
 
     /// HYPOTHESIS: a transport that reaches Ready but never announces an
-    /// exit exceeds the bootstrap budget as a typed timeout, so an empty
-    /// announcement is a wait, never an ExitOutsideClutch refusal.
+    /// exit refuses as a typed timeout naming the exit-announcement grace,
+    /// so an empty announcement is a bounded wait, never an
+    /// ExitOutsideClutch refusal and never the whole lifecycle budget.
     /// Falsified if the waiter yields the empty announcement to the bind.
     #[tokio::test(start_paused = true)]
     async fn a_ready_that_never_announces_an_exit_times_out() {
@@ -355,8 +356,12 @@ mod tests {
             .await
             .expect_err("no exit ever arrives");
         assert!(
-            matches!(refusal, ServerSelectionError::TransportTimeout { .. }),
-            "an exitless Ready exhausts the budget as a timeout, got: {refusal}"
+            matches!(
+                refusal,
+                ServerSelectionError::TransportTimeout { budget }
+                    if budget == zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE
+            ),
+            "an exitless Ready refuses at the grace, got: {refusal}"
         );
     }
 
