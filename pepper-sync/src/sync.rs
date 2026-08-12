@@ -2845,11 +2845,11 @@ mod test {
     }
 
     /// The session-progress contract of [`crate::sync::sync_status`]
-    /// under a stale initial sync state, where the recorded
+    /// under a stale initial sync state, whose recorded
     /// previously-scanned counts stand at or above the whole span the
-    /// wallet can scan. The session denominator then saturates to
-    /// zero, no session ratio exists, and the status must fall back to
-    /// the wallet's total progress rather than claim completion.
+    /// wallet can scan, saturating the session denominator to zero and
+    /// obliging the status to report the wallet's total progress
+    /// rather than claim completion.
     mod sync_status_stale_initial_state {
         use std::collections::BTreeMap;
 
