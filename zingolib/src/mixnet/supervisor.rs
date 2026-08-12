@@ -406,7 +406,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        match zingo_netutils::get_lightd_info_via_socks5(
+        match zingo_netutils::get_latest_block_via_socks5(
             socks5_addr,
             &indexer,
             MIXNET_ROUND_TRIP_BOUND,

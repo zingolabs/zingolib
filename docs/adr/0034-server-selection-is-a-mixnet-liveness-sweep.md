@@ -93,3 +93,25 @@ transmissions-are-probes Health economy. The sweep itself gains a
 ratified second role: it is the session's baseline health probe, the
 last probe-only act a session performs. The judgment this record calls
 liveness is since named Health in the glossary.
+
+## Addendum (2026-08-12)
+
+Four rulings from the sweep-failure investigation amend the mechanism.
+First, the survey's probe is `GetLatestBlock`, the lightest tip call an
+indexer answers, replacing `GetLightdInfo`; the liveness judgment rests
+on the height tolerance alone, and the census's chain partition carries
+the chain distinction. Second, the user's pinned clearnet sync indexer
+(`--sync-server`, renamed from `--server`, which survives as an alias)
+rides the survey and is chosen when it answers; a pin the survey found
+unresponsive is reported with the sweep's verdict offered as the
+alternative, and a sweep whose own transport failed is never charged
+against the pin, so a dead exit draw cannot close a pinned session's
+Sync Session. The DeadPin outcome is gone. Third, the survey bounds its
+fan-out: all candidates once rode one exit's packet pipeline
+concurrently, which saturated it and produced the all-or-nothing
+0-of-17 signature, so the width is now a bounded function of the census
+size, calibrated identically for spawned desktop binaries and the
+in-process client the mobile platforms host. Fourth, the survey stops
+discarding why probes fail: refusals carry the diary's failure kinds,
+and an empty cohort tallies its causes in its own rendering, so a
+saturated transport reads differently from dead indexers.

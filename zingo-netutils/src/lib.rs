@@ -98,7 +98,7 @@ pub mod live_indexer_discovery;
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
 pub use socks5_transmit::{
-    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
+    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_latest_block_via_socks5,
     send_transaction_via_socks5, transaction_known_via_socks5,
 };
 

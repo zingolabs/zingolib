@@ -15,7 +15,6 @@ use std::time::Duration;
 use http::Uri;
 
 use super::LightClient;
-use crate::mixnet::probe::ProbeSuccess;
 use crate::mixnet::sweep::{self, Selection, SurveyResult, SweepError};
 
 /// Two blocks: the height tolerance around the observed median that counts
@@ -89,19 +88,17 @@ impl LightClient {
     /// operator, and the height-ordered live cohort.
     ///
     /// `binary_path` is the `nym-proxy` binary the dedicated sweep proxy
-    /// spawns from. `pin` is an explicit user server: it is surveyed like any
-    /// candidate and selected when live, and its absence from the live cohort
-    /// fails [`SweepError::DeadPin`] rather than falling back to the draw.
+    /// spawns from. A pinned clearnet sync indexer never enters a sweep: the
+    /// caller holds it out of `candidates`, and the pin binds for sync by
+    /// the user's own selection.
     ///
     /// The sweep proxy is dropped before this returns, recycling its exit.
     pub async fn run_server_selection_sweep(
         &self,
         binary_path: &Path,
         candidates: &[Uri],
-        pin: Option<&Uri>,
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
-        let chain = lightd_chain_name(&self.chain_type());
         // A dedicated status channel: the sweep proxy's lifecycle is private
         // to this call and must not touch the session's mixnet status.
         let publisher = crate::mixnet::status_publisher();
@@ -153,13 +150,9 @@ impl LightClient {
             surveyed: results.len(),
         });
 
-        let selection = sweep::select(
-            &results,
-            chain,
-            SWEEP_HEIGHT_TOLERANCE,
-            pin,
-            &mut rand::rngs::OsRng,
-        );
+        // The pin-free judgment (tip_probe_primitive) held rather than
+        // propagated (readiness_exit_contract): both merged rules apply.
+        let selection = sweep::select(&results, SWEEP_HEIGHT_TOLERANCE, &mut rand::rngs::OsRng);
 
         // Exit Recycling: retiring the member kills the child and recycles
         // its lease, so no later traffic rides the exit that observed the
@@ -169,16 +162,6 @@ impl LightClient {
         // death is confirmed. Retiring here covers every post-bind exit.
         member.retire().await;
         selection.map_err(ServerSelectionError::Selection)
-    }
-}
-
-/// The chain name a `GetLightdInfo` reply carries for `chain`, the
-/// vocabulary the survey's liveness judgment must compare against.
-fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
-    match chain {
-        crate::config::ChainType::Mainnet => "main",
-        crate::config::ChainType::Testnet => "test",
-        crate::config::ChainType::Regtest(_) => "regtest",
     }
 }
 
@@ -239,27 +222,21 @@ async fn survey(
     .await
 }
 
-/// One candidate's survey: `GetLightdInfo` over the sweep exit, its success
-/// mapped to the reported chain and height, any failure to `None`.
+/// One candidate's survey: `GetLatestBlock` over the sweep exit, its success
+/// mapped to the reported tip height, any failure to `None`.
 async fn probe_one(
     socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
-) -> Option<ProbeSuccess> {
+) -> Option<u64> {
     use crate::lightclient::indexer_history::{
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = crate::correspondent::Host::of_uri(uri);
-    let result = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, uri, timeout).await;
+    let result = zingo_netutils::get_latest_block_via_socks5(socks5_addr, uri, timeout).await;
     let (reported, outcome) = match &result {
-        Ok(info) => (
-            Some(ProbeSuccess {
-                chain: info.chain_name.clone(),
-                height: info.block_height,
-            }),
-            Ok(()),
-        ),
+        Ok(tip) => (Some(tip.height), Ok(())),
         Err(error) => (None, Err(FailureKind::classify(&error.to_string()))),
     };
     history.record(&IndexerAttempt {
@@ -282,35 +259,6 @@ async fn probe_one(
 mod tests {
     use super::*;
     use crate::mixnet::MixnetMode;
-
-    /// HYPOTHESIS: the judgment compares against the wire's chain
-    /// vocabulary (`main`, `test`, `regtest`), never `ChainType`'s own
-    /// rendering (`mainnet`). Falsified if the mapping drifts back to the
-    /// Display form, which emptied a 17-of-17 mainnet cohort on 2026-08-06.
-    #[test]
-    fn the_judgment_speaks_the_wire_chain_vocabulary() {
-        use zingo_common_components::protocol::ActivationHeights;
-
-        assert_eq!(
-            lightd_chain_name(&crate::config::ChainType::Mainnet),
-            "main"
-        );
-        assert_eq!(
-            lightd_chain_name(&crate::config::ChainType::Testnet),
-            "test"
-        );
-        assert_eq!(
-            lightd_chain_name(&crate::config::ChainType::Regtest(
-                ActivationHeights::default()
-            )),
-            "regtest"
-        );
-        assert_ne!(
-            lightd_chain_name(&crate::config::ChainType::Mainnet),
-            crate::config::ChainType::Mainnet.to_string(),
-            "the Display form is not the wire form"
-        );
-    }
 
     /// The status a died sweep proxy publishes, carrying `detail` as its
     /// latched typed cause.

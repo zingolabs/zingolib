@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** The `--server` flag is renamed `--sync-server`, naming what
+  the pin is: a clearnet sync indexer, selected by the user. The old
+  spelling survives as a visible alias, so existing command lines keep
+  working. The pin rides the Server-Selection Sweep's survey and is chosen
+  when it answers; a pin the survey found unresponsive is reported with the
+  sweep's verdict offered as the alternative, and a sweep whose own
+  transport failed never counts against the pin. The messages say "pinned
+  clearnet sync indexer" where they said "pinned server".
+- **Breaking.** `network probe` wraps the single `GetLatestBlock` RPC, the
+  same tip call the Server-Selection Sweep surveys with, and reports the
+  tip height alone: there is no chain name in the reply to print.
 - A failed command renders its whole cause chain at the dispatch seam,
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the

@@ -76,6 +76,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
   refusal is the existing `NotReady` variant, carrying the grace as the
   budget it exceeded.
+- BREAKING: every probe wraps the single `GetLatestBlock` RPC. The mixnet
+  probe leg, the staged sync-path probe, and the attach readiness round
+  trip all probe the tip, the same primitive the sweep surveys with.
+  `mixnet::probe::ProbeSuccess` loses its `chain` field and carries the
+  tip height alone, and `SyncProbeStep::GrpcInfo` is renamed `GrpcTip`,
+  rendering `grpc-tip`.
+- BREAKING: the Server-Selection Sweep no longer knows a pin, and its
+  survey probes with `GetLatestBlock` instead of `GetLightdInfo`.
+  `lightclient::select::run_server_selection_sweep` loses its `pin`
+  parameter; `mixnet::sweep::select` and `live_cohort` lose their `pin`
+  and `chain` parameters; `SweepError::DeadPin` is removed; and
+  `mixnet::sweep::SurveyResult::reported` carries the bare tip height.
+  The judgment rests on the height tolerance alone. A pinned server rides
+  the candidate list like any other, and the caller judges the pin against
+  the returned cohort: it is chosen when it answered, and an unanswered pin
+  is reported with the sweep's verdict offered as the alternative.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and

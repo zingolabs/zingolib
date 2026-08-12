@@ -1,27 +1,30 @@
 //! Connectivity probes: the mixnet indexer probe and the staged sync-path
 //! probe.
 //!
-//! The mixnet probe runs `GetLightdInfo` against an indexer through the
-//! session's SOCKS5 proxy: it establishes an indexer's liveness over the
-//! mixnet, the precondition every sync attach requires (the 2026-08-06
-//! ruling), and its outcomes are appended to the cross-session indexer
-//! history like send attempts, so reliability accumulates. The probe has
-//! no clearnet leg: a session's only clearnet communication is sync
-//! itself.
+//! Every probe in this module wraps the single `GetLatestBlock` RPC, the
+//! lightest call an indexer answers, the same primitive the
+//! Server-Selection Sweep surveys with.
+//!
+//! The mixnet probe runs it against an indexer through the session's
+//! SOCKS5 proxy: it establishes an indexer's liveness over the mixnet,
+//! the precondition every sync attach requires (the 2026-08-06 ruling),
+//! and its outcomes are appended to the cross-session indexer history
+//! like send attempts, so reliability accumulates. The probe has no
+//! clearnet leg: a session's only clearnet communication is sync itself.
 //!
 //! The staged sync-path probe ([`probe_sync_server`]) serves connectivity
 //! triage for the ordinary synchronization path — the sole clearnet
 //! exception (the Connection Doctor, zingo-mobile's diagnostics plan): it
 //! walks one server through TCP connect, secure-channel establishment,
-//! and a `GetLightdInfo` round trip, timing each stage and reporting each
-//! failure as a typed [`NetOpFailure`], so a non-developer's report says
-//! which layer broke without anyone parsing prose. It contacts the server
-//! from the client's real IP, so it is a user-invoked diagnostic, never
-//! an automatic path.
+//! and a `GetLatestBlock` round trip, timing each stage and reporting
+//! each failure as a typed [`NetOpFailure`], so a non-developer's report
+//! says which layer broke without anyone parsing prose. It contacts the
+//! server from the client's real IP, so it is a user-invoked diagnostic,
+//! never an automatic path.
 //!
-//! Every outcome in this module is data: success carries the server's chain
-//! name and height as fields ([`ProbeSuccess`]), failure carries the
-//! taxonomy record with its cause chain as a vector. Rendering belongs to
+//! Every outcome in this module is data: success carries the server's tip
+//! height as a field ([`ProbeSuccess`]), failure carries the taxonomy
+//! record with its cause chain as a vector. Rendering belongs to
 //! consumers.
 #![forbid(unsafe_code)]
 
@@ -35,23 +38,12 @@ use crate::lightclient::indexer_history::{
     AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
 };
 
-/// What a successful `GetLightdInfo` proves, as fields rather than a
+/// What a successful `GetLatestBlock` proves, as a field rather than a
 /// formatted sentence, so the mobile FFI crosses it as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProbeSuccess {
-    /// The chain name the server reports (`main`, `test`, `regtest`).
-    pub chain: String,
-    /// The block height the server reports.
+    /// The tip height the server reports.
     pub height: u64,
-}
-
-impl ProbeSuccess {
-    fn of(info: &zingo_netutils::lightwallet_protocol::LightdInfo) -> Self {
-        ProbeSuccess {
-            chain: info.chain_name.clone(),
-            height: info.block_height,
-        }
-    }
 }
 
 /// One probe attempt's outcome and timing.
@@ -94,9 +86,9 @@ async fn mixnet_leg(
     host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, indexer, timeout)
+    let outcome = zingo_netutils::get_latest_block_via_socks5(socks5_addr, indexer, timeout)
         .await
-        .map(|info| ProbeSuccess::of(&info))
+        .map(|tip| ProbeSuccess { height: tip.height })
         .map_err(|e| super::socks5_transmit_failure(&e, host));
     let leg = ProbeLeg {
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
@@ -162,8 +154,8 @@ pub enum SyncProbeStep {
     /// as one connect phase. With [`Self::TcpConnect`] already green, a
     /// failure here is the secure channel, not reachability.
     TlsChannel,
-    /// A `GetLightdInfo` round trip over the established channel.
-    GrpcInfo,
+    /// A `GetLatestBlock` round trip over the established channel.
+    GrpcTip,
 }
 
 impl std::fmt::Display for SyncProbeStep {
@@ -171,7 +163,7 @@ impl std::fmt::Display for SyncProbeStep {
         match self {
             SyncProbeStep::TcpConnect => write!(f, "tcp-connect"),
             SyncProbeStep::TlsChannel => write!(f, "tls-channel"),
-            SyncProbeStep::GrpcInfo => write!(f, "grpc-info"),
+            SyncProbeStep::GrpcTip => write!(f, "grpc-tip"),
         }
     }
 }
@@ -211,7 +203,7 @@ fn probe_port(server: &Uri) -> u16 {
 }
 
 /// Walks `server` through the staged sync-path probe: TCP connect, the
-/// secure channel, and a `GetLightdInfo` round trip, each stage bounded by
+/// secure channel, and a `GetLatestBlock` round trip, each stage bounded by
 /// `stage_timeout` and timed, each failure a typed [`NetOpFailure`]. Runs
 /// against the ordinary synchronization path (no tunnel, no wallet, no
 /// lock), so the Connection Doctor can call it per configured server.
@@ -291,9 +283,9 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 
     // Stage 3: the RPC itself.
     let started = Instant::now();
-    let rpc = tokio::time::timeout(stage_timeout, grpc.get_lightd_info(stage_timeout)).await;
+    let rpc = tokio::time::timeout(stage_timeout, grpc.get_latest_block(stage_timeout)).await;
     let (failure, info) = match rpc {
-        Ok(Ok(info)) => (None, Some(ProbeSuccess::of(&info))),
+        Ok(Ok(tip)) => (None, Some(ProbeSuccess { height: tip.height })),
         Ok(Err(status)) => (
             Some(NetOpFailure::from_error(
                 NetOpStage::RemoteHttp,
@@ -305,7 +297,7 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
         Err(_) => (Some(timed_out()), None),
     };
     stages.push(SyncProbeStage {
-        step: SyncProbeStep::GrpcInfo,
+        step: SyncProbeStep::GrpcTip,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         failure,
     });

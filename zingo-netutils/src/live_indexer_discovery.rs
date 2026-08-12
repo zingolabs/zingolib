@@ -13,18 +13,18 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use lightwallet_protocol::LightdInfo;
+use lightwallet_protocol::BlockId;
 
 use crate::NymProxy;
 use crate::error::NymProxyError;
 use crate::indexers::{Indexer, IndexerChain, mixnet_eligible};
 use crate::mixnet_connect::seeded_shuffle;
-use crate::socks5_transmit::{Socks5TransmitError, get_lightd_info_via_socks5};
+use crate::socks5_transmit::{Socks5TransmitError, get_latest_block_via_socks5};
 use crate::time::{
     ATTACH_LISTENER_RETRY_PAUSE, MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT,
 };
 
-/// A census endpoint that answered `GetLightdInfo` through its own exit.
+/// A census endpoint that answered `GetLatestBlock` through its own exit.
 /// Holding the value holds the transport: dropping a `DiscoveredIndexer`
 /// tears the maintained connection down.
 pub struct DiscoveredIndexer {
@@ -34,8 +34,8 @@ pub struct DiscoveredIndexer {
     pub exit_node: String,
     /// The transport the probe rode, kept alive as the pool connection.
     pub transport: NymProxy,
-    /// The endpoint's `GetLightdInfo` answer.
-    pub info: LightdInfo,
+    /// The endpoint's `GetLatestBlock` answer.
+    pub tip: BlockId,
     /// Bootstrap plus probe, wall clock.
     pub elapsed: Duration,
 }
@@ -56,7 +56,7 @@ pub struct DiscoveryFailure {
 pub enum DiscoveryFailureKind {
     /// The assigned exit never became a working transport.
     Bootstrap(NymProxyError),
-    /// The transport came up but the endpoint's `GetLightdInfo` did not.
+    /// The transport came up but the endpoint's `GetLatestBlock` did not.
     Probe(Socks5TransmitError),
 }
 
@@ -180,11 +180,11 @@ async fn probe_via_unique_exit(
         .parse()
         .expect("the census tests pin every entry parseable");
     match probe_once_listening(&transport, &uri).await {
-        Ok(info) => {
+        Ok(tip) => {
             on_progress(format!(
                 "{}: live at height {} via exit {} ({:.1?})",
                 indexer.uri,
-                info.block_height,
+                tip.height,
                 short_exit(&exit_node),
                 started.elapsed()
             ));
@@ -192,7 +192,7 @@ async fn probe_via_unique_exit(
                 indexer,
                 exit_node,
                 transport,
-                info,
+                tip,
                 elapsed: started.elapsed(),
             })
         }
@@ -215,7 +215,7 @@ async fn probe_via_unique_exit(
 async fn probe_once_listening(
     transport: &NymProxy,
     uri: &http::Uri,
-) -> Result<LightdInfo, Socks5TransmitError> {
+) -> Result<BlockId, Socks5TransmitError> {
     let announced = transport.socks5_addr();
     let socks5_addr = announced.parse().map_err(|_| {
         // The proxy's own announcement is in-process and practically always
@@ -228,7 +228,7 @@ async fn probe_once_listening(
     })?;
     let deadline = Instant::now() + MIXNET_ROUND_TRIP_BOUND;
     loop {
-        match get_lightd_info_via_socks5(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND).await {
+        match get_latest_block_via_socks5(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND).await {
             Err(Socks5TransmitError::ProxyUnreachable { .. }) if Instant::now() < deadline => {
                 tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
             }

@@ -1,6 +1,6 @@
 //! Dynamic server selection via `get_info()` against a curated list of indexers.
 //!
-//! When no `--server` is specified, we call `get_info()` on each URI in
+//! When no `--sync-server` is specified, we call `get_info()` on each URI in
 //! `zingolib::netutils::indexers::MOST_UP_INDEXER_URIS` (the census) concurrently,
 //! measure response time, and return the responsive servers sorted
 //! from fastest to slowest.
@@ -120,7 +120,10 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
         .filter_map(|s| s.parse::<http::Uri>().ok())
         .collect();
 
-    eprintln!("No --server specified. Probing {} indexers...", uris.len());
+    eprintln!(
+        "No --sync-server specified. Probing {} indexers...",
+        uris.len()
+    );
 
     let (ranked, failures) = probe_servers(uris, SERVER_RANKING_TIMEOUT).await;
 
@@ -149,17 +152,17 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
 /// Why the clearnet resolution produced no server.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ResolveServerError {
-    /// The explicit `--server` value failed to parse as a URI.
+    /// The explicit `--sync-server` value failed to parse as a URI.
     #[error(transparent)]
     InvalidUri(#[from] http::uri::InvalidUri),
     /// No probed indexer answered, and no default server exists.
-    #[error("no probed server responded and there is no default server; pass --server")]
+    #[error("no probed server responded and there is no default server; pass --sync-server")]
     NoResponder,
 }
 
 /// Resolves the indexer server from CLI arguments.
 ///
-/// If `--server` was provided explicitly, uses that URI and returns an
+/// If `--sync-server` was provided explicitly, uses that URI and returns an
 /// empty ranked list. Otherwise, probes curated indexers with `get_info()`
 /// and returns the fastest responder along with the full ranked list.
 ///
@@ -180,7 +183,7 @@ pub(crate) fn resolve_server(
 }
 
 /// Resolves the indexer for a session going online without an explicit
-/// `--server`: the fastest probed responder, refused typed when nothing
+/// `--sync-server`: the fastest probed responder, refused typed when nothing
 /// answered, since no default server exists.
 pub(crate) async fn resolve_ranked_server()
 -> Result<(http::Uri, Vec<RankedServer>), ResolveServerError> {
