@@ -500,10 +500,14 @@ async fn drive_state<R: AsyncRead + Unpin>(
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(exit) = parse_exit_line(&line) {
             spoke_protocol = true;
-            // Recorded silently: the exit becomes visible evidence in the
-            // Ready snapshot the address announcement publishes.
             let mut guarded = state.lock().expect("proxy state mutex");
             guarded.exits.push(exit);
+            // An exit announced after the address changes the Ready
+            // snapshot, so it is published: a readiness waiter parked on an
+            // address-first Ready wakes on this publication alone.
+            if guarded.mode == MixnetMode::Ready {
+                publish_locked(&guarded, &publisher);
+            }
             continue;
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
@@ -1344,6 +1348,37 @@ mod tests {
     }
 
     // ----- session-channel publication falsifiers (the driver arc) -----
+
+    /// HYPOTHESIS: an exit announced after the address wakes a readiness
+    /// waiter that is already parked on the session channel, so a healthy
+    /// transport is never stopped as not ready for its announcement order.
+    #[tokio::test(start_paused = true)]
+    async fn an_exit_after_the_address_wakes_the_parked_waiter() {
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        let state = bootstrapping();
+        let handle = tokio::spawn(drive_state(
+            OpenAfter::new(b"SOCKS5_ADDR=127.0.0.1:43210\nNYM_EXIT=exit-alpha\n"),
+            Arc::clone(&state),
+            Arc::clone(&publisher),
+            None,
+        ));
+        let (addr, exits) =
+            await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT)
+                .await
+                .expect("the announced exit reaches the parked waiter");
+        assert_eq!(
+            addr,
+            "127.0.0.1:43210".parse().expect("the test address parses"),
+            "the waiter yields the announced address"
+        );
+        assert_eq!(
+            exits,
+            vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
+            "the waiter yields the exit announced after the address"
+        );
+        handle.abort();
+    }
 
     /// HYPOTHESIS: transport transitions are published into the session
     /// channel as they happen — a subscriber observes Ready with the
