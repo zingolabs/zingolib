@@ -222,7 +222,9 @@ impl IndexerAttempt {
     fn parse(line: &str) -> Option<Self> {
         let fields: Vec<&str> = line.split('\t').collect();
         // A six-field line predates the phase and exit columns; it loads
-        // with neither rather than being skipped.
+        // with neither rather than being skipped. Tolerance is per column,
+        // so an exit column that no longer names an Exit Node costs the
+        // exit alone and the rest of the row still loads.
         let (phase, exit, outcome_token) = match fields.len() {
             6 => (None, None, fields[5]),
             8 => (
@@ -230,7 +232,7 @@ impl IndexerAttempt {
                     .then(|| crate::correspondent::health::FailurePhase::parse(fields[5])),
                 match fields[6] {
                     "-" => None,
-                    token => Some(crate::mixnet::ExitNodeId::parse(token).ok()?),
+                    token => crate::mixnet::ExitNodeId::parse(token).ok(),
                 },
                 fields[7],
             ),
@@ -553,6 +555,34 @@ mod tests {
         assert_eq!(
             loaded[0].host,
             crate::correspondent::Host::of_host_str("tab here and newline")
+        );
+    }
+
+    /// An exit column that no longer names an Exit Node, because a hostile
+    /// identity flattened to blanks or a torn write emptied the field.
+    const BLANK_EXIT_COLUMN: &str = " ";
+
+    /// HYPOTHESIS: the loader's tolerance is per column, so a row whose exit
+    /// column no longer parses loads with every other field intact.
+    /// Falsified if the unparseable exit column discards the whole row.
+    #[test]
+    fn a_corrupt_exit_column_costs_only_the_exit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let handle = recording_handle(dir.path());
+        let mut recorded = an_attempt("zec.rocks", Err(FailureKind::Timeout));
+        let exit = recorded.exit.as_ref().expect("the fixture rode an exit");
+        let corrupt = recorded
+            .to_line()
+            .replace(exit.as_str(), BLANK_EXIT_COLUMN)
+            .into_bytes();
+        std::fs::write(dir.path().join("indexer-history.tsv"), corrupt)
+            .expect("write a row whose exit column is corrupt");
+
+        recorded.exit = None;
+        assert_eq!(
+            handle.load(),
+            vec![recorded],
+            "every column but the exit survives a corrupt exit"
         );
     }
 

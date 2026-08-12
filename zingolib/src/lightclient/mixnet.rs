@@ -241,13 +241,9 @@ impl LightClient {
     /// Ready session does and the transmit path submits over the mock
     /// indexer's channel without ever dialing the address.
     #[cfg(any(test, feature = "testutils"))]
-    pub async fn switch_on_mixnet_for_tests(&mut self, socks5_addr: &str) {
+    pub async fn switch_on_mixnet_for_tests(&mut self, socks5_addr: std::net::SocketAddr) {
         self.vacate_mixnet_slot().await;
-        self.mixnet_slot = crate::mixnet::MixnetSlot::AttachedForTests {
-            socks5_addr: socks5_addr
-                .parse()
-                .expect("the test stand-in socks5 address parses"),
-        };
+        self.mixnet_slot = crate::mixnet::MixnetSlot::AttachedForTests { socks5_addr };
         // Every slot transition publishes (the one-shared-watch invariant),
         // the stand-in included.
         self.publish_mixnet_slot_state();
@@ -652,6 +648,24 @@ mod tests {
             assert!(
                 !subscriber.has_changed().expect("the publisher is alive"),
                 "no stale transport publication may follow the deliberate disable"
+            );
+        }
+
+        /// HYPOTHESIS: the test-only mixnet switch takes an already parsed
+        /// socket address, so the contract is checked by the compiler and no
+        /// external harness can abort inside it on a placeholder string.
+        /// Falsified if the helper still takes text and parses within.
+        #[tokio::test]
+        async fn the_test_switch_takes_a_typed_socket_address() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            let socks5_addr = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+
+            client.switch_on_mixnet_for_tests(socks5_addr).await;
+
+            assert_eq!(
+                client.mixnet_socks5_addr(),
+                Some(socks5_addr),
+                "the slot reports the very address the caller handed it"
             );
         }
 
