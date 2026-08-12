@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: a wrapper error variant renders only its own layer. The
+  `Display` texts of the `error::SyncError`, `error::MempoolError`, and
+  `error::ScanError` wrapper variants no longer embed the wrapped source's
+  text, and `ScanError::EncodingError` renders transparently. A consumer
+  recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
 

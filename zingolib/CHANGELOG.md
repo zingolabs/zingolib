@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
+  variant. A transport that reports ready without announcing an exit from
+  the drawn Clutch now refuses with this variant instead of panicking, and
+  an exhaustive match over the enum needs the new arm.
 - BREAKING: a refused Server-Selection Sweep names its transport failure by
   type. `lightclient::select::ServerSelectionError::TransportUnready(String)`
   is replaced by three variants: `TransportDied`, which carries the death
