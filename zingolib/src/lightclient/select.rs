@@ -177,40 +177,57 @@ async fn await_sweep_ready(
     })
 }
 
-/// Survey every candidate over the sweep exit concurrently, recording each
-/// attempt in the indexer history like any probe.
+/// The number of survey tunnels the sweep opens at once, kept small because
+/// every tunnel shares the one sweep exit's packet pipeline, where a single
+/// measured round trip costs seconds and an unbounded fan-out queues enough
+/// concurrent TLS handshakes to blow every probe's
+/// [`zingo_netutils::time::PROBE_LEG_TIMEOUT`] at once — the 0-of-17
+/// signature.
+pub const SURVEY_TUNNEL_WIDTH: usize = 4;
+
+/// Survey every candidate over the sweep exit, at most
+/// [`SURVEY_TUNNEL_WIDTH`] tunnels at a time, recording each attempt in the
+/// indexer history like any probe.
 async fn survey(
     socks5_addr: std::net::SocketAddr,
     candidates: &[Uri],
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
 ) -> Vec<SurveyResult> {
+    use futures::StreamExt as _;
     let timeout = zingo_netutils::time::PROBE_LEG_TIMEOUT;
-    futures::future::join_all(candidates.iter().map(|uri| async move {
-        let reported = probe_one(socks5_addr, uri, timeout, history).await;
-        SurveyResult {
-            uri: uri.clone(),
-            reported,
-        }
-    }))
-    .await
+    futures::stream::iter(candidates.iter())
+        .map(|uri| async move {
+            let (reported, refusal) = probe_one(socks5_addr, uri, timeout, history).await;
+            SurveyResult {
+                uri: uri.clone(),
+                reported,
+                refusal,
+            }
+        })
+        .buffer_unordered(SURVEY_TUNNEL_WIDTH)
+        .collect()
+        .await
 }
 
 /// One candidate's survey: `GetLatestBlock` over the sweep exit, its success
-/// mapped to the reported tip height, any failure to `None`.
+/// mapped to the reported tip height, any failure to a classified refusal.
 async fn probe_one(
     socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
-) -> Option<u64> {
+) -> (
+    Option<u64>,
+    Option<crate::lightclient::indexer_history::FailureKind>,
+) {
     use crate::lightclient::indexer_history::{
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, now_unix_secs,
     };
     let host = crate::correspondent::Host::of_uri(uri);
     let result = zingo_netutils::get_latest_block_via_socks5(socks5_addr, uri, timeout).await;
-    let (reported, outcome) = match &result {
-        Ok(tip) => (Some(tip.height), Ok(())),
-        Err(error) => (None, Err(FailureKind::classify(&error.to_string()))),
+    let (reported, refusal) = match &result {
+        Ok(tip) => (Some(tip.height), None),
+        Err(error) => (None, Some(FailureKind::classify(&error.to_string()))),
     };
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -223,9 +240,12 @@ async fn probe_one(
             .err()
             .map(|error| crate::mixnet::charge_phase(&crate::mixnet::socks5_transmit_stage(error))),
         exit: None,
-        outcome,
+        outcome: match refusal {
+            None => Ok(()),
+            Some(kind) => Err(kind),
+        },
     });
-    reported
+    (reported, refusal)
 }
 
 #[cfg(test)]

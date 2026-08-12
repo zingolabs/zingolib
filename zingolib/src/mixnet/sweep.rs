@@ -12,6 +12,8 @@
 use http::Uri;
 use rand::seq::SliceRandom as _;
 
+use crate::lightclient::indexer_history::FailureKind;
+
 /// One candidate's survey outcome: the endpoint and the tip height its
 /// `GetLatestBlock` reported, or `None` when it did not answer over the
 /// mixnet.
@@ -21,6 +23,58 @@ pub struct SurveyResult {
     pub uri: Uri,
     /// The tip height the endpoint reported, or `None` on any failure.
     pub reported: Option<u64>,
+    /// Why the endpoint did not answer, when it did not.
+    pub refusal: Option<FailureKind>,
+}
+
+/// A per-kind count of the survey's refusals, rendered as a parenthesized
+/// suffix like " (14 timeout, 3 unreachable)" and as nothing when the
+/// survey had no refusals.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefusalTally(Vec<(FailureKind, usize)>);
+
+impl RefusalTally {
+    /// Counts the refusals of `results` in the diary vocabulary's order.
+    pub fn of(results: &[SurveyResult]) -> Self {
+        const KINDS: [FailureKind; 5] = [
+            FailureKind::Timeout,
+            FailureKind::Unreachable,
+            FailureKind::Queued,
+            FailureKind::Rejected,
+            FailureKind::Other,
+        ];
+        RefusalTally(
+            KINDS
+                .into_iter()
+                .map(|kind| {
+                    (
+                        kind,
+                        results
+                            .iter()
+                            .filter(|result| result.refusal == Some(kind))
+                            .count(),
+                    )
+                })
+                .filter(|(_, count)| *count > 0)
+                .collect(),
+        )
+    }
+}
+
+impl std::fmt::Display for RefusalTally {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
+        }
+        write!(f, " (")?;
+        for (index, (kind, count)) in self.0.iter().enumerate() {
+            if index > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{count} {}", kind.as_str())?;
+        }
+        write!(f, ")")
+    }
 }
 
 /// A candidate that answered the survey and passed the cohort's liveness
@@ -37,12 +91,15 @@ pub struct LiveCandidate {
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SweepError {
     /// No candidate passed the liveness test.
-    #[error("no live indexer: {answered} of {surveyed} answered, none within the cohort")]
+    #[error("no live indexer: {answered} of {surveyed} answered, none within the cohort{causes}")]
     EmptyCohort {
         /// How many candidates were surveyed.
         surveyed: usize,
         /// How many answered at all (before the cohort test).
         answered: usize,
+        /// The refusals counted per failure kind, so the report itself says
+        /// whether the transport or the indexers failed.
+        causes: RefusalTally,
     },
 }
 
@@ -115,6 +172,7 @@ pub fn select(
         return Err(SweepError::EmptyCohort {
             surveyed: results.len(),
             answered: answered_count(results),
+            causes: RefusalTally::of(results),
         });
     }
     let sync_indexer = draw_one_per_operator(&cohort, rng);
@@ -169,13 +227,19 @@ mod tests {
         SurveyResult {
             uri: uri(u),
             reported: Some(height),
+            refusal: None,
         }
     }
 
     fn silent(u: &str) -> SurveyResult {
+        refused(u, FailureKind::Timeout)
+    }
+
+    fn refused(u: &str, kind: FailureKind) -> SurveyResult {
         SurveyResult {
             uri: uri(u),
             reported: None,
+            refusal: Some(kind),
         }
     }
 
@@ -312,7 +376,33 @@ mod tests {
             SweepError::EmptyCohort {
                 surveyed: 2,
                 answered: 0,
+                causes: RefusalTally::of(&results),
             }
         );
+    }
+
+    /// HYPOTHESIS: the empty-cohort report names its causes per failure
+    /// kind, so a saturated transport (every probe timed out) reads
+    /// differently from dead indexers, without any external harness.
+    /// Falsified if the counts or the kinds leave the rendering.
+    #[test]
+    fn an_empty_cohort_names_its_causes() {
+        let results = vec![
+            refused("https://a.example:443", FailureKind::Timeout),
+            refused("https://b.example:443", FailureKind::Timeout),
+            refused("https://c.example:443", FailureKind::Unreachable),
+        ];
+        let error = select(&results, 2, &mut StdRng::seed_from_u64(0)).expect_err("empty");
+        assert_eq!(
+            error.to_string(),
+            "no live indexer: 0 of 3 answered, none within the cohort \
+             (2 timeout, 1 unreachable)"
+        );
+    }
+
+    /// A survey with no refusals renders no cause suffix.
+    #[test]
+    fn a_causeless_tally_renders_nothing() {
+        assert_eq!(RefusalTally::of(&[]).to_string(), "");
     }
 }

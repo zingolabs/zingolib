@@ -116,7 +116,7 @@ pub enum FailureKind {
 }
 
 impl FailureKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             FailureKind::Timeout => "timeout",
             FailureKind::Unreachable => "unreachable",

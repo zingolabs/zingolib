@@ -58,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the survey bounds its fan-out and reports its refusal causes.
+  The sweep opens at most `lightclient::select::SURVEY_TUNNEL_WIDTH`
+  tunnels at a time, because every tunnel shares the one sweep exit's
+  packet pipeline and an unbounded fan-out blew every probe's budget at
+  once — the 0-of-17 signature. `mixnet::sweep::SurveyResult` gains a
+  `refusal` field carrying the diary's `FailureKind`, and
+  `SweepError::EmptyCohort` gains a `causes` tally, so the refusal itself
+  says whether the transport or the indexers failed, e.g. "0 of 17
+  answered, none within the cohort (17 timeout)".
 - BREAKING: every probe wraps the single `GetLatestBlock` RPC. The mixnet
   probe leg, the staged sync-path probe, and the attach readiness round
   trip all probe the tip, the same primitive the sweep surveys with.
