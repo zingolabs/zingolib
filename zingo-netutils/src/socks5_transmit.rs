@@ -31,7 +31,9 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
-use lightwallet_protocol::{CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter};
+use lightwallet_protocol::{
+    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter,
+};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data
@@ -302,6 +304,25 @@ pub async fn get_lightd_info_via_socks5(
         destination_of(indexer),
         timeout,
         client.get_lightd_info(request),
+    )
+    .await
+}
+
+/// Fetches the indexer's `GetLatestBlock` tip through the local SOCKS5
+/// proxy, the lightest liveness probe an indexer answers, with the same
+/// phase-typed failures as the send path.
+pub async fn get_latest_block_via_socks5(
+    socks5_addr: SocketAddr,
+    indexer: &Uri,
+    timeout: Duration,
+) -> Result<BlockId, Socks5TransmitError> {
+    let mut client = connect_via_socks5(socks5_addr, indexer, timeout).await?;
+    let mut request = tonic::Request::new(ChainSpec {});
+    request.set_timeout(timeout);
+    bounded_rpc(
+        destination_of(indexer),
+        timeout,
+        client.get_latest_block(request),
     )
     .await
 }
