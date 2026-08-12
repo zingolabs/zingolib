@@ -113,7 +113,7 @@ impl ProgressPeek {
 
 /// The result-is-a-txid-list rendering, kept in one place so every
 /// transmitting body shares it.
-async fn transmit_txids<T: ToString, E: std::fmt::Display>(
+async fn transmit_txids<T: ToString, E: std::error::Error + Send + Sync + 'static>(
     operation: impl Future<Output = Result<impl IntoIterator<Item = T>, E>>,
 ) -> Result<String, CommandError> {
     match operation.await {
@@ -136,12 +136,11 @@ pub enum CommandError {
     Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
-    /// Transitional quarantine for commands whose failure prose is not
-    /// yet typed: the message is stored WITHOUT the "Error: " prefix
-    /// (the renderer adds it). Every construction site is a candidate
-    /// for a dedicated variant, and none may ever be string-matched.
-    #[error("{0}")]
-    NotYetTyped(String),
+    /// Transitional quarantine for commands whose failure is not yet
+    /// typed, carrying the failure itself so the dispatch renderer still
+    /// walks its whole source chain.
+    #[error(transparent)]
+    NotYetTyped(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 /// Renders `error` and then every link of its source chain, one `caused
@@ -159,17 +158,17 @@ pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> 
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
-    CommandError::NotYetTyped(format!(
-        "{detail}\nTry 'help {command}' for correct usage and examples."
-    ))
+    CommandError::NotYetTyped(
+        format!("{detail}\nTry 'help {command}' for correct usage and examples.").into(),
+    )
 }
 
 /// The indent width of every JSON object the CLI prints.
 const JSON_INDENT: u16 = 2;
 
-/// Wraps a failure's rendering in the transitional [`CommandError::NotYetTyped`] variant.
-fn not_yet_typed(e: impl std::fmt::Display) -> CommandError {
-    CommandError::NotYetTyped(e.to_string())
+/// Wraps a failure in the transitional [`CommandError::NotYetTyped`] variant, source chain and all.
+fn not_yet_typed(e: impl std::error::Error + Send + Sync + 'static) -> CommandError {
+    CommandError::NotYetTyped(Box::new(e))
 }
 
 async fn addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -215,9 +214,9 @@ async fn change_server(
 ) -> Result<String, CommandError> {
     match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
         Ok(()) => Ok("server set".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(format!(
-            "failed to set server: {e}"
-        ))),
+        Err(e) => Err(CommandError::NotYetTyped(
+            format!("failed to set server: {e}").into(),
+        )),
     }
 }
 
@@ -562,7 +561,7 @@ async fn recovery_info(lightclient: &mut LightClient) -> Result<String, CommandE
     match lightclient.wallet().read().await.recovery_info() {
         Some(backup_info) => Ok(backup_info.to_string()),
         None => Err(CommandError::NotYetTyped(
-            "no mnemonic found. wallet loaded from key.".to_string(),
+            "no mnemonic found. wallet loaded from key.".into(),
         )),
     }
 }
@@ -615,13 +614,15 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
         }
         SaveSubCommand::Check => match lightclient.check_save_error().await {
             Ok(()) => Ok(String::new()),
-            Err(e) => Err(CommandError::NotYetTyped(format!(
-                "save failed. {e}\nRestarting save task..."
-            ))),
+            Err(e) => Err(CommandError::NotYetTyped(
+                format!("save failed. {e}\nRestarting save task...").into(),
+            )),
         },
         SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
             Ok(()) => Ok("Save task shutdown successfully.".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(format!("save failed. {e}"))),
+            Err(e) => Err(CommandError::NotYetTyped(
+                format!("save failed. {e}").into(),
+            )),
         },
     }
 }
@@ -751,7 +752,7 @@ async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(proposal) => {
             if proposal.steps().len() != 1 {
                 return Err(CommandError::NotYetTyped(
-                    "shielding transactions should not have multiple proposal steps".to_string(),
+                    "shielding transactions should not have multiple proposal steps".into(),
                 ));
             }
             let step = proposal.steps().first();
@@ -762,7 +763,7 @@ async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
                 .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
             else {
                 return Err(CommandError::NotYetTyped(
-                    "shield amount outside valid range of zatoshis".to_string(),
+                    "shield amount outside valid range of zatoshis".into(),
                 ));
             };
             let fee = step.balance().fee_required();
@@ -888,7 +889,7 @@ async fn transmit(
 
     let Some(txids) = nonempty::NonEmpty::from_vec(txids) else {
         return Err(CommandError::NotYetTyped(
-            "no calculated transactions to transmit".to_string(),
+            "no calculated transactions to transmit".into(),
         ));
     };
 

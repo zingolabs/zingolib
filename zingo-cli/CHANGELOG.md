@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the
   same way.
+- The commands whose failures are not yet typed now carry the failure
+  itself across the dispatch seam instead of its outermost line, so the
+  chain walk reaches their detail too. `quicksend` names the send
+  refusal that stopped it, and `current_price` reports the whole price
+  race, where both printed one bare summary line before.
 - **Breaking.** `--server` has no default value. An online session without
   the flag configures no indexer at launch; the Server-Selection Sweep
   binds one at startup for every online session, whether or not it syncs,

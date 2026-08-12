@@ -1520,17 +1520,32 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
-    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+    use super::super::{
+        JSON_INDENT, address_check_json, not_yet_typed, render_error_chain, txids_json,
+    };
 
     /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
     /// "Error: " prefix, so the edge renderer adds it exactly once.
     #[test]
     fn not_yet_typed_renders_the_message_unprefixed() {
         assert_eq!(
-            not_yet_typed("no such wallet file").to_string(),
+            not_yet_typed(std::io::Error::other("no such wallet file")).to_string(),
             "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the wrapper carries the failure itself rather than its
+    /// outermost line, so the dispatch renderer walks the whole source
+    /// chain; a rendering that drops the innermost detail falsifies it.
+    #[test]
+    fn not_yet_typed_keeps_the_source_chain_renderable() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+        assert_eq!(
+            render_error_chain(&wrapped),
+            "Send error.\ncaused by: No proposal found in the wallet."
         );
     }
 
@@ -1749,7 +1764,7 @@ mod finding_pins {
     fn network_arguments_meet_the_unknown_command_refusal() {
         use super::super::{CommandError, dispatch_parsed};
         let rendered = match parse_command_tokens(&tokens(&["network", "probe", "http://x.com"]))
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
         {
             Ok(output) => output,
@@ -1835,7 +1850,7 @@ mod posture_surface {
         ));
         let tokens: Vec<String> = ["network", "off"].map(String::from).into();
         let report = parse_command_tokens(&tokens)
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
             .expect("network off succeeds offline");
         assert!(report.contains("Network off"), "{report}");
