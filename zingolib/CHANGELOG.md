@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `lightclient::select::ServerSelectionError` gains the
+  `ExitOutsideClutch` variant, which carries the exits the ready transport
+  reported. The bind refusal previously reached callers wrapped in
+  `TransportAcquisition`, whose message names a Clutch that could not be
+  drawn, and an exhaustive match over the enum needs the new arm.
 - BREAKING: `lightclient::LightClient::attach_mixnet` now refuses an empty
   exit report. `mixnet::MixnetProxyError` gains the `NoExits` variant, which
   the attach returns when the host names no bound Exit Node, and an
