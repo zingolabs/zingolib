@@ -468,7 +468,7 @@ pub enum PartSendResult {
     },
     /// Submission failed and the batch halted here.
     Failed {
-        /// The rendered error.
+        /// The failure's whole cause chain, outermost layer first.
         error: String,
     },
 }
@@ -1407,7 +1407,7 @@ impl LightClient {
                         .resolve(report.outcomes.len() as u32, sent);
                 }
                 Err(e) => {
-                    let error = e.to_string();
+                    let error = render_cause_chain(&e);
                     report.outcomes.push(PartOutcome {
                         part: *part,
                         denomination: *denomination,
@@ -2278,6 +2278,16 @@ fn immediate_migration_entry_gate(
         }
         Some(_) => Ok(()),
     }
+}
+
+/// The separator between two layers of a rendered cause chain, matching the
+/// rendering `zingo_net_diag` gives its own failure records.
+const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+
+/// Renders every layer of a failure's cause chain into the one text a batch
+/// report carries across serde.
+fn render_cause_chain(error: &LightClientError) -> String {
+    zingo_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
 }
 
 /// Records one part submission's own route evidence in the cross-session
@@ -3505,6 +3515,61 @@ mod tests {
                 client.batch_progress_handle().status(),
                 None,
                 "the progress side channel returns to idle"
+            );
+        }
+
+        /// HYPOTHESIS: a failed part's report carries every layer of the
+        /// failure's cause chain, so the reader learns which transaction the
+        /// wallet could not find rather than the bare category alone.
+        /// Falsified if the rendered text omits the innermost layer's detail.
+        #[tokio::test]
+        async fn a_failed_part_reports_the_whole_cause_chain() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            // A signed part with neither a retained blob nor a wallet
+            // transaction record is the recovery path's failure: the loop
+            // asks the wallet for bytes it does not hold.
+            part.mark_signed(own_txid, window_end, None)
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report.halted.expect("the batch halted on the failure");
+            assert!(
+                halted.contains(&own_txid.to_string()),
+                "the report must carry the whole cause chain, got {halted:?}"
+            );
+            let [
+                PartOutcome {
+                    result: PartSendResult::Failed { error },
+                    ..
+                },
+            ] = &report.outcomes[..]
+            else {
+                panic!(
+                    "the one part must be reported failed, got {:?}",
+                    report.outcomes
+                );
+            };
+            assert_eq!(
+                *error, halted,
+                "the part outcome and the halt reason render the same chain"
             );
         }
 
