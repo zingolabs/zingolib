@@ -58,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a refused Server-Selection Sweep names its transport failure by
+  type. `lightclient::select::ServerSelectionError::TransportUnready(String)`
+  is replaced by three variants: `TransportDied`, which carries the death
+  report's typed `zingo_net_diag::NetOpFailure` as a `source()` link;
+  `TransportTimeout`, which carries the bootstrap budget that elapsed; and
+  `TransportStatusClosed`, for a status channel that closed before
+  readiness. A caller now distinguishes a handshake-stage death from a
+  bootstrap timeout by matching, never by parsing prose.
 - BREAKING: a failure detail lives in exactly one chain link. The
   wrapper variants of `LightClientError` and
   `PriceError::TransportAcquisition` stop embedding their sources' text

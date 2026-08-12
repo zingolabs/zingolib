@@ -52,10 +52,24 @@ pub enum ServerSelectionError {
     /// The dedicated sweep proxy could not be spawned.
     #[error("the sweep proxy could not start")]
     ProxyStart(#[source] crate::mixnet::MixnetProxyError),
-    /// The sweep proxy did not reach readiness: it died or exceeded its
-    /// bootstrap budget before any survey ran.
-    #[error("the sweep transport did not become ready: {0}")]
-    TransportUnready(String),
+    /// The dedicated sweep proxy died before any survey ran.
+    #[error("the sweep transport died before it became ready")]
+    TransportDied {
+        /// The typed cause the death report latched, when it held one.
+        #[source]
+        detail: Option<zingo_net_diag::NetOpFailure>,
+    },
+    /// The dedicated sweep proxy exceeded its bootstrap budget before any
+    /// survey ran.
+    #[error("the sweep transport did not become ready within {}s", budget.as_secs())]
+    TransportTimeout {
+        /// The bootstrap budget that elapsed without a readiness
+        /// announcement.
+        budget: Duration,
+    },
+    /// The dedicated sweep proxy's status channel closed before readiness.
+    #[error("the sweep transport's status channel closed before readiness")]
+    TransportStatusClosed,
     /// The survey ran but no sync indexer could be selected.
     #[error(transparent)]
     Selection(#[from] SweepError),
@@ -177,13 +191,9 @@ async fn await_sweep_ready(
                         }
                     }
                     MixnetMode::Died => {
-                        return Err(status
-                            .death
-                            .as_ref()
-                            .and_then(|d| d.detail.as_ref().map(std::string::ToString::to_string))
-                            .unwrap_or_else(|| {
-                                "the sweep proxy died during bootstrap".to_string()
-                            }));
+                        return Err(ServerSelectionError::TransportDied {
+                            detail: status.death.as_ref().and_then(|d| d.detail.clone()),
+                        });
                     }
                     MixnetMode::Unattached
                     | MixnetMode::SwitchedOff
@@ -191,18 +201,14 @@ async fn await_sweep_ready(
                 }
             }
             if receiver.changed().await.is_err() {
-                return Err("the sweep proxy status channel closed".to_string());
+                return Err(ServerSelectionError::TransportStatusClosed);
             }
         }
     })
     .await;
     match outcome {
-        Ok(Ok(ready)) => Ok(ready),
-        Ok(Err(reason)) => Err(ServerSelectionError::TransportUnready(reason)),
-        Err(_elapsed) => Err(ServerSelectionError::TransportUnready(format!(
-            "no readiness within {}s",
-            budget.as_secs()
-        ))),
+        Ok(ready) => ready,
+        Err(_elapsed) => Err(ServerSelectionError::TransportTimeout { budget }),
     }
 }
 
@@ -295,6 +301,69 @@ mod tests {
             lightd_chain_name(&crate::config::ChainType::Mainnet),
             crate::config::ChainType::Mainnet.to_string(),
             "the Display form is not the wire form"
+        );
+    }
+
+    /// The status a died sweep proxy publishes, carrying `detail` as its
+    /// latched typed cause.
+    fn died_with(detail: Option<zingo_net_diag::NetOpFailure>) -> crate::mixnet::MixnetStatus {
+        crate::mixnet::MixnetStatus {
+            mode: MixnetMode::Died,
+            socks5_addr: None,
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: Some(crate::mixnet::DeathReport {
+                at: std::time::SystemTime::UNIX_EPOCH,
+                detail,
+            }),
+        }
+    }
+
+    /// HYPOTHESIS: a sweep transport that dies and a sweep transport that
+    /// exceeds its bootstrap budget refuse as two distinct typed variants,
+    /// and the death carries its `NetOpFailure` down the source chain, so a
+    /// caller separates the two without reading prose. Falsified if the two
+    /// paths share one variant, or if the death's typed cause reaches the
+    /// caller only as formatted text.
+    #[tokio::test(start_paused = true)]
+    async fn the_death_and_the_bootstrap_timeout_refuse_as_distinct_variants() {
+        let handshake = zingo_net_diag::NetOpFailure::from_error(
+            zingo_net_diag::NetOpStage::SocksHandshake,
+            "127.0.0.1:1080",
+            &std::io::Error::other("the handshake was refused"),
+        );
+        let death_publisher = crate::mixnet::status_publisher();
+        death_publisher.send_replace(died_with(Some(handshake.clone())));
+        let mut death_receiver = death_publisher.subscribe();
+        let died = await_sweep_ready(&mut death_receiver)
+            .await
+            .expect_err("a died transport never reaches readiness");
+
+        let idle_publisher = crate::mixnet::status_publisher();
+        let mut idle_receiver = idle_publisher.subscribe();
+        let timed_out = await_sweep_ready(&mut idle_receiver)
+            .await
+            .expect_err("a transport that never announces exceeds its budget");
+
+        assert_ne!(
+            std::mem::discriminant(&died),
+            std::mem::discriminant(&timed_out),
+            "a death and a bootstrap timeout are distinct refusals"
+        );
+        assert!(
+            matches!(
+                timed_out,
+                ServerSelectionError::TransportTimeout { budget }
+                    if budget == zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT
+            ),
+            "the timeout refusal carries the budget it exceeded"
+        );
+        let cause = std::error::Error::source(&died)
+            .expect("the death refusal carries its typed cause as a source");
+        assert_eq!(
+            cause.downcast_ref::<zingo_net_diag::NetOpFailure>(),
+            Some(&handshake),
+            "the typed failure reaches the caller whole"
         );
     }
 }
