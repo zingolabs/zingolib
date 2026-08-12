@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** The `--server` flag is renamed `--sync-server`, and the pin
+  it names is a clearnet sync indexer held out of the Server-Selection
+  Sweep. The sweep surveys the census minus the pin (one fewer candidate
+  when the pin is a census member), and the pin holds sync whatever the
+  sweep concludes: a refused sweep no longer closes a pinned session's
+  Sync Session. The survey's probe is `GetLatestBlock`, the lightest tip
+  call an indexer answers, where it was `GetLightdInfo`.
 - A failed command renders its whole cause chain at the dispatch seam,
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the
@@ -21,12 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chain walk reaches their detail too. `quicksend` names the send
   refusal that stopped it, and `current_price` reports the whole price
   race, where both printed one bare summary line before.
-- **Breaking.** `--server` has no default value. An online session without
-  the flag configures no indexer at launch; the Server-Selection Sweep
-  binds one at startup for every online session, whether or not it syncs,
-  so an `--online --nosync` session still has an indexer for later
-  interactive sync and send. `--server` remains the explicit pin the sweep
-  surveys and never substitutes.
+- **Breaking.** `--sync-server` has no default value. An online session
+  without the flag configures no indexer at launch; the Server-Selection
+  Sweep binds one at startup for every unpinned online session, whether or
+  not it syncs, so an `--online --nosync` session still has an indexer for
+  later interactive sync and send.
 - **Breaking.** The send-path vocabulary of ADRs 0036 and 0037 reaches the
   CLI's output grammar. The mixnet route report's JSON key `witness` is now
   `correspondent`, and `migrate auto`'s success key `broadcast` is now
@@ -36,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs the mixnet unconditionally and fails closed; clearnet carries
   sync alone. The clearnet server-selection sweep now compiles only
   under the non-default `clearnet-test-mode` feature, and a default
-  build resolves its indexer from `--server` without probing.
+  build resolves its indexer from `--sync-server` without probing.
 - Every dispatched command now narrates its latest progress line to stderr
   every eight seconds while it runs (`PROGRESS_HEARTBEAT_INTERVAL`), so no
   command is silent past one interval. The narration moved from individual

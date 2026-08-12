@@ -516,13 +516,13 @@ mod communication_mode {
     }
 
     /// Naming an endpoint is consenting to connect to it: an explicit
-    /// --server is a consent act (ADR 0025).
+    /// --sync-server is a consent act (ADR 0025).
     #[cfg(feature = "nym")]
     #[test]
     fn an_explicit_server_is_a_consent_act() {
         let dir = scratch_dir();
         assert_eq!(
-            mode_with_dir(&dir, &["--server", examples::SERVER_URI]),
+            mode_with_dir(&dir, &["--sync-server", examples::SERVER_URI]),
             CommunicationMode::Online
         );
     }
@@ -603,7 +603,7 @@ mod communication_mode {
             for act in [
                 vec!["--online"],
                 vec!["--remember-online"],
-                vec!["--server", examples::SERVER_URI],
+                vec!["--sync-server", examples::SERVER_URI],
             ] {
                 let mut args = vec![
                     examples::BIN_NAME,
@@ -677,7 +677,7 @@ mod communication_mode {
                 .try_get_matches_from([
                     examples::BIN_NAME,
                     "--offline",
-                    "--server",
+                    "--sync-server",
                     examples::SERVER_URI
                 ])
                 .is_err()
@@ -916,12 +916,13 @@ mod config_template {
         #[cfg(feature = "nym")]
         use crate::CommunicationMode;
 
-        /// An explicit `--server` is an online act, which only nym builds
+        /// An explicit `--sync-server` is an online act, which only nym builds
         /// accept (ADR 0026).
         #[cfg(feature = "nym")]
         #[test]
         fn defaults() {
-            let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
+            let config =
+                fill(&[examples::BIN_NAME, "--sync-server", examples::SERVER_URI]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
             assert_eq!(config.communication_mode, CommunicationMode::Online);
@@ -1035,11 +1036,12 @@ mod config_template {
 
         /// The URI shape check sits on the online resolution path, which
         /// only nym builds reach: the offline-only build refuses the
-        /// `--server` act before any URI is inspected (ADR 0026).
+        /// `--sync-server` act before any URI is inspected (ADR 0026).
         #[cfg(feature = "nym")]
         #[test]
         fn server_missing_port() {
-            let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
+            let err =
+                fill(&[examples::BIN_NAME, "--sync-server", "https://example.com"]).unwrap_err();
             assert!(err.contains("scheme"));
         }
     }
@@ -1062,7 +1064,7 @@ mod config_template {
         #[cfg(feature = "nym")]
         #[test]
         fn unpinned_online_configures_no_indexer() {
-            // --online is the consent act; with no --server there is no
+            // --online is the consent act; with no --sync-server there is no
             // default to fill in, and the sweep selects the sync indexer.
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
@@ -1086,7 +1088,7 @@ mod config_template {
         fn custom_server_is_propagated() {
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
-                "--server",
+                "--sync-server",
                 examples::SERVER_URI,
                 "--seed",
                 HOSPITAL_MUSEUM_SEED,
@@ -1110,7 +1112,7 @@ mod config_template {
             for act in [
                 vec!["--online"],
                 vec!["--remember-online"],
-                vec!["--server", examples::SERVER_URI],
+                vec!["--sync-server", examples::SERVER_URI],
             ] {
                 let mut args = vec![examples::BIN_NAME];
                 args.extend(act.iter());

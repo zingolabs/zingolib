@@ -85,10 +85,10 @@ pub fn build_clap_app() -> clap::Command {
                 .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction. \
 For a NEW wallet created in Offline mode it is instead an optional override of the library's built-in birthday floor."))
             .arg(Arg::new("server")
-                .long("server")
+                .long("sync-server")
                 .value_name("server")
-                .help("Pin a specific Indexer server. Without it, an online session's \
-Server-Selection Sweep selects the sync indexer.")
+                .help("Pin a specific clearnet sync indexer, held out of the Server-Selection \
+Sweep. Without it, an online session's sweep selects the sync indexer.")
                 .value_parser(parse_uri))
             .arg(Arg::new("offline")
                 .long("offline")
@@ -99,7 +99,7 @@ Server-Selection Sweep selects the sync indexer.")
                 .long("online")
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with("offline")
-                .help("Consent to go online this session (Connectivity Consent). First boot is offline by design; this flag, --remember-online, an explicit --server, or a stored standing consent takes a session online. The choice is not persisted."))
+                .help("Consent to go online this session (Connectivity Consent). First boot is offline by design; this flag, --remember-online, an explicit --sync-server, or a stored standing consent takes a session online. The choice is not persisted."))
             .arg(Arg::new("remember-online")
                 .long("remember-online")
                 .action(clap::ArgAction::SetTrue)
@@ -717,8 +717,8 @@ enum ConnectivityDecision {
 
 /// Combines the launch acts with the stored choice (ADR 0025): the
 /// deliberate `--offline` wins over everything, a launch act (`--online`,
-/// `--remember-online`, an explicit `--server`) over the store, the store
-/// alone sustains the connection, and nothing else goes online.
+/// `--remember-online`, an explicit `--sync-server`) over the store, the
+/// store alone sustains the connection, and nothing else goes online.
 #[cfg(feature = "nym")]
 fn decide_connectivity(
     offline: bool,
@@ -800,7 +800,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
                 "No Connectivity Consent is recorded, so this session runs offline: local \
                  operations work and nothing touches the network. To go online, pass --online \
                  (this session only), --remember-online (store the choice for future \
-                 sessions), or --server <uri>; in the session, `network on` also grants \
+                 sessions), or --sync-server <uri>; in the session, `network on` also grants \
                  consent and switches to ONLINE MODE. Pass --offline to run offline \
                  deliberately and silence this notice."
             );
@@ -857,15 +857,18 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
     communication_mode: CommunicationMode,
-    /// The pinned Indexer: `None` when the session is Offline, and equally
-    /// when it is Online unpinned, where the Server-Selection Sweep selects.
+    /// The pinned clearnet sync indexer: `None` when the session is Offline,
+    /// and equally when it is Online unpinned, where the Server-Selection
+    /// Sweep selects.
     server: Option<http::Uri>,
-    /// True when `--server` was typed on the command line: the pin the
-    /// Server-Selection Sweep surveys and never substitutes.
+    /// True when `--sync-server` was typed on the command line: the pin held
+    /// out of the Server-Selection Sweep, binding for sync by the user's own
+    /// selection.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     server_pinned: bool,
     /// All servers that responded to `get_info()` during dynamic selection,
-    /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
+    /// sorted fastest to slowest. Empty if `--sync-server` was specified
+    /// explicitly.
     /// Will be used for automatic failover when sync fails.
     #[cfg(feature = "clearnet-test-mode")]
     #[allow(dead_code)]
@@ -914,13 +917,13 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     #[cfg(feature = "clearnet-test-mode")]
     #[error(transparent)]
     ResolveServer(#[from] server_select_clearnet::ResolveServerError),
-    /// The pinned `--server` is not a valid indexer URI.
+    /// The pinned `--sync-server` is not a valid indexer URI.
     #[cfg(not(feature = "clearnet-test-mode"))]
-    #[error("invalid --server URI.")]
+    #[error("invalid --sync-server URI.")]
     IndexerUri(#[from] http::uri::InvalidUri),
-    /// The pinned server misses its scheme, host, or port.
+    /// The pinned clearnet sync indexer misses its scheme, host, or port.
     #[error(
-        "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
+        "Please provide the --sync-server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
     )]
     ServerShape {
         /// The under-specified server URI.
@@ -988,7 +991,7 @@ impl ConfigTemplate {
             }
         };
         // Without the quarantined sweep, resolution is pure: the typed
-        // `--server` pin or nothing, never a probe and never a default.
+        // `--sync-server` pin or nothing, never a probe and never a default.
         #[cfg(not(feature = "clearnet-test-mode"))]
         let server = match communication_mode {
             CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => None,
@@ -1145,7 +1148,10 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
             None if filled_template.communication_mode == CommunicationMode::Online => {
-                info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
+                info!(
+                    "No pinned clearnet sync indexer; the Server-Selection Sweep selects the \
+                     sync indexer"
+                )
             }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
@@ -1243,8 +1249,9 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     // The sweep binds the session's indexer, so it runs for every online
     // session, not only a syncing one: a --nosync session still accepts
     // interactive sync and send, which need an indexer bound. A pinned
-    // server is bound at config time and surveyed here; an unpinned online
-    // session has no indexer until the sweep selects one.
+    // clearnet sync indexer is bound at config time and held out of the
+    // sweep; an unpinned online session has no indexer until the sweep
+    // selects one.
     #[cfg(feature = "nym")]
     let indexer_ready = if filled_template.communication_mode == CommunicationMode::Online {
         sweep_select_sync_indexer(&mut lightclient, filled_template).await
@@ -1295,8 +1302,10 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 }
 
 /// Runs the Server-Selection Sweep (ADR 0034), narrating each phase, and
-/// binds its verdict as the sync indexer; returns whether this Sync Session
-/// may open.
+/// binds its verdict as the sync indexer for an unpinned session; a pinned
+/// clearnet sync indexer is held out of the sweep and holds sync whatever
+/// the sweep concludes, so only an unpinned session's Sync Session can be
+/// refused here.
 #[cfg(feature = "nym")]
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
@@ -1311,30 +1320,20 @@ async fn sweep_select_sync_indexer(
         .server_pinned
         .then(|| filled_template.server.clone())
         .flatten();
-    if let Some(pinned) = &pin
-        && !zingolib::mixnet::probe::probe_eligible(pinned)
-    {
-        eprintln!(
-            "Server-Selection Sweep: pinned server {pinned} is outside the mixnet exit policy \
-             (https on port 443), so no sweep can survey it; binding it directly."
-        );
-        return true;
-    }
     let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
         .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
         .collect();
-    if let Some(pinned) = &pin
-        && !candidates.contains(pinned)
-    {
-        candidates.push(pinned.clone());
+    if let Some(pinned) = &pin {
+        eprintln!(
+            "Server-Selection Sweep: user selected clearnet sync indexer {pinned} held out of \
+             selection sweep."
+        );
+        candidates.retain(|candidate| candidate != pinned);
     }
     let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
     let selection = lightclient
-        .run_server_selection_sweep(
-            std::path::Path::new(&proxy_path),
-            &candidates,
-            pin.as_ref(),
-            |phase| match phase {
+        .run_server_selection_sweep(std::path::Path::new(&proxy_path), &candidates, |phase| {
+            match phase {
                 SweepProgress::TransportBootstrapping => eprintln!(
                     "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
                      (its Exit Node is recycled when the sweep completes)..."
@@ -1346,11 +1345,19 @@ async fn sweep_select_sync_indexer(
                     "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
                      judging the live cohort..."
                 ),
-            },
-        )
+            }
+        })
         .await;
     match selection {
         Ok(selection) => {
+            if let Some(pinned) = &pin {
+                eprintln!(
+                    "Server-Selection Sweep: live cohort of {}; the pinned clearnet sync \
+                     indexer {pinned} holds sync.",
+                    selection.cohort.len(),
+                );
+                return true;
+            }
             let chosen = selection.sync_indexer.clone();
             match lightclient.set_indexer_uri(chosen.clone()).await {
                 Ok(()) => {
@@ -1373,6 +1380,14 @@ async fn sweep_select_sync_indexer(
             }
         }
         Err(e) => {
+            if let Some(pinned) = &pin {
+                eprintln!(
+                    "Server-Selection Sweep: no verdict: {}. The pinned clearnet sync indexer \
+                     {pinned} holds sync; the mixnet posture stands.",
+                    commands::render_error_chain(&e),
+                );
+                return true;
+            }
             eprintln!("{}", sweep_refusal_notice(&e));
             false
         }
