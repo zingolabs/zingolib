@@ -2406,7 +2406,10 @@ where
             }
             Err(e @ MempoolError::ShutdownWithoutStream) => return Err(e),
             Err(MempoolError::ServerError(e)) => {
-                tracing::warn!("Mempool stream request failed! Status: {e}.\nRetrying...");
+                tracing::warn!(
+                    "Mempool stream request failed! Status: {}.\nRetrying...",
+                    crate::error::cause_chain_text(&e)
+                );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
         }
