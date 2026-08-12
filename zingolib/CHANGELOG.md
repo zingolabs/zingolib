@@ -63,7 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tunnels at a time — at least one, at most a quarter of the census, and
   never past the measured `MAX_SURVEY_TUNNEL_WIDTH` — because every
   tunnel shares the one sweep exit's packet pipeline and an unbounded
-  fan-out blew every probe's budget at once — the 0-of-17 signature. `mixnet::sweep::SurveyResult` gains a
+  fan-out blew every probe's budget at once — the 0-of-17 signature.
+  The width counts connections through the one Nym client, never
+  processes, so Android and iOS — hosting the client in-process under
+  the single-process constraint — share the same calibration unchanged. `mixnet::sweep::SurveyResult` gains a
   `refusal` field carrying the diary's `FailureKind`, and
   `SweepError::EmptyCohort` gains a `causes` tally, so the refusal itself
   says whether the transport or the indexers failed, e.g. "0 of 17

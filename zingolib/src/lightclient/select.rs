@@ -192,10 +192,13 @@ const SURVEY_FANOUT_DIVISOR: usize = 4;
 /// The narrowest survey: one tunnel, the sequential floor.
 const MIN_SURVEY_TUNNEL_WIDTH: usize = 1;
 
-/// The number of survey tunnels open at once for a survey of `candidates`,
+/// The number of survey tunnels open at once for a survey of `candidates` —
 /// a bounded function of the census size: at least one, at most a
-/// [`SURVEY_FANOUT_DIVISOR`]th of the list, and never past the measured
-/// [`MAX_SURVEY_TUNNEL_WIDTH`] the shared exit pipeline carries.
+/// [`SURVEY_FANOUT_DIVISOR`]th of the list, never past the measured
+/// [`MAX_SURVEY_TUNNEL_WIDTH`] — counting connections through the one Nym
+/// client rather than processes, so the same calibration serves a spawned
+/// desktop binary and the in-process client Android and iOS host under the
+/// single-process constraint.
 pub fn survey_tunnel_width(candidates: usize) -> usize {
     candidates
         .div_ceil(SURVEY_FANOUT_DIVISOR)
