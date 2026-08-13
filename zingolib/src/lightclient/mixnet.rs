@@ -13,7 +13,10 @@ use super::{LightClient, MixnetPriceFetch};
 /// through one Exit Node and settles on the first quote, whichever operator
 /// answers.
 #[cfg(feature = "nym")]
-pub struct PriceRun;
+pub(crate) struct PriceRun {
+    /// The pools this run takes its transport from and returns it to.
+    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+}
 
 #[cfg(feature = "nym")]
 impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
@@ -48,6 +51,39 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
 
     fn settled(&self, outcomes: &[Self::Outcome]) -> bool {
         outcomes.iter().any(|(_, outcome)| outcome.is_ok())
+    }
+
+    fn acquire(
+        &self,
+    ) -> impl std::future::Future<
+        Output = Result<
+            (crate::mixnet::speed::Member, std::net::SocketAddr),
+            crate::mixnet::acquire::TransportError,
+        >,
+    > + Send {
+        let pools = self.pools.clone();
+        async move {
+            let member = pools.take_or_acquire(|pools| &pools.price).await?;
+            let addr = member
+                .addr()
+                .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
+            Ok((member, addr))
+        }
+    }
+
+    fn dispose(&self, spent: crate::mixnet::speed::Member) {
+        // The quote is already in hand, so teardown and the refill run
+        // behind the caller rather than in front of it. The member never
+        // returns to the pool: consecutive runs must not share an exit.
+        let pools = self.pools.clone();
+        tokio::spawn(async move {
+            spent.retire().await;
+            pools.ensure_filled();
+        });
+    }
+
+    fn narrate(&self, phase: crate::mixnet::speed::SpeedProgress) {
+        tracing::info!("price run: {phase:?}");
     }
 }
 
@@ -395,69 +431,49 @@ impl LightClient {
         // tunnel — while an attached session's single mobile-platform endpoint
         // carries it as before. The consumed member is stopped whatever
         // the outcome, and the refill draw excludes its exit.
-        let pooled = if self
-            .mixnet_slot
-            .proxy()
-            .is_some_and(crate::mixnet::MixnetProxy::is_spawned)
-            && self.correspondent_pools.acquirer().is_some()
-        {
-            Some(
-                self.correspondent_pools
-                    .take_or_acquire(|pools| &pools.price)
-                    .await
-                    .map_err(crate::wallet::error::PriceError::TransportAcquisition)?,
-            )
-        } else {
-            None
+        // The run is the one speed-priority operation shape: it acquires a
+        // transport, races its sources through that exit in a wave a
+        // Sentinel rides, and redraws whenever an exit proves to carry
+        // nothing. Acquisition, disposal, and the redraw bound are the
+        // shared loop's; this call site owns only the quote.
+        let dispatched = std::time::Instant::now();
+        let run = PriceRun {
+            pools: self.correspondent_pools.clone(),
         };
-        // A pooled member carries its own fresh Shared exit; only an attached
-        // session rides the slot's shared tunnel. A member whose transport
-        // reports no address died between take and use, so the run refuses
-        // rather than silently degrading to the slot tunnel.
-        let via_socks5 = match pooled.as_ref() {
-            Some(member) => match member.addr() {
-                Some(addr) => addr,
-                None => {
-                    if let Some(member) = pooled {
-                        member.retire().await;
-                        self.correspondent_pools.ensure_filled();
-                    }
+        // A spawned session draws its own transport per run, so a dead exit
+        // costs a redraw. An attached session has one endpoint its platform
+        // host owns: there is nothing to redraw, so the run rides that tunnel
+        // for one wave, and a dead exit ends it.
+        let (outcomes, via_socks5) = if self.correspondent_pools.acquirer().is_some() {
+            let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
+                .await
+                .map_err(crate::wallet::error::PriceError::Speed)?;
+            let dial = spent
+                .addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or_default();
+            crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
+            (outcomes, dial)
+        } else {
+            match crate::mixnet::speed::run_wave(&run, socks5_addr).await {
+                crate::mixnet::speed::WaveEnd::ExitCarriesNothing => {
                     return Err(LightClientError::from(
-                        crate::wallet::error::PriceError::TransportAcquisition(
-                            crate::mixnet::acquire::TransportError::DiedBeforeUse,
+                        crate::wallet::error::PriceError::Speed(
+                            crate::mixnet::speed::SpeedError::NoLiveExit {
+                                draws: 1,
+                                budget: zingo_netutils::time::SENTINEL_BUDGET,
+                            },
                         ),
                     ));
                 }
-            },
-            None => socks5_addr,
-        };
-
-        // The fetch runs outside the wallet lock (the net-diag
-        // polling-blackout remedy), so a hung tunnel can no longer freeze
-        // every wallet-state observer. The race is the one speed-priority
-        // wave every such operation runs: the sources ride its target lanes,
-        // a Sentinel rides the remaining one, and the first quote settles it.
-        let dispatched = std::time::Instant::now();
-        let budget = zingo_netutils::time::SENTINEL_BUDGET;
-        let wave = crate::mixnet::speed::run_wave(&PriceRun, via_socks5).await;
-        if let Some(member) = pooled {
-            member.retire().await;
-            self.correspondent_pools.ensure_filled();
-        }
-        let raced = match wave {
-            // The exit carried nothing, so no source was reached and none is
-            // charged for the silence.
-            crate::mixnet::speed::WaveEnd::ExitCarriesNothing => {
-                return Err(LightClientError::from(
-                    crate::wallet::error::PriceError::ExitCarriesNothing { budget },
-                ));
-            }
-            crate::mixnet::speed::WaveEnd::Settled(outcomes)
-            | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
-                zingo_price::first_quote(outcomes)
-                    .map_err(crate::wallet::error::PriceError::from)?
+                crate::mixnet::speed::WaveEnd::Settled(outcomes)
+                | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
+                    (outcomes, socks5_addr.to_string())
+                }
             }
         };
+        let raced =
+            zingo_price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
         self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {

@@ -9,8 +9,6 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
 #[cfg(feature = "nym")]
-use crate::mixnet::acquire;
-
 use super::output::OutputRef;
 
 /// Top level wallet errors
@@ -160,19 +158,11 @@ pub enum PriceError {
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
-    /// The Price Source Pool could not supply a transport for the run.
-    #[error("price transport acquisition failed.")]
-    TransportAcquisition(#[source] acquire::TransportError),
-    /// The run's Exit Node carried no round trip, so no source could have
-    /// answered and none is charged for the silence.
-    #[error(
-        "the run's exit node carried nothing within {}ms, so no price source was reached",
-        budget.as_millis()
-    )]
-    ExitCarriesNothing {
-        /// The budget the Sentinel gave the exit before condemning it.
-        budget: std::time::Duration,
-    },
+    /// The run reached no source at all: it acquired no transport, or every
+    /// exit it drew carried nothing. Shared with every speed-priority
+    /// operation, because neither failure is about prices.
+    #[error("the price run reached no source.")]
+    Speed(#[source] crate::mixnet::speed::SpeedError),
 }
 
 /// Summary error

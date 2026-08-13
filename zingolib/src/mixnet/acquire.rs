@@ -60,12 +60,12 @@ pub enum TransportError {
         reported: Vec<crate::mixnet::ExitNodeId>,
     },
     /// The transport died during bootstrap.
-    #[error(
-        "the pool transport died during bootstrap: {}",
-        detail.as_ref().map_or_else(|| "no detail reported".to_string(), ToString::to_string)
-    )]
+    #[error("the transport died before it became ready")]
     DiedDuringBootstrap {
-        /// The death detail the status channel carried, when it carried one.
+        /// The death detail the status channel carried, when it carried one,
+        /// kept as a source so the typed failure reaches a caller whole
+        /// rather than flattened into this message.
+        #[source]
         detail: Option<zingo_net_diag::NetOpFailure>,
     },
     /// The transport's status channel closed before readiness.

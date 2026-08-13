@@ -1390,11 +1390,13 @@ mod sweep_refusal_notice {
     /// carrying only the outermost line falsifies it.
     #[test]
     fn the_refusal_states_the_cause_of_a_source_only_failure() {
-        let refused = ServerSelectionError::ProxyStart(MixnetProxyError::NoStdout);
+        let refused = ServerSelectionError::Speed(zingolib::mixnet::speed::SpeedError::Transport(
+            zingolib::mixnet::TransportError::Proxy(MixnetProxyError::NoStdout),
+        ));
         assert_eq!(
             crate::sweep_refusal_notice(&refused),
-            "Server-Selection Sweep: no sync indexer selected: the sweep proxy could not \
-             start\ncaused by: the nym-proxy child exposed no stdout. This Sync Session does \
+            "Server-Selection Sweep: no sync indexer selected: the sweep reached no live \
+             exit\ncaused by: the nym-proxy child exposed no stdout. This Sync Session does \
              not open; the mixnet posture stands, and send and price-fetch continue."
         );
     }

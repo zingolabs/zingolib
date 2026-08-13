@@ -56,40 +56,13 @@ pub enum SweepProgress {
 /// Why a Server-Selection Sweep produced no sync indexer.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerSelectionError {
-    /// The sweep could not draw a ledgered Clutch for its transport.
-    #[error("the sweep could not acquire a transport")]
-    TransportAcquisition(#[source] crate::mixnet::acquire::TransportError),
-    /// The ready sweep transport bound an Exit Node outside the drawn Clutch.
-    #[error(
-        "the sweep transport bound an exit outside the drawn clutch ({} reported)",
-        reported.len()
-    )]
-    ExitOutsideClutch {
-        /// The exit identities the ready transport reported as bound.
-        reported: Vec<crate::mixnet::ExitNodeId>,
-    },
-    /// The dedicated sweep proxy could not be spawned.
-    #[error("the sweep proxy could not start")]
-    ProxyStart(#[source] crate::mixnet::MixnetProxyError),
-    /// The dedicated sweep proxy died before any survey ran.
-    #[error("the sweep transport died before it became ready")]
-    TransportDied {
-        /// The typed cause the death report latched, when it held one.
-        #[source]
-        detail: Option<zingo_net_diag::NetOpFailure>,
-    },
-    /// The dedicated sweep proxy exceeded its bootstrap budget before any
-    /// survey ran.
-    #[error("the sweep transport did not become ready within {}s", budget.as_secs())]
-    TransportTimeout {
-        /// The bootstrap budget that elapsed without a readiness
-        /// announcement.
-        budget: Duration,
-    },
-    /// The dedicated sweep proxy's status channel closed before readiness.
-    #[error("the sweep transport's status channel closed before readiness")]
-    TransportStatusClosed,
-    /// The survey ran but no sync indexer could be selected.
+    /// The sweep reached no live exit at all: it acquired no transport, or
+    /// every exit it drew carried nothing. Shared with every speed-priority
+    /// operation, because neither failure is about indexers.
+    #[error("the sweep reached no live exit")]
+    Speed(#[source] crate::mixnet::speed::SpeedError),
+    /// The survey ran through a proven exit but no indexer could be
+    /// selected.
     #[error(transparent)]
     Selection(#[from] SweepError),
 }
@@ -115,149 +88,88 @@ impl LightClient {
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
         let chain = lightd_chain_name(&self.chain_type());
-        // The sweep gates the Sync Session a user just asked to open.
-        use zingo_netutils::responsiveness::{PrioritiseSpeed, Responsiveness as _};
-        let acquirer = crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf());
-        // A dead exit is abandoned for a fresh one, and its reservation is
-        // held across the redraw so the pool cannot offer it again.
-        let mut abandoned: Option<
-            crate::correspondent::pool::Member<
-                crate::mixnet::MixnetProxy,
-                crate::correspondent::pool::Shared,
-            >,
-        > = None;
-        for draw in 1..=MAX_SWEEP_EXIT_DRAWS {
-            // A dedicated status channel per draw: the sweep proxy's lifecycle
-            // is private to this attempt and must not touch the session's
-            // mixnet status, nor carry a previous attempt's announcements.
-            let publisher = crate::mixnet::status_publisher();
-            let mut receiver = publisher.subscribe();
-            // The sweep refuses without a ledgered Clutch; its reservations are
-            // held for the sweep's life and recycled by drop on every return.
-            let mut clutch = self
-                .correspondent_pools
-                .draw_clutch(&acquirer)
-                .await
-                .map_err(ServerSelectionError::TransportAcquisition)?;
-            let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-            let proxy = crate::mixnet::acquire::TransportAcquirable::acquire(
-                &acquirer,
-                PrioritiseSpeed::CLASS,
-                &nodes,
-                publisher,
-            )
+        let acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable> =
+            std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
+                binary_path.to_path_buf(),
+            ));
+        // Random lane assignment, the pin guaranteed an opening lane: the
+        // first healthy answer is the verdict, the pin preempting while its
+        // own probe is pending. Acquisition, the Sentinel-ridden wave, and
+        // the redraw of an exit that carries nothing are the shared
+        // speed-priority loop's; this runner owns only the judgment.
+        let order = sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
+        let survey = IndexerSurvey {
+            pools: self.correspondent_pools.clone(),
+            acquirer,
+            order: order.clone(),
+            chain: chain.to_string(),
+            pin: pin.cloned(),
+            timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
+            history: self.indexer_history.clone(),
+        };
+        progress(SweepProgress::TransportBootstrapping);
+        let (results, member) = crate::mixnet::speed::run_speed_prioritized(&survey)
             .await
-            .map_err(ServerSelectionError::TransportAcquisition)?;
+            .map_err(ServerSelectionError::Speed)?;
+        let socks5_addr = member.addr().ok_or(ServerSelectionError::Speed(
+            crate::mixnet::speed::SpeedError::Transport(
+                crate::mixnet::acquire::TransportError::DiedBeforeUse,
+            ),
+        ))?;
+        progress(SweepProgress::Judging {
+            answered: results.iter().filter(|r| r.reported.is_some()).count(),
+            surveyed: results.len(),
+        });
 
-            progress(SweepProgress::TransportBootstrapping);
-            let (socks5_addr, exits) = await_sweep_ready(&mut receiver).await?;
-            // Bind-time recycle: the survey's fan-out is a declared Shared use
-            // of the one bound exit, and the unbound reservations return now.
-            // The shared gate guarantees an announced exit, so this refusal
-            // fires only on a genuinely foreign one (a version-skewed proxy),
-            // typed at the user's go-online moment, never a panic.
-            let Some(lease) =
-                crate::correspondent::pool::exit_pool::take_bound_lease(&mut clutch, &exits)
-            else {
-                proxy.stop().await;
-                return Err(ServerSelectionError::ExitOutsideClutch { reported: exits });
-            };
-            drop(clutch);
-            let member: crate::correspondent::pool::Member<
-                crate::mixnet::MixnetProxy,
-                crate::correspondent::pool::Shared,
-            > = crate::correspondent::pool::Member::new(proxy, lease);
-            // This draw holds its own exit now, so a dead predecessor can go
-            // back to the pool without risking its own reissue.
-            if let Some(dead) = abandoned.take() {
-                dead.retire().await;
-            }
-            progress(SweepProgress::Surveying {
-                candidates: candidates.len(),
-            });
-            // Random lane assignment, the pin guaranteed an opening lane: the
-            // first healthy answer is the verdict (the pin preempts while its
-            // own probe is pending), offered to the session immediately. The
-            // wave itself is the one every speed-priority operation runs.
-            let order =
-                sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
-            let survey = IndexerSurvey {
-                order: order.clone(),
-                chain: chain.to_string(),
-                pin: pin.cloned(),
-                timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
-                history: self.indexer_history.clone(),
-            };
-            let (results, exit_carries_nothing) =
-                match crate::mixnet::speed::run_wave(&survey, socks5_addr).await {
-                    crate::mixnet::speed::WaveEnd::ExitCarriesNothing => (Vec::new(), true),
-                    crate::mixnet::speed::WaveEnd::Settled(results)
-                    | crate::mixnet::speed::WaveEnd::Exhausted(results) => (results, false),
-                };
-            let verdict = sweep::first_healthy_verdict(&results, chain, pin);
-
-            if exit_carries_nothing && draw < MAX_SWEEP_EXIT_DRAWS {
-                // The exit, not the candidates, failed: this draw's results
-                // say nothing about any indexer, so they are dropped whole
-                // and the sweep starts over on a fresh exit.
-                progress(SweepProgress::ExitAbandoned { draw });
-                abandoned = Some(member);
-                continue;
-            }
-            progress(SweepProgress::Judging {
-                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+        let Some(chosen) = sweep::first_healthy_verdict(&results, chain, pin) else {
+            // Every candidate was surveyed through a proven exit and none
+            // was healthy, so the refusal is about the candidates.
+            member.retire().await;
+            return Err(SweepError::EmptyCohort {
                 surveyed: results.len(),
-            });
-
-            let Some(chosen) = verdict else {
-                // Every candidate was surveyed and none was healthy.
-                member.retire().await;
-                return Err(SweepError::EmptyCohort {
-                    surveyed: results.len(),
-                    answered: results.iter().filter(|r| r.reported.is_some()).count(),
-                    causes: sweep::RefusalTally::of(&results),
-                }
-                .into());
-            };
-            let selection = sweep::first_healthy_selection(&results, chain, chosen);
-
-            // Every candidate the verdict left unresolved continues in the
-            // background purely as the health sweep; the session holds its
-            // handle so `go_offline` can abort it, and retiring the member
-            // afterward recycles the exit that observed the survey.
-            let seen: std::collections::HashSet<Uri> =
-                results.iter().map(|result| result.uri.clone()).collect();
-            let rest: Vec<Uri> = order
-                .into_iter()
-                .filter(|candidate| !seen.contains(candidate))
-                .collect();
-            if rest.is_empty() {
-                member.retire().await;
-            } else {
-                let history = self.indexer_history.clone();
-                let continuation = tokio::spawn(async move {
-                    health_survey(socks5_addr, rest, &history).await;
-                    member.retire().await;
-                });
-                if let Some(superseded) = self
-                    .health_sweep
-                    .lock()
-                    .expect("the health-sweep slot is never poisoned")
-                    .replace(continuation)
-                {
-                    superseded.abort();
-                }
+                answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                causes: sweep::RefusalTally::of(&results),
             }
-            return Ok(selection);
+            .into());
+        };
+        let selection = sweep::first_healthy_selection(&results, chain, chosen);
+
+        // Every candidate the verdict left unresolved continues in the
+        // background purely as the health sweep; the session holds its
+        // handle so `go_offline` can abort it, and retiring the member
+        // afterward recycles the exit that observed the survey.
+        let seen: std::collections::HashSet<Uri> =
+            results.iter().map(|result| result.uri.clone()).collect();
+        let rest: Vec<Uri> = order
+            .into_iter()
+            .filter(|candidate| !seen.contains(candidate))
+            .collect();
+        if rest.is_empty() {
+            member.retire().await;
+        } else {
+            let history = self.indexer_history.clone();
+            let continuation = tokio::spawn(async move {
+                health_survey(socks5_addr, rest, &history).await;
+                member.retire().await;
+            });
+            if let Some(superseded) = self
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned")
+                .replace(continuation)
+            {
+                superseded.abort();
+            }
         }
-        // The loop returns on every path a draw can reach.
-        unreachable!("every sweep draw returns or abandons its exit")
+        Ok(selection)
     }
 }
 
 /// The Server-Selection Sweep as a speed-priority operation: it races the
 /// census through one Exit Node and settles on the first healthy answer.
 struct IndexerSurvey {
+    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
     order: Vec<Uri>,
     chain: String,
     pin: Option<Uri>,
@@ -292,6 +204,39 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
 
     fn settled(&self, outcomes: &[SurveyResult]) -> bool {
         sweep::first_healthy_verdict(outcomes, &self.chain, self.pin.as_ref()).is_some()
+    }
+
+    fn acquire(
+        &self,
+    ) -> impl std::future::Future<
+        Output = Result<
+            (crate::mixnet::speed::Member, std::net::SocketAddr),
+            crate::mixnet::acquire::TransportError,
+        >,
+    > + Send {
+        // The sweep's transport is its own, drawn and bound over the one
+        // acquisition the pools already define, never taken from a pool: its
+        // exit must be distinct from every exit a send or a price run holds.
+        let pools = self.pools.clone();
+        let acquirer = self.acquirer.clone();
+        async move {
+            let (transport, lease) = pools.acquire_bound(acquirer.as_ref()).await?;
+            let member = crate::mixnet::speed::Member::new(transport, lease);
+            let addr = member
+                .addr()
+                .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
+            Ok((member, addr))
+        }
+    }
+
+    fn dispose(&self, spent: crate::mixnet::speed::Member) {
+        tokio::spawn(async move {
+            spent.retire().await;
+        });
+    }
+
+    fn narrate(&self, phase: crate::mixnet::speed::SpeedProgress) {
+        tracing::info!("server-selection sweep: {phase:?}");
     }
 }
 
@@ -329,45 +274,6 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
         crate::config::ChainType::Mainnet => "main",
         crate::config::ChainType::Testnet => "test",
         crate::config::ChainType::Regtest(_) => "regtest",
-    }
-}
-
-/// Wait for the dedicated sweep proxy to reach readiness through the one
-/// shared gate, mapping each typed outcome into the sweep's own vocabulary.
-async fn await_sweep_ready(
-    receiver: &mut tokio::sync::watch::Receiver<crate::mixnet::MixnetStatus>,
-) -> Result<(std::net::SocketAddr, Vec<crate::mixnet::ExitNodeId>), ServerSelectionError> {
-    crate::mixnet::supervisor::await_ready_endpoint(
-        receiver,
-        zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
-    )
-    .await
-    .map_err(sweep_refusal)
-}
-
-/// The sweep's own name for one transport refusal, mapping every variant by
-/// hand so a new one is a compile error rather than a silent acquisition
-/// story.
-fn sweep_refusal(refusal: crate::mixnet::acquire::TransportError) -> ServerSelectionError {
-    use crate::mixnet::acquire::TransportError;
-    match refusal {
-        TransportError::DiedDuringBootstrap { detail } => {
-            ServerSelectionError::TransportDied { detail }
-        }
-        TransportError::StatusChannelClosed => ServerSelectionError::TransportStatusClosed,
-        TransportError::NotReady { budget } => ServerSelectionError::TransportTimeout { budget },
-        TransportError::ExitOutsideClutch { reported } => {
-            ServerSelectionError::ExitOutsideClutch { reported }
-        }
-        acquisition @ (TransportError::NoAcquirer
-        | TransportError::DiscoverySpawn(_)
-        | TransportError::DiscoveryFailed { .. }
-        | TransportError::ExitPoolNotSeeded
-        | TransportError::ExitPoolExhausted { .. }
-        | TransportError::Proxy(_)
-        | TransportError::HostUnavailable(_)
-        | TransportError::HostRefused(_)
-        | TransportError::DiedBeforeUse) => ServerSelectionError::TransportAcquisition(acquisition),
     }
 }
 
@@ -583,7 +489,13 @@ mod tests {
         let publisher = crate::mixnet::status_publisher();
         publisher.send_replace(ready_with(Vec::new()));
         let mut receiver = publisher.subscribe();
-        let waiter = tokio::spawn(async move { await_sweep_ready(&mut receiver).await });
+        let waiter = tokio::spawn(async move {
+            crate::mixnet::supervisor::await_ready_endpoint(
+                &mut receiver,
+                zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+            )
+            .await
+        });
         for _ in 0..PARKING_YIELDS {
             tokio::task::yield_now().await;
         }
@@ -611,13 +523,16 @@ mod tests {
         let publisher = crate::mixnet::status_publisher();
         publisher.send_replace(ready_with(Vec::new()));
         let mut receiver = publisher.subscribe();
-        let refusal = await_sweep_ready(&mut receiver)
-            .await
-            .expect_err("no exit ever arrives");
+        let refusal = crate::mixnet::supervisor::await_ready_endpoint(
+            &mut receiver,
+            zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+        )
+        .await
+        .expect_err("no exit ever arrives");
         assert!(
             matches!(
                 refusal,
-                ServerSelectionError::TransportTimeout { budget }
+                crate::mixnet::acquire::TransportError::NotReady { budget }
                     if budget == zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE
             ),
             "an exitless Ready refuses at the grace, got: {refusal}"
@@ -631,16 +546,18 @@ mod tests {
     /// acquisition failure.
     #[test]
     fn the_bind_refusal_never_tells_the_acquisition_story() {
-        let refusal = sweep_refusal(crate::mixnet::acquire::TransportError::ExitOutsideClutch {
-            reported: vec![crate::mixnet::ExitNodeId::from("exit-foreign")],
-        });
-        let told = refusal.to_string();
+        let refusal = ServerSelectionError::Speed(crate::mixnet::speed::SpeedError::Transport(
+            crate::mixnet::acquire::TransportError::ExitOutsideClutch {
+                reported: vec![crate::mixnet::ExitNodeId::from("exit-foreign")],
+            },
+        ));
+        let told = zingo_net_diag::chain_texts(&refusal).join(" ");
         assert!(
             !told.contains("could not acquire a transport"),
             "the bind refusal must not borrow the acquisition's story, got: {told}"
         );
         assert!(
-            told.contains("outside the drawn clutch"),
+            told.contains("no bound exit from the drawn clutch"),
             "the bind refusal names the exit outside the clutch, got: {told}"
         );
     }
@@ -661,15 +578,21 @@ mod tests {
         let death_publisher = crate::mixnet::status_publisher();
         death_publisher.send_replace(died_with(Some(handshake.clone())));
         let mut death_receiver = death_publisher.subscribe();
-        let died = await_sweep_ready(&mut death_receiver)
-            .await
-            .expect_err("a died transport never reaches readiness");
+        let died = crate::mixnet::supervisor::await_ready_endpoint(
+            &mut death_receiver,
+            zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+        )
+        .await
+        .expect_err("a died transport never reaches readiness");
 
         let idle_publisher = crate::mixnet::status_publisher();
         let mut idle_receiver = idle_publisher.subscribe();
-        let timed_out = await_sweep_ready(&mut idle_receiver)
-            .await
-            .expect_err("a transport that never announces exceeds its budget");
+        let timed_out = crate::mixnet::supervisor::await_ready_endpoint(
+            &mut idle_receiver,
+            zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+        )
+        .await
+        .expect_err("a transport that never announces exceeds its budget");
 
         assert_ne!(
             std::mem::discriminant(&died),
@@ -679,7 +602,7 @@ mod tests {
         assert!(
             matches!(
                 timed_out,
-                ServerSelectionError::TransportTimeout { budget }
+                crate::mixnet::acquire::TransportError::NotReady { budget }
                     if budget == zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT
             ),
             "the timeout refusal carries the budget it exceeded"

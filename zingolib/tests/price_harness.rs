@@ -153,10 +153,7 @@ fn mode_tally(error: &zingolib::lightclient::error::LightClientError) -> String 
         return format!("not a price failure: {error}");
     };
     match price {
-        WalletPriceError::ExitCarriesNothing { budget } => {
-            format!("exit carried nothing in {}ms", budget.as_millis())
-        }
-        WalletPriceError::TransportAcquisition(_) => "no transport acquired".to_string(),
+        WalletPriceError::Speed(speed) => speed_mode(speed),
         WalletPriceError::NotInitialised => "price list not initialised".to_string(),
         WalletPriceError::PriceError(one) => format!("one source: {}", source_mode(one)),
         WalletPriceError::RaceFailed(report) => {
@@ -170,6 +167,17 @@ fn mode_tally(error: &zingolib::lightclient::error::LightClientError) -> String 
                 .map(|(mode, count)| format!("{count} {mode}"))
                 .collect::<Vec<_>>()
                 .join(", ")
+        }
+    }
+}
+
+/// A failure of the wave itself, which belongs to the transport rather than
+/// to any price source.
+fn speed_mode(failure: &zingolib::mixnet::speed::SpeedError) -> String {
+    match failure {
+        zingolib::mixnet::speed::SpeedError::Transport(_) => "no transport acquired".to_string(),
+        zingolib::mixnet::speed::SpeedError::NoLiveExit { draws, budget } => {
+            format!("no live exit in {draws} draws of {}ms", budget.as_millis())
         }
     }
 }

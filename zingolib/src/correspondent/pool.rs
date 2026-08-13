@@ -280,7 +280,7 @@ impl Pools {
 
     /// Acquires one ready transport over a fresh Clutch, keeping only the
     /// bound exit's lease.
-    async fn acquire_bound(
+    pub(crate) async fn acquire_bound(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
     ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
