@@ -30,12 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
+  where it carried `info: LightdInfo`, because discovery now probes the tip.
 - BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
   helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
   proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
 
 ### Added
 
+- `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
+  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
+  used by the attach readiness round trip and by live-indexer discovery.
 - The `responsiveness` module partitions network operations at compile
   time: the sealed `Responsiveness` trait with the `Critical` and
   `NonCritical` marker types, the `ResponsivenessClass` enum with

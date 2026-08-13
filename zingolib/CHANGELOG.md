@@ -104,6 +104,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
   refusal is the existing `NotReady` variant, carrying the grace as the
   budget it exceeded.
+- BREAKING: the survey reports its refusal causes.
+  `mixnet::sweep::SurveyResult` gains a `refusal` field carrying the diary's
+  `FailureKind`, and `SweepError::EmptyCohort` gains a `causes` tally, so the
+  refusal itself says whether the transport or the indexers failed, e.g. "0 of
+  17 answered, none within the cohort (17 timeout)". A saturated transport now
+  reads differently from dead indexers without any external harness.
+- `zingo_netutils::Socks5Indexer::get_latest_block` fetches a candidate's tip
+  through the proxy, the lightest liveness probe an indexer answers. The attach
+  readiness round trip and the live-indexer discovery probe use it. The
+  Server-Selection Sweep's own survey keeps `get_lightd_info`, because the
+  first-healthy verdict rests on the chain a candidate names and a tip carries
+  no chain identity.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and

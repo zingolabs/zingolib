@@ -31,7 +31,9 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
-use lightwallet_protocol::{CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter};
+use lightwallet_protocol::{
+    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter,
+};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data
@@ -282,8 +284,17 @@ impl Socks5Indexer {
         )?)
     }
 
-    /// Fetches the indexer's `GetLightdInfo` through the proxy, the mixnet
-    /// leg of a paired clearnet/mixnet probe.
+    /// Fetches the indexer's chain tip through the proxy, the lightest
+    /// liveness probe an indexer answers.
+    pub async fn get_latest_block(&self) -> Result<BlockId, Socks5TransmitError> {
+        self.round_trip(ChainSpec {}, |mut client, request| async move {
+            client.get_latest_block(request).await
+        })
+        .await
+    }
+
+    /// Fetches the indexer's `GetLightdInfo` through the proxy, the probe
+    /// that names the chain a candidate serves.
     pub async fn get_lightd_info(&self) -> Result<LightdInfo, Socks5TransmitError> {
         self.round_trip(Empty {}, |mut client, request| async move {
             client.get_lightd_info(request).await

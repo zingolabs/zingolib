@@ -67,11 +67,10 @@ async fn main() -> ExitCode {
     );
     for found in &report.live {
         println!(
-            "  LIVE {} operator={} height={} vendor={} ({:.1?})",
+            "  LIVE {} operator={} height={} ({:.1?})",
             found.indexer.uri,
             found.indexer.operator(),
-            found.info.block_height,
-            found.info.vendor,
+            found.tip.height,
             found.elapsed
         );
     }
@@ -97,10 +96,10 @@ async fn main() -> ExitCode {
             .expect("the census tests pin every entry parseable");
         let socks5_addr = found.transport.socks5_addr();
         let heartbeat = Socks5Indexer::new(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND);
-        match heartbeat.get_lightd_info().await {
-            Ok(info) => println!(
+        match heartbeat.get_latest_block().await {
+            Ok(tip) => println!(
                 "  OK {} height={} (same transport, same exit)",
-                found.indexer.uri, info.block_height
+                found.indexer.uri, tip.height
             ),
             Err(source) => println!("  LOST {} ({source})", found.indexer.uri),
         }

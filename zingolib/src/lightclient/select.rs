@@ -162,8 +162,12 @@ impl LightClient {
             let history = &self.indexer_history;
             let mut stream = futures::stream::iter(order.clone())
                 .map(|uri| async move {
-                    let reported = probe_one(socks5_addr, &uri, timeout, history).await;
-                    SurveyResult { uri, reported }
+                    let (reported, refusal) = probe_one(socks5_addr, &uri, timeout, history).await;
+                    SurveyResult {
+                        uri,
+                        reported,
+                        refusal,
+                    }
                 })
                 .buffer_unordered(width);
             while let Some(result) = stream.next().await {
@@ -185,6 +189,7 @@ impl LightClient {
             return Err(SweepError::EmptyCohort {
                 surveyed: results.len(),
                 answered: results.iter().filter(|r| r.reported.is_some()).count(),
+                causes: sweep::RefusalTally::of(&results),
             }
             .into());
         };
@@ -319,18 +324,29 @@ fn sweep_refusal(refusal: crate::mixnet::acquire::TransportError) -> ServerSelec
 
 /// One candidate's survey: the shared mixnet probe over the sweep exit,
 /// which times and records the attempt, its success mapped to the reported
-/// chain and height and any failure to `None`.
+/// chain and height and any failure to its classified refusal.
 async fn probe_one(
     socks5_addr: std::net::SocketAddr,
     uri: &Uri,
     timeout: Duration,
     history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
-) -> Option<ProbeSuccess> {
-    crate::mixnet::probe::probe_indexer(uri, socks5_addr, timeout, history)
+) -> (
+    Option<ProbeSuccess>,
+    Option<crate::lightclient::indexer_history::FailureKind>,
+) {
+    match crate::mixnet::probe::probe_indexer(uri, socks5_addr, timeout, history)
         .await
         .leg
         .outcome
-        .ok()
+    {
+        Ok(success) => (Some(success), None),
+        Err(failure) => (
+            None,
+            Some(crate::lightclient::indexer_history::FailureKind::classify(
+                &failure.to_string(),
+            )),
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -452,7 +468,7 @@ mod tests {
         );
         history.set_recording(true);
 
-        let reported = probe_one(
+        let (reported, refusal) = probe_one(
             socks5_addr,
             &UNANSWERED_CANDIDATE.parse().expect("the static uri parses"),
             FAST_STAGE_BOUND,
@@ -463,6 +479,10 @@ mod tests {
         assert!(
             reported.is_none(),
             "a proxy that never answers reports no candidate"
+        );
+        assert!(
+            refusal.is_some(),
+            "a proxy that never answers classifies its refusal"
         );
         let attempt = history
             .load()

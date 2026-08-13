@@ -407,7 +407,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        match probe.get_lightd_info().await {
+        match probe.get_latest_block().await {
             Ok(_) => return Ok(()),
             Err(error) => {
                 let stage = crate::mixnet::socks5_transmit_stage(&error);

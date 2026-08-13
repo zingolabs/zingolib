@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking.** `network probe` wraps the single `GetLatestBlock` RPC, the
+  same tip call the Server-Selection Sweep surveys with, and reports the
+  tip height alone: there is no chain name in the reply to print.
 - A failed command renders its whole cause chain at the dispatch seam,
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the
