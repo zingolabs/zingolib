@@ -851,8 +851,6 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
-
-
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -953,8 +951,6 @@ fun uniffi_zingo_checksum_func_init_new(
 fun uniffi_zingo_checksum_func_migration_status(
 ): Short
 fun uniffi_zingo_checksum_func_mixnet_bootstrap_detail(
-): Short
-fun uniffi_zingo_checksum_func_mixnet_ip_correlation_disclaimer(
 ): Short
 fun uniffi_zingo_checksum_func_mixnet_mode(
 ): Short
@@ -1140,8 +1136,6 @@ fun uniffi_zingo_fn_func_init_new(`serveruri`: RustBuffer.ByValue,`birthday`: In
 fun uniffi_zingo_fn_func_migration_status(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_mixnet_bootstrap_detail(uniffi_out_err: UniffiRustCallStatus, 
-): RustBuffer.ByValue
-fun uniffi_zingo_fn_func_mixnet_ip_correlation_disclaimer(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_mixnet_mode(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1450,9 +1444,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_mixnet_bootstrap_detail() != 12980.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_zingo_checksum_func_mixnet_ip_correlation_disclaimer() != 47567.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_mixnet_mode() != 29476.toShort()) {
@@ -2413,15 +2404,6 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_mixnet_bootstrap_detail(
-        _status)
-}
-    )
-    }
-    
- fun `mixnetIpCorrelationDisclaimer`(): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.INSTANCE.uniffi_zingo_fn_func_mixnet_ip_correlation_disclaimer(
         _status)
 }
     )

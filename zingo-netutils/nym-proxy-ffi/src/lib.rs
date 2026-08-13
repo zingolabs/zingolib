@@ -96,13 +96,13 @@ pub trait ProxyDeathObserver: Send + Sync {
 /// [`Self::stop`] or a drop of the handle tears both down.
 #[derive(uniffi::Object)]
 pub struct MixnetProxyHandle {
-    // The runtime must outlive the proxy: NymProxy's client runs background
-    // tasks on it. Kept first so drop order tears the proxy down before the
-    // runtime it ran on.
-    runtime: Runtime,
+    // NymProxy's client runs background tasks on the runtime, so `proxy` and
+    // `monitor` are declared before `runtime`: fields drop in declaration
+    // order, so both tear down before the runtime they ran on.
     proxy: Mutex<Option<NymProxy>>,
-    endpoint: Socks5Endpoint,
     monitor: Option<tokio::task::AbortHandle>,
+    endpoint: Socks5Endpoint,
+    runtime: Runtime,
 }
 
 /// Why one SOCKS5 method-selection round trip failed.
@@ -255,7 +255,7 @@ impl MixnetProxyHandle {
     pub fn exit_node(&self) -> Option<String> {
         self.proxy
             .lock()
-            .expect("proxy mutex poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
             .map(|proxy| proxy.exit_node().to_string())
     }
@@ -267,7 +267,7 @@ impl MixnetProxyHandle {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        let taken = self.proxy.lock().expect("proxy mutex poisoned").take();
+        let taken = self.proxy.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
         if let Some(proxy) = taken {
             self.runtime.block_on(proxy.disconnect());
         }

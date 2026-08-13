@@ -70,9 +70,7 @@ use zingo_common_components::protocol::ActivationHeights;
 
 const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-// Bounds the pending-URI redial inside run_sync, which holds the LIGHTCLIENT
-// write lock: every other FFI call waits behind it, so the dial gets seconds,
-// not the OS connect timeout.
+// Bounds the pending-URI redial in attach_pending_indexer.
 const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
@@ -1683,24 +1681,40 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     })
 }
 
-/// One bounded redial of the URI left pending by `init_from_b64`'s
-/// Indexerless fallback, attaching the Indexer and clearing the pending URI
-/// on success, leaving it for the next sync tick on failure, and doing
-/// nothing when no URI is pending.
-fn attach_pending_indexer(lightclient: &mut LightClient) {
+/// Redials the pending Indexerless-fallback URI off the LIGHTCLIENT lock,
+/// attaching the Indexer under a brief write lock when the probe connects.
+fn attach_pending_indexer() {
     let pending_uri = PENDING_INDEXER_URI
         .read()
         .ok()
         .and_then(|pending| pending.clone());
     let Some(uri) = pending_uri else { return };
-    let attached = RT.block_on(async {
-        tokio::time::timeout(
-            PENDING_INDEXER_DIAL_TIMEOUT,
-            lightclient.set_indexer_uri(uri),
-        )
-        .await
+    let reachable = RT.block_on(async {
+        tokio::time::timeout(PENDING_INDEXER_DIAL_TIMEOUT, GrpcIndexer::new(uri.clone())).await
     });
-    if matches!(attached, Ok(Ok(())))
+    if !matches!(reachable, Ok(Ok(_))) {
+        return;
+    }
+    let attached = with_initialized_lightclient(|lightclient| {
+        let still_pending = PENDING_INDEXER_URI
+            .read()
+            .ok()
+            .and_then(|pending| pending.clone())
+            == Some(uri.clone());
+        if !still_pending {
+            return Ok(false);
+        }
+        Ok(RT
+            .block_on(async {
+                tokio::time::timeout(
+                    PENDING_INDEXER_DIAL_TIMEOUT,
+                    lightclient.set_indexer_uri(uri),
+                )
+                .await
+            })
+            .is_ok_and(|result| result.is_ok()))
+    });
+    if matches!(attached, Ok(true))
         && let Ok(mut pending) = PENDING_INDEXER_URI.write()
     {
         *pending = None;
@@ -1708,8 +1722,8 @@ fn attach_pending_indexer(lightclient: &mut LightClient) {
 }
 
 fn run_sync() -> Result<String, ZingolibError> {
+    attach_pending_indexer();
     with_initialized_lightclient(|lightclient| {
-        attach_pending_indexer(lightclient);
         if lightclient.sync_mode() == SyncMode::Paused {
             // resume_sync can race: sync_mode() was Paused a moment ago but the
             // task may have advanced before we got here. Return the error typed
@@ -2135,27 +2149,30 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    // zingolib fetches price only over the mixnet (ADR 0011). A mixnet that is
+    // on but not ready still refuses, so an enabled private route never
+    // silently drops to clearnet. Only the wallet fetch needs the lightclient.
+    let mixnet_price = with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            // zingolib fetches price only over the mixnet (ADR 0011). This
-            // wallet treats the price oracle as non-sensitive, so a mixnet
-            // deliberately switched off fetches over clearnet instead. A mixnet
-            // that is on but not ready still refuses, so an enabled private
-            // route never silently drops to clearnet.
-            let usd = match lightclient.update_current_price().await {
-                Ok(fetch) => fetch.usd,
-                Err(LightClientError::PriceFetchRequiresMixnet) => {
-                    zingo_price::race_current_price(None)
-                        .await
-                        .map_err(ZingolibError::read)?
-                        .price
-                        .price_usd
-                }
-                Err(e) => return Err(ffi_error(e)),
-            };
-            Ok(object! { "current_price" => usd }.pretty(2))
+            match lightclient.update_current_price().await {
+                Ok(fetch) => Ok(Some(fetch.usd)),
+                Err(LightClientError::PriceFetchRequiresMixnet) => Ok(None),
+                Err(e) => Err(ffi_error(e)),
+            }
         })
-    })
+    })?;
+    // The price oracle is non-sensitive, so a mixnet deliberately switched off
+    // fetches over clearnet, off the lightclient lock.
+    let usd = match mixnet_price {
+        Some(usd) => usd,
+        None => {
+            RT.block_on(zingo_price::race_current_price(None))
+                .map_err(ZingolibError::read)?
+                .price
+                .price_usd
+        }
+    };
+    Ok(object! { "current_price" => usd }.pretty(2))
 }
 
 pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
@@ -3490,13 +3507,4 @@ pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
             Err(ZingolibError::LightclientNotInitialized)
         }
     })
-}
-
-/// The canonical IP-correlation disclaimer (ZIP-0318): Mixnet Mode covers only
-/// transaction broadcast and price-fetch, and synchronization still exposes
-/// the client IP to the sync indexer. One constant from zingolib so every
-/// frontend renders the same text; infallible because it needs no wallet and
-/// has no failure path.
-pub fn mixnet_ip_correlation_disclaimer() -> String {
-    zingolib::nym::IP_CORRELATION_DISCLAIMER.to_string()
 }
