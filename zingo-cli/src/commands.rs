@@ -30,7 +30,7 @@ use zingolib::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingolib::lightclient::{LightClient, TransmitProgressHandle};
+use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -547,7 +547,8 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.shutdown_save_task().await {
-        Ok(()) => eprintln!("Save task shutdown successfully."),
+        Ok(SaveShutdown::ShutDown) => eprintln!("Save task shutdown successfully."),
+        Ok(SaveShutdown::NotRunning) => eprintln!("No save task was running."),
         Err(e) => eprintln!("Error: save failed. {}", render_error_chain(&e)),
     }
     Ok("Zingo CLI quit successfully.".to_string())
@@ -619,7 +620,8 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
             )),
         },
         SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
-            Ok(()) => Ok("Save task shutdown successfully.".to_string()),
+            Ok(SaveShutdown::ShutDown) => Ok("Save task shutdown successfully.".to_string()),
+            Ok(SaveShutdown::NotRunning) => Ok("No save task was running.".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(
                 format!("save failed. {}", render_error_chain(&e)).into(),
             )),

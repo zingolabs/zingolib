@@ -216,16 +216,7 @@ async fn probe_once_listening(
     transport: &NymProxy,
     uri: &http::Uri,
 ) -> Result<LightdInfo, Socks5TransmitError> {
-    let announced = transport.socks5_addr();
-    let socks5_addr = announced.parse().map_err(|_| {
-        // The proxy's own announcement is in-process and practically always
-        // a socket address; a defect refuses typed rather than dialing text.
-        Socks5TransmitError::TunnelTransport {
-            destination: uri.to_string(),
-            detail: format!("the proxy announced a non-socket address: {announced}"),
-            source: None,
-        }
-    })?;
+    let socks5_addr = transport.socks5_addr();
     let deadline = Instant::now() + MIXNET_ROUND_TRIP_BOUND;
     loop {
         match get_lightd_info_via_socks5(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND).await {

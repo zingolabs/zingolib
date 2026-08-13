@@ -95,13 +95,7 @@ async fn main() -> ExitCode {
             .uri
             .parse()
             .expect("the census tests pin every entry parseable");
-        let Ok(socks5_addr) = found.transport.socks5_addr().parse() else {
-            println!(
-                "  LOST {} (the proxy announced a non-socket address)",
-                found.indexer.uri
-            );
-            continue;
-        };
+        let socks5_addr = found.transport.socks5_addr();
         match get_lightd_info_via_socks5(socks5_addr, &uri, MIXNET_ROUND_TRIP_BOUND).await {
             Ok(info) => println!(
                 "  OK {} height={} (same transport, same exit)",

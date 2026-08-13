@@ -92,19 +92,17 @@ pub(crate) fn clutch_nodes(clutch: &HashSet<Reservation>) -> Vec<crate::mixnet::
         .collect()
 }
 
-/// Takes the one reservation a ready transport reports as bound out of
+/// Takes the first reservation a ready transport reports as bound out of
 /// `clutch`, recycling the rest, or `None` when the report names no drawn
 /// node.
 pub(crate) fn take_bound_lease(
     clutch: &mut HashSet<Reservation>,
     reported: &[crate::mixnet::ExitNodeId],
 ) -> Option<Reservation> {
-    let bound = clutch
-        .iter()
-        .find(|reservation| reported.contains(reservation.node()))?
-        .node()
-        .clone();
-    clutch.take(&bound)
+    // The report is walked in announcement order, not the set's arbitrary
+    // one, so a transport that names several drawn exits binds the one it
+    // announced first and the same report always binds the same exit.
+    reported.iter().find_map(|node| clutch.take(node))
 }
 
 /// The session's Exit Pool: one reservation per discovered node, issued to
@@ -201,6 +199,40 @@ mod tests {
         .expect("the reported exit is drawn");
         assert_eq!(lease.node(), &crate::mixnet::ExitNodeId::from("exit-b"));
         assert_eq!(clutch.len(), 2, "the unbound reservations remain");
+    }
+
+    /// HYPOTHESIS: a report naming several drawn exits binds the
+    /// first-announced one, so the bind follows the transport's own order
+    /// rather than the set's arbitrary one. Falsified if any trial binds a
+    /// later announcement.
+    #[test]
+    fn the_bound_lease_follows_the_announcement_order() {
+        /// Independently ordered clutches, enough that an arbitrary pick
+        /// cannot agree with the announcement order by chance.
+        const ORDER_TRIALS: usize = 16;
+
+        let announced = [
+            crate::mixnet::ExitNodeId::from("exit-b"),
+            crate::mixnet::ExitNodeId::from("exit-c"),
+            crate::mixnet::ExitNodeId::from("exit-a"),
+        ];
+        let first = announced.first().expect("the announcement names exits");
+        for trial in 0..ORDER_TRIALS {
+            let mut clutch: HashSet<Reservation> = [
+                Reservation::dangling_for_test("exit-a"),
+                Reservation::dangling_for_test("exit-b"),
+                Reservation::dangling_for_test("exit-c"),
+            ]
+            .into_iter()
+            .collect();
+            let lease =
+                take_bound_lease(&mut clutch, &announced).expect("the report names drawn exits");
+            assert_eq!(
+                lease.node(),
+                first,
+                "trial {trial} bound a later announcement"
+            );
+        }
     }
 
     /// HYPOTHESIS: a report naming no drawn node (foreign or empty) takes

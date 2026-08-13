@@ -54,6 +54,7 @@ pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
 
+pub use save::SaveShutdown;
 pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
