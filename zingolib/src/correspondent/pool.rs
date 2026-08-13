@@ -5,7 +5,8 @@ pub(crate) mod exit_pool;
 
 use crate::mixnet::acquire;
 
-/// The Indexer Pool's ratified complement of Exit-Bound members.
+/// The Indexer Pool's ratified complement of members whose exits are
+/// bound but unproven.
 pub(crate) const INDEXER_POOL_COMPLEMENT: usize = 2;
 
 /// The Price Source Pool's ratified complement of one Shared-exit member.
@@ -41,7 +42,7 @@ mod sealed {
 impl ExitUse for Exclusive {}
 impl ExitUse for Shared {}
 
-/// One ready member: an Exit-Bound transport and the owning lease of the
+/// One ready member: a transport with a bound exit and the owning lease of the
 /// Exit Node it bound, in the exit-use category `U`.
 pub(crate) struct Member<T, U: ExitUse> {
     transport: T,

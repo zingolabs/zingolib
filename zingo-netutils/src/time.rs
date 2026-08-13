@@ -218,6 +218,12 @@ pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 /// waited out.
 pub const PROBE_LEG_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// How long the Sentinel may take before its silence indicts the exit.
+/// Shorter than a probe leg because the Sentinel's address is reliable
+/// enough that silence is evidence about the tunnel, and measured round
+/// trips through a live exit landed under two seconds.
+pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
+
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
 /// one slow server cannot block the fastest-first ordering.
 pub const SERVER_RANKING_TIMEOUT: Duration = Duration::from_secs(5);

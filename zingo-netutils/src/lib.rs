@@ -99,6 +99,9 @@ mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
 pub use socks5_transmit::{ProxyDialFailure, Socks5Indexer, Socks5TransmitError, TunnelFailure};
 
+#[cfg(feature = "socks5-transmit")]
+pub mod sentinel;
+
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
     // sure a process-level CryptoProvider exists before that happens.

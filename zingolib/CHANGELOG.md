@@ -58,6 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: a speed-priority survey now carries a Sentinel in its opening
+  wave and restarts on a dead exit. The Sentinel is a reliable public
+  address, probed with an ordinary DNS lookup through the same tunnel; it
+  holds one of the wave's lanes rather than adding one, because the survey
+  width is a ceiling measured for the one Nym client a mobile host runs
+  in-process. Its silence within `zingo_netutils::time::SENTINEL_BUDGET`
+  proves the Exit Node carries nothing, whereupon the sweep abandons that
+  exit — holding its reservation until a replacement binds, so the pool
+  cannot offer it again — drops every result of the failed attempt, and
+  surveys afresh, up to `lightclient::select::MAX_SWEEP_EXIT_DRAWS` exits.
+  `SweepProgress` gains `ExitAbandoned`. Nothing from an abandoned draw
+  charges any indexer's Health: a tunnel-phase failure is the exit's.
 - A survey whose opening wave times out to a leg now ends there. Every leg
   timing out is evidence about the tunnel rather than about the candidates,
   which the remaining waves can only repeat at the same cost, so a dead

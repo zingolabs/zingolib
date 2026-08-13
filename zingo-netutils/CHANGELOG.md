@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
+  carries an ordinary DNS lookup of a constant name to a reliable public
+  resolver through a SOCKS5 tunnel, and reports `ExitEvidence` — whether the
+  bound Exit Node carried a round trip at all. A survey uses it to tell an
+  exit that carries nothing from indexers that will not answer; binding an
+  exit proves neither, because the mixnet client reports success against a
+  dead exit. `time::SENTINEL_BUDGET` bounds the probe.
+
+
 ### Changed
 
 - BREAKING: the free functions `send_transaction_via_socks5`,

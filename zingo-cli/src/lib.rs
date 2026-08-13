@@ -1352,6 +1352,11 @@ async fn sweep_select_sync_indexer(
                 SweepProgress::Surveying { candidates } => eprintln!(
                     "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
                 ),
+                SweepProgress::ExitAbandoned { draw } => eprintln!(
+                    "Server-Selection Sweep: the Exit Node of draw {draw} carries nothing — \
+                     a reliable address stayed silent through it; abandoning that exit and \
+                     surveying again from the start..."
+                ),
                 SweepProgress::Judging { answered, surveyed } => eprintln!(
                     "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
                      judging the live cohort..."
